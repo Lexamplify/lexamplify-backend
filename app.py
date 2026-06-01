@@ -145,6 +145,8 @@ def create_app():
     app.config['SQLITE_DB_PATH'] = DB_PATH
 
     sqlalchemy_db.init_app(app)
+    with app.app_context():
+        db.create_all()
     jwt.init_app(app)
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     init_sqlite_db()
