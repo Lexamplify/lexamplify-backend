@@ -90,7 +90,7 @@ const Breadcrumbs = () => {
 
   if (isSmallScreen && items.length > 2) {
     return (
-      <div style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--text-muted)' }}>
+      <div className="breadcrumbs-container" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--text-muted)' }}>
         <Link to={items[0].url} style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>{items[0].label}</Link>
         <span style={{ margin: '0 8px' }}>/</span>
         <span title={items[1].label} style={{ cursor: 'pointer' }}>...</span>
@@ -101,7 +101,7 @@ const Breadcrumbs = () => {
   }
 
   return (
-    <div style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--text-muted)' }}>
+    <div className="breadcrumbs-container" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--text-muted)' }}>
       {items.map((item, index) => {
         const isLast = index === items.length - 1;
         return (

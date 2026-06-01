@@ -325,13 +325,15 @@ h1, h2, h3, h4, h5, h6 {
     border-right: 1px solid var(--border-dark-subtle);
     display: flex;
     flex-direction: column;
+    background-color: var(--bg-sidebar) !important; /* solid background color to fix transparency */
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.6);
   }
 
   /* Drawer open state — toggled by .sidebar-open class from React */
   .sidebar.sidebar-open {
     transform: translateX(0);
-    box-shadow: 4px 0 28px rgba(0, 0, 0, 0.55);
+    box-shadow: 4px 0 28px rgba(0, 0, 0, 0.7);
   }
 
   /* Dark overlay sits below the open sidebar, above workspace */
@@ -357,10 +359,46 @@ h1, h2, h3, h4, h5, h6 {
     flex: none;
   }
 
-  /* Topbar spacing adjustments */
+  /* Task 2: Typography & Breathing Room */
+  .workspace-container p, 
+  .workspace-container span, 
+  .workspace-container li {
+    line-height: 1.6 !important;
+  }
+  .workspace-container h1, 
+  .workspace-container h2, 
+  .workspace-container h3 {
+    line-height: 1.3 !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  /* Main content wrappers & pages should not touch the bezel */
+  .resources-container, 
+  .analysis-panel, 
+  .document-viewer-panel, 
+  .premium-card, 
+  .panel, 
+  .card, 
+  main {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  /* Task 3: Topbar / Header Clean-up */
   .topbar {
     padding: 0 16px;
-    gap: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* Breadcrumbs Clean-up to prevent overflow */
+  .breadcrumbs-container {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
   }
 }
 
