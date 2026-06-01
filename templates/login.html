@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — LexAI India</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css') }}">
+    <style>
+        body {
+            font-family: 'DM Sans', sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--bg);
+            color: var(--text);
+            padding: 24px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        /* Subtle dot-mesh background layer */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: radial-gradient(circle, rgba(212, 175, 55, 0.07) 1px, transparent 1px);
+            background-size: 28px 28px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Theme toggle — fixed top-right */
+        .theme-toggle {
+            position: fixed;
+            top: 22px;
+            right: 26px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-strong);
+            color: var(--text-muted);
+            border-radius: var(--r-xs);
+            padding: 7px 12px;
+            font-size: 12px;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            z-index: 100;
+            box-shadow: var(--shadow-sm);
+        }
+        .theme-toggle:focus { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+        /* ── Auth Card ── */
+        .auth-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--r-lg);
+            box-shadow: var(--shadow-xl);
+            width: 100%;
+            max-width: 428px;
+            overflow: hidden;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Card header — deep navy stripe with wordmark */
+        .auth-header {
+            background: var(--navy);
+            padding: 34px 40px 30px;
+            text-align: center;
+            position: relative;
+        }
+        .auth-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 40px;
+            right: 40px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--gold), transparent);
+            opacity: 0.5;
+        }
+        .auth-logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--gold);
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            margin-bottom: 6px;
+        }
+        .auth-tagline {
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.40);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Card body */
+        .auth-body {
+            padding: 36px 40px 40px;
+        }
+        .auth-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+            margin: 0 0 4px 0;
+            line-height: 1.3;
+        }
+        .auth-sub {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin: 0 0 28px 0;
+        }
+
+        /* Error message */
+        #error-msg {
+            background: rgba(192, 57, 43, 0.07);
+            border: 1px solid rgba(192, 57, 43, 0.22);
+            color: #c0392b;
+            border-radius: var(--r-xs);
+            padding: 10px 14px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            display: none;
+            line-height: 1.5;
+        }
+
+        /* Form fields */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .form-control {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px 15px;
+            background: var(--bg-subtle);
+            border: 1.5px solid var(--border);
+            border-radius: var(--r-xs);
+            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 15px;
+            outline: none;
+        }
+        .form-control::placeholder { color: var(--text-faint); }
+        .form-control:focus {
+            border-color: var(--gold);
+            box-shadow: 0 0 0 3px var(--gold-glow);
+            background: var(--bg-panel);
+        }
+
+        /* Submit button */
+        .btn-login {
+            width: 100%;
+            padding: 13px;
+            background: var(--gold);
+            color: var(--navy);
+            border: none;
+            border-radius: var(--r-xs);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn-login:hover {
+            background: var(--gold-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 22px rgba(212, 175, 55, 0.38);
+        }
+        .btn-login:active { transform: translateY(0); box-shadow: none; }
+
+        /* Footer link */
+        .auth-footer {
+            text-align: center;
+            padding-top: 22px;
+            margin-top: 26px;
+            border-top: 1px solid var(--border);
+            font-size: 13.5px;
+            color: var(--text-muted);
+        }
+        .auth-footer a {
+            color: var(--gold);
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .auth-footer a:hover { text-decoration: underline; }
+    </style>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+</head>
+<body>
+
+    <select id="theme-selector" class="theme-toggle">
+        <option value="system">🖥️ System</option>
+        <option value="light">☀️ Light</option>
+        <option value="dark">🌙 Dark</option>
+    </select>
+
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-logo">⚖️ LexAI India</div>
+            <div class="auth-tagline">Enterprise Legal Intelligence</div>
+        </div>
+        <div class="auth-body">
+            <h2 class="auth-title">Welcome back</h2>
+            <p class="auth-sub">Sign in to your LexAI workspace.</p>
+
+            <div id="error-msg"></div>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="email" class="form-control" placeholder="you@lawfirm.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" class="form-control" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn-login">Sign In &rarr;</button>
+            </form>
+
+            <div class="auth-footer">
+                Don't have an account? <a href="/signup">Create one</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', () => { window.initThemeSelector('theme-selector'); });
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('error-msg');
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('lexai_token', data.token);
+                    localStorage.setItem('lexai_user', JSON.stringify({name: data.name, role: data.role}));
+                    window.location.href = '/dashboard';
+                } else {
+                    errorDiv.textContent = data.error || 'Login failed';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Network error. Please try again.';
+                errorDiv.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

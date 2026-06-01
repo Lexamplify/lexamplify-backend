@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Billing & Timesheets — LexAI India</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy:  #0d1b2a;
+    --navy2: #112233;
+    --navy3: #1a2f45;
+    --gold:  #c9a84c;
+    --gold2: #e6c97a;
+    --text:  #e8e4d8;
+    --text2: #9ca3af;
+    --border: rgba(201,168,76,0.2);
+    --red:   #e53e3e;
+    --green: #38a169;
+    --card:  rgba(255,255,255,0.04);
+    --radius: 10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--navy);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── SIDEBAR ─────────────────────────────────────────────── */
+  .sidebar {
+    width: 260px;
+    min-height: 100vh;
+    background: var(--navy2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 100;
+  }
+
+  .logo-wrap {
+    padding: 28px 24px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.02em;
+  }
+
+  .logo-sub {
+    font-size: 0.72rem;
+    color: var(--text2);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+
+  .nav {
+    flex: 1;
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-radius: var(--radius);
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background 0.18s, color 0.18s;
+    cursor: pointer;
+  }
+
+  .nav-item:hover {
+    background: var(--card);
+    color: var(--text);
+  }
+
+  .nav-item.active {
+    background: rgba(201,168,76,0.12);
+    color: var(--gold);
+    border: 1px solid var(--border);
+  }
+
+  .nav-item .nav-icon {
+    width: 20px;
+    text-align: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .sidebar-footer {
+    padding: 18px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 0.75rem;
+    color: var(--text2);
+  }
+
+  /* ── MAIN ─────────────────────────────────────────────────── */
+  .main {
+    margin-left: 260px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* ── TOPBAR ───────────────────────────────────────────────── */
+  .topbar {
+    background: var(--navy2);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .topbar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+  }
+
+  .tab-btn {
+    padding: 8px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text2);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+
+  .tab-btn:hover { color: var(--text); background: var(--card); }
+
+  .tab-btn.active {
+    background: rgba(201,168,76,0.15);
+    color: var(--gold);
+    border-color: var(--gold);
+  }
+
+  /* ── CONTENT ──────────────────────────────────────────────── */
+  .content {
+    padding: 32px;
+    flex: 1;
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── BUTTONS ──────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 20px;
+    border-radius: 8px;
+    border: none;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+
+  .btn-gold {
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    color: var(--navy);
+  }
+
+  .btn-gold:hover { opacity: 0.88; transform: translateY(-1px); }
+
+  .btn-ghost {
+    background: var(--card);
+    color: var(--text2);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover { color: var(--text); }
+
+  .btn-danger {
+    background: rgba(229,62,62,0.15);
+    color: var(--red);
+    border: 1px solid rgba(229,62,62,0.3);
+  }
+
+  .btn-danger:hover { background: rgba(229,62,62,0.25); }
+
+  .btn-green {
+    background: rgba(56,161,105,0.15);
+    color: var(--green);
+    border: 1px solid rgba(56,161,105,0.3);
+  }
+
+  .btn-green:hover { background: rgba(56,161,105,0.25); }
+
+  .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+  /* ── SUMMARY BAR ──────────────────────────────────────────── */
+  .summary-bar {
+    background: rgba(201,168,76,0.08);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .summary-bar-text {
+    font-size: 0.95rem;
+    color: var(--text2);
+  }
+
+  .summary-bar-text span {
+    color: var(--gold);
+    font-weight: 700;
+    font-size: 1.05rem;
+  }
+
+  /* ── SECTION HEADER ───────────────────────────────────────── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    color: var(--text);
+  }
+
+  /* ── TABLE ────────────────────────────────────────────────── */
+  .table-wrap {
+    background: var(--navy2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 600px;
+  }
+
+  thead tr {
+    background: rgba(201,168,76,0.07);
+  }
+
+  th {
+    padding: 13px 18px;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 13px 18px;
+    font-size: 0.875rem;
+    color: var(--text);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: middle;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  tbody tr:hover { background: rgba(255,255,255,0.025); }
+
+  .total-row td {
+    background: rgba(201,168,76,0.06);
+    color: var(--gold);
+    font-weight: 700;
+    border-top: 1px solid var(--border);
+    border-bottom: none !important;
+  }
+
+  .empty-row td {
+    text-align: center;
+    color: var(--text2);
+    padding: 40px 18px;
+    font-size: 0.875rem;
+  }
+
+  /* ── STATUS BADGES ────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .badge-grey  { background: rgba(156,163,175,0.15); color: #9ca3af; border: 1px solid rgba(156,163,175,0.25); }
+  .badge-blue  { background: rgba(59,130,246,0.15);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+  .badge-green { background: rgba(56,161,105,0.15);  color: var(--green); border: 1px solid rgba(56,161,105,0.25); }
+  .badge-red   { background: rgba(229,62,62,0.15);   color: var(--red);   border: 1px solid rgba(229,62,62,0.25); }
+
+  /* ── SUMMARY CARDS ────────────────────────────────────────── */
+  .cards-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+
+  .card {
+    background: var(--navy2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+  }
+
+  .card-label {
+    font-size: 0.78rem;
+    color: var(--text2);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .card-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: var(--gold);
+  }
+
+  .card-sub {
+    font-size: 0.78rem;
+    color: var(--text2);
+    margin-top: 6px;
+  }
+
+  /* ── MODAL ────────────────────────────────────────────────── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .modal-backdrop.open { display: flex; }
+
+  .modal {
+    background: var(--navy2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 26px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    color: var(--text);
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text2);
+    font-size: 1.3rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+
+  .modal-close:hover { color: var(--text); }
+
+  .modal-body { padding: 24px 26px; }
+
+  .modal-footer {
+    padding: 16px 26px 22px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── FORM ELEMENTS ────────────────────────────────────────── */
+  .form-group { margin-bottom: 18px; }
+
+  label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text2);
+    margin-bottom: 7px;
+    letter-spacing: 0.04em;
+  }
+
+  input, textarea, select {
+    width: 100%;
+    background: var(--navy3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    transition: border-color 0.18s;
+    outline: none;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(201,168,76,0.1);
+  }
+
+  input::placeholder, textarea::placeholder { color: var(--text2); }
+
+  textarea { resize: vertical; min-height: 80px; }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--gold);
+  }
+
+  .checkbox-row label {
+    margin-bottom: 0;
+    font-size: 0.875rem;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  /* ── TOAST ────────────────────────────────────────────────── */
+  #toast-container {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toast {
+    background: var(--navy3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    font-size: 0.875rem;
+    color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 260px;
+    animation: slideIn 0.25s ease;
+    transition: opacity 0.3s;
+  }
+
+  .toast.success { border-left: 3px solid var(--green); }
+  .toast.error   { border-left: 3px solid var(--red); }
+  .toast.info    { border-left: 3px solid var(--gold); }
+
+  @keyframes slideIn {
+    from { transform: translateX(60px); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+
+  /* ── PAYMENTS SECTION TITLE ───────────────────────────────── */
+  .payments-section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    color: var(--text2);
+    margin: 28px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── RESPONSIVE ───────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .sidebar { transform: translateX(-100%); }
+    .main { margin-left: 0; }
+    .cards-row { grid-template-columns: 1fr; }
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="logo-wrap">
+    <div class="logo-title">⚖ LexAI India</div>
+    <div class="logo-sub">Legal Intelligence Platform</div>
+  </div>
+  <nav class="nav">
+    <a class="nav-item" href="/dashboard">
+      <span class="nav-icon">📊</span>Dashboard
+    </a>
+    <a class="nav-item" href="/case-management">
+      <span class="nav-icon">📁</span>Case Management
+    </a>
+    <a class="nav-item" href="/clients">
+      <span class="nav-icon">👥</span>Client Management
+    </a>
+    <a class="nav-item active" href="/billing">
+      <span class="nav-icon">💰</span>Billing
+    </a>
+    <a class="nav-item" href="/court-resources">
+      <span class="nav-icon">🏛️</span>Court Resources
+    </a>
+  </nav>
+  <div class="sidebar-footer">LexAI India &copy; 2026</div>
+</aside>
+
+<!-- ── MAIN ─────────────────────────────────────────────────── -->
+<div class="main">
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span style="font-size:1.4rem;">💰</span>
+      <h1 class="topbar-title">Billing &amp; Timesheets</h1>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="timesheets">TIMESHEETS</button>
+      <button class="tab-btn" data-tab="invoices">INVOICES</button>
+      <button class="tab-btn" data-tab="payments">PAYMENTS</button>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <!-- ══════════════ TAB 1: TIMESHEETS ══════════════ -->
+    <div id="tab-timesheets" class="tab-panel active">
+      <!-- Summary Bar -->
+      <div class="summary-bar">
+        <div class="summary-bar-text">
+          Total This Month:
+          <span id="ts-total-hrs">0</span> hrs
+          &nbsp;|&nbsp;
+          ₹ <span id="ts-total-amt">0</span>
+        </div>
+        <button class="btn btn-gold" onclick="openModal('modal-log-time')">⏱️ Log Time</button>
+      </div>
+
+      <!-- Table -->
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table id="ts-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Description</th>
+                <th>Hours</th>
+                <th>Rate (₹/hr)</th>
+                <th>Amount (₹)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ts-tbody">
+              <tr class="empty-row"><td colspan="7">Loading time entries…</td></tr>
+            </tbody>
+            <tfoot id="ts-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ TAB 2: INVOICES ══════════════ -->
+    <div id="tab-invoices" class="tab-panel">
+      <div class="section-header">
+        <h2 class="section-title">Invoices</h2>
+        <button class="btn btn-gold" onclick="openModal('modal-gen-invoice')">📄 Generate Invoice</button>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table id="inv-table">
+            <thead>
+              <tr>
+                <th>Invoice #</th>
+                <th>Client</th>
+                <th>Amount (₹)</th>
+                <th>GST (₹)</th>
+                <th>Total (₹)</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="inv-tbody">
+              <tr class="empty-row"><td colspan="8">Loading invoices…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ TAB 3: PAYMENTS ══════════════ -->
+    <div id="tab-payments" class="tab-panel">
+      <!-- Summary Cards -->
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-label">Total Billed This Month</div>
+          <div class="card-value" id="pay-billed">₹0</div>
+          <div class="card-sub">From all invoices this month</div>
+        </div>
+        <div class="card" style="border-color:rgba(56,161,105,0.3);">
+          <div class="card-label">Total Received</div>
+          <div class="card-value" id="pay-received" style="color:var(--green);">₹0</div>
+          <div class="card-sub">Paid invoices</div>
+        </div>
+        <div class="card" style="border-color:rgba(229,62,62,0.3);">
+          <div class="card-label">Outstanding</div>
+          <div class="card-value" id="pay-outstanding" style="color:var(--red);">₹0</div>
+          <div class="card-sub">Unpaid &amp; overdue</div>
+        </div>
+      </div>
+
+      <!-- Paid Invoices -->
+      <div class="payments-section-title">Paid Invoices</div>
+      <div class="table-wrap" style="margin-bottom:28px;">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Invoice #</th>
+                <th>Client</th>
+                <th>Total (₹)</th>
+                <th>Paid Date</th>
+                <th>Mode</th>
+              </tr>
+            </thead>
+            <tbody id="pay-paid-tbody">
+              <tr class="empty-row"><td colspan="5">No paid invoices yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Unpaid / Overdue -->
+      <div class="payments-section-title">Unpaid &amp; Overdue Invoices</div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Invoice #</th>
+                <th>Client</th>
+                <th>Total (₹)</th>
+                <th>Due Date</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="pay-unpaid-tbody">
+              <tr class="empty-row"><td colspan="5">No outstanding invoices.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ══════════════ MODAL: LOG TIME ══════════════ -->
+<div class="modal-backdrop" id="modal-log-time">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lt-title">
+    <div class="modal-header">
+      <span class="modal-title" id="lt-title">⏱️ Log Time Entry</span>
+      <button class="modal-close" onclick="closeModal('modal-log-time')" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="lt-client">Client Name</label>
+          <input type="text" id="lt-client" placeholder="e.g. Ravi Sharma">
+        </div>
+        <div class="form-group">
+          <label for="lt-case">Case Number</label>
+          <input type="text" id="lt-case" placeholder="e.g. CAS-2026-001">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="lt-date">Date</label>
+          <input type="date" id="lt-date">
+        </div>
+        <div class="form-group">
+          <label for="lt-hours">Hours</label>
+          <input type="number" id="lt-hours" step="0.5" min="0.5" placeholder="e.g. 2.5">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="lt-rate">Rate (₹/hr)</label>
+        <input type="number" id="lt-rate" value="2500" min="0" placeholder="2500">
+      </div>
+      <div class="form-group">
+        <label for="lt-desc">Description / Notes</label>
+        <textarea id="lt-desc" placeholder="Describe the work performed…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-log-time')">Cancel</button>
+      <button class="btn btn-gold" onclick="submitLogTime()">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ MODAL: GENERATE INVOICE ══════════════ -->
+<div class="modal-backdrop" id="modal-gen-invoice">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="gi-title">
+    <div class="modal-header">
+      <span class="modal-title" id="gi-title">📄 Generate Invoice</span>
+      <button class="modal-close" onclick="closeModal('modal-gen-invoice')" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="gi-client">Client Name</label>
+        <input type="text" id="gi-client" placeholder="e.g. Priya Mehta">
+      </div>
+      <div class="form-group">
+        <label for="gi-amount">Invoice Amount (₹)</label>
+        <input type="number" id="gi-amount" min="0" placeholder="e.g. 15000">
+      </div>
+      <div class="form-group">
+        <div class="checkbox-row">
+          <input type="checkbox" id="gi-gst">
+          <label for="gi-gst">Apply GST 18%</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="gi-due">Due Date</label>
+        <input type="date" id="gi-due">
+      </div>
+      <div class="form-group">
+        <label for="gi-notes">Notes</label>
+        <textarea id="gi-notes" placeholder="Additional notes for the invoice…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-gen-invoice')">Cancel</button>
+      <button class="btn btn-gold" onclick="submitGenerateInvoice()">Generate</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST CONTAINER ─────────────────────────────────────── -->
+<div id="toast-container" role="status" aria-live="polite"></div>
+
+<script>
+/* ── Helpers ─────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+
+function fmt(n) {
+  return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtHrs(n) {
+  return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function shortDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function isThisMonth(d) {
+  if (!d) return false;
+  const dt = new Date(d);
+  const now = new Date();
+  return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear();
+}
+
+/* ── Toast ───────────────────────────────────────────────────── */
+function showToast(msg, type = 'info', duration = 3500) {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icons[type] || ''}</span><span>${msg}</span>`;
+  $('toast-container').appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 350);
+  }, duration);
+}
+
+/* ── Modal ───────────────────────────────────────────────────── */
+function openModal(id) {
+  $(id).classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(id) {
+  $(id).classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) closeModal(backdrop.id);
+  });
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-backdrop.open').forEach(m => closeModal(m.id));
+  }
+});
+
+/* ── Tabs ────────────────────────────────────────────────────── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    $(`tab-${btn.dataset.tab}`).classList.add('active');
+  });
+});
+
+/* ── State ───────────────────────────────────────────────────── */
+let timeEntries = [];
+let invoices    = [];
+
+/* ══════════════════════════════════════════════════════════════
+   TAB 1 — TIMESHEETS
+══════════════════════════════════════════════════════════════ */
+async function fetchTimeEntries() {
+  try {
+    const res = await fetch('/api/billing/time-entries');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    timeEntries = Array.isArray(data) ? data : (data.entries || data.data || []);
+  } catch (err) {
+    console.warn('Time entries fetch failed:', err);
+    timeEntries = [];
+  }
+  renderTimeEntries();
+}
+
+function parseEntry(e) {
+  /* Support various API shapes */
+  const raw = e.description || '';
+  let client = e.client_name || e.client || '';
+  let desc   = raw;
+
+  /* If description has embedded "Client: X | Case: Y | Notes: Z" */
+  if (!client && raw.includes('Client:')) {
+    const cMatch = raw.match(/Client:\s*([^|]+)/);
+    if (cMatch) client = cMatch[1].trim();
+    const nMatch = raw.match(/Notes:\s*(.*)/);
+    if (nMatch) desc = nMatch[1].trim();
+    else desc = raw.replace(/Client:[^|]+\|?\s*/g, '').replace(/Case:[^|]+\|?\s*/g, '').trim();
+  }
+
+  const hours  = parseFloat(e.hours  || e.hour  || 0);
+  const rate   = parseFloat(e.rate   || e.rate_per_hour || 2500);
+  const amount = hours * rate;
+  return { ...e, client, desc, hours, rate, amount };
+}
+
+function renderTimeEntries() {
+  const tbody  = $('ts-tbody');
+  const tfoot  = $('ts-tfoot');
+
+  if (!timeEntries.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">No time entries yet. Log your first entry above.</td></tr>`;
+    tfoot.innerHTML = '';
+    $('ts-total-hrs').textContent = '0';
+    $('ts-total-amt').textContent = '0';
+    return;
+  }
+
+  /* Sort newest first */
+  const sorted = [...timeEntries].sort((a, b) => {
+    return new Date(b.date || 0) - new Date(a.date || 0);
+  });
+
+  let totalHrs = 0, totalAmt = 0;
+  const now = new Date();
+  const thisMonth = sorted.filter(e => isThisMonth(e.date));
+  thisMonth.forEach(e => {
+    const p = parseEntry(e);
+    totalHrs += p.hours;
+    totalAmt += p.amount;
+  });
+
+  $('ts-total-hrs').textContent = fmtHrs(totalHrs);
+  $('ts-total-amt').textContent = fmt(totalAmt);
+
+  /* Grand totals for all entries shown */
+  let grandHrs = 0, grandAmt = 0;
+  tbody.innerHTML = sorted.map(e => {
+    const p = parseEntry(e);
+    grandHrs += p.hours;
+    grandAmt += p.amount;
+    return `<tr>
+      <td>${shortDate(p.date)}</td>
+      <td>${escHtml(p.client || '—')}</td>
+      <td style="max-width:220px;white-space:normal;">${escHtml(p.desc || '—')}</td>
+      <td>${fmtHrs(p.hours)}</td>
+      <td>₹${fmt(p.rate)}</td>
+      <td>₹${fmt(p.amount)}</td>
+      <td>
+        <button class="btn btn-danger btn-sm" onclick="deleteTimeEntry(${p.id || p._id || 0})">🗑 Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  tfoot.innerHTML = `<tr class="total-row">
+    <td colspan="3"><strong>Total</strong></td>
+    <td><strong>${fmtHrs(grandHrs)} hrs</strong></td>
+    <td>—</td>
+    <td><strong>₹${fmt(grandAmt)}</strong></td>
+    <td></td>
+  </tr>`;
+}
+
+async function deleteTimeEntry(id) {
+  if (!id || !confirm('Delete this time entry?')) return;
+  try {
+    const res = await fetch(`/api/billing/time-entries/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast('Time entry deleted.', 'success');
+    fetchTimeEntries();
+  } catch (err) {
+    showToast('Failed to delete entry: ' + err.message, 'error');
+  }
+}
+
+/* Set default date */
+$('lt-date').value = today();
+
+async function submitLogTime() {
+  const clientName = $('lt-client').value.trim();
+  const caseNum    = $('lt-case').value.trim();
+  const date       = $('lt-date').value;
+  const hours      = parseFloat($('lt-hours').value);
+  const rate       = parseFloat($('lt-rate').value || 2500);
+  const notes      = $('lt-desc').value.trim();
+
+  if (!date || !hours || hours <= 0) {
+    showToast('Please fill in Date and Hours.', 'error');
+    return;
+  }
+
+  const descFull = [
+    clientName ? `Client: ${clientName}` : null,
+    caseNum    ? `Case: ${caseNum}`      : null,
+    notes      ? `Notes: ${notes}`       : null
+  ].filter(Boolean).join(' | ');
+
+  const body = {
+    client_id: null,
+    case_id: null,
+    date,
+    hours,
+    rate,
+    description: descFull || 'Time entry'
+  };
+
+  try {
+    const res = await fetch('/api/billing/log-time', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast('Time entry saved successfully.', 'success');
+    closeModal('modal-log-time');
+    /* Reset form */
+    $('lt-client').value = '';
+    $('lt-case').value = '';
+    $('lt-date').value = today();
+    $('lt-hours').value = '';
+    $('lt-rate').value = '2500';
+    $('lt-desc').value = '';
+    fetchTimeEntries();
+  } catch (err) {
+    showToast('Failed to save entry: ' + err.message, 'error');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TAB 2 — INVOICES
+══════════════════════════════════════════════════════════════ */
+async function fetchInvoices() {
+  try {
+    const res = await fetch('/api/billing/invoices');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    invoices = Array.isArray(data) ? data : (data.invoices || data.data || []);
+  } catch (err) {
+    console.warn('Invoices fetch failed:', err);
+    invoices = [];
+  }
+  renderInvoices();
+  renderPayments();
+}
+
+function getInvoiceStatus(inv) {
+  const raw = (inv.status || '').toLowerCase();
+  if (raw) return raw;
+  /* Infer from fields if status missing */
+  if (inv.paid_at || inv.paid_date) return 'paid';
+  const due = inv.due_date ? new Date(inv.due_date) : null;
+  if (due && due < new Date()) return 'overdue';
+  return 'draft';
+}
+
+function statusBadge(status) {
+  const map = {
+    draft:   ['badge-grey',  'Draft'],
+    sent:    ['badge-blue',  'Sent'],
+    paid:    ['badge-green', 'Paid'],
+    overdue: ['badge-red',   'Overdue']
+  };
+  const [cls, label] = map[status] || ['badge-grey', status];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function parseInvoice(inv) {
+  const amount   = parseFloat(inv.amount || inv.subtotal || 0);
+  const applyGst = inv.apply_gst || inv.gst_applied || false;
+  const gst      = applyGst ? +(amount * 0.18).toFixed(2) : (parseFloat(inv.gst || inv.gst_amount || 0));
+  const total    = parseFloat(inv.total || inv.total_amount || (amount + gst));
+  const status   = getInvoiceStatus(inv);
+  const client   = inv.client_name || inv.client || (inv.client_id ? `Client #${inv.client_id}` : '—');
+  const invoiceNo = inv.invoice_number || inv.invoice_no || inv.number || `INV-${inv.id || inv._id || '—'}`;
+  return { ...inv, amount, gst, total, status, client, invoiceNo };
+}
+
+function renderInvoices() {
+  const tbody = $('inv-tbody');
+
+  if (!invoices.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="8">No invoices yet. Generate your first invoice above.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...invoices].sort((a, b) => {
+    return new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0);
+  });
+
+  tbody.innerHTML = sorted.map(inv => {
+    const p = parseInvoice(inv);
+    const id = p.id || p._id || 0;
+    return `<tr>
+      <td><strong>${escHtml(p.invoiceNo)}</strong></td>
+      <td>${escHtml(p.client)}</td>
+      <td>₹${fmt(p.amount)}</td>
+      <td>₹${fmt(p.gst)}</td>
+      <td><strong>₹${fmt(p.total)}</strong></td>
+      <td>${shortDate(p.due_date)}</td>
+      <td>${statusBadge(p.status)}</td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="downloadPdf(${id})">📥 PDF</button>
+          ${p.status !== 'paid'
+            ? `<button class="btn btn-green btn-sm" onclick="markPaid(${id})">✓ Mark Paid</button>`
+            : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* Set default due date (+30 days) */
+const dueDefault = new Date();
+dueDefault.setDate(dueDefault.getDate() + 30);
+$('gi-due').value = dueDefault.toISOString().slice(0, 10);
+
+async function submitGenerateInvoice() {
+  const clientName = $('gi-client').value.trim();
+  const amount     = parseFloat($('gi-amount').value);
+  const applyGst   = $('gi-gst').checked;
+  const dueDate    = $('gi-due').value;
+  const notes      = $('gi-notes').value.trim();
+
+  if (!clientName || !amount || amount <= 0 || !dueDate) {
+    showToast('Please fill in Client Name, Amount, and Due Date.', 'error');
+    return;
+  }
+
+  const body = {
+    client_id: null,
+    client_name: clientName,
+    amount,
+    apply_gst: applyGst,
+    due_date: dueDate,
+    notes
+  };
+
+  try {
+    const res = await fetch('/api/billing/generate-invoice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast('Invoice generated successfully.', 'success');
+    closeModal('modal-gen-invoice');
+    $('gi-client').value = '';
+    $('gi-amount').value = '';
+    $('gi-gst').checked = false;
+    const nd = new Date(); nd.setDate(nd.getDate() + 30);
+    $('gi-due').value = nd.toISOString().slice(0, 10);
+    $('gi-notes').value = '';
+    fetchInvoices();
+  } catch (err) {
+    showToast('Failed to generate invoice: ' + err.message, 'error');
+  }
+}
+
+async function downloadPdf(id) {
+  if (!id) { showToast('Invalid invoice ID.', 'error'); return; }
+  showToast('Preparing PDF download…', 'info');
+  try {
+    const res = await fetch(`/api/billing/generate-pdf/${id}`, { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `invoice-${id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+    showToast('PDF downloaded.', 'success');
+  } catch (err) {
+    showToast('PDF download failed: ' + err.message, 'error');
+  }
+}
+
+async function markPaid(id) {
+  if (!id || !confirm('Mark this invoice as paid?')) return;
+  try {
+    const res = await fetch(`/api/billing/mark-paid/${id}`, { method: 'PUT' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast('Invoice marked as paid.', 'success');
+    fetchInvoices();
+  } catch (err) {
+    showToast('Failed to update invoice: ' + err.message, 'error');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TAB 3 — PAYMENTS
+══════════════════════════════════════════════════════════════ */
+function renderPayments() {
+  const paidList   = invoices.filter(i => getInvoiceStatus(i) === 'paid');
+  const unpaidList = invoices.filter(i => ['draft','sent','overdue'].includes(getInvoiceStatus(i)));
+  const monthList  = invoices.filter(i => isThisMonth(i.created_at || i.date || i.due_date));
+
+  const sumTotal = arr => arr.reduce((s, i) => s + parseInvoice(i).total, 0);
+
+  const billed      = sumTotal(monthList);
+  const received    = sumTotal(paidList);
+  const outstanding = sumTotal(unpaidList);
+
+  $('pay-billed').textContent     = `₹${fmt(billed)}`;
+  $('pay-received').textContent   = `₹${fmt(received)}`;
+  $('pay-outstanding').textContent = `₹${fmt(outstanding)}`;
+
+  /* Paid table */
+  const paidTbody = $('pay-paid-tbody');
+  if (!paidList.length) {
+    paidTbody.innerHTML = `<tr class="empty-row"><td colspan="5">No paid invoices yet.</td></tr>`;
+  } else {
+    paidTbody.innerHTML = paidList.map(inv => {
+      const p = parseInvoice(inv);
+      const paidDate = p.paid_at || p.paid_date || p.updated_at || '—';
+      return `<tr>
+        <td><strong>${escHtml(p.invoiceNo)}</strong></td>
+        <td>${escHtml(p.client)}</td>
+        <td>₹${fmt(p.total)}</td>
+        <td>${shortDate(paidDate)}</td>
+        <td>Bank Transfer</td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* Unpaid / Overdue table */
+  const unpaidTbody = $('pay-unpaid-tbody');
+  if (!unpaidList.length) {
+    unpaidTbody.innerHTML = `<tr class="empty-row"><td colspan="5">No outstanding invoices.</td></tr>`;
+  } else {
+    unpaidTbody.innerHTML = unpaidList.map(inv => {
+      const p = parseInvoice(inv);
+      return `<tr>
+        <td><strong>${escHtml(p.invoiceNo)}</strong></td>
+        <td>${escHtml(p.client)}</td>
+        <td>₹${fmt(p.total)}</td>
+        <td>${shortDate(p.due_date)}</td>
+        <td>${statusBadge(p.status)}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+/* ── XSS helper ──────────────────────────────────────────────── */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ── Init ────────────────────────────────────────────────────── */
+(function init() {
+  fetchTimeEntries();
+  fetchInvoices();
+})();
+</script>
+</body>
+</html>

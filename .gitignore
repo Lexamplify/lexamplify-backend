@@ -1,0 +1,73 @@
+# ── SECRETS — NEVER COMMIT ───────────────────────────────────────
+.env
+.env.*
+*.env
+!.env.example
+
+# ── PYTHON ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+build/
+
+# ── DATABASES ────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# ── LOGS ─────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── UPLOADED FILES ───────────────────────────────────────────────
+static/uploads/
+
+# ── SESSION / VAULT DATA (may contain sensitive case data) ───────
+case_vault.json
+vc_vault_data.json
+
+# ── FRONTEND BUILD ARTIFACTS & DEPENDENCIES ──────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.env.development
+
+# ── FIREBASE DEPLOYMENT ARTIFACTS ────────────────────────────────
+.firebase/
+firebase-debug.log
+dist/
+public/
+
+# ── LARGE BINARY / MEDIA FILES ───────────────────────────────────
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.zip
+*.tar.gz
+
+# ── SCRATCH / NOTES FILES ────────────────────────────────────────
+AI Junior Lawyer response from chatgpt.txt
+AI Junior Lawyer response from google.txt
+test.html
+
+# ── IDE / OS ARTIFACTS ───────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── CLOUD DEPLOYMENT ARTIFACTS ───────────────────────────────────
+.claude/
+.gcloudignore

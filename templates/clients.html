@@ -1,0 +1,1507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client Management | LexAI India</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #0d1b2a;
+      --navy2:  #112233;
+      --navy3:  #1a2f45;
+      --gold:   #c9a84c;
+      --gold2:  #e6c97a;
+      --text:   #e8e4d8;
+      --text2:  #9ca3af;
+      --border: rgba(201,168,76,0.2);
+      --red:    #e53e3e;
+      --green:  #38a169;
+      --card:   rgba(255,255,255,0.04);
+      --radius: 10px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--navy);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ── LAYOUT ───────────────────────────────────────────────── */
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ──────────────────────────────────────────────── */
+    .sidebar {
+      width: 240px;
+      min-width: 240px;
+      background: var(--navy2);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      z-index: 10;
+    }
+
+    .sidebar-logo {
+      padding: 28px 24px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-logo .brand {
+      font-family: 'Playfair Display', serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 0.02em;
+    }
+    .sidebar-logo .tagline {
+      font-size: 11px;
+      color: var(--text2);
+      margin-top: 3px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      color: var(--text2);
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.18s, color 0.18s;
+      white-space: nowrap;
+    }
+    .nav-item:hover {
+      background: var(--card);
+      color: var(--text);
+    }
+    .nav-item.active {
+      background: rgba(201,168,76,0.12);
+      color: var(--gold);
+    }
+    .nav-item .nav-icon {
+      width: 18px;
+      text-align: center;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-footer {
+      padding: 16px 12px;
+      border-top: 1px solid var(--border);
+    }
+    .logout-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      color: var(--text2);
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.18s, color 0.18s;
+      width: 100%;
+      background: none;
+      border: none;
+    }
+    .logout-btn:hover {
+      background: rgba(229,62,62,0.1);
+      color: var(--red);
+    }
+
+    /* ── MAIN ─────────────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── TOPBAR ───────────────────────────────────────────────── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--navy2);
+      flex-shrink: 0;
+    }
+    .topbar-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .btn-gold {
+      background: linear-gradient(135deg, var(--gold), var(--gold2));
+      color: var(--navy);
+      border: none;
+      border-radius: var(--radius);
+      padding: 9px 18px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.18s, transform 0.12s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-gold:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-gold:active { transform: translateY(0); }
+
+    /* ── TWO-PANEL CONTENT ───────────────────────────────────── */
+    .content-panels {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* LEFT PANEL */
+    .left-panel {
+      width: 30%;
+      min-width: 260px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      background: var(--navy2);
+    }
+
+    .left-panel-header {
+      padding: 16px 16px 10px;
+      flex-shrink: 0;
+    }
+
+    .search-wrap {
+      position: relative;
+    }
+    .search-wrap .search-icon {
+      position: absolute;
+      left: 11px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text2);
+      font-size: 14px;
+      pointer-events: none;
+    }
+    .search-input {
+      width: 100%;
+      background: var(--navy3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 9px 12px 9px 34px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13.5px;
+      outline: none;
+      transition: border-color 0.18s;
+    }
+    .search-input::placeholder { color: var(--text2); }
+    .search-input:focus { border-color: var(--gold); }
+
+    .left-panel-add {
+      padding: 8px 16px 12px;
+      flex-shrink: 0;
+    }
+    .btn-outline-gold {
+      background: rgba(201,168,76,0.08);
+      color: var(--gold);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.18s;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-outline-gold:hover { background: rgba(201,168,76,0.15); }
+
+    .client-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 8px 16px;
+    }
+    .client-list::-webkit-scrollbar { width: 4px; }
+    .client-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .client-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 10px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.18s;
+      border-left: 3px solid transparent;
+      margin-bottom: 2px;
+    }
+    .client-item:hover { background: var(--card); }
+    .client-item.selected {
+      background: rgba(201,168,76,0.08);
+      border-left-color: var(--gold);
+    }
+
+    .client-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--navy3), var(--navy));
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Playfair Display', serif;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--gold);
+      flex-shrink: 0;
+    }
+
+    .client-meta { flex: 1; min-width: 0; }
+    .client-name-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 3px;
+    }
+    .client-name {
+      font-weight: 600;
+      font-size: 13.5px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 130px;
+    }
+    .badge-cases {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+    .badge-cases.has-cases { background: rgba(56,161,105,0.18); color: var(--green); }
+    .badge-cases.no-cases { background: rgba(156,163,175,0.15); color: var(--text2); }
+
+    .client-phone {
+      font-size: 12px;
+      color: var(--text2);
+    }
+    .client-activity {
+      font-size: 11px;
+      color: var(--text2);
+      margin-top: 2px;
+    }
+
+    .list-empty {
+      text-align: center;
+      padding: 40px 16px;
+      color: var(--text2);
+      font-size: 13px;
+    }
+
+    /* RIGHT PANEL */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--navy);
+    }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text2);
+      gap: 12px;
+    }
+    .empty-state-icon {
+      font-size: 48px;
+      opacity: 0.4;
+    }
+    .empty-state h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 18px;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .empty-state p { font-size: 13px; }
+
+    /* CLIENT DETAIL */
+    .client-detail {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .detail-header {
+      padding: 20px 28px 0;
+      flex-shrink: 0;
+    }
+    .detail-header-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .detail-name {
+      font-family: 'Playfair Display', serif;
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .type-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .type-individual { background: rgba(66,153,225,0.18); color: #63b3ed; }
+    .type-corporate  { background: rgba(201,168,76,0.18); color: var(--gold2); }
+
+    .detail-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .btn-sm {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: opacity 0.18s;
+    }
+    .btn-edit { background: rgba(201,168,76,0.12); color: var(--gold); }
+    .btn-edit:hover { background: rgba(201,168,76,0.22); }
+    .btn-delete { background: rgba(229,62,62,0.1); color: var(--red); }
+    .btn-delete:hover { background: rgba(229,62,62,0.2); }
+
+    /* TABS */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      padding: 16px 28px 0;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tab {
+      padding: 10px 18px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      cursor: pointer;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text2);
+      border: 1px solid transparent;
+      border-bottom: none;
+      transition: color 0.18s, background 0.18s;
+    }
+    .tab:hover { color: var(--text); background: var(--card); }
+    .tab.active {
+      color: var(--gold);
+      background: var(--card);
+      border-color: var(--border);
+      border-bottom: 1px solid var(--navy);
+      margin-bottom: -1px;
+    }
+
+    /* TAB CONTENT */
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 28px;
+    }
+    .tab-content::-webkit-scrollbar { width: 4px; }
+    .tab-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* OVERVIEW */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .info-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text2);
+      margin-bottom: 6px;
+    }
+    .info-value {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .info-full { grid-column: 1 / -1; }
+
+    /* EDIT FORM */
+    .edit-form { display: none; }
+    .edit-form.visible { display: block; }
+
+    .form-group { margin-bottom: 14px; }
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text2);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .form-input, .form-textarea, .form-select {
+      width: 100%;
+      background: var(--navy3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 9px 12px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13.5px;
+      outline: none;
+      transition: border-color 0.18s;
+    }
+    .form-input::placeholder, .form-textarea::placeholder { color: var(--text2); }
+    .form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--gold); }
+    .form-textarea { resize: vertical; min-height: 80px; }
+    .form-select option { background: var(--navy2); }
+    .form-select { cursor: pointer; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+    .form-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .btn-save {
+      background: linear-gradient(135deg, var(--gold), var(--gold2));
+      color: var(--navy);
+      border: none;
+      border-radius: var(--radius);
+      padding: 9px 20px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.18s;
+    }
+    .btn-save:hover { opacity: 0.88; }
+    .btn-cancel-edit {
+      background: var(--card);
+      color: var(--text2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 9px 18px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.18s;
+    }
+    .btn-cancel-edit:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+    /* CASES TAB */
+    .case-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      transition: border-color 0.18s;
+    }
+    .case-card:hover { border-color: rgba(201,168,76,0.4); }
+
+    .case-info { flex: 1; min-width: 0; }
+    .case-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .case-meta {
+      font-size: 12px;
+      color: var(--text2);
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .case-meta span { display: flex; align-items: center; gap: 4px; }
+
+    .status-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .status-active   { background: rgba(56,161,105,0.18); color: var(--green); }
+    .status-pending  { background: rgba(237,137,54,0.18); color: #ed8936; }
+    .status-closed   { background: rgba(156,163,175,0.15); color: var(--text2); }
+    .status-hearing  { background: rgba(66,153,225,0.18); color: #63b3ed; }
+
+    .case-link {
+      font-size: 12px;
+      color: var(--gold);
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.18s;
+    }
+    .case-link:hover { color: var(--gold2); }
+
+    .no-cases-msg {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text2);
+      font-size: 13px;
+    }
+    .no-cases-msg .icon { font-size: 36px; margin-bottom: 10px; opacity: 0.5; }
+
+    /* ACTIVITY TAB */
+    .timeline { position: relative; padding-left: 24px; }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      bottom: 8px;
+      width: 2px;
+      background: var(--border);
+    }
+    .timeline-item {
+      position: relative;
+      margin-bottom: 24px;
+    }
+    .timeline-dot {
+      position: absolute;
+      left: -20px;
+      top: 4px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--gold);
+      border: 2px solid var(--navy);
+    }
+    .timeline-time {
+      font-size: 11px;
+      color: var(--text2);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .timeline-text {
+      font-size: 13.5px;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .timeline-sub {
+      font-size: 12px;
+      color: var(--text2);
+      margin-top: 3px;
+    }
+
+    /* ── MODAL ────────────────────────────────────────────────── */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(3px);
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      background: var(--navy2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+      animation: modalIn 0.22s ease;
+    }
+    .modal::-webkit-scrollbar { width: 4px; }
+    .modal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      line-height: 1;
+      transition: color 0.18s, background 0.18s;
+    }
+    .modal-close:hover { color: var(--text); background: var(--card); }
+
+    .modal-body { padding: 20px 24px; }
+    .modal-footer {
+      padding: 14px 24px 20px;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      border-top: 1px solid var(--border);
+    }
+    .btn-cancel-modal {
+      background: var(--card);
+      color: var(--text2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 9px 18px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.18s;
+    }
+    .btn-cancel-modal:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+    /* ── TOAST ────────────────────────────────────────────────── */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .toast {
+      background: var(--navy2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 240px;
+      animation: toastIn 0.2s ease;
+    }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error   { border-left: 3px solid var(--red); }
+    .toast-icon { font-size: 16px; }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* LOADING / SPINNER */
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      color: var(--text2);
+      gap: 10px;
+    }
+
+    /* Divider */
+    .section-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 18px 0;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="brand">LexAI India</div>
+      <div class="tagline">Legal Intelligence Platform</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a class="nav-item" href="/">
+        <span class="nav-icon">🏛️</span> Dashboard
+      </a>
+      <a class="nav-item" href="/case-management">
+        <span class="nav-icon">⚖️</span> Case Management
+      </a>
+      <a class="nav-item active" href="/clients">
+        <span class="nav-icon">👥</span> Client Management
+      </a>
+      <a class="nav-item" href="/billing">
+        <span class="nav-icon">💳</span> Billing
+      </a>
+      <a class="nav-item" href="/court-resources">
+        <span class="nav-icon">📚</span> Court Resources
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="logout-btn" onclick="handleLogout()">
+        <span style="font-size:15px">🚪</span> Log Out
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ───────────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <h1 class="topbar-title">👥 Client Management</h1>
+      <button class="btn-gold" onclick="openAddModal()">➕ Add Client</button>
+    </div>
+
+    <!-- TWO-PANEL CONTENT -->
+    <div class="content-panels">
+
+      <!-- LEFT PANEL -->
+      <div class="left-panel">
+        <div class="left-panel-header">
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input
+              class="search-input"
+              id="searchInput"
+              type="text"
+              placeholder="Search clients…"
+              oninput="filterClients(this.value)"
+            />
+          </div>
+        </div>
+
+        <div class="left-panel-add">
+          <button class="btn-outline-gold" onclick="openAddModal()">➕ Add Client</button>
+        </div>
+
+        <div class="client-list" id="clientList">
+          <div class="loading-row">
+            <div class="spinner"></div> Loading clients…
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL -->
+      <div class="right-panel" id="rightPanel">
+
+        <!-- EMPTY STATE -->
+        <div class="empty-state" id="emptyState">
+          <div class="empty-state-icon">👤</div>
+          <h3>Select a client to view details</h3>
+          <p>Click any client from the list on the left to get started.</p>
+        </div>
+
+        <!-- CLIENT DETAIL (hidden until client selected) -->
+        <div class="client-detail" id="clientDetail" style="display:none;">
+
+          <div class="detail-header">
+            <div class="detail-header-row">
+              <div>
+                <div class="detail-name" id="detailName">—</div>
+                <span class="type-badge" id="detailTypeBadge"></span>
+              </div>
+              <div class="detail-actions">
+                <button class="btn-sm btn-edit" onclick="toggleEditForm()">✏️ Edit</button>
+                <button class="btn-sm btn-delete" onclick="deleteCurrentClient()">🗑️ Delete</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TABS -->
+          <div class="tabs">
+            <div class="tab active" data-tab="overview" onclick="switchTab(this)">Overview</div>
+            <div class="tab" data-tab="cases" onclick="switchTab(this)">Cases</div>
+            <div class="tab" data-tab="activity" onclick="switchTab(this)">Activity</div>
+          </div>
+
+          <div class="tab-content">
+
+            <!-- OVERVIEW TAB -->
+            <div class="tab-panel active" id="tab-overview">
+
+              <!-- READ VIEW -->
+              <div id="readView">
+                <div class="info-grid">
+                  <div class="info-card">
+                    <div class="info-label">Phone</div>
+                    <div class="info-value" id="detailPhone">—</div>
+                  </div>
+                  <div class="info-card">
+                    <div class="info-label">Email</div>
+                    <div class="info-value" id="detailEmail">—</div>
+                  </div>
+                  <div class="info-card info-full">
+                    <div class="info-label">Address</div>
+                    <div class="info-value" id="detailAddress">—</div>
+                  </div>
+                  <div class="info-card info-full">
+                    <div class="info-label">Notes</div>
+                    <div class="info-value" id="detailNotes" style="color:var(--text2);font-style:italic;">—</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- EDIT FORM -->
+              <div class="edit-form" id="editForm">
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label class="form-label">Full Name *</label>
+                    <input class="form-input" id="editName" type="text" placeholder="Client full name" required />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Client Type</label>
+                    <select class="form-select" id="editType">
+                      <option value="Individual">Individual</option>
+                      <option value="Corporate">Corporate</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Phone</label>
+                    <input class="form-input" id="editPhone" type="tel" placeholder="+91 XXXXX XXXXX" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input class="form-input" id="editEmail" type="email" placeholder="email@example.com" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Address</label>
+                  <textarea class="form-textarea" id="editAddress" placeholder="Full address…"></textarea>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Notes</label>
+                  <textarea class="form-textarea" id="editNotes" placeholder="Internal notes…"></textarea>
+                </div>
+                <div class="form-actions">
+                  <button class="btn-save" onclick="saveEdit()">💾 Save Changes</button>
+                  <button class="btn-cancel-edit" onclick="cancelEdit()">Cancel</button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- CASES TAB -->
+            <div class="tab-panel" id="tab-cases">
+              <div id="casesContent">
+                <div class="loading-row"><div class="spinner"></div> Loading cases…</div>
+              </div>
+            </div>
+
+            <!-- ACTIVITY TAB -->
+            <div class="tab-panel" id="tab-activity">
+              <div class="timeline" id="activityTimeline"></div>
+            </div>
+
+          </div><!-- /tab-content -->
+        </div><!-- /client-detail -->
+      </div><!-- /right-panel -->
+    </div><!-- /content-panels -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ── ADD CLIENT MODAL ──────────────────────────────────────── -->
+<div class="modal-backdrop" id="addModal" onclick="handleBackdropClick(event)">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle">Add New Client</span>
+      <button class="modal-close" onclick="closeAddModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Full Name <span style="color:var(--gold)">*</span></label>
+          <input class="form-input" id="addName" type="text" placeholder="Client full name" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input class="form-input" id="addPhone" type="tel" placeholder="+91 XXXXX XXXXX" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="addEmail" type="email" placeholder="email@example.com" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Client Type</label>
+          <select class="form-select" id="addType">
+            <option value="Individual">Individual</option>
+            <option value="Corporate">Corporate</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Address</label>
+        <textarea class="form-textarea" id="addAddress" placeholder="Full address…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="addNotes" placeholder="Internal notes about this client…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel-modal" onclick="closeAddModal()">Cancel</button>
+      <button class="btn-gold" onclick="submitAddClient()">💾 Save Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST CONTAINER ────────────────────────────────────────── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── JAVASCRIPT ─────────────────────────────────────────────── -->
+<script>
+  'use strict';
+
+  /* ─── STATE ─────────────────────────────────────── */
+  let allClients      = [];
+  let currentClientId = null;
+  let currentClientData = null;
+
+  /* ─── INIT ──────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', loadClientList);
+
+  /* ─── API HELPERS ───────────────────────────────── */
+  async function apiFetch(url, options = {}) {
+    const defaults = {
+      headers: { 'Content-Type': 'application/json' },
+    };
+    const res = await fetch(url, { ...defaults, ...options });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    return res.json().catch(() => ({}));
+  }
+
+  /* ─── LOAD CLIENT LIST ──────────────────────────── */
+  async function loadClientList() {
+    const list = document.getElementById('clientList');
+    list.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading clients…</div>';
+    try {
+      const data = await apiFetch('/api/clients/list');
+      allClients = Array.isArray(data) ? data : (data.clients || []);
+      renderClientList(allClients);
+    } catch (err) {
+      list.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠️ Failed to load clients.<br><small>${err.message}</small></div>`;
+    }
+  }
+
+  /* ─── RENDER LEFT LIST ──────────────────────────── */
+  function renderClientList(clients) {
+    const list = document.getElementById('clientList');
+    if (!clients.length) {
+      list.innerHTML = '<div class="list-empty">No clients found.</div>';
+      return;
+    }
+    list.innerHTML = clients.map(c => clientItemHTML(c)).join('');
+  }
+
+  function clientItemHTML(c) {
+    const initials = getInitials(c.name || c.full_name || '?');
+    const name     = c.name || c.full_name || 'Unknown';
+    const phone    = c.phone || '—';
+    const cases    = c.case_count ?? (c.cases ? c.cases.length : 0);
+    const activity = c.last_activity
+      ? formatRelative(c.last_activity)
+      : (c.created_at ? 'Added ' + formatDate(c.created_at) : '');
+    const isSelected = c.id === currentClientId;
+
+    return `
+      <div class="client-item${isSelected ? ' selected' : ''}"
+           id="client-item-${c.id}"
+           onclick="selectClient('${c.id}')">
+        <div class="client-avatar">${initials}</div>
+        <div class="client-meta">
+          <div class="client-name-row">
+            <span class="client-name" title="${escHtml(name)}">${escHtml(name)}</span>
+            <span class="badge-cases ${cases > 0 ? 'has-cases' : 'no-cases'}">${cases} case${cases !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="client-phone">${escHtml(phone)}</div>
+          ${activity ? `<div class="client-activity">${escHtml(activity)}</div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  /* ─── FILTER ────────────────────────────────────── */
+  function filterClients(q) {
+    const lq = q.toLowerCase();
+    const filtered = allClients.filter(c => {
+      const name  = (c.name || c.full_name || '').toLowerCase();
+      const phone = (c.phone || '').toLowerCase();
+      const email = (c.email || '').toLowerCase();
+      return name.includes(lq) || phone.includes(lq) || email.includes(lq);
+    });
+    renderClientList(filtered);
+    // re-highlight selected
+    if (currentClientId) {
+      document.getElementById(`client-item-${currentClientId}`)?.classList.add('selected');
+    }
+  }
+
+  /* ─── SELECT CLIENT ─────────────────────────────── */
+  async function selectClient(id) {
+    // highlight immediately
+    document.querySelectorAll('.client-item').forEach(el => el.classList.remove('selected'));
+    document.getElementById(`client-item-${id}`)?.classList.add('selected');
+    currentClientId = id;
+
+    showDetailSection();
+    setDetailLoading();
+
+    try {
+      const data = await apiFetch(`/api/clients/${id}`);
+      currentClientData = data;
+      populateDetail(data);
+    } catch (err) {
+      showToast('Failed to load client details.', 'error');
+      document.getElementById('detailName').textContent = 'Error loading client';
+    }
+  }
+
+  function showDetailSection() {
+    document.getElementById('emptyState').style.display   = 'none';
+    document.getElementById('clientDetail').style.display = 'flex';
+  }
+
+  function setDetailLoading() {
+    document.getElementById('detailName').textContent = 'Loading…';
+    document.getElementById('detailTypeBadge').textContent = '';
+    document.getElementById('detailPhone').textContent   = '—';
+    document.getElementById('detailEmail').textContent   = '—';
+    document.getElementById('detailAddress').textContent = '—';
+    document.getElementById('detailNotes').textContent   = '—';
+    document.getElementById('casesContent').innerHTML = '<div class="loading-row"><div class="spinner"></div></div>';
+    document.getElementById('activityTimeline').innerHTML = '';
+    cancelEdit();
+    // reset to overview tab
+    switchTabByName('overview');
+  }
+
+  function populateDetail(data) {
+    const name    = data.name || data.full_name || 'Unknown';
+    const type    = data.client_type || data.type || 'Individual';
+    const phone   = data.phone || '—';
+    const email   = data.email || '—';
+    const address = data.address || '—';
+    const notes   = data.notes || '';
+
+    document.getElementById('detailName').textContent    = name;
+    document.getElementById('detailPhone').textContent   = phone;
+    document.getElementById('detailEmail').textContent   = email;
+    document.getElementById('detailAddress').textContent = address;
+
+    const notesEl = document.getElementById('detailNotes');
+    if (notes) {
+      notesEl.textContent = notes;
+      notesEl.style.color       = 'var(--text)';
+      notesEl.style.fontStyle   = 'normal';
+    } else {
+      notesEl.textContent = 'No notes.';
+      notesEl.style.color       = 'var(--text2)';
+      notesEl.style.fontStyle   = 'italic';
+    }
+
+    // type badge
+    const badge = document.getElementById('detailTypeBadge');
+    badge.textContent  = type;
+    badge.className    = 'type-badge ' + (type === 'Corporate' ? 'type-corporate' : 'type-individual');
+
+    // pre-fill edit form
+    document.getElementById('editName').value    = name;
+    document.getElementById('editType').value    = type;
+    document.getElementById('editPhone').value   = phone !== '—' ? phone : '';
+    document.getElementById('editEmail').value   = email !== '—' ? email : '';
+    document.getElementById('editAddress').value = address !== '—' ? address : '';
+    document.getElementById('editNotes').value   = notes;
+
+    // cases
+    renderCasesTab(data.cases || []);
+
+    // activity
+    renderActivityTab(data);
+  }
+
+  /* ─── CASES TAB ─────────────────────────────────── */
+  function renderCasesTab(cases) {
+    const container = document.getElementById('casesContent');
+    if (!cases.length) {
+      container.innerHTML = `
+        <div class="no-cases-msg">
+          <div class="icon">📂</div>
+          No cases linked to this client yet.
+        </div>`;
+      return;
+    }
+    container.innerHTML = cases.map(c => {
+      const status = c.status || 'Active';
+      const statusClass = statusToClass(status);
+      return `
+        <div class="case-card">
+          <div class="case-info">
+            <div class="case-name">${escHtml(c.case_name || c.title || 'Untitled Case')}</div>
+            <div class="case-meta">
+              ${c.court ? `<span>🏛️ ${escHtml(c.court)}</span>` : ''}
+              ${c.next_hearing ? `<span>📅 ${formatDate(c.next_hearing)}</span>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="status-badge ${statusClass}">${escHtml(status)}</span>
+            <a class="case-link" href="/case-management?id=${c.id || ''}">View →</a>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function statusToClass(s) {
+    const l = (s || '').toLowerCase();
+    if (l === 'active')  return 'status-active';
+    if (l === 'pending') return 'status-pending';
+    if (l === 'closed')  return 'status-closed';
+    if (l.includes('hearing')) return 'status-hearing';
+    return 'status-pending';
+  }
+
+  /* ─── ACTIVITY TAB ──────────────────────────────── */
+  function renderActivityTab(data) {
+    const timeline = document.getElementById('activityTimeline');
+    const name     = data.name || data.full_name || 'Client';
+    const created  = data.created_at ? formatDate(data.created_at) : 'Unknown date';
+    const cases    = data.cases || [];
+    const caseCount = cases.length;
+
+    const items = [
+      {
+        time: created,
+        text: `${escHtml(name)} added as a client`,
+        sub: `Client type: ${escHtml(data.client_type || data.type || 'Individual')}`,
+      },
+    ];
+
+    if (caseCount > 0) {
+      items.push({
+        time: 'Ongoing',
+        text: `${caseCount} case${caseCount !== 1 ? 's' : ''} linked`,
+        sub: cases.map(c => escHtml(c.case_name || c.title || 'Untitled')).join(', '),
+      });
+    }
+
+    if (data.last_activity) {
+      items.push({
+        time: formatRelative(data.last_activity),
+        text: 'Last activity recorded',
+        sub: '',
+      });
+    }
+
+    timeline.innerHTML = items.map(item => `
+      <div class="timeline-item">
+        <div class="timeline-dot"></div>
+        <div class="timeline-time">${item.time}</div>
+        <div class="timeline-text">${item.text}</div>
+        ${item.sub ? `<div class="timeline-sub">${item.sub}</div>` : ''}
+      </div>`).join('');
+  }
+
+  /* ─── TAB SWITCHING ─────────────────────────────── */
+  function switchTab(el) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    const name = el.dataset.tab;
+    document.getElementById(`tab-${name}`)?.classList.add('active');
+  }
+
+  function switchTabByName(name) {
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.tab === name);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById(`tab-${name}`)?.classList.add('active');
+  }
+
+  /* ─── EDIT FORM ─────────────────────────────────── */
+  function toggleEditForm() {
+    const form = document.getElementById('editForm');
+    const read = document.getElementById('readView');
+    const isVisible = form.classList.contains('visible');
+    form.classList.toggle('visible', !isVisible);
+    read.style.display = isVisible ? 'block' : 'none';
+  }
+
+  function cancelEdit() {
+    document.getElementById('editForm').classList.remove('visible');
+    document.getElementById('readView').style.display = 'block';
+  }
+
+  async function saveEdit() {
+    if (!currentClientId) return;
+    const name = document.getElementById('editName').value.trim();
+    if (!name) { showToast('Full name is required.', 'error'); return; }
+
+    const payload = {
+      name:        name,
+      client_type: document.getElementById('editType').value,
+      phone:       document.getElementById('editPhone').value.trim(),
+      email:       document.getElementById('editEmail').value.trim(),
+      address:     document.getElementById('editAddress').value.trim(),
+      notes:       document.getElementById('editNotes').value.trim(),
+    };
+
+    try {
+      await apiFetch(`/api/clients/update/${currentClientId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+
+      // update local state
+      const idx = allClients.findIndex(c => c.id === currentClientId);
+      if (idx !== -1) {
+        allClients[idx] = { ...allClients[idx], ...payload, full_name: name };
+      }
+      currentClientData = { ...currentClientData, ...payload, full_name: name };
+
+      populateDetail(currentClientData);
+      cancelEdit();
+      renderClientList(allClients);
+      document.getElementById(`client-item-${currentClientId}`)?.classList.add('selected');
+      showToast('Client updated successfully.', 'success');
+    } catch (err) {
+      showToast('Failed to save changes: ' + err.message, 'error');
+    }
+  }
+
+  /* ─── DELETE ────────────────────────────────────── */
+  async function deleteCurrentClient() {
+    if (!currentClientId) return;
+    const name = currentClientData?.name || currentClientData?.full_name || 'this client';
+    if (!confirm(`Delete client "${name}"? This action cannot be undone.`)) return;
+
+    try {
+      await apiFetch(`/api/clients/delete/${currentClientId}`, { method: 'DELETE' });
+
+      allClients = allClients.filter(c => c.id !== currentClientId);
+      currentClientId   = null;
+      currentClientData = null;
+
+      renderClientList(allClients);
+      document.getElementById('emptyState').style.display   = 'flex';
+      document.getElementById('clientDetail').style.display = 'none';
+      showToast('Client deleted.', 'success');
+    } catch (err) {
+      showToast('Failed to delete client: ' + err.message, 'error');
+    }
+  }
+
+  /* ─── ADD MODAL ─────────────────────────────────── */
+  function openAddModal() {
+    ['addName','addPhone','addEmail','addAddress','addNotes'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('addType').value = 'Individual';
+    document.getElementById('addModal').classList.add('open');
+    document.getElementById('addName').focus();
+  }
+
+  function closeAddModal() {
+    document.getElementById('addModal').classList.remove('open');
+  }
+
+  function handleBackdropClick(e) {
+    if (e.target === e.currentTarget) closeAddModal();
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeAddModal();
+  });
+
+  async function submitAddClient() {
+    const name = document.getElementById('addName').value.trim();
+    if (!name) { showToast('Full name is required.', 'error'); document.getElementById('addName').focus(); return; }
+
+    const payload = {
+      name:        name,
+      client_type: document.getElementById('addType').value,
+      phone:       document.getElementById('addPhone').value.trim(),
+      email:       document.getElementById('addEmail').value.trim(),
+      address:     document.getElementById('addAddress').value.trim(),
+      notes:       document.getElementById('addNotes').value.trim(),
+    };
+
+    try {
+      const result = await apiFetch('/api/clients/add', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const newClient = result.client || result;
+      if (newClient && newClient.id) {
+        allClients.unshift(newClient);
+        renderClientList(allClients);
+        closeAddModal();
+        showToast(`Client "${name}" added successfully.`, 'success');
+        await selectClient(newClient.id);
+      } else {
+        // fallback: reload list
+        closeAddModal();
+        showToast(`Client "${name}" added.`, 'success');
+        await loadClientList();
+      }
+    } catch (err) {
+      showToast('Failed to add client: ' + err.message, 'error');
+    }
+  }
+
+  /* ─── TOAST ─────────────────────────────────────── */
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast     = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+      <span class="toast-icon">${type === 'success' ? '✅' : '❌'}</span>
+      <span>${escHtml(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.animation = 'none';
+      toast.style.opacity   = '0';
+      toast.style.transform = 'translateX(20px)';
+      toast.style.transition = 'opacity 0.3s, transform 0.3s';
+      setTimeout(() => toast.remove(), 350);
+    }, 3200);
+  }
+
+  /* ─── LOGOUT ────────────────────────────────────── */
+  function handleLogout() {
+    if (confirm('Are you sure you want to log out?')) {
+      window.location.href = '/logout';
+    }
+  }
+
+  /* ─── UTILS ─────────────────────────────────────── */
+  function getInitials(name) {
+    return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('');
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return dateStr; }
+  }
+
+  function formatRelative(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const mins  = Math.floor(diff / 60000);
+      const hours = Math.floor(diff / 3600000);
+      const days  = Math.floor(diff / 86400000);
+      if (mins < 1)   return 'Just now';
+      if (mins < 60)  return `${mins}m ago`;
+      if (hours < 24) return `${hours}h ago`;
+      if (days < 7)   return `${days}d ago`;
+      return formatDate(dateStr);
+    } catch { return dateStr; }
+  }
+</script>
+</body>
+</html>

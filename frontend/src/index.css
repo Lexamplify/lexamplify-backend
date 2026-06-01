@@ -1,0 +1,280 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap');
+
+:root {
+  /* Fonts */
+  --font-serif: 'Merriweather', Georgia, serif;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Accent Colors */
+  --accent-primary: #3B82F6;        /* Premium Harvey Cobalt */
+  --accent-hover: #2563EB;
+  --accent-muted: rgba(59, 130, 246, 0.1);
+  --accent-success: #10B981;
+  --accent-danger: #EF4444;
+  --accent-warning: #F59E0B;
+
+  /* Global Adaptive Theme Variables (Default Dark Mode) */
+  --bg-app: #0B0C10;            /* Obsidian deep black */
+  --bg-sidebar: #12141C;        /* Charcoal dark panel */
+  --bg-panel: #1A1C26;          /* Solid container panel */
+  --bg-card: #222533;           /* Solid card fill */
+  --text-primary: #F3F4F6;      /* Off-white readable text */
+  --text-muted: #9CA3AF;        /* Subtle gray text */
+  --border-subtle: #292D3E;     /* Solid border */
+
+  /* Backwards Compatibility Aliases */
+  --bg-dark-app: var(--bg-app);
+  --bg-dark-sidebar: var(--bg-sidebar);
+  --bg-dark-panel: var(--bg-panel);
+  --bg-dark-card: var(--bg-card);
+  --text-dark-primary: var(--text-primary);
+  --text-dark-muted: var(--text-muted);
+  --border-dark-subtle: var(--border-subtle);
+
+  /* The "Reading Fatigue" Paper off-white theme (Document Viewer Panel) */
+  --bg-paper-viewer: #F9F9F9;      /* Pure high-contrast off-white paper background */
+  --text-paper-primary: #1F2937;   /* Charcoal dark reading text */
+  --text-paper-secondary: #4B5563; /* Subtle body text */
+  --border-paper-subtle: #E5E7EB;  /* Light gray boundary divider */
+  --highlight-paper-risk: #FEF3C7; /* Amber micro-risk clause background */
+  --highlight-paper-border: #F59E0B;
+}
+
+/* Light Mode Overrides (Breathable soft slate off-white & charcoal text) */
+:root[data-theme="light"] {
+  --bg-app: #F8FAFC;            /* Soft slate-50 off-white */
+  --bg-sidebar: #FFFFFF;        /* Pure white sidebar */
+  --bg-panel: #F1F5F9;          /* Slate-100 container panel */
+  --bg-card: #FFFFFF;           /* White card fill */
+  --text-primary: #0F172A;      /* Deep slate-900 text */
+  --text-muted: #475569;        /* Slate-600 muted text */
+  --border-subtle: #E2E8F0;     /* Slate-200 boundary divider */
+}
+
+/* Butter-smooth transition configurations for theme engine switching */
+body,
+.app-container,
+.sidebar,
+.topbar,
+.main-content,
+.analysis-panel,
+.command-palette-card,
+.premium-card,
+.resources-container,
+.tab-btn,
+.sub-tab-btn,
+.form-input,
+.palette-input,
+.landing-container,
+.landing-header,
+.feature-card,
+.workflow-step {
+  transition: background-color 0.5s ease-in-out, color 0.5s ease-in-out, border-color 0.5s ease-in-out, box-shadow 0.5s ease-in-out;
+}
+
+/* Scroll Animation Classes */
+.scroll-animate {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scroll-animate.animated {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+
+/* Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-dark-app);
+  color: var(--text-dark-primary);
+  overflow-x: hidden;
+  height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  color: var(--text-dark-primary);
+}
+
+/* Global Layout Grid */
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-dark-app);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar styling */
+.sidebar {
+  width: 260px;
+  background-color: var(--bg-dark-sidebar);
+  border-right: 1px solid var(--border-dark-subtle);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: transform 0.3s ease, width 0.3s ease;
+  z-index: 100;
+}
+
+.sidebar.collapsed {
+  width: 0;
+  transform: translateX(-260px);
+  border-right: none;
+}
+
+/* Main workspace */
+.workspace-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.topbar {
+  height: 64px;
+  background-color: var(--bg-dark-sidebar);
+  border-bottom: 1px solid var(--border-dark-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.main-content {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  background-color: var(--bg-dark-app);
+}
+
+/* Split Pane Layout (Document-Centric Viewer) */
+.document-view-layout {
+  display: flex;
+  height: calc(100vh - 64px);
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Left Panel: Analysis & Controls (Dark Theme) */
+.analysis-panel {
+  flex: 1;
+  background-color: var(--bg-dark-app);
+  border-right: 1px solid var(--border-dark-subtle);
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* Right Panel: Document Viewer (Paper theme to prevent fatigue) */
+.document-viewer-panel {
+  flex: 1.2;
+  background-color: var(--bg-paper-viewer);
+  color: var(--text-paper-primary);
+  padding: 40px;
+  overflow-y: auto;
+  font-family: var(--font-serif);
+  line-height: 1.7;
+  font-size: 16px;
+  box-shadow: inset 5px 0 15px rgba(0, 0, 0, 0.05);
+}
+
+.document-viewer-panel h1, 
+.document-viewer-panel h2, 
+.document-viewer-panel h3 {
+  color: var(--text-paper-primary);
+  margin-bottom: 16px;
+  line-height: 1.3;
+}
+
+/* Micro-Risk Highlights in Paper Viewer */
+.risk-clause-highlight {
+  background-color: var(--highlight-paper-risk);
+  border-left: 3px solid var(--highlight-paper-border);
+  padding: 8px 12px;
+  margin: 12px 0;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.risk-clause-highlight:hover {
+  background-color: #FEEBAD; /* slightly darker amber on hover */
+}
+
+/* Focus Mode State Logic */
+.focus-mode-active .sidebar {
+  width: 0;
+  transform: translateX(-260px);
+  border-right: none;
+}
+
+.focus-mode-active .topbar {
+  opacity: 0.2;
+  transition: opacity 0.3s;
+}
+.focus-mode-active .topbar:hover {
+  opacity: 1;
+}
+
+/* Floating Command Palette (Ctrl + K) */
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 100px;
+  z-index: 9999;
+}
+
+.command-palette-card {
+  width: 600px;
+  background-color: var(--bg-dark-panel);
+  border: 1px solid var(--border-dark-subtle);
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+/* Interactive Utility Classes */
+.btn-accent {
+  background-color: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: background-color 0.2s;
+}
+.btn-accent:hover {
+  background-color: var(--accent-hover);
+}
+
+.form-input {
+  background-color: var(--bg-dark-sidebar);
+  border: 1px solid var(--border-dark-subtle);
+  color: var(--text-dark-primary);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: var(--font-sans);
+  outline: none;
+}
+.form-input:focus {
+  border-color: var(--accent-primary);
+}

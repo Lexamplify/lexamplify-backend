@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conflict Engine — LexAI India</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #0d1b2a;
+      --navy2:  #112233;
+      --navy3:  #1a2f45;
+      --gold:   #c9a84c;
+      --gold2:  #e6c97a;
+      --text:   #e8e4d8;
+      --text2:  #9ca3af;
+      --border: rgba(201,168,76,0.2);
+      --red:    #e53e3e;
+      --green:  #38a169;
+      --amber:  #d97706;
+      --card:   rgba(255,255,255,0.04);
+      --radius: 10px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'DM Sans', sans-serif;
+      background: var(--navy);
+      color: var(--text);
+    }
+
+    /* ─── Layout ─────────────────────────────────── */
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ─── Sidebar ─────────────────────────────────── */
+    .sidebar {
+      width: 240px;
+      min-width: 240px;
+      background: var(--navy2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .sidebar-logo {
+      padding: 28px 24px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-logo .logo-text {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 0.01em;
+      line-height: 1.2;
+    }
+
+    .sidebar-logo .logo-sub {
+      font-size: 0.7rem;
+      color: var(--text2);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-top: 3px;
+    }
+
+    .sidebar-nav {
+      padding: 18px 12px;
+      flex: 1;
+    }
+
+    .sidebar-nav a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      text-decoration: none;
+      color: var(--text2);
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: background 0.18s, color 0.18s;
+      margin-bottom: 2px;
+    }
+
+    .sidebar-nav a:hover {
+      background: var(--card);
+      color: var(--text);
+    }
+
+    .sidebar-nav a.active {
+      background: rgba(201,168,76,0.12);
+      color: var(--gold);
+      font-weight: 600;
+    }
+
+    .sidebar-nav a .nav-icon {
+      font-size: 0.95rem;
+      width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* ─── Main ────────────────────────────────────── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* ─── Topbar ──────────────────────────────────── */
+    .topbar {
+      background: var(--navy2);
+      border-bottom: 1px solid var(--border);
+      padding: 22px 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .topbar-left .topbar-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.55rem;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-left .topbar-title .bolt {
+      color: var(--gold);
+    }
+
+    .topbar-left .topbar-sub {
+      font-size: 0.82rem;
+      color: var(--text2);
+      margin-top: 4px;
+    }
+
+    .badge-premium {
+      background: linear-gradient(135deg, var(--gold), var(--gold2));
+      color: var(--navy);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    /* ─── Content ─────────────────────────────────── */
+    .content {
+      flex: 1;
+      padding: 36px;
+      overflow-y: auto;
+    }
+
+    /* ─── Step 1: Upload ──────────────────────────── */
+    .upload-panel {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-heading {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-heading::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .upload-slots {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .upload-slot {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .slot-label-input {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      color: var(--gold2);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 4px 0 6px;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.18s;
+    }
+
+    .slot-label-input:focus {
+      border-bottom-color: var(--gold);
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      padding: 20px;
+      position: relative;
+      text-align: center;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--gold);
+      background: rgba(201,168,76,0.05);
+    }
+
+    .drop-zone.has-file {
+      border-color: var(--green);
+      background: rgba(56,161,105,0.05);
+    }
+
+    .drop-zone .dz-icon {
+      font-size: 2rem;
+      opacity: 0.5;
+    }
+
+    .drop-zone.has-file .dz-icon {
+      opacity: 1;
+      font-size: 1.6rem;
+    }
+
+    .drop-zone .dz-main-text {
+      font-size: 0.85rem;
+      color: var(--text2);
+      font-weight: 500;
+    }
+
+    .drop-zone .dz-sub-text {
+      font-size: 0.74rem;
+      color: var(--text2);
+      opacity: 0.6;
+    }
+
+    .drop-zone .dz-filename {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--green);
+      word-break: break-all;
+      max-width: 100%;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .slot-remove {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--red);
+      font-size: 0.78rem;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      padding: 0;
+      text-align: right;
+      align-self: flex-end;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+    }
+
+    .slot-remove:hover { opacity: 1; }
+    .slot-remove.visible { display: block; }
+
+    /* ─── Analyze Button ──────────────────────────── */
+    .analyze-btn-wrap {
+      display: flex;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .btn-analyze {
+      background: linear-gradient(135deg, var(--gold), var(--gold2));
+      color: var(--navy);
+      border: none;
+      border-radius: var(--radius);
+      padding: 14px 40px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(201,168,76,0.3);
+    }
+
+    .btn-analyze:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 28px rgba(201,168,76,0.45);
+    }
+
+    .btn-analyze:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* ─── Loading ─────────────────────────────────── */
+    .loading-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding: 48px 0;
+      text-align: center;
+    }
+
+    .loading-state.visible { display: flex; }
+
+    .loading-spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-size: 1rem;
+      color: var(--text2);
+      font-weight: 500;
+    }
+
+    .loading-sub {
+      font-size: 0.82rem;
+      color: var(--text2);
+      opacity: 0.6;
+    }
+
+    /* ─── Error ───────────────────────────────────── */
+    .error-msg {
+      display: none;
+      background: rgba(229,62,62,0.1);
+      border: 1px solid rgba(229,62,62,0.3);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      color: #fc8181;
+      font-size: 0.88rem;
+      margin-top: 18px;
+    }
+
+    .error-msg.visible { display: block; }
+
+    /* ─── Results Panel ───────────────────────────── */
+    .results-panel {
+      display: none;
+      max-width: 1200px;
+      margin: 0 auto;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .results-panel.visible { display: block; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: 35% 65%;
+      gap: 24px;
+      align-items: start;
+    }
+
+    /* ─── Summary Card ────────────────────────────── */
+    .summary-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      position: sticky;
+      top: 24px;
+    }
+
+    .summary-card h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--gold);
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .summary-docs-list {
+      list-style: none;
+      margin-bottom: 20px;
+    }
+
+    .summary-docs-list li {
+      font-size: 0.82rem;
+      color: var(--text2);
+      padding: 5px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .summary-docs-list li::before {
+      content: '📄';
+      font-size: 0.85rem;
+    }
+
+    .conflict-count {
+      text-align: center;
+      margin: 20px 0;
+      padding: 18px;
+      background: rgba(201,168,76,0.06);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    .conflict-count .count-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 3.2rem;
+      font-weight: 700;
+      color: var(--gold);
+      line-height: 1;
+    }
+
+    .conflict-count .count-label {
+      font-size: 0.78rem;
+      color: var(--text2);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .severity-breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .sev-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.83rem;
+    }
+
+    .sev-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sev-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .sev-dot.critical { background: var(--red); }
+    .sev-dot.major    { background: var(--amber); }
+    .sev-dot.minor    { background: #4299e1; }
+
+    .sev-count {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .sev-count.critical { color: var(--red); }
+    .sev-count.major    { color: var(--amber); }
+    .sev-count.minor    { color: #4299e1; }
+
+    .summary-text-box {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 0.82rem;
+      color: var(--text2);
+      line-height: 1.65;
+      margin-bottom: 20px;
+    }
+
+    .btn-reset {
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text2);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 11px;
+      cursor: pointer;
+      transition: border-color 0.18s, color 0.18s, background 0.18s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-reset:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+      background: rgba(201,168,76,0.05);
+    }
+
+    /* ─── Conflict Details ────────────────────────── */
+    .conflicts-col h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 18px;
+    }
+
+    .conflict-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 20px;
+      border-left: 4px solid var(--border);
+      transition: transform 0.18s;
+    }
+
+    .conflict-card:hover { transform: translateY(-1px); }
+    .conflict-card.critical-card { border-left-color: var(--red); }
+    .conflict-card.major-card    { border-left-color: var(--amber); }
+    .conflict-card.minor-card    { border-left-color: #4299e1; }
+
+    .conflict-card-header {
+      padding: 16px 20px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .conflict-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .badge-severity {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .badge-severity.critical {
+      background: rgba(229,62,62,0.18);
+      color: #fc8181;
+      border: 1px solid rgba(229,62,62,0.3);
+    }
+
+    .badge-severity.major {
+      background: rgba(217,119,6,0.18);
+      color: #fbbf24;
+      border: 1px solid rgba(217,119,6,0.3);
+    }
+
+    .badge-severity.minor {
+      background: rgba(66,153,225,0.15);
+      color: #63b3ed;
+      border: 1px solid rgba(66,153,225,0.25);
+    }
+
+    .conflict-card-body {
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .excerpts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .excerpt-box {
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .excerpt-box.doc-a {
+      background: rgba(229,62,62,0.08);
+      border: 1px solid rgba(229,62,62,0.25);
+    }
+
+    .excerpt-box.doc-b {
+      background: rgba(217,119,6,0.08);
+      border: 1px solid rgba(217,119,6,0.25);
+    }
+
+    .excerpt-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .excerpt-box.doc-a .excerpt-label { color: #fc8181; }
+    .excerpt-box.doc-b .excerpt-label { color: #fbbf24; }
+
+    .excerpt-text {
+      font-size: 0.8rem;
+      color: var(--text2);
+      line-height: 1.6;
+      font-style: italic;
+    }
+
+    .explanation-box {
+      background: rgba(66,153,225,0.07);
+      border: 1px solid rgba(66,153,225,0.2);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .box-heading {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #63b3ed;
+      margin-bottom: 8px;
+    }
+
+    .explanation-text {
+      font-size: 0.8rem;
+      color: var(--text2);
+      line-height: 1.65;
+      font-style: italic;
+    }
+
+    .resolution-box {
+      background: rgba(56,161,105,0.08);
+      border: 1px solid rgba(56,161,105,0.25);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .resolution-box .box-heading { color: #68d391; }
+
+    .resolution-text {
+      font-size: 0.8rem;
+      color: var(--text2);
+      line-height: 1.65;
+      margin-bottom: 10px;
+    }
+
+    .btn-copy {
+      background: rgba(56,161,105,0.15);
+      border: 1px solid rgba(56,161,105,0.3);
+      border-radius: 6px;
+      color: #68d391;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: background 0.18s, border-color 0.18s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-copy:hover {
+      background: rgba(56,161,105,0.25);
+      border-color: rgba(56,161,105,0.5);
+    }
+
+    /* ─── No Conflicts ────────────────────────────── */
+    .no-conflicts {
+      text-align: center;
+      padding: 60px 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .no-conflicts .nc-icon { font-size: 3.5rem; margin-bottom: 16px; }
+
+    .no-conflicts h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--green);
+      margin-bottom: 12px;
+    }
+
+    .no-conflicts p {
+      font-size: 0.88rem;
+      color: var(--text2);
+      line-height: 1.65;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* ─── Toast ───────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      background: var(--navy3);
+      border: 1px solid var(--green);
+      border-radius: var(--radius);
+      padding: 12px 20px;
+      font-size: 0.85rem;
+      color: var(--green);
+      font-weight: 600;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ─── Responsive ──────────────────────────────── */
+    @media (max-width: 1024px) {
+      .results-grid {
+        grid-template-columns: 1fr;
+      }
+      .summary-card { position: static; }
+    }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .upload-slots { grid-template-columns: 1fr; }
+      .content { padding: 20px; }
+      .topbar { padding: 16px 20px; }
+      .excerpts-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ─── Sidebar ──────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-text">LexAI India</div>
+      <div class="logo-sub">Legal Intelligence Platform</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/dashboard">
+        <span class="nav-icon">🏠</span> Dashboard
+      </a>
+      <a href="/case-management">
+        <span class="nav-icon">📁</span> Case Management
+      </a>
+      <a href="/clients">
+        <span class="nav-icon">👥</span> Client Management
+      </a>
+      <a href="/conflict-engine" class="active">
+        <span class="nav-icon">⚡</span> Conflict Engine
+      </a>
+      <a href="/court-resources">
+        <span class="nav-icon">⚖️</span> Court Resources
+      </a>
+    </nav>
+  </aside>
+
+  <!-- ─── Main ─────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-title">
+          <span class="bolt">⚡</span> Cross-Document Conflict Engine
+        </div>
+        <div class="topbar-sub">Detect contradictions across multiple legal documents</div>
+      </div>
+      <span class="badge-premium">Premium Feature</span>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- ═══ STEP 1: UPLOAD PANEL ═══ -->
+      <div class="upload-panel" id="uploadPanel">
+        <div class="section-heading">Upload Documents to Analyze</div>
+
+        <div class="upload-slots">
+
+          <!-- Slot 1 -->
+          <div class="upload-slot" id="slot1">
+            <input class="slot-label-input" type="text" value="Document 1 (e.g. NDA)" id="label1" />
+            <div class="drop-zone" id="drop1" role="button" tabindex="0" aria-label="Upload Document 1">
+              <div class="dz-icon">📄</div>
+              <div class="dz-main-text" id="dz1-main">Click or drag a file here</div>
+              <div class="dz-sub-text" id="dz1-sub">PDF or DOCX supported</div>
+            </div>
+            <input class="file-input" type="file" id="file1" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <button class="slot-remove" id="remove1" type="button">✕ Remove</button>
+          </div>
+
+          <!-- Slot 2 -->
+          <div class="upload-slot" id="slot2">
+            <input class="slot-label-input" type="text" value="Document 2 (e.g. MSA)" id="label2" />
+            <div class="drop-zone" id="drop2" role="button" tabindex="0" aria-label="Upload Document 2">
+              <div class="dz-icon">📄</div>
+              <div class="dz-main-text" id="dz2-main">Click or drag a file here</div>
+              <div class="dz-sub-text" id="dz2-sub">PDF or DOCX supported</div>
+            </div>
+            <input class="file-input" type="file" id="file2" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <button class="slot-remove" id="remove2" type="button">✕ Remove</button>
+          </div>
+
+          <!-- Slot 3 -->
+          <div class="upload-slot" id="slot3">
+            <input class="slot-label-input" type="text" value="Document 3 (e.g. SOW/Annexure)" id="label3" />
+            <div class="drop-zone" id="drop3" role="button" tabindex="0" aria-label="Upload Document 3">
+              <div class="dz-icon">📄</div>
+              <div class="dz-main-text" id="dz3-main">Click or drag a file here</div>
+              <div class="dz-sub-text" id="dz3-sub">PDF or DOCX supported</div>
+            </div>
+            <input class="file-input" type="file" id="file3" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <button class="slot-remove" id="remove3" type="button">✕ Remove</button>
+          </div>
+
+        </div>
+
+        <div class="analyze-btn-wrap">
+          <button class="btn-analyze" id="analyzeBtn" disabled type="button">
+            ⚡ Analyze Conflicts
+          </button>
+        </div>
+
+        <!-- Loading state -->
+        <div class="loading-state" id="loadingState">
+          <div class="loading-spinner"></div>
+          <div class="loading-text">🔍 Scanning documents for conflicts…</div>
+          <div class="loading-sub">This may take 30–60 seconds depending on document size</div>
+        </div>
+
+        <!-- Error message -->
+        <div class="error-msg" id="errorMsg"></div>
+      </div>
+
+      <!-- ═══ STEP 2: RESULTS PANEL ═══ -->
+      <div class="results-panel" id="resultsPanel">
+
+        <div class="results-grid" id="resultsGrid">
+
+          <!-- Left: Summary -->
+          <div class="summary-col">
+            <div class="summary-card">
+              <h3>📊 Conflict Summary</h3>
+
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text2);margin-bottom:8px;">
+                Documents Compared
+              </div>
+              <ul class="summary-docs-list" id="summaryDocsList"></ul>
+
+              <div class="conflict-count">
+                <div class="count-num" id="conflictCountNum">0</div>
+                <div class="count-label">Conflicts Detected</div>
+              </div>
+
+              <div class="severity-breakdown">
+                <div class="sev-row">
+                  <div class="sev-label">
+                    <div class="sev-dot critical"></div>
+                    <span style="color:var(--text2);font-size:0.83rem;">Critical</span>
+                  </div>
+                  <span class="sev-count critical" id="countCritical">0</span>
+                </div>
+                <div class="sev-row">
+                  <div class="sev-label">
+                    <div class="sev-dot major"></div>
+                    <span style="color:var(--text2);font-size:0.83rem;">Major</span>
+                  </div>
+                  <span class="sev-count major" id="countMajor">0</span>
+                </div>
+                <div class="sev-row">
+                  <div class="sev-label">
+                    <div class="sev-dot minor"></div>
+                    <span style="color:var(--text2);font-size:0.83rem;">Minor</span>
+                  </div>
+                  <span class="sev-count minor" id="countMinor">0</span>
+                </div>
+              </div>
+
+              <div class="summary-text-box" id="summaryTextBox"></div>
+
+              <button class="btn-reset" id="resetBtn" type="button">
+                🔄 Analyze New Documents
+              </button>
+            </div>
+          </div>
+
+          <!-- Right: Conflict Details -->
+          <div class="conflicts-col">
+            <h3>Conflict Details</h3>
+            <div id="conflictsList"></div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- Toast -->
+<div class="toast" id="toast">✅ Resolution copied to clipboard</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ─── State ────────────────────────────────────────
+  const files = { 1: null, 2: null, 3: null };
+
+  // ─── Elements ─────────────────────────────────────
+  const analyzeBtn  = document.getElementById('analyzeBtn');
+  const loadingState = document.getElementById('loadingState');
+  const errorMsg    = document.getElementById('errorMsg');
+  const uploadPanel = document.getElementById('uploadPanel');
+  const resultsPanel = document.getElementById('resultsPanel');
+  const resetBtn    = document.getElementById('resetBtn');
+  const toast       = document.getElementById('toast');
+
+  // ─── File Management ──────────────────────────────
+  function setFile(slot, file) {
+    if (!file) return;
+    files[slot] = file;
+    const drop   = document.getElementById('drop' + slot);
+    const main   = document.getElementById('dz' + slot + '-main');
+    const sub    = document.getElementById('dz' + slot + '-sub');
+    const remove = document.getElementById('remove' + slot);
+
+    drop.classList.add('has-file');
+    main.innerHTML = '<span class="dz-filename">📎 ' + escHtml(file.name) + '</span>';
+    sub.textContent = formatBytes(file.size);
+    remove.classList.add('visible');
+    updateAnalyzeBtn();
+  }
+
+  function clearFile(slot) {
+    files[slot] = null;
+    const fileEl = document.getElementById('file' + slot);
+    const drop   = document.getElementById('drop' + slot);
+    const main   = document.getElementById('dz' + slot + '-main');
+    const sub    = document.getElementById('dz' + slot + '-sub');
+    const remove = document.getElementById('remove' + slot);
+
+    fileEl.value = '';
+    drop.classList.remove('has-file', 'drag-over');
+    main.textContent = 'Click or drag a file here';
+    sub.textContent  = 'PDF or DOCX supported';
+    remove.classList.remove('visible');
+    updateAnalyzeBtn();
+  }
+
+  function updateAnalyzeBtn() {
+    const count = Object.values(files).filter(Boolean).length;
+    analyzeBtn.disabled = count < 2;
+  }
+
+  // ─── Wire up each slot ────────────────────────────
+  [1, 2, 3].forEach(function (n) {
+    const drop   = document.getElementById('drop' + n);
+    const fileEl = document.getElementById('file' + n);
+    const remove = document.getElementById('remove' + n);
+
+    // Click drop zone → open file picker
+    drop.addEventListener('click', function () { fileEl.click(); });
+    drop.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileEl.click(); }
+    });
+
+    // File input change
+    fileEl.addEventListener('change', function () {
+      if (fileEl.files && fileEl.files[0]) setFile(n, fileEl.files[0]);
+    });
+
+    // Drag-and-drop
+    drop.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      drop.classList.add('drag-over');
+    });
+    drop.addEventListener('dragleave', function (e) {
+      if (!drop.contains(e.relatedTarget)) drop.classList.remove('drag-over');
+    });
+    drop.addEventListener('drop', function (e) {
+      e.preventDefault();
+      drop.classList.remove('drag-over');
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) {
+        // Assign to the hidden input via DataTransfer trick where possible
+        setFile(n, f);
+      }
+    });
+
+    // Remove button
+    remove.addEventListener('click', function (e) {
+      e.stopPropagation();
+      clearFile(n);
+    });
+  });
+
+  // ─── Analyze ──────────────────────────────────────
+  analyzeBtn.addEventListener('click', function () {
+    const count = Object.values(files).filter(Boolean).length;
+    if (count < 2) return;
+
+    const fd = new FormData();
+    if (files[1]) fd.append('doc1', files[1]);
+    if (files[2]) fd.append('doc2', files[2]);
+    if (files[3]) fd.append('doc3', files[3]);
+    fd.append('label1', document.getElementById('label1').value.trim() || 'Document 1');
+    fd.append('label2', document.getElementById('label2').value.trim() || 'Document 2');
+    fd.append('label3', document.getElementById('label3').value.trim() || 'Document 3');
+
+    // Show loading
+    analyzeBtn.disabled = true;
+    loadingState.classList.add('visible');
+    errorMsg.classList.remove('visible');
+
+    fetch('/api/conflict/analyze', {
+      method: 'POST',
+      body: fd
+    })
+    .then(function (res) {
+      if (!res.ok) {
+        return res.json().then(function (d) {
+          throw new Error(d.message || d.error || ('Server error: ' + res.status));
+        });
+      }
+      return res.json();
+    })
+    .then(function (data) {
+      loadingState.classList.remove('visible');
+      renderResults(data);
+    })
+    .catch(function (err) {
+      loadingState.classList.remove('visible');
+      analyzeBtn.disabled = false;
+      updateAnalyzeBtn();
+      showError(err.message || 'An unexpected error occurred. Please try again.');
+    });
+  });
+
+  // ─── Render Results ───────────────────────────────
+  function renderResults(data) {
+    const conflicts = Array.isArray(data.conflicts) ? data.conflicts : [];
+    const summary   = data.summary || '';
+    const docs      = data.documents || buildDocList();
+
+    // Severity counts
+    let cCrit = 0, cMaj = 0, cMin = 0;
+    conflicts.forEach(function (c) {
+      const s = (c.severity || '').toLowerCase();
+      if (s === 'critical') cCrit++;
+      else if (s === 'major') cMaj++;
+      else cMin++;
+    });
+
+    // Summary docs list
+    const docsList = document.getElementById('summaryDocsList');
+    docsList.innerHTML = '';
+    docs.forEach(function (d) {
+      const li = document.createElement('li');
+      li.textContent = d;
+      docsList.appendChild(li);
+    });
+
+    // Count
+    document.getElementById('conflictCountNum').textContent = conflicts.length;
+    document.getElementById('countCritical').textContent = cCrit;
+    document.getElementById('countMajor').textContent = cMaj;
+    document.getElementById('countMinor').textContent = cMin;
+
+    // Summary text
+    document.getElementById('summaryTextBox').textContent = summary;
+
+    // Conflicts list
+    const list = document.getElementById('conflictsList');
+    list.innerHTML = '';
+
+    if (conflicts.length === 0) {
+      const nc = document.createElement('div');
+      nc.className = 'no-conflicts';
+      nc.innerHTML =
+        '<div class="nc-icon">✅</div>' +
+        '<h3>No Conflicts Found</h3>' +
+        '<p>' + escHtml(summary || 'The analyzed documents appear to be consistent with each other. No contradictions or conflicting clauses were detected.') + '</p>';
+      list.appendChild(nc);
+    } else {
+      conflicts.forEach(function (conflict, idx) {
+        list.appendChild(buildConflictCard(conflict, idx));
+      });
+    }
+
+    // Show results
+    uploadPanel.style.display = 'none';
+    resultsPanel.classList.add('visible');
+  }
+
+  function buildConflictCard(c, idx) {
+    const sev   = (c.severity || 'minor').toLowerCase();
+    const sevClass = sev === 'critical' ? 'critical' : sev === 'major' ? 'major' : 'minor';
+    const sevLabel = sev.charAt(0).toUpperCase() + sev.slice(1);
+    const cardClass = sevClass + '-card';
+
+    const docAName = c.doc_a_name || c.document_a || 'Document A';
+    const docBName = c.doc_b_name || c.document_b || 'Document B';
+    const docAExcerpt = c.doc_a_excerpt || c.excerpt_a || '';
+    const docBExcerpt = c.doc_b_excerpt || c.excerpt_b || '';
+    const explanation = c.explanation || c.legal_explanation || '';
+    const resolution  = c.resolution  || c.recommended_resolution || '';
+    const title       = c.title || c.conflict_title || ('Conflict ' + (idx + 1));
+
+    const card = document.createElement('div');
+    card.className = 'conflict-card ' + cardClass;
+
+    const resId = 'res-' + idx;
+
+    card.innerHTML =
+      '<div class="conflict-card-header">' +
+        '<div class="conflict-title">' + escHtml(title) + '</div>' +
+        '<span class="badge-severity ' + sevClass + '">' + escHtml(sevLabel) + '</span>' +
+      '</div>' +
+      '<div class="conflict-card-body">' +
+        '<div class="excerpts-row">' +
+          '<div class="excerpt-box doc-a">' +
+            '<div class="excerpt-label">📄 ' + escHtml(docAName) + '</div>' +
+            '<div class="excerpt-text">' + escHtml(docAExcerpt) + '</div>' +
+          '</div>' +
+          '<div class="excerpt-box doc-b">' +
+            '<div class="excerpt-label">📄 ' + escHtml(docBName) + '</div>' +
+            '<div class="excerpt-text">' + escHtml(docBExcerpt) + '</div>' +
+          '</div>' +
+        '</div>' +
+        (explanation
+          ? '<div class="explanation-box">' +
+              '<div class="box-heading">⚖️ Legal Explanation</div>' +
+              '<div class="explanation-text">' + escHtml(explanation) + '</div>' +
+            '</div>'
+          : '') +
+        (resolution
+          ? '<div class="resolution-box">' +
+              '<div class="box-heading">✅ AI Recommended Resolution</div>' +
+              '<div class="resolution-text" id="' + resId + '">' + escHtml(resolution) + '</div>' +
+              '<button class="btn-copy" type="button" data-res-id="' + resId + '">📋 Copy Resolution</button>' +
+            '</div>'
+          : '') +
+      '</div>';
+
+    // Wire copy button after insertion
+    setTimeout(function () {
+      const btn = card.querySelector('.btn-copy');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          const id = btn.getAttribute('data-res-id');
+          const el = document.getElementById(id);
+          if (el) copyText(el.textContent);
+        });
+      }
+    }, 0);
+
+    return card;
+  }
+
+  function buildDocList() {
+    const list = [];
+    [1, 2, 3].forEach(function (n) {
+      if (files[n]) {
+        const label = document.getElementById('label' + n).value.trim() || ('Document ' + n);
+        list.push(label + ' — ' + files[n].name);
+      }
+    });
+    return list;
+  }
+
+  // ─── Reset ────────────────────────────────────────
+  resetBtn.addEventListener('click', function () {
+    [1, 2, 3].forEach(clearFile);
+    resultsPanel.classList.remove('visible');
+    uploadPanel.style.display = '';
+    analyzeBtn.disabled = true;
+    errorMsg.classList.remove('visible');
+    document.getElementById('conflictsList').innerHTML = '';
+    document.getElementById('summaryDocsList').innerHTML = '';
+  });
+
+  // ─── Helpers ──────────────────────────────────────
+  function showError(msg) {
+    errorMsg.textContent = '⚠️ ' + msg;
+    errorMsg.classList.add('visible');
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024)        return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(showToast).catch(function () {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showToast(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  var toastTimer;
+  function showToast() {
+    clearTimeout(toastTimer);
+    toast.classList.add('show');
+    toastTimer = setTimeout(function () {
+      toast.classList.remove('show');
+    }, 2800);
+  }
+
+})();
+</script>
+</body>
+</html>
