@@ -280,7 +280,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   TASK 1: MOBILE RESPONSIVENESS — OFF-CANVAS SIDEBAR DRAWER
+   TASK 1 & 2: MOBILE RESPONSIVENESS — OFF-CANVAS SIDEBAR DRAWER
    ───────────────────────────────────────────────────────────────────────── */
 
 /* Hamburger button — hidden on desktop, shown on mobile */
@@ -296,20 +296,19 @@ h1, h2, h3, h4, h5, h6 {
   justify-content: center;
   cursor: pointer;
   color: var(--text-primary);
-  transition: background-color 0.18s ease, transform 0.12s ease;
+  transition: all 0.15s ease-in-out;
   margin-right: 12px;
 }
-.hamburger-btn:hover  { background-color: var(--bg-panel); }
-.hamburger-btn:active { transform: scale(0.92); }
+.hamburger-btn:hover { background-color: var(--bg-panel); }
 
 /* Dark overlay that appears behind the open sidebar on mobile */
 .sidebar-overlay {
   display: none;
 }
 
-/* ── Mobile breakpoint (< 768px) ─────────────────────────────────────── */
-@media (max-width: 767px) {
-  /* Show hamburger */
+/* ── Mobile breakpoint (max-width: 768px) ─────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Show hamburger button */
   .hamburger-btn {
     display: flex;
   }
@@ -319,10 +318,14 @@ h1, h2, h3, h4, h5, h6 {
     position: fixed;
     left: 0;
     top: 0;
-    height: 100%;
+    height: 100vh;
+    width: 260px;
+    z-index: 1000;
     transform: translateX(-260px);
-    z-index: 200;
-    /* Existing transition in base rule handles the slide animation */
+    border-right: 1px solid var(--border-dark-subtle);
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   /* Drawer open state — toggled by .sidebar-open class from React */
@@ -331,34 +334,61 @@ h1, h2, h3, h4, h5, h6 {
     box-shadow: 4px 0 28px rgba(0, 0, 0, 0.55);
   }
 
-  /* Overlay — rendered by Layout, sits below the open sidebar */
+  /* Dark overlay sits below the open sidebar, above workspace */
   .sidebar-overlay {
     display: block;
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
-    z-index: 199;
+    z-index: 999;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
   }
+  
   .sidebar-overlay.visible {
     opacity: 1;
     pointer-events: all;
   }
 
-  /* Topbar: add breathing room so hamburger + breadcrumbs don't crowd right actions */
+  /* Force workspace-container to take up full screen width, preventing flex squishing */
+  .workspace-container {
+    width: 100vw;
+    flex: none;
+  }
+
+  /* Topbar spacing adjustments */
   .topbar {
     padding: 0 16px;
     gap: 8px;
   }
 }
 
+/* ── Desktop breakpoint (min-width: 769px) ─────────────────────────────────── */
+@media (min-width: 769px) {
+  .hamburger-btn {
+    display: none;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
-   TASK 2: PROFESSIONAL MICRO-ANIMATIONS
+   TASK 3: PROFESSIONAL MICRO-ANIMATIONS & TACTILE FEEDBACK
    ───────────────────────────────────────────────────────────────────────── */
 
-/* Page-enter animation — fired each time the route-keyed div mounts */
+/* Snappy hover transitions for buttons and links */
+button,
+.sidebar a {
+  transition: all 0.15s ease-in-out;
+}
+
+/* Tactile feedback on click / active state */
+button:active,
+.sidebar a:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+
+/* Page-enter animation */
 @keyframes page-enter {
   from {
     opacity: 0;
@@ -371,24 +401,18 @@ h1, h2, h3, h4, h5, h6 {
 }
 .page-enter {
   animation: page-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
-  /* 'both' fills forwards AND backwards so there's no flicker on mount */
 }
 
-/* Enhanced .btn-accent micro-interactions (cascades over the base rule) */
+/* Base styles / overrides */
 .btn-accent {
-  transition: background-color 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
+  transition: all 0.15s ease-in-out;
 }
 .btn-accent:hover {
   box-shadow: 0 4px 14px rgba(59, 130, 246, 0.28);
 }
-.btn-accent:active {
-  transform: scale(0.96);
-  box-shadow: none;
-}
 
-/* Sidebar nav link hover effect */
+/* Sidebar nav link style overrides */
 .sidebar-nav a {
-  transition: background-color 0.18s ease, color 0.18s ease;
   border-radius: 6px;
   margin: 0 8px;
 }
