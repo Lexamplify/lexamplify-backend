@@ -70,7 +70,7 @@ export default function CalendarView() {
   // Fetch logic
   const loadEvents = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/calendar/events');
+      const response = await fetch('https://lexamplify-backend.onrender.com/api/calendar/events');
       if (!response.ok) {
         throw new Error(`HTTP error: status ${response.status}`);
       }
@@ -147,7 +147,7 @@ export default function CalendarView() {
         ]
       };
 
-      const response = await fetch('http://127.0.0.1:5000/api/calendar/save', {
+      const response = await fetch('https://lexamplify-backend.onrender.com/api/calendar/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

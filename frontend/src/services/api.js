@@ -5,7 +5,7 @@
  */
 
 // Dynamically use environment variables for GCP serverless URLs, falling back to localhost
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
 /**
  * Generates authorization and content type headers.
@@ -16,7 +16,7 @@ const getHeaders = (isFormData = false) => {
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
   }
-  
+
   // Support both standard 'token' and prefixed 'lexai_token' names
   const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
   if (token) {

@@ -485,7 +485,7 @@ export default function CourtResources() {
   // ── secure reverse proxy redirection ───────────────────────────────
   const openInAppBrowser = (targetUrl) => {
     if (!targetUrl) return;
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
+    const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
     const proxyUrl = `${apiBase}/api/proxy?target_url=${encodeURIComponent(targetUrl)}`;
     const windowFeatures = 'width=1024,height=768,left=150,top=80,resizable=yes,scrollbars=yes,status=no,toolbar=no';
     const popup = window.open(proxyUrl, 'LexAISecureBrowser', windowFeatures);

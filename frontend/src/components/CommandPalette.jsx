@@ -292,7 +292,7 @@ export default function CommandPalette() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch('http://127.0.0.1:5000/api/calendar/save', {
+      const response = await fetch('https://lexamplify-backend.onrender.com/api/calendar/save', {
         method: 'POST',
         headers,
         body: JSON.stringify({ events: pendingSchedule }),
@@ -322,7 +322,7 @@ export default function CommandPalette() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch('http://127.0.0.1:5000/api/vault/save', {
+      const response = await fetch('https://lexamplify-backend.onrender.com/api/vault/save', {
         method: 'POST',
         headers,
         body: JSON.stringify({

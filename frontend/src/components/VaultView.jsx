@@ -59,7 +59,7 @@ export default function VaultView() {
 
   const loadDocuments = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/vault/documents');
+      const response = await fetch('https://lexamplify-backend.onrender.com/api/vault/documents');
       if (!response.ok) {
         throw new Error(`HTTP error: status ${response.status}`);
       }
@@ -120,7 +120,7 @@ export default function VaultView() {
               <span style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>Use the Universal Agent chat console to draft legal documents first.</span>
             </div>
           ) : (
-            <div 
+            <div
               className="animate-fade-in"
               style={{
                 display: 'grid',
@@ -129,20 +129,20 @@ export default function VaultView() {
               }}
             >
               {documents.map((doc) => (
-                <div 
+                <div
                   key={doc.id}
                   className="vault-grid-card"
                   onClick={() => handleCardClick(doc)}
                 >
                   {/* Card Header info */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <span 
-                      style={{ 
-                        fontSize: '10px', 
-                        fontWeight: '700', 
-                        color: 'var(--accent-primary, #3B82F6)', 
-                        background: 'rgba(59, 130, 246, 0.08)', 
-                        padding: '2px 6px', 
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: '700',
+                        color: 'var(--accent-primary, #3B82F6)',
+                        background: 'rgba(59, 130, 246, 0.08)',
+                        padding: '2px 6px',
                         borderRadius: '4px',
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px'
@@ -156,11 +156,11 @@ export default function VaultView() {
                   </div>
 
                   {/* Title */}
-                  <h3 
-                    style={{ 
-                      fontSize: '15px', 
-                      fontWeight: '600', 
-                      color: 'white', 
+                  <h3
+                    style={{
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      color: 'white',
                       margin: 0,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',

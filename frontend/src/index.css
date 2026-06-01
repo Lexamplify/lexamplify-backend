@@ -278,3 +278,120 @@ h1, h2, h3, h4, h5, h6 {
 .form-input:focus {
   border-color: var(--accent-primary);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TASK 1: MOBILE RESPONSIVENESS — OFF-CANVAS SIDEBAR DRAWER
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Hamburger button — hidden on desktop, shown on mobile */
+.hamburger-btn {
+  display: none;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background-color 0.18s ease, transform 0.12s ease;
+  margin-right: 12px;
+}
+.hamburger-btn:hover  { background-color: var(--bg-panel); }
+.hamburger-btn:active { transform: scale(0.92); }
+
+/* Dark overlay that appears behind the open sidebar on mobile */
+.sidebar-overlay {
+  display: none;
+}
+
+/* ── Mobile breakpoint (< 768px) ─────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Show hamburger */
+  .hamburger-btn {
+    display: flex;
+  }
+
+  /* Sidebar leaves the flex flow and becomes a fixed off-canvas drawer */
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100%;
+    transform: translateX(-260px);
+    z-index: 200;
+    /* Existing transition in base rule handles the slide animation */
+  }
+
+  /* Drawer open state — toggled by .sidebar-open class from React */
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 28px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Overlay — rendered by Layout, sits below the open sidebar */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 199;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .sidebar-overlay.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  /* Topbar: add breathing room so hamburger + breadcrumbs don't crowd right actions */
+  .topbar {
+    padding: 0 16px;
+    gap: 8px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TASK 2: PROFESSIONAL MICRO-ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Page-enter animation — fired each time the route-keyed div mounts */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-enter {
+  animation: page-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* 'both' fills forwards AND backwards so there's no flicker on mount */
+}
+
+/* Enhanced .btn-accent micro-interactions (cascades over the base rule) */
+.btn-accent {
+  transition: background-color 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
+}
+.btn-accent:hover {
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.28);
+}
+.btn-accent:active {
+  transform: scale(0.96);
+  box-shadow: none;
+}
+
+/* Sidebar nav link hover effect */
+.sidebar-nav a {
+  transition: background-color 0.18s ease, color 0.18s ease;
+  border-radius: 6px;
+  margin: 0 8px;
+}
+.sidebar-nav a:hover {
+  background-color: rgba(59, 130, 246, 0.07);
+}
