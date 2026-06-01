@@ -780,7 +780,8 @@ def create_app():
                 case_id TEXT,
                 title TEXT,
                 doc_type TEXT,
-                content TEXT
+                content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
