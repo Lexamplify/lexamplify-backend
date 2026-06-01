@@ -766,6 +766,41 @@ def create_app():
         from models.document_chunk import DocumentChunk
         sqlalchemy_db.create_all()
 
+    # --- START DATABASE BUILDER ---
+    import sqlite3
+    try:
+        # Connect to your exact database file
+        conn = sqlite3.connect('lex_assistant.db')
+        c = conn.cursor()
+        
+        # Build the Case Vault table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS case_vault (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id TEXT,
+                title TEXT,
+                doc_type TEXT,
+                content TEXT
+            )
+        ''')
+        
+        # Build the Calendar Events table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS calendar_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_date TEXT,
+                event_type TEXT,
+                title TEXT,
+                related_case_id TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        print("Database tables verified successfully!")
+    except Exception as e:
+        print(f"Database setup error: {e}")
+    # --- END DATABASE BUILDER ---
     return app
 
 if __name__ == '__main__':
