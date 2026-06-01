@@ -180,7 +180,7 @@ export default function CalendarView() {
       <style>{calendarStyles}</style>
 
       {/* Header controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <div className="calendar-header-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
           <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '6px' }}>Legal Calendar Dashboard</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
@@ -226,7 +226,7 @@ export default function CalendarView() {
       {!loading && !error && (
         <div key={gridKey} className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {/* Weekday headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '4px' }}>
+          <div className="calendar-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '4px' }}>
             {weekDays.map(day => (
               <div key={day} style={{ textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-dark-muted, #8F9CAE)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '8px 0' }}>
                 {day}
@@ -235,7 +235,7 @@ export default function CalendarView() {
           </div>
 
           {/* Month grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
+          <div className="calendar-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
             {paddingCells.map((_, idx) => (
               <div key={`pad-${idx}`} className="calendar-grid-cell padding-cell" />
             ))}

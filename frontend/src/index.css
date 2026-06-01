@@ -322,12 +322,12 @@ h1, h2, h3, h4, h5, h6 {
     width: 260px;
     z-index: 1000;
     transform: translateX(-260px);
-    border-right: 1px solid var(--border-dark-subtle);
+    border-right: 1px solid var(--border-subtle) !important;
     display: flex;
     flex-direction: column;
-    background-color: var(--bg-sidebar) !important; /* solid background color to fix transparency */
+    background-color: var(--bg-panel) !important; /* solid opaque background color to fix transparency */
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.6);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5) !important;
   }
 
   /* Drawer open state — toggled by .sidebar-open class from React */
@@ -399,6 +399,88 @@ h1, h2, h3, h4, h5, h6 {
     text-overflow: ellipsis;
     flex: 1;
     min-width: 0;
+  }
+
+  /* Task 2: Fix Nested Card Overflow (Court Resources) */
+  .resources-container .premium-card,
+  .resources-container .resource-panel,
+  .resources-container .banner-card,
+  .resources-container .modal-card,
+  .resources-container .card,
+  .resources-container .panel,
+  .resources-container [style*="width: 400px"],
+  .resources-container [style*="width:400px"],
+  .resources-container div[style*="background-color: var(--bg-dark-card)"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Ensure grid containers stack on mobile inside Court Resources */
+  .resources-container div[style*="display: grid"],
+  .resources-container div[style*="display:grid"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Task 3: Fix Calendar Overlap & Grid (Legal Calendar) */
+  .calendar-header-container {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
+    justify-content: flex-start !important;
+    position: static !important;
+  }
+
+  .calendar-grid-container {
+    display: grid !important;
+    grid-template-columns: repeat(7, 1fr) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .calendar-grid-cell {
+    aspect-ratio: 1 !important;
+    padding: 10px 0 !important;
+    text-align: center !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+  }
+
+  /* Make mobile calendar grid cells breathable, hiding long event text into neat dots */
+  .calendar-grid-cell div[style*="display: flex; flex-direction: column; gap: 3px"],
+  .calendar-grid-cell div[style*="display:flex;flex-direction:column;gap:3px"] {
+    margin-top: 4px !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .calendar-grid-cell div[style*="display: flex; flex-direction: column; gap: 3px"] > div,
+  .calendar-grid-cell div[style*="display:flex;flex-direction:column;gap:3px"] > div {
+    font-size: 0 !important;
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+    border-left-width: 6px !important;
+    background: transparent !important;
+    display: inline-block !important;
+    overflow: hidden !important;
+  }
+
+  .calendar-grid-cell div[style*="display: flex; flex-direction: column; gap: 3px"] > div[style*="color: var(--accent-primary)"],
+  .calendar-grid-cell div[style*="display:flex;flex-direction:column;gap:3px"] > div[style*="color:var(--accent-primary)"] {
+    font-size: 8px !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    border: none !important;
+    background: transparent !important;
   }
 }
 
