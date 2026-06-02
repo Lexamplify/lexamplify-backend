@@ -1,28 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap');
 
 :root {
-  /* Fonts */
   --font-serif: 'Merriweather', Georgia, serif;
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-
-  /* Accent Colors */
-  --accent-primary: #3B82F6;        /* Premium Harvey Cobalt */
+  --accent-primary: #3B82F6;
   --accent-hover: #2563EB;
   --accent-muted: rgba(59, 130, 246, 0.1);
   --accent-success: #10B981;
   --accent-danger: #EF4444;
   --accent-warning: #F59E0B;
 
-  /* Global Adaptive Theme Variables (Default Dark Mode) */
-  --bg-app: #0A0E17;            /* Quiet Luxury Deep Navy/Slate */
-  --bg-sidebar: rgba(10, 14, 23, 0.75); /* Semi-transparent frosted sidebar */
-  --bg-panel: #111827;          /* Rich Slate container panel */
-  --bg-card: #1F2937;           /* Solid card fill */
-  --text-primary: #F3F4F6;      /* Off-white readable text */
-  --text-muted: #9CA3AF;        /* Subtle gray text */
-  --border-subtle: rgba(255, 255, 255, 0.05); /* Thin elegant border */
+  --bg-app: #0A0E17;
+  --bg-sidebar: rgba(10, 14, 23, 0.75);
+  --bg-panel: #111827;
+  --bg-card: #1F2937;
+  --text-primary: #F3F4F6;
+  --text-muted: #9CA3AF;
+  --border-subtle: rgba(255, 255, 255, 0.05);
 
-  /* Backwards Compatibility Aliases */
   --bg-dark-app: var(--bg-app);
   --bg-dark-sidebar: var(--bg-sidebar);
   --bg-dark-panel: var(--bg-panel);
@@ -31,27 +26,24 @@
   --text-dark-muted: var(--text-muted);
   --border-dark-subtle: var(--border-subtle);
 
-  /* The "Reading Fatigue" Paper off-white theme (Document Viewer Panel) */
-  --bg-paper-viewer: #F9F9F9;      /* Pure high-contrast off-white paper background */
-  --text-paper-primary: #1F2937;   /* Charcoal dark reading text */
-  --text-paper-secondary: #4B5563; /* Subtle body text */
-  --border-paper-subtle: #E5E7EB;  /* Light gray boundary divider */
-  --highlight-paper-risk: #FEF3C7; /* Amber micro-risk clause background */
-  --highlight-paper-border: #F59E0B;
+  --bg-paper-viewer: #FAF9F6;
+  --text-paper-primary: #111827;
+  --text-paper-secondary: #374151;
+  --border-paper-subtle: #E5E7EB;
+  --highlight-paper-risk: rgba(245, 158, 11, 0.05);
+  --highlight-paper-border: var(--accent-warning);
 }
 
-/* Light Mode Overrides (Breathable soft slate off-white & charcoal text) */
 :root[data-theme="light"] {
-  --bg-app: #F8FAFC;            /* Soft slate-50 off-white */
-  --bg-sidebar: #FFFFFF;        /* Pure white sidebar */
-  --bg-panel: #F1F5F9;          /* Slate-100 container panel */
-  --bg-card: #FFFFFF;           /* White card fill */
-  --text-primary: #0F172A;      /* Deep slate-900 text */
-  --text-muted: #475569;        /* Slate-600 muted text */
-  --border-subtle: #E2E8F0;     /* Slate-200 boundary divider */
+  --bg-app: #F8FAFC;
+  --bg-sidebar: #FFFFFF;
+  --bg-panel: #F1F5F9;
+  --bg-card: #FFFFFF;
+  --text-primary: #0F172A;
+  --text-muted: #475569;
+  --border-subtle: #E2E8F0;
 }
 
-/* Butter-smooth transition configurations for theme engine switching */
 body,
 .app-container,
 .sidebar,
@@ -666,4 +658,101 @@ button:active,
 .sidebar-nav a:active {
   transform: scale(0.98) !important;
   transition: transform 0.08s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TASK 1: ENTERPRISE-GRADE LEGAL DATA TABLES (.premium-table & .doc-table)
+   ───────────────────────────────────────────────────────────────────────── */
+.premium-table, .doc-table {
+  width: 100% !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-family: var(--font-sans) !important;
+  font-size: 13px !important;
+  margin-top: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  background-color: var(--bg-dark-panel) !important;
+}
+
+.premium-table th, .doc-table th {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  font-size: 11px !important;
+  letter-spacing: 0.8px !important;
+  padding: 14px 20px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+.premium-table th:last-child, .doc-table th:last-child {
+  border-right: none !important;
+}
+
+.premium-table td, .doc-table td {
+  padding: 14px 20px !important;
+  color: var(--text-dark-primary) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.04) !important;
+  vertical-align: middle !important;
+  background-color: var(--bg-dark-panel) !important;
+  line-height: 1.5 !important;
+}
+
+.premium-table td:last-child, .doc-table td:last-child {
+  border-right: none !important;
+}
+
+.premium-table tr:last-child td, .doc-table tr:last-child td {
+  border-bottom: none !important;
+}
+
+.premium-table tr:hover td, .doc-table tr:hover td {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+  color: #FFFFFF !important;
+}
+
+/* Custom enhancements for upload zone and active state glow */
+.upload-zone {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.upload-zone:hover {
+  border-color: #3B82F6 !important;
+  background-color: rgba(59, 130, 246, 0.03) !important;
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.08) !important;
+}
+
+/* Interactive input hover */
+input[type="text"]:hover,
+input[type="number"]:hover,
+input[type="email"]:hover,
+input[type="password"]:hover,
+select:hover,
+textarea:hover,
+.form-input:hover,
+.select-element:hover,
+.search-input-field:hover,
+.dark-input:hover,
+.input-textarea:hover {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Focus Ring Glow enhancements */
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus,
+.form-input:focus,
+.select-element:focus,
+.search-input-field:focus,
+.dark-input:focus,
+.input-textarea:focus {
+  border-color: #3B82F6 !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
 }

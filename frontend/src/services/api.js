@@ -237,6 +237,67 @@ export const fetchDistricts = async () => {
 };
 
 /**
+ * Fetches causelist details from the CMS backend via CNR.
+ * @param {string} cnrNumber 
+ */
+export const fetchCauselist = async (cnrNumber) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/causelist/fetch`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ cnr_number: cnrNumber }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchCauselist error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to fetch causelist details.'
+    };
+  }
+};
+
+/**
+ * Fetches tracked cases from the CMS backend.
+ */
+export const fetchTrackedCases = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/causelist/list`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchTrackedCases error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to fetch tracked cases.'
+    };
+  }
+};
+
+/**
+ * Saves a new manually added case to the CMS.
+ * @param {object} caseData
+ */
+export const saveTrackedCase = async (caseData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/causelist/save`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(caseData),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] saveTrackedCase error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to save tracked case.'
+    };
+  }
+};
+
+/**
  * Fetches detailed page scrape content for a legal event.
  * @param {string} eventId 
  */
