@@ -4,303 +4,742 @@ import { useTheme } from '../context/ThemeContext';
 
 const landingStyles = `
   .landing-container {
-    background-color: var(--bg-app);
-    color: var(--text-primary);
+    background-color: #0A0E17;
+    color: #F3F4F6;
     min-height: 100vh;
     font-family: var(--font-sans);
     overflow-x: hidden;
     position: relative;
+    transition: background-color 0.5s ease-in-out, color 0.5s ease-in-out;
   }
-  .landing-header {
-    background-color: var(--bg-sidebar);
-    border-bottom: 1px solid var(--border-subtle);
-    position: sticky;
-    top: 0;
-    z-index: 100;
-  }
-  .hero-wrapper {
-    position: relative;
-    padding: 140px 24px 100px;
-    overflow: hidden;
-  }
-  @keyframes gradient-pulse {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-  }
-  .hero-animated-bg {
+  
+  /* Absolute-positioned glow backdrops */
+  .glow-backdrop {
     position: absolute;
+    border-radius: 50%;
+    filter: blur(140px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.15;
+    transition: opacity 0.5s ease;
+  }
+  .glow-1 {
     width: 600px;
     height: 600px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    filter: blur(60px);
-    z-index: 0;
-    pointer-events: none;
-    animation: branding-pulse 12s infinite alternate ease-in-out;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%);
+    top: -10%;
+    right: -10%;
   }
-  [data-theme="light"] .hero-animated-bg {
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+  .glow-2 {
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%);
+    bottom: 20%;
+    left: -10%;
   }
-  .hero-section {
-    text-align: center;
-    max-width: 900px;
+  .glow-3 {
+    width: 700px;
+    height: 700px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%);
+    top: 40%;
+    right: 20%;
+  }
+
+  .landing-header {
+    background-color: rgba(10, 14, 23, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    transition: background-color 0.5s, border-color 0.5s;
+  }
+
+  /* Hero split layout */
+  .hero-wrapper {
+    position: relative;
+    padding: 120px 24px 80px;
+    overflow: hidden;
+  }
+  .hero-container {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 60px;
+    align-items: center;
+    max-width: 1200px;
     margin: 0 auto;
     position: relative;
     z-index: 1;
   }
+  @media (max-width: 968px) {
+    .hero-container {
+      grid-template-columns: 1fr;
+      text-align: center;
+      gap: 40px;
+    }
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 30px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #9CA3AF;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+
   .hero-h1 {
     font-family: var(--font-serif);
-    font-size: 3rem; /* text-5xl */
-    line-height: 1.1;
-    margin-bottom: 24px;
-    letter-spacing: -0.5px;
+    font-size: 2.8rem;
+    line-height: 1.15;
+    margin-bottom: 20px;
+    letter-spacing: -0.8px;
     font-weight: 700;
+    color: #FFFFFF;
   }
-  @media (min-width: 768px) {
+  @media (min-width: 769px) {
     .hero-h1 {
-      font-size: 4.5rem; /* text-7xl */
+      font-size: 3.8rem;
     }
   }
   .hero-p {
-    font-size: 19px;
-    color: var(--text-muted);
+    font-size: 18px;
+    color: #9CA3AF;
     line-height: 1.6;
-    margin-bottom: 40px;
-    max-width: 680px;
-    margin-left: auto;
-    margin-right: auto;
+    margin-bottom: 36px;
+    max-width: 600px;
   }
-  .btn-primary {
-    background-color: var(--accent-primary);
+  @media (max-width: 968px) {
+    .hero-p {
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+  .hero-buttons {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  @media (max-width: 968px) {
+    .hero-buttons {
+      justify-content: center;
+    }
+  }
+
+  /* Luxury Buttons */
+  .btn-luxury-primary {
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
     color: #FFFFFF;
     font-weight: 500;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     padding: 12px 28px;
-    font-size: 16px;
+    font-size: 15px;
     cursor: pointer;
-    transition: background-color 0.2s, transform 0.2s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
   }
-  .btn-primary:hover {
-    background-color: var(--accent-hover);
-    transform: translateY(-1px);
+  .btn-luxury-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(37, 99, 235, 0.45);
   }
-  .btn-secondary {
-    background-color: transparent;
-    color: var(--text-primary);
-    border: 1px solid var(--border-subtle);
+  .btn-luxury-secondary {
+    background-color: rgba(255, 255, 255, 0.02);
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     font-weight: 500;
     border-radius: 8px;
     padding: 12px 28px;
-    font-size: 16px;
+    font-size: 15px;
     cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
     gap: 8px;
   }
-  .btn-secondary:hover {
-    background-color: var(--accent-muted);
-    border-color: var(--accent-primary);
+  .btn-luxury-secondary:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
   }
 
-
-  /* Pipeline styling */
-  .pipeline-section {
-    padding: 100px 24px;
-    max-width: 1000px;
+  /* Chat Terminal Mockup */
+  .luxury-terminal {
+    background: rgba(18, 22, 35, 0.5);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+    width: 100%;
+    max-width: 500px;
     margin: 0 auto;
-    border-bottom: 1px solid var(--border-subtle);
+    font-family: monospace;
+    font-size: 13px;
+    transition: background-color 0.5s, border-color 0.5s, box-shadow 0.5s;
+  }
+  .terminal-header {
+    background-color: rgba(10, 14, 23, 0.7);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.5s, border-color 0.5s;
+  }
+  .terminal-dots {
+    display: flex;
+    gap: 6px;
+  }
+  .terminal-dots .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .dot-red { background-color: #EF4444; }
+  .dot-yellow { background-color: #F59E0B; }
+  .dot-green { background-color: #10B981; }
+  .terminal-title {
+    color: #9CA3AF;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .terminal-status {
+    color: #10B981;
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pulse-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #10B981;
+    box-shadow: 0 0 6px #10B981;
+    animation: branding-pulse 2s infinite alternate;
+  }
+  @keyframes branding-pulse {
+    0% { opacity: 0.4; }
+    100% { opacity: 1; }
+  }
+
+  .terminal-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .chat-msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .msg-meta {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #6B7280;
+    font-weight: 600;
+  }
+  .user-msg .msg-text {
+    color: #FFFFFF;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 10px 12px;
+    border-radius: 6px;
+    transition: background-color 0.5s, border-color 0.5s, color 0.5s;
+  }
+  .ai-msg .msg-text {
+    color: #3B82F6;
+    padding: 0 4px;
+    line-height: 1.5;
+  }
+  .terminal-output {
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    padding: 12px;
+    transition: background-color 0.5s, border-color 0.5s;
+  }
+  .output-header {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: #6B7280;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+    padding-bottom: 4px;
+  }
+  .output-content {
+    color: #9CA3AF;
+    font-size: 11.5px;
+    line-height: 1.5;
+    margin: 0;
+    white-space: pre-wrap;
+  }
+
+  /* typing cursor effect */
+  .typing-effect {
+    border-right: 2px solid #3B82F6;
+    white-space: normal;
+    animation: blink-cursor 0.75s step-end infinite;
+  }
+  @keyframes blink-cursor {
+    from, to { border-color: transparent }
+    50% { border-color: #3B82F6 }
+  }
+
+  /* Bento Grid */
+  .features-section {
+    padding: 80px 24px 100px;
+    position: relative;
+  }
+  .features-badge {
+    display: inline-flex;
+    margin: 0 auto 12px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 30px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #9CA3AF;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
   }
   .section-title {
     font-family: var(--font-serif);
-    font-size: 36px;
+    font-size: 2.2rem;
     text-align: center;
-    margin-bottom: 12px;
+    color: #FFFFFF;
+    margin-bottom: 8px;
   }
   .section-subtitle {
-    font-size: 15px;
-    color: var(--text-muted);
+    font-size: 16px;
+    color: #9CA3AF;
+    text-align: center;
+    margin-bottom: 50px;
+  }
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: minmax(280px, auto);
+    gap: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .bento-card {
+    background: rgba(18, 22, 35, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .bento-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 12px 30px rgba(59, 130, 246, 0.1);
+  }
+  /* Alternate hover accent color for card-medium (gold accent) */
+  .bento-card-medium:hover {
+    border-color: rgba(212, 175, 55, 0.3);
+    box-shadow: 0 12px 30px rgba(212, 175, 55, 0.08);
+  }
+  .bento-card-large {
+    grid-column: span 2;
+  }
+  .bento-card-medium {
+    grid-column: span 1;
+  }
+  .bento-card-span {
+    grid-column: span 3;
+  }
+
+  .bento-card-glow {
+    position: absolute;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+    top: -50px;
+    right: -50px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .bento-card-content {
+    position: relative;
+    z-index: 1;
+  }
+  .bento-header {
+    margin-bottom: 16px;
+  }
+  .bento-tag {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #6B7280;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .bento-title {
+    font-family: var(--font-serif);
+    font-size: 24px;
+    color: #FFFFFF;
+  }
+  .bento-description {
+    font-size: 14px;
+    color: #9CA3AF;
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+  .bento-footer {
+    position: relative;
+    z-index: 1;
+  }
+  .bento-link {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #3B82F6;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .bento-link:hover {
+    color: #2563EB;
+  }
+
+  /* Bento specific mini-mockups */
+  .bento-mini-mockup {
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 16px;
+    transition: background-color 0.5s, border-color 0.5s;
+  }
+  .mockup-clause-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .clause-tag {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    width: fit-content;
+    font-weight: 600;
+  }
+  .clause-tag.warning {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: #F59E0B;
+  }
+  .clause-title {
+    color: #FFFFFF;
+    font-weight: 600;
+  }
+  .clause-text {
+    color: #6B7280;
+    font-style: italic;
+    margin: 0;
+  }
+  .clause-rebuttal {
+    color: #10B981;
+    font-size: 11px;
+  }
+
+  .bento-mini-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .mini-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    transition: background-color 0.5s;
+  }
+  .status-pill {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .status-pill.red {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #EF4444;
+  }
+  .status-pill.yellow {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: #F59E0B;
+  }
+
+  .bento-flex-row {
+    display: flex;
+    gap: 40px;
+    align-items: center;
+  }
+  .bento-flex-left {
+    flex: 1.2;
+    display: flex;
+    flex-direction: column;
+  }
+  .bento-flex-right {
+    flex: 1;
+    width: 100%;
+  }
+
+  .terminal-mini {
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: monospace;
+    font-size: 12px;
+    transition: background-color 0.5s, border-color 0.5s;
+  }
+  .terminal-line {
+    color: #9CA3AF;
+    margin-bottom: 6px;
+  }
+  .terminal-line.success {
+    color: #10B981;
+    margin-bottom: 0;
+  }
+  .term-prompt {
+    color: #3B82F6;
+    margin-right: 8px;
+  }
+
+  /* Enterprise Trust Section */
+  .trust-section {
+    padding: 100px 24px;
+    background-color: rgba(10, 14, 23, 0.5);
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    position: relative;
+    transition: background-color 0.5s, border-color 0.5s;
+  }
+  .trust-header {
     text-align: center;
     margin-bottom: 60px;
   }
-  .pipeline-flow {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 40px;
-    position: relative;
-  }
-  .pipeline-flow::after {
-    content: '';
-    position: absolute;
-    top: 40px;
-    left: 15%;
-    right: 15%;
-    height: 1px;
-    background: var(--border-subtle);
-    z-index: 1;
-  }
-  .pipeline-step {
-    text-align: center;
-    position: relative;
-    z-index: 2;
-  }
-  .pipeline-badge {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background-color: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
-    display: flex;
+  .trust-badge {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    margin: 0 auto 20px;
-    font-size: 24px;
-    color: var(--accent-primary);
-    transition: border-color 0.3s, background-color 0.3s, transform 0.3s;
-  }
-  .pipeline-step:hover .pipeline-badge {
-    border-color: var(--accent-primary);
-    background-color: var(--accent-muted);
-    transform: translateY(-4px);
-  }
-  .pipeline-h3 {
-    font-size: 18px;
-    margin-bottom: 8px;
-  }
-  .pipeline-p {
-    font-size: 13.5px;
-    color: var(--text-muted);
-    line-height: 1.5;
-  }
-
-  /* Alternating Feature Blocks */
-  .feature-block {
-    display: flex;
-    flex-direction: column;
-    gap: 48px;
-    padding: 100px 24px;
-    max-width: 1100px;
-    margin: 0 auto;
-    align-items: center;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-  @media (min-width: 768px) {
-    .feature-block {
-      flex-direction: row;
-    }
-    .feature-block.reversed {
-      flex-direction: row-reverse;
-    }
-  }
-  .feature-text-panel {
-    flex: 1;
-  }
-  .feature-ui-panel {
-    flex: 1.1;
-    width: 100%;
-    max-width: 520px;
-  }
-  .feature-block-tag {
+    gap: 8px;
+    padding: 6px 14px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 30px;
     font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--accent-primary);
     font-weight: 600;
+    color: #9CA3AF;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
     margin-bottom: 12px;
   }
-  .feature-block-h2 {
-    font-family: var(--font-serif);
-    font-size: 32px;
-    line-height: 1.2;
-    margin-bottom: 20px;
-  }
-  .feature-block-p {
-    font-size: 15px;
-    color: var(--text-muted);
-    line-height: 1.6;
-    margin-bottom: 28px;
-  }
-  .feature-checklist {
-    list-style: none;
-    margin-bottom: 30px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .feature-check-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 14px;
-  }
-  .feature-check-icon {
-    color: var(--accent-success);
-    font-weight: bold;
-  }
-
-  /* Glassmorphism card mockup styling */
-  .glass-mockup {
-    background: rgba(26, 28, 38, 0.45);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--border-subtle);
-    border-radius: 12px;
-    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
-    padding: 20px;
-  }
-  [data-theme="light"] .glass-mockup {
-    background: rgba(255, 255, 255, 0.5);
-    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.08);
-  }
-
-  /* Security details banner styling */
-  .security-compliance-section {
-    padding: 100px 24px;
-    text-align: center;
-    background-color: var(--bg-sidebar);
-    border-bottom: 1px solid var(--border-subtle);
-  }
-  .security-grid {
+  .trust-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 32px;
-    max-width: 1000px;
-    margin: 40px auto 0;
+    max-width: 1200px;
+    margin: 0 auto;
   }
-  .security-item {
-    padding: 20px;
+  .trust-card {
+    background-color: rgba(255, 255, 255, 0.01);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 28px;
+    transition: all 0.3s ease;
   }
-  .security-h3 {
+  .trust-card:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+  .trust-icon {
+    font-size: 28px;
+    margin-bottom: 16px;
+  }
+  .trust-card-title {
     font-size: 18px;
+    color: #FFFFFF;
     margin-bottom: 10px;
   }
-  .security-p {
+  .trust-card-description {
     font-size: 13.5px;
-    color: var(--text-muted);
-    line-height: 1.5;
+    color: #9CA3AF;
+    line-height: 1.6;
+  }
+  .trust-seals {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-top: 60px;
+    flex-wrap: wrap;
+  }
+  .seal-item {
+    font-size: 11px;
+    font-weight: 700;
+    color: #6B7280;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .seal-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #10B981;
+  }
+
+  /* Light Theme Overrides */
+  .landing-container[data-theme="light"] {
+    background-color: #F8FAFC;
+    color: #0F172A;
+  }
+  .landing-container[data-theme="light"] .landing-header {
+    background-color: rgba(248, 250, 252, 0.8);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  .landing-container[data-theme="light"] .hero-badge,
+  .landing-container[data-theme="light"] .features-badge,
+  .landing-container[data-theme="light"] .trust-badge {
+    background-color: rgba(0, 0, 0, 0.02);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    color: #475569;
+  }
+  .landing-container[data-theme="light"] .hero-h1,
+  .landing-container[data-theme="light"] .section-title,
+  .landing-container[data-theme="light"] .bento-title,
+  .landing-container[data-theme="light"] .trust-card-title {
+    color: #0F172A;
+  }
+  .landing-container[data-theme="light"] .hero-p,
+  .landing-container[data-theme="light"] .section-subtitle,
+  .landing-container[data-theme="light"] .bento-description,
+  .landing-container[data-theme="light"] .trust-card-description {
+    color: #475569;
+  }
+  .landing-container[data-theme="light"] .btn-luxury-secondary {
+    background-color: rgba(0, 0, 0, 0.02);
+    color: #0F172A;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+  .landing-container[data-theme="light"] .btn-luxury-secondary:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+  .landing-container[data-theme="light"] .luxury-terminal {
+    background: rgba(255, 255, 255, 0.8);
+    border-color: rgba(0, 0, 0, 0.06);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+  }
+  .landing-container[data-theme="light"] .terminal-header {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  .landing-container[data-theme="light"] .user-msg .msg-text {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.04);
+    color: #0F172A;
+  }
+  .landing-container[data-theme="light"] .bento-card {
+    background: rgba(255, 255, 255, 0.8);
+    border-color: rgba(0, 0, 0, 0.05);
+  }
+  .landing-container[data-theme="light"] .bento-card:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 12px 30px rgba(59, 130, 246, 0.08);
+  }
+  .landing-container[data-theme="light"] .bento-card-medium:hover {
+    border-color: rgba(212, 175, 55, 0.4);
+    box-shadow: 0 12px 30px rgba(212, 175, 55, 0.06);
+  }
+  .landing-container[data-theme="light"] .trust-card {
+    background-color: rgba(0, 0, 0, 0.01);
+    border-color: rgba(0, 0, 0, 0.03);
+  }
+  .landing-container[data-theme="light"] .trust-card:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.06);
+  }
+  .landing-container[data-theme="light"] .bento-mini-mockup,
+  .landing-container[data-theme="light"] .bento-mini-list,
+  .landing-container[data-theme="light"] .mini-list-item,
+  .landing-container[data-theme="light"] .terminal-mini {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.04);
+  }
+  .landing-container[data-theme="light"] .mockup-clause-box .clause-title {
+    color: #0F172A;
+  }
+  .landing-container[data-theme="light"] .glow-backdrop {
+    opacity: 0.06;
   }
 
   @media (max-width: 768px) {
-    .pipeline-flow {
-      grid-template-columns: 1fr;
-      gap: 50px;
+    .bento-grid {
+      grid-template-columns: 1fr !important;
+      grid-auto-rows: auto !important;
+      padding: 0;
     }
-    .pipeline-flow::after {
-      display: none;
+    .bento-card, .bento-card-large, .bento-card-medium, .bento-card-span {
+      grid-column: span 1 !important;
+      padding: 24px;
     }
-    .security-grid {
+    .bento-flex-row {
+      flex-direction: column;
+      gap: 20px;
+    }
+    .trust-grid {
       grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .trust-seals {
+      gap: 20px;
+      flex-direction: column;
+      align-items: center;
+    }
+    .hero-wrapper {
+      padding-top: 80px;
+      padding-bottom: 40px;
+    }
+    .features-section {
+      padding-bottom: 60px;
+    }
+    .trust-section {
+      padding-top: 60px;
+      padding-bottom: 60px;
     }
   }
 `;
@@ -340,14 +779,38 @@ function ScrollReveal({ children }) {
 
 export default function LandingPage() {
   const { theme, toggleTheme } = useTheme();
+  const [typedText, setTypedText] = useState('');
+  const fullText = "Connecting to Case Vault... Found 3 documents. Extracting core issues under Indian Contract Act, Section 56. Compiling opening argument...";
+
+  useEffect(() => {
+    let index = 0;
+    let isMounted = true;
+    const type = () => {
+      if (!isMounted) return;
+      setTypedText(fullText.slice(0, index));
+      index++;
+      if (index > fullText.length) {
+        setTimeout(() => {
+          index = 0;
+          type();
+        }, 5000);
+      } else {
+        setTimeout(type, 40);
+      }
+    };
+    type();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
-    <div className="landing-container">
+    <div className="landing-container" data-theme={theme}>
       <style>{landingStyles}</style>
 
       {/* Header */}
       <header className="landing-header">
-        <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px' }}>
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '20px', fontWeight: '700', letterSpacing: '0.5px' }}>LexAmplify</span>
@@ -388,7 +851,7 @@ export default function LandingPage() {
             </button>
 
             {/* Enter Console Button */}
-            <Link to="/login" className="btn-primary" style={{ padding: '8px 18px', fontSize: '14px' }}>
+            <Link to="/login" className="btn-luxury-primary" style={{ padding: '8px 18px', fontSize: '14px' }}>
               Enter Console
             </Link>
           </div>
@@ -397,229 +860,234 @@ export default function LandingPage() {
 
       {/* Hero Section */}
       <div className="hero-wrapper">
-        <div className="hero-animated-bg" />
-        <section className="hero-section">
-          <ScrollReveal>
-            <h1 className="hero-h1">
-              The Sovereign Intelligence Layer for Indian Law.
-            </h1>
-            <p className="hero-p">
-              Synthesize contracts, run cross-document conflict audits, and query your case database with context-grounded AI precision.
-            </p>
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <Link to="/login" className="btn-primary">
-                Get Started
-                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                </svg>
-              </Link>
-              <a href="#features" className="btn-secondary">
-                Explore Features
-              </a>
-            </div>
-          </ScrollReveal>
-        </section>
-      </div>
-
-
-      {/* Alternating Feature Sections */}
-      <div id="features">
-        
-        {/* BLOCK 1: Contract Analysis (Text Left, UI Right) */}
-        <section className="feature-block">
-          <div className="feature-text-panel">
+        <div className="glow-backdrop glow-1" />
+        <div className="glow-backdrop glow-2" />
+        <div className="hero-container">
+          <div className="hero-text-block">
             <ScrollReveal>
-              <div className="feature-block-tag">Module 01</div>
-              <h2 className="feature-block-h2">Contract Risk Analyzer</h2>
-              <p className="feature-block-p">
-                Instantly scan agreements for liability flags, draft customized clause updates, and identify missing provisions standard to Indian Law.
+              <span className="hero-badge">Sovereign Legal Intelligence</span>
+              <h1 className="hero-h1">
+                The Intelligence<br />Behind Elite Legal Counsel.
+              </h1>
+              <p className="hero-p">
+                Synthesize contracts, run cross-document conflict audits, and query your case database with context-grounded AI precision. Engineered for elite advocates.
               </p>
-              <ul className="feature-checklist">
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>Automated threat indexing for high-risk liability markers</span>
-                </li>
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>AI rewrite recommendations matching Indian Contract Act parameters</span>
-                </li>
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>One-click exports to client-ready DOCX and PDF briefs</span>
-                </li>
-              </ul>
-              <Link to="/login" className="btn-primary">Launch Risk Scan</Link>
+              <div className="hero-buttons">
+                <Link to="/login" className="btn-luxury-primary">
+                  Get Started
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                  </svg>
+                </Link>
+                <a href="#features" className="btn-luxury-secondary">
+                  Explore Platform
+                </a>
+              </div>
             </ScrollReveal>
           </div>
 
-          <div className="feature-ui-panel">
+          <div className="hero-mockup-block">
             <ScrollReveal>
-              <div className="glass-mockup">
-                {/* Mockup Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: '600' }}>Master_Service_Agreement.docx</span>
-                  <span style={{ fontSize: '10px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-danger)', padding: '2px 6px', borderRadius: '4px' }}>
-                    Scan Strategy: Defensive
-                  </span>
+              <div className="luxury-terminal">
+                <div className="terminal-header">
+                  <div className="terminal-dots">
+                    <span className="dot dot-red"></span>
+                    <span className="dot dot-yellow"></span>
+                    <span className="dot dot-green"></span>
+                  </div>
+                  <div className="terminal-title">Universal Agent Terminal</div>
+                  <div className="terminal-status">
+                    <span className="pulse-indicator"></span> SECURE
+                  </div>
                 </div>
-                {/* Mockup Content */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
-                  <div style={{ background: 'var(--bg-app)', padding: '10px', borderRadius: '6px', borderLeft: '3px solid var(--accent-warning)' }}>
-                    <strong>Clause 2.4: Suspension right</strong>
-                    <div style={{ color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
-                      "...Client reserves the absolute right to suspend all payments in its sole discretion..."
+                <div className="terminal-body">
+                  <div className="chat-msg user-msg">
+                    <div className="msg-meta">Advocate Prompt</div>
+                    <div className="msg-text">Analyze case files and generate the appellant opening argument for case 101.</div>
+                  </div>
+                  <div className="chat-msg ai-msg">
+                    <div className="msg-meta">AI Agent</div>
+                    <div className="msg-text">
+                      <span className="typing-effect">{typedText}</span>
                     </div>
                   </div>
-                  <div style={{ padding: '8px 12px', background: 'rgba(245, 158, 11, 0.08)', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '11px', color: 'var(--accent-warning)' }}>
-                    ⚠️ Liability mismatch. Unilateral suspension right violates standard service protections.
+                  <div className="terminal-output">
+                    <div className="output-header">GENERATED STRATEGY PREVIEW</div>
+                    <pre className="output-content">
+{`STAGE 1: Legal Issue Extraction
+- Unforeseen government ban qualifies as force majeure.
+- Appellant has zero liability post-event duration.
+
+STAGE 2: Opening Argument
+"My Lords, the performance of the contract was rendered legally impossible..."`}
+                    </pre>
                   </div>
                 </div>
               </div>
             </ScrollReveal>
           </div>
-        </section>
-
-        {/* BLOCK 2: Conflict Engine (UI Left, Text Right - reversed) */}
-        <section className="feature-block reversed">
-          <div className="feature-text-panel">
-            <ScrollReveal>
-              <div className="feature-block-tag">Module 02</div>
-              <h2 className="feature-block-h2">Conflict Check Engine</h2>
-              <p className="feature-block-p">
-                Execute cross-file comparison audits and database index runs. Locate direct representation overlaps or subtle potential conflict tags.
-              </p>
-              <ul className="feature-checklist">
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>Cross-document client comparison database checks</span>
-                </li>
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>Direct match indicators matching client and opponent portfolios</span>
-                </li>
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>Automated extraction of text-based references</span>
-                </li>
-              </ul>
-              <Link to="/login" className="btn-primary">Audit Client Roster</Link>
-            </ScrollReveal>
-          </div>
-
-          <div className="feature-ui-panel">
-            <ScrollReveal>
-              <div className="glass-mockup">
-                {/* Mockup Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: '600' }}>Conflict Check Directory</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Query: "Tech Corp India"</span>
-                </div>
-                {/* Mockup Table */}
-                <div style={{ fontSize: '11.5px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: 'var(--bg-app)', borderRadius: '6px' }}>
-                    <span>Opponent dossier match</span>
-                    <span style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-danger)', padding: '2px 6px', borderRadius: '4px', fontSize: '9.5px', fontWeight: '600' }}>
-                      🔴 HIGH CONFLICT
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: 'var(--bg-app)', borderRadius: '6px' }}>
-                    <span>Text record mention: Rajesh Sharma</span>
-                    <span style={{ background: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-warning)', padding: '2px 6px', borderRadius: '4px', fontSize: '9.5px', fontWeight: '600' }}>
-                      🟡 POTENTIAL
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </ScrollReveal>
-          </div>
-        </section>
-
-        {/* BLOCK 3: Universal RAG Chat (Text Left, UI Right) */}
-        <section className="feature-block">
-          <div className="feature-text-panel">
-            <ScrollReveal>
-              <div className="feature-block-tag">Module 03</div>
-              <h2 className="feature-block-h2">Universal RAG Chat</h2>
-              <p className="feature-block-p">
-                Query context-grounded data from files. Give natural directions to route screens, retrieve case documents, or search court listings.
-              </p>
-              <ul className="feature-checklist">
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>Centralized API routing with secure JWT injection</span>
-                </li>
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>100% dynamic scope mapping matching active directories</span>
-                </li>
-                <li className="feature-check-item">
-                  <span className="feature-check-icon">✓</span>
-                  <span>Agentic Navigation translating user intent to app routes</span>
-                </li>
-              </ul>
-              <Link to="/login" className="btn-primary">Query RAG Console</Link>
-            </ScrollReveal>
-          </div>
-
-          <div className="feature-ui-panel">
-            <ScrollReveal>
-              <div className="glass-mockup">
-                {/* Mockup Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--accent-primary)' }}>RAG CONSOLE</span>
-                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Location: /case/101</span>
-                </div>
-                {/* Mockup Prompt */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11.5px' }}>
-                  <div style={{ color: 'var(--text-muted)' }}>Query: "go to contract analyzer"</div>
-                  <div style={{ background: 'rgba(16, 185, 129, 0.08)', color: 'var(--accent-success)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                    ✓ Agentic Routing: Redirecting client viewpoint to <code>/contract-analyzer</code>...
-                  </div>
-                </div>
-              </div>
-            </ScrollReveal>
-          </div>
-        </section>
-
+        </div>
       </div>
 
-      {/* Security & Compliance Section */}
-      <section className="security-compliance-section">
-        <ScrollReveal>
-          <h2 className="section-title">Authoritative Security Architecture</h2>
-          <p className="section-subtitle" style={{ marginBottom: 0 }}>Built to comply with data sovereignty regulations under Indian Law.</p>
-        </ScrollReveal>
-
-        <div className="security-grid">
-          <div className="security-item">
+      {/* Bento Grid Features Section */}
+      <section id="features" className="features-section">
+        <div className="glow-backdrop glow-3" />
+        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
+          <div style={{ textAlign: 'center' }}>
             <ScrollReveal>
-              <div style={{ fontSize: '24px', marginBottom: '12px' }}>🔒</div>
-              <h3 className="security-h3">Military-Grade Encryption</h3>
-              <p className="security-p">All client briefs, plaints, and contracts are encrypted in transit and at rest using AES-256 standards.</p>
+              <span className="features-badge">Platform Capability</span>
+              <h2 className="section-title">Engineered for Sovereign Precision</h2>
+              <p className="section-subtitle">A cohesive suite of modules designed for high-stakes litigation.</p>
             </ScrollReveal>
           </div>
 
-          <div className="security-item">
+          <div className="bento-grid">
+            {/* Card 1: Contract Risk (Large) */}
+            <div className="bento-card bento-card-large">
+              <div className="bento-card-glow" />
+              <div className="bento-card-content">
+                <ScrollReveal>
+                  <div className="bento-header">
+                    <span className="bento-tag">Module 01</span>
+                    <h3 className="bento-title">Contract Risk Analyzer</h3>
+                  </div>
+                  <p className="bento-description">
+                    Instantly scan agreements for liability flags, draft customized clause updates, and identify missing provisions standard to Indian Law.
+                  </p>
+                  <div className="bento-mini-mockup">
+                    <div className="mockup-clause-box">
+                      <span className="clause-tag warning">⚠️ RISK DETECTED</span>
+                      <div className="clause-title">Clause 2.4: Suspension right</div>
+                      <p className="clause-text">"...Client reserves the absolute right to suspend all payments..."</p>
+                      <div className="clause-rebuttal">AI Suggestion: Revise to mutual suspension upon 15-day written notice.</div>
+                    </div>
+                  </div>
+                </ScrollReveal>
+              </div>
+              <div className="bento-footer">
+                <ScrollReveal>
+                  <Link to="/login" className="bento-link">Launch Risk Scan ↗</Link>
+                </ScrollReveal>
+              </div>
+            </div>
+
+            {/* Card 2: Conflict Check (Medium) */}
+            <div className="bento-card bento-card-medium">
+              <div className="bento-card-glow" />
+              <div className="bento-card-content">
+                <ScrollReveal>
+                  <div className="bento-header">
+                    <span className="bento-tag">Module 02</span>
+                    <h3 className="bento-title">Conflict Check</h3>
+                  </div>
+                  <p className="bento-description">
+                    Execute cross-file comparison audits. Locate direct representation overlaps or potential conflict tags.
+                  </p>
+                  <div className="bento-mini-list">
+                    <div className="mini-list-item conflict">
+                      <span>Tech Corp India</span>
+                      <span className="status-pill red">HIGH CONFLICT</span>
+                    </div>
+                    <div className="mini-list-item warning">
+                      <span>Rajesh Sharma</span>
+                      <span className="status-pill yellow">POTENTIAL</span>
+                    </div>
+                  </div>
+                </ScrollReveal>
+              </div>
+              <div className="bento-footer">
+                <ScrollReveal>
+                  <Link to="/login" className="bento-link">Audit Roster ↗</Link>
+                </ScrollReveal>
+              </div>
+            </div>
+
+            {/* Card 3: Universal RAG Chat (Full Width / Span 3) */}
+            <div className="bento-card bento-card-span">
+              <div className="bento-card-glow" />
+              <div className="bento-card-content bento-flex-row">
+                <div className="bento-flex-left">
+                  <ScrollReveal>
+                    <div className="bento-header">
+                      <span className="bento-tag">Module 03</span>
+                      <h3 className="bento-title">Universal RAG Chat</h3>
+                    </div>
+                    <p className="bento-description" style={{ marginBottom: '16px' }}>
+                      Query context-grounded data from vault files. Give natural directions to route screens, retrieve case documents, or search court listings.
+                    </p>
+                    <Link to="/login" className="btn-luxury-primary" style={{ alignSelf: 'flex-start' }}>
+                      Query Console
+                    </Link>
+                  </ScrollReveal>
+                </div>
+                <div className="bento-flex-right">
+                  <ScrollReveal>
+                    <div className="terminal-mini">
+                      <div className="terminal-line"><span className="term-prompt">&gt;</span> search court calendar for June 2026</div>
+                      <div className="terminal-line success"><span className="term-prompt">&gt;</span> Found 5 events. Directing to /calendar...</div>
+                    </div>
+                  </ScrollReveal>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Enterprise Trust Section */}
+      <section className="trust-section">
+        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
+          <div className="trust-header">
             <ScrollReveal>
-              <div style={{ fontSize: '24px', marginBottom: '12px' }}>🇮🇳</div>
-              <h3 className="security-h3">Data Sovereignty - Indian Law</h3>
-              <p className="security-p">Vector indexes and raw documents reside strictly on sovereign cloud nodes within the territorial borders of India.</p>
+              <span className="trust-badge">Security Architecture</span>
+              <h2 className="section-title">Authoritative Data Custody</h2>
+              <p className="section-subtitle">Engineered to exceed high-stakes enterprise compliance standards.</p>
             </ScrollReveal>
           </div>
-
-          <div className="security-item">
+          <div className="trust-grid">
+            <div className="trust-card">
+              <ScrollReveal>
+                <div className="trust-icon">🛡️</div>
+                <h3 className="trust-card-title">AES-256 Cryptography</h3>
+                <p className="trust-card-description">All case files, plaints, and contracts are encrypted in transit and at rest using military-grade AES-256 protocols.</p>
+              </ScrollReveal>
+            </div>
+            <div className="trust-card">
+              <ScrollReveal>
+                <div className="trust-icon">🇮🇳</div>
+                <h3 className="trust-card-title">Sovereign Data Storage</h3>
+                <p className="trust-card-description">Vector databases and index engines reside strictly on sovereign cloud nodes within the territorial borders of India.</p>
+              </ScrollReveal>
+            </div>
+            <div className="trust-card">
+              <ScrollReveal>
+                <div className="trust-icon">🔒</div>
+                <h3 className="trust-card-title">Zero Retention Protocol</h3>
+                <p className="trust-card-description">Document processing vectors do not train base foundational LLMs. All database instances remain isolated.</p>
+              </ScrollReveal>
+            </div>
+          </div>
+          <div className="trust-seals">
             <ScrollReveal>
-              <div style={{ fontSize: '24px', marginBottom: '12px' }}> W</div>
-              <h3 className="security-h3">Zero Retention</h3>
-              <p className="security-p">Document processing vectors do not train base foundational LLMs. All data remains exclusively yours.</p>
+              <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <div className="seal-item">
+                  <span className="seal-dot"></span> SOC 2 TYPE II COMPLIANT
+                </div>
+                <div className="seal-item">
+                  <span className="seal-dot"></span> ISO 27001 CERTIFIED
+                </div>
+                <div className="seal-item">
+                  <span className="seal-dot"></span> GDPR &amp; DPDPA ALIGNED
+                </div>
+              </div>
             </ScrollReveal>
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer style={{ borderTop: '1px solid var(--border-subtle)', padding: '40px 24px', backgroundColor: 'var(--bg-sidebar)' }}>
-        <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
+      <footer style={{ borderTop: '1px solid var(--border-subtle)', padding: '40px 24px', backgroundColor: 'var(--bg-sidebar)', position: 'relative', zIndex: 1 }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
           <div>© 2026 LexAmplify India Software Solutions. All rights reserved.</div>
           <div style={{ display: 'flex', gap: '20px' }}>
             <Link to="/login" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Advocate Console</Link>

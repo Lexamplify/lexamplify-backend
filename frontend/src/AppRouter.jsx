@@ -329,7 +329,7 @@ const DashboardView = () => {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
         {Object.values(DEMO_CASES).map(c => (
-          <div key={c.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px' }}>
+          <div key={c.id} className="premium-card" style={{ padding: '20px' }}>
             <h3 style={{ marginBottom: '8px' }}>{c.title}</h3>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
               Client: <strong>{c.client}</strong> | Status: <strong>{c.status}</strong>

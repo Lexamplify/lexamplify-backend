@@ -14,13 +14,13 @@
   --accent-warning: #F59E0B;
 
   /* Global Adaptive Theme Variables (Default Dark Mode) */
-  --bg-app: #0B0C10;            /* Obsidian deep black */
-  --bg-sidebar: #12141C;        /* Charcoal dark panel */
-  --bg-panel: #1A1C26;          /* Solid container panel */
-  --bg-card: #222533;           /* Solid card fill */
+  --bg-app: #0A0E17;            /* Quiet Luxury Deep Navy/Slate */
+  --bg-sidebar: rgba(10, 14, 23, 0.75); /* Semi-transparent frosted sidebar */
+  --bg-panel: #111827;          /* Rich Slate container panel */
+  --bg-card: #1F2937;           /* Solid card fill */
   --text-primary: #F3F4F6;      /* Off-white readable text */
   --text-muted: #9CA3AF;        /* Subtle gray text */
-  --border-subtle: #292D3E;     /* Solid border */
+  --border-subtle: rgba(255, 255, 255, 0.05); /* Thin elegant border */
 
   /* Backwards Compatibility Aliases */
   --bg-dark-app: var(--bg-app);
@@ -535,7 +535,135 @@ button:active,
 .sidebar-nav a {
   border-radius: 6px;
   margin: 0 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 .sidebar-nav a:hover {
   background-color: rgba(59, 130, 246, 0.07);
+}
+
+/* Glassmorphism Restraint on Sidebar and Topbar */
+.sidebar {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+.topbar {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+/* Typography Color Hierarchy - Muted Silver/White */
+h1, h2, h3, h4, h5, h6 {
+  color: #FFFFFF !important;
+}
+p, span, li, td, th {
+  color: var(--text-dark-primary);
+}
+.text-muted,
+.sidebar-nav a:not([style*="color: var(--accent-primary)"]) {
+  color: var(--text-dark-muted) !important;
+}
+
+/* Form Controls - Rich slate dark background, subtle inner shadow, and focus ring */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+select,
+textarea,
+.form-input,
+.select-element,
+.search-input-field,
+.dark-input,
+.input-textarea {
+  background-color: #0A0E17 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  font-family: var(--font-sans);
+  font-size: 13.5px !important;
+  outline: none !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus,
+.form-input:focus,
+.select-element:focus,
+.search-input-field:focus,
+.dark-input:focus,
+.input-textarea:focus {
+  border-color: #3B82F6 !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+}
+
+/* File Upload Dropzones */
+.drop-zone,
+.drag-drop-zone {
+  border: 2px dashed rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.01) !important;
+  border-radius: 12px !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.drop-zone:hover,
+.drag-drop-zone:hover,
+.drop-zone.dragover,
+.drag-drop-zone.dragover {
+  border-color: #3B82F6 !important;
+  background-color: rgba(59, 130, 246, 0.03) !important;
+}
+
+/* Hover States: Interactive Dashboard Cards & Lift transitions */
+.premium-card,
+.vault-grid-card,
+.trust-card,
+.bento-card,
+.conflict-detail-card,
+.precedent-card,
+.rec-protection-card,
+.inspected-risk-card,
+.card,
+.panel,
+.resource-panel,
+.upload-slot {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.premium-card:hover,
+.vault-grid-card:hover,
+.trust-card:hover,
+.bento-card:hover,
+.conflict-detail-card:hover,
+.precedent-card:hover,
+.rec-protection-card:hover,
+.inspected-risk-card:hover,
+.card:hover,
+.panel:hover,
+.resource-panel:hover,
+.upload-slot:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Active states: Tactical Mechanical click scale */
+button:active,
+.btn-accent:active,
+.btn-luxury-primary:active,
+.btn-luxury-secondary:active,
+.tab-btn:active,
+.sub-tab-btn:active,
+.mode-tab-btn:active,
+.analysis-tab-btn:active,
+.editor-tab-btn:active,
+.toolbar-btn:active,
+.sidebar-nav a:active {
+  transform: scale(0.98) !important;
+  transition: transform 0.08s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
