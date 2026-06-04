@@ -33,6 +33,18 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS document_chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            case_id INTEGER,
+            document_id INTEGER NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            chunk_text TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     conn.commit()
 
 load_dotenv()
@@ -57,7 +69,10 @@ def init_sqlite_db():
         last_hearing DATE,
         status TEXT DEFAULT 'Active',
         notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        cnr TEXT,
+        title TEXT,
+        next_hearing_date DATE
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS clients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,8 +82,23 @@ def init_sqlite_db():
         address TEXT,
         client_type TEXT DEFAULT 'Individual',
         notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        contact TEXT,
+        company TEXT
     )''')
+    
+    # Ensure missing schema columns are dynamically appended
+    for col, col_type in [("cnr", "TEXT"), ("title", "TEXT"), ("next_hearing_date", "DATE")]:
+        try:
+            c.execute(f"ALTER TABLE tracked_cases ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+            
+    for col, col_type in [("contact", "TEXT"), ("company", "TEXT")]:
+        try:
+            c.execute(f"ALTER TABLE clients ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
     c.execute('''CREATE TABLE IF NOT EXISTS time_entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         client_id INTEGER,
@@ -250,6 +280,22 @@ def create_app():
     def api_ping():
         return jsonify({'ok': True})
 
+    def force_pristine_groq_messages(messages):
+        clean = []
+        allowed_keys = {'role', 'content', 'name', 'tool_calls', 'tool_call_id'}
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            # Explicitly extract only safe API parameters
+            sanitized_msg = {k: v for k, v in m.items() if k in allowed_keys}
+            
+            # Handle potential nested dictionary mutations inside tool_calls if they exist
+            if 'tool_calls' in sanitized_msg and sanitized_msg['tool_calls'] is None:
+                del sanitized_msg['tool_calls']
+                
+            clean.append(sanitized_msg)
+        return clean
+
     @app.route('/api/chat', methods=['POST', 'OPTIONS'])
     def api_chat():
         if request.method == 'OPTIONS':
@@ -293,7 +339,9 @@ def create_app():
                 "3. If the user asks to draft, generate, write or compose a legal document (e.g. bail application, master service agreement, petition), you MUST use the 'propose_document_draft' tool.\n"
                 "4. If the user asks to read, look up, find or search for saved legal documents or drafts in the vault, you MUST use the 'search_case_vault' tool.\n"
                 "5. If the user asks to run a courtroom simulation (or simulate a courtroom case) based on a vault document, you MUST use the 'run_courtroom_simulation' tool.\n"
-                "6. For other questions, respond with a direct text answer."
+                "6. For other questions, respond with a direct text answer.\n"
+                "CRITICAL: Do not invoke the propose_calendar_events tool unless the user has explicitly requested to schedule, modify, or add items to their calendar. When querying or analyzing documents from the Case Vault, only invoke document or vault search utilities.\n"
+                "UNIVERSAL TOOL EXECUTION RULE: You are strictly limited to executing exactly ONE function call per turn. Do not use logical operators, conjunctions, or text chaining between tool invocations. Examine the dynamically provided tool schemas for the current request. You must either provide ALL parameters marked as required by the active schema, or do not call the tool at all. Never pass empty parameter objects {} if the schema requires specific properties."
             )
 
             # Define Tool Schema for Groq SDK
@@ -304,7 +352,7 @@ def create_app():
                         "name": "propose_calendar_events",
                         "description": (
                             "Propose deadlines and tickler warning events (e.g. 30, 14, or 7 days prior to a critical date) "
-                            "based on user scheduling requests."
+                            "based on user scheduling requests. STRICT RULE: If you have no events to propose, do not invoke this tool."
                         ),
                         "parameters": {
                             "type": "object",
@@ -336,8 +384,7 @@ def create_app():
                                         "required": ["event_date", "event_type", "title", "related_case_id"]
                                     }
                                 }
-                            },
-                            "required": ["events"]
+                            }
                         }
                     }
                 },
@@ -397,7 +444,7 @@ def create_app():
                             "properties": {
                                 "case_id": {
                                     "type": "string",
-                                    "description": "Optional case ID to filter search results by."
+                                    "description": "The specific case identifier. If the user does not specify a case, you MUST omit this parameter entirely. NEVER pass null."
                                 }
                             }
                         }
@@ -426,15 +473,21 @@ def create_app():
                 }
             ]
 
-            messages = [
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": f"User query: {query}"}
-            ]
+            incoming_messages = data.get('messages', [])
+            
+            if incoming_messages:
+                clean_messages = force_pristine_groq_messages(incoming_messages)
+            else:
+                clean_messages = [{"role": "user", "content": f"User query: {query}"}]
+                
+            messages = [{"role": "system", "content": system_instruction}] + clean_messages
 
             # 4. The First Groq Call (Decision Phase)
+            sanitized_messages = force_pristine_groq_messages(messages)
+            
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
-                messages=messages,
+                messages=sanitized_messages,
                 tools=tools,
                 tool_choice="auto"
             )
@@ -447,8 +500,56 @@ def create_app():
                 tool_call = tool_calls[0]
                 tool_name = tool_call.function.name
                 
-                # Argument Parsing
-                args = json.loads(tool_call.function.arguments)
+                # Dynamic Argument Parsing Guardrail
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                    # Dynamically check required fields against our active schema
+                    active_schema = next((t["function"] for t in tools if t["function"]["name"] == tool_name), None)
+                    if active_schema and "parameters" in active_schema:
+                        required_fields = active_schema["parameters"].get("required", [])
+                        missing_fields = [f for f in required_fields if f not in args]
+                        if missing_fields:
+                            raise ValueError(f"Missing required parameters: {missing_fields}")
+                except Exception as e:
+                    # Intercept before hitting external gateways and feed error back to LLM
+                    error_feedback = (
+                        f"System Guardrail Alert: Your tool invocation for '{tool_name}' failed validation. "
+                        f"Error: {str(e)}. "
+                        "You MUST retry your function call and ensure you provide all required parameters exactly as specified in the schema."
+                    )
+                    
+                    try:
+                        assistant_msg = response_message.model_dump()
+                    except AttributeError:
+                        try:
+                            assistant_msg = response_message.dict()
+                        except AttributeError:
+                            assistant_msg = {
+                                "role": "assistant",
+                                "content": response_message.content,
+                                "tool_calls": [{"id": tool_call.id, "type": "function", "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments}}]
+                            }
+                    
+                    messages.append(assistant_msg)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": error_feedback
+                    })
+                    
+                    retry_sanitized = force_pristine_groq_messages(messages)
+                    retry_response = client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=retry_sanitized
+                    )
+                    
+                    fallback_text = retry_response.choices[0].message.content or "Tool validation failed. Please try again."
+                    return jsonify({
+                        "action": "chat",
+                        "message": fallback_text,
+                        "answer": fallback_text
+                    }), 200
 
                 if tool_name == "run_courtroom_simulation":
                     case_id = args.get('case_id')
@@ -477,7 +578,7 @@ def create_app():
                     
                     res_stage1 = client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": stage1_prompt}],
+                        messages=force_pristine_groq_messages([{"role": "user", "content": stage1_prompt}]),
                         response_format={"type": "json_object"}
                     )
                     
@@ -518,7 +619,7 @@ def create_app():
                     
                     res_stage3 = client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": stage3_prompt}]
+                        messages=force_pristine_groq_messages([{"role": "user", "content": stage3_prompt}])
                     )
                     stage3_text = res_stage3.choices[0].message.content or ""
                     
@@ -535,7 +636,7 @@ def create_app():
                     
                     res_stage4 = client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": stage4_prompt}],
+                        messages=force_pristine_groq_messages([{"role": "user", "content": stage4_prompt}]),
                         response_format={"type": "json_object"}
                     )
                     
@@ -581,7 +682,7 @@ def create_app():
                     try:
                         c = conn.cursor()
                         case_id = args.get("case_id")
-                        if case_id:
+                        if case_id and str(case_id).lower() != "null":
                             c.execute("SELECT * FROM case_vault WHERE case_id = ? ORDER BY created_at DESC", (str(case_id),))
                         else:
                             c.execute("SELECT * FROM case_vault ORDER BY created_at DESC")
@@ -636,9 +737,11 @@ def create_app():
                         "content": formatted_vault_results
                     })
 
+                    sanitized_second_messages = force_pristine_groq_messages(messages)
+
                     second_response = client.chat.completions.create(
                         model="llama-3.1-8b-instant",
-                        messages=messages
+                        messages=sanitized_second_messages
                     )
                     final_text = second_response.choices[0].message.content or ""
                     return jsonify({
@@ -763,7 +866,6 @@ def create_app():
         from models.user import User
         from models.case import Case
         from models.document import Document
-        from models.document_chunk import DocumentChunk
         sqlalchemy_db.create_all()
 
     # --- START DATABASE BUILDER ---
@@ -793,6 +895,20 @@ def create_app():
                 event_type TEXT,
                 title TEXT,
                 related_case_id TEXT
+            )
+        ''')
+
+        # Build the Document Chunks table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS document_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                case_id INTEGER,
+                document_id INTEGER NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         

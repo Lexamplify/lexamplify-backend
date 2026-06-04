@@ -10,8 +10,6 @@ import os
 import json
 import math
 import hashlib
-from database import db
-from models.document_chunk import DocumentChunk
 import litellm
 from utils.ai_helper import ask_groq
 
@@ -183,41 +181,36 @@ def ingest_document(document_id: int, case_id: int, user_id: int, text: str) -> 
     and stores them in SQLite. Returns count of chunks created.
     Cleans up existing chunks for the same document to prevent double indexing.
     """
+    import sqlite3
     chunks = chunk_document_text(text)
     if not chunks:
         return 0
         
+    conn = sqlite3.connect('lex_assistant.db')
+    c = conn.cursor()
     try:
         # Avoid duplicate index entries
-        DocumentChunk.query.filter_by(document_id=document_id).delete()
-        db.session.commit()
+        c.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
+        conn.commit()
     except Exception as e:
-        db.session.rollback()
         print(f"[RAG Ingestion] Error cleaning old chunks: {e}")
         
-    chunks_to_insert = []
-    for idx, chunk_text in enumerate(chunks):
-        embedding_vector = get_embedding(chunk_text)
-        embedding_json = json.dumps(embedding_vector)
-        
-        chunk = DocumentChunk(
-            user_id=user_id,
-            case_id=case_id,
-            document_id=document_id,
-            chunk_index=idx,
-            chunk_text=chunk_text,
-            embedding=embedding_json
-        )
-        chunks_to_insert.append(chunk)
-        
     try:
-        db.session.bulk_save_objects(chunks_to_insert)
-        db.session.commit()
-        return len(chunks_to_insert)
+        for idx, chunk_text in enumerate(chunks):
+            embedding_vector = get_embedding(chunk_text)
+            embedding_json = json.dumps(embedding_vector)
+            
+            c.execute('''
+                INSERT INTO document_chunks (user_id, case_id, document_id, chunk_index, chunk_text, embedding)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (user_id, case_id, document_id, idx, chunk_text, embedding_json))
+        conn.commit()
+        return len(chunks)
     except Exception as e:
-        db.session.rollback()
-        print(f"[RAG Ingestion] Bulk insertion failed: {e}")
+        print(f"[RAG Ingestion] Direct insertion failed: {e}")
         raise e
+    finally:
+        conn.close()
 
 # ── 4. SIMILARITY & METADATA FILTERING ──────────────────────────────────
 
@@ -242,39 +235,50 @@ def search_chunks(query: str, user_id: int, case_id: int = None, document_id: in
       - 'current_case': filters by user_id AND case_id
       - 'open_document': filters by user_id, case_id, AND document_id
     """
-    query_filter = DocumentChunk.query.filter(DocumentChunk.user_id == user_id)
+    import sqlite3
     
-    if scope == "current_case":
-        if case_id is not None:
-            query_filter = query_filter.filter(DocumentChunk.case_id == case_id)
+    sql = "SELECT id, document_id, case_id, chunk_index, chunk_text, embedding FROM document_chunks WHERE user_id = ?"
+    params = [user_id]
+    
+    if scope == "current_case" and case_id is not None:
+        sql += " AND case_id = ?"
+        params.append(case_id)
     elif scope == "open_document":
         if document_id is not None:
-            query_filter = query_filter.filter(DocumentChunk.document_id == document_id)
-            if case_id is not None:
-                query_filter = query_filter.filter(DocumentChunk.case_id == case_id)
-                
+            sql += " AND document_id = ?"
+            params.append(document_id)
+        if case_id is not None:
+            sql += " AND case_id = ?"
+            params.append(case_id)
+            
+    conn = sqlite3.connect('lex_assistant.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
     try:
-        db_chunks = query_filter.all()
+        c.execute(sql, params)
+        rows = c.fetchall()
     except Exception as e:
         print(f"[RAG Search] Database query failed: {e}")
         return []
+    finally:
+        conn.close()
         
-    if not db_chunks:
+    if not rows:
         return []
         
     query_emb = get_embedding(query)
     
     scored_chunks = []
-    for chunk in db_chunks:
+    for row in rows:
         try:
-            chunk_emb = json.loads(chunk.embedding)
+            chunk_emb = json.loads(row["embedding"])
             sim = cosine_similarity(query_emb, chunk_emb)
             scored_chunks.append({
-                "chunk_id": chunk.id,
-                "document_id": chunk.document_id,
-                "case_id": chunk.case_id,
-                "chunk_index": chunk.chunk_index,
-                "text": chunk.chunk_text,
+                "chunk_id": row["id"],
+                "document_id": row["document_id"],
+                "case_id": row["case_id"],
+                "chunk_index": row["chunk_index"],
+                "text": row["chunk_text"],
                 "similarity": sim
             })
         except Exception as e:

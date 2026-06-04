@@ -278,9 +278,14 @@ def get_document_details(doc_id):
         return jsonify({"error": "Document not found or access unauthorized."}), 404
         
     try:
-        from models.document_chunk import DocumentChunk
-        chunks = DocumentChunk.query.filter_by(document_id=doc_id).order_by(DocumentChunk.chunk_index.asc()).all()
-        full_text = "\n\n".join(c.chunk_text for c in chunks)
+        import sqlite3
+        conn = sqlite3.connect('lex_assistant.db')
+        c = conn.cursor()
+        c.execute("SELECT chunk_text FROM document_chunks WHERE document_id = ? ORDER BY chunk_index ASC", (doc_id,))
+        rows = c.fetchall()
+        conn.close()
+        
+        full_text = "\n\n".join(r[0] for r in rows)
         
         return jsonify({
             "id": doc.id,
@@ -309,6 +314,15 @@ def delete_document(doc_id):
         return jsonify({"error": "Document not found or access unauthorized."}), 404
         
     try:
+        import sqlite3
+        # Cascade delete from lex_assistant.db SQLite Direct
+        conn = sqlite3.connect('lex_assistant.db')
+        c = conn.cursor()
+        c.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
+        conn.commit()
+        conn.close()
+
+        # Delete from SQLAlchemy database.db
         db.session.delete(doc)
         db.session.commit()
         return jsonify({"message": "Document and vectorized index successfully deleted."}), 200

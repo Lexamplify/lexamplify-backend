@@ -13,13 +13,5 @@ class Document(db.Model):
     tags        = db.Column(db.String(200))
     created_at  = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Automatically cascade delete associated chunks when a document is deleted
-    chunks = db.relationship(
-        "DocumentChunk",
-        backref="document",
-        cascade="all, delete-orphan",
-        passive_deletes=True
-    )
-
     def __repr__(self):
         return f"<Document id={self.id} filename='{self.filename}'>"
