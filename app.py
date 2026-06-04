@@ -448,13 +448,17 @@ def create_app():
                     "type": "function",
                     "function": {
                         "name": "search_case_vault",
-                        "description": "Search the Case Vault database for saved legal documents or drafts.",
+                        "description": "Search the Case Vault. If you know the exact Case ID, provide it in case_id. If you do not know the exact ID, provide a detailed query in search_query (e.g., \"bail application for chain snatching\"). DO NOT guess or hallucinate case_id numbers.",
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "case_id": {
                                     "type": "string",
                                     "description": "The specific case identifier. If the user does not specify a case, you MUST omit this parameter entirely. NEVER pass null."
+                                },
+                                "search_query": {
+                                    "type": "string",
+                                    "description": "A semantic text query to find the document by keywords if the case_id is unknown."
                                 }
                             }
                         }
@@ -692,11 +696,31 @@ def create_app():
                     try:
                         c = conn.cursor()
                         case_id = args.get("case_id")
+                        search_query = args.get("search_query")
+                        
                         if case_id and str(case_id).lower() != "null":
                             c.execute("SELECT * FROM case_vault WHERE case_id = ? ORDER BY created_at DESC", (str(case_id),))
+                            rows = c.fetchall()
+                        elif search_query:
+                            c.execute("SELECT * FROM case_vault ORDER BY created_at DESC")
+                            all_docs = c.fetchall()
+                            stop_words = {"a", "an", "the", "and", "or", "but", "if", "for", "with", "about", "as", "by", "in", "to", "of", "on", "is", "are"}
+                            keywords = [w.lower() for w in search_query.split() if w.lower() not in stop_words]
+                            
+                            best_doc = None
+                            max_overlap = 0
+                            
+                            for doc in all_docs:
+                                doc_text = (str(doc['title']) + " " + str(doc['content'])).lower()
+                                overlap = sum(1 for kw in keywords if kw in doc_text)
+                                if overlap > max_overlap:
+                                    max_overlap = overlap
+                                    best_doc = doc
+                            
+                            rows = [best_doc] if best_doc else []
                         else:
                             c.execute("SELECT * FROM case_vault ORDER BY created_at DESC")
-                        rows = c.fetchall()
+                            rows = c.fetchall()
                     finally:
                         conn.row_factory = old_row_factory
                     
@@ -715,7 +739,10 @@ def create_app():
                     if results:
                         formatted_vault_results = "\n".join(results)
                     else:
-                        formatted_vault_results = "No documents found in the Case Vault."
+                        if args.get("search_query"):
+                            formatted_vault_results = "No documents found matching this query in the Case Vault."
+                        else:
+                            formatted_vault_results = "No documents found in the Case Vault."
 
                     # Convert response_message to dict to be safe or use model_dump
                     try:
