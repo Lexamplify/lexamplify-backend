@@ -228,50 +228,65 @@ export default function CommandPalette() {
     let shouldRefocus = false;
 
     try {
-      const response = await sendUniversalChat(payload);
+      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+      
+      const response = await fetch('https://lexamplify-backend.onrender.com/api/ai/rag-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
 
-      if (response.error) {
-        const errorMsg = response.message || 'A server communication error occurred.';
-        setMessages(prev => [...prev, { role: 'error', text: errorMsg }]);
+      if (!response.ok) {
         shouldRefocus = true;
-        return;
+        setMessages(prev => [...prev, { role: 'error', text: 'A server communication error occurred.' }]);
+        throw new Error("Stream connection failed");
       }
 
-      // Append assistant turn — answer or message text
-      const answerText = response.answer || response.message || '';
-      if (answerText) {
-        setMessages(prev => [
-          ...prev,
-          { role: 'assistant', text: answerText, sources: response.sources || [] },
-        ]);
-      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedDraft = "";
 
-      if (response.action === 'confirm_schedule' && response.proposed_events) {
-        setPendingSchedule(response.proposed_events);
-      }
-      if (response.action === 'review_document' && response.draft) {
-        setPendingDraft(response.draft);
-      }
-      if (response.action === 'simulate_courtroom' && response.simulationData) {
-        setNavigatingRoute('/war-room');
-        setTimeout(() => {
-          navigate('/war-room', { state: { simulationData: response.simulationData } });
-          handleClose();
-          setNavigatingRoute(null);
-        }, 1200);
-      }
-      if (response.action === 'analyze' || (response.action === 'navigate' && response.target_route)) {
-        const targetRoute = response.action === 'analyze' ? '/analyzer' : response.target_route;
-        setNavigatingRoute(targetRoute);
-        setTimeout(() => {
-          if (targetRoute === '/analyzer' || targetRoute === '/contract-analyzer') {
-            navigate(targetRoute, { state: { contractData: response } });
-          } else {
-            navigate(targetRoute);
+      const messageId = Date.now();
+      setMessages(prev => [...prev, { id: messageId, role: 'assistant', text: '', sources: [] }]);
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunkText = decoder.decode(value, { stream: true });
+        const lines = chunkText.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && !line.includes('data: [DONE]')) {
+            try {
+              const parsed = JSON.parse(line.replace('data: ', ''));
+              
+              if (parsed.metadata) {
+                 setMessages(prev => prev.map(msg => 
+                    msg.id === messageId ? { ...msg, sources: parsed.metadata.sources } : msg
+                 ));
+              }
+
+              if (parsed.token) {
+                accumulatedDraft += parsed.token;
+                setMessages(prev => prev.map(msg => 
+                    msg.id === messageId ? { ...msg, text: accumulatedDraft } : msg
+                ));
+              }
+              
+              if (parsed.error) {
+                 setMessages(prev => prev.map(msg => 
+                    msg.id === messageId ? { ...msg, text: accumulatedDraft + '\n\n[Error: ' + parsed.error + ']' } : msg
+                 ));
+              }
+            } catch (e) {
+              // ignore partial JSON from stream buffering issues
+            }
           }
-          handleClose();
-          setNavigatingRoute(null);
-        }, 1200);
+        }
       }
     } finally {
       setLoading(false);
