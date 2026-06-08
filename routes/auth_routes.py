@@ -55,6 +55,15 @@ def register_user():
     conn = sqlite3.connect('lex_assistant.db')
     c = conn.cursor()
     try:
+        # 🚨 THE FIX: Force Render to create the table if it's missing
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            )
+        ''')
+        
         # Check if user already exists
         c.execute("SELECT id FROM users WHERE email = ?", (email,))
         if c.fetchone():

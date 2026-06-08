@@ -146,53 +146,55 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  // --- 1. THE DYNAMIC REGISTRATION FUNCTION ---
+  const handleRegister = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      setError('Please provide both email and password.');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
+    if (!email || !password) return setError('Please provide email and password.');
+    setLoading(true); setError('');
 
     try {
-      // 1. Point to your actual Python backend API
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
-      
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // IMPORTANT: The Python backend expects 'email'
-        body: JSON.stringify({ email: email, password: password }) 
+        // DEFENSIVE MAPPING: Send both keys so backend never misses it
+        body: JSON.stringify({ email: email, username: email, password: password }) 
       });
 
       const data = await response.json();
-
-      // 2. Handle invalid passwords or missing accounts
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Authentication failed. Check your credentials.');
-      }
-
-      // 3. Prevent silent failures if the backend forgets to send the token
-      if (!data.access_token) {
-        throw new Error('Critical: Server authenticated but did not return a JWT token.');
-      }
-
-      // 4. Dynamically store the real JWT token
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('lexai_token', data.access_token); // Keeping both if your app uses both
+      if (!response.ok) throw new Error(data.error || 'Registration failed.');
       
-      // Optional: Store user metadata for the UI (like their name)
-      if (data.user_id) {
-        localStorage.setItem('user_id', data.user_id);
-      }
-
-      // 5. Navigate to the secure dashboard
-      navigate('/dashboard');
-
+      alert("Account created securely! You can now click Sign In.");
     } catch (err) {
-      console.error("[Login Error]:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 2. THE DYNAMIC LOGIN FUNCTION ---
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!email || !password) return setError('Please provide email and password.');
+    setLoading(true); setError('');
+
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // DEFENSIVE MAPPING: Guarantee Python catches it
+        body: JSON.stringify({ email: email, username: email, password: password }) 
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || 'Invalid credentials.');
+      if (!data.access_token) throw new Error('No JWT token received from server.');
+
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('lexai_token', data.access_token);
+      navigate('/dashboard');
+    } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
@@ -263,7 +265,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={(e) => e.preventDefault()}>
             {error && (
               <div style={{ color: 'var(--accent-danger)', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '20px' }}>
                 ⚠️ {error}
@@ -299,9 +301,28 @@ export default function LoginPage() {
               />
             </div>
 
-            <button type="submit" className="login-btn" disabled={loading}>
-              {loading ? 'Authenticating advocates...' : 'Sign In'}
-            </button>
+            {/* Replace your old <button type="submit"> with these two: */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button 
+                type="button" 
+                onClick={handleRegister} 
+                className="login-btn" 
+                style={{ background: 'transparent', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)' }}
+                disabled={loading}
+              >
+                Create Account
+              </button>
+              
+              <button 
+                type="button" 
+                onClick={handleLogin} 
+                className="login-btn" 
+                style={{ margin: 0 }}
+                disabled={loading}
+              >
+                {loading ? 'Authenticating...' : 'Sign In'}
+              </button>
+            </div>
           </form>
 
           {/* Bottom Back Button */}
