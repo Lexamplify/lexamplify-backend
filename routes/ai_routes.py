@@ -183,17 +183,16 @@ def rag_chat():
         elif case_id is not None:
             scope = "current_case"
 
-        from utils.rag_pipeline import answer_rag_query
-        result = answer_rag_query(
-            query=query,
-            user_id=user_id,
-            case_id=case_id,
-            document_id=document_id,
-            scope=scope,
-            current_path=current_path,
-            params=params
+        from utils.rag_pipeline import stream_rag_query
+        from flask import Response, stream_with_context
+        
+        # Wrap the generator in a Flask Response with the event-stream mimetype
+        return Response(
+            stream_with_context(
+                stream_rag_query(query, user_id, case_id, document_id, scope, current_path, params)
+            ),
+            mimetype='text/event-stream'
         )
-        return jsonify(result), 200
 
     except Exception as e:
         print(f"[RAG API Error]: {e}")

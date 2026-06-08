@@ -432,3 +432,59 @@ def answer_rag_query(query: str, user_id: int, case_id: int = None, document_id:
             "answer": "Error generating RAG response. Please check backend LLM availability.",
             "sources": []
         }
+
+def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", current_path: str = "", params: dict = None):
+    """
+    High-performance streaming RAG query. Bypasses JSON stringification 
+    to yield tokens instantly to the frontend via Server-Sent Events.
+    """
+    from groq import Groq
+    import os
+    
+    matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=4)
+    
+    # We remove the strict JSON requirement from the prompt so it can freely stream text
+    system_prompt = (
+        "You are an elite AI legal assistant operating strictly under Indian Law. "
+        "Answer the user's query or draft the requested document using the provided context. "
+        "Format your response clearly using markdown. DO NOT output JSON."
+    )
+    
+    if matched_chunks:
+        context_blocks = [f"[Source Chunk]:\n{c['text']}" for c in matched_chunks]
+        context_str = "\n\n".join(context_blocks)
+    else:
+        context_str = "No document context retrieved."
+        
+    user_message = f"Retrieved Context:\n{context_str}\n\nUser Query: {query}"
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    
+    try:
+        # 1. Yield metadata immediately so the UI can log the sources instantly
+        metadata = {
+            "action": "chat",
+            "sources": [{"document_id": c["document_id"]} for c in matched_chunks]
+        }
+        yield f"data: {json.dumps({'metadata': metadata})}\n\n"
+        
+        # 2. Open the Groq Stream
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.2,
+            stream=True # CRITICAL: Enables live token streaming
+        )
+        
+        # 3. Yield each word as it generates
+        for chunk in completion:
+            if chunk.choices[0].delta.content:
+                token = chunk.choices[0].delta.content
+                yield f"data: {json.dumps({'token': token})}\n\n"
+                
+        yield "data: [DONE]\n\n"
+        
+    except Exception as e:
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"

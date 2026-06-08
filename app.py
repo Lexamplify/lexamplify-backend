@@ -453,11 +453,11 @@ def create_app():
                             "type": "object",
                             "properties": {
                                 "case_id": {
-                                    "type": "string",
-                                    "description": "The specific case identifier. If the user does not specify a case, you MUST omit this parameter entirely. NEVER pass null."
+                                    "type": ["string", "null"],
+                                    "description": "The specific case identifier. If the user does not specify a case, you may pass null. If you pass null, you MUST ask the user 'Which case vault would you like me to search?'"
                                 },
                                 "search_query": {
-                                    "type": "string",
+                                    "type": ["string", "null"],
                                     "description": "A semantic text query to find the document by keywords if the case_id is unknown."
                                 }
                             }

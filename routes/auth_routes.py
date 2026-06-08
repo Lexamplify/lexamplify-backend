@@ -50,7 +50,13 @@ def login():
         if not user or not check_password_hash(user.password, password):
             return jsonify({"error": "Invalid email or password."}), 401
         token = create_access_token(identity=str(user.id))
-        return jsonify({"token": token, "name": user.name, "role": user.role})
+        return jsonify({
+            "message": "Login successful",
+            "access_token": token,
+            "user_id": user.id,
+            "name": user.name,
+            "role": user.role
+        }), 200
     except Exception as e:
         print(f"Login error: {str(e)}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500

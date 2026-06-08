@@ -146,7 +146,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       setError('Please provide both email and password.');
@@ -156,15 +156,47 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    // Mock verification delay
-    setTimeout(() => {
-      // Set the authentication tokens before navigating to prevent 401 downsream
-      localStorage.setItem('token', 'demo_session');
-      localStorage.setItem('lexai_token', 'demo_session');
+    try {
+      // 1. Point to your actual Python backend API
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
       
-      setLoading(false);
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // IMPORTANT: The Python backend expects 'email'
+        body: JSON.stringify({ email: email, password: password }) 
+      });
+
+      const data = await response.json();
+
+      // 2. Handle invalid passwords or missing accounts
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Authentication failed. Check your credentials.');
+      }
+
+      // 3. Prevent silent failures if the backend forgets to send the token
+      if (!data.access_token) {
+        throw new Error('Critical: Server authenticated but did not return a JWT token.');
+      }
+
+      // 4. Dynamically store the real JWT token
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('lexai_token', data.access_token); // Keeping both if your app uses both
+      
+      // Optional: Store user metadata for the UI (like their name)
+      if (data.user_id) {
+        localStorage.setItem('user_id', data.user_id);
+      }
+
+      // 5. Navigate to the secure dashboard
       navigate('/dashboard');
-    }, 800);
+
+    } catch (err) {
+      console.error("[Login Error]:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
