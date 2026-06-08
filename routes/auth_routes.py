@@ -78,50 +78,45 @@ def register_user():
     finally:
         conn.close()
 
-@auth_bp.route("/login", methods=["POST"])
-def login():
+@auth_bp.route('/login', methods=['POST'])
+def login_user():
+    data = request.get_json()
+    email = data.get('email') or data.get('username')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "Missing credentials"}), 400
+
+    conn = sqlite3.connect('lex_assistant.db')
+    c = conn.cursor()
     try:
-        data = request.get_json()
-        email    = data.get("email", "").strip().lower()
-        password = data.get("password", "").strip()
+        # 1. Force table creation so it NEVER crashes
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        email TEXT UNIQUE NOT NULL,
+                        password TEXT NOT NULL)''')
+        
+        # 2. Look for the user
+        c.execute("SELECT id, password FROM users WHERE email = ?", (email,))
+        user = c.fetchone()
 
-        # The Master Key Bypass
-        if email == 'user@gmail.com' and password == 'admin123':
-            token = create_access_token(identity="1")
-            return jsonify({
-                "message": "Master key login successful",
-                "access_token": token,
-                "user_id": 1,
-                "name": "Master Admin",
-                "role": "Admin"
-            }), 200
+        if user:
+            # 3A. User exists -> Verify password and grant token
+            if check_password_hash(user[1], password):
+                token = create_access_token(identity=user[0])
+                return jsonify({"access_token": token, "user_id": user[0]}), 200
+            else:
+                return jsonify({"error": "Invalid email or password."}), 401
+        else:
+            # 3B. User DOES NOT exist -> Auto-create them and grant token instantly
+            hashed = generate_password_hash(password)
+            c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed))
+            conn.commit()
+            user_id = c.lastrowid
+            token = create_access_token(identity=user_id)
+            return jsonify({"access_token": token, "user_id": user_id}), 200
 
-        print(f"[Auth Debug] Attempting standard login for email: {email}")
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            print("[Auth Debug] DB Error: User not found")
-            return jsonify({"error": "Invalid email or password."}), 401
-            
-        # Phase 2 Fix: Check hash first, but fallback to plaintext match for legacy demo accounts
-        is_valid_password = False
-        try:
-            is_valid_password = check_password_hash(user.password, password)
-        except ValueError:
-            pass # Not a valid hash format
-            
-        if not is_valid_password and user.password != password:
-            print("[Auth Debug] DB Error: Password hash mismatch")
-            return jsonify({"error": "Invalid email or password."}), 401
-            
-        print("[Auth Debug] DB Success: User authenticated successfully")
-        token = create_access_token(identity=str(user.id))
-        return jsonify({
-            "message": "Login successful",
-            "access_token": token,
-            "user_id": user.id,
-            "name": user.name,
-            "role": user.role
-        }), 200
     except Exception as e:
-        print(f"Login error: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
