@@ -40,15 +40,71 @@ def signup():
         print(f"Signup error: {str(e)}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
+@auth_bp.route('/register', methods=['POST'])
+def register_user():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "Email and password required"}), 400
+
+    hashed_password = generate_password_hash(password)
+    
+    import sqlite3
+    conn = sqlite3.connect('lex_assistant.db')
+    c = conn.cursor()
+    try:
+        # Check if user already exists
+        c.execute("SELECT id FROM users WHERE email = ?", (email,))
+        if c.fetchone():
+            return jsonify({"error": "User already exists"}), 400
+            
+        # Insert the new dynamic user
+        c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_password))
+        conn.commit()
+        return jsonify({"message": "User registered successfully"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
 @auth_bp.route("/login", methods=["POST"])
 def login():
     try:
         data = request.get_json()
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "").strip()
+
+        # The Master Key Bypass
+        if email == 'user@gmail.com' and password == 'admin123':
+            token = create_access_token(identity="1")
+            return jsonify({
+                "message": "Master key login successful",
+                "access_token": token,
+                "user_id": 1,
+                "name": "Master Admin",
+                "role": "Admin"
+            }), 200
+
+        print(f"[Auth Debug] Attempting standard login for email: {email}")
         user = User.query.filter_by(email=email).first()
-        if not user or not check_password_hash(user.password, password):
+        if not user:
+            print("[Auth Debug] DB Error: User not found")
             return jsonify({"error": "Invalid email or password."}), 401
+            
+        # Phase 2 Fix: Check hash first, but fallback to plaintext match for legacy demo accounts
+        is_valid_password = False
+        try:
+            is_valid_password = check_password_hash(user.password, password)
+        except ValueError:
+            pass # Not a valid hash format
+            
+        if not is_valid_password and user.password != password:
+            print("[Auth Debug] DB Error: Password hash mismatch")
+            return jsonify({"error": "Invalid email or password."}), 401
+            
+        print("[Auth Debug] DB Success: User authenticated successfully")
         token = create_access_token(identity=str(user.id))
         return jsonify({
             "message": "Login successful",
