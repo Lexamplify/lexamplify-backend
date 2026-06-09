@@ -183,3 +183,115 @@ def rag_chat():
             "error": True,
             "message": "Agent processing failed."
         }), 500
+
+
+# ── Courtroom Simulation Engine ─────────────────────────────────
+@ai_bp.route("/simulate", methods=["POST"])
+@jwt_required()
+def run_simulation():
+    """
+    Runs the 4-stage courtroom simulation pipeline.
+    Called from WarRoomView after instant navigation — avoids the SSE 15-second timeout.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        document_content = data.get("document_content", "").strip()
+        client_side = data.get("client_side", "Appellant")
+
+        if not document_content:
+            return jsonify({"error": "No document content provided"}), 400
+
+        from utils.rag_pipeline import get_groq_client
+        client = get_groq_client()
+        if not client:
+            return jsonify({"error": "Groq client unavailable"}), 500
+
+        truncated = document_content[:8000]
+
+        # Stage 1: Extract legal issues + search query
+        s1 = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": (
+                f"Analyze this legal document:\n\n{truncated}\n\n"
+                "Extract the top 3 core legal issues and a 5-word search query. "
+                "Return JSON with exactly these keys: "
+                "'extracted_issues' (string summarising the 3 issues) and 'search_query' (string)."
+            )}],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+        s1_data = json.loads(s1.choices[0].message.content)
+        extracted_issues = s1_data.get("extracted_issues", "")
+        search_query = s1_data.get("search_query", "")
+
+        # Stage 2: Tavily live citations
+        tavily_results = []
+        tavily_key = os.environ.get("TAVILY_API_KEY")
+        if tavily_key:
+            try:
+                import sys
+                sys.path.insert(0, '.')
+                from tavily import TavilyClient
+                tc = TavilyClient(api_key=tavily_key)
+                sr = tc.search(
+                    query=f"Indian Supreme Court landmark judgments {search_query} site:indiankanoon.org",
+                    search_depth="advanced",
+                    max_results=3,
+                )
+                for r in sr.get("results", []):
+                    tavily_results.append({
+                        "title": r.get("title", ""),
+                        "snippet": r.get("content", ""),
+                        "url": r.get("url", ""),
+                    })
+            except Exception as te:
+                print(f"[Simulate Tavily Error]: {te}")
+
+        # Stage 3: Opening argument
+        s3 = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": (
+                f"Act as an Indian Advocate representing the {client_side}. "
+                "Draft a structured opening argument for your case.\n"
+                "Cite the provided web search cases where relevant.\n\n"
+                f"Facts and Issues:\n{extracted_issues}\n\n"
+                f"Live Cases Retrieved:\n{json.dumps(tavily_results, indent=2)}\n\n"
+                "Provide only the drafted argument text. No markdown code blocks."
+            )}],
+            temperature=0.3,
+        )
+        opening_argument = s3.choices[0].message.content or ""
+
+        # Stage 4: Red-team opposition
+        s4 = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": (
+                "Act as opposing counsel in this litigation.\n"
+                f"Here is the opening argument by the {client_side}:\n\n"
+                f"{opening_argument}\n\n"
+                "Identify legal weaknesses and generate aggressive counter-questions. "
+                "For each question provide a suggested rebuttal.\n\n"
+                "Return JSON with exactly one key: 'opposing_counter_questions' — "
+                "a list of objects each with 'question' and 'suggested_rebuttal'."
+            )}],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        try:
+            red_team = json.loads(s4.choices[0].message.content)
+        except Exception:
+            red_team = {"opposing_counter_questions": []}
+
+        return jsonify({
+            "simulationData": {
+                "client_side": client_side,
+                "extracted_issues": extracted_issues,
+                "live_citations": tavily_results,
+                "opening_argument": opening_argument,
+                "red_team": red_team,
+            }
+        }), 200
+
+    except Exception as e:
+        print(f"[Simulate Error]: {e}")
+        return jsonify({"error": str(e)}), 500

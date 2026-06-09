@@ -296,18 +296,120 @@ const WAR_ROOM_STYLES = `
   }
 `;
 
+const STAGE_LABELS = [
+  'Extracting legal issues...',
+  'Searching Indian Kanoon for precedents...',
+  'Drafting opening argument...',
+  'Running Red Team analysis...',
+];
+
 export default function WarRoomView() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isMounted, setIsMounted] = useState(false);
+  const [simulationData, setSimulationData] = useState(location.state?.simulationData || null);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simError, setSimError] = useState(null);
+  const [stageIndex, setStageIndex] = useState(0);
 
   useEffect(() => {
     const t = requestAnimationFrame(() => setIsMounted(true));
     return () => cancelAnimationFrame(t);
   }, []);
 
-  const simulationData = location.state?.simulationData;
+  // Run the simulation when a pendingSimulation payload is passed via route state
+  useEffect(() => {
+    const pending = location.state?.pendingSimulation;
+    if (!pending || simulationData) return;
 
+    const { documentContext, clientSide } = pending;
+    setSimLoading(true);
+    setSimError(null);
+
+    // Advance stage label every ~6 seconds to give feedback while the 4 stages run
+    let stage = 0;
+    const stageTimer = setInterval(() => {
+      stage = Math.min(stage + 1, STAGE_LABELS.length - 1);
+      setStageIndex(stage);
+    }, 6000);
+
+    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+    fetch('https://lexamplify-backend.onrender.com/api/ai/simulate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ document_content: documentContext, client_side: clientSide || 'Appellant' }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        clearInterval(stageTimer);
+        if (data.error) {
+          setSimError(data.error);
+        } else {
+          setSimulationData(data.simulationData);
+        }
+      })
+      .catch(err => {
+        clearInterval(stageTimer);
+        setSimError(err.message || 'Simulation failed. Please try again.');
+      })
+      .finally(() => setSimLoading(false));
+
+    return () => clearInterval(stageTimer);
+  }, []);
+
+  // ── Loading state ────────────────────────────────────────────
+  if (simLoading) {
+    return (
+      <>
+        <style>{WAR_ROOM_STYLES}</style>
+        <div className="wr-fallback">
+          <div className="wr-fallback-card" style={{ minWidth: '420px' }}>
+            <div className="wr-fallback-icon" style={{ animation: 'pulse-shimmer 1.5s infinite ease-in-out' }}>⚖️</div>
+            <h2 className="wr-fallback-title">Preparing War Room</h2>
+            <p className="wr-fallback-body" style={{ marginBottom: '24px' }}>
+              {STAGE_LABELS[stageIndex]}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {STAGE_LABELS.map((label, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px' }}>
+                  <div style={{
+                    width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                    background: i < stageIndex ? 'var(--accent-success)' : i === stageIndex ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                    transition: 'background 0.4s',
+                  }} />
+                  <span style={{ color: i <= stageIndex ? 'var(--text-primary)' : 'var(--text-muted)' }}>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Error state ──────────────────────────────────────────────
+  if (simError) {
+    return (
+      <>
+        <style>{WAR_ROOM_STYLES}</style>
+        <div className="wr-fallback">
+          <div className="wr-fallback-card">
+            <div className="wr-fallback-icon">🚨</div>
+            <h2 className="wr-fallback-title">Simulation Failed</h2>
+            <p className="wr-fallback-body">{simError}</p>
+            <button className="btn-accent" onClick={() => navigate('/dashboard')} style={{ padding: '10px 26px' }}>
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── No data and no pending simulation ───────────────────────
   if (!simulationData) {
     return (
       <>

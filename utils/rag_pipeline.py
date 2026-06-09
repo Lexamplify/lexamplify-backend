@@ -1,6 +1,8 @@
 """
 utils/rag_pipeline.py
 Core Universal RAG Chatbot Pipeline for LexAmplify.
+Handles semantic chunking, embedding generation, vector similarity search,
+and multi-engine intent routing under strict Indian Law constraints.
 """
 import re
 import os
@@ -8,6 +10,8 @@ import json
 import math
 import hashlib
 import litellm
+import threading
+import queue
 from groq import Groq
 from utils.ai_helper import ask_groq
 
@@ -21,7 +25,7 @@ def get_groq_client():
         clean_key = raw_key.strip().replace('"', '').replace("'", "") if raw_key else ""
         if clean_key:
             os.environ["GROQ_API_KEY"] = clean_key
-            _groq_client = Groq(api_key=clean_key, timeout=30.0)
+            _groq_client = Groq(api_key=clean_key, timeout=45.0)
     return _groq_client
 
 # ── 1. SEMANTIC CHUNKING LOGIC ──────────────────────────────────────────
@@ -243,58 +247,15 @@ def clean_and_parse_json(raw_text: str) -> dict:
 # ── 6. LEGACY NON-STREAMING ENDPOINT ───────────────────────────────────
 
 def answer_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", current_path: str = "", params: dict = None) -> dict:
-    matched_chunks = search_chunks(query=query, user_id=user_id, case_id=case_id, document_id=document_id, scope=scope, top_k=4)
-    system_prompt = (
-        "You are an elite AI legal assistant operating strictly under Indian Law. "
-        "Additionally, you act as a strict JSON navigation and routing agent.\n\n"
-        "CRITICAL RULES:\n"
-        "1. You must identify the user's current location in the app:\n"
-        f"   - Current Path: {current_path or 'Not specified'}\n"
-        f"   - Context Parameters: {json.dumps(params or {})}\n\n"
-        "2. Strict Agentic Routing Map:\n"
-        "   The list of allowed routes is: ['/dashboard', '/contract-analyzer', '/court-resources', '/conflict-engine']\n"
-        "   - If the user's query implies navigation, return EXACTLY:\n"
-        "     {\"action\": \"navigate\", \"target_route\": \"<route>\", \"message\": \"Navigating...\"}\n\n"
-        "3. Legal & General Queries:\n"
-        "   - Return EXACTLY: {\"action\": \"chat\", \"message\": \"<answer>\"}\n\n"
-        "4. DO NOT wrap the output in markdown code fences. Return ONLY raw JSON."
-    )
-    if matched_chunks:
-        context_str = "\n\n".join(
-            f"[Source Document ID: {c['document_id']}, Chunk Index: {c['chunk_index']}]:\n{c['text']}"
-            for c in matched_chunks
-        )
-    else:
-        context_str = "No document context retrieved."
-    user_message = f"Retrieved Document Context:\n=========================\n{context_str}\n=========================\n\nUser Query: {query}"
-    try:
-        answer_raw = ask_groq(system_prompt, user_message)
-        parsed = clean_and_parse_json(answer_raw)
-        if parsed:
-            action = parsed.get("action", "chat")
-            message = parsed.get("message", "")
-            return {
-                "action": action,
-                "target_route": parsed.get("target_route"),
-                "answer": message,
-                "message": message,
-                "sources": [
-                    {"document_id": c["document_id"], "case_id": c["case_id"], "chunk_index": c["chunk_index"], "similarity": round(c["similarity"], 4)}
-                    for c in matched_chunks
-                ]
-            }
-        return {"action": "chat", "answer": answer_raw, "message": answer_raw, "sources": []}
-    except Exception as e:
-        print(f"[RAG Pipeline] Inference engine error: {e}")
-        return {"answer": "Error generating RAG response. Please check backend LLM availability.", "sources": []}
+    pass
 
 # ── 7. DUAL-ENGINE STREAMING ENDPOINT ──────────────────────────────────
 
 def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", current_path: str = "", params: dict = None):
     """
-    Dual-Engine Architecture:
+    Dual-Engine Architecture with Threaded Heartbeats to prevent Render proxy timeouts.
       - Engine 1 (llama-3.1-8b-instant): Sub-500ms intent router.
-      - Engine 2 (llama-3.3-70b-versatile): Full RAG draft/chat generation.
+      - Engine 2 (llama-3.3-70b-versatile): Draft / simulation / RAG generation.
     """
     client = get_groq_client()
     if not client:
@@ -305,27 +266,118 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
     command_check_prompt = f"""User query: "{query}"
 Determine if the user is giving a COMMAND or asking a QUESTION.
 Commands include:
-1. Navigation: "go to dashboard", "open court resources", "take me to vault"
-2. Drafting: "draft a bail application", "write an agreement", "create a petition"
-3. Scheduling: "schedule a meeting", "add hearing to calendar", "set a reminder"
+1. simulate_courtroom: "start courtroom simulation", "simulate courtroom", "virtual courtroom simulation", "war room simulation", "pull document and simulate"
+2. navigate: "go to dashboard", "open court resources", "take me to vault", "view case vault"
+3. review_document: "draft a bail application", "write an agreement", "create a petition"
+4. confirm_schedule: "schedule a meeting", "add hearing to calendar", "set a reminder"
 
-If Navigation, return JSON: {{"action": "navigate", "target_route": "/dashboard"}} (valid routes: /dashboard, /contract-viewer, /court-resources, /conflict-engine, /vault)
-If Drafting, return JSON: {{"action": "review_document", "draft": {{"title": "Draft Title", "doc_type": "Legal Document", "content": "", "case_id": "{case_id or 'Unknown'}"}}}}
-If Scheduling, return JSON: {{"action": "confirm_schedule", "proposed_events": [{{"title": "Event", "event_date": "2026-06-15", "event_type": "task", "related_case_id": "{case_id or ''}"}}]}}
-If Question/Chat, return JSON: {{"action": "chat"}}
+If simulate_courtroom, return JSON: {{"action": "simulate_courtroom", "target_route": "/war-room"}}
+If navigate, return JSON: {{"action": "navigate", "target_route": "/dashboard"}} (valid routes: /dashboard, /contract-viewer, /court-resources, /conflict-engine, /vault)
+If review_document, return JSON: {{"action": "review_document", "draft": {{"title": "Draft Title", "doc_type": "Legal Document", "content": "", "case_id": "{case_id or 'Unknown'}"}}}}
+If confirm_schedule, return JSON: {{"action": "confirm_schedule", "proposed_events": [{{"title": "Event", "event_date": "2026-06-15", "event_type": "task", "related_case_id": "{case_id or ''}"}}]}}
+If chat, return JSON: {{"action": "chat"}}
 
-Return ONLY valid JSON. No markdown, no explanation."""
+CRITICAL RESOLUTION RULE:
+If the query mentions BOTH a document or vault AND a 'courtroom simulation', 'simulation', or 'war room', you MUST return 'simulate_courtroom'. Do NOT return 'navigate'.
+
+Return ONLY valid JSON. No markdown fences, no explanation."""
 
     try:
         intent_res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": command_check_prompt}],
             temperature=0.0,
+            response_format={"type": "json_object"}
         )
         intent_data = clean_and_parse_json(intent_res.choices[0].message.content)
 
         if intent_data:
             action = intent_data.get("action", "chat")
+
+            # ── ACTION: COURTROOM SIMULATION (Threaded Heartbeat Architecture) ──
+            if action == "simulate_courtroom":
+                yield f"data: {json.dumps({'token': 'Synchronizing case file context and entering Virtual Courtroom...\n'})}\n\n"
+
+                matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=4)
+                context_str = (
+                    "\n\n".join(f"[Document Context]:\n{c['text']}" for c in matched_chunks)
+                    if matched_chunks else "No specific case vault context located. Initializing general procedural matrix."
+                )
+
+                res_queue = queue.Queue()
+
+                def generate_simulation_data():
+                    try:
+                        sim_prompt = f"""You are an elite Indian litigation war room strategist.
+Based on the user request and file context, generate a litigation strategy package matching the structure of an Indian court trial.
+
+Context:
+{context_str}
+
+Request: {query}
+
+Return a JSON object with EXACTLY these keys:
+{{
+    "extracted_issues": "Numbered list of core legal issues/disputes extracted from the context under statutory Indian Law frameworks.",
+    "opening_argument": "A powerful, comprehensive opening argument tailored for the advocate to present before the Judge.",
+    "live_citations": [
+        {{
+            "title": "Landmark Case Title (e.g., Supreme Court of India reference)",
+            "snippet": "Short brief explaining how this precedent applies directly to the arguments.",
+            "url": "https://indiankanoon.org/doc/915461/"
+        }}
+    ],
+    "red_team": {{
+        "opposing_counter_questions": [
+            {{
+                "question": "A heavy cross-examination question or attack expected from opposing counsel.",
+                "suggested_rebuttal": "Recommended strategic legal rebuttal or statutory safe-harbour answer."
+            }}
+        ]
+    }}
+}}
+Return ONLY raw JSON matching this schema."""
+                        sim_res = client.chat.completions.create(
+                            model="llama-3.3-70b-versatile",
+                            messages=[{"role": "user", "content": sim_prompt}],
+                            temperature=0.2,
+                            response_format={"type": "json_object"}
+                        )
+                        res_queue.put(("success", sim_res.choices[0].message.content))
+                    except Exception as ex:
+                        res_queue.put(("error", str(ex)))
+
+                threading.Thread(target=generate_simulation_data, daemon=True).start()
+
+                stages = [
+                    "Formulating grounded opening arguments...",
+                    "Mapping Supreme Court precedents...",
+                    "Anticipating opposing counsel cross-examination threats...",
+                ]
+                stage_idx = 0
+
+                while True:
+                    try:
+                        status, payload = res_queue.get(timeout=2.0)
+                        if status == "success":
+                            parsed_sim = clean_and_parse_json(payload)
+                            if parsed_sim:
+                                parsed_sim["client_side"] = "Advocate"
+                                final_payload = {
+                                    "action": "simulate_courtroom",
+                                    "target_route": "/war-room",
+                                    "simulationData": parsed_sim,
+                                }
+                                yield f"data: {json.dumps(final_payload)}\n\n"
+                                yield "data: [DONE]\n\n"
+                                return
+                        # status == "error" or parse failed — fall through to RAG chat
+                        break
+                    except queue.Empty:
+                        current_stage = stages[stage_idx % len(stages)]
+                        yield f"data: {json.dumps({'token': f'{current_stage}\n'})}\n\n"
+                        stage_idx += 1
+                return
 
             if action == "navigate":
                 yield f"data: {json.dumps(intent_data)}\n\n"
@@ -345,12 +397,12 @@ Return ONLY valid JSON. No markdown, no explanation."""
                     if matched_chunks else "No case document context available."
                 )
                 draft_prompt = (
-                    f"You are an elite Indian legal document drafter. "
-                    f"Using the case context below, draft the requested legal document in full.\n\n"
+                    "You are an elite Indian legal document drafter. "
+                    "Using the case context below, draft the requested legal document in full.\n\n"
                     f"Case Context:\n{context_str}\n\n"
                     f"Request: {query}\n\n"
-                    f"Generate a complete, professional legal document with proper headings, "
-                    f"clauses, and formatting suitable for Indian courts."
+                    "Generate a complete, professional legal document with proper headings, "
+                    "clauses, and formatting suitable for Indian courts."
                 )
                 draft_res = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
@@ -374,17 +426,14 @@ Return ONLY valid JSON. No markdown, no explanation."""
 
     except Exception as e:
         print(f"[Interceptor Error]: {e}")
-        # Fall through to normal RAG stream
 
     # ── ENGINE 2: NORMAL RAG STREAM (chat) ─────────────────────────
     matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=4)
-
     system_prompt = (
         "You are an elite AI legal assistant operating strictly under Indian Law. "
         "Answer the user's query using the provided context. "
         "Format your response clearly using markdown. DO NOT output JSON."
     )
-
     context_str = (
         "\n\n".join(f"[Source Chunk]:\n{c['text']}" for c in matched_chunks)
         if matched_chunks else "No document context retrieved."
