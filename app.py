@@ -161,10 +161,12 @@ def create_app():
     def add_cors_headers(response):
         origin = request.headers.get('Origin')
         if origin in ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://lexamplify-4.web.app', 'https://test.lexamplify.com']:
-            response.headers.add('Access-Control-Allow-Origin', origin)
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
-            response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-            response.headers.add('Access-Control-Allow-Credentials', 'true')
+            # Use direct assignment so we never produce duplicate CORS headers
+            # (SSE responses pre-set these; .add() would append a second value)
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Accept'
+            response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
 
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')

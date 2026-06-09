@@ -154,6 +154,17 @@ def rag_chat():
                 yield f"data: {error_msg}\n\n"
 
         # Wrap the safe generator in a Flask Response
+        # CORS headers are set by the global add_cors_headers handler in app.py.
+        # Do NOT hardcode '*' here — it conflicts with Access-Control-Allow-Credentials: true.
+        allowed_origins = [
+            'http://localhost:5173',
+            'http://127.0.0.1:5173',
+            'https://lexamplify-4.web.app',
+            'https://test.lexamplify.com',
+        ]
+        request_origin = request.headers.get('Origin', '')
+        cors_origin = request_origin if request_origin in allowed_origins else 'http://localhost:5173'
+
         return Response(
             stream_with_context(safe_stream_generator()),
             mimetype='text/event-stream',
@@ -161,7 +172,8 @@ def rag_chat():
                 'Cache-Control': 'no-cache',
                 'X-Accel-Buffering': 'no',
                 'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': cors_origin,
+                'Access-Control-Allow-Credentials': 'true',
             }
         )
 
