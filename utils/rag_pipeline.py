@@ -11,7 +11,21 @@ import json
 import math
 import hashlib
 import litellm
+from groq import Groq
 from utils.ai_helper import ask_groq
+
+# ── LAZY CLIENT SINGLETON PATTERN ───────────────────────────────────
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        raw_key = os.environ.get("GROQ_API_KEY", "")
+        clean_key = raw_key.strip().replace('"', '').replace("'", "") if raw_key else ""
+        if clean_key:
+            os.environ["GROQ_API_KEY"] = clean_key
+            _groq_client = Groq(api_key=clean_key, timeout=30.0)
+    return _groq_client
 
 # ── 1. SEMANTIC CHUNKING LOGIC ──────────────────────────────────────────
 
@@ -251,6 +265,9 @@ def search_chunks(query: str, user_id: int, case_id: int = None, document_id: in
             sql += " AND case_id = ?"
             params.append(case_id)
             
+    # CRITICAL FIX: Append the safety limit before executing
+    sql += " ORDER BY created_at DESC LIMIT 500"
+            
     conn = sqlite3.connect('lex_assistant.db')
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -457,12 +474,11 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         context_str = "No document context retrieved."
         
     user_message = f"Retrieved Context:\n{context_str}\n\nUser Query: {query}"
-    safe_groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-    client = Groq(api_key=safe_groq_key)
-
-    # Bonus safety: If litellm uses the env var for embeddings higher up, 
-    # overwrite the global env var so litellm doesn't crash either:
-    os.environ["GROQ_API_KEY"] = safe_groq_key
+    
+    client = get_groq_client()
+    if not client:
+        yield f"data: {json.dumps({'token': '[System Error: GROQ_API_KEY is missing or invalid on server.]'})}\n\n"
+        return
     
     try:
         # 1. Yield metadata immediately so the UI can log the sources instantly
@@ -472,7 +488,7 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         }
         yield f"data: {json.dumps({'metadata': metadata})}\n\n"
         
-        # 2. Open the Groq Stream
+        # 2. Open the Groq Stream via singleton
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[

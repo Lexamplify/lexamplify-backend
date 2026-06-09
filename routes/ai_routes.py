@@ -147,7 +147,10 @@ def rag_chat():
     Parses current location path and parameters, and executes agentic routing.
     """
     try:
-        user_id = int(get_jwt_identity())
+        user_identity = get_jwt_identity()
+        if not str(user_identity).isdigit():
+            return jsonify({"error": True, "message": "Invalid authentication token format."}), 401
+        user_id = int(user_identity)
         data = request.get_json(silent=True)
         if not data:
             return jsonify({
