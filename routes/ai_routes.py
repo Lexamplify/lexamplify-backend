@@ -191,7 +191,13 @@ def rag_chat():
             stream_with_context(
                 stream_rag_query(query, user_id, case_id, document_id, scope, current_path, params)
             ),
-            mimetype='text/event-stream'
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*'
+            }
         )
 
     except Exception as e:

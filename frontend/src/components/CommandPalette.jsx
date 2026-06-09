@@ -248,6 +248,7 @@ export default function CommandPalette() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedDraft = "";
+      let buffer = '';
 
       const messageId = Date.now();
       setMessages(prev => [...prev, { id: messageId, role: 'assistant', text: '', sources: [] }]);
@@ -256,13 +257,18 @@ export default function CommandPalette() {
         const { value, done } = await reader.read();
         if (done) break;
 
-        const chunkText = decoder.decode(value, { stream: true });
-        const lines = chunkText.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        
+        // SSE lines typically end in \n\n or \r\r\n
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep the incomplete line in the buffer
         
         for (const line of lines) {
-          if (line.startsWith('data: ') && !line.includes('data: [DONE]')) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
+            const jsonString = trimmed.replace(/^data:\s*/, '');
             try {
-              const parsed = JSON.parse(line.replace('data: ', ''));
+              const parsed = JSON.parse(jsonString);
               
               if (parsed.metadata) {
                  setMessages(prev => prev.map(msg => 
