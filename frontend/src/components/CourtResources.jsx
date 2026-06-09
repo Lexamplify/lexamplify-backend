@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   fetchCourtGlobals,
   fetchCourtData,
@@ -429,7 +429,19 @@ const DISTRICT_JUDGES_DB = {
 };
 
 export default function CourtResources() {
+  const location = useLocation();
+
   const [activeTab, setActiveTab] = useState('supreme');
+
+  // ── Deep-link from AI Legal Associate navigation ──────────────────────────
+  // When the AI navigates here with { state: { openTab: 'highcourt' } }, auto-switch tab
+  useEffect(() => {
+    const requestedTab = location.state?.openTab;
+    const VALID_TABS = ['supreme','highcourt','district','laws','forms','events','courtfee','enotary','iptracker'];
+    if (requestedTab && VALID_TABS.includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [location.state]);
   const [globals, setGlobals] = useState({ sc_courts: [], bare_acts: [], events: [], cause_list_urls: {} });
   const [loadingGlobals, setLoadingGlobals] = useState(true);
   
