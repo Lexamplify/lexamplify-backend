@@ -186,11 +186,20 @@ def rag_chat():
         from utils.rag_pipeline import stream_rag_query
         from flask import Response, stream_with_context
         
-        # Wrap the generator in a Flask Response with the event-stream mimetype
+        def safe_stream_generator():
+            try:
+                # Attempt to stream from the pipeline
+                for chunk in stream_rag_query(query, user_id, case_id, document_id, scope, current_path, params):
+                    yield chunk
+            except Exception as e:
+                # If rag_pipeline crashes, stream the exact error into the frontend UI!
+                print(f"[PIPELINE CRASH]: {e}")
+                error_msg = json.dumps({'token': f"\n\n[System Error: {str(e)}]\nCheck Render logs for utils/rag_pipeline.py"})
+                yield f"data: {error_msg}\n\n"
+
+        # Wrap the safe generator in a Flask Response
         return Response(
-            stream_with_context(
-                stream_rag_query(query, user_id, case_id, document_id, scope, current_path, params)
-            ),
+            stream_with_context(safe_stream_generator()),
             mimetype='text/event-stream',
             headers={
                 'Cache-Control': 'no-cache',
