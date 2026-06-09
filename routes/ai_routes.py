@@ -31,133 +31,86 @@ Read the given legal document text and return a JSON object with EXACTLY these f
 Rules:
 - summary: Plain English, no legal jargon, 3-4 sentences
 - key_points: Exactly 5 most important points from the document
-- law_sections: All Indian law sections, acts, or articles mentioned OR applicable
-- document_type: Best guess at what type of Indian legal document this is
-- Return ONLY the JSON object. No markdown fences. No explanation.
-- Start your response with { and end with }
+- law_sections: List relevant Indian law sections explicitly mentioned or heavily implied
+- document_type: Match exactly one of the listed categories
+- Do not add any extra commentary or wrap in markdown backticks. Return RAW JSON.
 """
-
-# ── Legal Chatbot Prompt ───────────────────────────────────────
-CHATBOT_PROMPT = """
-You are a knowledgeable Indian legal assistant helping lawyers and citizens understand Indian law.
-
-Rules:
-- Answer in plain English — no heavy legal jargon
-- Keep answers to 4-8 sentences
-- Always reference the specific Indian law, IPC section, CrPC section,
-  Constitutional article, or Act that applies
-- Be accurate and helpful
-- Always end your response with exactly this line:
-  "Note: This is general legal information. Please consult a qualified lawyer for advice specific to your case."
-
-You specialize in: IPC, CrPC, Indian Contract Act 1872, Constitution of India,
-Consumer Protection Act, Labour Laws, Family Law, Property Law, Criminal Law.
-"""
-
-
-def safe_parse_json(raw: str) -> dict:
-    """Robustly extract JSON object from Gemini response."""
-    raw = re.sub(r"```json|```", "", raw).strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        pass
-    start = raw.find('{')
-    end = raw.rfind('}')
-    if start != -1 and end != -1:
-        try:
-            return json.loads(raw[start:end + 1])
-        except Exception:
-            pass
-    return None
-
 
 @ai_bp.route("/summarize", methods=["POST"])
-def summarize():
-    text = ""
-
-    if request.files.get("file"):
-        f = request.files["file"]
-        fname = f.filename.lower()
-        data = f.read()
-        if fname.endswith(".pdf"):
-            text = extract_text_for_summary(data, "pdf")
-        elif fname.endswith(".docx"):
-            text = extract_text_for_summary(data, "docx")
-        else:
-            text = data.decode("utf-8", errors="ignore")[:2500]
-
-    elif request.is_json:
-        text = request.json.get("text", "").strip()[:2500]
-
-    if not text:
-        return jsonify({"error": "No content provided."}), 400
-
+@jwt_required()
+def summarize_document():
     try:
-        # Step 1: AI summary
-        raw = ask_gemini(SUMMARIZER_PROMPT, f"Document text:\n{text}")
-        result = safe_parse_json(raw)
+        if "file" not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+            
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No selected file"}), 400
 
-        if not result:
-            result = {
-                "summary": raw[:500],
-                "key_points": ["Please review the document manually."],
-                "law_sections": [],
-                "document_type": "Unknown"
-            }
+        text = extract_text_for_summary(file)
+        if not text or len(text.strip()) < 10:
+            return jsonify({"error": "Could not extract readable text from document"}), 400
 
-        # Step 2: Find India Kanoon citations
-        try:
-            citations = find_citations_for_document(text, ask_gemini)
-            result["citations"] = citations
-        except Exception as ce:
-            print(f"[Citation error]: {ce}")
-            result["citations"] = []
+        # Call Gemini for structural JSON breakdown
+        raw_response = ask_gemini(f"{SUMMARIZER_PROMPT}\n\nDocument Text:\n{text[:25000]}")
+        
+        # Clean potential markdown wrapping safely
+        cleaned = re.sub(r"```json\s*|\s*```", "", raw_response).strip()
+        analysis = json.loads(cleaned)
 
-        return jsonify(result)
+        # ── Find Indian Kanoon Citations Based on Key Sections ──
+        citations = find_citations_for_document(text)
+        analysis["citations"] = citations
+
+        return jsonify(analysis), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[Summarizer Error]: {e}")
+        return jsonify({"error": "Failed to analyze document structure."}), 500
 
 
+# ── Legal Chatbot Endpoint ──────────────────────────────────────
 @ai_bp.route("/chat", methods=["POST"])
-def chat():
-    return redirect("/api/chat", code=307)
-
-
-@ai_bp.route("/citations", methods=["POST"])
-def get_citations():
-    """Standalone endpoint to find citations for any text."""
-    data = request.get_json()
-    text = data.get("text", "").strip()
-    if not text:
-        return jsonify({"error": "No text provided."}), 400
+@jwt_required()
+def general_chat():
     try:
-        citations = find_citations_for_document(text, ask_gemini)
-        return jsonify({"citations": citations})
+        data = request.get_json() or {}
+        message = data.get("message", "").strip()
+        
+        if not message:
+            return jsonify({"error": "Message is empty"}), 400
+
+        system_prompt = (
+            "You are LexAmplify, an advanced AI legal assistant specializing exclusively in Indian Law. "
+            "Provide accurate, professional, cite-supported information covering the IPC, BNS, CrPC, "
+            "Indian Contract Act, Constitution of India, and landmarks. Always structure response clearly."
+        )
+        
+        response = ask_gemini(f"System: {system_prompt}\nUser: {message}")
+        return jsonify({"response": response}), 200
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[Chat Error]: {e}")
+        return jsonify({"error": "Chat connection timed out."}), 500
 
 
+# ── Universal RAG Chatbot with SSE Streaming ────────────────────
 @ai_bp.route("/rag-chat", methods=["POST"])
 @jwt_required()
 def rag_chat():
-    """
-    Secure, context-aware Universal RAG chatbot (Indian Law) endpoint.
-    Parses current location path and parameters, and executes agentic routing.
-    """
     try:
         user_identity = get_jwt_identity()
+        
+        # 🚨 FIXED CRITICAL SECURITY HOLE: Reject bad tokens completely. No fallback to User 1!
         if not str(user_identity).isdigit():
-            return jsonify({"error": True, "message": "Invalid authentication token format."}), 401
-        user_id = int(user_identity)
-        data = request.get_json(silent=True)
-        if not data:
             return jsonify({
                 "error": True,
-                "message": "Agent processing failed."
-            }), 500
-
+                "message": "Invalid authentication token format. Access denied."
+            }), 401
+            
+        user_id = int(user_identity)
+        
+        data = request.get_json(silent=True) or {}
         query = data.get("query", "").strip()
         current_path = data.get("currentPath", "")
         params = data.get("params", {})
