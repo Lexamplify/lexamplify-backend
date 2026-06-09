@@ -457,7 +457,12 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         context_str = "No document context retrieved."
         
     user_message = f"Retrieved Context:\n{context_str}\n\nUser Query: {query}"
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    safe_groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    client = Groq(api_key=safe_groq_key)
+
+    # Bonus safety: If litellm uses the env var for embeddings higher up, 
+    # overwrite the global env var so litellm doesn't crash either:
+    os.environ["GROQ_API_KEY"] = safe_groq_key
     
     try:
         # 1. Yield metadata immediately so the UI can log the sources instantly
