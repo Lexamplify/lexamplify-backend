@@ -11,6 +11,7 @@ import {
 } from '../services/api';
 
 const styles = `
+  /* ── ANALYZER CONTAINER ──────────────────────────────────────────── */
   .analyzer-container {
     font-family: var(--font-sans);
     color: var(--text-dark-primary);
@@ -18,59 +19,86 @@ const styles = `
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: var(--bg-dark-app);
   }
 
+  /* ── HEADER BAR ─────────────────────────────────────────────────── */
   .analyzer-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
+    padding: 14px 28px;
+    background: var(--bg-dark-sidebar);
+    border-bottom: 1px solid var(--border-dark-subtle);
+    flex-shrink: 0;
     gap: 12px;
+    flex-wrap: wrap;
   }
 
-  .strategy-select-container {
+  .analyzer-title-block { display: flex; flex-direction: column; gap: 2px; }
+  .analyzer-title { font-size: 18px; font-weight: 700; color: #fff; font-family: var(--font-serif); margin: 0; line-height: 1.2; }
+  .analyzer-subtitle { font-size: 11.5px; color: var(--text-dark-muted); margin: 0; }
+
+  .analyzer-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  /* ── RISK METRICS STRIP ─────────────────────────────────────────── */
+  .risk-metrics-strip {
     display: flex;
     align-items: center;
     gap: 8px;
-    background-color: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    padding: 6px 12px;
-    border-radius: 8px;
-  }
-
-  .strategy-dropdown {
-    background: transparent;
-    border: none;
-    color: white;
-    font-weight: 600;
-    font-size: 13.5px;
-    outline: none;
-    cursor: pointer;
-  }
-
-  .strategy-dropdown option {
-    background-color: var(--bg-dark-panel);
-    color: white;
-  }
-
-  .summary-banner {
-    background-color: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    border-radius: 8px;
-    padding: 12px 18px;
-    margin-bottom: 16px;
-    font-size: 13.5px;
-    line-height: 1.5;
+    padding: 10px 28px;
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid var(--border-dark-subtle);
     flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .risk-metric-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border: 1px solid;
+    cursor: default;
+  }
+  .risk-metric-pill.high  { background: rgba(239,68,68,0.12); color: #FCA5A5; border-color: rgba(239,68,68,0.3); }
+  .risk-metric-pill.amber { background: rgba(245,158,11,0.12); color: #FCD34D; border-color: rgba(245,158,11,0.3); }
+  .risk-metric-pill.green { background: rgba(16,185,129,0.12); color: #6EE7B7; border-color: rgba(16,185,129,0.3); }
+  .risk-metric-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .risk-metric-dot.red   { background: #EF4444; box-shadow: 0 0 5px #EF4444; }
+  .risk-metric-dot.amber { background: #F59E0B; box-shadow: 0 0 5px #F59E0B; }
+  .risk-metric-dot.green { background: #10B981; box-shadow: 0 0 5px #10B981; }
+
+  /* Risk bar progress */
+  .risk-bar-track {
+    flex: 1; height: 4px; background: rgba(255,255,255,0.06); border-radius: 4px;
+    overflow: hidden; min-width: 80px;
+  }
+  .risk-bar-fill-red   { display: inline-block; height: 100%; background: #EF4444; }
+  .risk-bar-fill-amber { display: inline-block; height: 100%; background: #F59E0B; }
+  .risk-bar-fill-green { display: inline-block; height: 100%; background: #10B981; }
+
+  /* ── SUMMARY BANNER ─────────────────────────────────────────────── */
+  .summary-banner {
+    background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(99,102,241,0.06));
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 0;
+    border-left: 3px solid var(--accent-primary);
+    padding: 12px 28px;
+    font-size: 13px;
+    line-height: 1.6;
+    flex-shrink: 0;
+    color: #CBD5E1;
   }
 
-  /* Split Pane Workspace */
+  /* ── SPLIT PANE ──────────────────────────────────────────────────── */
   .workspace-pane {
     flex: 1;
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;
-    gap: 20px;
+    gap: 0;
     overflow: hidden;
     height: 100%;
   }
@@ -83,19 +111,18 @@ const styles = `
     }
   }
 
-  /* Left Pane: Editor & Code */
+  /* ── EDITOR COLUMN ───────────────────────────────────────────────── */
   .editor-column {
-    background-color: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 12px;
+    background: var(--bg-dark-panel);
+    border-right: 1px solid var(--border-dark-subtle);
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
   .editor-header-bar {
-    background-color: var(--bg-dark-sidebar);
-    padding: 12px 20px;
+    background: var(--bg-dark-sidebar);
+    padding: 10px 16px;
     border-bottom: 1px solid var(--border-dark-subtle);
     display: flex;
     justify-content: space-between;
@@ -103,109 +130,91 @@ const styles = `
     flex-shrink: 0;
   }
 
-  .editor-tabs {
-    display: flex;
-    gap: 8px;
-  }
+  .editor-tabs { display: flex; gap: 4px; }
 
   .editor-tab-btn {
     background: transparent;
     border: none;
     color: var(--text-dark-muted);
-    padding: 6px 12px;
+    padding: 6px 14px;
     font-size: 12.5px;
     font-weight: 500;
     cursor: pointer;
-    border-radius: 4px;
-    transition: all 0.2s;
+    border-radius: 5px;
+    transition: all 0.18s;
+    border-bottom: 2px solid transparent;
   }
+  .editor-tab-btn:hover { color: white; background: rgba(255,255,255,0.04); }
+  .editor-tab-btn.active { color: var(--accent-primary); background: rgba(59,130,246,0.08); font-weight: 600; border-bottom-color: var(--accent-primary); border-radius: 5px 5px 0 0; }
 
-  .editor-tab-btn:hover {
-    color: white;
-    background-color: rgba(255, 255, 255, 0.03);
-  }
-
-  .editor-tab-btn.active {
-    color: white;
-    background-color: rgba(255, 255, 255, 0.08);
-    font-weight: 600;
-  }
-
-  /* Rich Text Formatting Toolbar */
+  /* ── RICH TEXT TOOLBAR ───────────────────────────────────────────── */
   .rich-text-toolbar {
-    background-color: #1f2937 !important; /* bg-gray-800 */
-    border-bottom: 1px solid #374151 !important; /* border-gray-700 */
+    background: #111827;
+    border-bottom: 1px solid #1F2937;
     display: flex;
-    gap: 6px;
-    padding: 8px 16px;
-    flex-wrap: wrap;
+    gap: 2px;
+    padding: 6px 12px;
     align-items: center;
+    flex-wrap: wrap;
   }
 
   .toolbar-btn {
     background: transparent;
     border: none;
-    color: #e5e7eb !important; /* text-gray-200 */
-    padding: 4px 8px;
+    color: #9CA3AF;
+    padding: 4px 7px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     min-width: 28px;
-    height: 28px;
-    transition: all 0.2s ease-in-out;
+    height: 26px;
+    transition: all 0.15s;
   }
+  .toolbar-btn:hover { background: #1F2937; color: #fff; }
+  .toolbar-btn svg { pointer-events: none; }
 
-  .toolbar-btn:hover {
-    background-color: #374151 !important; /* hover bg-gray-700 */
-    color: #ffffff !important;
-  }
+  .toolbar-divider { width: 1px; height: 16px; background: #1F2937; margin: 0 4px; }
 
-  .toolbar-divider {
-    width: 1px;
-    height: 18px;
-    background-color: #374151; /* gray-700 */
-    margin: 0 4px;
-  }
-
+  /* ── EDITOR SCROLL ───────────────────────────────────────────────── */
   .editor-scroll-area {
     flex: 1;
     overflow-y: auto;
-    padding: 32px;
-    background-color: #F9F9F9;
+    padding: 24px 28px;
+    background: #F8F7F5;
     color: #1F2937;
   }
 
   .scanner-body {
     outline: none;
-    font-family: var(--font-serif);
-    font-size: 18px !important;
-    line-height: 1.625 !important;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 15px !important;
+    line-height: 1.8 !important;
     white-space: pre-wrap;
-    color: #1F2937;
-    min-height: 70vh !important;
-    padding: 40px !important;
-    background-color: #ffffff;
-    border-radius: 4px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    color: #1a1a1a;
+    min-height: 65vh !important;
+    padding: 40px 48px !important;
+    background: #ffffff;
+    border-radius: 2px;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
     box-sizing: border-box;
+    border: 1px solid #e8e4de;
+    letter-spacing: 0.01em;
   }
 
-  /* Right Pane: Analysis Workspace */
+  /* ── ANALYSIS COLUMN ─────────────────────────────────────────────── */
   .analysis-column {
-    background-color: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 12px;
+    background: var(--bg-dark-panel);
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
   .analysis-tabs-bar {
-    background-color: var(--bg-dark-sidebar);
+    background: var(--bg-dark-sidebar);
     border-bottom: 1px solid var(--border-dark-subtle);
     display: flex;
     overflow-x: auto;
@@ -216,462 +225,366 @@ const styles = `
     background: transparent;
     border: none;
     color: var(--text-dark-muted);
-    padding: 14px 16px;
-    font-size: 13px;
+    padding: 13px 14px;
+    font-size: 12.5px;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
     border-bottom: 2px solid transparent;
+    transition: all 0.2s;
   }
-
-  .analysis-tab-btn:hover {
-    color: white;
-    background-color: rgba(255, 255, 255, 0.02);
-  }
-
-  .analysis-tab-btn.active {
-    color: var(--accent-primary);
-    border-bottom-color: var(--accent-primary);
-    font-weight: 600;
-  }
+  .analysis-tab-btn:hover { color: white; }
+  .analysis-tab-btn.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary); font-weight: 600; }
 
   .analysis-panel-body {
     flex: 1;
     overflow-y: auto;
-    position: relative;
+    padding: 18px;
     display: flex;
     flex-direction: column;
+    gap: 14px;
   }
 
-  /* Initial Upload Layout */
+  /* ── UPLOAD / LANDING SCREEN ────────────────────────────────────── */
   .upload-layout-container {
-    background-color: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 12px;
-    padding: 30px;
-    max-width: 720px;
-    margin: 40px auto;
+    max-width: 680px;
+    margin: 32px auto;
     width: 100%;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .upload-hero {
+    background: linear-gradient(135deg, var(--bg-dark-panel) 0%, #0F172A 100%);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 16px 16px 0 0;
+    padding: 32px 32px 24px;
+    text-align: center;
+  }
+
+  .upload-icon-ring {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(59,130,246,0.1); border: 2px solid rgba(59,130,246,0.25);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 26px;
   }
 
   .drag-drop-zone {
-    border: 2px dashed var(--border-dark-subtle);
-    background-color: var(--bg-dark-app);
-    border-radius: 10px;
-    padding: 40px 20px;
+    border: 2px dashed rgba(59,130,246,0.3);
+    background: rgba(59,130,246,0.02);
+    border-radius: 12px;
+    padding: 36px 20px;
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.2s, background-color 0.2s;
-    margin-bottom: 20px;
+    transition: all 0.2s;
+    margin-bottom: 0;
   }
-
   .drag-drop-zone:hover, .drag-drop-zone.dragover {
     border-color: var(--accent-primary);
-    background-color: rgba(59, 130, 246, 0.03);
+    background: rgba(59,130,246,0.05);
+  }
+
+  .upload-body {
+    background: var(--bg-dark-panel);
+    border: 1px solid var(--border-dark-subtle);
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    padding: 24px 32px 32px;
   }
 
   .input-textarea {
     width: 100%;
-    height: 180px;
-    background-color: var(--bg-dark-app);
+    height: 140px;
+    background: rgba(255,255,255,0.03);
     border: 1px solid var(--border-dark-subtle);
     color: var(--text-dark-primary);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 14px;
     font-family: var(--font-sans);
     font-size: 13.5px;
     resize: none;
     outline: none;
-    margin-bottom: 20px;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
   }
+  .input-textarea:focus { border-color: var(--accent-primary); }
 
-  /* Risk markers & Details view */
-  .risk-stat-bar {
+  /* ── RISK CLAUSE LIST (overview when no clause selected) ────────── */
+  .clause-list-item {
     display: flex;
-    gap: 12px;
-    margin-bottom: 16px;
-    font-size: 12.5px;
-  }
-
-  .risk-stat-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background-color: rgba(255, 255, 255, 0.03);
-    padding: 4px 10px;
-    border-radius: 20px;
-    border: 1px solid var(--border-dark-subtle);
-  }
-
-  .risk-indicator-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-  }
-
-  .risk-indicator-dot.red { background-color: var(--accent-danger); box-shadow: 0 0 6px var(--accent-danger); }
-  .risk-indicator-dot.amber { background-color: var(--accent-warning); box-shadow: 0 0 6px var(--accent-warning); }
-  .risk-indicator-dot.green { background-color: var(--accent-success); box-shadow: 0 0 6px var(--accent-success); }
-
-  .inspected-risk-card {
-    background-color: var(--bg-dark-card);
-    border: 1px solid var(--border-dark-subtle);
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
     border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 16px;
+    border: 1px solid var(--border-dark-subtle);
+    cursor: pointer;
+    transition: all 0.18s;
+    background: rgba(255,255,255,0.01);
+  }
+  .clause-list-item:hover { background: rgba(255,255,255,0.04); border-color: rgba(59,130,246,0.3); }
+  .clause-list-item.red-item { border-left: 3px solid #EF4444; }
+  .clause-list-item.amber-item { border-left: 3px solid #F59E0B; }
+  .clause-number { font-size: 10px; font-weight: 700; color: var(--text-dark-muted); min-width: 18px; margin-top: 2px; }
+  .clause-text-preview { font-size: 12.5px; color: #D1D5DB; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .clause-risk-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; white-space: nowrap; margin-left: auto; flex-shrink: 0; }
+  .clause-risk-badge.red   { background: rgba(239,68,68,0.15);  color: #FCA5A5; }
+  .clause-risk-badge.amber { background: rgba(245,158,11,0.15); color: #FCD34D; }
+
+  /* ── INSPECTED RISK CARD ─────────────────────────────────────────── */
+  .inspected-risk-card {
+    background: var(--bg-dark-card);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 10px;
+    padding: 14px;
   }
 
   .original-clause-box {
-    background-color: var(--bg-dark-app);
+    background: var(--bg-dark-app);
     border: 1px solid var(--border-dark-subtle);
     border-radius: 6px;
-    padding: 12px;
-    font-family: var(--font-serif);
-    font-size: 13.5px;
+    padding: 10px 12px;
+    font-family: Georgia, serif;
+    font-size: 13px;
     line-height: 1.5;
     margin-top: 8px;
-    max-height: 140px;
+    max-height: 120px;
     overflow-y: auto;
+    color: #D1D5DB;
   }
 
+  /* ── AUTOCOMPLETE ────────────────────────────────────────────────── */
   .autocomplete-dropdown {
     position: absolute;
-    background-color: var(--bg-dark-card);
+    background: var(--bg-dark-card);
     border: 1px solid var(--border-dark-subtle);
-    border-radius: 6px;
-    box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+    border-radius: 8px;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.5);
     z-index: 100;
-    max-height: 180px;
+    max-height: 200px;
     overflow-y: auto;
     width: 100%;
-    margin-top: 2px;
+    margin-top: 4px;
   }
-
   .autocomplete-item {
     padding: 10px 14px;
     cursor: pointer;
-    font-size: 13px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    transition: background-color 0.2s;
+    font-size: 12.5px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background 0.15s;
+    color: #9CA3AF;
   }
+  .autocomplete-item:hover { background: rgba(59,130,246,0.1); color: white; }
 
-  .autocomplete-item:hover {
-    background-color: rgba(59, 130, 246, 0.1);
-    color: white;
-  }
-
-  /* Chat bubble styles */
+  /* ── CHAT ────────────────────────────────────────────────────────── */
   .chat-bubble-stream {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding-bottom: 16px;
+    gap: 10px;
+    padding-bottom: 12px;
     overflow-y: auto;
-    margin-bottom: 12px;
   }
-
   .chat-message-bubble {
     padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 13.5px;
-    line-height: 1.4;
-    max-width: 85%;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 88%;
   }
-
   .chat-message-bubble.user {
-    background-color: var(--accent-primary);
+    background: var(--accent-primary);
     color: white;
     align-self: flex-end;
-    border-top-right-radius: 0;
+    border-top-right-radius: 3px;
   }
-
   .chat-message-bubble.bot {
-    background-color: var(--bg-dark-card);
+    background: rgba(255,255,255,0.04);
     border: 1px solid var(--border-dark-subtle);
-    color: var(--text-dark-primary);
+    color: #D1D5DB;
     align-self: flex-start;
-    border-top-left-radius: 0;
+    border-top-left-radius: 3px;
   }
 
-  /* Precedent precedent matching */
+  /* ── PRECEDENTS ──────────────────────────────────────────────────── */
   .precedent-card {
     border: 1px solid var(--border-dark-subtle);
-    background-color: var(--bg-dark-card);
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: background 0.18s;
+  }
+  .precedent-card:hover { background: rgba(255,255,255,0.04); }
+  .precedent-link { color: var(--accent-primary); text-decoration: none; font-weight: 600; font-size: 13.5px; }
+  .precedent-link:hover { text-decoration: underline; }
+
+  /* ── RECOMMENDATIONS ─────────────────────────────────────────────── */
+  .rec-protection-card {
+    background: rgba(245,158,11,0.04);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-left: 3px solid var(--accent-warning);
     border-radius: 8px;
     padding: 14px;
   }
 
-  .precedent-link {
-    color: var(--accent-primary);
-    text-decoration: none;
-    font-weight: 600;
-  }
-
-  .precedent-link:hover {
-    text-decoration: underline;
-  }
-
-  /* Recommendations Missing protective clauses */
-  .rec-protection-card {
-    background-color: var(--bg-dark-card);
-    border: 1px solid var(--border-dark-subtle);
-    border-left: 4px solid var(--accent-warning);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  /* Loader and Modals */
+  /* ── SHIMMER LOADER ──────────────────────────────────────────────── */
   .shimmer-bar {
-    background: linear-gradient(90deg, #1A1C26 25%, #222533 50%, #1A1C26 75%);
+    background: linear-gradient(90deg, #1a2035 25%, #252d47 50%, #1a2035 75%);
     background-size: 200% 100%;
-    animation: shimmer-animation 1.5s infinite;
-    border-radius: 4px;
-    height: 14px;
-    margin-bottom: 12px;
+    animation: shimmer-animation 1.4s infinite;
+    border-radius: 6px;
+    height: 13px;
+    margin-bottom: 10px;
   }
-
   @keyframes shimmer-animation {
-    0% { background-position: 200% 0; }
+    0%   { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
 
+  /* ── MODALS ──────────────────────────────────────────────────────── */
   .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0,0,0,0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 20px;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000; padding: 20px;
+    backdrop-filter: blur(4px);
   }
-
   .export-modal-card {
-    background-color: var(--bg-dark-panel);
+    background: var(--bg-dark-panel);
     border: 1px solid var(--border-dark-subtle);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 480px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border-radius: 14px;
+    width: 100%; max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
   }
-
   .format-selection-card {
     border: 1px solid var(--border-dark-subtle);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 14px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer; transition: all 0.2s;
   }
-
   .format-selection-card.selected {
     border-color: var(--accent-primary);
-    background-color: rgba(59, 130, 246, 0.05);
+    background: rgba(59,130,246,0.07);
+    box-shadow: 0 0 0 1px rgba(59,130,246,0.3);
   }
 
-  /* Tailwind CSS Utility Polyfills for component scopes */
-  .p-4 {
-    padding: 1rem !important;
-  }
-  @media (min-width: 768px) {
-    .md\\:p-8 {
-      padding: 2rem !important;
-    }
-  }
-
-  .leading-relaxed {
-    line-height: 1.625 !important;
-  }
-  .text-lg {
-    font-size: 1.125rem !important;
-  }
-
-  .transition-all {
-    transition-property: all !important;
-  }
-  .duration-300 {
-    transition-duration: 300ms !important;
-  }
-  .ease-in-out {
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
-  }
-
-  .hover\\:bg-gray-700:hover {
-    background-color: #374151 !important;
-  }
-  .hover\\:-translate-y-0\\.5:hover {
-    transform: translateY(-2px) !important;
-  }
-  .hover\\:shadow-lg:hover {
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.15) !important;
-  }
-
-  .transition-opacity {
-    transition-property: opacity !important;
-  }
-  .opacity-0 {
-    opacity: 0 !important;
-  }
-  .opacity-100 {
-    opacity: 1 !important;
-  }
-
-  /* Form Input Styling for right console ONLY */
+  /* ── FORM INPUTS (analysis column) ──────────────────────────────── */
   .analysis-column select,
   .analysis-column input[type="text"],
   .analysis-column textarea,
   .input-textarea {
-    background-color: #1f2937 !important;
-    border: 1px solid #4b5563 !important;
-    border-radius: 0.5rem !important;
-    padding: 0.75rem !important;
-    color: #ffffff !important;
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    padding: 10px 12px !important;
+    color: #E5E7EB !important;
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 13.5px;
     outline: none;
     width: 100%;
     box-sizing: border-box;
+    transition: border-color 0.2s !important;
   }
-
-  /* Premium Form Focus ring utilities */
-  .focus\\:ring-2:focus {
-    box-shadow: 0 0 0 2px #9ca3af !important; /* gray-400 focus ring */
-  }
-  .focus\\:ring-gray-400:focus {
-    box-shadow: 0 0 0 2px #9ca3af !important;
-  }
-  .focus\\:outline-none:focus {
-    outline: 2px solid transparent !important;
-    outline-offset: 2px !important;
-  }
-
   .analysis-column select:focus,
   .analysis-column input[type="text"]:focus,
   .analysis-column textarea:focus,
   .input-textarea:focus {
-    border-color: #9ca3af !important;
-    box-shadow: 0 0 0 2px #9ca3af !important;
+    border-color: var(--accent-primary) !important;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
   }
 
-  /* Smooth Insertion Keyframe Animations (Strictly runs once) */
-  @keyframes fadeHighlightIns {
-    0% {
-      background-color: #FEF08A !important; /* yellow-200 */
-      opacity: 0;
-    }
-    10% {
-      opacity: 1;
-    }
-    100% {
-      background-color: #D1FAE5 !important; /* light green */
-    }
+  /* ── STRATEGY SELECTOR ───────────────────────────────────────────── */
+  .strategy-select-container {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-dark-subtle);
+    padding: 7px 14px; border-radius: 8px;
   }
-
-  @keyframes fadeHighlightBlockquote {
-    0% {
-      background-color: #FEF08A !important; /* yellow-200 */
-      opacity: 0;
-    }
-    10% {
-      opacity: 1;
-    }
-    100% {
-      background-color: #F3F4F6 !important; /* light gray */
-    }
+  .strategy-dropdown {
+    background: transparent; border: none; color: white;
+    font-weight: 600; font-size: 13px; outline: none; cursor: pointer;
   }
+  .strategy-dropdown option { background: #1F2937; color: white; }
 
-  /* Revision Diff styling */
+  /* ── REVISION DIFF ───────────────────────────────────────────────── */
   .revised-del {
-    color: #DC2626 !important;
-    text-decoration: line-through !important;
-    background-color: #FEE2E2 !important;
-    padding: 2px 4px !important;
-    border-radius: 4px !important;
-    margin-right: 4px !important;
-    display: inline !important;
+    color: #DC2626 !important; text-decoration: line-through !important;
+    background: #FEE2E2 !important; padding: 1px 4px !important;
+    border-radius: 3px !important; margin-right: 3px !important; display: inline !important;
   }
   .revised-ins {
-    color: #16A34A !important;
-    text-decoration: none !important;
-    background-color: #D1FAE5 !important;
-    padding: 2px 4px !important;
-    border-radius: 4px !important;
-    font-weight: 500 !important;
-    display: inline !important;
+    color: #16A34A !important; background: #D1FAE5 !important;
+    padding: 1px 4px !important; border-radius: 3px !important;
+    font-weight: 500 !important; display: inline !important;
   }
-
-  /* New revision class with animations */
   .newly-revised-ins {
-    color: #16A34A !important;
-    text-decoration: none !important;
-    padding: 2px 4px !important;
-    border-radius: 4px !important;
-    font-weight: 500 !important;
-    display: inline !important;
+    color: #16A34A !important; padding: 1px 4px !important;
+    border-radius: 3px !important; font-weight: 500 !important; display: inline !important;
     animation: fadeHighlightIns 1.5s ease-in-out forwards;
   }
 
-  /* Extensions Append styling */
-  .extension-divider {
-    border: 0;
-    height: 1px;
-    background: #E5E7EB;
-    margin: 24px 0;
+  @keyframes fadeHighlightIns {
+    0%   { background: #FEF08A !important; opacity: 0; }
+    10%  { opacity: 1; }
+    100% { background: #D1FAE5 !important; }
   }
-  .extension-blockquote {
-    border-left: 4px solid #3B82F6 !important;
-    background-color: #F3F4F6 !important;
-    padding: 16px 20px !important;
-    margin: 0 0 20px 0 !important;
-    border-radius: 0 8px 8px 0;
-    color: #1F2937 !important;
-    font-family: var(--font-serif);
-    font-size: 15px;
-    line-height: 1.6;
-    text-align: left;
+  @keyframes fadeHighlightBlockquote {
+    0%   { background: #FEF08A !important; opacity: 0; }
+    10%  { opacity: 1; }
+    100% { background: #F3F4F6 !important; }
   }
 
-  /* New appended blockquote with animations */
+  /* ── EXTENSIONS ──────────────────────────────────────────────────── */
+  .extension-divider { border: 0; height: 1px; background: #E5E7EB; margin: 20px 0; }
+  .extension-blockquote {
+    border-left: 4px solid #3B82F6 !important; background: #F3F4F6 !important;
+    padding: 14px 18px !important; margin: 0 0 16px 0 !important;
+    border-radius: 0 8px 8px 0; color: #1F2937 !important;
+    font-family: Georgia, serif; font-size: 14px; line-height: 1.6;
+  }
   .newly-appended-blockquote {
-    border-left: 4px solid #3B82F6 !important;
-    padding: 16px 20px !important;
-    margin: 0 0 20px 0 !important;
-    border-radius: 0 8px 8px 0;
-    color: #1F2937 !important;
-    font-family: var(--font-serif);
-    font-size: 15px;
-    line-height: 1.6;
-    text-align: left;
+    border-left: 4px solid #3B82F6 !important; padding: 14px 18px !important;
+    margin: 0 0 16px 0 !important; border-radius: 0 8px 8px 0;
+    color: #1F2937 !important; font-family: Georgia, serif;
+    font-size: 14px; line-height: 1.6;
     animation: fadeHighlightBlockquote 1.5s ease-in-out forwards;
   }
+  .extension-title { display: block; margin-bottom: 6px; color: #1E3A8A; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .extension-body { white-space: pre-wrap; outline: none; }
 
-  .extension-title {
-    display: block;
-    margin-bottom: 8px;
-    color: #1E3A8A;
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .extension-body {
-    white-space: pre-wrap;
-    outline: none;
-  }
-
+  /* ── SHARED HELPERS ──────────────────────────────────────────────── */
   .input-label {
-    display: block;
-    margin-bottom: 6px;
-    color: var(--text-dark-muted);
-    font-size: 11.5px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    display: block; margin-bottom: 6px; color: var(--text-dark-muted);
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
   }
+
+  .p-4 { padding: 1rem !important; }
+  @media (min-width: 768px) { .md\\:p-8 { padding: 2rem !important; } }
+  .transition-all { transition-property: all !important; }
+  .duration-300  { transition-duration: 300ms !important; }
+  .ease-in-out   { transition-timing-function: cubic-bezier(0.4,0,0.2,1) !important; }
+  .transition-opacity { transition-property: opacity !important; }
+  .opacity-0  { opacity: 0 !important; }
+  .opacity-100 { opacity: 1 !important; }
+  .hover\\:-translate-y-0\\.5:hover { transform: translateY(-2px) !important; }
+  .hover\\:shadow-lg:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3),0 4px 6px -2px rgba(0,0,0,0.15) !important; }
+  .leading-relaxed { line-height: 1.625 !important; }
+  .text-lg { font-size: 1.125rem !important; }
+
+  /* ── RISK STAT BAR (legacy, kept for clause-list fallback) ───────── */
+  .risk-stat-bar { display: flex; gap: 10px; margin-bottom: 14px; font-size: 12px; }
+  .risk-stat-item {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.03);
+    padding: 4px 10px; border-radius: 20px;
+    border: 1px solid var(--border-dark-subtle);
+  }
+  .risk-indicator-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .risk-indicator-dot.red   { background: var(--accent-danger);   box-shadow: 0 0 5px var(--accent-danger); }
+  .risk-indicator-dot.amber { background: var(--accent-warning);  box-shadow: 0 0 5px var(--accent-warning); }
+  .risk-indicator-dot.green { background: var(--accent-success);  box-shadow: 0 0 5px var(--accent-success); }
 `;
 
 export default function ContractAnalyzer({ setFocusMode }) {
@@ -1289,130 +1202,158 @@ export default function ContractAnalyzer({ setFocusMode }) {
   return (
     <>
       <style>{styles}</style>
-      <div className="analyzer-container p-4 md:p-8">
-        
-        {/* Header toolbar */}
+      <div className="analyzer-container">
+
+        {/* ── HEADER BAR ── */}
         <div className="analyzer-header">
-          <div>
-            <h1 style={{ fontSize: '24px', margin: 0, fontFamily: 'var(--font-serif)' }}>Contract Risk Analyzer</h1>
-            <span style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>
-              Double-sided scanner for liability audits, extensions, and revisions under Indian Law.
-            </span>
+          <div className="analyzer-title-block">
+            <h1 className="analyzer-title">Contract Risk Analyzer</h1>
+            <p className="analyzer-subtitle">Liability audit · clause revision · missing protections · Indian Law</p>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="analyzer-actions">
             <div className="strategy-select-container">
-              <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase' }}>Mode:</span>
-              <select 
-                className="strategy-dropdown transition-all duration-300 ease-in-out focus:ring-2 focus:ring-gray-400 focus:outline-none" 
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mode</span>
+              <select
+                className="strategy-dropdown"
                 value={scanStrategy}
                 onChange={(e) => handleStrategyChange(e.target.value)}
               >
-                <option value="Defensive">🛡️ Defensive Scan</option>
-                <option value="Aggressive">⚡ Aggressive Scan</option>
+                <option value="Defensive">Defensive Scan</option>
+                <option value="Aggressive">Aggressive Scan</option>
               </select>
             </div>
 
             {isAnalyzed && (
               <>
-                <button 
-                  className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" 
+                <button
+                  className="btn-accent hover:-translate-y-0.5 hover:shadow-lg transition-all duration-300 ease-in-out"
                   onClick={() => setShowExportModal(true)}
-                  style={{ fontSize: '13px' }}
+                  style={{ fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  📥 Export Document
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export Document
                 </button>
-                <button 
-                  className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" 
-                  onClick={() => { 
-                    setIsAnalyzed(false); 
-                    setRawText(''); 
-                    setClauses([]); 
-                    setSummary(''); 
-                    setAppendedClauses([]); 
-                  }}
-                  style={{ fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
+                <button
+                  onClick={() => { setIsAnalyzed(false); setRawText(''); setClauses([]); setSummary(''); setAppendedClauses([]); setActiveClauseId(null); setRewrittenText(''); }}
+                  style={{ fontSize: '12.5px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '7px 14px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
+                  onMouseEnter={e => { e.target.style.color='white'; e.target.style.borderColor='rgba(255,255,255,0.3)'; }}
+                  onMouseLeave={e => { e.target.style.color='#9CA3AF'; e.target.style.borderColor='var(--border-dark-subtle)'; }}
                 >
-                  Reset
+                  New Document
                 </button>
               </>
             )}
           </div>
         </div>
 
-        {/* Executive Summary at the top (only shown when analyzed) */}
+        {/* ── RISK METRICS STRIP (shown after analysis) ── */}
+        {isAnalyzed && (
+          <div className="risk-metrics-strip">
+            <div className="risk-metric-pill high">
+              <span className="risk-metric-dot red"></span>
+              <strong>{redCount}</strong>&nbsp;High Risk
+            </div>
+            <div className="risk-metric-pill amber">
+              <span className="risk-metric-dot amber"></span>
+              <strong>{amberCount}</strong>&nbsp;Medium
+            </div>
+            <div className="risk-metric-pill green">
+              <span className="risk-metric-dot green"></span>
+              <strong>{greenCount}</strong>&nbsp;Resolved
+            </div>
+            {(redCount + amberCount + greenCount) > 0 && (
+              <div className="risk-bar-track">
+                {redCount > 0 && <span className="risk-bar-fill-red" style={{ width: `${(redCount / (redCount + amberCount + greenCount)) * 100}%` }}></span>}
+                {amberCount > 0 && <span className="risk-bar-fill-amber" style={{ width: `${(amberCount / (redCount + amberCount + greenCount)) * 100}%` }}></span>}
+                {greenCount > 0 && <span className="risk-bar-fill-green" style={{ width: `${(greenCount / (redCount + amberCount + greenCount)) * 100}%` }}></span>}
+              </div>
+            )}
+            <span style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginLeft: 'auto' }}>
+              {redCount + amberCount} clause{(redCount + amberCount) !== 1 ? 's' : ''} flagged · click to inspect
+            </span>
+          </div>
+        )}
+
+        {/* ── EXECUTIVE SUMMARY BANNER ── */}
         {isAnalyzed && summary && (
           <div className="summary-banner">
-            <strong>Executive Summary:</strong> {summary}
+            <span style={{ fontSize: '10.5px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent-primary)', marginRight: '8px' }}>Executive Summary</span>
+            {summary}
           </div>
         )}
 
         {/* ────────── INITIAL UPLOAD / INPUT SCREEN ────────── */}
         {!isAnalyzed ? (
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px' }}>
             <div className="upload-layout-container">
-              <div className="panel-header" style={{ textAlign: 'center', marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '22px' }}>Analyze Case Contract</h2>
-                <p>Ingest contract briefs, employment covenants, or MSAs to isolate liabilities and generate revisions.</p>
-              </div>
 
               {isAnalyzing ? (
-                <div style={{ padding: '40px', textAlignment: 'center', textAlign: 'center' }}>
-                  <div className="shimmer-bar" style={{ width: '80%', margin: '0 auto 15px' }}></div>
-                  <div className="shimmer-bar" style={{ width: '60%', margin: '0 auto 15px' }}></div>
-                  <div className="shimmer-bar" style={{ width: '40%', margin: '0 auto' }}></div>
-                  <p style={{ color: 'var(--accent-primary)', fontWeight: '600', fontSize: '14.5px', marginTop: '20px' }}>
-                    Compiling contract vector node and scanning liabilities under Indian Contract Law...
-                  </p>
-                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>This can take up to 20 seconds for dense PDFs...</span>
+                /* ── SCANNING STATE ── */
+                <div style={{ background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', borderRadius: '16px', padding: '48px 32px', textAlign: 'center' }}>
+                  <div style={{ width: '56px', height: '56px', margin: '0 auto 24px', borderRadius: '50%', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: 'var(--accent-primary)', animation: 'spin 0.9s linear infinite' }}></div>
+                  <h3 style={{ fontSize: '16px', color: 'white', marginBottom: '8px' }}>Scanning contract under Indian Law…</h3>
+                  <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '28px' }}>Compiling vector node · identifying liability clauses · matching precedents</p>
+                  <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div className="shimmer-bar"></div>
+                    <div className="shimmer-bar" style={{ width: '80%' }}></div>
+                    <div className="shimmer-bar" style={{ width: '60%' }}></div>
+                  </div>
+                  <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginTop: '20px', opacity: 0.6 }}>Dense PDFs can take up to 20 seconds</p>
                 </div>
               ) : (
-                <div>
-                  {/* File upload zone */}
-                  <div 
-                    className="drag-drop-zone transition-all duration-300 ease-in-out hover:shadow-lg"
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                    onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.remove('dragover');
-                      handleFileUpload(e.dataTransfer.files);
-                    }}
-                  >
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      style={{ display: 'none' }}
-                      onChange={(e) => handleFileUpload(e.target.files)}
-                      accept=".pdf,.docx"
+                <>
+                  {/* ── HERO ── */}
+                  <div className="upload-hero">
+                    <div className="upload-icon-ring">⚖️</div>
+                    <h2 style={{ fontSize: '20px', color: 'white', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Analyze a Contract</h2>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
+                      Upload an NDA, employment agreement, MSA, or any Indian law contract to scan liability clauses, get AI rewrites, and find missing protections.
+                    </p>
+                  </div>
+
+                  <div className="upload-body">
+                    {/* Drop zone */}
+                    <div
+                      className="drag-drop-zone transition-all duration-300 ease-in-out"
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
+                      onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); }}
+                    >
+                      <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                      <h3 style={{ fontSize: '14.5px', color: 'white', marginBottom: '4px' }}>Drop your contract here</h3>
+                      <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
+                      <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Max 10 MB</span>
+                    </div>
+
+                    {/* Divider */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '18px 0' }}>
+                      <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or paste text</span>
+                      <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                    </div>
+
+                    <textarea
+                      className="input-textarea"
+                      placeholder="Paste the raw text of your contract here…"
+                      value={rawText}
+                      onChange={(e) => setRawText(e.target.value)}
+                      style={{ marginBottom: '16px' }}
                     />
-                    <div style={{ fontSize: '32px', marginBottom: '10px' }}>📂</div>
-                    <h3 style={{ fontSize: '15px', color: 'white', marginBottom: '4px' }}>Upload PDF or DOCX Contract</h3>
-                    <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>Drag and drop file here, or click to browse</p>
+
+                    <button
+                      className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
+                      onClick={handleTextAnalyze}
+                      style={{ width: '100%', padding: '13px', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      Start Contract Risk Scan
+                    </button>
                   </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '15px 0' }}>
-                    <hr style={{ flex: 1, border: 'none', borderBottom: '1px solid var(--border-dark-subtle)' }} />
-                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)', textTransform: 'uppercase' }}>or paste raw text</span>
-                    <hr style={{ flex: 1, border: 'none', borderBottom: '1px solid var(--border-dark-subtle)' }} />
-                  </div>
-
-                  <textarea
-                    className="input-textarea bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                    placeholder="Paste the raw text of your contract here to analyze immediately..."
-                    value={rawText}
-                    onChange={(e) => setRawText(e.target.value)}
-                  />
-
-                  <button 
-                    className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" 
-                    onClick={handleTextAnalyze}
-                    style={{ width: '100%', padding: '12px' }}
-                  >
-                    ⚡ Start Contract Risk Scan
-                  </button>
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -1449,82 +1390,37 @@ export default function ContractAnalyzer({ setFocusMode }) {
               {/* Rich-Text Formatting Toolbar */}
               {leftTab === 'scanner' && (
                 <div className="rich-text-toolbar">
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('undo')}
-                    title="Undo"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                  >
-                    ↩️
+                  {/* Undo */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('undo')} title="Undo" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
                   </button>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('redo')}
-                    title="Redo"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                  >
-                    ↪️
+                  {/* Redo */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('redo')} title="Redo" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
                   </button>
                   <div className="toolbar-divider"></div>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('bold')}
-                    title="Bold"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                    style={{ fontWeight: 'bold' }}
-                  >
-                    B
-                  </button>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('italic')}
-                    title="Italic"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                    style={{ fontStyle: 'italic' }}
-                  >
-                    I
-                  </button>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('underline')}
-                    title="Underline"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                    style={{ textDecoration: 'underline' }}
-                  >
-                    U
-                  </button>
+                  {/* Bold */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '14px' }}>B</button>
+                  {/* Italic */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '14px' }}>I</button>
+                  {/* Underline */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('underline')} title="Underline" className="toolbar-btn" style={{ textDecoration: 'underline', fontSize: '14px' }}>U</button>
                   <div className="toolbar-divider"></div>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('justifyLeft')}
-                    title="Align Left"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                  >
-                    ⬅️
+                  {/* Align Left */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyLeft')} title="Align Left" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
                   </button>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('justifyCenter')}
-                    title="Align Center"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                  >
-                    ↔️
+                  {/* Align Center */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyCenter')} title="Align Center" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
                   </button>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('justifyRight')}
-                    title="Align Right"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                  >
-                    ➡️
+                  {/* Align Right */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyRight')} title="Align Right" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
                   </button>
-                  <button 
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFormat('justifyFull')}
-                    title="Justify"
-                    className="toolbar-btn transition-all duration-300 ease-in-out"
-                  >
-                    ≡
+                  {/* Justify */}
+                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyFull')} title="Justify" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                   </button>
                 </div>
               )}
@@ -1596,49 +1492,43 @@ export default function ContractAnalyzer({ setFocusMode }) {
             {/* RIGHT COLUMN: Analysis Console */}
             <div className="analysis-column">
               <div className="analysis-tabs-bar">
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${activeTab === 'risks' ? 'active' : ''}`} onClick={() => switchTab('risks')}>
-                  ⚡ Risks ({redCount + amberCount})
+                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'risks' ? 'active' : ''}`} onClick={() => switchTab('risks')}>
+                  Risks {redCount + amberCount > 0 && <span style={{ marginLeft: '4px', background: redCount > 0 ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)', color: redCount > 0 ? '#FCA5A5' : '#FCD34D', borderRadius: '10px', padding: '1px 7px', fontSize: '10.5px', fontWeight: '700' }}>{redCount + amberCount}</span>}
                 </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${activeTab === 'recs' ? 'active' : ''}`} onClick={() => { switchTab('recs'); if (recommendations.length === 0) fetchMissingProtections(); }}>
-                  🛡️ Missing ({recommendations.length})
+                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'recs' ? 'active' : ''}`} onClick={() => { switchTab('recs'); if (recommendations.length === 0) fetchMissingProtections(); }}>
+                  Missing {recommendations.length > 0 && <span style={{ marginLeft: '4px', background: 'rgba(245,158,11,0.2)', color: '#FCD34D', borderRadius: '10px', padding: '1px 7px', fontSize: '10.5px', fontWeight: '700' }}>{recommendations.length}</span>}
                 </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${activeTab === 'draft' ? 'active' : ''}`} onClick={() => switchTab('draft')}>
-                  🤖 Auto-Draft
+                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'draft' ? 'active' : ''}`} onClick={() => switchTab('draft')}>
+                  Auto-Draft
                 </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => switchTab('chat')}>
-                  💬 RAG Chat
+                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => switchTab('chat')}>
+                  RAG Chat
                 </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${activeTab === 'citations' ? 'active' : ''}`} onClick={() => switchTab('citations')}>
-                  📚 Citations ({matchedPrecedents.length})
+                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'citations' ? 'active' : ''}`} onClick={() => switchTab('citations')}>
+                  Citations {matchedPrecedents.length > 0 && <span style={{ marginLeft: '4px', background: 'rgba(59,130,246,0.2)', color: '#93C5FD', borderRadius: '10px', padding: '1px 7px', fontSize: '10.5px', fontWeight: '700' }}>{matchedPrecedents.length}</span>}
                 </button>
               </div>
 
-              <div className={`analysis-panel-body p-4 md:p-8 gap-5 transition-opacity duration-300 ${tabOpacity}`}>
+              <div className={`analysis-panel-body transition-opacity duration-300 ${tabOpacity}`}>
                 
                 {/* SUB TAB: Risks (Actions) */}
                 {activeTab === 'risks' && (
-                  <div className="gap-5" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <div className="risk-stat-bar" style={{ marginBottom: 0 }}>
-                      <div className="risk-stat-item">
-                        <span className="risk-indicator-dot red"></span>
-                        <strong>{redCount}</strong> High
-                      </div>
-                      <div className="risk-stat-item">
-                        <span className="risk-indicator-dot amber"></span>
-                        <strong>{amberCount}</strong> Medium
-                      </div>
-                      <div className="risk-stat-item">
-                        <span className="risk-indicator-dot green"></span>
-                        <strong>{greenCount}</strong> Resolved
-                      </div>
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
 
                     {activeClause ? (
-                      <div className="gap-5" style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div className="inspected-risk-card" style={{ marginBottom: 0 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {/* Back to list */}
+                        <button
+                          onClick={() => { setActiveClauseId(null); setRewrittenText(''); setIntent(''); }}
+                          style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '12px', cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                          All clauses
+                        </button>
+                        <div className="inspected-risk-card">
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                             <span className={`risk-indicator-dot ${activeClause.risk === 'RED' ? 'red' : 'amber'}`}></span>
-                            <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>
+                            <h3 style={{ fontSize: '14px', color: 'white', margin: 0, fontWeight: '600' }}>
                               {activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause'}
                             </h3>
                           </div>
@@ -1690,7 +1580,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                         {/* Rewrite suggested container */}
                         {rewrittenText && (
-                          <div className="gap-5" style={{ display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                             <div>
                               <label className="input-label">AI Suggested Revision</label>
                               <textarea
@@ -1711,8 +1601,38 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         )}
                       </div>
                     ) : (
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
-                        Click on any highlighted red/amber clause in the contract text editor on the left to inspect its risk and draft revisions.
+                      /* ── CLAUSE LIST OVERVIEW ── */
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
+                            No flagged clauses found.
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+                              {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length} flagged clauses — click to inspect & rewrite
+                            </div>
+                            {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').map((c, idx) => (
+                              <div
+                                key={c.id}
+                                className={`clause-list-item ${c.risk === 'RED' ? 'red-item' : 'amber-item'}`}
+                                onClick={() => inspectRisk(c.id)}
+                              >
+                                <span className="clause-number">#{idx + 1}</span>
+                                <span className="clause-text-preview">{c.text}</span>
+                                <span className={`clause-risk-badge ${c.risk === 'RED' ? 'red' : 'amber'}`}>
+                                  {c.risk === 'RED' ? 'HIGH' : 'MED'}
+                                </span>
+                              </div>
+                            ))}
+                            {greenCount > 0 && (
+                              <div style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', display: 'inline-block' }}></span>
+                                {greenCount} clause{greenCount > 1 ? 's' : ''} resolved
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1720,7 +1640,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Recommendations (Extensions) */}
                 {activeTab === 'recs' && (
-                  <div className="gap-5" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Missing Indian Protections</h3>
                       <button 
@@ -1744,8 +1664,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         No missing clauses identified yet.
                       </div>
                     ) : (
-                      <div className="gap-5" style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div className="gap-5" style={{ display: 'flex', flexDirection: 'column', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
                           {recommendations.map((item, idx) => (
                             <div key={idx} className="rec-protection-card" style={{ marginBottom: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
@@ -1781,9 +1701,9 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Auto-Draft */}
                 {activeTab === 'draft' && (
-                  <div className="gap-5" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                     <form onSubmit={handleAutoDraft}>
-                      <div className="gap-5" style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                         <div className="input-group">
                           <label className="input-label">Reference Context File *</label>
                           <select 
@@ -1829,7 +1749,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Chat */}
                 {activeTab === 'chat' && (
-                  <div className="gap-5" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <div className="chat-bubble-stream" ref={chatStreamRef}>
                       {chatHistory.map((msg, i) => (
                         <div key={i} className={`chat-message-bubble ${msg.sender}`}>
@@ -1861,7 +1781,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Citations */}
                 {activeTab === 'citations' && (
-                  <div className="gap-5" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                     <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Landmark Indian Contract Precedents</h3>
                     
                     {matchedPrecedents.length === 0 ? (
@@ -1869,7 +1789,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         No keyword matches. Write or paste clauses regarding liability limits, notice, or IP to trigger citations.
                       </div>
                     ) : (
-                      <div className="gap-5" style={{ display: 'flex', flexDirection: 'column', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                         {matchedPrecedents.map((prec, i) => (
                           <div key={i} className="precedent-card" style={{ marginBottom: 0 }}>
                             <div style={{ display: 'flex', gap: '8px' }}>

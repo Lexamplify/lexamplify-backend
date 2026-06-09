@@ -375,19 +375,14 @@ export default function ConflictEngine() {
   const [error, setError] = useState('');
   const [dbResults, setDbResults] = useState(null);
 
-  // Cross Document State
-  const [files, setFiles] = useState({ 1: null, 2: null, 3: null });
-  const [labels, setLabels] = useState({
-    1: 'Document 1 (e.g. NDA)',
-    2: 'Document 2 (e.g. MSA)',
-    3: 'Document 3 (e.g. SOW/Annexure)'
-  });
+  // Cross Document State — dynamic, unlimited slots
+  const [slots, setSlots] = useState([
+    { id: 1, file: null, label: 'Document 1 (e.g. NDA)',           inputRef: React.createRef() },
+    { id: 2, file: null, label: 'Document 2 (e.g. MSA)',           inputRef: React.createRef() },
+    { id: 3, file: null, label: 'Document 3 (e.g. SOW/Annexure)', inputRef: React.createRef() },
+  ]);
   const [crossResults, setCrossResults] = useState(null);
   const [showToast, setShowToast] = useState(false);
-
-  const fileInput1Ref = useRef(null);
-  const fileInput2Ref = useRef(null);
-  const fileInput3Ref = useRef(null);
 
   // ── 1. DATABASE SEARCH CONFLICT CHECK ──────────────────────────────
   const handleDbSearchSubmit = async (e) => {
@@ -408,26 +403,39 @@ export default function ConflictEngine() {
     }
   };
 
-  // ── 2. CROSS-DOCUMENT FILE MANAGEMENT ──────────────────────────────
-  const handleFileChange = (slot, file) => {
+  // ── 2. CROSS-DOCUMENT FILE MANAGEMENT (DYNAMIC SLOTS) ──────────────
+  const handleFileChange = (slotId, file) => {
     if (!file) return;
-    setFiles(prev => ({ ...prev, [slot]: file }));
+    setSlots(prev => prev.map(s => s.id === slotId ? { ...s, file } : s));
   };
 
-  const removeFile = (slot, e) => {
+  const removeFile = (slotId, e) => {
     e.stopPropagation();
-    setFiles(prev => ({ ...prev, [slot]: null }));
-    const refMap = { 1: fileInput1Ref, 2: fileInput2Ref, 3: fileInput3Ref };
-    if (refMap[slot].current) refMap[slot].current.value = '';
+    setSlots(prev => prev.map(s => {
+      if (s.id !== slotId) return s;
+      if (s.inputRef.current) s.inputRef.current.value = '';
+      return { ...s, file: null };
+    }));
   };
 
-  const handleLabelChange = (slot, value) => {
-    setLabels(prev => ({ ...prev, [slot]: value }));
+  const removeSlot = (slotId, e) => {
+    e.stopPropagation();
+    setSlots(prev => prev.filter(s => s.id !== slotId));
+  };
+
+  const handleLabelChange = (slotId, value) => {
+    setSlots(prev => prev.map(s => s.id === slotId ? { ...s, label: value } : s));
+  };
+
+  const addSlot = () => {
+    const nextId = Date.now();
+    const slotNum = slots.length + 1;
+    setSlots(prev => [...prev, { id: nextId, file: null, label: `Document ${slotNum}`, inputRef: React.createRef() }]);
   };
 
   const handleCrossDocAnalyze = async () => {
-    const uploadedCount = Object.values(files).filter(Boolean).length;
-    if (uploadedCount < 2) {
+    const loaded = slots.filter(s => s.file);
+    if (loaded.length < 2) {
       alert('Please upload at least 2 documents to compare.');
       return;
     }
@@ -437,12 +445,10 @@ export default function ConflictEngine() {
     setCrossResults(null);
 
     const formData = new FormData();
-    if (files[1]) formData.append('doc1', files[1]);
-    if (files[2]) formData.append('doc2', files[2]);
-    if (files[3]) formData.append('doc3', files[3]);
-    formData.append('label1', labels[1] || 'Document 1');
-    formData.append('label2', labels[2] || 'Document 2');
-    formData.append('label3', labels[3] || 'Document 3');
+    loaded.forEach((s, idx) => {
+      formData.append(`doc${idx + 1}`, s.file);
+      formData.append(`label${idx + 1}`, s.label || `Document ${idx + 1}`);
+    });
 
     const res = await analyzeConflicts(formData);
     setIsLoading(false);
@@ -461,7 +467,11 @@ export default function ConflictEngine() {
   };
 
   const resetCrossDoc = () => {
-    setFiles({ 1: null, 2: null, 3: null });
+    setSlots([
+      { id: 1, file: null, label: 'Document 1 (e.g. NDA)',           inputRef: React.createRef() },
+      { id: 2, file: null, label: 'Document 2 (e.g. MSA)',           inputRef: React.createRef() },
+      { id: 3, file: null, label: 'Document 3 (e.g. SOW/Annexure)', inputRef: React.createRef() },
+    ]);
     setCrossResults(null);
     setError('');
   };
@@ -634,132 +644,93 @@ export default function ConflictEngine() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {!crossResults ? (
               <>
+                {/* ── DYNAMIC UPLOAD SLOTS ── */}
                 <div className="upload-slots">
-                  
-                  {/* Slot 1 */}
-                  <div className="upload-slot">
-                    <input 
-                      className="dark-input text-white" 
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                      type="text" 
-                      value={labels[1]} 
-                      onChange={(e) => handleLabelChange(1, e.target.value)}
-                    />
-                    <div 
-                      className={`drop-zone ${files[1] ? 'has-file' : ''}`}
-                      onClick={() => fileInput1Ref.current?.click()}
-                    >
-                      <input 
-                        type="file" 
-                        ref={fileInput1Ref} 
-                        style={{ display: 'none' }} 
-                        accept=".pdf,.docx"
-                        onChange={(e) => handleFileChange(1, e.target.files[0])}
-                      />
-                      <span style={{ fontSize: '28px' }}>📄</span>
-                      {files[1] ? (
-                        <>
-                          <span className="dz-filename">📎 {files[1].name}</span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{formatBytes(files[1].size)}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>Click or drag a file here</span>
-                          <span style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', opacity: 0.6 }}>PDF or DOCX</span>
-                        </>
+                  {slots.map((slot) => (
+                    <div className="upload-slot" key={slot.id}>
+                      {/* Label + remove-slot button */}
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <input
+                          className="dark-input"
+                          style={{ padding: '6px 10px', fontSize: '12px', flex: 1 }}
+                          type="text"
+                          value={slot.label}
+                          onChange={(e) => handleLabelChange(slot.id, e.target.value)}
+                        />
+                        {slots.length > 2 && (
+                          <button
+                            className="slot-remove-btn"
+                            onClick={(e) => removeSlot(slot.id, e)}
+                            title="Remove this slot"
+                            style={{ padding: '4px 8px', fontSize: '11px', opacity: 0.7 }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Drop zone */}
+                      <div
+                        className={`drop-zone ${slot.file ? 'has-file' : ''}`}
+                        onClick={() => slot.inputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                        onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
+                        onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileChange(slot.id, e.dataTransfer.files[0]); }}
+                      >
+                        <input
+                          type="file"
+                          ref={slot.inputRef}
+                          style={{ display: 'none' }}
+                          accept=".pdf,.docx"
+                          onChange={(e) => handleFileChange(slot.id, e.target.files[0])}
+                        />
+                        {slot.file ? (
+                          <>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            <span className="dz-filename">{slot.file.name}</span>
+                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{formatBytes(slot.file.size)}</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.5)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                            <span style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>Click or drag a file here</span>
+                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', opacity: 0.6 }}>PDF or DOCX</span>
+                          </>
+                        )}
+                      </div>
+
+                      {slot.file && (
+                        <button className="slot-remove-btn" onClick={(e) => removeFile(slot.id, e)}>✕ Remove file</button>
                       )}
                     </div>
-                    {files[1] && (
-                      <button className="slot-remove-btn" onClick={(e) => removeFile(1, e)}>✕ Remove</button>
-                    )}
-                  </div>
+                  ))}
 
-                  {/* Slot 2 */}
-                  <div className="upload-slot">
-                    <input 
-                      className="dark-input text-white" 
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                      type="text" 
-                      value={labels[2]} 
-                      onChange={(e) => handleLabelChange(2, e.target.value)}
-                    />
-                    <div 
-                      className={`drop-zone ${files[2] ? 'has-file' : ''}`}
-                      onClick={() => fileInput2Ref.current?.click()}
-                    >
-                      <input 
-                        type="file" 
-                        ref={fileInput2Ref} 
-                        style={{ display: 'none' }} 
-                        accept=".pdf,.docx"
-                        onChange={(e) => handleFileChange(2, e.target.files[0])}
-                      />
-                      <span style={{ fontSize: '28px' }}>📄</span>
-                      {files[2] ? (
-                        <>
-                          <span className="dz-filename">📎 {files[2].name}</span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{formatBytes(files[2].size)}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>Click or drag a file here</span>
-                          <span style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', opacity: 0.6 }}>PDF or DOCX</span>
-                        </>
-                      )}
+                  {/* ── ADD DOCUMENT TILE ── */}
+                  <div
+                    className="upload-slot"
+                    onClick={addSlot}
+                    style={{ cursor: 'pointer', justifyContent: 'center', alignItems: 'center', border: '2px dashed rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.02)', minHeight: '180px' }}
+                    title="Add another document"
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--text-dark-muted)', pointerEvents: 'none' }}>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.5)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                      <span style={{ fontSize: '13px' }}>Add Document</span>
+                      <span style={{ fontSize: '11px', opacity: 0.6 }}>Compare unlimited documents</span>
                     </div>
-                    {files[2] && (
-                      <button className="slot-remove-btn" onClick={(e) => removeFile(2, e)}>✕ Remove</button>
-                    )}
                   </div>
-
-                  {/* Slot 3 */}
-                  <div className="upload-slot">
-                    <input 
-                      className="dark-input text-white" 
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                      type="text" 
-                      value={labels[3]} 
-                      onChange={(e) => handleLabelChange(3, e.target.value)}
-                    />
-                    <div 
-                      className={`drop-zone ${files[3] ? 'has-file' : ''}`}
-                      onClick={() => fileInput3Ref.current?.click()}
-                    >
-                      <input 
-                        type="file" 
-                        ref={fileInput3Ref} 
-                        style={{ display: 'none' }} 
-                        accept=".pdf,.docx"
-                        onChange={(e) => handleFileChange(3, e.target.files[0])}
-                      />
-                      <span style={{ fontSize: '28px' }}>📄</span>
-                      {files[3] ? (
-                        <>
-                          <span className="dz-filename">📎 {files[3].name}</span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{formatBytes(files[3].size)}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>Click or drag a file here</span>
-                          <span style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', opacity: 0.6 }}>PDF or DOCX</span>
-                        </>
-                      )}
-                    </div>
-                    {files[3] && (
-                      <button className="slot-remove-btn" onClick={(e) => removeFile(3, e)}>✕ Remove</button>
-                    )}
-                  </div>
-
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>
+                    {slots.filter(s => s.file).length} / {slots.length} documents loaded
+                  </span>
                   <button
                     className="btn-accent"
-                    style={{ padding: '14px 44px' }}
+                    style={{ padding: '13px 44px', fontSize: '14px' }}
                     onClick={handleCrossDocAnalyze}
-                    disabled={Object.values(files).filter(Boolean).length < 2 || isLoading}
+                    disabled={slots.filter(s => s.file).length < 2 || isLoading}
                   >
-                    {isLoading ? 'Scanning Documents...' : '⚡ Run Cross-Document Check'}
+                    {isLoading ? 'Scanning…' : '⚡ Run Cross-Document Check'}
                   </button>
                 </div>
 
@@ -787,8 +758,8 @@ export default function ConflictEngine() {
                     
                     <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Documents Analyzed</span>
                     <ul style={{ paddingLeft: '20px', margin: '8px 0 20px 0', fontSize: '13px', color: 'var(--text-dark-primary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {Object.entries(files).map(([key, f]) => f && (
-                        <li key={key}>📂 {labels[key]} ({f.name})</li>
+                      {slots.filter(s => s.file).map(s => (
+                        <li key={s.id}>📂 {s.label} ({s.file.name})</li>
                       ))}
                     </ul>
 

@@ -53,6 +53,8 @@ const calendarStyles = `
 `;
 
 export default function CalendarView() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -70,7 +72,7 @@ export default function CalendarView() {
   // Fetch logic
   const loadEvents = async () => {
     try {
-      const response = await fetch('https://lexamplify-backend.onrender.com/api/calendar/events');
+      const response = await fetch(`${API_BASE}/api/calendar/events`);
       if (!response.ok) {
         throw new Error(`HTTP error: status ${response.status}`);
       }
@@ -147,7 +149,7 @@ export default function CalendarView() {
         ]
       };
 
-      const response = await fetch('https://lexamplify-backend.onrender.com/api/calendar/save', {
+      const response = await fetch(`${API_BASE}/api/calendar/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

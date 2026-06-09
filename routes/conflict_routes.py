@@ -45,17 +45,23 @@ def conflict_engine():
 @conflict_bp.route('/api/conflict/analyze', methods=['POST'])
 def analyze_conflicts():
     docs = []
-    for i in range(1, 4):
-        key = f'doc{i}'
-        label_key = f'label{i}'
+    # Support unlimited documents — frontend sends doc1, doc2, doc3, ... docN
+    slot = 1
+    while True:
+        key = f'doc{slot}'
+        label_key = f'label{slot}'
         f = request.files.get(key)
-        if f and f.filename:
+        if f is None:
+            break  # no more slots
+        if f.filename:
             label = request.form.get(label_key) or f.filename
             text = extract_text(f.read(), f.filename)
-            # Truncate to prevent context exhaustion
-            if len(text) > 3500:
-                text = text[:3500] + '\n... [truncated]'
+            # Per-document truncation to prevent LLM context exhaustion
+            per_doc_limit = max(1500, 7000 // max(slot, 1))
+            if len(text) > per_doc_limit:
+                text = text[:per_doc_limit] + '\n... [truncated]'
             docs.append({'name': label, 'text': text})
+        slot += 1
 
     if len(docs) < 2:
         return jsonify({'error': 'Upload at least 2 documents to analyze conflicts.'}), 400

@@ -296,7 +296,8 @@ Return ONLY valid JSON. No markdown fences, no explanation."""
 
             # ── ACTION: COURTROOM SIMULATION (Threaded Heartbeat Architecture) ──
             if action == "simulate_courtroom":
-                yield f"data: {json.dumps({'token': 'Synchronizing case file context and entering Virtual Courtroom...\n'})}\n\n"
+                _init_msg = json.dumps({'token': 'Synchronizing case file context and entering Virtual Courtroom...\n'})
+                yield f"data: {_init_msg}\n\n"
 
                 matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=4)
                 context_str = (
@@ -375,7 +376,8 @@ Return ONLY raw JSON matching this schema."""
                         break
                     except queue.Empty:
                         current_stage = stages[stage_idx % len(stages)]
-                        yield f"data: {json.dumps({'token': f'{current_stage}\n'})}\n\n"
+                        _stage_msg = json.dumps({'token': current_stage + '\n'})
+                        yield f"data: {_stage_msg}\n\n"
                         stage_idx += 1
                 return
 

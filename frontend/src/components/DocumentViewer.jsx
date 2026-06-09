@@ -1,19 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation, Link } from 'react-router-dom';
 import { fetchDocumentDetails } from '../services/api';
 
 export default function DocumentViewer({ focusMode, setFocusMode }) {
   const { caseId, docId } = useParams();
+  const location = useLocation();
+  // When navigating from VaultView, caseId is 'vault' — back link goes to /vault
+  const fromVault = caseId === 'vault' || location.state?.fromVault;
+  const backTo    = fromVault ? '/vault' : `/case/${caseId}`;
+  const backLabel = fromVault ? 'Back to Document Vault' : 'Back to Case Directory';
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // ── 1. FETCH DOCUMENT & CHUNKED TEXT ────────────────────────────────
+  // If navigating from the Case Vault (Universal Agent drafted docs), the full doc
+  // is passed via route state to avoid a cross-storage 404. Only hit the API when
+  // coming from the Document model (uploaded files via /api/documents).
   useEffect(() => {
+    const injected = location.state?.docData;
+    if (injected) {
+      setDoc(injected);
+      setLoading(false);
+      return;
+    }
+
     const loadDocument = async () => {
       setLoading(true);
       setError(null);
-      
+
       const response = await fetchDocumentDetails(docId);
       if (response.error) {
         setError(response.message);
@@ -24,7 +39,7 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
     };
 
     loadDocument();
-  }, [docId]);
+  }, [docId, location.state]);
 
   // ── 2. TRIGGER DECOUPLED RAG CHAT PALETTE ───────────────────────────
   const handleOpenRAG = () => {
@@ -45,8 +60,8 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
       <div style={{ padding: '40px', color: 'var(--accent-danger)' }}>
         <h3>⚠️ Load Failed</h3>
         <p style={{ marginTop: '8px', color: 'var(--text-dark-muted)' }}>{error || 'Unable to locate document records.'}</p>
-        <Link to={`/case/${caseId}`} style={{ display: 'inline-block', marginTop: '16px', color: 'var(--accent-primary)', textDecoration: 'none' }}>
-          ← Return to Case Vault
+        <Link to={backTo} style={{ display: 'inline-block', marginTop: '16px', color: 'var(--accent-primary)', textDecoration: 'none' }}>
+          ← {backLabel}
         </Link>
       </div>
     );
@@ -70,8 +85,8 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
         }}
       >
         <div>
-          <Link to={`/case/${caseId}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontSize: '13px' }}>
-            ← Back to Case Directory
+          <Link to={backTo} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontSize: '13px' }}>
+            ← {backLabel}
           </Link>
           <h2 style={{ fontSize: '20px', marginTop: '12px', color: 'white' }}>RAG Ingestion</h2>
           <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Indexed Database ID: #{doc.id}</span>

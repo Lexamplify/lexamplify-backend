@@ -29,6 +29,8 @@ const pulseStyle = `
 `;
 
 export default function CommandPalette() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -138,7 +140,7 @@ export default function CommandPalette() {
 
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-      const response = await fetch('https://lexamplify-backend.onrender.com/api/ai/rag-chat', {
+      const response = await fetch(`${API_BASE}/api/ai/rag-chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -260,7 +262,7 @@ export default function CommandPalette() {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const response = await fetch('https://lexamplify-backend.onrender.com/api/calendar/save', {
+      const response = await fetch(`${API_BASE}/api/calendar/save`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ events: pendingSchedule }),
@@ -284,7 +286,7 @@ export default function CommandPalette() {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const response = await fetch('https://lexamplify-backend.onrender.com/api/vault/save', {
+      const response = await fetch(`${API_BASE}/api/vault/save`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -486,13 +488,37 @@ export default function CommandPalette() {
               <div style={{ padding: '16px', backgroundColor: 'var(--bg-dark-sidebar, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-dark-subtle)', paddingBottom: '8px' }}>
                   <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent-primary)' }}>📄 Review drafted document</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Case: {pendingDraft.case_id}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Case: {pendingDraft.case_id || 'General'}</span>
                 </div>
                 <div style={{ fontSize: '13px', color: 'white', fontWeight: '600' }}>
                   {pendingDraft.title} {pendingDraft.doc_type ? `(${pendingDraft.doc_type})` : ''}
                 </div>
-                <div className="palette-scroll" style={{ maxHeight: '200px', overflowY: 'auto', padding: '12px', backgroundColor: 'var(--bg-dark-app)', border: '1px solid var(--border-dark-subtle)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.5', color: '#E6EDF0', whiteSpace: 'pre-wrap' }}>
-                  {pendingDraft.content}
+                <div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Edit before saving — changes will be stored in the vault
+                  </div>
+                  <textarea
+                    value={pendingDraft.content}
+                    onChange={(e) => setPendingDraft(prev => ({ ...prev, content: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      minHeight: '180px',
+                      maxHeight: '280px',
+                      padding: '12px',
+                      backgroundColor: 'var(--bg-dark-app)',
+                      border: '1px solid var(--border-dark-subtle)',
+                      borderRadius: '6px',
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      lineHeight: '1.5',
+                      color: '#E6EDF0',
+                      resize: 'vertical',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                    onFocus={(e) => { e.target.style.borderColor = 'var(--accent-primary)'; }}
+                    onBlur={(e) => { e.target.style.borderColor = 'var(--border-dark-subtle)'; }}
+                  />
                 </div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                   <button type="button" onClick={() => setPendingDraft(null)} style={{ padding: '8px 16px', fontSize: '12px', color: 'var(--text-dark-primary)', background: 'transparent', border: '1px solid var(--border-dark-subtle)', borderRadius: '6px', cursor: 'pointer' }}>Reject</button>

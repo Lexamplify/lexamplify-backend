@@ -756,3 +756,154 @@ textarea:focus,
   border-color: #3B82F6 !important;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SIDEBAR NAV ITEMS — icon + label with active state left-border indicator
+   ───────────────────────────────────────────────────────────────────────── */
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  margin: 2px 8px;
+  border-radius: 7px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 400;
+  background: transparent;
+  box-shadow: inset 3px 0 0 transparent;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+.sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #ffffff !important;
+}
+.sidebar-nav-item.active {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: var(--accent-primary) !important;
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent-primary);
+}
+.sidebar-nav-item .nav-icon {
+  color: inherit;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  opacity: 0.75;
+}
+.sidebar-nav-item.active .nav-icon {
+  opacity: 1;
+  color: var(--accent-primary);
+}
+.sidebar-nav-item .nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DASHBOARD STAT CARDS
+   ───────────────────────────────────────────────────────────────────────── */
+.stat-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 18px 20px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   QUICK ACTION CARDS
+   ───────────────────────────────────────────────────────────────────────── */
+.quick-action-card {
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+.quick-action-card:hover {
+  border-color: rgba(59, 130, 246, 0.4) !important;
+  background: rgba(59, 130, 246, 0.04) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SIDEBAR LOGO MARK BOX
+   ───────────────────────────────────────────────────────────────────────── */
+.sidebar-logo-mark {
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   UNIVERSAL AGENT BOTTOM BUTTON (sidebar glow button)
+   ───────────────────────────────────────────────────────────────────────── */
+.universal-agent-btn:hover {
+  background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(37,99,235,0.16)) !important;
+  border-color: rgba(59,130,246,0.4) !important;
+  box-shadow: 0 0 16px rgba(59,130,246,0.15);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   STATUS BADGE PILL
+   ───────────────────────────────────────────────────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SIDEBAR scrollbar
+   ───────────────────────────────────────────────────────────────────────── */
+.sidebar nav::-webkit-scrollbar { width: 4px; }
+.sidebar nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+.sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FOCUS MODE TOGGLE pill enhancement
+   ───────────────────────────────────────────────────────────────────────── */
+.focus-toggle-track {
+  width: 32px; height: 17px;
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.focus-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: white;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}

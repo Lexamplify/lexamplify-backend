@@ -304,6 +304,8 @@ const STAGE_LABELS = [
 ];
 
 export default function WarRoomView() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+
   const location = useLocation();
   const navigate = useNavigate();
   const [isMounted, setIsMounted] = useState(false);
@@ -334,7 +336,7 @@ export default function WarRoomView() {
     }, 6000);
 
     const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-    fetch('https://lexamplify-backend.onrender.com/api/ai/simulate', {
+    fetch(`${API_BASE}/api/ai/simulate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -411,25 +413,106 @@ export default function WarRoomView() {
 
   // ── No data and no pending simulation ───────────────────────
   if (!simulationData) {
+    const steps = [
+      { num: '01', title: 'Upload a case document', desc: 'Go to Case Vault and upload a brief, FIR, contract, or legal notice.' },
+      { num: '02', title: 'Open the Universal Agent', desc: 'Press Ctrl+K or click "Universal Agent" in the sidebar.' },
+      { num: '03', title: 'Trigger the simulation', desc: 'Type: "Pull the [document name] and start virtual courtroom simulation."' },
+      { num: '04', title: 'War Room activates', desc: 'The AI runs a 4-stage pipeline and populates this dashboard automatically.' },
+    ];
     return (
       <>
         <style>{WAR_ROOM_STYLES}</style>
+        <style>{`
+          .wr-setup-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 40px 44px;
+            max-width: 620px;
+            width: 100%;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.35);
+          }
+          .wr-step-item {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border-subtle);
+          }
+          .wr-step-item:last-child { border-bottom: none; }
+          .wr-step-num {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--accent-primary);
+            background: rgba(59,130,246,0.1);
+            border-radius: 6px;
+            padding: 4px 7px;
+            flex-shrink: 0;
+            font-family: var(--font-sans);
+            letter-spacing: 0.5px;
+          }
+          .wr-cmd-chip {
+            display: inline-block;
+            background: rgba(59,130,246,0.08);
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 5px;
+            padding: 3px 9px;
+            font-size: 12px;
+            font-family: monospace;
+            color: var(--accent-primary);
+            margin-top: 6px;
+          }
+        `}</style>
         <div className="wr-fallback">
-          <div className="wr-fallback-card">
-            <div className="wr-fallback-icon">⚖️</div>
-            <h2 className="wr-fallback-title">No Active Simulation</h2>
-            <p className="wr-fallback-body">
-              The War Room requires an active courtroom simulation. Open the Universal
-              Agent and instruct it to run a courtroom simulation on a saved Case Vault
-              document to populate this dashboard.
-            </p>
-            <button
-              className="btn-accent"
-              onClick={() => navigate('/dashboard')}
-              style={{ padding: '10px 26px' }}
-            >
-              Return to Dashboard
-            </button>
+          <div className="wr-setup-card">
+            {/* Icon + Title */}
+            <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+              <div style={{ fontSize: '42px', marginBottom: '14px', filter: 'drop-shadow(0 4px 12px rgba(59,130,246,0.3))' }}>⚖️</div>
+              <h2 style={{ fontSize: '21px', fontWeight: '700', color: 'white', margin: '0 0 8px' }}>Virtual Courtroom — Ready</h2>
+              <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
+                No simulation is active yet. Follow the steps below to generate a full litigation strategy.
+              </p>
+            </div>
+
+            {/* Steps */}
+            <div style={{ marginBottom: '24px' }}>
+              {steps.map(s => (
+                <div key={s.num} className="wr-step-item">
+                  <span className="wr-step-num">{s.num}</span>
+                  <div>
+                    <div style={{ fontSize: '13.5px', fontWeight: '600', color: 'white', marginBottom: '3px' }}>{s.title}</div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{s.desc}</div>
+                    {s.num === '03' && (
+                      <div className="wr-cmd-chip">
+                        "Pull the [document] and start virtual courtroom simulation"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn-accent"
+                onClick={() => window.dispatchEvent(new Event('toggle-rag-palette'))}
+                style={{ padding: '10px 22px', display: 'flex', alignItems: 'center', gap: '7px' }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                Open Universal Agent
+              </button>
+              <button
+                style={{ padding: '10px 22px', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '7px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' }}
+                onClick={() => navigate('/vault')}
+                onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(59,130,246,0.35)'; e.currentTarget.style.color='white'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border-subtle)'; e.currentTarget.style.color='var(--text-muted)'; }}
+              >
+                Go to Case Vault
+              </button>
+            </div>
           </div>
         </div>
       </>
