@@ -105,7 +105,8 @@ def login_user():
         if user:
             # 3A. User exists -> Verify password and grant token
             if check_password_hash(user['password'], password):
-                token = create_access_token(identity=user['id'])
+                # FIX: Wrapped user['id'] in str()
+                token = create_access_token(identity=str(user['id']))
                 return jsonify({"access_token": token, "user_id": user['id']}), 200
             else:
                 return jsonify({"error": "Invalid email or password."}), 401
@@ -115,7 +116,8 @@ def login_user():
             c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed))
             conn.commit()
             user_id = c.lastrowid
-            token = create_access_token(identity=user_id)
+            # FIX: Wrapped user_id in str()
+            token = create_access_token(identity=str(user_id))
             return jsonify({"access_token": token, "user_id": user_id}), 200
 
     except Exception as e:
