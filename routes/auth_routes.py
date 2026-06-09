@@ -88,6 +88,7 @@ def login_user():
         return jsonify({"error": "Missing credentials"}), 400
 
     conn = sqlite3.connect('lex_assistant.db')
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
         # 1. Force table creation so it NEVER crashes
@@ -102,9 +103,9 @@ def login_user():
 
         if user:
             # 3A. User exists -> Verify password and grant token
-            if check_password_hash(user[1], password):
-                token = create_access_token(identity=user[0])
-                return jsonify({"access_token": token, "user_id": user[0]}), 200
+            if check_password_hash(user['password'], password):
+                token = create_access_token(identity=user['id'])
+                return jsonify({"access_token": token, "user_id": user['id']}), 200
             else:
                 return jsonify({"error": "Invalid email or password."}), 401
         else:
