@@ -4,6 +4,7 @@ Blueprint: /api/auth
   POST /api/auth/signup
   POST /api/auth/login
 """
+import sqlite3
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
