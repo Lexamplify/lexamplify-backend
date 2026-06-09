@@ -1,9 +1,6 @@
 """
 utils/rag_pipeline.py
 Core Universal RAG Chatbot Pipeline for LexAmplify.
-Handles semantic chunking (legal-clause specific), embedding generation
-(with LiteLLM and a determininstic feature hashing fallback), vector similarity search
-on SQLite, and LLM reasoning under strict Indian Law constraints.
 """
 import re
 import os
@@ -30,20 +27,9 @@ def get_groq_client():
 # ── 1. SEMANTIC CHUNKING LOGIC ──────────────────────────────────────────
 
 def split_into_semantic_units(text: str) -> list[str]:
-    """
-    Splits the raw document text into initial semantic units based on legal headings,
-    numbered sections, and paragraph breaks common to Indian legal documents.
-    """
     if not text:
         return []
-    
-    # Normalize newlines
     text = text.replace('\r\n', '\n').replace('\r', '\n')
-    
-    # Regular expressions matching common boundary points in Indian pleadings/contracts:
-    # - Paragraph/Clause numbers at start of line: e.g. "1.", "12.", "1.1", "Clause 4", "Section 437"
-    # - Capitalized headings: "WHEREAS", "PRAYER", "ORDER", "JUDGMENT", "FACTS", "GROUNDS", "DEFINITIONS"
-    # We use lookahead assertions to split without losing or deleting the headings/sections themselves.
     pattern = r'(?=\n(?:' \
               r'\d+\.\s+|' \
               r'\d+\)\s+|' \
@@ -62,43 +48,23 @@ def split_into_semantic_units(text: str) -> list[str]:
               r'Cl\.\s+\d+|' \
               r'Article\s+\d+' \
               r'))'
-    
     units = re.split(pattern, text)
-    
-    # Clean up empty or whitespace-only units
-    cleaned_units = []
-    for unit in units:
-        unit_str = unit.strip()
-        if unit_str:
-            cleaned_units.append(unit_str)
-            
-    return cleaned_units
+    return [u.strip() for u in units if u.strip()]
 
 
 def chunk_document_text(text: str, target_chunk_size: int = 1000, max_chunk_size: int = 1500) -> list[str]:
-    """
-    Assembles semantic units into balanced chunks. If a single unit is too large,
-    it splits it by sentences. If units are too small, it groups them to prevent
-    context loss, keeping total characters within targets.
-    """
     units = split_into_semantic_units(text)
     chunks = []
     current_chunk = []
     current_length = 0
-    
+
     for unit in units:
         unit_len = len(unit)
-        
-        # Case A: A single unit is extremely large, exceeding our max chunk size.
-        # We must split this large unit semantically by sentences.
         if unit_len > max_chunk_size:
-            # First, flush any accumulated small units
             if current_chunk:
                 chunks.append(" ".join(current_chunk))
                 current_chunk = []
                 current_length = 0
-                
-            # Split this large unit by sentence boundaries (period/question/exclamation with space)
             sentences = re.split(r'(?<=[.!?])\s+', unit)
             temp_chunk = []
             temp_len = 0
@@ -113,50 +79,35 @@ def chunk_document_text(text: str, target_chunk_size: int = 1000, max_chunk_size
                     temp_len += sentence_len
             if temp_chunk:
                 chunks.append(" ".join(temp_chunk))
-                
-        # Case B: Adding this unit would exceed our maximum chunk size.
-        # We flush the current chunk and start a new one with this unit.
         elif current_length + unit_len > max_chunk_size:
             if current_chunk:
                 chunks.append(" ".join(current_chunk))
             current_chunk = [unit]
             current_length = unit_len
-            
-        # Case C: Accumulate the unit.
         else:
             current_chunk.append(unit)
             current_length += unit_len
-            
-        # If we have reached a good sizing, let's flush to keep chunks clean
+
         if current_length >= target_chunk_size:
             chunks.append(" ".join(current_chunk))
             current_chunk = []
             current_length = 0
-            
-    # Flush any remaining items
+
     if current_chunk:
         chunks.append(" ".join(current_chunk))
-        
     return chunks
 
 # ── 2. EMBEDDINGS LOGIC ─────────────────────────────────────────────────
 
 def _generate_local_fallback_embedding(text: str, dimension: int = 512) -> list[float]:
-    """
-    Generates a deterministic hash-based term frequency vector (Feature Hashing)
-    to serve as a zero-dependency, crash-proof local embedding fallback.
-    """
     vec = [0.0] * dimension
     words = re.findall(r'\w+', text.lower())
     if not words:
         return vec
     for word in words:
-        # Deterministic MD5 hash to index
         h = int(hashlib.md5(word.encode('utf-8')).hexdigest(), 16)
         index = h % dimension
-        # Term frequency accumulation
         vec[index] += 1.0
-    # Normalize to unit length
     magnitude = math.sqrt(sum(x * x for x in vec))
     if magnitude > 0:
         vec = [x / magnitude for x in vec]
@@ -164,64 +115,40 @@ def _generate_local_fallback_embedding(text: str, dimension: int = 512) -> list[
 
 
 def get_embedding(text: str) -> list[float]:
-    """
-    Generates an embedding vector for a given text.
-    Attempts groq/nomic-embed-text-v1.5, falls back to openai/text-embedding-3-small,
-    and defaults to a robust local feature hashing fallback under network or credential failures.
-    """
     try:
-        response = litellm.embedding(
-            model="groq/nomic-embed-text-v1.5",
-            input=[text]
-        )
+        response = litellm.embedding(model="groq/nomic-embed-text-v1.5", input=[text])
         return response['data'][0]['embedding']
-    except Exception as e:
-        print(f"[RAG Pipeline] Groq embedding failed: {e}. Trying OpenAI fallback...")
+    except Exception:
         try:
-            response = litellm.embedding(
-                model="openai/text-embedding-3-small",
-                input=[text]
-            )
+            response = litellm.embedding(model="openai/text-embedding-3-small", input=[text])
             return response['data'][0]['embedding']
-        except Exception as e2:
-            print(f"[RAG Pipeline] External embedding interfaces failed: {e2}. Routing to local hash vectorizer...")
+        except Exception:
             return _generate_local_fallback_embedding(text)
 
 # ── 3. DB INGESTION LOGIC ───────────────────────────────────────────────
 
 def ingest_document(document_id: int, case_id: int, user_id: int, text: str) -> int:
-    """
-    Splits document text into semantic chunks, generates embeddings,
-    and stores them in SQLite. Returns count of chunks created.
-    Cleans up existing chunks for the same document to prevent double indexing.
-    """
     import sqlite3
     chunks = chunk_document_text(text)
     if not chunks:
         return 0
-        
     conn = sqlite3.connect('lex_assistant.db')
     c = conn.cursor()
     try:
-        # Avoid duplicate index entries
         c.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
         conn.commit()
-    except Exception as e:
-        print(f"[RAG Ingestion] Error cleaning old chunks: {e}")
-        
+    except Exception:
+        pass
     try:
         for idx, chunk_text in enumerate(chunks):
             embedding_vector = get_embedding(chunk_text)
-            embedding_json = json.dumps(embedding_vector)
-            
-            c.execute('''
-                INSERT INTO document_chunks (user_id, case_id, document_id, chunk_index, chunk_text, embedding)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (user_id, case_id, document_id, idx, chunk_text, embedding_json))
+            c.execute(
+                'INSERT INTO document_chunks (user_id, case_id, document_id, chunk_index, chunk_text, embedding) VALUES (?, ?, ?, ?, ?, ?)',
+                (user_id, case_id, document_id, idx, chunk_text, json.dumps(embedding_vector))
+            )
         conn.commit()
         return len(chunks)
     except Exception as e:
-        print(f"[RAG Ingestion] Direct insertion failed: {e}")
         raise e
     finally:
         conn.close()
@@ -229,7 +156,6 @@ def ingest_document(document_id: int, case_id: int, user_id: int, text: str) -> 
 # ── 4. SIMILARITY & METADATA FILTERING ──────────────────────────────────
 
 def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
-    """Computes cosine similarity between two float vectors."""
     if not vec1 or not vec2 or len(vec1) != len(vec2):
         return 0.0
     dot_product = sum(x * y for x, y in zip(vec1, vec2))
@@ -241,19 +167,9 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
 
 
 def search_chunks(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", top_k: int = 5) -> list[dict]:
-    """
-    Search chunks based on query and dynamically adjusted metadata scope filters.
-    Performs cosine similarity calculation in-memory.
-    Scope options:
-      - 'all_cases': filters only by user_id
-      - 'current_case': filters by user_id AND case_id
-      - 'open_document': filters by user_id, case_id, AND document_id
-    """
     import sqlite3
-    
     sql = "SELECT id, document_id, case_id, chunk_index, chunk_text, embedding FROM document_chunks WHERE user_id = ?"
     params = [user_id]
-    
     if scope == "current_case" and case_id is not None:
         sql += " AND case_id = ?"
         params.append(case_id)
@@ -264,27 +180,20 @@ def search_chunks(query: str, user_id: int, case_id: int = None, document_id: in
         if case_id is not None:
             sql += " AND case_id = ?"
             params.append(case_id)
-            
-    # CRITICAL FIX: Append the safety limit before executing
     sql += " ORDER BY created_at DESC LIMIT 500"
-            
     conn = sqlite3.connect('lex_assistant.db')
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
         c.execute(sql, params)
         rows = c.fetchall()
-    except Exception as e:
-        print(f"[RAG Search] Database query failed: {e}")
+    except Exception:
         return []
     finally:
         conn.close()
-        
     if not rows:
         return []
-        
     query_emb = get_embedding(query)
-    
     scored_chunks = []
     for row in rows:
         try:
@@ -298,23 +207,17 @@ def search_chunks(query: str, user_id: int, case_id: int = None, document_id: in
                 "text": row["chunk_text"],
                 "similarity": sim
             })
-        except Exception as e:
+        except Exception:
             continue
-            
     scored_chunks.sort(key=lambda x: x["similarity"], reverse=True)
     return scored_chunks[:top_k]
 
-# ── 5. RAG RESPONSE GENERATION ─────────────────────────────────────────
+# ── 5. JSON PARSE SHIELD ────────────────────────────────────────────────
 
 def clean_and_parse_json(raw_text: str) -> dict:
-    """
-    Safely strips markdown blocks and extracts a valid JSON object.
-    """
     if not raw_text:
         return None
     cleaned = raw_text.strip()
-    
-    # Strip markdown block wraps
     if cleaned.startswith("```"):
         lines = cleaned.splitlines()
         if len(lines) >= 2:
@@ -323,16 +226,11 @@ def clean_and_parse_json(raw_text: str) -> dict:
             if lines[-1].startswith("```"):
                 lines = lines[:-1]
             cleaned = "\n".join(lines).strip()
-            
-    # Remove any surrounding backticks
     cleaned = cleaned.strip("`").strip()
-    
     try:
         return json.loads(cleaned)
     except Exception:
         pass
-        
-    # Search for first '{' and last '}'
     start_idx = cleaned.find('{')
     end_idx = cleaned.rfind('}')
     if start_idx != -1 and end_idx != -1:
@@ -340,26 +238,12 @@ def clean_and_parse_json(raw_text: str) -> dict:
             return json.loads(cleaned[start_idx:end_idx + 1])
         except Exception:
             pass
-            
     return None
 
+# ── 6. LEGACY NON-STREAMING ENDPOINT ───────────────────────────────────
 
 def answer_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", current_path: str = "", params: dict = None) -> dict:
-    """
-    Orchestrates the retrieval of relevant context and executes the LLM reasoning loop.
-    Acting as a strict JSON routing/navigation agent.
-    """
-    # Retrieve closest contexts
-    matched_chunks = search_chunks(
-        query=query,
-        user_id=user_id,
-        case_id=case_id,
-        document_id=document_id,
-        scope=scope,
-        top_k=4
-    )
-    
-    # Restrict system prompt to enforce strict agentic routing & return format
+    matched_chunks = search_chunks(query=query, user_id=user_id, case_id=case_id, document_id=document_id, scope=scope, top_k=4)
     system_prompt = (
         "You are an elite AI legal assistant operating strictly under Indian Law. "
         "Additionally, you act as a strict JSON navigation and routing agent.\n\n"
@@ -369,126 +253,151 @@ def answer_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         f"   - Context Parameters: {json.dumps(params or {})}\n\n"
         "2. Strict Agentic Routing Map:\n"
         "   The list of allowed routes is: ['/dashboard', '/contract-analyzer', '/court-resources', '/conflict-engine']\n"
-        "   - If the user's query implies navigation (e.g., 'go to contract analyzer', 'show me court resources', 'take me to the dashboard'), you MUST return EXACTLY this JSON structure:\n"
-        "     {\n"
-        "       \"action\": \"navigate\",\n"
-        "       \"target_route\": \"<one_of_the_allowed_routes>\",\n"
-        "       \"message\": \"Navigating...\"\n"
-        "     }\n"
-        "     NOTE: Choose the route that best matches the user's navigation target.\n\n"
+        "   - If the user's query implies navigation, return EXACTLY:\n"
+        "     {\"action\": \"navigate\", \"target_route\": \"<route>\", \"message\": \"Navigating...\"}\n\n"
         "3. Legal & General Queries:\n"
-        "   - If the query is a legal question or a general query (not navigation), use the provided document context to answer it.\n"
-        "   - If the context lacks the answer, state 'Insufficient document context'.\n"
-        "   - You MUST format your response as EXACTLY this JSON structure:\n"
-        "     {\n"
-        "       \"action\": \"chat\",\n"
-        "       \"message\": \"<your answer text here>\"\n"
-        "     }\n\n"
-        "4. DO NOT wrap the output in markdown code fences or backticks. Return ONLY the raw JSON string starting with { and ending with }."
+        "   - Return EXACTLY: {\"action\": \"chat\", \"message\": \"<answer>\"}\n\n"
+        "4. DO NOT wrap the output in markdown code fences. Return ONLY raw JSON."
     )
-    
-    # Formulate context payload
     if matched_chunks:
-        context_blocks = []
-        for c in matched_chunks:
-            context_blocks.append(
-                f"[Source Document ID: {c['document_id']}, Chunk Index: {c['chunk_index']}]:\n"
-                f"{c['text']}"
-            )
-        context_str = "\n\n".join(context_blocks)
+        context_str = "\n\n".join(
+            f"[Source Document ID: {c['document_id']}, Chunk Index: {c['chunk_index']}]:\n{c['text']}"
+            for c in matched_chunks
+        )
     else:
         context_str = "No document context retrieved."
-        
-    user_message = (
-        f"Retrieved Document Context:\n"
-        f"=========================\n"
-        f"{context_str}\n"
-        f"=========================\n\n"
-        f"User Query: {query}"
-    )
-    
+    user_message = f"Retrieved Document Context:\n=========================\n{context_str}\n=========================\n\nUser Query: {query}"
     try:
         answer_raw = ask_groq(system_prompt, user_message)
-        
-        # Clean and parse the response from the LLM
         parsed = clean_and_parse_json(answer_raw)
-        
         if parsed:
             action = parsed.get("action", "chat")
-            target_route = parsed.get("target_route")
             message = parsed.get("message", "")
-            
-            # Map both answer and message fields to guarantee frontend compatibility
             return {
                 "action": action,
-                "target_route": target_route,
+                "target_route": parsed.get("target_route"),
                 "answer": message,
                 "message": message,
                 "sources": [
-                    {
-                        "document_id": c["document_id"],
-                        "case_id": c["case_id"],
-                        "chunk_index": c["chunk_index"],
-                        "similarity": round(c["similarity"], 4)
-                    }
+                    {"document_id": c["document_id"], "case_id": c["case_id"], "chunk_index": c["chunk_index"], "similarity": round(c["similarity"], 4)}
                     for c in matched_chunks
                 ]
             }
-        else:
-            # Fallback if parsing failed
-            return {
-                "action": "chat",
-                "answer": answer_raw,
-                "message": answer_raw,
-                "sources": []
-            }
-            
+        return {"action": "chat", "answer": answer_raw, "message": answer_raw, "sources": []}
     except Exception as e:
         print(f"[RAG Pipeline] Inference engine error: {e}")
-        return {
-            "answer": "Error generating RAG response. Please check backend LLM availability.",
-            "sources": []
-        }
+        return {"answer": "Error generating RAG response. Please check backend LLM availability.", "sources": []}
+
+# ── 7. DUAL-ENGINE STREAMING ENDPOINT ──────────────────────────────────
 
 def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", current_path: str = "", params: dict = None):
     """
-    High-performance streaming RAG query. Bypasses JSON stringification 
-    to yield tokens instantly to the frontend via Server-Sent Events.
+    Dual-Engine Architecture:
+      - Engine 1 (llama-3.1-8b-instant): Sub-500ms intent router.
+      - Engine 2 (llama-3.3-70b-versatile): Full RAG draft/chat generation.
     """
-    from groq import Groq
-    import os
-    
-    matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=4)
-    
-    # We remove the strict JSON requirement from the prompt so it can freely stream text
-    system_prompt = (
-        "You are an elite AI legal assistant operating strictly under Indian Law. "
-        "Answer the user's query or draft the requested document using the provided context. "
-        "Format your response clearly using markdown. DO NOT output JSON."
-    )
-    
-    if matched_chunks:
-        context_blocks = [f"[Source Chunk]:\n{c['text']}" for c in matched_chunks]
-        context_str = "\n\n".join(context_blocks)
-    else:
-        context_str = "No document context retrieved."
-        
-    user_message = f"Retrieved Context:\n{context_str}\n\nUser Query: {query}"
-    
     client = get_groq_client()
     if not client:
         yield f"data: {json.dumps({'token': '[System Error: GROQ_API_KEY is missing or invalid on server.]'})}\n\n"
         return
-    
+
+    # ── ENGINE 1: INTENT ROUTER ─────────────────────────────────────
+    command_check_prompt = f"""User query: "{query}"
+Determine if the user is giving a COMMAND or asking a QUESTION.
+Commands include:
+1. Navigation: "go to dashboard", "open court resources", "take me to vault"
+2. Drafting: "draft a bail application", "write an agreement", "create a petition"
+3. Scheduling: "schedule a meeting", "add hearing to calendar", "set a reminder"
+
+If Navigation, return JSON: {{"action": "navigate", "target_route": "/dashboard"}} (valid routes: /dashboard, /contract-viewer, /court-resources, /conflict-engine, /vault)
+If Drafting, return JSON: {{"action": "review_document", "draft": {{"title": "Draft Title", "doc_type": "Legal Document", "content": "", "case_id": "{case_id or 'Unknown'}"}}}}
+If Scheduling, return JSON: {{"action": "confirm_schedule", "proposed_events": [{{"title": "Event", "event_date": "2026-06-15", "event_type": "task", "related_case_id": "{case_id or ''}"}}]}}
+If Question/Chat, return JSON: {{"action": "chat"}}
+
+Return ONLY valid JSON. No markdown, no explanation."""
+
     try:
-        # 1. Yield metadata immediately so the UI can log the sources instantly
+        intent_res = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": command_check_prompt}],
+            temperature=0.0,
+        )
+        intent_data = clean_and_parse_json(intent_res.choices[0].message.content)
+
+        if intent_data:
+            action = intent_data.get("action", "chat")
+
+            if action == "navigate":
+                yield f"data: {json.dumps(intent_data)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            if action == "confirm_schedule":
+                yield f"data: {json.dumps(intent_data)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            if action == "review_document":
+                # ── ENGINE 2: DRAFT GENERATOR ───────────────────────
+                matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=6)
+                context_str = (
+                    "\n\n".join(f"[Source Chunk]:\n{c['text']}" for c in matched_chunks)
+                    if matched_chunks else "No case document context available."
+                )
+                draft_prompt = (
+                    f"You are an elite Indian legal document drafter. "
+                    f"Using the case context below, draft the requested legal document in full.\n\n"
+                    f"Case Context:\n{context_str}\n\n"
+                    f"Request: {query}\n\n"
+                    f"Generate a complete, professional legal document with proper headings, "
+                    f"clauses, and formatting suitable for Indian courts."
+                )
+                draft_res = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": draft_prompt}],
+                    temperature=0.3,
+                )
+                draft_content = draft_res.choices[0].message.content
+                doc_info = intent_data.get("draft", {})
+                result = {
+                    "action": "review_document",
+                    "draft": {
+                        "title": doc_info.get("title", "Legal Document"),
+                        "doc_type": doc_info.get("doc_type", "Legal Document"),
+                        "content": draft_content,
+                        "case_id": str(case_id or "Unknown"),
+                    }
+                }
+                yield f"data: {json.dumps(result)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+    except Exception as e:
+        print(f"[Interceptor Error]: {e}")
+        # Fall through to normal RAG stream
+
+    # ── ENGINE 2: NORMAL RAG STREAM (chat) ─────────────────────────
+    matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=4)
+
+    system_prompt = (
+        "You are an elite AI legal assistant operating strictly under Indian Law. "
+        "Answer the user's query using the provided context. "
+        "Format your response clearly using markdown. DO NOT output JSON."
+    )
+
+    context_str = (
+        "\n\n".join(f"[Source Chunk]:\n{c['text']}" for c in matched_chunks)
+        if matched_chunks else "No document context retrieved."
+    )
+    user_message = f"Retrieved Context:\n{context_str}\n\nUser Query: {query}"
+
+    try:
         metadata = {
             "action": "chat",
             "sources": [{"document_id": c["document_id"]} for c in matched_chunks]
         }
         yield f"data: {json.dumps({'metadata': metadata})}\n\n"
-        
-        # 2. Open the Groq Stream via singleton
+
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -496,16 +405,14 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
                 {"role": "user", "content": user_message}
             ],
             temperature=0.2,
-            stream=True # CRITICAL: Enables live token streaming
+            stream=True,
         )
-        
-        # 3. Yield each word as it generates
+
         for chunk in completion:
             if chunk.choices[0].delta.content:
-                token = chunk.choices[0].delta.content
-                yield f"data: {json.dumps({'token': token})}\n\n"
-                
+                yield f"data: {json.dumps({'token': chunk.choices[0].delta.content})}\n\n"
+
         yield "data: [DONE]\n\n"
-        
+
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"

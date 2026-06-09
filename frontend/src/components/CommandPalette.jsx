@@ -229,7 +229,7 @@ export default function CommandPalette() {
 
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-      
+
       const response = await fetch('https://lexamplify-backend.onrender.com/api/ai/rag-chat', {
         method: 'POST',
         headers: {
@@ -258,39 +258,68 @@ export default function CommandPalette() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        
+
         // SSE lines typically end in \n\n or \r\r\n
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep the incomplete line in the buffer
-        
+
         for (const line of lines) {
           const trimmed = line.trim();
-          if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
-            const jsonString = trimmed.replace(/^data:\s*/, '');
-            try {
-              const parsed = JSON.parse(jsonString);
-              
-              if (parsed.metadata) {
-                 setMessages(prev => prev.map(msg => 
-                    msg.id === messageId ? { ...msg, sources: parsed.metadata.sources } : msg
-                 ));
-              }
+          if (!trimmed.startsWith("data:")) continue;
 
-              if (parsed.token) {
-                accumulatedDraft += parsed.token;
-                setMessages(prev => prev.map(msg => 
-                    msg.id === messageId ? { ...msg, text: accumulatedDraft } : msg
-                ));
+          // Extract the actual JSON string payload
+          const jsonString = trimmed.replace(/^data:\s*/, "").trim();
+
+          // 🚨 THE FIX: Ignore empty keep-alives and the [DONE] closing signal
+          if (!jsonString || jsonString === "[DONE]") {
+            continue;
+          }
+
+          try {
+            const parsed = JSON.parse(jsonString);
+
+            // NEW COMMAND PARSING: Intercept actions before standard text streaming
+            if (parsed.action && parsed.action !== 'chat') {
+              if (parsed.action === 'navigate') {
+                setNavigatingRoute(parsed.target_route);
+                setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, text: `Executing Agentic Routing: Navigating to ${parsed.target_route}...` } : msg));
+                setTimeout(() => {
+                  navigate(parsed.target_route);
+                  setIsOpen(false);
+                  setNavigatingRoute(null);
+                }, 1500);
+              } else if (parsed.action === 'review_document') {
+                setPendingDraft(parsed.draft);
+                setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, text: 'I have drafted the document. Please review and approve it below.' } : msg));
+              } else if (parsed.action === 'confirm_schedule') {
+                setPendingSchedule(parsed.proposed_events);
+                setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, text: 'I have proposed a schedule. Please review and approve it below.' } : msg));
               }
-              
-              if (parsed.error) {
-                 setMessages(prev => prev.map(msg => 
-                    msg.id === messageId ? { ...msg, text: accumulatedDraft + '\n\n[Error: ' + parsed.error + ']' } : msg
-                 ));
-              }
-            } catch (e) {
-              // ignore partial JSON from stream buffering issues
+              continue;
             }
+
+            if (parsed.metadata) {
+              setMessages(prev => prev.map(msg =>
+                msg.id === messageId ? { ...msg, sources: parsed.metadata.sources } : msg
+              ));
+            }
+
+            if (parsed.token) {
+              accumulatedDraft += parsed.token;
+              setMessages(prev => prev.map(msg =>
+                msg.id === messageId ? { ...msg, text: accumulatedDraft } : msg
+              ));
+            }
+
+            if (parsed.error) {
+              setMessages(prev => prev.map(msg =>
+                msg.id === messageId ? { ...msg, text: accumulatedDraft + '\n\n[Error: ' + parsed.error + ']' } : msg
+              ));
+            }
+          } catch (e) {
+            // 🚨 THE SHIELD: If a chunk is broken over the network, 
+            // just ignore it silently. DO NOT crash the whole stream!
+            console.warn("Skipping partial chunk...");
           }
         }
       }
