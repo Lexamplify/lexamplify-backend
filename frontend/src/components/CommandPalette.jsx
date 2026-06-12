@@ -169,8 +169,13 @@ export default function CommandPalette() {
   const [isListening, setIsListening] = useState(false);
   const [micError,    setMicError]    = useState(null);
 
+  // ── File attachment ──────────────────────────────────
+  const [attachedFile, setAttachedFile] = useState(null); // { name, content }
+  const [fileLoading,  setFileLoading]  = useState(false);
+
   // ── Refs ─────────────────────────────────────────────
   const inputRef       = useRef(null);
+  const fileInputRef   = useRef(null);
   const recognitionRef = useRef(null);
   const searchRef      = useRef(null);
   const messagesEndRef = useRef(null);
@@ -319,6 +324,53 @@ export default function CommandPalette() {
     isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
   };
 
+  // ── File attachment handler ───────────────────────────
+  const handleFileAttach = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    const textTypes = ['txt', 'md', 'json', 'csv', 'js', 'ts', 'py', 'java', 'xml', 'html', 'css'];
+
+    if (['jpg','jpeg','png','gif','webp','bmp','svg'].includes(ext)) {
+      setAttachedFile({ name: file.name, content: '[Image attached — image analysis is not yet supported by this model. Describe what you need help with and I will assist.]', isImage: true });
+      return;
+    }
+
+    if (textTypes.includes(ext)) {
+      setFileLoading(true);
+      try {
+        const text = await file.text();
+        setAttachedFile({ name: file.name, content: text.slice(0, 12000) });
+      } catch (_) {
+        setAttachedFile({ name: file.name, content: '[Could not read file content]' });
+      } finally { setFileLoading(false); }
+      return;
+    }
+
+    // PDF / DOCX — send to backend for extraction
+    setFileLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+      const res = await fetch(`${API_BASE}/api/ai/extract-file`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAttachedFile({ name: file.name, content: data.text || '[Empty document]' });
+      } else {
+        setAttachedFile({ name: file.name, content: '[Failed to extract text from file — please paste the content manually]' });
+      }
+    } catch (_) {
+      setAttachedFile({ name: file.name, content: '[Failed to read file]' });
+    } finally { setFileLoading(false); }
+  };
+
   // ── Main search / stream ─────────────────────────────
   async function handleSearch(e, directQuery = null) {
     if (e) e.preventDefault();
@@ -335,14 +387,21 @@ export default function CommandPalette() {
       localStorage.setItem(CURRENT_KEY, sid);
     }
 
-    pushMessage(sid, { id: `u_${Date.now()}`, role: 'user', text: q });
+    // Build display text and full query (file content appended for backend)
+    const displayText = attachedFile ? `📎 ${attachedFile.name}\n\n${q}` : q;
+    const fullQuery   = attachedFile
+      ? `[Attached document: ${attachedFile.name}]\n\n${attachedFile.content}\n\n---\n\nUser query: ${q}`
+      : q;
+
+    pushMessage(sid, { id: `u_${Date.now()}`, role: 'user', text: displayText });
     setQuery('');
+    setAttachedFile(null);
     setLoading(true);
     // Reset pendingSchedule/pendingDraft on new query
     updateSession(sid, s => ({ ...s, pendingSchedule: null, pendingDraft: null }));
 
     // ── Client-side navigation fast-path ─────────────
-    if (isNavCommand(q)) {
+    if (isNavCommand(q) && !attachedFile) {
       const intent = resolveNavIntent(q);
       if (intent) {
         const label = intent.route.replace(/^\//, '').replace(/-/g, ' ');
@@ -370,9 +429,18 @@ export default function CommandPalette() {
           'Content-Type': 'application/json',
           ...(token && { Authorization: `Bearer ${token}` }),
         },
-        body: JSON.stringify({ query: q, currentPath: location.pathname, params: routeParams }),
+        body: JSON.stringify({ query: fullQuery, currentPath: location.pathname, params: routeParams }),
       });
 
+      if (res.status === 401) {
+        pushMessage(sid, {
+          id: `e_${Date.now()}`, role: 'error',
+          text: '⚠️ Session expired. Please log in again to use the AI Legal Associate.',
+          isAuth: true,
+        });
+        setLoading(false);
+        return;
+      }
       if (!res.ok) {
         pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text: 'Server communication error. Please try again.' });
         setLoading(false);
@@ -707,6 +775,12 @@ export default function CommandPalette() {
                     <div key={idx} className="lex-msg-in" style={{ background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.17)', borderLeft: '3px solid #EF4444', borderRadius: '3px 8px 8px 3px', padding: '10px 14px' }}>
                       <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#EF4444', marginBottom: '4px' }}>Error</div>
                       <div style={{ fontSize: '13px', color: '#FCA5A5', lineHeight: '1.5' }}>{msg.text}</div>
+                      {msg.isAuth && (
+                        <button
+                          onClick={() => { handleClose(); navigate('/login'); }}
+                          style={{ marginTop: '8px', padding: '5px 14px', background: '#EF4444', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                        >Go to Login →</button>
+                      )}
                     </div>
                   );
                 }
@@ -855,9 +929,37 @@ export default function CommandPalette() {
                  INPUT BAR
             ══════════════════════════════════ */}
             <div style={{ padding: '12px 20px 16px', borderTop: '1px solid #141B28', background: '#090C14', flexShrink: 0 }}>
+
+              {/* File attachment preview pill */}
+              {(attachedFile || fileLoading) && (
+                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {fileLoading ? (
+                    <div className="lex-shimmer" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.2)', borderRadius: '20px', fontSize: '12px', color: '#7EB3F5' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3B82F6', display: 'inline-block' }} />
+                      Extracting file…
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: attachedFile?.isImage ? 'rgba(245,158,11,.1)' : 'rgba(16,185,129,.1)', border: `1px solid ${attachedFile?.isImage ? 'rgba(245,158,11,.25)' : 'rgba(16,185,129,.25)'}`, borderRadius: '20px', fontSize: '12px', color: attachedFile?.isImage ? '#FCD34D' : '#6EE7B7', maxWidth: '320px' }}>
+                      <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedFile?.name}</span>
+                      <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', lineHeight: 1, fontSize: '14px', opacity: 0.7 }}>×</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                style={{ display: 'none' }}
+                accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.jpg,.jpeg,.png,.gif,.webp"
+                onChange={handleFileAttach}
+              />
+
               <form
                 onSubmit={handleSearch}
-                style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${isListening ? 'rgba(239,68,68,.5)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
+                style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${isListening ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
               >
                 <textarea
                   ref={inputRef}
@@ -876,10 +978,25 @@ export default function CommandPalette() {
                   placeholder={
                     isListening
                       ? '🎤 Listening — speak your command…'
+                      : attachedFile
+                      ? `Ask something about ${attachedFile.name}…`
                       : 'Command your AI Legal Associate… (Shift+Enter for new line)'
                   }
                   style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }}
                 />
+
+                {/* Attach file button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLocked || fileLoading}
+                  style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}
+                  title="Attach file (PDF, DOCX, TXT, image)"
+                >
+                  <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                  </svg>
+                </button>
 
                 {/* Mic button */}
                 <button
@@ -904,8 +1021,8 @@ export default function CommandPalette() {
                 <button
                   type="submit"
                   className="lex-send-btn"
-                  disabled={isLocked || !query.trim()}
-                  style={{ background: (isLocked || !query.trim()) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || !query.trim()) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || !query.trim()) ? 0.45 : 1 }}
+                  disabled={isLocked || (!query.trim() && !attachedFile)}
+                  style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}
                 >
                   Send
                 </button>

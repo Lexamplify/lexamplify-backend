@@ -2,6 +2,7 @@ from flask import Flask, render_template, jsonify, request
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from database import db as sqlalchemy_db
+from datetime import timedelta
 import os
 import sqlite3
 import json
@@ -172,6 +173,7 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'secret')
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
     app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'static/uploads')
     app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 16777216))
     app.config['SQLITE_DB_PATH'] = DB_PATH
@@ -180,6 +182,25 @@ def create_app():
     jwt.init_app(app)
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     init_sqlite_db()
+
+    @app.route('/api/ai/extract-file', methods=['POST', 'OPTIONS'])
+    def extract_file_text():
+        """Extract plain text from an uploaded PDF, DOCX, or TXT for the AI Legal Associate."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        f = request.files.get('file')
+        if not f or not f.filename:
+            return jsonify({'error': 'No file provided'}), 400
+        ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else 'txt'
+        try:
+            from utils.pdf_helper import extract_text_for_summary
+            raw_bytes = f.read()
+            text = extract_text_for_summary(raw_bytes, ext)
+            if not text or not text.strip():
+                text = raw_bytes.decode('utf-8', errors='ignore')
+            return jsonify({'text': text[:12000], 'filename': f.filename})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/vault/save', methods=['POST', 'OPTIONS'])
     def save_vault_document():

@@ -35,13 +35,23 @@
 }
 
 :root[data-theme="light"] {
-  --bg-app: #F8FAFC;
-  --bg-sidebar: #FFFFFF;
-  --bg-panel: #F1F5F9;
-  --bg-card: #FFFFFF;
-  --text-primary: #0F172A;
-  --text-muted: #475569;
-  --border-subtle: #E2E8F0;
+  /* Neutral slate palette — not pure white, prevents eye strain */
+  --bg-app:        #EAEDF3;
+  --bg-sidebar:    #DDE1EC;
+  --bg-panel:      #F0F2F8;
+  --bg-card:       #FFFFFF;
+  --text-primary:  #1A2234;
+  --text-muted:    #4A5568;
+  --border-subtle: #C8CEDC;
+
+  /* Ensure dark-prefixed aliases also adopt */
+  --bg-dark-app:    #EAEDF3;
+  --bg-dark-sidebar:#DDE1EC;
+  --bg-dark-panel:  #F0F2F8;
+  --bg-dark-card:   #FFFFFF;
+  --text-dark-primary: #1A2234;
+  --text-dark-muted:   #4A5568;
+  --border-dark-subtle:#C8CEDC;
 }
 
 body,
@@ -543,19 +553,19 @@ button:active,
   -webkit-backdrop-filter: blur(12px) !important;
 }
 
-/* Typography Color Hierarchy - Muted Silver/White */
+/* Typography Color Hierarchy */
 h1, h2, h3, h4, h5, h6 {
-  color: #FFFFFF !important;
+  color: var(--text-primary) !important;
 }
 p, span, li, td, th {
-  color: var(--text-dark-primary);
+  color: var(--text-primary);
 }
 .text-muted,
 .sidebar-nav a:not([style*="color: var(--accent-primary)"]) {
   color: var(--text-dark-muted) !important;
 }
 
-/* Form Controls - Rich slate dark background, subtle inner shadow, and focus ring */
+/* Form Controls — adapts to dark and light themes */
 input[type="text"],
 input[type="number"],
 input[type="email"],
@@ -567,16 +577,15 @@ textarea,
 .search-input-field,
 .dark-input,
 .input-textarea {
-  background-color: #0A0E17 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  color: #FFFFFF !important;
+  background-color: var(--bg-dark-app, #0A0E17) !important;
+  border: 1px solid var(--border-dark-subtle, rgba(255,255,255,0.08)) !important;
+  color: var(--text-dark-primary, #FFFFFF) !important;
   border-radius: 8px !important;
   padding: 10px 14px !important;
   font-family: var(--font-sans);
   font-size: 13.5px !important;
   outline: none !important;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5) !important;
 }
 
 input[type="text"]:focus,
@@ -591,7 +600,7 @@ textarea:focus,
 .dark-input:focus,
 .input-textarea:focus {
   border-color: #3B82F6 !important;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
 }
 
 /* File Upload Dropzones */
@@ -907,3 +916,182 @@ textarea:focus,
   transition: left 0.2s;
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+   Applied on top of base styles when [data-theme="light"] is set.
+   Fixes: headings invisible on white, dark form inputs in light bg,
+          hardcoded white/rgba text colours becoming invisible on light bg.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar ── */
+:root[data-theme="light"] .sidebar {
+  background-color: var(--bg-sidebar) !important;
+  border-right: 1px solid var(--border-subtle) !important;
+}
+:root[data-theme="light"] .sidebar-nav-item {
+  color: #4A5568 !important;
+}
+:root[data-theme="light"] .sidebar-nav-item:hover {
+  background: rgba(59,130,246,.08) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .sidebar-nav-item.active {
+  background: rgba(59,130,246,.12) !important;
+  color: #2563EB !important;
+  box-shadow: inset 3px 0 0 #2563EB !important;
+}
+
+/* ── Topbar ── */
+:root[data-theme="light"] .topbar {
+  background-color: var(--bg-sidebar) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+/* ── Tables ── */
+:root[data-theme="light"] .premium-table th,
+:root[data-theme="light"] .doc-table th {
+  background-color: #E8ECF4 !important;
+  color: #1A2234 !important;
+  border-bottom: 1px solid #C8CEDC !important;
+  border-right: 1px solid #C8CEDC !important;
+}
+:root[data-theme="light"] .premium-table td,
+:root[data-theme="light"] .doc-table td {
+  background-color: #FFFFFF !important;
+  color: #374151 !important;
+  border-bottom: 1px solid #E5E7EB !important;
+  border-right: 1px solid #E5E7EB !important;
+}
+:root[data-theme="light"] .premium-table tr:hover td,
+:root[data-theme="light"] .doc-table tr:hover td {
+  background-color: #F5F7FC !important;
+  color: #1A2234 !important;
+}
+
+/* ── Cards & panels ── */
+:root[data-theme="light"] .premium-card,
+:root[data-theme="light"] .stat-card,
+:root[data-theme="light"] .quick-action-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+
+/* ── Form inputs in light mode ── */
+:root[data-theme="light"] input[type="text"],
+:root[data-theme="light"] input[type="number"],
+:root[data-theme="light"] input[type="email"],
+:root[data-theme="light"] input[type="password"],
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .form-input,
+:root[data-theme="light"] .select-element,
+:root[data-theme="light"] .search-input-field,
+:root[data-theme="light"] .dark-input,
+:root[data-theme="light"] .input-textarea {
+  background-color: #FFFFFF !important;
+  border: 1px solid #C8CEDC !important;
+  color: #1A2234 !important;
+  box-shadow: none !important;
+}
+:root[data-theme="light"] input[type="text"]:focus,
+:root[data-theme="light"] input[type="number"]:focus,
+:root[data-theme="light"] input[type="email"]:focus,
+:root[data-theme="light"] input[type="password"]:focus,
+:root[data-theme="light"] select:focus,
+:root[data-theme="light"] textarea:focus,
+:root[data-theme="light"] .form-input:focus,
+:root[data-theme="light"] .input-textarea:focus {
+  border-color: #3B82F6 !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.15) !important;
+}
+
+/* ── Scrollbar (light) ── */
+:root[data-theme="light"] .sidebar nav::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); }
+:root[data-theme="light"] .sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.22); }
+
+/* ── Main content text ── */
+:root[data-theme="light"] .main-content,
+:root[data-theme="light"] .analysis-panel,
+:root[data-theme="light"] .resources-container {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ── Tab buttons (CourtResources, ContractAnalyzer) ── */
+:root[data-theme="light"] .tab-btn,
+:root[data-theme="light"] .sub-tab-btn,
+:root[data-theme="light"] .analysis-tab-btn,
+:root[data-theme="light"] .editor-tab-btn {
+  color: #4A5568 !important;
+  background: transparent !important;
+}
+:root[data-theme="light"] .tab-btn:hover,
+:root[data-theme="light"] .sub-tab-btn:hover,
+:root[data-theme="light"] .analysis-tab-btn:hover,
+:root[data-theme="light"] .editor-tab-btn:hover {
+  color: #1A2234 !important;
+  background: rgba(0,0,0,.04) !important;
+}
+:root[data-theme="light"] .tab-btn.active,
+:root[data-theme="light"] .sub-tab-btn.active,
+:root[data-theme="light"] .analysis-tab-btn.active,
+:root[data-theme="light"] .editor-tab-btn.active {
+  color: #2563EB !important;
+  border-bottom-color: #2563EB !important;
+}
+
+/* ── Contract Analyzer light mode ── */
+:root[data-theme="light"] .analyzer-container,
+:root[data-theme="light"] .editor-column,
+:root[data-theme="light"] .analysis-column {
+  background: var(--bg-panel) !important;
+}
+:root[data-theme="light"] .analyzer-header,
+:root[data-theme="light"] .editor-header-bar,
+:root[data-theme="light"] .analysis-tabs-bar {
+  background: var(--bg-sidebar) !important;
+  border-color: var(--border-subtle) !important;
+}
+:root[data-theme="light"] .analyzer-title { color: #1A2234 !important; }
+:root[data-theme="light"] .analyzer-subtitle { color: #4A5568 !important; }
+:root[data-theme="light"] .clause-text-preview { color: #374151 !important; }
+:root[data-theme="light"] .clause-number { color: #6B7280 !important; }
+:root[data-theme="light"] .inspected-risk-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .original-clause-box {
+  background: #F8FAFC !important;
+  border-color: #C8CEDC !important;
+  color: #374151 !important;
+}
+:root[data-theme="light"] .chat-message-bubble.bot {
+  background: #F0F2F8 !important;
+  border-color: #C8CEDC !important;
+  color: #374151 !important;
+}
+:root[data-theme="light"] .precedent-card { background: #F8FAFC !important; border-color: #C8CEDC !important; }
+:root[data-theme="light"] .rec-protection-card { background: rgba(245,158,11,.05) !important; }
+:root[data-theme="light"] .upload-hero { background: linear-gradient(135deg, #F0F2F8 0%, #E8ECF4 100%) !important; }
+
+/* ── Vault & dashboard cards ── */
+:root[data-theme="light"] .vault-grid-card,
+:root[data-theme="light"] .bento-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+  color: #374151 !important;
+}
+
+/* ── Status badges & pills (muted text in light mode) ── */
+:root[data-theme="light"] .text-muted,
+:root[data-theme="light"] .sidebar-nav a:not(.active) {
+  color: #4A5568 !important;
+}
+
+/* ── Buttons (ensure visible in light mode) ── */
+:root[data-theme="light"] .btn-accent {
+  background-color: #3B82F6 !important;
+  color: #FFFFFF !important;
+}
+:root[data-theme="light"] .btn-accent:hover { background-color: #2563EB !important; }
