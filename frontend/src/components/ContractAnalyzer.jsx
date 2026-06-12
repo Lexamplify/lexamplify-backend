@@ -22,75 +22,76 @@ const styles = `
     background: var(--bg-dark-app);
   }
 
-  /* ── HEADER BAR ─────────────────────────────────────────────────── */
+  /* ── HEADER BAR (single compact row) ────────────────────────────── */
   .analyzer-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 14px 28px;
+    padding: 0 20px;
+    height: 52px;
     background: var(--bg-dark-sidebar);
     border-bottom: 1px solid var(--border-dark-subtle);
     flex-shrink: 0;
-    gap: 12px;
-    flex-wrap: wrap;
+    gap: 10px;
+    overflow: hidden;
   }
 
-  .analyzer-title-block { display: flex; flex-direction: column; gap: 2px; }
-  .analyzer-title { font-size: 18px; font-weight: 700; color: #fff; font-family: var(--font-serif); margin: 0; line-height: 1.2; }
-  .analyzer-subtitle { font-size: 11.5px; color: var(--text-dark-muted); margin: 0; }
+  .analyzer-title-block { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
+  .analyzer-title { font-size: 14px; font-weight: 700; color: var(--text-dark-primary, #fff); font-family: var(--font-serif); margin: 0; line-height: 1; white-space: nowrap; }
+  .analyzer-subtitle { font-size: 10.5px; color: var(--text-dark-muted); margin: 0; white-space: nowrap; display: none; }
+  @media (min-width: 1280px) { .analyzer-subtitle { display: block; } }
 
-  .analyzer-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  /* Divider pip between sections */
+  .header-sep { width: 1px; height: 22px; background: var(--border-dark-subtle); flex-shrink: 0; }
 
-  /* ── RISK METRICS STRIP ─────────────────────────────────────────── */
-  .risk-metrics-strip {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 28px;
-    background: rgba(0,0,0,0.2);
-    border-bottom: 1px solid var(--border-dark-subtle);
-    flex-shrink: 0;
-    flex-wrap: wrap;
-  }
+  /* Risk pills inline in header */
   .risk-metric-pill {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 14px;
+    gap: 5px;
+    padding: 3px 10px;
     border-radius: 20px;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 600;
     border: 1px solid;
     cursor: default;
+    white-space: nowrap;
   }
   .risk-metric-pill.high  { background: rgba(239,68,68,0.12); color: #FCA5A5; border-color: rgba(239,68,68,0.3); }
   .risk-metric-pill.amber { background: rgba(245,158,11,0.12); color: #FCD34D; border-color: rgba(245,158,11,0.3); }
   .risk-metric-pill.green { background: rgba(16,185,129,0.12); color: #6EE7B7; border-color: rgba(16,185,129,0.3); }
-  .risk-metric-dot { width: 7px; height: 7px; border-radius: 50%; }
-  .risk-metric-dot.red   { background: #EF4444; box-shadow: 0 0 5px #EF4444; }
-  .risk-metric-dot.amber { background: #F59E0B; box-shadow: 0 0 5px #F59E0B; }
-  .risk-metric-dot.green { background: #10B981; box-shadow: 0 0 5px #10B981; }
+  .risk-metric-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .risk-metric-dot.red   { background: #EF4444; box-shadow: 0 0 4px #EF4444; }
+  .risk-metric-dot.amber { background: #F59E0B; box-shadow: 0 0 4px #F59E0B; }
+  .risk-metric-dot.green { background: #10B981; box-shadow: 0 0 4px #10B981; }
 
-  /* Risk bar progress */
-  .risk-bar-track {
-    flex: 1; height: 4px; background: rgba(255,255,255,0.06); border-radius: 4px;
-    overflow: hidden; min-width: 80px;
-  }
-  .risk-bar-fill-red   { display: inline-block; height: 100%; background: #EF4444; }
-  .risk-bar-fill-amber { display: inline-block; height: 100%; background: #F59E0B; }
-  .risk-bar-fill-green { display: inline-block; height: 100%; background: #10B981; }
+  .analyzer-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
 
-  /* ── SUMMARY BANNER ─────────────────────────────────────────────── */
+  /* ── SUMMARY BANNER (collapsible) ───────────────────────────────── */
   .summary-banner {
-    background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(99,102,241,0.06));
-    border: 1px solid rgba(59,130,246,0.2);
-    border-radius: 0;
+    background: linear-gradient(135deg, rgba(59,130,246,0.07), rgba(99,102,241,0.05));
+    border-bottom: 1px solid rgba(59,130,246,0.15);
     border-left: 3px solid var(--accent-primary);
-    padding: 12px 28px;
-    font-size: 13px;
-    line-height: 1.6;
+    padding: 9px 20px 9px 16px;
+    font-size: 12.5px;
+    line-height: 1.55;
     flex-shrink: 0;
-    color: #CBD5E1;
+    color: #94A3B8;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    overflow: hidden;
+  }
+  .summary-toggle-btn {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid rgba(59,130,246,0.2);
+    color: var(--accent-primary);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-top: 1px;
+    white-space: nowrap;
   }
 
   /* ── SPLIT PANE ──────────────────────────────────────────────────── */
@@ -503,7 +504,7 @@ const styles = `
     padding: 7px 14px; border-radius: 8px;
   }
   .strategy-dropdown {
-    background: transparent; border: none; color: white;
+    background: transparent; border: none; color: var(--text-dark-primary, white);
     font-weight: 600; font-size: 13px; outline: none; cursor: pointer;
   }
   .strategy-dropdown option { background: #1F2937; color: white; }
@@ -634,6 +635,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [chatInput, setChatInput] = useState('');
   const [sendingChat, setSendingChat] = useState(false);
   
+  const [summaryCollapsed, setSummaryCollapsed] = useState(true);
+
   // Export Modal states
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState('pdf');
@@ -1204,17 +1207,39 @@ export default function ContractAnalyzer({ setFocusMode }) {
       <style>{styles}</style>
       <div className="analyzer-container">
 
-        {/* ── HEADER BAR ── */}
+        {/* ── COMPACT HEADER BAR (single row) ── */}
         <div className="analyzer-header">
+          {/* Title */}
           <div className="analyzer-title-block">
-            <h1 className="analyzer-title">Contract Risk Analyzer</h1>
-            <p className="analyzer-subtitle">Liability audit · clause revision · missing protections · Indian Law</p>
+            <h1 className="analyzer-title">⚖️ Contract Risk Analyzer</h1>
+            <span className="analyzer-subtitle">Liability audit · Indian Law</span>
           </div>
 
+          {/* Risk pills — shown after analysis, inline in header */}
+          {isAnalyzed && (
+            <>
+              <div className="header-sep" />
+              <div className="risk-metric-pill high">
+                <span className="risk-metric-dot red" />
+                <strong>{redCount}</strong> High
+              </div>
+              <div className="risk-metric-pill amber">
+                <span className="risk-metric-dot amber" />
+                <strong>{amberCount}</strong> Med
+              </div>
+              <div className="risk-metric-pill green">
+                <span className="risk-metric-dot green" />
+                <strong>{greenCount}</strong> OK
+              </div>
+              <div className="header-sep" />
+            </>
+          )}
+
+          {/* Mode selector + actions */}
           <div className="analyzer-actions">
-            <div className="strategy-select-container">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mode</span>
+            <div className="strategy-select-container" style={{ padding: '5px 10px' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span style={{ fontSize: '10px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mode</span>
               <select
                 className="strategy-dropdown"
                 value={scanStrategy}
@@ -1228,59 +1253,41 @@ export default function ContractAnalyzer({ setFocusMode }) {
             {isAnalyzed && (
               <>
                 <button
-                  className="btn-accent hover:-translate-y-0.5 hover:shadow-lg transition-all duration-300 ease-in-out"
+                  className="btn-accent transition-all duration-300 ease-in-out"
                   onClick={() => setShowExportModal(true)}
-                  style={{ fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ fontSize: '12px', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '5px' }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Export Document
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export
                 </button>
                 <button
-                  onClick={() => { setIsAnalyzed(false); setRawText(''); setClauses([]); setSummary(''); setAppendedClauses([]); setActiveClauseId(null); setRewrittenText(''); }}
-                  style={{ fontSize: '12.5px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '7px 14px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
-                  onMouseEnter={e => { e.target.style.color='white'; e.target.style.borderColor='rgba(255,255,255,0.3)'; }}
-                  onMouseLeave={e => { e.target.style.color='#9CA3AF'; e.target.style.borderColor='var(--border-dark-subtle)'; }}
+                  onClick={() => { setIsAnalyzed(false); setRawText(''); setClauses([]); setSummary(''); setAppendedClauses([]); setActiveClauseId(null); setRewrittenText(''); setSummaryCollapsed(true); }}
+                  style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
+                  onMouseEnter={e => { e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='rgba(255,255,255,0.3)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color='#9CA3AF'; e.currentTarget.style.borderColor='var(--border-dark-subtle)'; }}
                 >
-                  New Document
+                  New
                 </button>
               </>
             )}
           </div>
         </div>
 
-        {/* ── RISK METRICS STRIP (shown after analysis) ── */}
-        {isAnalyzed && (
-          <div className="risk-metrics-strip">
-            <div className="risk-metric-pill high">
-              <span className="risk-metric-dot red"></span>
-              <strong>{redCount}</strong>&nbsp;High Risk
-            </div>
-            <div className="risk-metric-pill amber">
-              <span className="risk-metric-dot amber"></span>
-              <strong>{amberCount}</strong>&nbsp;Medium
-            </div>
-            <div className="risk-metric-pill green">
-              <span className="risk-metric-dot green"></span>
-              <strong>{greenCount}</strong>&nbsp;Resolved
-            </div>
-            {(redCount + amberCount + greenCount) > 0 && (
-              <div className="risk-bar-track">
-                {redCount > 0 && <span className="risk-bar-fill-red" style={{ width: `${(redCount / (redCount + amberCount + greenCount)) * 100}%` }}></span>}
-                {amberCount > 0 && <span className="risk-bar-fill-amber" style={{ width: `${(amberCount / (redCount + amberCount + greenCount)) * 100}%` }}></span>}
-                {greenCount > 0 && <span className="risk-bar-fill-green" style={{ width: `${(greenCount / (redCount + amberCount + greenCount)) * 100}%` }}></span>}
-              </div>
-            )}
-            <span style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginLeft: 'auto' }}>
-              {redCount + amberCount} clause{(redCount + amberCount) !== 1 ? 's' : ''} flagged · click to inspect
-            </span>
-          </div>
-        )}
-
-        {/* ── EXECUTIVE SUMMARY BANNER ── */}
+        {/* ── COLLAPSIBLE EXECUTIVE SUMMARY ── */}
         {isAnalyzed && summary && (
           <div className="summary-banner">
-            <span style={{ fontSize: '10.5px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent-primary)', marginRight: '8px' }}>Executive Summary</span>
-            {summary}
+            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent-primary)', flexShrink: 0, marginTop: '1px' }}>Summary</span>
+            {!summaryCollapsed && (
+              <span style={{ flex: 1, fontSize: '12.5px', color: '#94A3B8', lineHeight: 1.5 }}>{summary}</span>
+            )}
+            {summaryCollapsed && (
+              <span style={{ flex: 1, fontSize: '12.5px', color: '#64748B', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {summary.slice(0, 90)}{summary.length > 90 ? '…' : ''}
+              </span>
+            )}
+            <button className="summary-toggle-btn" onClick={() => setSummaryCollapsed(v => !v)}>
+              {summaryCollapsed ? 'Expand' : 'Collapse'}
+            </button>
           </div>
         )}
 
@@ -1293,7 +1300,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 /* ── SCANNING STATE ── */
                 <div style={{ background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', borderRadius: '16px', padding: '48px 32px', textAlign: 'center' }}>
                   <div style={{ width: '56px', height: '56px', margin: '0 auto 24px', borderRadius: '50%', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: 'var(--accent-primary)', animation: 'spin 0.9s linear infinite' }}></div>
-                  <h3 style={{ fontSize: '16px', color: 'white', marginBottom: '8px' }}>Scanning contract under Indian Law…</h3>
+                  <h3 style={{ fontSize: '16px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>Scanning contract under Indian Law…</h3>
                   <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '28px' }}>Compiling vector node · identifying liability clauses · matching precedents</p>
                   <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div className="shimmer-bar"></div>
@@ -1307,7 +1314,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   {/* ── HERO ── */}
                   <div className="upload-hero">
                     <div className="upload-icon-ring">⚖️</div>
-                    <h2 style={{ fontSize: '20px', color: 'white', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Analyze a Contract</h2>
+                    <h2 style={{ fontSize: '20px', color: 'var(--text-dark-primary)', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Analyze a Contract</h2>
                     <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
                       Upload an NDA, employment agreement, MSA, or any Indian law contract to scan liability clauses, get AI rewrites, and find missing protections.
                     </p>
@@ -1324,7 +1331,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     >
                       <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
                       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                      <h3 style={{ fontSize: '14.5px', color: 'white', marginBottom: '4px' }}>Drop your contract here</h3>
+                      <h3 style={{ fontSize: '14.5px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop your contract here</h3>
                       <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
                       <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Max 10 MB</span>
                     </div>

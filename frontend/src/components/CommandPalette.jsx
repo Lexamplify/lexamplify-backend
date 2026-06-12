@@ -82,6 +82,28 @@ const QUICK_CMDS = [
 // ═══════════════════════════════════════════════════════
 const truncate = (str, n) => (str && str.length > n) ? str.slice(0, n) + '…' : (str || '');
 
+const renderDraftHtml = (text) => {
+  if (!text) return '';
+  const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return escaped
+    // H1: **ALL CAPS HEADING** or # Heading at line start
+    .replace(/^#{1,2}\s+(.+)$/gm, '<div class="draft-h1">$1</div>')
+    .replace(/^###\s+(.+)$/gm, '<div class="draft-h2">$1</div>')
+    // Bold → rendered strong
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Horizontal rule
+    .replace(/^---+$/gm, '<hr class="draft-hr">')
+    // Double newline → paragraph break
+    .replace(/\n\n/g, '</p><p class="draft-p">')
+    // Single newline → break
+    .replace(/\n/g, '<br>')
+    // Wrap
+    .replace(/^/, '<p class="draft-p">')
+    .replace(/$/, '</p>');
+};
+
 const relativeDate = (ts) => {
   const d = Date.now() - ts;
   if (d < 60000)     return 'Just now';
@@ -117,6 +139,28 @@ const AGENT_CSS = `
   .lex-side-scroll::-webkit-scrollbar       { width:3px; }
   .lex-side-scroll::-webkit-scrollbar-track { background:transparent; }
   .lex-side-scroll::-webkit-scrollbar-thumb { background:#1A2030; border-radius:4px; }
+
+  /* ── Draft Document renderer ── */
+  .lex-draft-doc {
+    background:#FAFAF8; border:1px solid #E8E4DE; border-radius:6px;
+    padding:32px 40px; font-family:Georgia,'Times New Roman',serif;
+    font-size:13.5px; line-height:1.85; color:#1A2234;
+    max-height:380px; overflow-y:auto; box-shadow:0 2px 12px rgba(0,0,0,.25);
+    outline:none; cursor:text;
+  }
+  .lex-draft-doc .draft-h1 {
+    text-align:center; font-size:14px; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; margin:14px 0 6px; color:#111827;
+  }
+  .lex-draft-doc .draft-h2 {
+    font-size:13px; font-weight:700; margin:12px 0 4px; color:#1F2937;
+  }
+  .lex-draft-doc .draft-p { margin:6px 0; }
+  .lex-draft-doc .draft-hr {
+    border:none; border-top:1px solid #D1D5DB; margin:14px 0;
+  }
+  .lex-draft-doc strong { font-weight:700; color:#111827; }
+  .lex-draft-doc em     { font-style:italic; }
 
   .lex-chat-scroll::-webkit-scrollbar       { width:5px; }
   .lex-chat-scroll::-webkit-scrollbar-track { background:transparent; }
@@ -899,15 +943,17 @@ export default function CommandPalette() {
                   <div style={{ fontSize: '10px', color: '#2D3D50', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Edit below before saving — final content will be stored in the vault
                   </div>
-                  <textarea
-                    className="lex-textarea"
-                    value={pendingDraft.content}
-                    onChange={e => updateSession(currentId, s => ({
-                      ...s, pendingDraft: { ...s.pendingDraft, content: e.target.value }
-                    }))}
-                    style={{ width: '100%', minHeight: '200px', maxHeight: '360px', padding: '12px', background: '#090C14', border: '1px solid #1A2030', borderRadius: '7px', fontFamily: 'monospace', fontSize: '12.5px', lineHeight: '1.6', color: '#B8C8D8', resize: 'vertical', outline: 'none', boxSizing: 'border-box', transition: 'border-color .15s' }}
-                    onFocus={e  => { e.target.style.borderColor = 'rgba(59,130,246,.45)'; }}
-                    onBlur={e   => { e.target.style.borderColor = '#1A2030'; }}
+                  <div
+                    className="lex-draft-doc"
+                    contentEditable
+                    suppressContentEditableWarning
+                    dangerouslySetInnerHTML={{ __html: renderDraftHtml(pendingDraft.content) }}
+                    onBlur={e => {
+                      const plain = e.currentTarget.innerText || '';
+                      updateSession(currentId, s => ({
+                        ...s, pendingDraft: { ...s.pendingDraft, content: plain }
+                      }));
+                    }}
                   />
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
                     <button
