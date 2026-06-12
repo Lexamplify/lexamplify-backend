@@ -142,25 +142,46 @@ const AGENT_CSS = `
 
   /* ── Draft Document renderer ── */
   .lex-draft-doc {
-    background:#FAFAF8; border:1px solid #E8E4DE; border-radius:6px;
-    padding:32px 40px; font-family:Georgia,'Times New Roman',serif;
-    font-size:13.5px; line-height:1.85; color:#1A2234;
-    max-height:380px; overflow-y:auto; box-shadow:0 2px 12px rgba(0,0,0,.25);
-    outline:none; cursor:text;
+    background: var(--bg-dark-card);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 6px;
+    padding: 32px 40px;
+    font-family: Georgia,'Times New Roman',serif;
+    font-size: 13.5px;
+    line-height: 1.85;
+    color: var(--text-dark-primary);
+    max-height: 380px;
+    overflow-y: auto;
+    box-shadow: 0 2px 16px rgba(0,0,0,.3);
+    outline: none;
+    cursor: text;
   }
+  /* Explicitly target children to defeat global p/span { color } rules */
+  .lex-draft-doc p,
+  .lex-draft-doc div,
+  .lex-draft-doc span,
+  .lex-draft-doc strong,
+  .lex-draft-doc em { color: var(--text-dark-primary); }
   .lex-draft-doc .draft-h1 {
     text-align:center; font-size:14px; font-weight:700; letter-spacing:.06em;
-    text-transform:uppercase; margin:14px 0 6px; color:#111827;
+    text-transform:uppercase; margin:14px 0 6px;
   }
-  .lex-draft-doc .draft-h2 {
-    font-size:13px; font-weight:700; margin:12px 0 4px; color:#1F2937;
+  .lex-draft-doc .draft-h2 { font-size:13px; font-weight:700; margin:12px 0 4px; }
+  .lex-draft-doc .draft-p  { margin:6px 0; }
+  .lex-draft-doc .draft-hr { border:none; border-top:1px solid var(--border-dark-subtle); margin:14px 0; }
+
+  /* Light theme: restore parchment look */
+  [data-theme="light"] .lex-draft-doc {
+    background: #FAFAF8;
+    border-color: #E8E4DE;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
   }
-  .lex-draft-doc .draft-p { margin:6px 0; }
-  .lex-draft-doc .draft-hr {
-    border:none; border-top:1px solid #D1D5DB; margin:14px 0;
-  }
-  .lex-draft-doc strong { font-weight:700; color:#111827; }
-  .lex-draft-doc em     { font-style:italic; }
+  [data-theme="light"] .lex-draft-doc p,
+  [data-theme="light"] .lex-draft-doc div,
+  [data-theme="light"] .lex-draft-doc span,
+  [data-theme="light"] .lex-draft-doc strong,
+  [data-theme="light"] .lex-draft-doc em { color: #1A2234; }
+  [data-theme="light"] .lex-draft-doc .draft-hr { border-top-color: #D1D5DB; }
 
   .lex-chat-scroll::-webkit-scrollbar       { width:5px; }
   .lex-chat-scroll::-webkit-scrollbar-track { background:transparent; }

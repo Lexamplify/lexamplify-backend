@@ -150,8 +150,8 @@ const styles = `
 
   /* ── RICH TEXT TOOLBAR ───────────────────────────────────────────── */
   .rich-text-toolbar {
-    background: #111827;
-    border-bottom: 1px solid #1F2937;
+    background: var(--bg-dark-sidebar);
+    border-bottom: 1px solid var(--border-dark-subtle);
     display: flex;
     gap: 2px;
     padding: 6px 12px;
@@ -162,7 +162,7 @@ const styles = `
   .toolbar-btn {
     background: transparent;
     border: none;
-    color: #9CA3AF;
+    color: var(--text-dark-muted);
     padding: 4px 7px;
     border-radius: 4px;
     font-size: 12px;
@@ -175,17 +175,21 @@ const styles = `
     height: 26px;
     transition: all 0.15s;
   }
-  .toolbar-btn:hover { background: #1F2937; color: #fff; }
+  .toolbar-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-dark-primary); }
   .toolbar-btn svg { pointer-events: none; }
 
-  .toolbar-divider { width: 1px; height: 16px; background: #1F2937; margin: 0 4px; }
+  .toolbar-divider { width: 1px; height: 16px; background: var(--border-dark-subtle); margin: 0 4px; }
 
   /* ── EDITOR SCROLL ───────────────────────────────────────────────── */
   .editor-scroll-area {
     flex: 1;
     overflow-y: auto;
     padding: 24px 28px;
-    background: #F8F7F5;
+    background: var(--bg-dark-app);
+    color: var(--text-dark-primary);
+  }
+  [data-theme="light"] .editor-scroll-area {
+    background: #F0F2F8;
     color: #1F2937;
   }
 
@@ -195,16 +199,30 @@ const styles = `
     font-size: 15px !important;
     line-height: 1.8 !important;
     white-space: pre-wrap;
-    color: #1a1a1a;
+    color: var(--text-dark-primary);
     min-height: 65vh !important;
     padding: 40px 48px !important;
-    background: #ffffff;
+    background: var(--bg-dark-card);
     border-radius: 2px;
-    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+    box-shadow: 0 2px 20px rgba(0,0,0,0.15);
     box-sizing: border-box;
-    border: 1px solid #e8e4de;
+    border: 1px solid var(--border-dark-subtle);
     letter-spacing: 0.01em;
   }
+  /* Defeat global p/span { color } rule for scanner content */
+  .scanner-body p,
+  .scanner-body span,
+  .scanner-body div { color: var(--text-dark-primary); }
+  /* Light theme: white document look */
+  [data-theme="light"] .scanner-body {
+    background: #ffffff;
+    color: #1a1a1a;
+    border-color: #e8e4de;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+  }
+  [data-theme="light"] .scanner-body p,
+  [data-theme="light"] .scanner-body span,
+  [data-theme="light"] .scanner-body div { color: #1a1a1a; }
 
   /* ── ANALYSIS COLUMN ─────────────────────────────────────────────── */
   .analysis-column {
@@ -431,7 +449,7 @@ const styles = `
 
   /* ── SHIMMER LOADER ──────────────────────────────────────────────── */
   .shimmer-bar {
-    background: linear-gradient(90deg, #1a2035 25%, #252d47 50%, #1a2035 75%);
+    background: linear-gradient(90deg, var(--bg-dark-card) 25%, var(--bg-dark-panel) 50%, var(--bg-dark-card) 75%);
     background-size: 200% 100%;
     animation: shimmer-animation 1.4s infinite;
     border-radius: 6px;
