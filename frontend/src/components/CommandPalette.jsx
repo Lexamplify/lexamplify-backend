@@ -26,6 +26,7 @@ const makeSession = () => ({
   messages: [],
   pendingSchedule: null,
   pendingDraft: null,
+  activeDocument: null,   // persists after draft card is rejected/closed
   createdAt: Date.now(),
   updatedAt: Date.now(),
 });
@@ -198,8 +199,10 @@ const AGENT_CSS = `
   .lex-quick { cursor:pointer; padding:10px 14px; border-radius:8px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); display:flex; align-items:flex-start; gap:10px; transition:all .15s; text-align:left; width:100%; }
   .lex-quick:hover { background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); }
 
-  .lex-close-btn:hover { background:rgba(239,68,68,.1)!important; border-color:rgba(239,68,68,.3)!important; color:#EF4444!important; }
-  .lex-new-btn:hover   { background:rgba(59,130,246,.2)!important; border-color:rgba(59,130,246,.4)!important; }
+  .lex-close-btn:hover      { background:rgba(239,68,68,.1)!important; border-color:rgba(239,68,68,.3)!important; color:#EF4444!important; }
+  .lex-new-btn:hover        { background:rgba(59,130,246,.2)!important; border-color:rgba(59,130,246,.4)!important; }
+  .lex-view-draft-btn       { transition:all .15s; }
+  .lex-view-draft-btn:hover { background:rgba(99,102,241,.22)!important; border-color:rgba(99,102,241,.5)!important; color:#C7D2FE!important; }
 
   .lex-send-btn:not(:disabled):hover { background:#2563EB!important; }
   .lex-mic-btn:not(.lex-mic-live):hover { border-color:rgba(59,130,246,.4)!important; color:#93C5FD!important; }
@@ -250,6 +253,8 @@ export default function CommandPalette() {
   const messages        = currentSession?.messages        || [];
   const pendingSchedule = currentSession?.pendingSchedule || null;
   const pendingDraft    = currentSession?.pendingDraft    || null;
+  // activeDocument: the "document on the desk" — survives draft card close/reject
+  const activeDocument  = currentSession?.activeDocument  || null;
 
   // Route params (pathname-aware, works outside <Routes>)
   const matchDoc  = location.pathname.match(/\/case\/([^/]+)\/doc\/([^/]+)/);
@@ -499,12 +504,12 @@ export default function CommandPalette() {
           query: fullQuery,
           currentPath: location.pathname,
           params: routeParams,
-          // Inject the active draft so the backend can edit it directly
-          ...(pendingDraft && {
-            current_draft_context:  pendingDraft.content,
-            current_draft_title:    pendingDraft.title,
-            current_draft_type:     pendingDraft.doc_type,
-            current_draft_case_id:  pendingDraft.case_id,
+          // Always inject activeDocument — persists even when draft card is closed/rejected
+          ...(activeDocument && {
+            current_draft_context:  activeDocument.content,
+            current_draft_title:    activeDocument.title,
+            current_draft_type:     activeDocument.doc_type,
+            current_draft_case_id:  activeDocument.case_id,
           }),
         }),
       });
@@ -547,12 +552,12 @@ export default function CommandPalette() {
 
             // ── Draft edit reply: overwrite active draft inline ──────
             if (p.action === 'update_document') {
-              updateSession(sid, s => ({
-                ...s,
-                pendingDraft: s.pendingDraft
+              updateSession(sid, s => {
+                const updated = s.pendingDraft
                   ? { ...s.pendingDraft, content: p.updated_content }
-                  : { title: p.title || 'Updated Document', content: p.updated_content, doc_type: 'Legal Document', case_id: 'Unknown' },
-              }));
+                  : { title: p.title || 'Updated Document', content: p.updated_content, doc_type: 'Legal Document', case_id: 'Unknown' };
+                return { ...s, pendingDraft: updated, activeDocument: updated };
+              });
               patchMessage(sid, msgId, m => ({
                 ...m,
                 text: `✏️ Draft updated${p.change_summary ? ' — ' + p.change_summary : ''}.\n\nReview the changes in the draft panel below.`,
@@ -587,7 +592,7 @@ export default function CommandPalette() {
             }
 
             if (p.action === 'review_document') {
-              updateSession(sid, s => ({ ...s, pendingDraft: p.draft }));
+              updateSession(sid, s => ({ ...s, pendingDraft: p.draft, activeDocument: p.draft }));
               patchMessage(sid, msgId, m => ({ ...m, text: 'Document drafted. Review and edit below before saving to the vault.' }));
               continue;
             }
@@ -642,7 +647,8 @@ export default function CommandPalette() {
           content:  pendingDraft.content,
         }),
       });
-      updateSession(currentId, s => ({ ...s, pendingDraft: null }));
+      // Approved = filed away; clear both draft card and working document
+      updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
       pushMessage(currentId, {
         id: `sys_${Date.now()}`, role: r.ok ? 'assistant' : 'error',
         text: r.ok ? '✅ Document saved to Case Vault.' : 'Failed to save document. Please try again.',
@@ -794,6 +800,18 @@ export default function CommandPalette() {
                   </div>
                 )}
               </div>
+              {/* View Draft pill — shown when a document is active but the card is closed */}
+              {activeDocument && !pendingDraft && (
+                <button
+                  className="lex-view-draft-btn"
+                  onClick={() => updateSession(currentId, s => ({ ...s, pendingDraft: s.activeDocument }))}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 11px', background: 'rgba(99,102,241,.12)', border: '1px solid rgba(99,102,241,.3)', borderRadius: '5px', color: '#A5B4FC', fontSize: '11px', cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}
+                  title={`Reopen: ${activeDocument.title}`}
+                >
+                  📄 View Draft
+                </button>
+              )}
+
               <button
                 className="lex-close-btn"
                 onClick={handleClose}
@@ -999,7 +1017,9 @@ export default function CommandPalette() {
                     onBlur={e => {
                       const plain = e.currentTarget.innerText || '';
                       updateSession(currentId, s => ({
-                        ...s, pendingDraft: { ...s.pendingDraft, content: plain }
+                        ...s,
+                        pendingDraft:   { ...s.pendingDraft,   content: plain },
+                        activeDocument: { ...s.activeDocument, content: plain },
                       }));
                     }}
                   />

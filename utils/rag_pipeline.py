@@ -272,6 +272,32 @@ def _is_edit_intent(query: str) -> bool:
     return any(v in ql for v in _EDIT_VERBS)
 
 
+# Explicit pronouns/names that refer to the open document
+_DRAFT_REFS = (
+    'this draft', 'the draft', 'this document', 'the document',
+    'this agreement', 'the agreement', 'this contract', 'the contract',
+    'this notice', 'the notice', 'this petition', 'the petition',
+    'this nda', 'this mou', 'this deed', 'this clause', 'this order',
+)
+# Q&A verbs that implicitly target the open document when one is present
+_QA_VERBS = (
+    'summarize', 'summarise', 'summarization', 'give me a summary',
+    'explain ', 'analyze ', 'analyse ', 'review ',
+    'highlight', 'what are the', 'list the clause', 'list the term',
+    'key clauses', 'key points', 'main points', 'overview of',
+    'what does it say', 'what does the', 'tell me about',
+)
+
+def _is_draft_query(query: str) -> bool:
+    """Return True if the query is a Q&A request referencing the active draft."""
+    ql = query.lower().lstrip()
+    if any(ref in ql for ref in _DRAFT_REFS):
+        return True
+    if any(v in ql for v in _QA_VERBS):
+        return True
+    return False
+
+
 # ── 8. DUAL-ENGINE STREAMING ENDPOINT ──────────────────────────────────
 
 def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None,
@@ -326,6 +352,41 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         except Exception as e:
             _err_payload = json.dumps({'token': '[Edit error: ' + str(e) + ']\n'})
             yield f"data: {_err_payload}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    # ── DRAFT Q&A INTERCEPT (runs BEFORE the intent router) ────────────────
+    # When the lawyer asks a question about or requests a summary of the active
+    # draft, answer strictly from the injected draft text — not from the RAG
+    # index or general knowledge.
+    if current_draft_context and _is_draft_query(query) and not _is_edit_intent(query):
+        qa_prompt = (
+            f"You are a senior Indian legal counsel reviewing an active draft document.\n\n"
+            f"ACTIVE DRAFT — \"{current_draft_title or 'Legal Document'}\":\n"
+            f"---\n{current_draft_context[:10000]}\n---\n\n"
+            f"LAWYER'S QUERY: {query}\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Answer STRICTLY from the draft text above — do not fabricate clauses.\n"
+            "2. Cite specific clause numbers or headings from the draft where relevant.\n"
+            "3. Be precise. Format clearly with headings or bullet points as appropriate.\n"
+            "4. If asked for a summary, produce a structured executive summary covering: "
+            "parties, purpose, key obligations, confidentiality scope, term, and termination."
+        )
+        try:
+            yield f"data: {json.dumps({'metadata': {'action': 'chat', 'sources': []}})}\n\n"
+            qa_completion = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": qa_prompt}],
+                temperature=0.1,
+                stream=True,
+            )
+            for chunk in qa_completion:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield f"data: {json.dumps({'token': delta})}\n\n"
+        except Exception as e:
+            _qa_err = json.dumps({'token': '[Query error: ' + str(e) + ']'})
+            yield f"data: {_qa_err}\n\n"
         yield "data: [DONE]\n\n"
         return
 
