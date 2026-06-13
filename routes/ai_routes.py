@@ -115,6 +115,12 @@ def rag_chat():
         current_path = data.get("currentPath", "")
         params = data.get("params", {})
 
+        # Draft iteration context — present when lawyer has an active draft open
+        current_draft_context  = data.get("current_draft_context", "").strip()
+        current_draft_title    = data.get("current_draft_title", "")
+        current_draft_type     = data.get("current_draft_type", "")
+        current_draft_case_id  = data.get("current_draft_case_id", "")
+
         if not query:
             return jsonify({
                 "error": True,
@@ -145,7 +151,12 @@ def rag_chat():
         def safe_stream_generator():
             try:
                 # Attempt to stream from the pipeline
-                for chunk in stream_rag_query(query, user_id, case_id, document_id, scope, current_path, params):
+                for chunk in stream_rag_query(
+                    query, user_id, case_id, document_id, scope, current_path, params,
+                    current_draft_context=current_draft_context,
+                    current_draft_title=current_draft_title,
+                    current_draft_type=current_draft_type,
+                ):
                     yield chunk
             except Exception as e:
                 # If rag_pipeline crashes, stream the exact error into the frontend UI!

@@ -249,9 +249,35 @@ def clean_and_parse_json(raw_text: str) -> dict:
 def answer_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", current_path: str = "", params: dict = None) -> dict:
     pass
 
-# ── 7. DUAL-ENGINE STREAMING ENDPOINT ──────────────────────────────────
+# ── 7. DRAFT EDITING HELPERS ────────────────────────────────────────────
 
-def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None, scope: str = "all_cases", current_path: str = "", params: dict = None):
+# Verbs that signal "change the current draft" (not create a new one, not navigate)
+_EDIT_VERBS = (
+    'add ', 'insert ', 'append ', 'include ', 'attach ',
+    'remove ', 'delete ', 'take out', 'strip ', 'drop ',
+    'change ', 'update ', 'modify ', 'edit ', 'revise ', 'amend ', 'replace ',
+    'rewrite ', 'rephrase ', 'simplify ', 'formalize ', 'strengthen ',
+    'shorten ', 'expand ', 'condense ', 'clarify ', 'fix ', 'correct ',
+    'make it ', 'make this ', 'undo ', 'revert ', 'tone down', 'redraft',
+    'put in ', 'swap ', 'rename ', 'retitle ', 'restructure ', 'reorganize ',
+)
+# Prefixes that are always navigation, never editing
+_NAV_PREFIXES = ('go to', 'open ', 'navigate to', 'take me to', 'switch to', 'show me')
+
+def _is_edit_intent(query: str) -> bool:
+    """Return True if the query reads as a request to mutate an existing draft."""
+    ql = query.lower().lstrip()
+    if any(ql.startswith(p) for p in _NAV_PREFIXES):
+        return False
+    return any(v in ql for v in _EDIT_VERBS)
+
+
+# ── 8. DUAL-ENGINE STREAMING ENDPOINT ──────────────────────────────────
+
+def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None,
+                     scope: str = "all_cases", current_path: str = "", params: dict = None,
+                     current_draft_context: str = "", current_draft_title: str = "",
+                     current_draft_type: str = ""):
     """
     Dual-Engine Architecture with Threaded Heartbeats to prevent Render proxy timeouts.
       - Engine 1 (llama-3.1-8b-instant): Sub-500ms intent router.
@@ -262,25 +288,65 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         yield f"data: {json.dumps({'token': '[System Error: GROQ_API_KEY is missing or invalid on server.]'})}\n\n"
         return
 
+    # ── DRAFT EDITING INTERCEPT (runs BEFORE the intent router) ────────────
+    # When the lawyer has an active draft AND gives an editing command, we skip
+    # the intent router entirely — it cannot hallucinate navigation or simulation.
+    if current_draft_context and _is_edit_intent(query):
+        _editing_msg = json.dumps({'token': '✏️ Applying changes to draft…\n'})
+        yield f"data: {_editing_msg}\n\n"
+
+        edit_prompt = (
+            f"You are a senior Indian legal drafting counsel. "
+            f"The lawyer wants you to revise their active draft.\n\n"
+            f"CURRENT DRAFT — \"{current_draft_title or 'Legal Document'}\":\n"
+            f"---\n{current_draft_context[:10000]}\n---\n\n"
+            f"LAWYER'S INSTRUCTION: {query}\n\n"
+            "DRAFTING RULES:\n"
+            "1. Apply the instruction precisely and correctly under Indian Law.\n"
+            "2. Return the COMPLETE updated document — not just the changed section.\n"
+            "3. Preserve all existing headings, numbering, party names, and clause structure.\n"
+            "4. Insert new clauses in the most logically appropriate position.\n"
+            "5. Use proper legal English suitable for Indian courts and arbitral tribunals.\n"
+            "6. Output ONLY the revised document text — no preamble, no explanation, no markdown code fences."
+        )
+        try:
+            edit_res = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": edit_prompt}],
+                temperature=0.2,
+            )
+            updated_content = edit_res.choices[0].message.content or ""
+            _edit_payload = json.dumps({
+                'action': 'update_document',
+                'updated_content': updated_content,
+                'title': current_draft_title,
+                'change_summary': query[:80],
+            })
+            yield f"data: {_edit_payload}\n\n"
+        except Exception as e:
+            _err_payload = json.dumps({'token': '[Edit error: ' + str(e) + ']\n'})
+            yield f"data: {_err_payload}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
     # ── ENGINE 1: INTENT ROUTER ─────────────────────────────────────
     command_check_prompt = f"""User query: "{query}"
-Determine if the user is giving a COMMAND or asking a QUESTION.
-Commands include:
-1. simulate_courtroom: "start courtroom simulation", "simulate courtroom", "virtual courtroom simulation", "war room simulation", "pull document and simulate"
-2. navigate: "go to dashboard", "open court resources", "take me to vault", "view case vault"
-3. review_document: "draft a bail application", "write an agreement", "create a petition"
-4. confirm_schedule: "schedule a meeting", "add hearing to calendar", "set a reminder"
 
-If simulate_courtroom, return JSON: {{"action": "simulate_courtroom", "target_route": "/war-room"}}
-If navigate, return JSON: {{"action": "navigate", "target_route": "/dashboard"}} (valid routes: /dashboard, /contract-viewer, /court-resources, /conflict-engine, /vault)
-If review_document, return JSON: {{"action": "review_document", "draft": {{"title": "Draft Title", "doc_type": "Legal Document", "content": "", "case_id": "{case_id or 'Unknown'}"}}}}
-If confirm_schedule, return JSON: {{"action": "confirm_schedule", "proposed_events": [{{"title": "Event", "event_date": "2026-06-15", "event_type": "task", "related_case_id": "{case_id or ''}"}}]}}
-If chat, return JSON: {{"action": "chat"}}
+Classify this into exactly one action. Return ONLY valid JSON — no markdown, no explanation.
 
-CRITICAL RESOLUTION RULE:
-If the query mentions BOTH a document or vault AND a 'courtroom simulation', 'simulation', or 'war room', you MUST return 'simulate_courtroom'. Do NOT return 'navigate'.
+STRICT RULES — read carefully before classifying:
+- "simulate_courtroom": ONLY when the user EXPLICITLY says "simulate courtroom", "start war room simulation", "virtual courtroom", or "run simulation". NEVER trigger for drafting, editing, or clause requests.
+- "navigate": ONLY when the user EXPLICITLY says "go to [page]", "open [page]", "navigate to [page]", or "take me to [page]".
+- "review_document": When the user wants to CREATE a brand-new legal document from scratch ("draft a bail application", "write an NDA", "prepare a petition").
+- "confirm_schedule": When the user wants to add calendar entries, hearings, or reminders.
+- "chat": For ALL questions, research, legal analysis, explanations, and anything not matching the above.
 
-Return ONLY valid JSON. No markdown fences, no explanation."""
+JSON formats:
+- navigate:           {{"action": "navigate", "target_route": "/route"}}  (valid: /dashboard, /court-resources, /conflict-engine, /vault, /war-room)
+- simulate_courtroom: {{"action": "simulate_courtroom", "target_route": "/war-room"}}
+- review_document:    {{"action": "review_document", "draft": {{"title": "Title", "doc_type": "Type", "content": "", "case_id": "{case_id or 'Unknown'}"}}}}
+- confirm_schedule:   {{"action": "confirm_schedule", "proposed_events": [{{"title": "...", "event_date": "YYYY-MM-DD", "event_type": "task", "related_case_id": "{case_id or ''}"}}]}}
+- chat:               {{"action": "chat"}}"""
 
     try:
         intent_res = client.chat.completions.create(

@@ -462,8 +462,9 @@ export default function CommandPalette() {
     setQuery('');
     setAttachedFile(null);
     setLoading(true);
-    // Reset pendingSchedule/pendingDraft on new query
-    updateSession(sid, s => ({ ...s, pendingSchedule: null, pendingDraft: null }));
+    // Reset pendingSchedule only — pendingDraft persists until explicitly rejected/approved.
+    // The draft is the "document on the desk"; the lawyer keeps working on it.
+    updateSession(sid, s => ({ ...s, pendingSchedule: null }));
 
     // ── Client-side navigation fast-path ─────────────
     if (isNavCommand(q) && !attachedFile) {
@@ -494,7 +495,18 @@ export default function CommandPalette() {
           'Content-Type': 'application/json',
           ...(token && { Authorization: `Bearer ${token}` }),
         },
-        body: JSON.stringify({ query: fullQuery, currentPath: location.pathname, params: routeParams }),
+        body: JSON.stringify({
+          query: fullQuery,
+          currentPath: location.pathname,
+          params: routeParams,
+          // Inject the active draft so the backend can edit it directly
+          ...(pendingDraft && {
+            current_draft_context:  pendingDraft.content,
+            current_draft_title:    pendingDraft.title,
+            current_draft_type:     pendingDraft.doc_type,
+            current_draft_case_id:  pendingDraft.case_id,
+          }),
+        }),
       });
 
       if (res.status === 401) {
@@ -532,6 +544,21 @@ export default function CommandPalette() {
 
           try {
             const p = JSON.parse(json);
+
+            // ── Draft edit reply: overwrite active draft inline ──────
+            if (p.action === 'update_document') {
+              updateSession(sid, s => ({
+                ...s,
+                pendingDraft: s.pendingDraft
+                  ? { ...s.pendingDraft, content: p.updated_content }
+                  : { title: p.title || 'Updated Document', content: p.updated_content, doc_type: 'Legal Document', case_id: 'Unknown' },
+              }));
+              patchMessage(sid, msgId, m => ({
+                ...m,
+                text: `✏️ Draft updated${p.change_summary ? ' — ' + p.change_summary : ''}.\n\nReview the changes in the draft panel below.`,
+              }));
+              continue;
+            }
 
             if (p.action === 'simulate_courtroom') {
               patchMessage(sid, msgId, m => ({ ...m, text: 'Litigation strategy loaded. Entering Virtual Courtroom War Room…' }));
