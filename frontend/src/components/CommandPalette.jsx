@@ -294,7 +294,6 @@ const AGENT_CSS = `
   .lex-sidebar-toggle:hover { color:#7EB3F5; background:rgba(59,130,246,.08); }
 
   /* ── RHS Draft Drawer ── */
-  .lex-drawer { transition: width 0.25s ease; }
   .lex-drawer-body {
     flex:1; overflow-y:auto; outline:none; cursor:text;
     padding:32px 40px;
@@ -355,6 +354,21 @@ const AGENT_CSS = `
   .lex-util-btn { background:none; border:none; cursor:pointer; color:#3D5168; padding:3px 6px; border-radius:4px; line-height:1; transition:all .15s; flex-shrink:0; display:flex; align-items:center; }
   .lex-util-btn:hover { color:#7EB3F5; background:rgba(59,130,246,.1); }
   .lex-copy-toast { position:absolute; top:-26px; right:0; background:#1A2030; border:1px solid #1E2A3A; color:#6EE7B7; font-size:10px; padding:2px 8px; border-radius:4px; white-space:nowrap; pointer-events:none; animation:lex-in .2s ease; }
+
+  /* ── Nested document tree in sidebar ── */
+  .lex-doc-tree-wrap  { margin-top:5px; padding-left:8px; display:flex; flex-direction:column; gap:1px; border-left:1px solid rgba(59,130,246,.18); }
+  .lex-doc-tree-item  { display:flex; align-items:center; gap:5px; padding:3px 7px; width:100%; text-align:left; background:none; border:none; border-radius:4px; cursor:pointer; transition:all .15s; font-family:inherit; }
+  .lex-doc-tree-item:hover { background:rgba(59,130,246,.1); }
+  .lex-doc-tree-label { font-size:10.5px; color:#5B7FA0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .lex-doc-tree-item:hover .lex-doc-tree-label { color:#93C5FD; }
+
+  /* ── Hero ↔ Docked input bar transitions ── */
+  @keyframes lex-dock { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  .lex-input-bar-hero   { animation:lex-in .32s ease; }
+  .lex-input-bar-docked { animation:lex-dock .26s cubic-bezier(0.4,0,0.2,1); }
+
+  /* ── RHS Drawer (upgraded transition) ── */
+  .lex-drawer { transition: width 0.3s cubic-bezier(0.4,0,0.2,1); }
 `;
 
 // ═══════════════════════════════════════════════════════
@@ -385,8 +399,9 @@ export default function CommandPalette() {
   const [sidebarOpen,     setSidebarOpen]     = useState(true);
   const [drawerOpen,      setDrawerOpen]      = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState(null); // { content, title, doc_type }
-  const [slashMenu,       setSlashMenu]       = useState(false);
-  const [copyToast,       setCopyToast]       = useState(false);
+  const [slashMenu,         setSlashMenu]         = useState(false);
+  const [copyToast,         setCopyToast]         = useState(false);
+  const [isDrawerExpanded,  setIsDrawerExpanded]  = useState(false);
 
   // ── File attachment ──────────────────────────────────
   const [attachedFile, setAttachedFile] = useState(null); // { name, content }
@@ -398,6 +413,7 @@ export default function CommandPalette() {
   const recognitionRef = useRef(null);
   const searchRef      = useRef(null);
   const messagesEndRef = useRef(null);
+  const msgRefs        = useRef({});
 
   // ── Derived ──────────────────────────────────────────
   const currentSession  = sessions.find(s => s.id === currentId) || null;
@@ -871,24 +887,60 @@ export default function CommandPalette() {
   const yesterdaySess = sessions.filter(s => now - s.updatedAt >= 86400000 && now - s.updatedAt < 172800000);
   const olderSess     = sessions.filter(s => now - s.updatedAt >= 172800000);
 
-  // Sidebar session row renderer
-  const SessionRow = ({ s }) => (
-    <div
-      key={s.id}
-      className={`lex-sess-item ${s.id === currentId ? 'active' : ''}`}
-      onClick={() => selectSession(s.id)}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '12px', fontWeight: s.id === currentId ? 600 : 400, color: s.id === currentId ? '#93C5FD' : '#9BAFC0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.35' }}>
-            {s.title}
+  // Sidebar session row renderer (with nested document tree for active session)
+  const SessionRow = ({ s }) => {
+    const isActive   = s.id === currentId;
+    const docHistory = isActive ? (s.messages || []).filter(m => m.docCard) : [];
+    return (
+      <div
+        className={`lex-sess-item ${isActive ? 'active' : ''}`}
+        onClick={() => selectSession(s.id)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '12px', fontWeight: isActive ? 600 : 400, color: isActive ? '#93C5FD' : '#9BAFC0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.35' }}>
+              {s.title}
+            </div>
+            <div style={{ fontSize: '10px', color: '#64748B', letterSpacing: '.03em', marginTop: '2px' }}>{relativeDate(s.updatedAt)}</div>
           </div>
-          <div style={{ fontSize: '10px', color: '#64748B', letterSpacing: '.03em', marginTop: '2px' }}>{relativeDate(s.updatedAt)}</div>
+          <button className="lex-sess-del" onClick={(e) => deleteSession(s.id, e)} title="Delete conversation">×</button>
         </div>
-        <button className="lex-sess-del" onClick={(e) => deleteSession(s.id, e)} title="Delete conversation">×</button>
+
+        {/* Nested document tree — only for current session */}
+        {isActive && docHistory.length > 0 && (
+          <div className="lex-doc-tree-wrap">
+            {docHistory.map((m, di) => (
+              <button
+                key={di}
+                className="lex-doc-tree-item"
+                onClick={e => {
+                  e.stopPropagation();
+                  const snap = {
+                    title:   m.docCard.title,
+                    content: m.docCard.snapshot,
+                    doc_type: m.docCard.doc_type,
+                    case_id: s.activeDocument?.case_id || 'Unknown',
+                  };
+                  updateSession(currentId, ss => ({ ...ss, pendingDraft: snap, activeDocument: snap }));
+                  setViewingSnapshot(null);
+                  setDrawerOpen(true);
+                  setTimeout(() => msgRefs.current[m.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+                }}
+              >
+                <svg width="10" height="10" fill="none" stroke={m.docCard.isUpdate ? '#6366F1' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <span className="lex-doc-tree-label">
+                  {m.docCard.isUpdate ? '↺ ' : ''}{truncate(m.docCard.title, 26)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const SectionLabel = ({ label }) => (
     <div style={{ padding: '8px 6px 3px', fontSize: '9px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -1040,39 +1092,87 @@ export default function CommandPalette() {
             {/* ── Messages scroll area ── */}
             <div className="lex-chat-scroll" style={{ flex: 1, overflowY: 'auto', padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-              {/* Empty state — quick commands */}
-              {messages.length === 0 && !loading && (
-                <div style={{ maxWidth: '700px', margin: '0 auto', width: '100%' }}>
-                  <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-                    <div style={{ width: '60px', height: '60px', margin: '0 auto 16px', borderRadius: '15px', background: 'linear-gradient(135deg,rgba(59,130,246,.18),rgba(99,102,241,.18))', border: '1px solid rgba(99,102,241,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="26" height="26" fill="none" stroke="#93C5FD" strokeWidth="1.6" viewBox="0 0 24 24">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                        <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
-                      </svg>
+              {/* ── Hero layout: centered content + inline input bar ── */}
+              {messages.length === 0 && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 0 }}>
+                  <div style={{ maxWidth: '700px', width: '100%' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+                      <div style={{ width: '60px', height: '60px', margin: '0 auto 16px', borderRadius: '15px', background: 'linear-gradient(135deg,rgba(59,130,246,.18),rgba(99,102,241,.18))', border: '1px solid rgba(99,102,241,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="26" height="26" fill="none" stroke="#93C5FD" strokeWidth="1.6" viewBox="0 0 24 24">
+                          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                          <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                        </svg>
+                      </div>
+                      <h2 style={{ fontSize: '21px', fontWeight: 700, color: '#DDE6F0', margin: '0 0 8px' }}>AI Legal Associate</h2>
+                      <p style={{ fontSize: '13.5px', color: '#3E5470', lineHeight: '1.6', maxWidth: '420px', margin: '0 auto' }}>
+                        Your junior counsel for LexAmplify. Draft documents, research law,
+                        navigate any feature, manage schedules — all through natural conversation.
+                      </p>
                     </div>
-                    <h2 style={{ fontSize: '21px', fontWeight: 700, color: '#DDE6F0', margin: '0 0 8px' }}>AI Legal Associate</h2>
-                    <p style={{ fontSize: '13.5px', color: '#3E5470', lineHeight: '1.6', maxWidth: '420px', margin: '0 auto' }}>
-                      Your junior counsel for LexAmplify. Draft documents, research law,
-                      navigate any feature, manage schedules — all through natural conversation.
-                    </p>
-                  </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    {QUICK_CMDS.map((cmd, i) => (
-                      <button
-                        key={i}
-                        className="lex-quick"
-                        onClick={() => { setQuery(cmd.text); setTimeout(() => searchRef.current?.(null, cmd.text), 40); }}
-                      >
-                        <span style={{ fontSize: '20px', flexShrink: 0, lineHeight: 1, marginTop: '1px' }}>{cmd.icon}</span>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '12px', color: '#9BAFC0', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                            {cmd.text}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      {QUICK_CMDS.map((cmd, i) => (
+                        <button
+                          key={i}
+                          className="lex-quick"
+                          onClick={() => { setQuery(cmd.text); setTimeout(() => searchRef.current?.(null, cmd.text), 40); }}
+                        >
+                          <span style={{ fontSize: '20px', flexShrink: 0, lineHeight: 1, marginTop: '1px' }}>{cmd.icon}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '12px', color: '#9BAFC0', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              {cmd.text}
+                            </div>
+                            <div style={{ fontSize: '9.5px', color: '#64748B', marginTop: '3px', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>{cmd.category}</div>
                           </div>
-                          <div style={{ fontSize: '9.5px', color: '#64748B', marginTop: '3px', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>{cmd.category}</div>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ── Input bar — hero position (floats directly below shortcut tiles) ── */}
+                    <div className="lex-input-bar-hero" style={{ marginTop: '24px' }}>
+                      {(attachedFile || fileLoading) && (
+                        <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {fileLoading ? (
+                            <div className="lex-shimmer" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.2)', borderRadius: '20px', fontSize: '12px', color: '#7EB3F5' }}>
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3B82F6', display: 'inline-block' }} />
+                              Extracting file…
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: attachedFile?.isImage ? 'rgba(245,158,11,.1)' : 'rgba(16,185,129,.1)', border: `1px solid ${attachedFile?.isImage ? 'rgba(245,158,11,.25)' : 'rgba(16,185,129,.25)'}`, borderRadius: '20px', fontSize: '12px', color: attachedFile?.isImage ? '#FCD34D' : '#6EE7B7', maxWidth: '320px' }}>
+                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedFile?.name}</span>
+                              <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', lineHeight: 1, fontSize: '14px', opacity: 0.7 }}>×</button>
+                            </div>
+                          )}
                         </div>
-                      </button>
-                    ))}
+                      )}
+                      <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.jpg,.jpeg,.png,.gif,.webp" onChange={handleFileAttach} />
+                      <div style={{ position: 'relative' }}>
+                        {slashMenu && (() => {
+                          const slashFilter = query.slice(1).toLowerCase();
+                          const filtered = SLASH_CMDS.filter(c => !slashFilter || c.cmd.includes(slashFilter) || c.label.toLowerCase().includes(slashFilter));
+                          return filtered.length > 0 ? (
+                            <div className="lex-slash-menu">
+                              {filtered.map((c, ci) => (
+                                <button key={ci} className="lex-slash-item" onMouseDown={e => { e.preventDefault(); setQuery(c.fill); setSlashMenu(false); setTimeout(() => inputRef.current?.focus(), 10); }}>
+                                  <span className="lex-slash-cmd">{c.cmd}</span>
+                                  <span className="lex-slash-label">{c.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null;
+                        })()}
+                        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${isListening ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.08)'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
+                          <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={isListening ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command your AI Legal Associate… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
+                          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLocked || fileLoading} style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }} title="Attach file"><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+                          <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''}`} onClick={toggleMic} style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={isListening ? 'Stop listening' : 'Voice command'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
+                          <button type="submit" className="lex-send-btn" disabled={isLocked || (!query.trim() && !attachedFile)} style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}>Send</button>
+                        </form>
+                      </div>
+                      <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
+                        AI Legal Associate can make mistakes. Always verify critical legal information independently.
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1081,7 +1181,7 @@ export default function CommandPalette() {
               {messages.map((msg, idx) => {
                 if (msg.role === 'user') {
                   return (
-                    <div key={idx} className="lex-msg-in" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ display: 'flex', justifyContent: 'flex-end' }}>
                       <div style={{ maxWidth: '72%', background: 'rgba(59,130,246,.14)', border: '1px solid rgba(59,130,246,.24)', borderRadius: '12px 12px 2px 12px', padding: '11px 16px', fontSize: '13.5px', color: '#D5E2F0', lineHeight: '1.6', wordBreak: 'break-word' }}>
                         {msg.text}
                       </div>
@@ -1090,7 +1190,7 @@ export default function CommandPalette() {
                 }
                 if (msg.role === 'error') {
                   return (
-                    <div key={idx} className="lex-msg-in" style={{ background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.17)', borderLeft: '3px solid #EF4444', borderRadius: '3px 8px 8px 3px', padding: '10px 14px' }}>
+                    <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.17)', borderLeft: '3px solid #EF4444', borderRadius: '3px 8px 8px 3px', padding: '10px 14px' }}>
                       <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#EF4444', marginBottom: '4px' }}>Error</div>
                       <div style={{ fontSize: '13px', color: '#FCA5A5', lineHeight: '1.5' }}>{msg.text}</div>
                       {msg.isAuth && (
@@ -1104,7 +1204,7 @@ export default function CommandPalette() {
                 }
                 // assistant
                 return (
-                  <div key={idx} className="lex-msg-in" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                  <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                     <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
                       <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
                     </div>
@@ -1247,9 +1347,10 @@ export default function CommandPalette() {
             </div>
 
             {/* ══════════════════════════════════
-                 INPUT BAR
+                 INPUT BAR — docked (active mode)
             ══════════════════════════════════ */}
-            <div style={{ padding: '12px 20px 16px', borderTop: '1px solid #141B28', background: '#090C14', flexShrink: 0 }}>
+            {messages.length > 0 && (
+            <div className="lex-input-bar-docked" style={{ padding: '12px 20px 16px', borderTop: '1px solid rgba(255,255,255,.05)', background: '#090C14', flexShrink: 0 }}>
 
               {/* File attachment preview pill */}
               {(attachedFile || fileLoading) && (
@@ -1386,6 +1487,7 @@ export default function CommandPalette() {
                 AI Legal Associate can make mistakes. Always verify critical legal information independently.
               </div>
             </div>
+            )}{/* end docked input bar */}
           </main>
 
           {/* ══════════════════════════════════
@@ -1394,7 +1496,7 @@ export default function CommandPalette() {
           <aside
             className="lex-drawer"
             style={{
-              width: drawerOpen && activeDocument ? '440px' : '0',
+              width: drawerOpen && activeDocument ? (isDrawerExpanded ? '60vw' : '440px') : '0',
               flexShrink: 0,
               background: '#090C14',
               borderLeft: '1px solid #141B28',
@@ -1428,7 +1530,18 @@ export default function CommandPalette() {
                     </button>
                     <button
                       className="lex-util-btn"
-                      onClick={() => setDrawerOpen(false)}
+                      title={isDrawerExpanded ? 'Exit theater mode' : 'Theater mode — expand'}
+                      onClick={() => setIsDrawerExpanded(v => !v)}
+                      style={{ color: isDrawerExpanded ? '#A5B4FC' : undefined }}
+                    >
+                      {isDrawerExpanded
+                        ? <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        : <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                      }
+                    </button>
+                    <button
+                      className="lex-util-btn"
+                      onClick={() => { setDrawerOpen(false); setIsDrawerExpanded(false); }}
                       title="Hide drawer (draft stays active)"
                       style={{ fontSize: '15px', padding: '2px 6px' }}
                     >×</button>
