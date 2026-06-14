@@ -65,6 +65,29 @@ const resolveNavIntent = (q) => {
 const isNavCommand = (q) => NAV_TRIGGERS.some(t => q.toLowerCase().startsWith(t));
 
 // ═══════════════════════════════════════════════════════
+//  SLASH COMMANDS  (/ prefix autocomplete)
+// ═══════════════════════════════════════════════════════
+const SLASH_CMDS = [
+  { cmd: '/nda',         label: 'Mutual NDA Agreement',     fill: 'Draft a mutual Non-Disclosure Agreement' },
+  { cmd: '/notice',      label: 'Legal Notice',             fill: 'Draft a legal notice for breach of contract' },
+  { cmd: '/bail',        label: 'Bail Application',         fill: 'Draft a bail application based on the case facts' },
+  { cmd: '/petition',    label: 'Writ Petition (Art. 226)', fill: 'Draft a writ petition under Article 226 of the Constitution' },
+  { cmd: '/affidavit',   label: 'Supporting Affidavit',     fill: 'Draft a supporting affidavit' },
+  { cmd: '/summarize',   label: 'Summarize Draft',          fill: 'Summarize this draft' },
+  { cmd: '/arbitration', label: 'Add Arbitration Clause',   fill: 'Add an arbitration clause to this draft' },
+  { cmd: '/risk',        label: 'Risk Analysis',            fill: 'Analyse the high risk clauses in this draft' },
+];
+
+// ═══════════════════════════════════════════════════════
+//  ACTION PILLS  (shown after last AI reply, draft active)
+// ═══════════════════════════════════════════════════════
+const ACTION_PILLS = [
+  { emoji: '✨', label: 'Add Arbitration Clause',   query: 'add an arbitration clause to this draft' },
+  { emoji: '🔍', label: 'Analyse High-Risk Clauses', query: 'analyse the high risk clauses in this draft' },
+  { emoji: '📋', label: 'Summarize Draft',           query: 'summarize this draft' },
+];
+
+// ═══════════════════════════════════════════════════════
 //  QUICK COMMANDS  (empty-state suggestions)
 // ═══════════════════════════════════════════════════════
 const QUICK_CMDS = [
@@ -149,6 +172,11 @@ const renderMarkdown = (text) => {
   }
   return out.join('');
 };
+
+const highlightPlaceholders = (html) =>
+  html.replace(/\[([A-Z][A-Z0-9 ''\/\-,\.&]*)\]/g,
+    '<span class="lex-placeholder">[$1]</span>'
+  );
 
 const relativeDate = (ts) => {
   const d = Date.now() - ts;
@@ -264,17 +292,19 @@ const AGENT_CSS = `
   .lex-drawer { transition: width 0.25s ease; }
   .lex-drawer-body {
     flex:1; overflow-y:auto; outline:none; cursor:text;
-    padding:28px 32px; font-family:Georgia,'Times New Roman',serif;
-    font-size:13.5px; line-height:1.85;
+    padding:32px 40px;
+    font-family: Georgia, 'Merriweather', 'Times New Roman', serif;
+    font-size:13.5px; line-height:1.9; letter-spacing:.01em;
+    text-align:justify;
     color: var(--text-dark-primary);
     background: var(--bg-dark-card);
   }
   .lex-drawer-body p, .lex-drawer-body div, .lex-drawer-body span,
   .lex-drawer-body strong, .lex-drawer-body em { color: var(--text-dark-primary); }
-  [data-theme="light"] .lex-drawer-body { background:#FAFAF8; }
+  [data-theme="light"] .lex-drawer-body { background:#FAF8F5; border-left:3px solid #EDE8DF; }
   [data-theme="light"] .lex-drawer-body p, [data-theme="light"] .lex-drawer-body div,
   [data-theme="light"] .lex-drawer-body span, [data-theme="light"] .lex-drawer-body strong,
-  [data-theme="light"] .lex-drawer-body em { color:#1A2234; }
+  [data-theme="light"] .lex-drawer-body em { color:#1A1A2E; }
   .lex-drawer-body::-webkit-scrollbar { width:4px; }
   .lex-drawer-body::-webkit-scrollbar-thumb { background:#1E2533; border-radius:4px; }
 
@@ -290,9 +320,36 @@ const AGENT_CSS = `
   .lex-md .md-code { background:#0F1420; border:1px solid #1A2030; padding:1px 5px; border-radius:3px; font-family:monospace; font-size:12px; color:#93C5FD; }
   .lex-md .md-gap { height:6px; }
 
-  /* ── Doc card in chat ── */
-  .lex-doc-card-btn { display:flex; align-items:center; gap:8px; margin-top:10px; padding:9px 14px; background:rgba(99,102,241,.08); border:1px solid rgba(99,102,241,.22); border-radius:7px; color:#A5B4FC; font-size:12px; cursor:pointer; width:100%; text-align:left; transition:all .15s; }
-  .lex-doc-card-btn:hover { background:rgba(99,102,241,.16)!important; border-color:rgba(99,102,241,.4)!important; }
+  /* ── Artifact card in chat ── */
+  .lex-artifact-card { margin-top:10px; background:rgba(99,102,241,.05); border:1px solid rgba(99,102,241,.18); border-radius:7px; overflow:hidden; }
+  .lex-artifact-card-header { display:flex; align-items:center; gap:8px; padding:8px 12px; }
+  .lex-artifact-view-btn { margin-left:auto; padding:3px 10px; background:rgba(99,102,241,.12); border:1px solid rgba(99,102,241,.28); border-radius:4px; cursor:pointer; color:#A5B4FC; font-size:11px; font-weight:500; transition:all .15s; white-space:nowrap; flex-shrink:0; font-family:inherit; }
+  .lex-artifact-view-btn:hover { background:rgba(99,102,241,.24)!important; }
+  .lex-artifact-preview { padding:5px 12px 8px; font-size:10.5px; color:#374558; border-top:1px solid rgba(99,102,241,.1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ── Action pills ── */
+  .lex-action-pills { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid #141B28; }
+  .lex-pill { padding:4px 11px; font-size:11px; background:rgba(255,255,255,.03); border:1px solid #1E2A3A; border-radius:20px; color:#506275; cursor:pointer; transition:all .15s; white-space:nowrap; font-family:inherit; }
+  .lex-pill:hover { background:rgba(59,130,246,.1)!important; border-color:rgba(59,130,246,.3)!important; color:#93C5FD!important; }
+
+  /* ── Slash command popup ── */
+  .lex-slash-menu { position:absolute; bottom:calc(100% + 6px); left:0; right:0; background:#111827; border:1px solid #1E2A3A; border-radius:8px; overflow:hidden; box-shadow:0 -6px 24px rgba(0,0,0,.55); z-index:200; }
+  .lex-slash-item { display:flex; align-items:center; gap:10px; padding:9px 14px; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid #141B28; cursor:pointer; transition:background .12s; font-family:inherit; }
+  .lex-slash-item:last-child { border-bottom:none; }
+  .lex-slash-item:hover { background:rgba(59,130,246,.1); }
+  .lex-slash-cmd { font-size:12px; font-weight:700; color:#3B82F6; font-family:monospace; min-width:110px; }
+  .lex-slash-label { font-size:11.5px; color:#506275; }
+
+  /* ── Smart Paper placeholder highlights ── */
+  .lex-placeholder { background:rgba(251,191,36,.14); border:1px solid rgba(251,191,36,.32); border-radius:3px; padding:0 3px; color:#FCD34D; font-weight:500; cursor:pointer; transition:background .15s; white-space:nowrap; }
+  .lex-placeholder:hover { background:rgba(251,191,36,.28); }
+  [data-theme="light"] .lex-placeholder { color:#92400E; background:rgba(251,191,36,.22); border-color:rgba(251,191,36,.5); }
+
+  /* ── Snapshot banner & utility buttons in drawer ── */
+  .lex-snapshot-banner { background:rgba(245,158,11,.08); border-bottom:1px solid rgba(245,158,11,.22); padding:5px 14px; display:flex; align-items:center; gap:8px; font-size:11px; color:#FCD34D; flex-shrink:0; }
+  .lex-util-btn { background:none; border:none; cursor:pointer; color:#3D5168; padding:3px 6px; border-radius:4px; line-height:1; transition:all .15s; flex-shrink:0; display:flex; align-items:center; }
+  .lex-util-btn:hover { color:#7EB3F5; background:rgba(59,130,246,.1); }
+  .lex-copy-toast { position:absolute; top:-26px; right:0; background:#1A2030; border:1px solid #1E2A3A; color:#6EE7B7; font-size:10px; padding:2px 8px; border-radius:4px; white-space:nowrap; pointer-events:none; animation:lex-in .2s ease; }
 `;
 
 // ═══════════════════════════════════════════════════════
@@ -320,8 +377,11 @@ export default function CommandPalette() {
   const [navRoute,    setNavRoute]    = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [micError,    setMicError]    = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [drawerOpen,  setDrawerOpen]  = useState(false);
+  const [sidebarOpen,     setSidebarOpen]     = useState(true);
+  const [drawerOpen,      setDrawerOpen]      = useState(false);
+  const [viewingSnapshot, setViewingSnapshot] = useState(null); // { content, title, doc_type }
+  const [slashMenu,       setSlashMenu]       = useState(false);
+  const [copyToast,       setCopyToast]       = useState(false);
 
   // ── File attachment ──────────────────────────────────
   const [attachedFile, setAttachedFile] = useState(null); // { name, content }
@@ -647,7 +707,15 @@ export default function CommandPalette() {
               patchMessage(sid, msgId, m => ({
                 ...m,
                 text: `✏️ Draft updated${p.change_summary ? ' — ' + p.change_summary : ''}.`,
+                docCard: {
+                  title: p.title || 'Updated Document',
+                  doc_type: 'Draft Edit',
+                  snapshot: p.updated_content,
+                  ts: Date.now(),
+                  isUpdate: true,
+                },
               }));
+              setViewingSnapshot(null);
               setDrawerOpen(true);
               continue;
             }
@@ -683,8 +751,15 @@ export default function CommandPalette() {
               patchMessage(sid, msgId, m => ({
                 ...m,
                 text: 'Document drafted. Review and edit it in the draft panel →',
-                docCard: { title: p.draft.title, doc_type: p.draft.doc_type },
+                docCard: {
+                  title: p.draft.title,
+                  doc_type: p.draft.doc_type,
+                  snapshot: p.draft.content,
+                  ts: Date.now(),
+                  isUpdate: false,
+                },
               }));
+              setViewingSnapshot(null);
               setDrawerOpen(true);
               continue;
             }
@@ -749,6 +824,28 @@ export default function CommandPalette() {
       pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save to Case Vault.' });
     } finally { setLoading(false); }
   }
+
+  // ── Draft utility actions ─────────────────────────────
+  const handleCopyDraft = () => {
+    const doc = viewingSnapshot || activeDocument;
+    if (!doc) return;
+    navigator.clipboard.writeText(doc.content).then(() => {
+      setCopyToast(true);
+      setTimeout(() => setCopyToast(false), 1800);
+    });
+  };
+
+  const handleExportDraft = () => {
+    const doc = viewingSnapshot || activeDocument;
+    if (!doc) return;
+    const blob = new Blob([doc.content], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = doc.title.replace(/\s+/g, '_') + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // ── Close  (does NOT wipe messages) ─────────────────
   const handleClose = () => {
@@ -1014,15 +1111,35 @@ export default function CommandPalette() {
                             dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
                           />
                           {msg.docCard && (
-                            <button
-                              className="lex-doc-card-btn"
-                              onClick={() => setDrawerOpen(true)}
-                            >
-                              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                              <span style={{ flex: 1 }}>{msg.docCard.title}</span>
-                              {msg.docCard.doc_type && <span style={{ opacity: 0.55, fontSize: '10.5px' }}>{msg.docCard.doc_type}</span>}
-                              <span style={{ fontSize: '10.5px', opacity: 0.7 }}>Open in Draft Viewer →</span>
-                            </button>
+                            <div className="lex-artifact-card">
+                              <div className="lex-artifact-card-header">
+                                <svg width="12" height="12" fill="none" stroke={msg.docCard.isUpdate ? '#6366F1' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#C8D8E8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {msg.docCard.isUpdate ? '✏️ ' : '📄 '}{msg.docCard.title}
+                                </span>
+                                {msg.docCard.doc_type && (
+                                  <span style={{ fontSize: '10px', color: '#3D5168', background: 'rgba(255,255,255,.04)', padding: '1px 6px', borderRadius: '3px', flexShrink: 0 }}>
+                                    {msg.docCard.doc_type}
+                                  </span>
+                                )}
+                                <button
+                                  className="lex-artifact-view-btn"
+                                  onClick={() => {
+                                    if (msg.docCard.snapshot) {
+                                      setViewingSnapshot({ content: msg.docCard.snapshot, title: msg.docCard.title, doc_type: msg.docCard.doc_type });
+                                    }
+                                    setDrawerOpen(true);
+                                  }}
+                                >
+                                  View Version →
+                                </button>
+                              </div>
+                              {msg.docCard.snapshot && (
+                                <div className="lex-artifact-preview">
+                                  {msg.docCard.snapshot.replace(/\n/g, ' ').slice(0, 120)}…
+                                </div>
+                              )}
+                            </div>
                           )}
                         </>
                       ) : (
@@ -1043,6 +1160,20 @@ export default function CommandPalette() {
                               </span>
                             ))}
                           </div>
+                        </div>
+                      )}
+                      {/* Action pills — last assistant msg + active draft */}
+                      {idx === messages.length - 1 && activeDocument && !loading && (
+                        <div className="lex-action-pills">
+                          {ACTION_PILLS.map((pill, pi) => (
+                            <button
+                              key={pi}
+                              className="lex-pill"
+                              onClick={() => searchRef.current?.(null, pill.query)}
+                            >
+                              {pill.emoji} {pill.label}
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -1141,6 +1272,35 @@ export default function CommandPalette() {
                 onChange={handleFileAttach}
               />
 
+              <div style={{ position: 'relative' }}>
+              {/* ── Slash command popup ── */}
+              {slashMenu && (() => {
+                const slashFilter = query.slice(1).toLowerCase();
+                const filtered = SLASH_CMDS.filter(c =>
+                  !slashFilter ||
+                  c.cmd.includes(slashFilter) ||
+                  c.label.toLowerCase().includes(slashFilter)
+                );
+                return filtered.length > 0 ? (
+                  <div className="lex-slash-menu">
+                    {filtered.map((c, ci) => (
+                      <button
+                        key={ci}
+                        className="lex-slash-item"
+                        onMouseDown={e => {
+                          e.preventDefault(); // prevent textarea blur
+                          setQuery(c.fill);
+                          setSlashMenu(false);
+                          setTimeout(() => inputRef.current?.focus(), 10);
+                        }}
+                      >
+                        <span className="lex-slash-cmd">{c.cmd}</span>
+                        <span className="lex-slash-label">{c.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
               <form
                 onSubmit={handleSearch}
                 style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${isListening ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
@@ -1151,11 +1311,14 @@ export default function CommandPalette() {
                   rows={1}
                   value={query}
                   onChange={e => {
-                    setQuery(e.target.value);
+                    const val = e.target.value;
+                    setQuery(val);
+                    setSlashMenu(val.startsWith('/') && !val.includes(' '));
                     e.target.style.height = 'auto';
                     e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px';
                   }}
                   onKeyDown={e => {
+                    if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; }
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); }
                   }}
                   disabled={isLocked}
@@ -1211,6 +1374,7 @@ export default function CommandPalette() {
                   Send
                 </button>
               </form>
+              </div>{/* end slash-command wrapper */}
 
               <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
                 AI Legal Associate can make mistakes. Always verify critical legal information independently.
@@ -1235,34 +1399,61 @@ export default function CommandPalette() {
           >
             {activeDocument && (
               <>
-                {/* Drawer header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                    <svg width="13" height="13" fill="none" stroke="#7EB3F5" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#DDE6F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeDocument.title}</span>
-                    {activeDocument.doc_type && (
-                      <span style={{ fontSize: '10.5px', color: '#3D5168', background: 'rgba(255,255,255,.04)', padding: '1px 7px', borderRadius: '3px', flexShrink: 0 }}>{activeDocument.doc_type}</span>
+                {/* Drawer header with utility buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
+                    <svg width="12" height="12" fill="none" stroke={viewingSnapshot ? '#F59E0B' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#DDE6F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {viewingSnapshot ? viewingSnapshot.title : activeDocument.title}
+                    </span>
+                    {(viewingSnapshot || activeDocument).doc_type && (
+                      <span style={{ fontSize: '10px', color: '#3D5168', background: 'rgba(255,255,255,.04)', padding: '1px 6px', borderRadius: '3px', flexShrink: 0 }}>
+                        {(viewingSnapshot || activeDocument).doc_type}
+                      </span>
                     )}
                   </div>
-                  <button
-                    onClick={() => setDrawerOpen(false)}
-                    style={{ background: 'none', border: 'none', color: '#3D5168', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px 6px', borderRadius: '4px', flexShrink: 0 }}
-                    title="Hide drawer (draft stays active)"
-                  >×</button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0, position: 'relative' }}>
+                    {copyToast && <span className="lex-copy-toast">Copied!</span>}
+                    <button className="lex-util-btn" title="Copy to clipboard" onClick={handleCopyDraft}>
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button className="lex-util-btn" title="Export as .txt" onClick={handleExportDraft}>
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </button>
+                    <button
+                      className="lex-util-btn"
+                      onClick={() => setDrawerOpen(false)}
+                      title="Hide drawer (draft stays active)"
+                      style={{ fontSize: '15px', padding: '2px 6px' }}
+                    >×</button>
+                  </div>
                 </div>
 
-                {/* Subtitle */}
-                <div style={{ padding: '4px 16px 6px', fontSize: '9.5px', color: '#2D3D50', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0, borderBottom: '1px solid #0F1420' }}>
-                  Edit below · Approve to save to vault
-                </div>
+                {/* Snapshot mode banner */}
+                {viewingSnapshot ? (
+                  <div className="lex-snapshot-banner">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>Viewing historical version — read only</span>
+                    <button
+                      onClick={() => setViewingSnapshot(null)}
+                      style={{ marginLeft: 'auto', color: '#FCD34D', background: 'none', border: '1px solid rgba(253,211,77,.3)', borderRadius: '3px', padding: '1px 8px', cursor: 'pointer', fontSize: '10.5px', fontFamily: 'inherit' }}
+                    >← Return to Current</button>
+                  </div>
+                ) : (
+                  <div style={{ padding: '3px 14px 5px', fontSize: '9px', color: '#2D3D50', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0, borderBottom: '1px solid #0F1420' }}>
+                    Edit below · Highlighted fields <span style={{ color: '#FCD34D' }}>[require your input]</span> · Approve to save to vault
+                  </div>
+                )}
 
-                {/* Editable document body */}
+                {/* Document body — Smart Paper with placeholder highlighting */}
                 <div
                   className="lex-drawer-body"
-                  contentEditable
+                  contentEditable={!viewingSnapshot}
                   suppressContentEditableWarning
-                  dangerouslySetInnerHTML={{ __html: renderDraftHtml(activeDocument.content) }}
-                  onBlur={e => {
+                  dangerouslySetInnerHTML={{
+                    __html: highlightPlaceholders(renderDraftHtml((viewingSnapshot || activeDocument).content))
+                  }}
+                  onBlur={viewingSnapshot ? undefined : e => {
                     const plain = e.currentTarget.innerText || '';
                     updateSession(currentId, s => ({
                       ...s,
@@ -1273,20 +1464,23 @@ export default function CommandPalette() {
                 />
 
                 {/* Drawer footer */}
-                <div style={{ padding: '10px 16px', borderTop: '1px solid #141B28', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexShrink: 0, background: '#090C14' }}>
-                  <button
-                    onClick={() => {
-                      updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
-                      setDrawerOpen(false);
-                    }}
-                    style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid #1A2030', borderRadius: '6px', cursor: 'pointer' }}
-                  >Reject</button>
-                  <button
-                    onClick={handleApproveDraft}
-                    disabled={loading}
-                    style={{ padding: '7px 18px', fontSize: '12px', color: '#fff', background: '#3B82F6', border: 'none', borderRadius: '6px', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: loading ? 0.6 : 1 }}
-                  >Approve & Save to Vault</button>
-                </div>
+                {!viewingSnapshot && (
+                  <div style={{ padding: '10px 14px', borderTop: '1px solid #141B28', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexShrink: 0, background: '#090C14' }}>
+                    <button
+                      onClick={() => {
+                        updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
+                        setViewingSnapshot(null);
+                        setDrawerOpen(false);
+                      }}
+                      style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid #1A2030', borderRadius: '6px', cursor: 'pointer' }}
+                    >Reject</button>
+                    <button
+                      onClick={handleApproveDraft}
+                      disabled={loading}
+                      style={{ padding: '7px 18px', fontSize: '12px', color: '#fff', background: '#3B82F6', border: 'none', borderRadius: '6px', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: loading ? 0.6 : 1 }}
+                    >Approve & Save to Vault</button>
+                  </div>
+                )}
               </>
             )}
           </aside>
