@@ -78,14 +78,8 @@ const SLASH_CMDS = [
   { cmd: '/risk',        label: 'Risk Analysis',            fill: 'Analyse the high risk clauses in this draft' },
 ];
 
-// ═══════════════════════════════════════════════════════
-//  ACTION PILLS  (shown after last AI reply, draft active)
-// ═══════════════════════════════════════════════════════
-const ACTION_PILLS = [
-  { emoji: '✨', label: 'Add Arbitration Clause',   query: 'add an arbitration clause to this draft' },
-  { emoji: '🔍', label: 'Analyse High-Risk Clauses', query: 'analyse the high risk clauses in this draft' },
-  { emoji: '📋', label: 'Summarize Draft',           query: 'summarize this draft' },
-];
+// ACTION_PILLS are now LLM-driven — sent via SSE as { suggested_actions: [...] }
+// and stored on msg.suggestedActions. No hardcoded array needed.
 
 // ═══════════════════════════════════════════════════════
 //  QUICK COMMANDS  (empty-state suggestions)
@@ -198,17 +192,28 @@ const AGENT_CSS = `
     70%  { transform:scale(1.06); box-shadow:0 0 0 8px rgba(239,68,68,0);   }
     100% { transform:scale(1);    box-shadow:0 0 0 0   rgba(239,68,68,0);   }
   }
-  @keyframes lex-in    { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
-  @keyframes lex-navbar{ 0%{width:0} 100%{width:100%} }
-  @keyframes lex-dot   { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+  @keyframes lex-in      { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+  @keyframes lex-navbar  { 0%{width:0} 100%{width:100%} }
+  @keyframes lex-dot     { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+  @keyframes lex-breathe { 0%,100%{opacity:.72;box-shadow:0 0 0 0 rgba(59,130,246,0)} 50%{opacity:1;box-shadow:0 0 18px 5px rgba(59,130,246,.28)} }
 
-  .lex-shimmer   { animation: lex-pulse 1.5s infinite ease-in-out; }
-  .lex-mic-live  { animation: lex-mic-ring 1.4s infinite!important; background:rgba(239,68,68,.12)!important; color:#ef4444!important; border-color:#ef4444!important; }
-  .lex-msg-in    { animation: lex-in .2s ease; }
-  .lex-nav-bar   { height:2px; background:linear-gradient(90deg,#3B82F6,#6366F1); animation:lex-navbar 1.1s ease forwards; border-radius:2px; }
-  .lex-dot-1     { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:0s;   }
-  .lex-dot-2     { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:.18s; }
-  .lex-dot-3     { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:.36s; }
+  .lex-shimmer      { animation: lex-pulse 1.5s infinite ease-in-out; }
+  .lex-mic-live     { animation: lex-mic-ring 1.4s infinite!important; background:rgba(239,68,68,.12)!important; color:#ef4444!important; border-color:#ef4444!important; }
+  .lex-msg-in       { animation: lex-in .2s ease; }
+  .lex-nav-bar      { height:2px; background:linear-gradient(90deg,#3B82F6,#6366F1); animation:lex-navbar 1.1s ease forwards; border-radius:2px; }
+  .lex-dot-1        { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:0s;   }
+  .lex-dot-2        { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:.18s; }
+  .lex-dot-3        { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:.36s; }
+  .lex-ai-breathing { animation: lex-breathe 2.2s ease-in-out infinite; border-radius:7px; }
+
+  /* ── Ambient glow on chat canvas ── */
+  .lex-chat-main { position:relative; }
+  .lex-chat-main::before {
+    content:''; position:absolute; top:22%; left:50%; transform:translateX(-50%);
+    width:620px; height:380px; pointer-events:none; z-index:0;
+    background:radial-gradient(ellipse at center, rgba(59,130,246,.055) 0%, rgba(99,102,241,.03) 45%, transparent 70%);
+    filter:blur(55px);
+  }
 
   .lex-side-scroll::-webkit-scrollbar       { width:3px; }
   .lex-side-scroll::-webkit-scrollbar-track { background:transparent; }
@@ -320,25 +325,25 @@ const AGENT_CSS = `
   .lex-md .md-code { background:#0F1420; border:1px solid #1A2030; padding:1px 5px; border-radius:3px; font-family:monospace; font-size:12px; color:#93C5FD; }
   .lex-md .md-gap { height:6px; }
 
-  /* ── Artifact card in chat ── */
-  .lex-artifact-card { margin-top:10px; background:rgba(99,102,241,.05); border:1px solid rgba(99,102,241,.18); border-radius:7px; overflow:hidden; }
+  /* ── Artifact card in chat (glassmorphism) ── */
+  .lex-artifact-card { margin-top:10px; background:rgba(10,14,26,.65); border:1px solid rgba(255,255,255,.06); border-radius:8px; overflow:hidden; box-shadow:0 4px 32px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.05); backdrop-filter:blur(12px); }
   .lex-artifact-card-header { display:flex; align-items:center; gap:8px; padding:8px 12px; }
-  .lex-artifact-view-btn { margin-left:auto; padding:3px 10px; background:rgba(99,102,241,.12); border:1px solid rgba(99,102,241,.28); border-radius:4px; cursor:pointer; color:#A5B4FC; font-size:11px; font-weight:500; transition:all .15s; white-space:nowrap; flex-shrink:0; font-family:inherit; }
-  .lex-artifact-view-btn:hover { background:rgba(99,102,241,.24)!important; }
-  .lex-artifact-preview { padding:5px 12px 8px; font-size:10.5px; color:#374558; border-top:1px solid rgba(99,102,241,.1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lex-artifact-view-btn { margin-left:auto; padding:3px 10px; background:rgba(99,102,241,.12); border:1px solid rgba(99,102,241,.25); border-radius:4px; cursor:pointer; color:#A5B4FC; font-size:11px; font-weight:500; transition:all .15s; white-space:nowrap; flex-shrink:0; font-family:inherit; letter-spacing:.03em; }
+  .lex-artifact-view-btn:hover { background:rgba(99,102,241,.24)!important; border-color:rgba(99,102,241,.45)!important; }
+  .lex-artifact-preview { padding:5px 12px 8px; font-size:10.5px; color:#64748B; letter-spacing:.02em; border-top:1px solid rgba(255,255,255,.04); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* ── Action pills ── */
-  .lex-action-pills { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid #141B28; }
-  .lex-pill { padding:4px 11px; font-size:11px; background:rgba(255,255,255,.03); border:1px solid #1E2A3A; border-radius:20px; color:#506275; cursor:pointer; transition:all .15s; white-space:nowrap; font-family:inherit; }
-  .lex-pill:hover { background:rgba(59,130,246,.1)!important; border-color:rgba(59,130,246,.3)!important; color:#93C5FD!important; }
+  .lex-action-pills { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,.05); }
+  .lex-pill { padding:4px 12px; font-size:11px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.07); border-radius:20px; color:#94A3B8; cursor:pointer; transition:all .18s; white-space:nowrap; font-family:inherit; letter-spacing:.03em; }
+  .lex-pill:hover { background:rgba(59,130,246,.12)!important; border-color:rgba(59,130,246,.35)!important; color:#93C5FD!important; box-shadow:0 0 10px rgba(59,130,246,.15)!important; }
 
   /* ── Slash command popup ── */
-  .lex-slash-menu { position:absolute; bottom:calc(100% + 6px); left:0; right:0; background:#111827; border:1px solid #1E2A3A; border-radius:8px; overflow:hidden; box-shadow:0 -6px 24px rgba(0,0,0,.55); z-index:200; }
-  .lex-slash-item { display:flex; align-items:center; gap:10px; padding:9px 14px; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid #141B28; cursor:pointer; transition:background .12s; font-family:inherit; }
+  .lex-slash-menu { position:absolute; bottom:calc(100% + 6px); left:0; right:0; background:#0D1117; border:1px solid rgba(255,255,255,.07); border-radius:8px; overflow:hidden; box-shadow:0 -8px 32px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.04); z-index:200; backdrop-filter:blur(12px); }
+  .lex-slash-item { display:flex; align-items:center; gap:10px; padding:9px 14px; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid rgba(255,255,255,.04); cursor:pointer; transition:background .12s; font-family:inherit; }
   .lex-slash-item:last-child { border-bottom:none; }
   .lex-slash-item:hover { background:rgba(59,130,246,.1); }
-  .lex-slash-cmd { font-size:12px; font-weight:700; color:#3B82F6; font-family:monospace; min-width:110px; }
-  .lex-slash-label { font-size:11.5px; color:#506275; }
+  .lex-slash-cmd { font-size:12px; font-weight:700; color:#3B82F6; font-family:monospace; min-width:110px; letter-spacing:.03em; }
+  .lex-slash-label { font-size:11.5px; color:#94A3B8; letter-spacing:.02em; }
 
   /* ── Smart Paper placeholder highlights ── */
   .lex-placeholder { background:rgba(251,191,36,.14); border:1px solid rgba(251,191,36,.32); border-radius:3px; padding:0 3px; color:#FCD34D; font-weight:500; cursor:pointer; transition:background .15s; white-space:nowrap; }
@@ -764,9 +769,10 @@ export default function CommandPalette() {
               continue;
             }
 
-            if (p.metadata) { patchMessage(sid, msgId, m => ({ ...m, sources: p.metadata.sources })); }
-            if (p.token)    { accText += p.token; patchMessage(sid, msgId, m => ({ ...m, text: accText })); }
-            if (p.error)    { patchMessage(sid, msgId, m => ({ ...m, text: accText + '\n\n[Error: ' + p.error + ']' })); }
+            if (p.metadata)           { patchMessage(sid, msgId, m => ({ ...m, sources: p.metadata.sources })); }
+            if (p.token)              { accText += p.token; patchMessage(sid, msgId, m => ({ ...m, text: accText })); }
+            if (p.suggested_actions)  { patchMessage(sid, msgId, m => ({ ...m, suggestedActions: p.suggested_actions })); }
+            if (p.error)              { patchMessage(sid, msgId, m => ({ ...m, text: accText + '\n\n[Error: ' + p.error + ']' })); }
           } catch (_) { /* skip malformed chunk */ }
         }
       }
@@ -877,7 +883,7 @@ export default function CommandPalette() {
           <div style={{ fontSize: '12px', fontWeight: s.id === currentId ? 600 : 400, color: s.id === currentId ? '#93C5FD' : '#9BAFC0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.35' }}>
             {s.title}
           </div>
-          <div style={{ fontSize: '10px', color: '#374558', marginTop: '2px' }}>{relativeDate(s.updatedAt)}</div>
+          <div style={{ fontSize: '10px', color: '#64748B', letterSpacing: '.03em', marginTop: '2px' }}>{relativeDate(s.updatedAt)}</div>
         </div>
         <button className="lex-sess-del" onClick={(e) => deleteSession(s.id, e)} title="Delete conversation">×</button>
       </div>
@@ -885,7 +891,7 @@ export default function CommandPalette() {
   );
 
   const SectionLabel = ({ label }) => (
-    <div style={{ padding: '8px 6px 3px', fontSize: '9.5px', fontWeight: 700, color: '#2D3D50', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
+    <div style={{ padding: '8px 6px 3px', fontSize: '9px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
       {label}
     </div>
   );
@@ -973,7 +979,7 @@ export default function CommandPalette() {
           {/* ══════════════════════════════════
                MAIN CHAT AREA
           ══════════════════════════════════ */}
-          <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0C1018', overflow: 'hidden' }}>
+          <main className="lex-chat-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0C1018', overflow: 'hidden' }}>
 
             {/* Top header bar */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '10px' }}>
@@ -991,7 +997,7 @@ export default function CommandPalette() {
                     }
                   </svg>
                 </button>
-                <span style={{ fontSize: '11px', color: '#2D4057', flexShrink: 0 }}>Context:</span>
+                <span style={{ fontSize: '10px', color: '#475569', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>Context:</span>
                 <code style={{ fontSize: '11px', color: '#5B7FA0', background: 'rgba(255,255,255,.04)', padding: '2px 8px', borderRadius: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }}>
                   {location.pathname}
                 </code>
@@ -1063,7 +1069,7 @@ export default function CommandPalette() {
                           <div style={{ fontSize: '12px', color: '#9BAFC0', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                             {cmd.text}
                           </div>
-                          <div style={{ fontSize: '10px', color: '#2D3D50', marginTop: '3px' }}>{cmd.category}</div>
+                          <div style={{ fontSize: '9.5px', color: '#64748B', marginTop: '3px', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>{cmd.category}</div>
                         </div>
                       </button>
                     ))}
@@ -1102,7 +1108,7 @@ export default function CommandPalette() {
                     <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
                       <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
                     </div>
-                    <div style={{ flex: 1, background: '#111827', border: '1px solid #1A2030', borderRadius: '2px 12px 12px 12px', padding: '12px 16px', minWidth: 0 }}>
+                    <div style={{ flex: 1, background: 'rgba(13,17,28,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: '2px 12px 12px 12px', padding: '12px 16px', minWidth: 0, boxShadow: '0 4px 24px rgba(0,0,0,.28)', backdropFilter: 'blur(8px)' }}>
                       {msg.text ? (
                         <>
                           <div
@@ -1150,22 +1156,22 @@ export default function CommandPalette() {
                         </div>
                       )}
                       {msg.sources && msg.sources.length > 0 && (
-                        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #1A2030' }}>
-                          <div style={{ fontSize: '9.5px', textTransform: 'uppercase', color: '#2D3D50', marginBottom: '5px', letterSpacing: '0.6px' }}>Sources</div>
+                        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,.05)' }}>
+                          <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B', marginBottom: '5px', fontWeight: 600 }}>Sources</div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
                             {msg.sources.map((src, si) => (
-                              <span key={si} style={{ background: 'rgba(255,255,255,.03)', border: '1px solid #1A2030', padding: '3px 8px', borderRadius: '20px', fontSize: '10.5px', color: '#506275' }}>
-                                Doc #{src.document_id} · Chunk {src.chunk_index}
+                              <span key={si} style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', color: '#64748B', letterSpacing: '.03em' }}>
+                                Doc #{src.document_id}{src.chunk_index != null && ` · Chunk ${src.chunk_index}`}
                                 {src.similarity != null && ` · ${Math.round(src.similarity * 100)}%`}
                               </span>
                             ))}
                           </div>
                         </div>
                       )}
-                      {/* Action pills — last assistant msg + active draft */}
-                      {idx === messages.length - 1 && activeDocument && !loading && (
+                      {/* Action pills — LLM-generated, shown on last assistant message when not loading */}
+                      {idx === messages.length - 1 && msg.suggestedActions?.length > 0 && !loading && (
                         <div className="lex-action-pills">
-                          {ACTION_PILLS.map((pill, pi) => (
+                          {msg.suggestedActions.map((pill, pi) => (
                             <button
                               key={pi}
                               className="lex-pill"
@@ -1184,10 +1190,10 @@ export default function CommandPalette() {
               {/* Loading indicator */}
               {loading && (
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div className="lex-ai-breathing" style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
                   </div>
-                  <div style={{ background: '#111827', border: '1px solid #1A2030', borderRadius: '2px 12px 12px 12px', padding: '14px 18px' }}>
+                  <div style={{ background: 'rgba(13,17,28,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: '2px 12px 12px 12px', padding: '14px 18px', boxShadow: '0 4px 24px rgba(0,0,0,.28)', backdropFilter: 'blur(8px)' }}>
                     <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                       {[1, 2, 3].map(n => (
                         <span key={n} className={`lex-dot-${n}`} style={{ width: '7px', height: '7px', background: '#3B82F6', borderRadius: '50%', display: 'inline-block' }} />
@@ -1203,7 +1209,7 @@ export default function CommandPalette() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #1A2030' }}>
                     <span style={{ fontSize: '16px' }}>📅</span>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#7EB3F5' }}>Review Proposed Schedule</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '10.5px', color: '#2D3D50' }}>{pendingSchedule.length} event{pendingSchedule.length !== 1 ? 's' : ''}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#64748B', letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 600 }}>{pendingSchedule.length} event{pendingSchedule.length !== 1 ? 's' : ''}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginBottom: '14px' }}>
                     {pendingSchedule.map((ev, i) => {
@@ -1440,7 +1446,7 @@ export default function CommandPalette() {
                     >← Return to Current</button>
                   </div>
                 ) : (
-                  <div style={{ padding: '3px 14px 5px', fontSize: '9px', color: '#2D3D50', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0, borderBottom: '1px solid #0F1420' }}>
+                  <div style={{ padding: '3px 14px 5px', fontSize: '9px', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,.04)', fontWeight: 600 }}>
                     Edit below · Highlighted fields <span style={{ color: '#FCD34D' }}>[require your input]</span> · Approve to save to vault
                   </div>
                 )}

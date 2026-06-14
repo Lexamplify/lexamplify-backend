@@ -298,6 +298,49 @@ def _is_draft_query(query: str) -> bool:
     return False
 
 
+def _generate_suggested_actions(client, query: str, response_snippet: str, draft_context: str = "") -> list:
+    """Use the fast model to generate 3 context-aware next-step action pills."""
+    snippet = response_snippet[:1500] if response_snippet else ""
+    draft_hint = (
+        f"\nActive draft context (opening): {draft_context[:400]}"
+        if draft_context else ""
+    )
+    prompt = (
+        "You are a legal workflow assistant embedded in an Indian legal SaaS platform. "
+        "Based on the lawyer's query and the AI response below, suggest exactly 3 "
+        "highly specific, actionable next steps they should take inside this workspace.\n\n"
+        f"Lawyer's query: {query}\n"
+        f"AI Response snippet: {snippet}{draft_hint}\n\n"
+        "Rules:\n"
+        "1. Each action must be specific to the query/response context — not generic.\n"
+        "2. Prefer actions like: editing the draft, analysing clauses, researching law, filing steps.\n"
+        "3. Respond ONLY with a JSON array of exactly 3 objects. No preamble, no markdown fences.\n"
+        'Each object: {"emoji": "<single emoji>", "label": "<2-5 word label>", "query": "<exact query text>"}'
+    )
+    try:
+        resp = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=280,
+        )
+        raw = resp.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        actions = json.loads(raw.strip())
+        if isinstance(actions, list) and len(actions) >= 1:
+            return actions[:3]
+    except Exception as e:
+        print(f"[suggested_actions]: {e}")
+    return [
+        {"emoji": "📋", "label": "Summarize Draft",        "query": "Summarize this draft"},
+        {"emoji": "✨", "label": "Add Arbitration Clause",  "query": "Add an arbitration clause to this draft"},
+        {"emoji": "🔍", "label": "Analyse Risk Clauses",   "query": "Analyse the high risk clauses in this draft"},
+    ]
+
+
 # ── 8. DUAL-ENGINE STREAMING ENDPOINT ──────────────────────────────────
 
 def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None,
@@ -380,10 +423,14 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
                 temperature=0.1,
                 stream=True,
             )
+            full_qa_text = ''
             for chunk in qa_completion:
                 delta = chunk.choices[0].delta.content
                 if delta:
+                    full_qa_text += delta
                     yield f"data: {json.dumps({'token': delta})}\n\n"
+            actions = _generate_suggested_actions(client, query, full_qa_text, current_draft_context)
+            yield f"data: {json.dumps({'suggested_actions': actions})}\n\n"
         except Exception as e:
             _qa_err = json.dumps({'token': '[Query error: ' + str(e) + ']'})
             yield f"data: {_qa_err}\n\n"
@@ -550,6 +597,8 @@ Return ONLY raw JSON matching this schema."""
                     }
                 }
                 yield f"data: {json.dumps(result)}\n\n"
+                actions = _generate_suggested_actions(client, query, draft_content[:800])
+                yield f"data: {json.dumps({'suggested_actions': actions})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
@@ -586,10 +635,15 @@ Return ONLY raw JSON matching this schema."""
             stream=True,
         )
 
+        full_text = ''
         for chunk in completion:
             if chunk.choices[0].delta.content:
-                yield f"data: {json.dumps({'token': chunk.choices[0].delta.content})}\n\n"
+                token = chunk.choices[0].delta.content
+                full_text += token
+                yield f"data: {json.dumps({'token': token})}\n\n"
 
+        actions = _generate_suggested_actions(client, query, full_text, current_draft_context)
+        yield f"data: {json.dumps({'suggested_actions': actions})}\n\n"
         yield "data: [DONE]\n\n"
 
     except Exception as e:
