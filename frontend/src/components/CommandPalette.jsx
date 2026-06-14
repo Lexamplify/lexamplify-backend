@@ -105,6 +105,51 @@ const renderDraftHtml = (text) => {
     .replace(/$/, '</p>');
 };
 
+// ═══════════════════════════════════════════════════════
+//  MARKDOWN RENDERER  (zero-dependency, for AI chat replies)
+// ═══════════════════════════════════════════════════════
+const escHtml = (s) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const applyInline = (s) =>
+  escHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code class="md-code">$1</code>');
+
+const renderMarkdown = (text) => {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const ln = lines[i];
+    if (/^### /.test(ln))       { out.push(`<h3 class="md-h3">${applyInline(ln.slice(4))}</h3>`); i++; }
+    else if (/^## /.test(ln))   { out.push(`<h2 class="md-h2">${applyInline(ln.slice(3))}</h2>`); i++; }
+    else if (/^# /.test(ln))    { out.push(`<h1 class="md-h1">${applyInline(ln.slice(2))}</h1>`); i++; }
+    else if (/^---+$/.test(ln.trim())) { out.push('<hr class="md-hr">'); i++; }
+    else if (/^[*\-] /.test(ln)) {
+      const items = [];
+      while (i < lines.length && /^[*\-] /.test(lines[i])) {
+        items.push(`<li>${applyInline(lines[i].replace(/^[*\-] /, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ul class="md-ul">${items.join('')}</ul>`);
+    }
+    else if (/^\d+\. /.test(ln)) {
+      const items = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i])) {
+        items.push(`<li>${applyInline(lines[i].replace(/^\d+\. /, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ol class="md-ol">${items.join('')}</ol>`);
+    }
+    else if (ln.trim() === '') { out.push('<div class="md-gap"></div>'); i++; }
+    else { out.push(`<p class="md-p">${applyInline(ln)}</p>`); i++; }
+  }
+  return out.join('');
+};
+
 const relativeDate = (ts) => {
   const d = Date.now() - ts;
   if (d < 60000)     return 'Just now';
@@ -209,6 +254,45 @@ const AGENT_CSS = `
 
   .lex-textarea { resize:none; overflow:hidden; font-family:inherit; }
   .lex-textarea:focus { outline:none; }
+
+  /* ── Sidebar collapse ── */
+  .lex-sidebar { transition: width 0.22s ease; }
+  .lex-sidebar-toggle { background:none; border:none; color:#3D5168; cursor:pointer; padding:4px 6px; border-radius:4px; line-height:1; transition:all .15s; }
+  .lex-sidebar-toggle:hover { color:#7EB3F5; background:rgba(59,130,246,.08); }
+
+  /* ── RHS Draft Drawer ── */
+  .lex-drawer { transition: width 0.25s ease; }
+  .lex-drawer-body {
+    flex:1; overflow-y:auto; outline:none; cursor:text;
+    padding:28px 32px; font-family:Georgia,'Times New Roman',serif;
+    font-size:13.5px; line-height:1.85;
+    color: var(--text-dark-primary);
+    background: var(--bg-dark-card);
+  }
+  .lex-drawer-body p, .lex-drawer-body div, .lex-drawer-body span,
+  .lex-drawer-body strong, .lex-drawer-body em { color: var(--text-dark-primary); }
+  [data-theme="light"] .lex-drawer-body { background:#FAFAF8; }
+  [data-theme="light"] .lex-drawer-body p, [data-theme="light"] .lex-drawer-body div,
+  [data-theme="light"] .lex-drawer-body span, [data-theme="light"] .lex-drawer-body strong,
+  [data-theme="light"] .lex-drawer-body em { color:#1A2234; }
+  .lex-drawer-body::-webkit-scrollbar { width:4px; }
+  .lex-drawer-body::-webkit-scrollbar-thumb { background:#1E2533; border-radius:4px; }
+
+  /* ── Markdown output in chat bubbles ── */
+  .lex-md { word-break:break-word; }
+  .lex-md .md-h1 { font-size:15px; font-weight:700; color:#DDE6F0; margin:14px 0 4px; }
+  .lex-md .md-h2 { font-size:14px; font-weight:700; color:#C8D8E8; margin:12px 0 4px; }
+  .lex-md .md-h3 { font-size:13px; font-weight:700; color:#B0C4D8; margin:10px 0 3px; letter-spacing:.01em; }
+  .lex-md .md-p  { margin:4px 0; }
+  .lex-md .md-ul, .lex-md .md-ol { margin:5px 0 5px 18px; padding:0; }
+  .lex-md li     { margin:2px 0; }
+  .lex-md .md-hr { border:none; border-top:1px solid #1A2030; margin:10px 0; }
+  .lex-md .md-code { background:#0F1420; border:1px solid #1A2030; padding:1px 5px; border-radius:3px; font-family:monospace; font-size:12px; color:#93C5FD; }
+  .lex-md .md-gap { height:6px; }
+
+  /* ── Doc card in chat ── */
+  .lex-doc-card-btn { display:flex; align-items:center; gap:8px; margin-top:10px; padding:9px 14px; background:rgba(99,102,241,.08); border:1px solid rgba(99,102,241,.22); border-radius:7px; color:#A5B4FC; font-size:12px; cursor:pointer; width:100%; text-align:left; transition:all .15s; }
+  .lex-doc-card-btn:hover { background:rgba(99,102,241,.16)!important; border-color:rgba(99,102,241,.4)!important; }
 `;
 
 // ═══════════════════════════════════════════════════════
@@ -236,6 +320,8 @@ export default function CommandPalette() {
   const [navRoute,    setNavRoute]    = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [micError,    setMicError]    = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [drawerOpen,  setDrawerOpen]  = useState(false);
 
   // ── File attachment ──────────────────────────────────
   const [attachedFile, setAttachedFile] = useState(null); // { name, content }
@@ -560,8 +646,9 @@ export default function CommandPalette() {
               });
               patchMessage(sid, msgId, m => ({
                 ...m,
-                text: `✏️ Draft updated${p.change_summary ? ' — ' + p.change_summary : ''}.\n\nReview the changes in the draft panel below.`,
+                text: `✏️ Draft updated${p.change_summary ? ' — ' + p.change_summary : ''}.`,
               }));
+              setDrawerOpen(true);
               continue;
             }
 
@@ -593,7 +680,12 @@ export default function CommandPalette() {
 
             if (p.action === 'review_document') {
               updateSession(sid, s => ({ ...s, pendingDraft: p.draft, activeDocument: p.draft }));
-              patchMessage(sid, msgId, m => ({ ...m, text: 'Document drafted. Review and edit below before saving to the vault.' }));
+              patchMessage(sid, msgId, m => ({
+                ...m,
+                text: 'Document drafted. Review and edit it in the draft panel →',
+                docCard: { title: p.draft.title, doc_type: p.draft.doc_type },
+              }));
+              setDrawerOpen(true);
               continue;
             }
 
@@ -633,7 +725,7 @@ export default function CommandPalette() {
 
   // ── Approve draft ────────────────────────────────────
   async function handleApproveDraft() {
-    if (!pendingDraft || !currentId) return;
+    if (!activeDocument || !currentId) return;
     setLoading(true);
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
@@ -641,14 +733,14 @@ export default function CommandPalette() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
         body: JSON.stringify({
-          case_id:  pendingDraft.case_id,
-          title:    pendingDraft.title,
-          doc_type: pendingDraft.doc_type || '',
-          content:  pendingDraft.content,
+          case_id:  activeDocument.case_id,
+          title:    activeDocument.title,
+          doc_type: activeDocument.doc_type || '',
+          content:  activeDocument.content,
         }),
       });
-      // Approved = filed away; clear both draft card and working document
       updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
+      setDrawerOpen(false);
       pushMessage(currentId, {
         id: `sys_${Date.now()}`, role: r.ok ? 'assistant' : 'error',
         text: r.ok ? '✅ Document saved to Case Vault.' : 'Failed to save document. Please try again.',
@@ -718,7 +810,7 @@ export default function CommandPalette() {
           {/* ══════════════════════════════════
                LEFT SIDEBAR
           ══════════════════════════════════ */}
-          <aside style={{ width: '255px', flexShrink: 0, background: '#080B14', borderRight: '1px solid #141B28', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <aside className="lex-sidebar" style={{ width: sidebarOpen ? '255px' : '0', flexShrink: 0, background: '#080B14', borderRight: '1px solid #141B28', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
             {/* Brand header */}
             <div style={{ padding: '18px 14px 12px', borderBottom: '1px solid #141B28' }}>
@@ -787,8 +879,21 @@ export default function CommandPalette() {
           <main style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0C1018', overflow: 'hidden' }}>
 
             {/* Top header bar */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                {/* Sidebar collapse toggle */}
+                <button
+                  className="lex-sidebar-toggle"
+                  onClick={() => setSidebarOpen(v => !v)}
+                  title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+                >
+                  <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    {sidebarOpen
+                      ? <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>
+                      : <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>
+                    }
+                  </svg>
+                </button>
                 <span style={{ fontSize: '11px', color: '#2D4057', flexShrink: 0 }}>Context:</span>
                 <code style={{ fontSize: '11px', color: '#5B7FA0', background: 'rgba(255,255,255,.04)', padding: '2px 8px', borderRadius: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }}>
                   {location.pathname}
@@ -800,15 +905,15 @@ export default function CommandPalette() {
                   </div>
                 )}
               </div>
-              {/* View Draft pill — shown when a document is active but the card is closed */}
-              {activeDocument && !pendingDraft && (
+              {/* Draft drawer toggle — visible whenever an active document exists */}
+              {activeDocument && (
                 <button
                   className="lex-view-draft-btn"
-                  onClick={() => updateSession(currentId, s => ({ ...s, pendingDraft: s.activeDocument }))}
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 11px', background: 'rgba(99,102,241,.12)', border: '1px solid rgba(99,102,241,.3)', borderRadius: '5px', color: '#A5B4FC', fontSize: '11px', cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}
-                  title={`Reopen: ${activeDocument.title}`}
+                  onClick={() => setDrawerOpen(v => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 11px', background: drawerOpen ? 'rgba(99,102,241,.22)' : 'rgba(99,102,241,.12)', border: `1px solid ${drawerOpen ? 'rgba(99,102,241,.5)' : 'rgba(99,102,241,.3)'}`, borderRadius: '5px', color: '#A5B4FC', fontSize: '11px', cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}
+                  title={activeDocument.title}
                 >
-                  📄 View Draft
+                  📄 {drawerOpen ? 'Hide Draft' : 'View Draft'}
                 </button>
               )}
 
@@ -902,9 +1007,24 @@ export default function CommandPalette() {
                     </div>
                     <div style={{ flex: 1, background: '#111827', border: '1px solid #1A2030', borderRadius: '2px 12px 12px 12px', padding: '12px 16px', minWidth: 0 }}>
                       {msg.text ? (
-                        <div style={{ fontSize: '13.5px', lineHeight: '1.7', color: '#C8D8E8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                          {msg.text}
-                        </div>
+                        <>
+                          <div
+                            className="lex-md"
+                            style={{ fontSize: '13.5px', lineHeight: '1.7', color: '#C8D8E8' }}
+                            dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
+                          />
+                          {msg.docCard && (
+                            <button
+                              className="lex-doc-card-btn"
+                              onClick={() => setDrawerOpen(true)}
+                            >
+                              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                              <span style={{ flex: 1 }}>{msg.docCard.title}</span>
+                              {msg.docCard.doc_type && <span style={{ opacity: 0.55, fontSize: '10.5px' }}>{msg.docCard.doc_type}</span>}
+                              <span style={{ fontSize: '10.5px', opacity: 0.7 }}>Open in Draft Viewer →</span>
+                            </button>
+                          )}
+                        </>
                       ) : (
                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
                           {[1, 2, 3].map(n => (
@@ -982,56 +1102,6 @@ export default function CommandPalette() {
                       onClick={handleApproveSchedule}
                       style={{ padding: '7px 18px', fontSize: '12px', color: '#fff', background: '#3B82F6', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
                     >Approve & Save</button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Pending draft approval card ── */}
-              {pendingDraft && (
-                <div className="lex-msg-in" style={{ background: '#111827', border: '1px solid #1A2030', borderRadius: '10px', padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #1A2030' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>📄</span>
-                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#7EB3F5' }}>Review Drafted Document</span>
-                    </div>
-                    {pendingDraft.case_id && (
-                      <span style={{ fontSize: '10.5px', color: '#2D3D50', background: 'rgba(255,255,255,.04)', padding: '2px 8px', borderRadius: '4px' }}>
-                        Case: {pendingDraft.case_id}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#DDE6F0', marginBottom: '2px' }}>
-                    {pendingDraft.title}
-                    {pendingDraft.doc_type && (
-                      <span style={{ fontWeight: 400, color: '#3D5168', fontSize: '11.5px', marginLeft: '6px' }}>({pendingDraft.doc_type})</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#2D3D50', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Edit below before saving — final content will be stored in the vault
-                  </div>
-                  <div
-                    className="lex-draft-doc"
-                    contentEditable
-                    suppressContentEditableWarning
-                    dangerouslySetInnerHTML={{ __html: renderDraftHtml(pendingDraft.content) }}
-                    onBlur={e => {
-                      const plain = e.currentTarget.innerText || '';
-                      updateSession(currentId, s => ({
-                        ...s,
-                        pendingDraft:   { ...s.pendingDraft,   content: plain },
-                        activeDocument: { ...s.activeDocument, content: plain },
-                      }));
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
-                    <button
-                      onClick={() => updateSession(currentId, s => ({ ...s, pendingDraft: null }))}
-                      style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid #1A2030', borderRadius: '6px', cursor: 'pointer' }}
-                    >Reject</button>
-                    <button
-                      onClick={handleApproveDraft}
-                      style={{ padding: '7px 18px', fontSize: '12px', color: '#fff', background: '#3B82F6', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
-                    >Approve & Save to Vault</button>
                   </div>
                 </div>
               )}
@@ -1147,6 +1217,79 @@ export default function CommandPalette() {
               </div>
             </div>
           </main>
+
+          {/* ══════════════════════════════════
+               RHS DRAFT DRAWER
+          ══════════════════════════════════ */}
+          <aside
+            className="lex-drawer"
+            style={{
+              width: drawerOpen && activeDocument ? '440px' : '0',
+              flexShrink: 0,
+              background: '#090C14',
+              borderLeft: '1px solid #141B28',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {activeDocument && (
+              <>
+                {/* Drawer header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <svg width="13" height="13" fill="none" stroke="#7EB3F5" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#DDE6F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeDocument.title}</span>
+                    {activeDocument.doc_type && (
+                      <span style={{ fontSize: '10.5px', color: '#3D5168', background: 'rgba(255,255,255,.04)', padding: '1px 7px', borderRadius: '3px', flexShrink: 0 }}>{activeDocument.doc_type}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setDrawerOpen(false)}
+                    style={{ background: 'none', border: 'none', color: '#3D5168', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px 6px', borderRadius: '4px', flexShrink: 0 }}
+                    title="Hide drawer (draft stays active)"
+                  >×</button>
+                </div>
+
+                {/* Subtitle */}
+                <div style={{ padding: '4px 16px 6px', fontSize: '9.5px', color: '#2D3D50', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0, borderBottom: '1px solid #0F1420' }}>
+                  Edit below · Approve to save to vault
+                </div>
+
+                {/* Editable document body */}
+                <div
+                  className="lex-drawer-body"
+                  contentEditable
+                  suppressContentEditableWarning
+                  dangerouslySetInnerHTML={{ __html: renderDraftHtml(activeDocument.content) }}
+                  onBlur={e => {
+                    const plain = e.currentTarget.innerText || '';
+                    updateSession(currentId, s => ({
+                      ...s,
+                      pendingDraft:   s.pendingDraft   ? { ...s.pendingDraft,   content: plain } : null,
+                      activeDocument: s.activeDocument ? { ...s.activeDocument, content: plain } : null,
+                    }));
+                  }}
+                />
+
+                {/* Drawer footer */}
+                <div style={{ padding: '10px 16px', borderTop: '1px solid #141B28', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexShrink: 0, background: '#090C14' }}>
+                  <button
+                    onClick={() => {
+                      updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
+                      setDrawerOpen(false);
+                    }}
+                    style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid #1A2030', borderRadius: '6px', cursor: 'pointer' }}
+                  >Reject</button>
+                  <button
+                    onClick={handleApproveDraft}
+                    disabled={loading}
+                    style={{ padding: '7px 18px', fontSize: '12px', color: '#fff', background: '#3B82F6', border: 'none', borderRadius: '6px', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: loading ? 0.6 : 1 }}
+                  >Approve & Save to Vault</button>
+                </div>
+              </>
+            )}
+          </aside>
 
         </div>
       </div>
