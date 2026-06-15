@@ -368,12 +368,13 @@ _TOOL_DEFS = [
                     "document_reference": {
                         "type": "string",
                         "description": (
-                            "Title or short topic label of the case/document being routed — "
-                            "do NOT summarize, paraphrase, or analyze the content."
+                            "The EXACT title or keyword of the document the user mentioned "
+                            "(e.g. 'divorce', 'FIR', 'NDA'). Extract it verbatim from the "
+                            "user query. You MUST always populate this field."
                         ),
                     }
                 },
-                "required": [],
+                "required": ["document_reference"],
             },
         },
     },

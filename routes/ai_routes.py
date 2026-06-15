@@ -224,33 +224,43 @@ def run_simulation():
         document_reference = data.get("document_reference", "").strip()
         client_side = data.get("client_side", "Appellant")
 
-        # Vault lookup: reconstruct document text when file_content wasn't passed.
-        # Searches TWO separate stores in priority order:
-        #   1. case_vault (lex_assistant.db)  — AI drafts saved via "Save to Vault"
-        #   2. document_chunks (lex_assistant.db) joined via documents (instance/database.db)
-        #      — PDFs/DOCXs uploaded through VaultView
-        # All matches are case-insensitive LIKE so "FIR" hits "FIR_2024.pdf" etc.
-        if not document_content and document_reference:
+        # Vault lookup — runs whenever file_content is absent, regardless of whether
+        # document_reference is populated.  Three passes in priority order:
+        #
+        #   Pass 1 — case_vault (lex_assistant.db): AI drafts saved via "Save to Vault".
+        #            Matches on BOTH title AND doc_type so "divorce" hits title="Divorce"
+        #            OR doc_type="Divorce Agreement".
+        #   Pass 2 — uploaded PDFs/DOCXs: documents (instance/database.db) → chunks (lex_assistant.db).
+        #   Pass 3 — last resort: most recently saved case_vault document (no filter).
+        #            Handles the case where the LLM returned an empty document_reference.
+        if not document_content:
             import sqlite3, os
-            ref_pattern = f'%{document_reference}%'
             user_id_int = int(get_jwt_identity())
+            ref_pattern = f'%{document_reference}%' if document_reference else None
 
+            # Initialise to None so the finally block can safely guard .close() calls
+            # even when sqlite3.connect() itself is what raises.
+            conn_lex = None
+            conn_sa  = None
             try:
-                # ── Pass 1: case_vault (has full content column) ──────────
                 conn_lex = sqlite3.connect('lex_assistant.db')
                 c_lex = conn_lex.cursor()
-                c_lex.execute(
-                    "SELECT content FROM case_vault "
-                    "WHERE LOWER(title) LIKE LOWER(?) "
-                    "ORDER BY created_at DESC LIMIT 1",
-                    (ref_pattern,)
-                )
-                row = c_lex.fetchone()
-                if row and row[0]:
-                    document_content = row[0].strip()
+
+                # ── Pass 1: case_vault — title + doc_type fuzzy match ─────
+                if ref_pattern:
+                    c_lex.execute(
+                        "SELECT content FROM case_vault "
+                        "WHERE (LOWER(title) LIKE LOWER(?) OR LOWER(doc_type) LIKE LOWER(?)) "
+                        "  AND content IS NOT NULL AND content != '' "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        (ref_pattern, ref_pattern)
+                    )
+                    row = c_lex.fetchone()
+                    if row and row[0]:
+                        document_content = row[0].strip()
 
                 # ── Pass 2: uploaded file chunks ──────────────────────────
-                if not document_content:
+                if not document_content and ref_pattern:
                     sa_db = os.path.join('instance', 'database.db')
                     if os.path.exists(sa_db):
                         conn_sa = sqlite3.connect(sa_db)
@@ -262,8 +272,6 @@ def run_simulation():
                             (user_id_int, ref_pattern)
                         )
                         doc_row = c_sa.fetchone()
-                        conn_sa.close()
-
                         if doc_row:
                             c_lex.execute(
                                 "SELECT chunk_text FROM document_chunks "
@@ -275,9 +283,24 @@ def run_simulation():
                                 r[0] for r in c_lex.fetchall()
                             ).strip()
 
-                conn_lex.close()
+                # ── Pass 3: most-recent vault doc (empty-reference fallback) ─
+                if not document_content:
+                    c_lex.execute(
+                        "SELECT content FROM case_vault "
+                        "WHERE content IS NOT NULL AND content != '' "
+                        "ORDER BY created_at DESC LIMIT 1"
+                    )
+                    row = c_lex.fetchone()
+                    if row and row[0]:
+                        document_content = row[0].strip()
+
             except Exception as _lookup_err:
                 print(f"[Simulate Vault Lookup]: {_lookup_err}")
+            finally:
+                if conn_sa:
+                    conn_sa.close()
+                if conn_lex:
+                    conn_lex.close()
 
         if not document_content:
             return jsonify({"error": "No document content provided. Attach a file or reference a vault document."}), 400

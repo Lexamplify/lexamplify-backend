@@ -624,9 +624,10 @@ export default function CommandPalette() {
       localStorage.setItem(CURRENT_KEY, sid);
     }
 
-    // Capture file content NOW — setAttachedFile(null) below only schedules a re-render,
-    // but we need the value available inside the async routing block further down.
+    // Freeze both file pieces before setAttachedFile(null) clears state.
+    // State updates are async — the closure holds stale values after the setter runs.
     const capturedFileContent = attachedFile?.content ?? null;
+    const capturedFileName    = attachedFile?.name    ?? null;
 
     // Build display text and full query (file content appended for backend)
     const displayText = attachedFile ? `📎 ${attachedFile.name}\n\n${q}` : q;
@@ -716,8 +717,20 @@ export default function CommandPalette() {
               || actionPayload.data?.file_content
               || actionPayload.data?.content
               || '';
+
+            // Reference priority:
+            //   1. LLM-returned document_reference (now required, but small models still skip it)
+            //   2. Attached filename (reliable when a file was uploaded)
+            //   3. Regex-extract the document keyword from the user's own words
+            //   4. First 60 chars of query as last resort
             const finalRef = actionPayload.data?.document_reference
-              || (attachedFile?.name ?? capturedFileContent ? 'Attached Document' : '');
+              || capturedFileName
+              || (() => {
+                   const m = q.match(/\bthe\s+(\w+(?:\s+\w+){0,2})\s+(?:draft|document|case|file)\b/i)
+                          || q.match(/pull(?:ing)?\s+(?:the\s+)?(\w+(?:\s+\w+){0,2})\s+(?:draft|from|and)/i)
+                          || q.match(/(?:simulate|courtroom|war.?room)\s+(?:for\s+)?(?:the\s+)?(\w+(?:\s+\w+){0,2})/i);
+                   return m ? m[1].trim() : q.slice(0, 60).trim();
+                 })();
             setLoading(false);
             setNavRoute(actionPayload.destination);
             setTimeout(() => {
