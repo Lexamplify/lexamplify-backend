@@ -6,28 +6,85 @@ import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
 const DV_STYLES = `
+  /* ── Spinners / utility ──────────────────────────────── */
   @keyframes dv-spin {
-    0%   { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  @keyframes doc-ai-reading {
-    0%   { box-shadow: 0 0 0 0px rgba(59,130,246,0); }
-    20%  { box-shadow: 0 0 0 3px rgba(59,130,246,0.22), inset 0 0 40px rgba(59,130,246,0.03); }
-    80%  { box-shadow: 0 0 0 3px rgba(59,130,246,0.22), inset 0 0 40px rgba(59,130,246,0.03); }
-    100% { box-shadow: 0 0 0 0px rgba(59,130,246,0); }
-  }
-  .doc-ai-scanning {
-    animation: doc-ai-reading 1.5s ease-in-out forwards;
+    to { transform: rotate(360deg); }
   }
 
-  /* ── AI Chat Panel ─────────────────────────────── */
-  .dv-ai-panel {
+  /* ── Task 3: Document pulse while AI reads ───────────── */
+  @keyframes doc-pulse {
+    0%   { opacity: 1; box-shadow: inset 0 0 0 transparent; }
+    50%  { opacity: 0.6; box-shadow: inset 0 0 20px rgba(59,130,246,0.15); background: #F8FAFC; }
+    100% { opacity: 1; box-shadow: inset 0 0 0 transparent; }
+  }
+  .anim-doc-pulse {
+    animation: doc-pulse 1.5s ease-in-out;
+  }
+
+  /* ── Task 1: Light-theme markdown override ───────────── */
+  /* Applied to the paper document area so MARKDOWN_CSS dark  */
+  /* colors don't bleed through on the white/cream background */
+  .vault-doc-theme .md-p,
+  .vault-doc-theme p    { color: #1E293B !important; }
+  .vault-doc-theme .md-h2,
+  .vault-doc-theme h1,
+  .vault-doc-theme h2   { color: #0F172A !important; font-weight: 800; }
+  .vault-doc-theme .md-h3,
+  .vault-doc-theme h3   { color: #1E293B !important; font-weight: 700; }
+  .vault-doc-theme .md-h4,
+  .vault-doc-theme h4, h5, h6 { color: #334155 !important; }
+  .vault-doc-theme .md-b,
+  .vault-doc-theme strong { color: #0F172A !important; }
+  .vault-doc-theme .md-i,
+  .vault-doc-theme em   { color: #334155 !important; }
+  .vault-doc-theme .md-code,
+  .vault-doc-theme code { background: rgba(37,99,235,0.07) !important; color: #1D4ED8 !important; }
+  .vault-doc-theme .md-dot  { color: #2563EB !important; }
+  .vault-doc-theme .md-num-n { color: #2563EB !important; }
+  .vault-doc-theme .md-bullet span:last-child,
+  .vault-doc-theme .md-num   span:last-child { color: #1E293B !important; }
+  .vault-doc-theme li,
+  .vault-doc-theme blockquote,
+  .vault-doc-theme a    { color: #1E293B !important; }
+  .vault-doc-theme a    { text-decoration: underline; }
+
+  /* ── Task 2: Right-column layout ────────────────────── */
+  .dv-right-col {
+    width: 400px;
     flex-shrink: 0;
-    background: #0d1117;
-    border-left: 1px solid rgba(59,130,246,0.18);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-dark-app, #0f131a);
+    border-left: 1px solid var(--border-dark-subtle, #2C3241);
+    overflow: hidden;
+  }
+
+  /* Sidebar (info panel) inside right col */
+  .dv-sidebar {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(59,130,246,0.15) transparent;
+  }
+  .dv-sidebar::-webkit-scrollbar { width: 3px; }
+  .dv-sidebar::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.15); border-radius: 2px; }
+
+  /* Task 2: AI panel fade-in when it mounts */
+  @keyframes dv-panel-fade {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .dv-ai-panel {
+    flex: 1;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    animation: dv-panel-fade 0.3s ease;
   }
   .dv-ai-header {
     padding: 14px 18px;
@@ -171,7 +228,7 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
   const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const aiEndRef = useRef(null);
-  const docRef   = useRef(null); // always-current doc for async closures
+  const docRef   = useRef(null);
 
   useEffect(() => { docRef.current = doc; }, [doc]);
 
@@ -254,10 +311,10 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
   // ── Render: Loading ───────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ padding: '40px', color: 'var(--text-dark-muted)', fontStyle: 'italic', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <style>{`@keyframes dv-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        <div style={{ display: 'inline-block', width: '24px', height: '24px', border: '2.5px solid rgba(255,255,255,0.2)', borderRadius: '50%', borderTopColor: 'var(--accent-primary)', animation: 'dv-spin 0.8s linear infinite' }} />
-        Reconstructing case document from vectorized semantic chunks...
+      <div style={{ padding: '40px', color: 'var(--text-dark-muted)', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <style>{`@keyframes dv-spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ width: '24px', height: '24px', border: '2.5px solid rgba(255,255,255,0.2)', borderRadius: '50%', borderTopColor: 'var(--accent-primary)', animation: 'dv-spin 0.8s linear infinite' }} />
+        <span style={{ fontStyle: 'italic', fontSize: '13px' }}>Reconstructing case document from vectorized semantic chunks...</span>
       </div>
     );
   }
@@ -275,217 +332,190 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
   }
 
   return (
-    <div className="document-view-layout" style={{ display: 'flex', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: 'calc(100vh - 64px)', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
       <style>{DV_STYLES}</style>
       <style>{MARKDOWN_CSS}</style>
 
-      {/* ── LEFT PANEL: Actions ───────────────────────────────────── */}
+      {/* ── LEFT: Document Reader (flex: 1, never resizes) ─── */}
       <div
-        className="analysis-panel"
+        className={`document-viewer-panel${isAnalyzing ? ' anim-doc-pulse' : ''}`}
         style={{
-          width: '280px',
-          flexShrink: 0,
-          backgroundColor: 'var(--bg-dark-app)',
-          borderRight: '1px solid var(--border-dark-subtle)',
-          padding: '24px',
+          flex: 1,
+          backgroundColor: 'var(--bg-paper-viewer, #FAFAF8)',
+          color: '#1E293B',
+          padding: '40px 60px',
           overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '20px',
+          fontFamily: 'var(--font-serif, Georgia, serif)',
+          lineHeight: '1.8',
+          fontSize: '15px',
         }}
       >
-        <div>
-          <Link to={backTo} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontSize: '13px' }}>
-            ← {backLabel}
-          </Link>
-          <h2 style={{ fontSize: '20px', marginTop: '12px', color: 'white' }}>RAG Ingestion</h2>
-          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Indexed Database ID: #{doc.id}</span>
+        <div style={{ borderBottom: '1px solid var(--border-paper-subtle, #E2E8F0)', paddingBottom: '16px', marginBottom: '28px' }}>
+          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1.2px', color: '#64748B', fontWeight: '700' }}>
+            OFFICIAL VAULT COPY
+          </span>
+          <h1 style={{ fontSize: '26px', marginTop: '6px', color: '#0F172A', fontFamily: 'var(--font-serif, Georgia, serif)', fontWeight: '700', lineHeight: '1.3' }}>
+            {doc.filename}
+          </h1>
         </div>
 
-        <div style={{ background: 'var(--bg-dark-panel)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-dark-subtle)' }}>
-          <h4 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-dark-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-            AI Executive Summary
-          </h4>
-          <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-dark-primary)', margin: 0 }}>
-            {doc.summary || 'No summary generated.'}
-          </p>
-        </div>
-
-        {/* Inline AI Panel Trigger */}
-        <div>
-          <button
-            onClick={() => triggerAiPanel()}
-            disabled={isAnalyzing || showAiPanel}
-            style={{
-              width: '100%',
-              padding: '12px',
-              fontSize: '13px',
-              fontWeight: '600',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: isAnalyzing || showAiPanel ? 'default' : 'pointer',
-              background: showAiPanel
-                ? 'rgba(16,185,129,0.12)'
-                : isAnalyzing
-                  ? 'rgba(59,130,246,0.3)'
-                  : 'var(--accent-primary, #3B82F6)',
-              color: showAiPanel ? '#6EE7B7' : 'white',
-              boxShadow: showAiPanel ? 'none' : '0 4px 6px rgba(59,130,246,0.15)',
-              transition: 'all 0.2s',
-            }}
-          >
-            {isAnalyzing
-              ? '🤖 Analyzing document…'
-              : showAiPanel
-                ? '✓ AI Panel Active'
-                : '💬 Ask AI about this Doc'}
-          </button>
-          <div style={{ fontSize: '10px', color: 'var(--text-dark-muted)', textAlign: 'center', marginTop: '6px' }}>
-            {showAiPanel ? 'Chat panel open on the right' : 'Opens inline AI chat panel'}
-          </div>
-        </div>
-
-        <div style={{ background: 'var(--bg-dark-panel)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-dark-subtle)' }}>
-          <h4 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-dark-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-            Viewport Settings
-          </h4>
-          <button
-            type="button"
-            onClick={() => setFocusMode(!focusMode)}
-            style={{
-              width: '100%',
-              padding: '8px',
-              background: focusMode ? 'var(--accent-primary)' : 'var(--bg-dark-app)',
-              color: 'white',
-              border: '1px solid var(--border-dark-subtle)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '500',
-              transition: 'all 0.2s',
-            }}
-          >
-            {focusMode ? '📖 Close Focus Mode' : '🔍 Full-Width Focus Mode'}
-          </button>
-        </div>
-
-        {doc.tags && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {doc.tags.split(',').map((tag, i) => (
-              <span
-                key={i}
-                style={{ fontSize: '10px', background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-muted)', padding: '2px 8px', borderRadius: '12px' }}
-              >
-                🏷️ {tag.trim()}
-              </span>
-            ))}
+        {/* Task 1: vault-doc-theme wrapper forces dark text on light background */}
+        {doc.text ? (
+          <div
+            className="vault-doc-theme md-body"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(doc.text) }}
+          />
+        ) : (
+          <div style={{ fontStyle: 'italic', color: '#64748B' }}>
+            No text chunks found for this document. Try re-uploading the file.
           </div>
         )}
       </div>
 
-      {/* ── CENTER + RIGHT: Document Reader + AI Panel ────────────── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* ── RIGHT: Fixed 400px column — sidebar OR AI chat ─── */}
+      <div className="dv-right-col">
 
-        {/* Document Paper */}
-        <div
-          className={`document-viewer-panel${isAnalyzing ? ' doc-ai-scanning' : ''}`}
-          style={{
-            flex: 1,
-            backgroundColor: 'var(--bg-paper-viewer)',
-            color: 'var(--text-paper-primary)',
-            padding: '40px 60px',
-            overflowY: 'auto',
-            fontFamily: 'var(--font-serif)',
-            lineHeight: '1.8',
-            fontSize: '15px',
-          }}
-        >
-          <div style={{ borderBottom: '1px solid var(--border-paper-subtle)', paddingBottom: '16px', marginBottom: '24px' }}>
-            <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-paper-secondary)', fontWeight: '600' }}>
-              OFFICIAL VAULT COPY
-            </span>
-            <h1 style={{ fontSize: '26px', marginTop: '4px', color: 'var(--text-paper-primary)', fontFamily: 'var(--font-serif)', fontWeight: '700', lineHeight: '1.3' }}>
-              {doc.filename}
-            </h1>
-          </div>
-
-          {doc.text ? (
-            <div
-              className="md-body"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(doc.text) }}
-              style={{ color: 'var(--text-paper-primary)' }}
-            />
-          ) : (
-            <div style={{ fontStyle: 'italic', color: 'var(--text-paper-secondary)' }}>
-              No text chunks found for this document. Try re-uploading the file.
-            </div>
-          )}
-        </div>
-
-        {/* AI Chat Panel */}
-        <div
-          className="dv-ai-panel"
-          style={{
-            width: showAiPanel ? '380px' : '0',
-            opacity: showAiPanel ? 1 : 0,
-            transition: 'width 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-            pointerEvents: showAiPanel ? 'auto' : 'none',
-          }}
-        >
-          <div className="dv-ai-header">
-            <div className="dv-ai-title">
-              <div className="dv-ai-live-dot" />
-              Document AI
-            </div>
-            <button
-              className="dv-ai-close-btn"
-              onClick={() => setShowAiPanel(false)}
-              title="Close AI panel"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="dv-ai-messages">
-            {aiMessages.map((m, i) => (
-              <div key={i} className={`dv-ai-bubble ${m.role}`}>
-                {m.role === 'bot' ? (
-                  <div
-                    className="md-body"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
-                  />
-                ) : (
-                  m.text
-                )}
+        {showAiPanel ? (
+          /* AI Chat Panel — fades in, scrolls independently */
+          <div className="dv-ai-panel">
+            <div className="dv-ai-header">
+              <div className="dv-ai-title">
+                <div className="dv-ai-live-dot" />
+                Document AI
               </div>
-            ))}
-            {aiLoading && (
-              <div className="dv-ai-bubble typing">Analyzing document…</div>
-            )}
-            <div ref={aiEndRef} />
+              <button
+                className="dv-ai-close-btn"
+                onClick={() => setShowAiPanel(false)}
+                title="Close AI panel"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="dv-ai-messages">
+              {aiMessages.map((m, i) => (
+                <div key={i} className={`dv-ai-bubble ${m.role}`}>
+                  {m.role === 'bot' ? (
+                    <div
+                      className="md-body"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
+                    />
+                  ) : (
+                    m.text
+                  )}
+                </div>
+              ))}
+              {aiLoading && <div className="dv-ai-bubble typing">Analyzing document…</div>}
+              <div ref={aiEndRef} />
+            </div>
+
+            <form className="dv-ai-input-row" onSubmit={handleAiSubmit}>
+              <input
+                className="dv-ai-input"
+                value={aiInput}
+                onChange={e => setAiInput(e.target.value)}
+                placeholder="Ask about this document…"
+                disabled={aiLoading}
+              />
+              <button
+                type="submit"
+                className="dv-ai-send"
+                disabled={aiLoading || !aiInput.trim()}
+              >
+                Send
+              </button>
+            </form>
           </div>
 
-          <form className="dv-ai-input-row" onSubmit={handleAiSubmit}>
-            <input
-              className="dv-ai-input"
-              value={aiInput}
-              onChange={e => setAiInput(e.target.value)}
-              placeholder="Ask about this document…"
-              disabled={aiLoading}
-            />
-            <button
-              type="submit"
-              className="dv-ai-send"
-              disabled={aiLoading || !aiInput.trim()}
-            >
-              Send
-            </button>
-          </form>
-        </div>
+        ) : (
+          /* Sidebar — info panel */
+          <div className="dv-sidebar">
+            <div>
+              <Link to={backTo} style={{ color: 'var(--accent-primary, #3B82F6)', textDecoration: 'none', fontSize: '13px' }}>
+                ← {backLabel}
+              </Link>
+              <h2 style={{ fontSize: '18px', marginTop: '14px', marginBottom: '2px', color: 'white' }}>RAG Ingestion</h2>
+              <span style={{ fontSize: '11px', color: 'var(--text-dark-muted, #8F9CAE)' }}>Indexed Database ID: #{doc.id}</span>
+            </div>
+
+            <div style={{ background: 'var(--bg-dark-panel, #171c26)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-dark-subtle, #2C3241)' }}>
+              <h4 style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-dark-muted, #8F9CAE)', marginBottom: '9px', letterSpacing: '0.6px', margin: '0 0 9px' }}>
+                AI Executive Summary
+              </h4>
+              <p style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-dark-primary, white)', margin: 0 }}>
+                {doc.summary || 'No summary generated.'}
+              </p>
+            </div>
+
+            <div>
+              <button
+                onClick={() => triggerAiPanel()}
+                disabled={isAnalyzing}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: isAnalyzing ? 'default' : 'pointer',
+                  background: isAnalyzing ? 'rgba(59,130,246,0.3)' : 'var(--accent-primary, #3B82F6)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px rgba(59,130,246,0.15)',
+                  transition: 'all 0.2s',
+                  fontFamily: 'var(--font-sans)',
+                }}
+              >
+                {isAnalyzing ? '🤖 Analyzing document…' : '💬 Ask AI about this Doc'}
+              </button>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-dark-muted, #8F9CAE)', textAlign: 'center', marginTop: '7px' }}>
+                Opens inline AI chat — document stays stable
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-dark-panel, #171c26)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-dark-subtle, #2C3241)' }}>
+              <h4 style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-dark-muted, #8F9CAE)', marginBottom: '9px', letterSpacing: '0.6px', margin: '0 0 9px' }}>
+                Viewport Settings
+              </h4>
+              <button
+                type="button"
+                onClick={() => setFocusMode(!focusMode)}
+                style={{
+                  width: '100%',
+                  padding: '9px',
+                  background: focusMode ? 'var(--accent-primary, #3B82F6)' : 'var(--bg-dark-app, #0f131a)',
+                  color: 'white',
+                  border: '1px solid var(--border-dark-subtle, #2C3241)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  transition: 'all 0.2s',
+                  fontFamily: 'var(--font-sans)',
+                }}
+              >
+                {focusMode ? '📖 Close Focus Mode' : '🔍 Full-Width Focus Mode'}
+              </button>
+            </div>
+
+            {doc.tags && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {doc.tags.split(',').map((tag, i) => (
+                  <span
+                    key={i}
+                    style={{ fontSize: '10px', background: 'var(--bg-dark-panel, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', color: 'var(--text-dark-muted, #8F9CAE)', padding: '3px 9px', borderRadius: '12px' }}
+                  >
+                    🏷️ {tag.trim()}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>
