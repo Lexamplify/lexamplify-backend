@@ -8,11 +8,25 @@ Blueprint: /api/ai
 """
 import json
 import re
+import sqlite3
 from flask import Blueprint, request, jsonify, redirect
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.ai_helper import ask_gemini
 from utils.pdf_helper import extract_text_for_summary
 from utils.kanoon_helper import find_citations_for_document
+
+def _log_chat(user_id, user_message, bot_response):
+    """Fire-and-forget: persist a chat exchange to chat_history."""
+    try:
+        conn = sqlite3.connect('lex_assistant.db', check_same_thread=False)
+        conn.execute(
+            'INSERT INTO chat_history (user_id, user_message, bot_response) VALUES (?, ?, ?)',
+            (user_id, user_message[:4000], bot_response[:4000])
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 ai_bp = Blueprint("ai", __name__)
 
@@ -106,11 +120,52 @@ def general_chat():
             )
 
         response = ask_gemini(system_prompt, message)
+
+        # Persist exchange (non-blocking best-effort — never breaks the chat)
+        try:
+            uid = int(get_jwt_identity())
+        except Exception:
+            uid = None
+        _log_chat(uid, message, response)
+
         return jsonify({"response": response}), 200
 
     except Exception as e:
         print(f"[Chat Error]: {e}")
         return jsonify({"error": "Chat connection timed out."}), 500
+
+
+@ai_bp.route("/history", methods=["GET"])
+@jwt_required()
+def get_chat_history():
+    """Return the 60 most recent chat exchanges for the current user."""
+    try:
+        uid = int(get_jwt_identity())
+        conn = sqlite3.connect('lex_assistant.db', check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            '''SELECT id, user_message, bot_response, created_at
+               FROM chat_history
+               WHERE user_id = ?
+               ORDER BY created_at DESC
+               LIMIT 60''',
+            (uid,)
+        ).fetchall()
+        conn.close()
+        threads = [
+            {
+                'id': r['id'],
+                'preview': r['user_message'][:60],
+                'user_message': r['user_message'],
+                'bot_response': r['bot_response'],
+                'created_at': r['created_at'],
+            }
+            for r in rows
+        ]
+        return jsonify({'threads': threads}), 200
+    except Exception as e:
+        print(f"[History Error]: {e}")
+        return jsonify({'threads': []}), 200
 
 
 # ── Universal RAG Chatbot with SSE Streaming ────────────────────
