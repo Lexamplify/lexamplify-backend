@@ -76,16 +76,35 @@ def general_chat():
     try:
         data = request.get_json() or {}
         message = data.get("message", "").strip()
-        
+
         if not message:
             return jsonify({"error": "Message is empty"}), 400
 
-        system_prompt = (
-            "You are LexAmplify, an advanced AI legal assistant specializing exclusively in Indian Law. "
-            "Provide accurate, professional, cite-supported information covering the IPC, BNS, CrPC, "
-            "Indian Contract Act, Constitution of India, and landmarks. Always structure response clearly."
-        )
-        
+        is_courtroom = message.startswith('[Virtual Courtroom')
+
+        if is_courtroom:
+            system_prompt = (
+                "You are the Opposing Counsel in an Indian court proceeding. Your role is to aggressively "
+                "challenge the advocate's argument with precise legal counter-points grounded in Indian law "
+                "(IPC, BNS, CrPC, Evidence Act, Constitution). Never break character.\n\n"
+                "RESPONSE FORMAT — follow this EXACTLY in every reply:\n"
+                "1. Write your counter-argument in 2–4 sharp, adversarial paragraphs.\n"
+                "2. Output the exact delimiter on its own line: |||REBUTTALS|||\n"
+                "3. Output a JSON array of exactly 3 strategic rebuttals the advocate can click to respond:\n"
+                '   [{"text": "Short rebuttal 1 (1-2 sentences max)"}, '
+                '{"text": "Short rebuttal 2"}, {"text": "Short rebuttal 3"}]\n\n'
+                "The rebuttals must be concise, punchy, attorney-grade responses. "
+                "Cite IPC/BNS/CrPC sections where possible. "
+                "Never include |||REBUTTALS||| more than once. "
+                "The JSON array must be valid — no trailing commas, no markdown code fences around it."
+            )
+        else:
+            system_prompt = (
+                "You are LexAmplify, an advanced AI legal assistant specializing exclusively in Indian Law. "
+                "Provide accurate, professional, cite-supported information covering the IPC, BNS, CrPC, "
+                "Indian Contract Act, Constitution of India, and landmarks. Always structure response clearly."
+            )
+
         response = ask_gemini(system_prompt, message)
         return jsonify({"response": response}), 200
 

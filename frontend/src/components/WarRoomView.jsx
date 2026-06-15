@@ -22,6 +22,70 @@ const parseIssues = (text) => {
   return lines.filter(l => l.length > 20);
 };
 
+// ── Lightweight Markdown renderer (no external dep) ─────────────────────────
+// Escapes HTML entities first so LLM output can never inject raw HTML.
+
+const renderMarkdown = (raw) => {
+  if (!raw) return '';
+  const escaped = raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  const html = escaped
+    // Headers
+    .replace(/^### (.+)$/gm, '<h4 class="wr-md-h4">$1</h4>')
+    .replace(/^## (.+)$/gm,  '<h3 class="wr-md-h3">$1</h3>')
+    .replace(/^# (.+)$/gm,   '<h2 class="wr-md-h2">$1</h2>')
+    // Bold → strong, italic → em  (non-greedy, single-line)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong class="wr-md-b">$1</strong>')
+    .replace(/\*([^*\n]+)\*/g,     '<em class="wr-md-i">$1</em>')
+    // Inline code
+    .replace(/`([^`\n]+)`/g, '<code class="wr-md-code">$1</code>')
+    // Bullet lines  –  • - *
+    .replace(/^[-•*]\s+(.+)$/gm, '<div class="wr-md-bullet"><span class="wr-md-dot">▸</span><span>$1</span></div>')
+    // Numbered lines
+    .replace(/^(\d+)\.\s+(.+)$/gm, '<div class="wr-md-num"><span class="wr-md-num-n">$1.</span><span>$2</span></div>')
+    // Blank lines → paragraph breaks; single newlines → <br>
+    .replace(/\n{2,}/g, '</p><p class="wr-md-p">')
+    .replace(/\n/g, '<br/>');
+
+  return `<p class="wr-md-p">${html}</p>`;
+};
+
+// ── Parse the |||REBUTTALS||| delimiter that the backend appends ─────────────
+
+const parseRobotResponse = (raw) => {
+  const DELIM = '|||REBUTTALS|||';
+  const idx = raw.indexOf(DELIM);
+  if (idx === -1) return { mainText: raw, rebuttals: [] };
+
+  const mainText    = raw.slice(0, idx).trim();
+  const rebuttalRaw = raw.slice(idx + DELIM.length).trim();
+
+  let rebuttals = [];
+  try {
+    // Extract first JSON array found (handles any trailing whitespace/newlines)
+    const arrayMatch = rebuttalRaw.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      const parsed = JSON.parse(arrayMatch[0]);
+      if (Array.isArray(parsed)) {
+        rebuttals = parsed
+          .map(r => (typeof r === 'string' ? r : r?.text || ''))
+          .filter(s => s.length > 5);
+      }
+    }
+  } catch {
+    // Fallback: treat each non-empty line after the delimiter as a rebuttal
+    rebuttals = rebuttalRaw
+      .split('\n')
+      .map(l => l.replace(/^[-*•\d.)\s]+/, '').trim())
+      .filter(l => l.length > 10);
+  }
+
+  return { mainText, rebuttals };
+};
+
 // ── Pipeline stages ──────────────────────────────────────────────────────────
 
 const PIPELINE_STAGES = [
@@ -356,38 +420,81 @@ const WAR_ROOM_STYLES = `
     background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); color: #6EE7B7;
   }
   .wr-chat-messages {
-    min-height: 280px; max-height: 340px; overflow-y: auto;
-    padding: 16px; display: flex; flex-direction: column; gap: 10px;
+    min-height: 320px; max-height: 540px; overflow-y: auto;
+    padding: 18px 16px; display: flex; flex-direction: column; gap: 12px;
     background: rgba(255,255,255,0.01);
     scrollbar-width: thin; scrollbar-color: var(--border-subtle) transparent;
   }
   .wr-chat-messages::-webkit-scrollbar { width: 4px; }
   .wr-chat-messages::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
   .wr-bubble {
-    max-width: 86%; padding: 10px 14px; border-radius: 12px;
-    font-size: 13px; line-height: 1.55;
+    max-width: 86%; padding: 13px 17px; border-radius: 14px;
+    font-size: 14.5px; line-height: 1.72; letter-spacing: 0.01em;
   }
   .wr-bubble.user {
-    align-self: flex-end; background: #3B82F6; color: white;
-    border-bottom-right-radius: 3px;
+    align-self: flex-end; background: #2563EB; color: #EFF6FF;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 2px 12px rgba(37,99,235,0.25);
   }
   .wr-bubble.bot {
     align-self: flex-start;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--border-subtle, #2C3241);
-    color: #D1D5DB; border-bottom-left-radius: 3px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.09);
+    color: #CBD5E1; border-bottom-left-radius: 4px;
   }
   .wr-bubble.typing {
     align-self: flex-start;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--border-subtle, #2C3241);
+    background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.07);
     color: var(--text-muted, #8F9CAE);
-    border-bottom-left-radius: 3px; font-style: italic;
+    border-bottom-left-radius: 4px; font-style: italic;
     animation: wr-blink 1.1s ease-in-out infinite;
   }
   @keyframes wr-blink {
     0%,100% { opacity: 1; } 50% { opacity: 0.45; }
   }
+
+  /* ── Markdown body styles (inside .wr-bubble.bot) ─────────────────── */
+  .wr-md-body { width: 100%; }
+  .wr-md-p    { margin: 0 0 8px; }
+  .wr-md-p:last-child { margin-bottom: 0; }
+  .wr-md-h2   { font-size: 15px; font-weight: 800; color: white; margin: 12px 0 6px; }
+  .wr-md-h3   { font-size: 14px; font-weight: 700; color: #E2E8F0; margin: 10px 0 5px; }
+  .wr-md-h4   { font-size: 11.5px; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px; margin: 8px 0 4px; }
+  .wr-md-b    { font-weight: 700; color: #F1F5F9; }
+  .wr-md-i    { font-style: italic; color: #CBD5E1; }
+  .wr-md-code { background: rgba(59,130,246,0.12); padding: 2px 6px; border-radius: 4px; font-size: 12.5px; font-family: 'Fira Mono', monospace; color: #93C5FD; }
+  .wr-md-bullet { display: flex; gap: 9px; margin: 4px 0; align-items: flex-start; }
+  .wr-md-dot    { color: #3B82F6; flex-shrink: 0; margin-top: 2px; }
+  .wr-md-num    { display: flex; gap: 9px; margin: 4px 0; align-items: flex-start; }
+  .wr-md-num-n  { color: #3B82F6; flex-shrink: 0; font-weight: 700; min-width: 20px; }
+
+  /* ── Quick-Reply Rebuttal Pills ────────────────────────────────────── */
+  .wr-quick-replies {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    align-self: flex-start; max-width: 90%;
+    padding: 2px 0 4px;
+  }
+  .wr-qr-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 15px; border-radius: 22px;
+    font-size: 12.5px; font-weight: 600; font-family: var(--font-sans);
+    letter-spacing: 0.02em; cursor: pointer; text-align: left;
+    border: 1px solid rgba(59,130,246,0.28);
+    background: rgba(59,130,246,0.07); color: #93C5FD;
+    transition: all 0.17s cubic-bezier(0.4,0,0.2,1);
+    line-height: 1.45;
+  }
+  .wr-qr-pill:hover:not(:disabled) {
+    background: rgba(59,130,246,0.16);
+    border-color: rgba(59,130,246,0.55);
+    color: #BFDBFE;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(59,130,246,0.18);
+  }
+  .wr-qr-pill:active:not(:disabled) { transform: translateY(0); }
+  .wr-qr-pill:disabled { opacity: 0.35; cursor: not-allowed; }
+  .wr-qr-arrow { font-size: 10px; opacity: 0.7; }
   .wr-chat-input-row {
     display: flex; border-top: 1px solid var(--border-subtle, #2C3241);
     background: rgba(255,255,255,0.02);
@@ -664,9 +771,11 @@ export default function WarRoomView() {
         }),
       });
       const data = await res.json();
-      setChatMessages(prev => [...prev, { role: 'bot', text: data.response || 'No response.' }]);
+      const raw = data.response || '';
+      const { mainText, rebuttals } = parseRobotResponse(raw);
+      setChatMessages(prev => [...prev, { role: 'bot', text: mainText || 'No response.', rebuttals }]);
     } catch {
-      setChatMessages(prev => [...prev, { role: 'bot', text: 'Connection error. Please retry.' }]);
+      setChatMessages(prev => [...prev, { role: 'bot', text: 'Connection error. Please retry.', rebuttals: [] }]);
     }
     setChatLoading(false);
   };
@@ -1045,9 +1154,33 @@ export default function WarRoomView() {
                 {/* Messages */}
                 <div className="wr-chat-messages">
                   {chatMessages.map((m, i) => (
-                    <div key={i} className={`wr-bubble ${m.role}`}>
-                      {m.text}
-                    </div>
+                    <React.Fragment key={i}>
+                      <div className={`wr-bubble ${m.role}`}>
+                        {m.role === 'bot' ? (
+                          <div
+                            className="wr-md-body"
+                            dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
+                          />
+                        ) : (
+                          m.text
+                        )}
+                      </div>
+                      {m.role === 'bot' && m.rebuttals?.length > 0 && (
+                        <div className="wr-quick-replies">
+                          {m.rebuttals.map((r, j) => (
+                            <button
+                              key={j}
+                              className="wr-qr-pill"
+                              disabled={chatLoading}
+                              onClick={() => submitToChat(r)}
+                            >
+                              <span className="wr-qr-arrow">↳</span>
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </React.Fragment>
                   ))}
                   {chatLoading && (
                     <div className="wr-bubble typing">Opposing counsel preparing cross-examination…</div>
