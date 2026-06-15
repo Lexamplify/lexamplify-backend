@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { uploadDocument } from '../services/api';
+import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -20,37 +21,6 @@ const parseIssues = (text) => {
   const bullets = lines.filter(l => /^[-•*]/.test(l));
   if (bullets.length >= 2) return bullets.map(l => l.replace(/^[-•*]\s*/, ''));
   return lines.filter(l => l.length > 20);
-};
-
-// ── Lightweight Markdown renderer (no external dep) ─────────────────────────
-// Escapes HTML entities first so LLM output can never inject raw HTML.
-
-const renderMarkdown = (raw) => {
-  if (!raw) return '';
-  const escaped = raw
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  const html = escaped
-    // Headers
-    .replace(/^### (.+)$/gm, '<h4 class="wr-md-h4">$1</h4>')
-    .replace(/^## (.+)$/gm,  '<h3 class="wr-md-h3">$1</h3>')
-    .replace(/^# (.+)$/gm,   '<h2 class="wr-md-h2">$1</h2>')
-    // Bold → strong, italic → em  (non-greedy, single-line)
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong class="wr-md-b">$1</strong>')
-    .replace(/\*([^*\n]+)\*/g,     '<em class="wr-md-i">$1</em>')
-    // Inline code
-    .replace(/`([^`\n]+)`/g, '<code class="wr-md-code">$1</code>')
-    // Bullet lines  –  • - *
-    .replace(/^[-•*]\s+(.+)$/gm, '<div class="wr-md-bullet"><span class="wr-md-dot">▸</span><span>$1</span></div>')
-    // Numbered lines
-    .replace(/^(\d+)\.\s+(.+)$/gm, '<div class="wr-md-num"><span class="wr-md-num-n">$1.</span><span>$2</span></div>')
-    // Blank lines → paragraph breaks; single newlines → <br>
-    .replace(/\n{2,}/g, '</p><p class="wr-md-p">')
-    .replace(/\n/g, '<br/>');
-
-  return `<p class="wr-md-p">${html}</p>`;
 };
 
 // ── Parse the |||REBUTTALS||| delimiter that the backend appends ─────────────
@@ -101,6 +71,7 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const WAR_ROOM_STYLES = `
+${MARKDOWN_CSS}
   /* ── PIPELINE LOADING ──────────────────────────────────────────── */
   .wr-pipeline-wrap {
     display: flex;
@@ -454,21 +425,6 @@ const WAR_ROOM_STYLES = `
     0%,100% { opacity: 1; } 50% { opacity: 0.45; }
   }
 
-  /* ── Markdown body styles (inside .wr-bubble.bot) ─────────────────── */
-  .wr-md-body { width: 100%; }
-  .wr-md-p    { margin: 0 0 8px; }
-  .wr-md-p:last-child { margin-bottom: 0; }
-  .wr-md-h2   { font-size: 15px; font-weight: 800; color: white; margin: 12px 0 6px; }
-  .wr-md-h3   { font-size: 14px; font-weight: 700; color: #E2E8F0; margin: 10px 0 5px; }
-  .wr-md-h4   { font-size: 11.5px; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px; margin: 8px 0 4px; }
-  .wr-md-b    { font-weight: 700; color: #F1F5F9; }
-  .wr-md-i    { font-style: italic; color: #CBD5E1; }
-  .wr-md-code { background: rgba(59,130,246,0.12); padding: 2px 6px; border-radius: 4px; font-size: 12.5px; font-family: 'Fira Mono', monospace; color: #93C5FD; }
-  .wr-md-bullet { display: flex; gap: 9px; margin: 4px 0; align-items: flex-start; }
-  .wr-md-dot    { color: #3B82F6; flex-shrink: 0; margin-top: 2px; }
-  .wr-md-num    { display: flex; gap: 9px; margin: 4px 0; align-items: flex-start; }
-  .wr-md-num-n  { color: #3B82F6; flex-shrink: 0; font-weight: 700; min-width: 20px; }
-
   /* ── Quick-Reply Rebuttal Pills ────────────────────────────────────── */
   .wr-quick-replies {
     display: flex; flex-wrap: wrap; gap: 8px;
@@ -673,6 +629,7 @@ export default function WarRoomView() {
   const [strategyTone, setStrategyTone] = useState('aggressive');
   const [savingSession, setSavingSession] = useState(false);
   const [savedSession, setSavedSession] = useState(false);
+  const [docSource, setDocSource] = useState('');
 
   const chatEndRef = useRef(null);
   const chatSectionRef = useRef(null);
@@ -710,6 +667,7 @@ export default function WarRoomView() {
   };
 
   const runSimulation = async (docContent, clientSide = 'Appellant', docRef = '') => {
+    setDocSource(docRef);
     setIsSimulating(true);
     setCurrentStage(1);
     setSimulationData(null);
@@ -945,10 +903,24 @@ export default function WarRoomView() {
     }
 
     const sessionText = lines.join('\n');
-    const blob = new Blob([sessionText], { type: 'text/plain' });
-    const file = new File([blob], `War_Room_${Date.now()}.txt`, { type: 'text/plain' });
-
-    await uploadDocument(file, null, 'Virtual Courtroom');
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const smartTitle = `${docSource || 'Document'} — Simulation (${timeString})`;
+    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+    try {
+      await fetch(`${API_BASE}/api/vault/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          case_id: 'WAR_ROOM',
+          title: smartTitle,
+          doc_type: 'Courtroom Simulation',
+          content: sessionText,
+        }),
+      });
+    } catch { /* silent — UI feedback via setSavedSession */ }
     setSavingSession(false);
     setSavedSession(true);
     setTimeout(() => setSavedSession(false), 3500);
@@ -1325,7 +1297,7 @@ export default function WarRoomView() {
                       <div className={`wr-bubble ${m.role}`}>
                         {m.role === 'bot' ? (
                           <div
-                            className="wr-md-body"
+                            className="md-body"
                             dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
                           />
                         ) : (

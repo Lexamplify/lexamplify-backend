@@ -164,7 +164,7 @@ const vaultStyles = `
   .premium-table tr:hover td { background-color: rgba(255,255,255,0.02); }
 
   /* ── Card action buttons ── */
-  .vault-card-actions { display: flex; gap: 7px; margin-top: auto; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.04); }
+  .vault-card-actions { display: flex; gap: 7px; margin-top: 8px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.04); }
   .vault-btn-view {
     flex: 1; padding: 7px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
     background: var(--accent-primary, #3B82F6); color: white; border: none; cursor: pointer;
@@ -179,6 +179,17 @@ const vaultStyles = `
   }
   .vault-btn-analyze:hover { border-color: rgba(59,130,246,0.4); color: var(--accent-primary, #3B82F6); }
 
+  /* ── Quick AI Actions ── */
+  .vault-card-quick-actions { display: flex; gap: 6px; padding: 0 0 2px; }
+  .vault-btn-quick {
+    flex: 1; padding: 6px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
+    background: rgba(59,130,246,0.06); color: #93C5FD;
+    border: 1px solid rgba(59,130,246,0.18); cursor: pointer;
+    transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 4px;
+    font-family: var(--font-sans);
+  }
+  .vault-btn-quick:hover { background: rgba(59,130,246,0.13); border-color: rgba(59,130,246,0.4); color: #BFDBFE; }
+
   /* ── Modal ── */
   .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px); }
   .modal-card { background-color: var(--bg-dark-panel, #171c26); border: 1px solid var(--border-dark-subtle, #2C3241); border-radius: 12px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
@@ -192,13 +203,14 @@ const vaultStyles = `
 
 // Doc type → accent color
 const DOC_TYPE_STYLES = {
-  'Legal Document':   { bg: 'rgba(59,130,246,0.1)',  color: '#3B82F6' },
-  'Contract':         { bg: 'rgba(16,185,129,0.1)',  color: '#10B981' },
-  'FIR':              { bg: 'rgba(239,68,68,0.1)',   color: '#EF4444' },
-  'Petition':         { bg: 'rgba(245,158,11,0.1)',  color: '#F59E0B' },
-  'Draft':            { bg: 'rgba(139,92,246,0.1)',  color: '#8B5CF6' },
-  'Agreement':        { bg: 'rgba(6,182,212,0.1)',   color: '#06B6D4' },
-  'Judgment':         { bg: 'rgba(236,72,153,0.1)',  color: '#EC4899' },
+  'Legal Document':       { bg: 'rgba(59,130,246,0.1)',  color: '#3B82F6' },
+  'Contract':             { bg: 'rgba(16,185,129,0.1)',  color: '#10B981' },
+  'FIR':                  { bg: 'rgba(239,68,68,0.1)',   color: '#EF4444' },
+  'Petition':             { bg: 'rgba(245,158,11,0.1)',  color: '#F59E0B' },
+  'Draft':                { bg: 'rgba(139,92,246,0.1)',  color: '#8B5CF6' },
+  'Agreement':            { bg: 'rgba(6,182,212,0.1)',   color: '#06B6D4' },
+  'Judgment':             { bg: 'rgba(236,72,153,0.1)',  color: '#EC4899' },
+  'Courtroom Simulation': { bg: 'rgba(239,68,68,0.07)',  color: '#FCA5A5' },
 };
 
 function getDocTypeStyle(type) {
@@ -319,6 +331,35 @@ export default function VaultView() {
           file_content: doc.content || doc.text || '',
           document_reference: doc.title || doc.filename || 'Vault Document',
         },
+      },
+    });
+  };
+
+  const buildDocData = (doc) => ({
+    id: doc.id,
+    filename: doc.title || 'Vault Document',
+    summary: doc.doc_type ? `${doc.doc_type} — saved from Universal Agent` : 'Document from Case Vault',
+    text: doc.content || '',
+    tags: doc.tags || null,
+    case_id: doc.case_id || null,
+  });
+
+  const handleSummarize = (doc) => {
+    navigate(`/case/vault/doc/${doc.id}`, {
+      state: {
+        fromVault: true,
+        docData: buildDocData(doc),
+        autoQuery: 'Provide a comprehensive legal summary of this document, covering all key legal points, obligations, parties involved, and important clauses.',
+      },
+    });
+  };
+
+  const handleExtractFacts = (doc) => {
+    navigate(`/case/vault/doc/${doc.id}`, {
+      state: {
+        fromVault: true,
+        docData: buildDocData(doc),
+        autoQuery: 'Extract all key facts, dates, parties, legal citations, and obligations from this document. Present them in a structured numbered list.',
       },
     });
   };
@@ -509,7 +550,7 @@ export default function VaultView() {
                         Created: {formatDate(doc.created_at)}
                       </div>
 
-                      {/* Actions */}
+                      {/* Primary Actions */}
                       <div className="vault-card-actions">
                         <button className="vault-btn-view" onClick={() => handleViewDocument(doc)}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -522,6 +563,16 @@ export default function VaultView() {
                             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
                           </svg>
                           Analyze
+                        </button>
+                      </div>
+
+                      {/* Quick AI Actions */}
+                      <div className="vault-card-quick-actions">
+                        <button className="vault-btn-quick" onClick={() => handleSummarize(doc)} title="AI-powered summary">
+                          📋 Summarize
+                        </button>
+                        <button className="vault-btn-quick" onClick={() => handleExtractFacts(doc)} title="Extract facts and dates">
+                          ⚡ Extract Facts
                         </button>
                       </div>
                     </div>
