@@ -221,10 +221,34 @@ def run_simulation():
     try:
         data = request.get_json(silent=True) or {}
         document_content = data.get("document_content", "").strip()
+        document_reference = data.get("document_reference", "").strip()
         client_side = data.get("client_side", "Appellant")
 
+        # Vault lookup: if the frontend couldn't pass file_content (LLM dropped it),
+        # reconstruct the document text from stored chunks using the reference title.
+        if not document_content and document_reference:
+            try:
+                import sqlite3
+                user_id_int = int(get_jwt_identity())
+                conn = sqlite3.connect('lex_assistant.db')
+                c = conn.cursor()
+                c.execute(
+                    "SELECT id FROM documents WHERE user_id = ? AND filename LIKE ? ORDER BY created_at DESC LIMIT 1",
+                    (user_id_int, f'%{document_reference}%')
+                )
+                doc_row = c.fetchone()
+                if doc_row:
+                    c.execute(
+                        "SELECT chunk_text FROM document_chunks WHERE user_id = ? AND document_id = ? ORDER BY chunk_index ASC",
+                        (user_id_int, doc_row[0])
+                    )
+                    document_content = '\n'.join(r[0] for r in c.fetchall()).strip()
+                conn.close()
+            except Exception as _lookup_err:
+                print(f"[Simulate Vault Lookup]: {_lookup_err}")
+
         if not document_content:
-            return jsonify({"error": "No document content provided"}), 400
+            return jsonify({"error": "No document content provided. Attach a file or reference a vault document."}), 400
 
         from utils.rag_pipeline import get_groq_client
         client = get_groq_client()

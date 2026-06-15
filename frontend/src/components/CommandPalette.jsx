@@ -624,6 +624,10 @@ export default function CommandPalette() {
       localStorage.setItem(CURRENT_KEY, sid);
     }
 
+    // Capture file content NOW — setAttachedFile(null) below only schedules a re-render,
+    // but we need the value available inside the async routing block further down.
+    const capturedFileContent = attachedFile?.content ?? null;
+
     // Build display text and full query (file content appended for backend)
     const displayText = attachedFile ? `📎 ${attachedFile.name}\n\n${q}` : q;
     const fullQuery   = attachedFile
@@ -706,11 +710,22 @@ export default function CommandPalette() {
         try {
           const actionPayload = await res.json();
           if (actionPayload.is_action && actionPayload.intent === 'ROUTE') {
+            // Force-inject the file content from the attached file state.
+            // Never trust the LLM to echo file content back — use what we captured.
+            const finalContent = capturedFileContent
+              || actionPayload.data?.file_content
+              || actionPayload.data?.content
+              || '';
             setLoading(false);
             setNavRoute(actionPayload.destination);
             setTimeout(() => {
               navigate(actionPayload.destination, {
-                state: { documentData: actionPayload.data },
+                state: {
+                  documentData: {
+                    ...actionPayload.data,
+                    file_content: finalContent,
+                  },
+                },
               });
               setNavRoute(null);
               setIsOpen(false);

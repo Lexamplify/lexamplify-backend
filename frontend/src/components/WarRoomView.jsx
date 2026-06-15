@@ -531,7 +531,7 @@ export default function WarRoomView() {
     });
   };
 
-  const runSimulation = async (docContent, clientSide = 'Appellant') => {
+  const runSimulation = async (docContent, clientSide = 'Appellant', docRef = '') => {
     setIsSimulating(true);
     setCurrentStage(1);
     setSimulationData(null);
@@ -554,7 +554,11 @@ export default function WarRoomView() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ document_content: docContent, client_side: clientSide }),
+        body: JSON.stringify({
+          document_content: docContent,
+          client_side: clientSide,
+          document_reference: docRef,
+        }),
       });
       const data = await res.json();
       clearStageTimers();
@@ -583,8 +587,13 @@ export default function WarRoomView() {
     const pending  = location.state?.pendingSimulation;
     const existing = location.state?.simulationData; // pre-computed fallback only
 
-    if (docData?.file_content) {
-      runSimulation(docData.file_content, 'Appellant');
+    const fileContent = docData?.file_content || '';
+    const docRef      = docData?.document_reference || '';
+
+    // Fire simulation the instant we land — even a document_reference alone is enough.
+    // The backend will vault-lookup the full text when file_content is absent.
+    if (fileContent || docRef) {
+      runSimulation(fileContent, 'Appellant', docRef);
     } else if (pending?.documentContext) {
       runSimulation(pending.documentContext, pending.clientSide || 'Appellant');
     } else if (existing) {
