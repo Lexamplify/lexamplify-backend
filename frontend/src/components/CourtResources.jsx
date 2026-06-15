@@ -494,7 +494,7 @@ export default function CourtResources() {
   // Toast State
   const [toastMessage, setToastMessage] = useState(null);
 
-  // ── secure reverse proxy redirection ───────────────────────────────
+  // ── secure reverse proxy — used for cause lists (embeds inside app) ──────
   const openInAppBrowser = (targetUrl) => {
     if (!targetUrl) return;
     const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
@@ -504,6 +504,13 @@ export default function CourtResources() {
     if (!popup || popup.closed || typeof popup.closed === 'undefined') {
       alert('⚠️ Your browser blocked the secure LexAI secure window pop-up. Please allow pop-ups in your browser address bar.');
     }
+  };
+
+  // ── direct external link — used for event URLs so gov sites don't ─────────
+  // reject the proxy referrer and redirect to their own homepage
+  const openDirectLink = (url) => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   // Toast helper
@@ -1298,7 +1305,7 @@ export default function CourtResources() {
                           View details
                         </button>
                         {event.url && (
-                          <button className="btn-accent" style={{ fontSize: '11px', padding: '5px 10px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }} onClick={() => openInAppBrowser(event.url)}>
+                          <button className="btn-accent" style={{ fontSize: '11px', padding: '5px 10px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }} onClick={() => openDirectLink(event.url)}>
                             Link ↗
                           </button>
                         )}
@@ -1600,7 +1607,7 @@ export default function CourtResources() {
                       <button 
                         className="btn-accent" 
                         style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
-                        onClick={() => { closeEventModal(); openInAppBrowser(eventModalData.source_url); }}
+                        onClick={() => { closeEventModal(); openDirectLink(eventModalData.source_url); }}
                       >
                         Open Official Page
                       </button>
@@ -1648,7 +1655,7 @@ export default function CourtResources() {
               {eventModalStatus === 'content' && eventModalData.register_url && (
                 <button 
                   className="btn-accent"
-                  onClick={() => { closeEventModal(); openInAppBrowser(eventModalData.register_url); }}
+                  onClick={() => { closeEventModal(); openDirectLink(eventModalData.register_url); }}
                 >
                   📝 Register / RSVP ↗
                 </button>

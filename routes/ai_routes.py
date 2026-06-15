@@ -86,7 +86,7 @@ def general_chat():
             "Indian Contract Act, Constitution of India, and landmarks. Always structure response clearly."
         )
         
-        response = ask_gemini(f"System: {system_prompt}\nUser: {message}")
+        response = ask_gemini(system_prompt, message)
         return jsonify({"response": response}), 200
 
     except Exception as e:

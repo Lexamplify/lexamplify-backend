@@ -347,20 +347,20 @@ _BARE_ACTS = [
 
 
 _EVENTS = [
-    {'id': 'evt-001', 'date': 'May 7, 2026',  'title': 'Supreme Court — Constitution Bench Sitting',          'sub': '5-Judge Bench on Electoral Bond Scheme Contempt',     'type': 'media',      'url': 'https://sci.gov.in/causelist'},
-    {'id': 'evt-002', 'date': 'May 10, 2026', 'title': 'National Legal Services Day — Webinar',               'sub': 'NALSA — Free Legal Aid Awareness Drive',              'type': 'webinar',    'url': 'https://nalsa.gov.in'},
-    {'id': 'evt-003', 'date': 'May 12, 2026', 'title': 'eCourts Phase III Launch Update',                     'sub': 'Ministry of Law & Justice — New Delhi',               'type': 'conference', 'url': 'https://doj.gov.in'},
-    {'id': 'evt-004', 'date': 'May 15, 2026', 'title': 'BCI Annual Conference 2026',                          'sub': 'Bar Council of India — New Delhi',                    'type': 'conference', 'url': 'https://www.barcouncilofindia.org'},
-    {'id': 'evt-005', 'date': 'May 20, 2026', 'title': 'Seminar: BNS & BNSS Implementation in Practice',     'sub': 'Delhi High Court Bar Association',                    'type': 'conference', 'url': 'https://www.dhcba.in'},
-    {'id': 'evt-006', 'date': 'May 22, 2026', 'title': 'Webinar: AI in Indian Courts — Impact on Legal Practice', 'sub': 'LawTech India — Online',                          'type': 'webinar',    'url': 'https://lawtech.in'},
-    {'id': 'evt-007', 'date': 'May 25, 2026', 'title': 'Consumer Protection Act Workshop',                    'sub': 'National Consumer Disputes Redressal Commission',     'type': 'webinar',    'url': 'https://ncdrc.nic.in'},
-    {'id': 'evt-008', 'date': 'June 2, 2026', 'title': 'Criminal Law Reforms — Public Consultation',          'sub': 'Law Commission of India',                            'type': 'conference', 'url': 'https://lawcommissionofindia.nic.in'},
-    {'id': 'evt-009', 'date': 'June 5, 2026', 'title': 'Mediation Training Programme',                        'sub': 'NALSA & Supreme Court Mediation Centre',             'type': 'webinar',    'url': 'https://nalsa.gov.in'},
-    {'id': 'evt-010', 'date': 'June 10, 2026','title': 'SCBA Annual General Meeting 2026',                    'sub': 'Supreme Court Bar Association, New Delhi',            'type': 'conference', 'url': 'https://www.scba.org.in'},
-    {'id': 'evt-011', 'date': 'June 12, 2026','title': 'IPR Day — Trademark & Patent Law Updates',            'sub': 'CGPDTM — Office of DPIIT, Mumbai',                   'type': 'conference', 'url': 'https://ipindia.gov.in'},
-    {'id': 'evt-012', 'date': 'June 15, 2026','title': 'Media Briefing — SC Notable Judgements of May 2026', 'sub': 'Supreme Court of India Press Release',                'type': 'media',      'url': 'https://sci.gov.in'},
-    {'id': 'evt-013', 'date': 'June 20, 2026','title': 'Cyber Laws & Digital Evidence Workshop',              'sub': 'National Judicial Academy, Bhopal',                   'type': 'webinar',    'url': 'https://www.nja.nic.in'},
-    {'id': 'evt-014', 'date': 'June 25, 2026','title': 'Alternative Dispute Resolution — NCLT Seminar',       'sub': 'NCLT Bar Association',                                'type': 'conference', 'url': 'https://nclt.gov.in'},
+    {'id': 'evt-001', 'date': 'May 7, 2026',  'title': 'Supreme Court — Constitution Bench Sitting',          'sub': '5-Judge Bench on Electoral Bond Scheme Contempt',     'type': 'media',      'url': 'https://main.sci.gov.in/case-status'},
+    {'id': 'evt-002', 'date': 'May 10, 2026', 'title': 'National Legal Services Day — Webinar',               'sub': 'NALSA — Free Legal Aid Awareness Drive',              'type': 'webinar',    'url': 'https://nalsa.gov.in/activities'},
+    {'id': 'evt-003', 'date': 'May 12, 2026', 'title': 'eCourts Phase III Launch Update',                     'sub': 'Ministry of Law & Justice — New Delhi',               'type': 'conference', 'url': 'https://ecourts.gov.in/ecourts_home/'},
+    {'id': 'evt-004', 'date': 'May 15, 2026', 'title': 'BCI Annual Conference 2026',                          'sub': 'Bar Council of India — New Delhi',                    'type': 'conference', 'url': 'https://www.barcouncilofindia.org/about-bci/'},
+    {'id': 'evt-005', 'date': 'May 20, 2026', 'title': 'Seminar: BNS & BNSS Implementation in Practice',     'sub': 'Delhi High Court Bar Association',                    'type': 'conference', 'url': 'https://delhihighcourt.nic.in/web/page/notices'},
+    {'id': 'evt-006', 'date': 'May 22, 2026', 'title': 'Webinar: AI in Indian Courts — Impact on Legal Practice', 'sub': 'LawTech India — Online',                          'type': 'webinar',    'url': 'https://www.nja.nic.in/programs/'},
+    {'id': 'evt-007', 'date': 'May 25, 2026', 'title': 'Consumer Protection Act Workshop',                    'sub': 'National Consumer Disputes Redressal Commission',     'type': 'webinar',    'url': 'https://ncdrc.nic.in/ncdrc/'},
+    {'id': 'evt-008', 'date': 'June 2, 2026', 'title': 'Criminal Law Reforms — Public Consultation',          'sub': 'Law Commission of India',                            'type': 'conference', 'url': 'https://legalaffairs.gov.in/law-commission-india'},
+    {'id': 'evt-009', 'date': 'June 5, 2026', 'title': 'Mediation Training Programme',                        'sub': 'NALSA & Supreme Court Mediation Centre',             'type': 'webinar',    'url': 'https://nalsa.gov.in/services/adr'},
+    {'id': 'evt-010', 'date': 'June 10, 2026','title': 'SCBA Annual General Meeting 2026',                    'sub': 'Supreme Court Bar Association, New Delhi',            'type': 'conference', 'url': 'https://www.scba.org.in/'},
+    {'id': 'evt-011', 'date': 'June 12, 2026','title': 'IPR Day — Trademark & Patent Law Updates',            'sub': 'CGPDTM — Office of DPIIT, Mumbai',                   'type': 'conference', 'url': 'https://ipindia.gov.in/trade-marks.htm'},
+    {'id': 'evt-012', 'date': 'June 15, 2026','title': 'Media Briefing — SC Notable Judgements of May 2026', 'sub': 'Supreme Court of India Press Release',                'type': 'media',      'url': 'https://main.sci.gov.in/judgments'},
+    {'id': 'evt-013', 'date': 'June 20, 2026','title': 'Cyber Laws & Digital Evidence Workshop',              'sub': 'National Judicial Academy, Bhopal',                   'type': 'webinar',    'url': 'https://www.nja.nic.in/programs/'},
+    {'id': 'evt-014', 'date': 'June 25, 2026','title': 'Alternative Dispute Resolution — NCLT Seminar',       'sub': 'NCLT Bar Association',                                'type': 'conference', 'url': 'https://www.nclt.gov.in/'},
 ]
 
 
