@@ -224,26 +224,58 @@ def run_simulation():
         document_reference = data.get("document_reference", "").strip()
         client_side = data.get("client_side", "Appellant")
 
-        # Vault lookup: if the frontend couldn't pass file_content (LLM dropped it),
-        # reconstruct the document text from stored chunks using the reference title.
+        # Vault lookup: reconstruct document text when file_content wasn't passed.
+        # Searches TWO separate stores in priority order:
+        #   1. case_vault (lex_assistant.db)  — AI drafts saved via "Save to Vault"
+        #   2. document_chunks (lex_assistant.db) joined via documents (instance/database.db)
+        #      — PDFs/DOCXs uploaded through VaultView
+        # All matches are case-insensitive LIKE so "FIR" hits "FIR_2024.pdf" etc.
         if not document_content and document_reference:
+            import sqlite3, os
+            ref_pattern = f'%{document_reference}%'
+            user_id_int = int(get_jwt_identity())
+
             try:
-                import sqlite3
-                user_id_int = int(get_jwt_identity())
-                conn = sqlite3.connect('lex_assistant.db')
-                c = conn.cursor()
-                c.execute(
-                    "SELECT id FROM documents WHERE user_id = ? AND filename LIKE ? ORDER BY created_at DESC LIMIT 1",
-                    (user_id_int, f'%{document_reference}%')
+                # ── Pass 1: case_vault (has full content column) ──────────
+                conn_lex = sqlite3.connect('lex_assistant.db')
+                c_lex = conn_lex.cursor()
+                c_lex.execute(
+                    "SELECT content FROM case_vault "
+                    "WHERE LOWER(title) LIKE LOWER(?) "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (ref_pattern,)
                 )
-                doc_row = c.fetchone()
-                if doc_row:
-                    c.execute(
-                        "SELECT chunk_text FROM document_chunks WHERE user_id = ? AND document_id = ? ORDER BY chunk_index ASC",
-                        (user_id_int, doc_row[0])
-                    )
-                    document_content = '\n'.join(r[0] for r in c.fetchall()).strip()
-                conn.close()
+                row = c_lex.fetchone()
+                if row and row[0]:
+                    document_content = row[0].strip()
+
+                # ── Pass 2: uploaded file chunks ──────────────────────────
+                if not document_content:
+                    sa_db = os.path.join('instance', 'database.db')
+                    if os.path.exists(sa_db):
+                        conn_sa = sqlite3.connect(sa_db)
+                        c_sa = conn_sa.cursor()
+                        c_sa.execute(
+                            "SELECT id FROM documents "
+                            "WHERE user_id = ? AND LOWER(filename) LIKE LOWER(?) "
+                            "ORDER BY created_at DESC LIMIT 1",
+                            (user_id_int, ref_pattern)
+                        )
+                        doc_row = c_sa.fetchone()
+                        conn_sa.close()
+
+                        if doc_row:
+                            c_lex.execute(
+                                "SELECT chunk_text FROM document_chunks "
+                                "WHERE user_id = ? AND document_id = ? "
+                                "ORDER BY chunk_index ASC",
+                                (user_id_int, doc_row[0])
+                            )
+                            document_content = '\n'.join(
+                                r[0] for r in c_lex.fetchall()
+                            ).strip()
+
+                conn_lex.close()
             except Exception as _lookup_err:
                 print(f"[Simulate Vault Lookup]: {_lookup_err}")
 

@@ -716,6 +716,8 @@ export default function CommandPalette() {
               || actionPayload.data?.file_content
               || actionPayload.data?.content
               || '';
+            const finalRef = actionPayload.data?.document_reference
+              || (attachedFile?.name ?? capturedFileContent ? 'Attached Document' : '');
             setLoading(false);
             setNavRoute(actionPayload.destination);
             setTimeout(() => {
@@ -723,6 +725,7 @@ export default function CommandPalette() {
                 state: {
                   documentData: {
                     ...actionPayload.data,
+                    document_reference: finalRef,
                     file_content: finalContent,
                   },
                 },
