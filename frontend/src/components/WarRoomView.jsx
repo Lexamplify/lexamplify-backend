@@ -568,6 +568,44 @@ const WAR_ROOM_STYLES = `
     padding: 3px 9px; font-size: 12px; font-family: monospace;
     color: #3B82F6; margin-top: 6px;
   }
+
+  /* ── MANUAL UPLOAD DROPZONE ────────────────────────────────────── */
+  .wr-or-divider {
+    display: flex; align-items: center; gap: 12px; margin: 18px 0 14px;
+    color: rgba(139,148,162,0.55); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .wr-or-divider::before, .wr-or-divider::after {
+    content: ''; flex: 1; height: 1px; background: rgba(44,50,65,0.8);
+  }
+  .wr-dropzone {
+    border: 2px dashed rgba(59,130,246,0.28); border-radius: 12px;
+    padding: 26px 20px; text-align: center; cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+    background: rgba(59,130,246,0.02);
+  }
+  .wr-dropzone:hover { border-color: rgba(59,130,246,0.55); background: rgba(59,130,246,0.06); }
+  .wr-dropzone.drag-over {
+    border-color: #3B82F6; background: rgba(59,130,246,0.1);
+    transform: scale(1.015);
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.08);
+  }
+  .wr-dropzone-uploading { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.05); cursor: default; }
+  .wr-dropzone-icon { font-size: 26px; margin-bottom: 8px; display: block; }
+  .wr-dropzone-title { font-size: 13px; font-weight: 600; color: white; margin-bottom: 4px; }
+  .wr-dropzone-hint  { font-size: 11.5px; color: rgba(139,148,162,0.65); }
+  .wr-upload-error {
+    background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 8px; padding: 9px 14px; font-size: 12px;
+    color: #FCA5A5; margin-top: 10px; text-align: center;
+  }
+  .wr-upload-spinner {
+    width: 22px; height: 22px;
+    border: 2px solid rgba(59,130,246,0.2); border-top-color: #3B82F6;
+    border-radius: 50%; animation: spin 0.75s linear infinite;
+    margin: 0 auto 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 `;
 
 // ── Sub-component: ThreatCard ────────────────────────────────────────────────
@@ -639,6 +677,12 @@ export default function WarRoomView() {
   const chatEndRef = useRef(null);
   const chatSectionRef = useRef(null);
   const stageTimers = useRef([]);
+  const fileInputRef = useRef(null);
+
+  // Manual upload state (Task 3)
+  const [uploadState, setUploadState] = useState('idle'); // 'idle' | 'uploading' | 'error'
+  const [uploadError, setUploadError] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -700,6 +744,7 @@ export default function WarRoomView() {
       if (data.error) {
         setSimError(data.error);
       } else {
+        sessionStorage.setItem('wr_active_session', JSON.stringify(data.simulationData));
         setSimulationData(data.simulationData);
         setCurrentStage(5);
         progressiveReveal(data.simulationData);
@@ -717,22 +762,43 @@ export default function WarRoomView() {
   useEffect(() => {
     const raf = requestAnimationFrame(() => setIsMounted(true));
 
-    const docData  = location.state?.documentData;   // tool-routing payload — highest priority
+    const docData  = location.state?.documentData;
     const pending  = location.state?.pendingSimulation;
-    const existing = location.state?.simulationData; // pre-computed fallback only
+    const existing = location.state?.simulationData;
 
     const fileContent = docData?.file_content || '';
     const docRef      = docData?.document_reference || '';
 
-    // Fire simulation the instant we land — even a document_reference alone is enough.
-    // The backend will vault-lookup the full text when file_content is absent.
     if (fileContent || docRef) {
+      // Immediately wipe the router state so a browser refresh doesn't re-fire the API
+      window.history.replaceState({}, document.title);
       runSimulation(fileContent, 'Appellant', docRef);
     } else if (pending?.documentContext) {
+      window.history.replaceState({}, document.title);
       runSimulation(pending.documentContext, pending.clientSide || 'Appellant');
     } else if (existing) {
+      window.history.replaceState({}, document.title);
       setSimulationData(existing);
       progressiveReveal(existing);
+    } else {
+      // Restore from tab-scoped session cache — no animation, instant reveal
+      const cached = sessionStorage.getItem('wr_active_session');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setSimulationData(parsed);
+          setRevealedSections(new Set([1, 2, 3, 4, 5]));
+          const excerpt = (parsed.extracted_issues || '').split('\n')[0] || 'this matter';
+          const qCount  = parsed.red_team?.opposing_counter_questions?.length || 3;
+          setChatMessages([{
+            role: 'bot',
+            text: `⚖️ Session restored. I have reviewed your argument on "${excerpt.substring(0, 100).trim()}…" ${qCount} challenges remain active. State your position.`,
+            rebuttals: [],
+          }]);
+        } catch {
+          sessionStorage.removeItem('wr_active_session');
+        }
+      }
     }
 
     return () => { cancelAnimationFrame(raf); clearStageTimers(); };
@@ -796,6 +862,50 @@ export default function WarRoomView() {
     if (!rebuttalText || chatLoading) return;
     chatSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     submitToChat(rebuttalText);
+  };
+
+  // ── Manual file upload → simulation (Task 3) ─────────────────────────────
+
+  const handleManualUpload = async (file) => {
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'txt', 'docx'].includes(ext)) {
+      setUploadError('Unsupported file. Please upload a PDF, TXT, or DOCX file.');
+      return;
+    }
+    setUploadState('uploading');
+    setUploadError('');
+    try {
+      // Upload → index chunks into the RAG pipeline (same flow as Case Vault)
+      await uploadDocument(file, null, 'War Room Upload');
+      // Trigger simulation; backend Pass 2 vault lookup finds the chunks by filename
+      const refName = file.name.replace(/\.[^.]+$/, '');
+      setUploadState('idle');
+      runSimulation('', 'Appellant', refName);
+    } catch (err) {
+      setUploadState('error');
+      setUploadError(err?.message || 'Upload failed. Check your connection and try again.');
+    }
+  };
+
+  const onDropzoneClick = () => {
+    if (uploadState === 'uploading') return;
+    fileInputRef.current?.click();
+  };
+
+  const onFileInputChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) handleManualUpload(file);
+    e.target.value = '';
+  };
+
+  const onDragOver  = (e) => { e.preventDefault(); setIsDragOver(true); };
+  const onDragLeave = ()  => setIsDragOver(false);
+  const onDrop      = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleManualUpload(file);
   };
 
   // ── Save full session to vault ────────────────────────────────────────────
@@ -916,25 +1026,69 @@ export default function WarRoomView() {
 
   if (!simulationData) {
     const steps = [
-      { num: '01', title: 'Upload a case document', desc: 'Go to Case Vault and upload a brief, FIR, contract, or legal notice.' },
-      { num: '02', title: 'Open the Universal Agent', desc: 'Press Ctrl+K or click "Universal Agent" in the sidebar.' },
-      { num: '03', title: 'Trigger the simulation', desc: 'Type a command like the one below and the AI will route you here instantly.', chip: '"Pull the [document] and start virtual courtroom simulation"' },
-      { num: '04', title: 'War Room activates', desc: '5-Stage AI pipeline runs and populates this dashboard automatically.' },
+      { num: '01', title: 'Open the Universal Agent', desc: 'Press Ctrl+K or click "Universal Agent" in the sidebar.' },
+      { num: '02', title: 'Trigger the simulation', desc: 'Type a command and the AI routes you here instantly.', chip: '"Pull the [document] and start virtual courtroom simulation"' },
+      { num: '03', title: 'War Room activates', desc: '5-Stage AI pipeline runs and populates this dashboard automatically.' },
     ];
 
     return (
       <>
         <style>{WAR_ROOM_STYLES}</style>
+        {/* Hidden file input — triggered by dropzone click */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.txt,.docx"
+          style={{ display: 'none' }}
+          onChange={onFileInputChange}
+        />
         <div className="wr-fallback">
           <div className="wr-setup-card">
-            <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-              <div style={{ fontSize: '42px', marginBottom: '14px', filter: 'drop-shadow(0 4px 12px rgba(59,130,246,0.3))' }}>⚖️</div>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ fontSize: '42px', marginBottom: '12px', filter: 'drop-shadow(0 4px 12px rgba(59,130,246,0.3))' }}>⚖️</div>
               <h2 style={{ fontSize: '21px', fontWeight: '700', color: 'white', margin: '0 0 8px' }}>Virtual Courtroom — Ready</h2>
-              <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
-                No simulation is active. Follow the steps below to generate a full litigation strategy.
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
+                Upload a document directly or trigger via the Universal Agent.
               </p>
             </div>
-            <div style={{ marginBottom: '24px' }}>
+
+            {/* ── DROPZONE ── */}
+            <div
+              className={`wr-dropzone${isDragOver ? ' drag-over' : ''}${uploadState === 'uploading' ? ' wr-dropzone-uploading' : ''}`}
+              onClick={onDropzoneClick}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+            >
+              {uploadState === 'uploading' ? (
+                <>
+                  <div className="wr-upload-spinner" />
+                  <div className="wr-dropzone-title">Uploading & indexing document…</div>
+                  <div className="wr-dropzone-hint">Pipeline will start automatically once processing completes</div>
+                </>
+              ) : (
+                <>
+                  <span className="wr-dropzone-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(59,130,246,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="17 8 12 3 7 8"/>
+                      <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                  </span>
+                  <div className="wr-dropzone-title">Drop your case document here</div>
+                  <div className="wr-dropzone-hint">PDF, TXT, or DOCX · Click to browse · Triggers simulation instantly</div>
+                </>
+              )}
+            </div>
+            {uploadState === 'error' && (
+              <div className="wr-upload-error">{uploadError}</div>
+            )}
+
+            {/* ── OR DIVIDER ── */}
+            <div className="wr-or-divider">or use the Universal Agent</div>
+
+            {/* ── STEP LIST ── */}
+            <div style={{ marginBottom: '22px' }}>
               {steps.map(s => (
                 <div key={s.num} className="wr-step-row">
                   <span className="wr-step-num">{s.num}</span>
@@ -946,6 +1100,7 @@ export default function WarRoomView() {
                 </div>
               ))}
             </div>
+
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <button
                 className="btn-accent"
@@ -1002,7 +1157,19 @@ export default function WarRoomView() {
               <span className="wr-badge-dot" />
               Pipeline Complete
             </span>
-            <button className="wr-new-sim-btn" onClick={() => { setSimulationData(null); navigate('/war-room', { replace: true }); }}>
+            <button className="wr-new-sim-btn" onClick={() => {
+              sessionStorage.removeItem('wr_active_session');
+              clearStageTimers();
+              setSimulationData(null);
+              setIsSimulating(false);
+              setSimError(null);
+              setRevealedSections(new Set());
+              setChatMessages([]);
+              setSavedSession(false);
+              setUploadState('idle');
+              setUploadError('');
+              navigate('/war-room', { replace: true });
+            }}>
               New Simulation
             </button>
           </div>
