@@ -297,7 +297,7 @@ const WAR_ROOM_STYLES = `
     max-height: 0; overflow: hidden;
     transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1);
   }
-  .wr-rebuttal-panel.open { max-height: 500px; }
+  .wr-rebuttal-panel.open { max-height: 600px; }
   .wr-rebuttal-inner {
     padding: 0 18px 16px;
     border-top: 1px solid var(--border-subtle, #2C3241);
@@ -312,6 +312,22 @@ const WAR_ROOM_STYLES = `
     border-left: 2px solid #10B981;
     padding: 10px 14px; border-radius: 0 6px 6px 0;
   }
+  .wr-use-rebuttal-btn {
+    margin-top: 12px; display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border-radius: 8px; cursor: pointer;
+    font-size: 12px; font-weight: 700; font-family: var(--font-sans);
+    letter-spacing: 0.3px;
+    border: 1px solid rgba(16,185,129,0.4);
+    background: rgba(16,185,129,0.08); color: #6EE7B7;
+    transition: all 0.18s ease;
+  }
+  .wr-use-rebuttal-btn:hover {
+    background: rgba(16,185,129,0.18);
+    border-color: #10B981;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(16,185,129,0.15);
+  }
+  .wr-use-rebuttal-btn:active { transform: translateY(0); }
 
   /* ── SECTION V — CHAT ──────────────────────────────────────────── */
   .wr-chat-outer { border: 1px solid var(--border-subtle, #2C3241); border-radius: 12px; overflow: hidden; }
@@ -449,7 +465,7 @@ const WAR_ROOM_STYLES = `
 
 // ── Sub-component: ThreatCard ────────────────────────────────────────────────
 
-function ThreatCard({ threat, index, expanded, onToggle }) {
+function ThreatCard({ threat, index, expanded, onToggle, onUseRebuttal }) {
   return (
     <div className="wr-threat-card">
       <div className="wr-threat-trigger" onClick={onToggle}>
@@ -466,6 +482,16 @@ function ThreatCard({ threat, index, expanded, onToggle }) {
           <div className="wr-rebuttal-inner">
             <div className="wr-rebuttal-label">Your Rebuttal</div>
             <div className="wr-rebuttal-body">{renderParagraphs(threat.suggested_rebuttal)}</div>
+            <button
+              className="wr-use-rebuttal-btn"
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onUseRebuttal?.(threat.suggested_rebuttal); }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+              Use this Rebuttal
+            </button>
           </div>
         )}
       </div>
@@ -504,6 +530,7 @@ export default function WarRoomView() {
   const [savedSession, setSavedSession] = useState(false);
 
   const chatEndRef = useRef(null);
+  const chatSectionRef = useRef(null);
   const stageTimers = useRef([]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -609,14 +636,12 @@ export default function WarRoomView() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  // ── Section V: chat submit ────────────────────────────────────────────────
+  // ── Shared chat submitter (used by manual input AND "Use this Rebuttal") ──
 
-  const handleChatSubmit = async (e) => {
-    e?.preventDefault();
-    if (!chatInput.trim() || chatLoading) return;
+  const submitToChat = async (text) => {
+    if (!text.trim() || chatLoading) return;
 
-    const query = chatInput.trim();
-    setChatInput('');
+    const query = text.trim();
     setChatMessages(prev => [...prev, { role: 'user', text: query }]);
     setChatLoading(true);
 
@@ -644,6 +669,24 @@ export default function WarRoomView() {
       setChatMessages(prev => [...prev, { role: 'bot', text: 'Connection error. Please retry.' }]);
     }
     setChatLoading(false);
+  };
+
+  // ── Section V: manual chat submit ────────────────────────────────────────
+
+  const handleChatSubmit = async (e) => {
+    e?.preventDefault();
+    if (!chatInput.trim() || chatLoading) return;
+    const query = chatInput.trim();
+    setChatInput('');
+    await submitToChat(query);
+  };
+
+  // ── Section IV → V: fire rebuttal directly into the chat loop ────────────
+
+  const handleUseRebuttal = (rebuttalText) => {
+    if (!rebuttalText || chatLoading) return;
+    chatSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    submitToChat(rebuttalText);
   };
 
   // ── Save full session to vault ────────────────────────────────────────────
@@ -960,6 +1003,7 @@ export default function WarRoomView() {
                         index={i}
                         expanded={expandedThreats.has(i)}
                         onToggle={() => toggleThreat(i)}
+                        onUseRebuttal={handleUseRebuttal}
                       />
                     ))}
                   </div>
@@ -973,7 +1017,7 @@ export default function WarRoomView() {
           </div>
 
           {/* ───────── SECTION V — Continuous Simulation Chat ───────── */}
-          <div className={`wr-section${sectionRevealed(5) ? ' wr-revealed' : ''}`}>
+          <div ref={chatSectionRef} className={`wr-section${sectionRevealed(5) ? ' wr-revealed' : ''}`}>
             <div className="wr-card">
               <div className="wr-card-head">
                 <span className="wr-roman">V</span>

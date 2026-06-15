@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import VaultView from './VaultView';
 
 const WS_CSS = `
@@ -231,7 +231,31 @@ const EMPTY_STATES = {
 };
 
 export default function CaseWorkspace() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
   const [activeTab, setActiveTab] = useState('documents');
+  const [caseInfo, setCaseInfo] = useState(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+    fetch(`${API_BASE}/api/vault/documents`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const docs = data?.documents || [];
+        if (docs.length > 0) {
+          const latest = docs[0];
+          setCaseInfo({
+            title: latest.title || 'Case Vault',
+            docType: latest.doc_type || 'Document',
+            count: docs.length,
+          });
+        } else {
+          setCaseInfo({ title: 'Case Vault', docType: 'No documents yet', count: 0 });
+        }
+      })
+      .catch(() => setCaseInfo({ title: 'Case Vault', docType: 'Vault Overview', count: 0 }));
+  }, []);
 
   return (
     <>
@@ -241,9 +265,11 @@ export default function CaseWorkspace() {
         {/* ── CASE HEADER ── */}
         <div className="cw-header">
           <div className="cw-header-left">
-            <h1 className="cw-case-title">State vs. Yashraj</h1>
+            <h1 className="cw-case-title">
+              {caseInfo ? caseInfo.title : '—'}
+            </h1>
             <p className="cw-case-subtitle">
-              Yashraj stole a statue from the museum and was caught
+              {caseInfo ? caseInfo.docType : 'Loading case data…'}
             </p>
           </div>
           <div className="cw-badges">
@@ -251,7 +277,11 @@ export default function CaseWorkspace() {
               <span className="cw-badge-dot" />
               Active
             </span>
-            <span className="cw-badge-suit">Suit No. 214/2023</span>
+            <span className="cw-badge-suit">
+              {caseInfo != null
+                ? `${caseInfo.count} Document${caseInfo.count !== 1 ? 's' : ''}`
+                : '—'}
+            </span>
           </div>
         </div>
 
