@@ -341,6 +341,147 @@ def _generate_suggested_actions(client, query: str, response_snippet: str, draft
     ]
 
 
+# ── 9. AGENTIC TOOL ROUTING  ────────────────────────────────────────────
+#
+#  Two tools let the LLM hard-route the user to a specialised workspace
+#  instead of answering in chat.  The check is a single fast-model call
+#  with tool_choice="auto".  It fires only when keyword pre-screening
+#  suggests a routing intent, so normal chat has zero added latency.
+
+_TOOL_DEFS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "trigger_virtual_courtroom",
+            "description": (
+                "Route the user to the Virtual Courtroom / War Room workspace when they "
+                "want to simulate a courtroom trial, practice litigation arguments, run a "
+                "war-room session, or stress-test a case strategy."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "document_reference": {
+                        "type": "string",
+                        "description": "Brief description of the case or document being simulated.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "trigger_contract_analyzer",
+            "description": (
+                "Route the user to the Contract Analyzer when they upload a document and "
+                "ask to analyze it for risks, extract clauses, check compliance, perform "
+                "a due-diligence review, or scan for red-flag provisions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "document_reference": {
+                        "type": "string",
+                        "description": "Name or description of the uploaded document.",
+                    },
+                    "file_content": {
+                        "type": "string",
+                        "description": "First 200 characters of the file content if available.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+]
+
+_TOOL_DESTINATION = {
+    "trigger_virtual_courtroom": "/war-room",
+    "trigger_contract_analyzer": "/analyzer",
+}
+
+# Keywords that justify spending one extra LLM call on the tool-routing check.
+_ROUTING_SIMULATION_WORDS = (
+    'simulate', 'simulation', 'courtroom', 'war room', 'war-room',
+    'litigation practice', 'argue the case', 'moot',
+)
+_ROUTING_ANALYSIS_WORDS = (
+    'analyze contract', 'analyse contract', 'contract analysis', 'contract review',
+    'risk analysis', 'risk scan', 'clause risk', 'compliance check',
+    'due diligence', 'red flag', 'flag clause', 'analyze this', 'analyse this',
+    'review this document', 'scan this',
+)
+
+
+def _needs_tool_routing_check(query: str, has_file: bool) -> bool:
+    """Fast keyword pre-screen before paying for the tool-call LLM round-trip."""
+    ql = query.lower()
+    if any(kw in ql for kw in _ROUTING_SIMULATION_WORDS):
+        return True
+    if has_file and any(kw in ql for kw in _ROUTING_ANALYSIS_WORDS):
+        return True
+    return False
+
+
+def detect_tool_action(query: str) -> dict | None:
+    """
+    Calls llama-3.1-8b-instant with tool definitions.
+    Returns a routing payload dict if the LLM fires a tool call, else None.
+    This function is called from ai_routes.py BEFORE the SSE stream is opened,
+    so it can return a plain JSON response (Content-Type: application/json)
+    rather than an SSE stream, enabling the frontend dual-mode handler.
+    """
+    client = get_groq_client()
+    if not client:
+        return None
+    try:
+        resp = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": query[:2000]}],
+            tools=_TOOL_DEFS,
+            tool_choice="auto",
+            temperature=0.0,
+            max_tokens=120,
+        )
+        msg = resp.choices[0].message
+        if not msg.tool_calls:
+            return None
+        call        = msg.tool_calls[0]
+        fn_name     = call.function.name
+        destination = _TOOL_DESTINATION.get(fn_name)
+        if not destination:
+            return None
+        try:
+            args = json.loads(call.function.arguments or '{}')
+        except Exception:
+            args = {}
+
+        # Extract file content from the query string (frontend embeds it as
+        # "[Attached document: name]\n\ncontent\n\n---\n\nUser query: ...").
+        file_content = ""
+        if '\n\n---\n\nUser query:' in query:
+            file_content = query.split('\n\n---\n\nUser query:')[0]
+            # Strip the "[Attached document: ...]\n\n" header line
+            if file_content.startswith('[Attached document:'):
+                file_content = '\n'.join(file_content.split('\n')[2:])
+
+        return {
+            "is_action":   True,
+            "intent":      "ROUTE",
+            "destination": destination,
+            "data": {
+                "tool":               fn_name,
+                "document_reference": args.get("document_reference", ""),
+                "file_content":       file_content[:8000],
+            },
+        }
+    except Exception as e:
+        print(f"[detect_tool_action]: {e}")
+        return None
+
+
 # ── 8. DUAL-ENGINE STREAMING ENDPOINT ──────────────────────────────────
 
 def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id: int = None,

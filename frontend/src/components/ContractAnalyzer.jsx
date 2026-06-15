@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   analyzeContract,
   rewriteContractClause,
@@ -667,6 +667,22 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const editorRef = useRef(null);
   const suggestionsRef = useRef(null);
   const chatStreamRef = useRef(null);
+
+  const location = useLocation();
+
+  // Auto-ingest document piped from Case Vault (or Universal Agent tool-routing)
+  useEffect(() => {
+    const incoming = location.state?.documentData;
+    if (!incoming?.file_content) return;
+    const content = incoming.file_content;
+    setRawText(content);
+    (async () => {
+      setIsAnalyzing(true);
+      const res = await analyzeContract(null, content, scanStrategy);
+      setIsAnalyzing(false);
+      if (!res.error) loadAnalysisResults(res);
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-Collapse Sidebar on Mount (Focus Mode)
   useEffect(() => {

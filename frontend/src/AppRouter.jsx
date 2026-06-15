@@ -12,6 +12,7 @@ import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
 import CalendarView from './components/CalendarView';
 import VaultView from './components/VaultView';
+import CaseWorkspace from './components/CaseWorkspace';
 import WarRoomView from './components/WarRoomView';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
@@ -635,7 +636,7 @@ function AppRouterContent() {
         <Route path="/conflict-engine"        element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ConflictEngine /></Layout>} />
         <Route path="/case/:caseId"           element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />
         <Route path="/calendar"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CalendarView /></Layout>} />
-        <Route path="/vault"                  element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><VaultView /></Layout>} />
+        <Route path="/vault"                  element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
         <Route path="/war-room"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
         <Route path="/analyzer"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />

@@ -313,7 +313,14 @@ export default function VaultView() {
   };
 
   const handleAnalyzeDocument = (doc) => {
-    navigate('/analyzer', { state: { contractData: doc } });
+    navigate('/analyzer', {
+      state: {
+        documentData: {
+          file_content: doc.content || doc.text || '',
+          document_reference: doc.title || doc.filename || 'Vault Document',
+        },
+      },
+    });
   };
 
   // ── CNR fetch ───────────────────────────────────────────────────────────────

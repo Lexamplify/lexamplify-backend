@@ -145,6 +145,20 @@ def rag_chat():
         elif case_id is not None:
             scope = "current_case"
 
+        # ── AGENTIC TOOL-ROUTING PRE-FLIGHT ──────────────────────────
+        # Runs a fast LLM tool-call check BEFORE opening the SSE stream.
+        # If the LLM fires a tool (virtual courtroom / contract analyzer),
+        # we return a plain JSON response so the frontend can hard-navigate
+        # without rendering any chat bubble text.
+        # JWT validation above already ran — identity is verified.
+        from utils.rag_pipeline import _needs_tool_routing_check, detect_tool_action
+        has_file = query.startswith('[Attached document:')
+        if _needs_tool_routing_check(query, has_file):
+            action_payload = detect_tool_action(query)
+            if action_payload:
+                return jsonify(action_payload), 200
+        # ─────────────────────────────────────────────────────────────
+
         from utils.rag_pipeline import stream_rag_query
         from flask import Response, stream_with_context
         

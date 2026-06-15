@@ -696,6 +696,32 @@ export default function CommandPalette() {
         return;
       }
 
+      // ── Dual-mode: JSON action (tool-call route) vs SSE text stream ──
+      // The backend returns application/json when the LLM fires a tool call
+      // (trigger_virtual_courtroom / trigger_contract_analyzer).
+      // In that case we navigate immediately — no chat bubble is rendered.
+      // All other responses are text/event-stream and fall through untouched.
+      const contentType = res.headers.get('Content-Type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          const actionPayload = await res.json();
+          if (actionPayload.is_action && actionPayload.intent === 'ROUTE') {
+            setLoading(false);
+            setNavRoute(actionPayload.destination);
+            setTimeout(() => {
+              navigate(actionPayload.destination, {
+                state: { documentData: actionPayload.data },
+              });
+              setNavRoute(null);
+              setIsOpen(false);
+            }, 900);
+            return;
+          }
+        } catch (_) { /* non-action JSON — fall through */ }
+      }
+      // ─────────────────────────────────────────────────────────────────
+
+      // SSE stream — push placeholder bubble then consume token events
       const reader = res.body.getReader();
       const dec    = new TextDecoder();
       let buf = '', accText = '';
