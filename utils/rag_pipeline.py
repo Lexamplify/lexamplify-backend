@@ -356,14 +356,21 @@ _TOOL_DEFS = [
             "description": (
                 "Route the user to the Virtual Courtroom / War Room workspace when they "
                 "want to simulate a courtroom trial, practice litigation arguments, run a "
-                "war-room session, or stress-test a case strategy."
+                "war-room session, or stress-test a case strategy. "
+                "IMPORTANT: DO NOT simulate the courtroom, draft arguments, or analyze "
+                "the case yourself. Your ONLY job is to identify the routing intent and "
+                "populate document_reference with the raw document title or topic. "
+                "The dedicated simulation engine will handle all legal analysis."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "document_reference": {
                         "type": "string",
-                        "description": "Brief description of the case or document being simulated.",
+                        "description": (
+                            "Title or short topic label of the case/document being routed — "
+                            "do NOT summarize, paraphrase, or analyze the content."
+                        ),
                     }
                 },
                 "required": [],

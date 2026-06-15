@@ -579,17 +579,17 @@ export default function WarRoomView() {
   useEffect(() => {
     const raf = requestAnimationFrame(() => setIsMounted(true));
 
-    const existing = location.state?.simulationData;
-    const docData  = location.state?.documentData;   // tool-routing payload
+    const docData  = location.state?.documentData;   // tool-routing payload — highest priority
     const pending  = location.state?.pendingSimulation;
+    const existing = location.state?.simulationData; // pre-computed fallback only
 
-    if (existing) {
-      setSimulationData(existing);
-      progressiveReveal(existing);
-    } else if (docData?.file_content) {
+    if (docData?.file_content) {
       runSimulation(docData.file_content, 'Appellant');
     } else if (pending?.documentContext) {
       runSimulation(pending.documentContext, pending.clientSide || 'Appellant');
+    } else if (existing) {
+      setSimulationData(existing);
+      progressiveReveal(existing);
     }
 
     return () => { cancelAnimationFrame(raf); clearStageTimers(); };
