@@ -5,6 +5,8 @@ Cross-Document Conflict Engine — upload up to 3 docs, find contradictions with
 import os
 import json
 import re
+import sqlite3
+from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, current_app
 from litellm import completion
 
@@ -130,8 +132,15 @@ If no conflicts are found, return an empty conflicts array with a summary explai
 def check_conflict_entity():
     data = request.get_json() or {}
     entity_name = data.get('entity_name', '').strip()
+    opposing_party = (data.get('opposing_party') or '').strip()
+    matter_type = (data.get('matter_type') or 'Civil').strip()
+
     if not entity_name:
         return jsonify({'error': 'Please provide an entity name to search.'}), 400
+
+    # Severity weighting: Criminal/Matrimonial/Writ raise conflict_status to High Conflict
+    high_risk_matters = {'criminal', 'matrimonial', 'writ'}
+    matter_severity_boost = matter_type.lower() in high_risk_matters
     
     # Search inside the case vault
     vault_path = os.path.join(os.getcwd(), "case_vault.json")
@@ -170,13 +179,14 @@ def check_conflict_entity():
     ]
 
     entity_lower = entity_name.lower()
-    
+    opposing_lower = opposing_party.lower() if opposing_party else ''
+
     # 1. Search dummy case lists
     for case in dummy_cases:
         case_match = False
         match_type = ""
         matched_text = ""
-        
+
         if entity_lower in case["client"].lower():
             case_match = True
             match_type = "Primary Client Match"
@@ -189,8 +199,16 @@ def check_conflict_entity():
             case_match = True
             match_type = "Case Title Match"
             matched_text = f"Case Title: {case['title']}"
-            
+        # Also check if opposing party appears as the current client (cross-side conflict)
+        elif opposing_lower and opposing_lower in case["client"].lower():
+            case_match = True
+            match_type = "Adverse Party Match"
+            matched_text = f"Opposing party '{opposing_party}' is our existing client: {case['client']}"
+
         if case_match:
+            # Matter severity boost: high-risk matters escalate Potential → High Conflict
+            base_status = "High Conflict" if match_type in ("Primary Client Match", "Adverse Party Match") else "Potential"
+            boosted_status = "High Conflict" if (matter_severity_boost and base_status == "Potential") else base_status
             results.append({
                 "case_id": case["id"],
                 "case_title": case["title"],
@@ -199,16 +217,17 @@ def check_conflict_entity():
                 "matched_doc": "Case Core Records",
                 "match_type": match_type,
                 "excerpt": matched_text,
-                "conflict_status": "High Conflict"
+                "conflict_status": boosted_status,
             })
-            continue # skip deep doc matching if metadata matches
-            
+            continue  # skip deep doc matching if metadata matched
+
         # Check document contents
         for doc in case["docs"]:
             if entity_lower in doc["text"].lower():
                 start_idx = max(0, doc["text"].lower().find(entity_lower) - 50)
                 end_idx = min(len(doc["text"]), start_idx + len(entity_name) + 100)
                 excerpt = doc["text"][start_idx:end_idx].strip().replace('\n', ' ')
+                status = "High Conflict" if matter_severity_boost else "Potential"
                 results.append({
                     "case_id": case["id"],
                     "case_title": case["title"],
@@ -217,23 +236,23 @@ def check_conflict_entity():
                     "matched_doc": doc["title"],
                     "match_type": "Document Ingestion Mention",
                     "excerpt": f"... {excerpt} ...",
-                    "conflict_status": "Potential"
+                    "conflict_status": status,
                 })
                 break
-                
+
     # 2. Search inside case_vault.json loaded files
     for doc_id, doc_data in cases.items():
         doc_title = doc_data.get('title', 'Ingested Document')
         doc_html = doc_data.get('html_content', '')
         doc_text = re.sub(r'<[^>]*>', '', doc_html)
         doc_summary = doc_data.get('summary', '')
-        
+
         if entity_lower in doc_text.lower() or entity_lower in doc_summary.lower():
             matched_in = doc_summary if entity_lower in doc_summary.lower() else doc_text
             start_idx = max(0, matched_in.lower().find(entity_lower) - 50)
             end_idx = min(len(matched_in), start_idx + len(entity_name) + 100)
             excerpt = matched_in[start_idx:end_idx].strip().replace('\n', ' ')
-            
+
             results.append({
                 "case_id": doc_id,
                 "case_title": f"Vault Doc: {doc_title}",
@@ -242,19 +261,75 @@ def check_conflict_entity():
                 "matched_doc": doc_title,
                 "match_type": "Ingested Clause Match",
                 "excerpt": f"... {excerpt} ...",
-                "conflict_status": "Potential"
+                "conflict_status": "Potential",
             })
-            
-    # Calculate overall status classification
+
+    # Overall status classification
     overall_status = "Clear"
     if any(r["conflict_status"] == "High Conflict" for r in results):
         overall_status = "High Conflict"
     elif any(r["conflict_status"] == "Potential" for r in results):
         overall_status = "Potential"
-        
+
     return jsonify({
         "entity_name": entity_name,
+        "opposing_party": opposing_party,
+        "matter_type": matter_type,
         "status": overall_status,
         "results": results,
-        "summary": f"Conflict check completed for '{entity_name}'. Overall status is {overall_status} with {len(results)} potential risk nodes identified."
+        "summary": (
+            f"Conflict check completed for '{entity_name}'"
+            + (f" vs '{opposing_party}'" if opposing_party else "")
+            + f" [{matter_type}]. Status: {overall_status}. {len(results)} risk nodes identified."
+        ),
     })
+
+
+@conflict_bp.route('/api/conflict/clearance-memo', methods=['POST'])
+def save_clearance_memo():
+    """Store a clearance memo audit record in lex_assistant.db."""
+    data = request.get_json(force=True, silent=True) or {}
+    ref_id = data.get('ref_id', '').strip()
+    target_entity = data.get('target_entity', '').strip()
+    opposing_party = (data.get('opposing_party') or '').strip()
+    matter_type = (data.get('matter_type') or 'Civil').strip()
+    timestamp = data.get('timestamp') or datetime.utcnow().isoformat()
+    memo_text = data.get('memo_text', '')
+
+    if not target_entity:
+        return jsonify({'error': 'target_entity required'}), 400
+
+    try:
+        db_path = os.path.join(os.getcwd(), 'lex_assistant.db')
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        # Create table if not exists (idempotent)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS conflict_clearance_memos (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                ref_id          TEXT    NOT NULL,
+                target_entity   TEXT    NOT NULL,
+                opposing_party  TEXT,
+                matter_type     TEXT,
+                generated_at    TEXT,
+                memo_text       TEXT
+            )
+        """)
+        cur.execute(
+            """
+            INSERT INTO conflict_clearance_memos
+                (ref_id, target_entity, opposing_party, matter_type, generated_at, memo_text)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (ref_id, target_entity, opposing_party, matter_type, timestamp, memo_text),
+        )
+        conn.commit()
+        inserted_id = cur.lastrowid
+        conn.close()
+
+        return jsonify({'success': True, 'id': inserted_id, 'ref_id': ref_id}), 201
+
+    except Exception as e:
+        print(f"[clearance_memo] DB error: {e}")
+        return jsonify({'error': str(e)}), 500

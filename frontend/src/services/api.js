@@ -567,15 +567,19 @@ export const exportContract = async (documentText, draftText, format = 'pdf') =>
 };
 
 /**
- * Runs a conflict check on a specified entity name against client databases and case documents.
- * @param {string} entityName 
+ * Runs a conflict check against client databases and case documents.
+ * @param {{ targetEntity: string, opposingParty?: string, matterType?: string }} params
  */
-export const runConflictCheck = async (entityName) => {
+export const runConflictCheck = async ({ targetEntity = '', opposingParty = '', matterType = 'Civil' } = {}) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/conflict/check`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ entity_name: entityName }),
+      body: JSON.stringify({
+        entity_name: targetEntity,
+        opposing_party: opposingParty,
+        matter_type: matterType,
+      }),
     });
     return await handleResponse(response);
   } catch (error) {
@@ -584,6 +588,24 @@ export const runConflictCheck = async (entityName) => {
       error: true,
       message: error.message || 'Conflict check failed. Connection timed out or server is offline.'
     };
+  }
+};
+
+/**
+ * Stores a clearance memo audit record in the backend.
+ * @param {object} memoData
+ */
+export const saveClearanceMemo = async (memoData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/conflict/clearance-memo`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(memoData),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] saveClearanceMemo error:', error);
+    return { error: true };
   }
 };
 

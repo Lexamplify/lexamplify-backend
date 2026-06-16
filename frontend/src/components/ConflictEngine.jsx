@@ -1,5 +1,48 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { runConflictCheck, analyzeConflicts } from '../services/api';
+import React, { useState, useRef } from 'react';
+import { runConflictCheck, analyzeConflicts, saveClearanceMemo } from '../services/api';
+
+// Severity weighting by matter type — drives the intake risk badge
+const MATTER_RISK = {
+  Criminal:    { level: 'High Risk',    cls: 'high' },
+  Matrimonial: { level: 'High Risk',    cls: 'high' },
+  Civil:       { level: 'Medium Risk',  cls: 'potential' },
+  Commercial:  { level: 'Medium Risk',  cls: 'potential' },
+  Corporate:   { level: 'Lower Risk',   cls: 'clear' },
+  IP:          { level: 'Lower Risk',   cls: 'clear' },
+  Arbitration: { level: 'Medium Risk',  cls: 'potential' },
+  Writ:        { level: 'High Risk',    cls: 'high' },
+};
+
+// Derive a visual breadcrumb chain from a single result row
+function buildBreadcrumb(result, entityName) {
+  const { match_type, case_title, client, matched_doc } = result;
+  switch (match_type) {
+    case 'Primary Client Match':
+      return [`Target: ${entityName}`, `Our Client: ${client}`, case_title, '🛑 Direct Conflict'];
+    case 'Adverse Party Match':
+      return [`Target: ${entityName}`, `Adverse to: ${client}`, case_title, '🛑 Direct Conflict'];
+    case 'Case Title Match':
+      return [`Target: ${entityName}`, 'In Case Title', case_title, '⚠️ Potential'];
+    case 'Document Ingestion Mention':
+      return [`Target: ${entityName}`, `Vault Doc: ${matched_doc || 'Unknown'}`, case_title, '⚠️ Potential'];
+    case 'Ingested Clause Match':
+      return [`Target: ${entityName}`, 'Clause Reference', matched_doc || case_title, 'ℹ️ Monitor'];
+    default:
+      return [`Target: ${entityName}`, match_type, case_title];
+  }
+}
+
+// Wrap matching entity name in <mark> tags for clause highlighting
+function highlightTerm(text, term) {
+  if (!text || !term) return text || '';
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  return parts.map((part, i) =>
+    part.toLowerCase() === term.toLowerCase()
+      ? <mark key={i} className="clause-mark">{part}</mark>
+      : part
+  );
+}
 
 const styles = `
   .conflict-container {
@@ -36,21 +79,56 @@ const styles = `
     font-weight: 500;
     cursor: pointer;
     border-radius: 6px;
-    transition: all 0.3s ease-in-out;
+    transition: all 0.2s ease-in-out;
   }
 
   .mode-tab-btn:hover {
-    color: white;
-    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    background-color: var(--hover-bg);
   }
 
   .mode-tab-btn.active {
     color: var(--accent-primary);
-    background-color: rgba(59, 130, 246, 0.08);
+    background-color: var(--accent-muted);
     font-weight: 600;
   }
 
-  /* Control Panel */
+  /* ── Triage intake form ── */
+  .triage-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  @media (max-width: 640px) {
+    .triage-grid { grid-template-columns: 1fr; }
+  }
+
+  .triage-field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dark-muted);
+    margin-bottom: 6px;
+  }
+
+  .matter-risk-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* ── Control Panel ── */
   .control-panel {
     background-color: var(--bg-dark-panel);
     border: 1px solid var(--border-dark-subtle);
@@ -60,10 +138,10 @@ const styles = `
     flex-direction: column;
     gap: 16px;
     margin-bottom: 24px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-card);
   }
 
-  /* Status Badges */
+  /* ── Status Badges ── */
   .badge-status {
     display: inline-flex;
     align-items: center;
@@ -78,30 +156,30 @@ const styles = `
   }
 
   .badge-status.clear {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10B981;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background-color: var(--badge-clear-bg);
+    color: var(--badge-clear-color);
+    border: 1px solid var(--badge-clear-border);
   }
 
   .badge-status.potential {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #F59E0B;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background-color: var(--badge-warn-bg);
+    color: var(--badge-warn-color);
+    border: 1px solid var(--badge-warn-border);
   }
 
   .badge-status.high {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #EF4444;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background-color: var(--badge-danger-bg);
+    color: var(--badge-danger-color);
+    border: 1px solid var(--badge-danger-border);
   }
 
-  /* Grid and Data Table */
+  /* ── Grid and Data Table ── */
   .data-grid-container {
     background-color: var(--bg-dark-panel);
     border: 1px solid var(--border-dark-subtle);
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-card);
   }
 
   .premium-table {
@@ -113,7 +191,7 @@ const styles = `
 
   .premium-table th {
     background-color: var(--bg-dark-sidebar);
-    color: var(--text-dark-muted);
+    color: var(--text-badge);
     font-weight: 600;
     padding: 14px 20px;
     border-bottom: 1px solid var(--border-dark-subtle);
@@ -129,14 +207,62 @@ const styles = `
   }
 
   .premium-table tbody tr {
-    transition: background-color 0.2s ease-in-out;
+    transition: background-color 0.15s ease-in-out;
   }
 
   .premium-table tbody tr:hover {
-    background-color: rgba(255, 255, 255, 0.02);
+    background-color: var(--hover-bg);
   }
 
-  /* Pulsing Skeleton Loader */
+  /* ── Relational Breadcrumbs ── */
+  .breadcrumb-chain {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 10px 14px;
+    background-color: var(--stat-bg);
+    border: 1px solid var(--stat-border);
+    border-radius: 8px;
+  }
+
+  .crumb {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-dark-muted);
+    padding: 3px 8px;
+    border-radius: 4px;
+    background-color: var(--hover-bg);
+    white-space: nowrap;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .crumb-terminal {
+    color: var(--badge-danger-color);
+    background-color: var(--badge-danger-bg);
+  }
+
+  .crumb-terminal.warn {
+    color: var(--badge-warn-color);
+    background-color: var(--badge-warn-bg);
+  }
+
+  .crumb-terminal.info {
+    color: var(--badge-clear-color);
+    background-color: var(--badge-clear-bg);
+  }
+
+  .crumb-arrow {
+    font-size: 12px;
+    color: var(--text-dark-muted);
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+
+  /* ── Pulsing Skeleton Loader ── */
   .skeleton-pulse-wrapper {
     display: flex;
     flex-direction: column;
@@ -148,7 +274,7 @@ const styles = `
   }
 
   .skeleton-bar {
-    background: linear-gradient(90deg, #1f2937 25%, #374151 50%, #1f2937 75%);
+    background: linear-gradient(90deg, var(--skeleton-from) 25%, var(--skeleton-to) 50%, var(--skeleton-from) 75%);
     background-size: 200% 100%;
     animation: shimmer-animation 1.5s infinite;
     border-radius: 6px;
@@ -157,17 +283,17 @@ const styles = `
   }
 
   @keyframes shimmer-animation {
-    0% { background-position: 200% 0; }
+    0%   { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
 
-  /* Error Banner */
+  /* ── Error Banner ── */
   .error-banner {
-    background-color: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background-color: var(--badge-danger-bg);
+    border: 1px solid var(--badge-danger-border);
     border-radius: 8px;
     padding: 16px 20px;
-    color: #F87171;
+    color: var(--badge-danger-color);
     font-size: 14px;
     margin-bottom: 20px;
     display: flex;
@@ -175,28 +301,50 @@ const styles = `
     gap: 10px;
   }
 
-  /* Custom inputs matching dark theme */
-  .dark-input {
-    background-color: #1f2937 !important;
-    border: 1px solid #4b5563 !important;
-    color: #ffffff !important;
+  /* ── Field inputs (token-based, replaces .dark-input) ── */
+  .field-input {
+    background-color: var(--input-bg) !important;
+    border: 1px solid var(--input-border) !important;
+    color: var(--input-color) !important;
     border-radius: 0.5rem !important;
     padding: 0.75rem !important;
     outline: none;
-    transition: all 0.3s ease-in-out;
+    width: 100%;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    transition: all 0.2s ease-in-out;
   }
 
-  .dark-input:focus {
-    border-color: #9ca3af !important;
-    box-shadow: 0 0 0 2px #9ca3af !important;
+  .field-input:focus {
+    border-color: var(--accent-primary) !important;
+    box-shadow: 0 0 0 3px var(--input-focus-shadow, rgba(59,130,246,0.15)) !important;
   }
 
-  .dark-input:disabled {
+  .field-input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  /* Upload Slots */
+  .field-select {
+    background-color: var(--input-bg) !important;
+    border: 1px solid var(--input-border) !important;
+    color: var(--input-color) !important;
+    border-radius: 0.5rem !important;
+    padding: 0.75rem !important;
+    outline: none;
+    width: 100%;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239CA3AF' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+
+  /* ── Upload Slots ── */
   .upload-slots {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -212,12 +360,13 @@ const styles = `
     display: flex;
     flex-direction: column;
     gap: 14px;
-    transition: all 0.3s ease-in-out;
+    transition: all 0.2s ease-in-out;
+    box-shadow: var(--shadow-card);
   }
 
   .upload-slot:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   }
 
   .drop-zone {
@@ -238,17 +387,17 @@ const styles = `
 
   .drop-zone:hover, .drop-zone.dragover {
     border-color: var(--accent-primary);
-    background-color: rgba(59, 130, 246, 0.03);
+    background-color: var(--accent-muted);
   }
 
   .drop-zone.has-file {
     border-color: var(--accent-success);
-    background-color: rgba(16, 185, 129, 0.03);
+    background-color: var(--badge-clear-bg);
   }
 
   .dz-filename {
     font-weight: 600;
-    color: #10B981;
+    color: var(--accent-success);
     word-break: break-all;
   }
 
@@ -263,11 +412,9 @@ const styles = `
     transition: opacity 0.2s;
   }
 
-  .slot-remove-btn:hover {
-    opacity: 0.8;
-  }
+  .slot-remove-btn:hover { opacity: 0.8; }
 
-  /* Cross Document results styles */
+  /* ── Cross-Document results ── */
   .cross-results-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -276,9 +423,7 @@ const styles = `
   }
 
   @media (min-width: 1024px) {
-    .cross-results-grid {
-      grid-template-columns: 0.35fr 0.65fr;
-    }
+    .cross-results-grid { grid-template-columns: 0.35fr 0.65fr; }
   }
 
   .summary-card {
@@ -288,6 +433,7 @@ const styles = `
     padding: 24px;
     position: sticky;
     top: 24px;
+    box-shadow: var(--shadow-card);
   }
 
   .conflict-detail-card {
@@ -297,15 +443,13 @@ const styles = `
     margin-bottom: 16px;
     overflow: hidden;
     transition: transform 0.2s ease-in-out;
+    box-shadow: var(--shadow-card);
   }
 
-  .conflict-detail-card:hover {
-    transform: translateY(-2px);
-  }
-
+  .conflict-detail-card:hover  { transform: translateY(-2px); }
   .conflict-detail-card.critical { border-left: 4px solid var(--accent-danger); }
-  .conflict-detail-card.major { border-left: 4px solid var(--accent-warning); }
-  .conflict-detail-card.minor { border-left: 4px solid var(--accent-primary); }
+  .conflict-detail-card.major    { border-left: 4px solid var(--accent-warning); }
+  .conflict-detail-card.minor    { border-left: 4px solid var(--accent-primary); }
 
   .conflict-card-header {
     background-color: var(--bg-dark-sidebar);
@@ -316,6 +460,7 @@ const styles = `
     border-bottom: 1px solid var(--border-dark-subtle);
   }
 
+  /* ── Clause-Level Side-by-Side Excerpts ── */
   .excerpts-container {
     display: grid;
     grid-template-columns: 1fr;
@@ -324,26 +469,75 @@ const styles = `
   }
 
   @media (min-width: 768px) {
-    .excerpts-container {
-      grid-template-columns: 1fr 1fr;
-    }
+    .excerpts-container { grid-template-columns: 1fr 1fr; }
   }
 
   .excerpt-box {
     border-radius: 8px;
     padding: 14px;
+    position: relative;
   }
 
   .excerpt-box.doc-a {
-    background-color: rgba(239, 68, 68, 0.05);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background-color: var(--excerpt-a-bg);
+    border: 1px solid var(--excerpt-a-border);
+    border-left: 3px solid var(--accent-danger);
   }
 
   .excerpt-box.doc-b {
-    background-color: rgba(245, 158, 11, 0.05);
-    border: 1px solid rgba(245, 158, 11, 0.2);
+    background-color: var(--excerpt-b-bg);
+    border: 1px solid var(--excerpt-b-border);
+    border-left: 3px solid var(--accent-warning);
   }
 
+  /* Clause highlighting mark */
+  .clause-mark {
+    background-color: rgba(252, 211, 77, 0.30);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 2px;
+    font-style: normal;
+  }
+
+  /* ── Clearance Memo Panel ── */
+  .clearance-panel {
+    background-color: var(--badge-clear-bg);
+    border: 1px solid var(--badge-clear-border);
+    border-left: 4px solid var(--badge-clear-color);
+    border-radius: 12px;
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: var(--shadow-card);
+  }
+
+  .memo-preview-box {
+    background-color: var(--bg-dark-app);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 8px;
+    padding: 20px 24px;
+    font-family: 'Courier New', monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text-dark-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  @media print {
+    .no-print { display: none !important; }
+    .memo-preview-box {
+      max-height: none;
+      border: none;
+      font-size: 11pt;
+      line-height: 1.6;
+    }
+  }
+
+  /* ── Toast ── */
   .toast {
     position: fixed;
     bottom: 24px;
@@ -355,27 +549,31 @@ const styles = `
     border-radius: 8px;
     font-size: 13.5px;
     font-weight: 600;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
     z-index: 1000;
     opacity: 0;
     transform: translateY(10px);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .toast.show {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  .toast.show { opacity: 1; transform: translateY(0); }
 `;
 
 export default function ConflictEngine() {
-  const [activeMode, setActiveMode] = useState('database'); // 'database' | 'cross-doc'
-  const [entityName, setEntityName] = useState('');
+  const [activeMode, setActiveMode] = useState('database');
+
+  // ── Triage Intake ──
+  const [triageForm, setTriageForm] = useState({ targetEntity: '', opposingParty: '', matterType: 'Civil' });
+  const debounceRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [dbResults, setDbResults] = useState(null);
 
-  // Cross Document State — dynamic, unlimited slots
+  // ── Clearance Memo ──
+  const [memoStatus, setMemoStatus] = useState('idle');
+  const [memoText, setMemoText] = useState('');
+
+  // ── Cross-Doc ──
   const [slots, setSlots] = useState([
     { id: 1, file: null, label: 'Document 1 (e.g. NDA)',           inputRef: React.createRef() },
     { id: 2, file: null, label: 'Document 2 (e.g. MSA)',           inputRef: React.createRef() },
@@ -384,26 +582,96 @@ export default function ConflictEngine() {
   const [crossResults, setCrossResults] = useState(null);
   const [showToast, setShowToast] = useState(false);
 
-  // ── 1. DATABASE SEARCH CONFLICT CHECK ──────────────────────────────
-  const handleDbSearchSubmit = async (e) => {
+  const matterRisk = MATTER_RISK[triageForm.matterType] || { level: 'Medium Risk', cls: 'potential' };
+
+  // ── 1. DATABASE TRIAGE SEARCH ──────────────────────────────────────
+  const handleDbSearchSubmit = (e) => {
     e.preventDefault();
-    if (!entityName.trim() || isLoading) return;
+    if (!triageForm.targetEntity.trim() || isLoading) return;
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setIsLoading(true);
+      setError('');
+      setDbResults(null);
+      setMemoStatus('idle');
+      setMemoText('');
 
-    setIsLoading(true);
-    setError('');
-    setDbResults(null);
+      const res = await runConflictCheck({
+        targetEntity: triageForm.targetEntity.trim(),
+        opposingParty: triageForm.opposingParty.trim(),
+        matterType: triageForm.matterType,
+      });
 
-    const res = await runConflictCheck(entityName.trim());
-    setIsLoading(false);
-
-    if (res.error) {
-      setError(res.message || 'Analysis failed. Please check the backend connection.');
-    } else {
-      setDbResults(res);
-    }
+      setIsLoading(false);
+      if (res.error) {
+        setError(res.message || 'Analysis failed. Please check the backend connection.');
+      } else {
+        setDbResults(res);
+      }
+    }, 300);
   };
 
-  // ── 2. CROSS-DOCUMENT FILE MANAGEMENT (DYNAMIC SLOTS) ──────────────
+  // ── 2. CLEARANCE MEMO ──────────────────────────────────────────────
+  const handleGenerateMemo = async () => {
+    setMemoStatus('generating');
+    const refId = `CLR-${Date.now()}-${triageForm.targetEntity.replace(/\s+/g, '').substring(0, 6).toUpperCase()}`;
+    const now = new Date().toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' });
+
+    const content =
+`CONFLICT CLEARANCE MEMORANDUM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generated:       ${now}
+Reference No.:   ${refId}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TARGET ENTITY:     ${triageForm.targetEntity}
+OPPOSING PARTY:    ${triageForm.opposingParty || 'Not Specified'}
+MATTER TYPE:       ${triageForm.matterType}
+
+CLEARANCE STATUS:  ✅ GRANTED — NO CONFLICT DETECTED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SUMMARY:
+A comprehensive conflict check was conducted for "${triageForm.targetEntity}" across
+the case vault, active client roster, and all ingested document repositories.
+No attorney-client conflict of interest was identified as of the date above.
+
+LEGAL BASIS:
+This clearance is issued pursuant to Rule 33 of the Bar Council of India
+Rules, 1975 (Professional Conduct and Etiquette) and applicable professional
+responsibility obligations governing concurrent and successive representation.
+
+AUDIT TRAIL:
+This memorandum is recorded in the firm's Conflict Intelligence audit log
+for regulatory compliance and malpractice risk management.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GENERATED BY: LexAmplify — Malpractice Shield Module
+`;
+
+    setMemoText(content);
+    setMemoStatus('done');
+
+    // Fire-and-forget audit record to backend
+    saveClearanceMemo({
+      ref_id: refId,
+      target_entity: triageForm.targetEntity,
+      opposing_party: triageForm.opposingParty,
+      matter_type: triageForm.matterType,
+      timestamp: new Date().toISOString(),
+      memo_text: content,
+    }).catch(() => {});
+  };
+
+  const copyMemo = () => {
+    navigator.clipboard.writeText(memoText);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2800);
+  };
+
+  const printMemo = () => window.print();
+
+  // ── 3. CROSS-DOCUMENT FILE MANAGEMENT ─────────────────────────────
   const handleFileChange = (slotId, file) => {
     if (!file) return;
     setSlots(prev => prev.map(s => s.id === slotId ? { ...s, file } : s));
@@ -486,37 +754,40 @@ export default function ConflictEngine() {
     <>
       <style>{styles}</style>
       <div className="conflict-container p-4 md:p-8">
-        
-        {/* Header */}
+
+        {/* ── Header ── */}
         <div className="conflict-header">
           <div>
-            <h1 style={{ fontSize: '24px', margin: 0, fontFamily: 'var(--font-serif)' }}>Cross-Document Conflict Engine</h1>
+            <h1 style={{ fontSize: '24px', margin: '0 0 4px 0', fontFamily: 'var(--font-serif)' }}>
+              Malpractice Shield
+            </h1>
             <span style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>
-              Scan legal databases for client-opponent matching conflicts, or compare annexures with AI.
+              Conflict intelligence engine — database triage and cross-document clause analysis.
             </span>
           </div>
-          <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '4px 12px', background: 'linear-gradient(135deg, var(--gold, #c9a84c), var(--gold2, #e6c97a))', color: 'var(--navy, #0d1b2a)', borderRadius: '20px' }}>
+          <span style={{
+            fontSize: '11px', fontWeight: '700', letterSpacing: '0.06em',
+            textTransform: 'uppercase', padding: '4px 12px',
+            background: 'linear-gradient(135deg, var(--gold, #c9a84c), var(--gold2, #e6c97a))',
+            color: 'var(--navy, #0d1b2a)', borderRadius: '20px',
+          }}>
             Flagship RAG node
           </span>
         </div>
 
-        {/* Tab mode selection */}
+        {/* ── Tab mode ── */}
         <div className="mode-tabs">
-          <button 
-            className={`mode-tab-btn ${activeMode === 'database' ? 'active' : ''}`}
-            onClick={() => { setActiveMode('database'); setError(''); }}
-          >
-            🔍 Database Search
+          <button className={`mode-tab-btn ${activeMode === 'database' ? 'active' : ''}`}
+            onClick={() => { setActiveMode('database'); setError(''); }}>
+            🔍 Triage Search
           </button>
-          <button 
-            className={`mode-tab-btn ${activeMode === 'cross-doc' ? 'active' : ''}`}
-            onClick={() => { setActiveMode('cross-doc'); setError(''); }}
-          >
+          <button className={`mode-tab-btn ${activeMode === 'cross-doc' ? 'active' : ''}`}
+            onClick={() => { setActiveMode('cross-doc'); setError(''); }}>
             📂 Cross-Document Uploader
           </button>
         </div>
 
-        {/* Explicit Error Banner */}
+        {/* ── Error Banner ── */}
         {error && (
           <div className="error-banner">
             <span>⚠️</span>
@@ -524,43 +795,82 @@ export default function ConflictEngine() {
           </div>
         )}
 
-        {/* ── MODE 1: DATABASE CONFLICT SEARCH ───────────────────────────── */}
+        {/* ══ MODE 1: DATABASE TRIAGE SEARCH ════════════════════════════════ */}
         {activeMode === 'database' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
-            {/* Top Search Panel */}
+
             <form onSubmit={handleDbSearchSubmit}>
               <div className="control-panel">
-                <label className="input-label" style={{ margin: 0 }}>Onboard Entity Check (Client, Corporation, or Party Name)</label>
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  <input
-                    type="text"
-                    placeholder="Enter full name of corporation or individual to run audit check..."
-                    className="dark-input"
-                    style={{ flex: 1, minWidth: '260px' }}
-                    value={entityName}
-                    onChange={(e) => setEntityName(e.target.value)}
-                    disabled={isLoading}
-                    required
-                  />
-                  <button 
-                    type="submit" 
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-dark-primary)' }}>
+                    Conflict Triage Intake
+                  </span>
+                  <span className={`badge-status ${matterRisk.cls} matter-risk-chip`}>
+                    {matterRisk.level}
+                  </span>
+                </div>
+
+                {/* Multi-field triage grid */}
+                <div className="triage-grid">
+                  <div>
+                    <label className="triage-field-label">Target Entity *</label>
+                    <input
+                      type="text"
+                      className="field-input"
+                      placeholder="Corporation or individual name..."
+                      value={triageForm.targetEntity}
+                      onChange={(e) => setTriageForm(f => ({ ...f, targetEntity: e.target.value }))}
+                      disabled={isLoading}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="triage-field-label">Opposing Party</label>
+                    <input
+                      type="text"
+                      className="field-input"
+                      placeholder="Known adversary or counter-party..."
+                      value={triageForm.opposingParty}
+                      onChange={(e) => setTriageForm(f => ({ ...f, opposingParty: e.target.value }))}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '0 0 220px' }}>
+                    <label className="triage-field-label">Matter Type</label>
+                    <select
+                      className="field-select"
+                      value={triageForm.matterType}
+                      onChange={(e) => setTriageForm(f => ({ ...f, matterType: e.target.value }))}
+                      disabled={isLoading}
+                    >
+                      {Object.keys(MATTER_RISK).map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
                     className="btn-accent"
-                    style={{ padding: '0 28px', minWidth: '180px' }}
-                    disabled={isLoading}
+                    style={{ padding: '12px 32px', flexShrink: 0, height: '48px' }}
+                    disabled={isLoading || !triageForm.targetEntity.trim()}
                   >
-                    Run Conflict Check
+                    {isLoading ? 'Scanning…' : 'Run Conflict Check'}
                   </button>
                 </div>
               </div>
             </form>
 
-            {/* Scanning Database Pulsing Skeleton Loader */}
+            {/* Loading skeleton */}
             {isLoading && (
               <div className="skeleton-pulse-wrapper">
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <div className="loading-spinner" style={{ width: '20px', height: '20px' }}></div>
-                  <strong style={{ color: 'var(--text-dark-muted)' }}>Scanning case files and vault documents...</strong>
+                  <strong style={{ color: 'var(--accent-primary)', fontSize: '13px' }}>
+                    Scanning case files, vault documents, and adverse party records…
+                  </strong>
                 </div>
                 <div className="skeleton-bar" style={{ width: '80%' }}></div>
                 <div className="skeleton-bar" style={{ width: '90%' }}></div>
@@ -568,36 +878,85 @@ export default function ConflictEngine() {
               </div>
             )}
 
-            {/* Results Grid Table */}
+            {/* Results */}
             {dbResults && !isLoading && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                
-                {/* Result header summary */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-dark-panel)', padding: '16px 20px', borderRadius: '8px', border: '1px solid var(--border-dark-subtle)' }}>
-                  <div>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', display: 'block' }}>Search Target</span>
-                    <strong style={{ fontSize: '18px', color: 'white' }}>{dbResults.entity_name}</strong>
-                  </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Classification</span>
-                    <span className={`badge-status ${dbResults.status === 'High Conflict' ? 'high' : dbResults.status === 'Potential' ? 'potential' : 'clear'}`}>
-                      {dbResults.status === 'High Conflict' ? '🔴 High Conflict' : dbResults.status === 'Potential' ? '🟡 Potential' : '🟢 Clear'}
+                {/* Result header */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  flexWrap: 'wrap', gap: '12px',
+                  background: 'var(--bg-dark-panel)', padding: '16px 20px',
+                  borderRadius: '8px', border: '1px solid var(--border-dark-subtle)',
+                  boxShadow: 'var(--shadow-card)',
+                }}>
+                  <div>
+                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', display: 'block' }}>
+                      Search Target
                     </span>
+                    <strong style={{ fontSize: '18px', color: 'var(--text-primary)' }}>
+                      {dbResults.entity_name}
+                    </strong>
+                    {triageForm.opposingParty && (
+                      <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-dark-muted)', marginTop: '2px' }}>
+                        vs. {triageForm.opposingParty} · {triageForm.matterType}
+                      </span>
+                    )}
                   </div>
+                  <span className={`badge-status ${
+                    dbResults.status === 'High Conflict' ? 'high'
+                    : dbResults.status === 'Potential' ? 'potential'
+                    : 'clear'
+                  }`}>
+                    {dbResults.status === 'High Conflict' ? '🔴 High Conflict'
+                      : dbResults.status === 'Potential' ? '🟡 Potential'
+                      : '🟢 Clear'}
+                  </span>
                 </div>
 
+                {/* ── Relational Breadcrumbs ── */}
+                {dbResults.results && dbResults.results.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-dark-muted)', marginBottom: '8px', letterSpacing: '0.06em' }}>
+                      Conflict Chain Visualization
+                    </div>
+                    {dbResults.results.slice(0, 3).map((r, idx) => {
+                      const chain = buildBreadcrumb(r, dbResults.entity_name);
+                      const last = chain[chain.length - 1];
+                      const termCls = last.includes('🛑') ? '' : last.includes('⚠️') ? 'warn' : 'info';
+                      return (
+                        <div key={idx} className="breadcrumb-chain" style={{ marginBottom: '8px' }}>
+                          {chain.map((step, i) => (
+                            <React.Fragment key={i}>
+                              <span className={`crumb${i === chain.length - 1 ? ` crumb-terminal${termCls ? ` ${termCls}` : ''}` : ''}`}>
+                                {step}
+                              </span>
+                              {i < chain.length - 1 && <span className="crumb-arrow">→</span>}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    {dbResults.results.length > 3 && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-dark-muted)', paddingLeft: '4px' }}>
+                        + {dbResults.results.length - 3} more conflict nodes in table below
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Data table */}
                 <div className="data-grid-container">
                   <div className="overflow-x-auto">
                     <table className="premium-table">
                       <thead>
                         <tr>
-                          <th>Location / Case Name</th>
+                          <th>Case / Document</th>
                           <th>Primary Client</th>
-                          <th>Adversary Opponent</th>
+                          <th>Adversary</th>
                           <th>Match Type</th>
-                          <th>Ingestion Excerpt context</th>
-                          <th>Status Badge</th>
+                          <th>Excerpt</th>
+                          <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -605,16 +964,20 @@ export default function ConflictEngine() {
                           dbResults.results.map((r, idx) => (
                             <tr key={idx}>
                               <td>
-                                <strong style={{ color: 'white' }}>{r.case_title}</strong>
-                                <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-dark-muted)' }}>ID: {r.case_id}</span>
+                                <strong style={{ color: 'var(--text-primary)' }}>{r.case_title}</strong>
+                                <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-dark-muted)' }}>
+                                  ID: {r.case_id}
+                                </span>
                               </td>
                               <td>{r.client}</td>
                               <td>{r.opponent}</td>
                               <td>
-                                <span style={{ fontSize: '12.5px', color: 'var(--accent-primary)', fontWeight: '600' }}>{r.match_type}</span>
+                                <span style={{ fontSize: '12.5px', color: 'var(--accent-primary)', fontWeight: '600' }}>
+                                  {r.match_type}
+                                </span>
                               </td>
-                              <td style={{ maxWidth: '320px', fontSize: '13px', color: 'var(--text-dark-muted)', fontStyle: 'italic', wordBreak: 'break-word' }}>
-                                {r.excerpt}
+                              <td style={{ maxWidth: '300px', fontSize: '13px', color: 'var(--text-dark-muted)', fontStyle: 'italic', wordBreak: 'break-word' }}>
+                                {highlightTerm(r.excerpt, triageForm.targetEntity)}
                               </td>
                               <td>
                                 <span className={`badge-status ${r.conflict_status === 'High Conflict' ? 'high' : 'potential'}`}>
@@ -626,7 +989,7 @@ export default function ConflictEngine() {
                         ) : (
                           <tr>
                             <td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-dark-muted)', fontStyle: 'italic' }}>
-                              No conflict nodes identified in client vault files. Clearance approved.
+                              No conflict nodes identified. Conflict scan complete.
                             </td>
                           </tr>
                         )}
@@ -634,42 +997,88 @@ export default function ConflictEngine() {
                     </table>
                   </div>
                 </div>
+
+                {/* ── Clearance Memo (zero-conflict only) ── */}
+                {(!dbResults.results || dbResults.results.length === 0) && (
+                  <div className="clearance-panel">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '28px' }}>✅</span>
+                      <div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--badge-clear-color)' }}>
+                          Clearance Granted
+                        </div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-dark-muted)', marginTop: '2px' }}>
+                          No conflicts detected for <strong>{dbResults.entity_name}</strong>. Generate a formal clearance memorandum for the firm audit trail.
+                        </div>
+                      </div>
+                    </div>
+
+                    {memoStatus === 'idle' && (
+                      <button
+                        className="btn-accent no-print"
+                        style={{ alignSelf: 'flex-start', padding: '10px 24px' }}
+                        onClick={handleGenerateMemo}
+                      >
+                        Generate Clearance Memo
+                      </button>
+                    )}
+
+                    {memoStatus === 'generating' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--accent-primary)' }}>
+                        <div className="loading-spinner" style={{ width: '18px', height: '18px' }}></div>
+                        <span style={{ fontSize: '13px' }}>Generating memo and logging audit record…</span>
+                      </div>
+                    )}
+
+                    {memoStatus === 'done' && (
+                      <>
+                        <div className="memo-preview-box">{memoText}</div>
+                        <div className="no-print" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                          <button className="btn-accent" style={{ padding: '8px 20px', fontSize: '13px' }} onClick={copyMemo}>
+                            Copy Memo
+                          </button>
+                          <button
+                            className="btn-accent"
+                            style={{ padding: '8px 20px', fontSize: '13px', opacity: 0.85 }}
+                            onClick={printMemo}
+                          >
+                            Export PDF
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
               </div>
             )}
           </div>
         )}
 
-        {/* ── MODE 2: CROSS-DOCUMENT UPLOADER COMPARISON ────────────────────── */}
+        {/* ══ MODE 2: CROSS-DOCUMENT UPLOADER ═══════════════════════════════ */}
         {activeMode === 'cross-doc' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {!crossResults ? (
               <>
-                {/* ── DYNAMIC UPLOAD SLOTS ── */}
                 <div className="upload-slots">
                   {slots.map((slot) => (
                     <div className="upload-slot" key={slot.id}>
-                      {/* Label + remove-slot button */}
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                         <input
-                          className="dark-input"
-                          style={{ padding: '6px 10px', fontSize: '12px', flex: 1 }}
+                          className="field-input"
+                          style={{ padding: '6px 10px', fontSize: '12px' }}
                           type="text"
                           value={slot.label}
                           onChange={(e) => handleLabelChange(slot.id, e.target.value)}
                         />
                         {slots.length > 2 && (
-                          <button
-                            className="slot-remove-btn"
-                            onClick={(e) => removeSlot(slot.id, e)}
-                            title="Remove this slot"
-                            style={{ padding: '4px 8px', fontSize: '11px', opacity: 0.7 }}
-                          >
+                          <button className="slot-remove-btn" onClick={(e) => removeSlot(slot.id, e)} title="Remove slot"
+                            style={{ padding: '4px 8px', fontSize: '11px', opacity: 0.7 }}>
                             ✕
                           </button>
                         )}
                       </div>
 
-                      {/* Drop zone */}
                       <div
                         className={`drop-zone ${slot.file ? 'has-file' : ''}`}
                         onClick={() => slot.inputRef.current?.click()}
@@ -677,22 +1086,23 @@ export default function ConflictEngine() {
                         onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
                         onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileChange(slot.id, e.dataTransfer.files[0]); }}
                       >
-                        <input
-                          type="file"
-                          ref={slot.inputRef}
-                          style={{ display: 'none' }}
-                          accept=".pdf,.docx"
-                          onChange={(e) => handleFileChange(slot.id, e.target.files[0])}
-                        />
+                        <input type="file" ref={slot.inputRef} style={{ display: 'none' }}
+                          accept=".pdf,.docx" onChange={(e) => handleFileChange(slot.id, e.target.files[0])} />
+
                         {slot.file ? (
                           <>
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                            </svg>
                             <span className="dz-filename">{slot.file.name}</span>
                             <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{formatBytes(slot.file.size)}</span>
                           </>
                         ) : (
                           <>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.5)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                              <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+                            </svg>
                             <span style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>Click or drag a file here</span>
                             <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', opacity: 0.6 }}>PDF or DOCX</span>
                           </>
@@ -705,15 +1115,17 @@ export default function ConflictEngine() {
                     </div>
                   ))}
 
-                  {/* ── ADD DOCUMENT TILE ── */}
+                  {/* Add document tile */}
                   <div
                     className="upload-slot"
                     onClick={addSlot}
-                    style={{ cursor: 'pointer', justifyContent: 'center', alignItems: 'center', border: '2px dashed rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.02)', minHeight: '180px' }}
+                    style={{ cursor: 'pointer', justifyContent: 'center', alignItems: 'center', border: '2px dashed var(--border-dark-subtle)', background: 'var(--accent-muted)', minHeight: '180px' }}
                     title="Add another document"
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--text-dark-muted)', pointerEvents: 'none' }}>
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.5)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                      </svg>
                       <span style={{ fontSize: '13px' }}>Add Document</span>
                       <span style={{ fontSize: '11px', opacity: 0.6 }}>Compare unlimited documents</span>
                     </div>
@@ -724,12 +1136,9 @@ export default function ConflictEngine() {
                   <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>
                     {slots.filter(s => s.file).length} / {slots.length} documents loaded
                   </span>
-                  <button
-                    className="btn-accent"
-                    style={{ padding: '13px 44px', fontSize: '14px' }}
+                  <button className="btn-accent" style={{ padding: '13px 44px', fontSize: '14px' }}
                     onClick={handleCrossDocAnalyze}
-                    disabled={slots.filter(s => s.file).length < 2 || isLoading}
-                  >
+                    disabled={slots.filter(s => s.file).length < 2 || isLoading}>
                     {isLoading ? 'Scanning…' : '⚡ Run Cross-Document Check'}
                   </button>
                 </div>
@@ -738,7 +1147,9 @@ export default function ConflictEngine() {
                   <div className="skeleton-pulse-wrapper" style={{ marginTop: '24px' }}>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       <div className="loading-spinner" style={{ width: '20px', height: '20px' }}></div>
-                      <strong style={{ color: 'var(--text-dark-muted)' }}>Extracting files and compiling RAG vectors...</strong>
+                      <strong style={{ color: 'var(--accent-primary)', fontSize: '13px' }}>
+                        Extracting files and running clause-level RAG analysis…
+                      </strong>
                     </div>
                     <div className="skeleton-bar" style={{ width: '85%' }}></div>
                     <div className="skeleton-bar" style={{ width: '75%' }}></div>
@@ -746,29 +1157,39 @@ export default function ConflictEngine() {
                 )}
               </>
             ) : (
-              // Results Panel
+              /* ── Results Panel ── */
               <div className="cross-results-grid">
-                
+
                 {/* Summary Card */}
                 <div className="summary-col">
                   <div className="summary-card">
                     <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-dark-subtle)', paddingBottom: '12px' }}>
                       📊 AI Summary
                     </h3>
-                    
-                    <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Documents Analyzed</span>
+
+                    <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', fontWeight: '600' }}>
+                      Documents Analyzed
+                    </span>
                     <ul style={{ paddingLeft: '20px', margin: '8px 0 20px 0', fontSize: '13px', color: 'var(--text-dark-primary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {slots.filter(s => s.file).map(s => (
                         <li key={s.id}>📂 {s.label} ({s.file.name})</li>
                       ))}
                     </ul>
 
-                    <div style={{ textAlign: 'center', padding: '16px', backgroundColor: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-dark-subtle)', borderRadius: '8px', marginBottom: '20px' }}>
-                      <div style={{ fontSize: '36px', fontWeight: '700', color: 'white' }}>{crossResults.conflicts ? crossResults.conflicts.length : 0}</div>
-                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase' }}>Conflicts Found</span>
+                    <div style={{ textAlign: 'center', padding: '16px', backgroundColor: 'var(--stat-bg)', border: '1px solid var(--stat-border)', borderRadius: '8px', marginBottom: '20px' }}>
+                      <div style={{ fontSize: '36px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        {crossResults.conflicts ? crossResults.conflicts.length : 0}
+                      </div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase' }}>
+                        Conflicts Found
+                      </span>
                     </div>
 
-                    <div style={{ fontSize: '13px', color: 'var(--text-dark-muted)', lineHeight: '1.6', background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-dark-subtle)', padding: '14px', borderRadius: '8px', marginBottom: '20px' }}>
+                    <div style={{
+                      fontSize: '13px', color: 'var(--text-dark-muted)', lineHeight: '1.6',
+                      background: 'var(--stat-bg)', border: '1px solid var(--stat-border)',
+                      padding: '14px', borderRadius: '8px', marginBottom: '20px',
+                    }}>
                       {crossResults.summary}
                     </div>
 
@@ -778,27 +1199,32 @@ export default function ConflictEngine() {
                   </div>
                 </div>
 
-                {/* Details list */}
+                {/* Conflict Detail Cards */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: 'white' }}>Conflict Audit Logs</h3>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: 'var(--text-primary)' }}>
+                    Conflict Audit Logs
+                  </h3>
                   {crossResults.conflicts && crossResults.conflicts.length > 0 ? (
                     crossResults.conflicts.map((c, idx) => {
                       const sev = (c.severity || 'minor').toLowerCase();
                       return (
                         <div key={idx} className={`conflict-detail-card ${sev}`}>
                           <div className="conflict-card-header">
-                            <strong style={{ color: 'white', fontSize: '14.5px' }}>{c.title || `Conflict ${idx + 1}`}</strong>
+                            <strong style={{ color: 'var(--text-primary)', fontSize: '14.5px' }}>
+                              {c.title || `Conflict ${idx + 1}`}
+                            </strong>
                             <span className={`badge-status ${sev === 'critical' ? 'high' : sev === 'major' ? 'potential' : 'clear'}`}>
                               {c.severity}
                             </span>
                           </div>
 
+                          {/* Clause-level side-by-side excerpts */}
                           <div className="excerpts-container">
                             <div className="excerpt-box doc-a">
                               <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-danger)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
                                 📄 {c.doc_a_name || 'Document A'}
                               </span>
-                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic' }}>
+                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic', lineHeight: '1.6' }}>
                                 "{c.doc_a_excerpt}"
                               </div>
                             </div>
@@ -807,14 +1233,14 @@ export default function ConflictEngine() {
                               <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-warning)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
                                 📄 {c.doc_b_name || 'Document B'}
                               </span>
-                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic' }}>
+                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic', lineHeight: '1.6' }}>
                                 "{c.doc_b_excerpt}"
                               </div>
                             </div>
                           </div>
 
                           <div style={{ padding: '0 20px 20px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div style={{ backgroundColor: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.15)', borderRadius: '8px', padding: '12px 14px' }}>
+                            <div style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: '8px', padding: '12px 14px' }}>
                               <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-primary)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
                                 ⚖️ Legal Explanation
                               </span>
@@ -823,16 +1249,16 @@ export default function ConflictEngine() {
                               </div>
                             </div>
 
-                            <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: '8px', padding: '12px 14px' }}>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#10B981', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                            <div style={{ backgroundColor: 'var(--badge-clear-bg)', border: '1px solid var(--badge-clear-border)', borderRadius: '8px', padding: '12px 14px' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--badge-clear-color)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
                                 ✅ Recommended Harmonization
                               </span>
-                              <div style={{ fontSize: '13.5px', color: 'white', marginBottom: '8px' }}>
+                              <div style={{ fontSize: '13.5px', color: 'var(--text-primary)', marginBottom: '8px' }}>
                                 {c.recommended_resolution}
                               </div>
-                              <button 
-                                className="btn-copy" 
-                                style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.25)', color: '#10B981', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px' }}
+                              <button
+                                className="btn-copy"
+                                style={{ backgroundColor: 'var(--badge-clear-bg)', border: '1px solid var(--badge-clear-border)', color: 'var(--badge-clear-color)', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px' }}
                                 onClick={() => copyResolutionToClipboard(c.recommended_resolution)}
                               >
                                 Copy Harmonized Clause
@@ -856,9 +1282,9 @@ export default function ConflictEngine() {
 
       </div>
 
-      {/* Copy Toast Alert */}
+      {/* ── Toast ── */}
       <div className={`toast ${showToast ? 'show' : ''}`}>
-        ✅ Harmonized resolution copied to clipboard
+        ✅ Copied to clipboard
       </div>
     </>
   );

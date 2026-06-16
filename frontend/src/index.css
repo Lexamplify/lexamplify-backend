@@ -1095,3 +1095,313 @@ textarea:focus,
   color: #FFFFFF !important;
 }
 :root[data-theme="light"] .btn-accent:hover { background-color: #2563EB !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEMANTIC TOKEN ADDITIONS
+   New variables consumed by ConflictEngine and shared components.
+   Added as a separate :root block so they extend (not override) existing vars.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Card depth shadow — used across ConflictEngine & dashboard cards */
+  --shadow-card:   0 4px 20px rgba(0, 0, 0, 0.15);
+  /* Hover overlay — neutral across light and dark */
+  --hover-bg:      rgba(255, 255, 255, 0.04);
+  /* Stat boxes inside summary cards */
+  --stat-bg:       rgba(255, 255, 255, 0.02);
+  --stat-border:   rgba(255, 255, 255, 0.06);
+  /* Badge visible in all themes */
+  --text-badge:    var(--text-muted);
+  /* Form field tokens (ConflictEngine field-input / field-select) */
+  --input-bg:          #1f2937;
+  --input-border:      rgba(255, 255, 255, 0.12);
+  --input-color:       var(--text-primary);
+  --input-focus-shadow: rgba(59, 130, 246, 0.25);
+  /* Status badge semantic tokens */
+  --badge-clear-bg:     rgba(16, 185, 129, 0.15);
+  --badge-clear-color:  #10B981;
+  --badge-clear-border: rgba(16, 185, 129, 0.3);
+  --badge-warn-bg:      rgba(245, 158, 11, 0.15);
+  --badge-warn-color:   #F59E0B;
+  --badge-warn-border:  rgba(245, 158, 11, 0.3);
+  --badge-danger-bg:    rgba(239, 68, 68, 0.15);
+  --badge-danger-color: #EF4444;
+  --badge-danger-border:rgba(239, 68, 68, 0.3);
+  /* Skeleton shimmer — dark defaults */
+  --skeleton-from:  rgba(255, 255, 255, 0.04);
+  --skeleton-to:    rgba(255, 255, 255, 0.09);
+  /* Clause excerpt boxes */
+  --excerpt-a-bg:     rgba(239, 68, 68, 0.05);
+  --excerpt-a-border: rgba(239, 68, 68, 0.20);
+  --excerpt-b-bg:     rgba(245, 158, 11, 0.05);
+  --excerpt-b-border: rgba(245, 158, 11, 0.20);
+}
+
+/* Override semantic tokens for existing light theme */
+:root[data-theme="light"] {
+  --shadow-card:   0 2px 12px rgba(0, 0, 0, 0.08);
+  --hover-bg:      rgba(0, 0, 0, 0.04);
+  --stat-bg:       rgba(0, 0, 0, 0.02);
+  --stat-border:   rgba(0, 0, 0, 0.08);
+  --text-badge:    #475569;
+  --input-bg:      #FFFFFF;
+  --input-border:  #C8CEDC;
+  --input-color:   #1A2234;
+  --badge-clear-color:   #059669;
+  --badge-clear-bg:      rgba(5, 150, 105, 0.10);
+  --badge-clear-border:  rgba(5, 150, 105, 0.25);
+  --badge-warn-color:    #D97706;
+  --badge-warn-bg:       rgba(217, 119, 6, 0.10);
+  --badge-warn-border:   rgba(217, 119, 6, 0.25);
+  --badge-danger-color:  #DC2626;
+  --badge-danger-bg:     rgba(220, 38, 38, 0.10);
+  --badge-danger-border: rgba(220, 38, 38, 0.25);
+  --skeleton-from:  rgba(0, 0, 0, 0.04);
+  --skeleton-to:    rgba(0, 0, 0, 0.09);
+  --excerpt-a-bg:     rgba(220, 38, 38, 0.04);
+  --excerpt-a-border: rgba(220, 38, 38, 0.18);
+  --excerpt-b-bg:     rgba(217, 119, 6, 0.04);
+  --excerpt-b-border: rgba(217, 119, 6, 0.18);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EXECUTIVE LINEN THEME  [data-theme="light-matte"]
+   Premium warm-white "bond paper" canvas for senior-lawyer environments.
+   • Canvas:  #FDFBF7 (soft alabaster)
+   • Cards:   #F4F1EA (muted bond paper) — never pure #FFFFFF
+   • Depth:   diffuse drop-shadows replace harsh borders
+   • Spinners & skeletons use --accent-primary, not washed-out gray
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="light-matte"] {
+  /* Core palette */
+  --bg-app:           #FDFBF7;
+  --bg-sidebar:       #F0EDE6;
+  --bg-panel:         #F4F1EA;
+  --bg-card:          #F4F1EA;
+  --text-primary:     #1C1C1E;
+  --text-muted:       #5C5C6E;
+  --border-subtle:    rgba(0, 0, 0, 0.07);
+
+  /* Dark-alias overrides so existing dark-prefixed vars also adapt */
+  --bg-dark-app:       #FDFBF7;
+  --bg-dark-sidebar:   #F0EDE6;
+  --bg-dark-panel:     #F4F1EA;
+  --bg-dark-card:      #F4F1EA;
+  --text-dark-primary: #1C1C1E;
+  --text-dark-muted:   #5C5C6E;
+  --border-dark-subtle:rgba(0, 0, 0, 0.07);
+
+  /* Depth architecture — no harsh borders */
+  --shadow-card: 0 4px 15px -3px rgba(0, 0, 0, 0.08), 0 1px 4px -1px rgba(0, 0, 0, 0.04);
+  --hover-bg:    rgba(0, 0, 0, 0.04);
+  --stat-bg:     rgba(0, 0, 0, 0.02);
+  --stat-border: rgba(0, 0, 0, 0.06);
+
+  /* Badge tokens — darker for high-contrast on warm light */
+  --text-badge:          #475569;
+  --badge-clear-color:   #047857;
+  --badge-clear-bg:      rgba(4, 120, 87, 0.10);
+  --badge-clear-border:  rgba(4, 120, 87, 0.22);
+  --badge-warn-color:    #B45309;
+  --badge-warn-bg:       rgba(180, 83, 9, 0.10);
+  --badge-warn-border:   rgba(180, 83, 9, 0.22);
+  --badge-danger-color:  #B91C1C;
+  --badge-danger-bg:     rgba(185, 28, 28, 0.10);
+  --badge-danger-border: rgba(185, 28, 28, 0.22);
+
+  /* Skeleton shimmer — warm tones */
+  --skeleton-from:  rgba(0, 0, 0, 0.04);
+  --skeleton-to:    rgba(0, 0, 0, 0.10);
+
+  /* Clause excerpt boxes */
+  --excerpt-a-bg:     rgba(185, 28, 28, 0.04);
+  --excerpt-a-border: rgba(185, 28, 28, 0.16);
+  --excerpt-b-bg:     rgba(180, 83, 9, 0.04);
+  --excerpt-b-border: rgba(180, 83, 9, 0.16);
+
+  /* Form field tokens */
+  --input-bg:           #FDFBF7;
+  --input-border:       rgba(0, 0, 0, 0.12);
+  --input-color:        #1C1C1E;
+  --input-focus-shadow: rgba(59, 130, 246, 0.12);
+}
+
+/* ── light-matte: Sidebar ── */
+:root[data-theme="light-matte"] .sidebar {
+  background-color: var(--bg-sidebar) !important;
+  border-right: none !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06) !important;
+}
+:root[data-theme="light-matte"] .sidebar-nav-item {
+  color: #4A5568 !important;
+}
+:root[data-theme="light-matte"] .sidebar-nav-item:hover {
+  background: rgba(59, 130, 246, 0.07) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light-matte"] .sidebar-nav-item.active {
+  background: rgba(59, 130, 246, 0.10) !important;
+  color: #2563EB !important;
+  box-shadow: inset 3px 0 0 #2563EB !important;
+}
+
+/* ── light-matte: Topbar ── */
+:root[data-theme="light-matte"] .topbar {
+  background-color: var(--bg-sidebar) !important;
+  border-bottom: none !important;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ── light-matte: Main content areas ── */
+:root[data-theme="light-matte"] .main-content,
+:root[data-theme="light-matte"] .analysis-panel,
+:root[data-theme="light-matte"] .resources-container {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ── light-matte: Cards (no harsh borders — shadow-only depth) ── */
+:root[data-theme="light-matte"] .premium-card,
+:root[data-theme="light-matte"] .stat-card,
+:root[data-theme="light-matte"] .quick-action-card,
+:root[data-theme="light-matte"] .vault-grid-card,
+:root[data-theme="light-matte"] .bento-card {
+  background: var(--bg-card) !important;
+  border: none !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+/* ── light-matte: Form inputs ── */
+:root[data-theme="light-matte"] input[type="text"],
+:root[data-theme="light-matte"] input[type="number"],
+:root[data-theme="light-matte"] input[type="email"],
+:root[data-theme="light-matte"] input[type="password"],
+:root[data-theme="light-matte"] select,
+:root[data-theme="light-matte"] textarea,
+:root[data-theme="light-matte"] .form-input,
+:root[data-theme="light-matte"] .select-element,
+:root[data-theme="light-matte"] .search-input-field,
+:root[data-theme="light-matte"] .dark-input,
+:root[data-theme="light-matte"] .field-input,
+:root[data-theme="light-matte"] .field-select,
+:root[data-theme="light-matte"] .input-textarea {
+  background-color: var(--input-bg) !important;
+  border: 1px solid var(--input-border) !important;
+  color: var(--input-color) !important;
+  box-shadow: none !important;
+}
+:root[data-theme="light-matte"] input[type="text"]:focus,
+:root[data-theme="light-matte"] textarea:focus,
+:root[data-theme="light-matte"] .dark-input:focus,
+:root[data-theme="light-matte"] .field-input:focus,
+:root[data-theme="light-matte"] .field-select:focus {
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 3px var(--input-focus-shadow) !important;
+}
+
+/* ── light-matte: Tables ── */
+:root[data-theme="light-matte"] .premium-table th {
+  background-color: var(--bg-sidebar) !important;
+  color: var(--text-badge) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-right: none !important;
+}
+:root[data-theme="light-matte"] .premium-table td {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  border-right: none !important;
+}
+:root[data-theme="light-matte"] .premium-table tr:hover td {
+  background-color: var(--hover-bg) !important;
+}
+
+/* ── light-matte: Tab buttons ── */
+:root[data-theme="light-matte"] .tab-btn,
+:root[data-theme="light-matte"] .sub-tab-btn,
+:root[data-theme="light-matte"] .analysis-tab-btn,
+:root[data-theme="light-matte"] .editor-tab-btn {
+  color: var(--text-muted) !important;
+  background: transparent !important;
+}
+:root[data-theme="light-matte"] .tab-btn.active,
+:root[data-theme="light-matte"] .sub-tab-btn.active,
+:root[data-theme="light-matte"] .analysis-tab-btn.active,
+:root[data-theme="light-matte"] .editor-tab-btn.active {
+  color: #2563EB !important;
+  border-bottom-color: #2563EB !important;
+}
+:root[data-theme="light-matte"] .tab-btn:hover,
+:root[data-theme="light-matte"] .sub-tab-btn:hover {
+  color: var(--text-primary) !important;
+  background: var(--hover-bg) !important;
+}
+
+/* ── light-matte: Contract Analyzer ── */
+:root[data-theme="light-matte"] .analyzer-container,
+:root[data-theme="light-matte"] .editor-column,
+:root[data-theme="light-matte"] .analysis-column {
+  background: var(--bg-panel) !important;
+}
+:root[data-theme="light-matte"] .analyzer-header,
+:root[data-theme="light-matte"] .editor-header-bar,
+:root[data-theme="light-matte"] .analysis-tabs-bar {
+  background: var(--bg-sidebar) !important;
+  border-color: var(--border-subtle) !important;
+}
+:root[data-theme="light-matte"] .analyzer-title  { color: var(--text-primary) !important; }
+:root[data-theme="light-matte"] .analyzer-subtitle { color: var(--text-muted) !important; }
+:root[data-theme="light-matte"] .clause-text-preview { color: var(--text-muted) !important; }
+:root[data-theme="light-matte"] .inspected-risk-card {
+  background: var(--bg-card) !important;
+  border: none !important;
+  box-shadow: var(--shadow-card) !important;
+}
+:root[data-theme="light-matte"] .original-clause-box {
+  background: var(--bg-app) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  color: var(--text-muted) !important;
+}
+:root[data-theme="light-matte"] .chat-message-bubble.bot {
+  background: var(--bg-card) !important;
+  border-color: rgba(0, 0, 0, 0.07) !important;
+  color: var(--text-muted) !important;
+}
+:root[data-theme="light-matte"] .precedent-card {
+  background: var(--bg-card) !important;
+  border: none !important;
+  box-shadow: var(--shadow-card) !important;
+}
+:root[data-theme="light-matte"] .upload-hero {
+  background: linear-gradient(135deg, var(--bg-panel) 0%, var(--bg-sidebar) 100%) !important;
+}
+
+/* ── light-matte: Vault & dashboard ── */
+:root[data-theme="light-matte"] .vault-grid-card,
+:root[data-theme="light-matte"] .bento-card {
+  color: var(--text-primary) !important;
+}
+
+/* ── light-matte: Muted text ── */
+:root[data-theme="light-matte"] .text-muted,
+:root[data-theme="light-matte"] .sidebar-nav a:not(.active) {
+  color: var(--text-muted) !important;
+}
+
+/* ── light-matte: Loading spinner uses brand accent ── */
+:root[data-theme="light-matte"] .loading-spinner {
+  border-color: rgba(59, 130, 246, 0.18) !important;
+  border-top-color: var(--accent-primary) !important;
+}
+
+/* ── light-matte: Buttons ── */
+:root[data-theme="light-matte"] .btn-accent {
+  background-color: var(--accent-primary) !important;
+  color: #FFFFFF !important;
+}
+:root[data-theme="light-matte"] .btn-accent:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+/* ── light-matte: Scrollbar (warm tones) ── */
+:root[data-theme="light-matte"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); }
+:root[data-theme="light-matte"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.22); }
