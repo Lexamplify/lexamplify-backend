@@ -1252,7 +1252,7 @@ export default function CourtResources() {
               />
             </div>
 
-            {/* Info banner for court-portal type forms */}
+            {/* Info banner */}
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: '10px',
               padding: '10px 14px', marginBottom: '16px',
@@ -1261,8 +1261,9 @@ export default function CourtResources() {
             }}>
               <span style={{ fontSize: '14px', flexShrink: 0 }}>ℹ️</span>
               <span>
-                <strong style={{ color: 'var(--text-dark-primary)' }}>📥 Download PDF</strong> opens the file directly in your browser.&nbsp;
-                <strong style={{ color: 'var(--text-dark-primary)' }}>🌐 Open Court Portal</strong> takes you to the official court forms page where that document is available for download.
+                <strong style={{ color: 'var(--text-dark-primary)' }}>📥 Download PDF</strong> — direct file from the court server, opens immediately.&nbsp;&nbsp;
+                <strong style={{ color: 'var(--text-dark-primary)' }}>🌐 Open Court Portal</strong> — opens the official court forms page in a new tab where you can find and download the specific document.
+                Supreme Court forms require you to browse the SCI portal; Delhi HC forms are direct PDFs.
               </span>
             </div>
 
