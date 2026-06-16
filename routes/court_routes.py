@@ -269,33 +269,78 @@ _DISTRICTS = {
 }
 
 _FORMS = [
-    {'name': 'Address Form', 'cat': 'Civil', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/Address_Form.pdf'},
-    {'name': 'Affidavit Form — Convict', 'cat': 'Criminal', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/Affidavit_Convict.pdf'},
-    {'name': 'Annexure B Form — Bail Bond', 'cat': 'Criminal', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/Annexure_B_Bail.pdf'},
-    {'name': 'Bail Bond 116(3) CrPC', 'cat': 'Criminal', 'url': 'https://delhidistrictcourts.nic.in/forms/BailBond116_3CrPC.pdf'},
-    {'name': 'Bail Bond 437A CrPC', 'cat': 'Criminal', 'url': 'https://delhidistrictcourts.nic.in/forms/BailBond437A.pdf'},
-    {'name': 'Bail Performa Form', 'cat': 'Criminal', 'url': 'https://delhidistrictcourts.nic.in/forms/BailPerforma.pdf'},
-    {'name': 'Case Information Form', 'cat': 'General', 'url': 'https://services.ecourts.gov.in/ecourtindia_v6/cases/case_information_form.pdf'},
-    {'name': 'Certified Form Criminal — C.A.I.', 'cat': 'Criminal', 'url': 'https://delhidistrictcourts.nic.in/forms/CertifiedFormCAI.pdf'},
-    {'name': 'Check List — 138 NI Act', 'cat': 'Civil', 'url': 'https://delhidistrictcourts.nic.in/forms/CheckList138NI.pdf'},
-    {'name': 'Check List — Civil', 'cat': 'Civil', 'url': 'https://delhidistrictcourts.nic.in/forms/CheckListCivil.pdf'},
-    {'name': 'Civil Certified Copy Form', 'cat': 'Civil', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/Civil_CertifiedCopy.pdf'},
-    {'name': 'Delhi High Court Vakalatnama', 'cat': 'General', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/DHC_Vakalatnama.pdf'},
-    {'name': 'Extra Party Information Form', 'cat': 'General', 'url': 'https://delhidistrictcourts.nic.in/forms/ExtraPartyInfo.pdf'},
-    {'name': 'First Information Report (FIR) Format', 'cat': 'Criminal', 'url': 'https://www.mha.gov.in/sites/default/files/FIR_format.pdf'},
-    {'name': 'Index Form — Civil', 'cat': 'Civil', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/IndexForm_Civil.pdf'},
-    {'name': 'List of Dates Form', 'cat': 'General', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/ListOfDates.pdf'},
-    {'name': 'Miscellaneous Application', 'cat': 'General', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/MiscApplication.pdf'},
-    {'name': 'Plaintiff Verification', 'cat': 'Civil', 'url': 'https://delhidistrictcourts.nic.in/forms/PlaintiffVerification.pdf'},
-    {'name': 'Power of Attorney Format', 'cat': 'General', 'url': 'https://igrs.delhi.gov.in/forms/POA_format.pdf'},
-    {'name': 'Return of Service / Summons', 'cat': 'Civil', 'url': 'https://delhidistrictcourts.nic.in/forms/ReturnOfService.pdf'},
-    {'name': 'Stay Application', 'cat': 'Civil', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/StayApplication.pdf'},
-    {'name': 'Surety Form — Bail', 'cat': 'Criminal', 'url': 'https://delhidistrictcourts.nic.in/forms/SuretyFormBail.pdf'},
-    {'name': 'Undertaking Form', 'cat': 'General', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/Undertaking.pdf'},
-    {'name': 'Vakalatnama — Civil', 'cat': 'Civil', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/Vakalatnama_Civil.pdf'},
-    {'name': 'Vakalatnama — Criminal', 'cat': 'Criminal', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/Vakalatnama_Criminal.pdf'},
-    {'name': 'Written Statement Format', 'cat': 'Civil', 'url': 'https://delhidistrictcourts.nic.in/forms/WrittenStatement.pdf'},
-    {'name': 'Writ Petition Checklist', 'cat': 'Constitutional', 'url': 'https://delhihighcourt.nic.in/writereaddata/upload/CourtForms/WritPetition_Checklist.pdf'},
+    # ── Supreme Court of India ────────────────────────────────────────────
+    # All SCI forms are indexed at https://main.sci.gov.in/forms-formats
+    {'name': 'SC — All Standard Forms & Formats',       'cat': 'General',        'court': 'Supreme Court',  'url': 'https://main.sci.gov.in/forms-formats',                          'url_type': 'page'},
+    {'name': 'SC — Civil Appeal / SLP Format',          'cat': 'Civil',          'court': 'Supreme Court',  'url': 'https://main.sci.gov.in/forms-formats',                          'url_type': 'page'},
+    {'name': 'SC — Writ Petition (Article 32)',          'cat': 'Constitutional', 'court': 'Supreme Court',  'url': 'https://main.sci.gov.in/forms-formats',                          'url_type': 'page'},
+    {'name': 'SC — Criminal Appeal Format',             'cat': 'Criminal',       'court': 'Supreme Court',  'url': 'https://main.sci.gov.in/forms-formats',                          'url_type': 'page'},
+    {'name': 'SC — Transfer Petition Format',           'cat': 'General',        'court': 'Supreme Court',  'url': 'https://main.sci.gov.in/forms-formats',                          'url_type': 'page'},
+    {'name': 'SC — Vakalatnama (All Petitions)',         'cat': 'General',        'court': 'Supreme Court',  'url': 'https://main.sci.gov.in/forms-formats',                          'url_type': 'page'},
+
+    # ── Delhi High Court ──────────────────────────────────────────────────
+    # All DHC forms are indexed at https://delhihighcourt.nic.in/web/page/new-forms
+    {'name': 'DHC — All Standard Forms (Index)',         'cat': 'General',        'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Vakalatnama (Civil)',                'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Vakalatnama (Criminal)',             'cat': 'Criminal',       'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Index Form (Civil Petition)',        'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Address / Cover Form',               'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Bail Application (Criminal)',        'cat': 'Criminal',       'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Affidavit Form (Convict)',           'cat': 'Criminal',       'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Annexure B — Bail Bond',             'cat': 'Criminal',       'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Surety / Bail Bond Form',            'cat': 'Criminal',       'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Writ Petition Checklist',            'cat': 'Constitutional', 'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Certified Copy Application (Civil)','cat': 'Civil',           'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Certified Form Criminal (C.A.I.)',   'cat': 'Criminal',       'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — List of Dates Format',               'cat': 'General',        'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Stay / Interim Application',         'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Undertaking Form',                   'cat': 'General',        'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Written Statement Format',           'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Miscellaneous Application',          'cat': 'General',        'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Check List (Civil)',                 'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Check List (138 NI Act)',            'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Return of Service / Summons',        'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Plaintiff Verification Format',      'cat': 'Civil',          'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+    {'name': 'DHC — Extra Party Information Form',       'cat': 'General',        'court': 'Delhi HC',       'url': 'https://delhihighcourt.nic.in/web/page/new-forms',               'url_type': 'page'},
+
+    # ── Bombay High Court ─────────────────────────────────────────────────
+    # Forms indexed at https://bombayhighcourt.nic.in/forms.php
+    {'name': 'BHC — All Forms Index',                    'cat': 'General',        'court': 'Bombay HC',      'url': 'https://bombayhighcourt.nic.in/forms.php',                       'url_type': 'page'},
+    {'name': 'BHC — Vakalatnama',                        'cat': 'General',        'court': 'Bombay HC',      'url': 'https://bombayhighcourt.nic.in/forms.php',                       'url_type': 'page'},
+    {'name': 'BHC — Writ Petition (Article 226)',        'cat': 'Constitutional', 'court': 'Bombay HC',      'url': 'https://bombayhighcourt.nic.in/forms.php',                       'url_type': 'page'},
+    {'name': 'BHC — Bail Application (Criminal)',        'cat': 'Criminal',       'court': 'Bombay HC',      'url': 'https://bombayhighcourt.nic.in/forms.php',                       'url_type': 'page'},
+    {'name': 'BHC — First Appeal / Civil Revision',      'cat': 'Civil',          'court': 'Bombay HC',      'url': 'https://bombayhighcourt.nic.in/forms.php',                       'url_type': 'page'},
+
+    # ── Madras High Court ─────────────────────────────────────────────────
+    # Forms indexed at https://hcmadras.tn.gov.in/forms.html
+    {'name': 'MHC — All Forms Index',                    'cat': 'General',        'court': 'Madras HC',      'url': 'https://hcmadras.tn.gov.in/forms.html',                         'url_type': 'page'},
+    {'name': 'MHC — Vakalatnama (Original Side)',         'cat': 'Civil',          'court': 'Madras HC',      'url': 'https://hcmadras.tn.gov.in/forms.html',                         'url_type': 'page'},
+    {'name': 'MHC — Writ Petition Format',               'cat': 'Constitutional', 'court': 'Madras HC',      'url': 'https://hcmadras.tn.gov.in/forms.html',                         'url_type': 'page'},
+    {'name': 'MHC — Criminal Appeals & Bail',            'cat': 'Criminal',       'court': 'Madras HC',      'url': 'https://hcmadras.tn.gov.in/forms.html',                         'url_type': 'page'},
+
+    # ── Karnataka High Court ──────────────────────────────────────────────
+    # Forms indexed at https://karnatakajudiciary.kar.nic.in/forms.asp
+    {'name': 'KHC — All Forms Index',                    'cat': 'General',        'court': 'Karnataka HC',   'url': 'https://karnatakajudiciary.kar.nic.in/forms.asp',                'url_type': 'page'},
+    {'name': 'KHC — Vakalatnama',                        'cat': 'General',        'court': 'Karnataka HC',   'url': 'https://karnatakajudiciary.kar.nic.in/forms.asp',                'url_type': 'page'},
+    {'name': 'KHC — Writ Petition (Article 226)',        'cat': 'Constitutional', 'court': 'Karnataka HC',   'url': 'https://karnatakajudiciary.kar.nic.in/forms.asp',                'url_type': 'page'},
+
+    # ── eCourts / District Courts ─────────────────────────────────────────
+    # Portal: https://districts.ecourts.gov.in/ (national eCourts portal)
+    {'name': 'eCourts — District Court Portal (All States)', 'cat': 'General',   'court': 'District Courts', 'url': 'https://districts.ecourts.gov.in/',                             'url_type': 'page'},
+    {'name': 'eCourts — Bail Bond CrPC S.116(3)',        'cat': 'Criminal',       'court': 'District Courts', 'url': 'https://districts.ecourts.gov.in/',                             'url_type': 'page'},
+    {'name': 'eCourts — Bail Bond CrPC S.437A',          'cat': 'Criminal',       'court': 'District Courts', 'url': 'https://districts.ecourts.gov.in/',                             'url_type': 'page'},
+    {'name': 'eCourts — Surety Affidavit (Bail)',         'cat': 'Criminal',       'court': 'District Courts', 'url': 'https://districts.ecourts.gov.in/',                             'url_type': 'page'},
+    {'name': 'eCourts — Plaint (Order VII CPC)',          'cat': 'Civil',          'court': 'District Courts', 'url': 'https://districts.ecourts.gov.in/',                             'url_type': 'page'},
+    {'name': 'eCourts — Written Statement Format',        'cat': 'Civil',          'court': 'District Courts', 'url': 'https://districts.ecourts.gov.in/',                             'url_type': 'page'},
+    {'name': 'eCourts — Execution Application',           'cat': 'Civil',          'court': 'District Courts', 'url': 'https://districts.ecourts.gov.in/',                             'url_type': 'page'},
+
+    # ── Central Government (direct stable PDFs) ───────────────────────────
+    # MHA FIR format — stable long-standing URL
+    {'name': 'FIR Format — MHA Standard (CrPC S.154)', 'cat': 'Criminal',         'court': 'Central Govt',   'url': 'https://www.mha.gov.in/sites/default/files/FIR_format.pdf',    'url_type': 'pdf'},
+
+    # ── NALSA / Legal Aid ─────────────────────────────────────────────────
+    {'name': 'NALSA — Legal Aid Application Form',        'cat': 'General',        'court': 'NALSA',          'url': 'https://nalsa.gov.in/lsam/application-for-legal-services',     'url_type': 'page'},
+    {'name': 'NALSA — Motor Accident Claim Format',       'cat': 'Civil',          'court': 'NALSA',          'url': 'https://nalsa.gov.in/',                                         'url_type': 'page'},
 ]
 
 

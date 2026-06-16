@@ -491,6 +491,9 @@ export default function CourtResources() {
   const [feeNote, setFeeNote] = useState('');
   const [calculatingFee, setCalculatingFee] = useState(false);
 
+  // Forms court-filter state
+  const [activeCourtFilter, setActiveCourtFilter] = useState('All');
+
   // Toast State
   const [toastMessage, setToastMessage] = useState(null);
 
@@ -1219,50 +1222,102 @@ export default function CourtResources() {
           <div className="resource-panel">
             <div className="panel-header">
               <h2>Standard Legal Forms &amp; Templates</h2>
-              <p>Downloadable court forms, checklists, vakalatnamas, and bond applications.</p>
+              <p>Official court forms, vakalatnamas, bail bonds, and checklists — sourced directly from court websites. Click to open the official portal and download.</p>
             </div>
 
+            {/* Court filter pills */}
+            <div className="control-row" style={{ marginBottom: '14px' }}>
+              <div className="sub-tabs-wrapper" style={{ borderBottom: 'none', marginBottom: 0, flexWrap: 'wrap', gap: '6px' }}>
+                {['All', 'Supreme Court', 'Delhi HC', 'Bombay HC', 'Madras HC', 'Karnataka HC', 'District Courts', 'Central Govt', 'NALSA'].map(court => (
+                  <button
+                    key={court}
+                    className={`sub-tab-btn ${activeCourtFilter === court ? 'active' : ''}`}
+                    onClick={() => setActiveCourtFilter(court)}
+                  >
+                    {court}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Search bar */}
             <div style={{ marginBottom: '18px' }}>
               <input
                 type="text"
-                placeholder="Search forms by name (e.g. Vakalatnama, Bail)..."
+                placeholder="Search forms (e.g. Vakalatnama, Bail, Writ)..."
                 className="search-input-field"
-                style={{ width: '100%', maxWidth: '400px' }}
+                style={{ width: '100%', maxWidth: '420px' }}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
 
+            {/* Info banner for court-portal type forms */}
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '10px',
+              padding: '10px 14px', marginBottom: '16px',
+              background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+              borderRadius: '8px', fontSize: '12px', color: 'var(--text-dark-muted)',
+            }}>
+              <span style={{ fontSize: '14px', flexShrink: 0 }}>ℹ️</span>
+              <span>
+                <strong style={{ color: 'var(--text-dark-primary)' }}>📥 Download PDF</strong> opens the file directly in your browser.&nbsp;
+                <strong style={{ color: 'var(--text-dark-primary)' }}>🌐 Open Court Portal</strong> takes you to the official court forms page where that document is available for download.
+              </span>
+            </div>
+
             <div className="responsive-table-container">
               {loadingHC ? (
                 <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-dark-muted)' }}>Loading form templates...</div>
-              ) : (
-                <table className="premium-table">
-                  <thead>
-                    <tr>
-                      <th>Form / Template Name</th>
-                      <th>Category</th>
-                      <th style={{ width: '140px', textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hcData.forms
-                      .filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                      .map((form, idx) => (
+              ) : (() => {
+                const filtered = hcData.forms.filter(f => {
+                  const matchText = f.name.toLowerCase().includes(searchQuery.toLowerCase());
+                  const matchCourt = activeCourtFilter === 'All' || f.court === activeCourtFilter;
+                  return matchText && matchCourt;
+                });
+                return (
+                  <table className="premium-table">
+                    <thead>
+                      <tr>
+                        <th>Form / Template Name</th>
+                        <th>Court</th>
+                        <th>Category</th>
+                        <th style={{ width: '160px', textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: 'center', padding: '28px', color: 'var(--text-dark-muted)' }}>
+                            No forms match your filters.
+                          </td>
+                        </tr>
+                      ) : filtered.map((form, idx) => (
                         <tr key={idx}>
                           <td><strong>📋 {form.name}</strong></td>
-                          <td><span className="card-badge" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'white' }}>{form.cat}</span></td>
+                          <td>
+                            <span className="card-badge" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'var(--text-dark-muted)', fontSize: '11px' }}>
+                              {form.court || 'General'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="card-badge" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'white' }}>{form.cat}</span>
+                          </td>
                           <td style={{ textAlign: 'right' }}>
-                            <button className="btn-accent" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => openInAppBrowser(form.url)}>
-                              📥 Download
+                            <button
+                              className="btn-accent"
+                              style={{ fontSize: '11px', padding: '4px 10px' }}
+                              onClick={() => openDirectLink(form.url)}
+                            >
+                              {form.url_type === 'pdf' ? '📥 Download PDF' : '🌐 Open Court Portal'}
                             </button>
                           </td>
                         </tr>
-                      ))
-                    }
-                  </tbody>
-                </table>
-              )}
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
           </div>
         )}
