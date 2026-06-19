@@ -357,8 +357,12 @@ const AGENT_CSS = `
   .lex-doc-tree-wrap  { margin-top:5px; padding-left:8px; display:flex; flex-direction:column; gap:1px; border-left:1px solid rgba(59,130,246,.18); }
   .lex-doc-tree-item  { display:flex; align-items:center; gap:5px; padding:3px 7px; width:100%; text-align:left; background:none; border:none; border-radius:4px; cursor:pointer; transition:all .15s; font-family:inherit; }
   .lex-doc-tree-item:hover { background:rgba(59,130,246,.1); }
+  .lex-doc-tree-item.lex-saved-asset:hover { background:rgba(16,185,129,.07); }
   .lex-doc-tree-label { font-size:10.5px; color:#5B7FA0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
   .lex-doc-tree-item:hover .lex-doc-tree-label { color:#93C5FD; }
+  .lex-doc-tree-item.lex-saved-asset .lex-doc-tree-label { color:#34D399; }
+  .lex-doc-tree-item.lex-saved-asset:hover .lex-doc-tree-label { color:#6EE7B7; }
+  .lex-doc-section-sep { font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#253040; padding:4px 7px 1px; }
 
   /* ── Hero ↔ Docked input bar transitions ── */
   @keyframes lex-dock { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
@@ -1828,31 +1832,41 @@ export default function CommandPalette() {
     setLoading(true);
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+
+      // Build compact audit snapshot from current session (user+assistant turns only)
+      const currentSess = sessions.find(s => s.id === currentId);
+      const sessionTitleForAudit = currentSess?.title || 'Untitled Conversation';
+      const auditMsgs = (currentSess?.messages || [])
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && m.text)
+        .map(m => ({ role: m.role, text: (m.text || '').slice(0, 3000), ts: m._ts || Date.now() }));
+
       const r = await fetch(`${API_BASE}/api/vault/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
         body: JSON.stringify({
-          case_id:     activeDocument.case_id || 'GENERAL',
-          title:       fileName,
-          doc_type:    activeDocument.doc_type || '',
-          content:     activeDocument.content,
-          folder_id:   folderId,
-          smart_title: smartTitle,
-          tags:        JSON.stringify(tags || []),
+          case_id:        activeDocument.case_id || 'GENERAL',
+          title:          fileName,
+          doc_type:       activeDocument.doc_type || '',
+          content:        activeDocument.content,
+          folder_id:      folderId,
+          smart_title:    smartTitle,
+          tags:           JSON.stringify(tags || []),
+          session_title:  sessionTitleForAudit,
+          audit_messages: JSON.stringify(auditMsgs),
         }),
       });
       const data = r.ok ? await r.json() : null;
       const displayPath = data?.location || (folderPath ? `${folderPath} / ${fileName}` : fileName);
 
       if (r.ok) {
-        // Clear draft + patch the most recent docCard in history as saved
+        // Clear draft + patch the most recent docCard in history as saved (with folderId for deep-link)
         updateSession(currentId, s => {
           const msgs = s.messages || [];
           let lastDocIdx = -1;
           msgs.forEach((m, i) => { if (m.docCard) lastDocIdx = i; });
           const patched = lastDocIdx >= 0
             ? msgs.map((m, i) => i === lastDocIdx
-                ? { ...m, docCard: { ...m.docCard, saved: true, savedPath: displayPath, savedDocId: data?.id } }
+                ? { ...m, docCard: { ...m.docCard, saved: true, savedPath: displayPath, savedDocId: data?.id, savedFolderId: folderId } }
                 : m)
             : msgs;
           return { ...s, pendingDraft: null, activeDocument: null, messages: patched };
@@ -1927,8 +1941,10 @@ export default function CommandPalette() {
 
   // Sidebar session row renderer (with 3-dots menu + nested document tree)
   const SessionRow = ({ s }) => {
-    const isActive   = s.id === currentId;
-    const docHistory = isActive ? (s.messages || []).filter(m => m.docCard) : [];
+    const isActive      = s.id === currentId;
+    const docHistory    = isActive ? (s.messages || []).filter(m => m.docCard) : [];
+    const activeDrafts  = docHistory.filter(m => !m.docCard.saved);
+    const vaultAssets   = docHistory.filter(m => m.docCard.saved);
     const isRenaming = renamingId === s.id;
     const isConfirmDelete = deleteConfirmId === s.id;
     const menuIsOpen = openMenuId === s.id;
@@ -2016,37 +2032,59 @@ export default function CommandPalette() {
           </div>
         </div>
 
-        {/* Nested document tree — only for current session */}
-        {isActive && docHistory.length > 0 && (
+        {/* Nested document tree — Active Drafts + Vault Assets */}
+        {isActive && (activeDrafts.length > 0 || vaultAssets.length > 0) && (
           <div className="lex-doc-tree-wrap">
-            {docHistory.map((m, di) => (
-              <button
-                key={di}
-                className="lex-doc-tree-item"
-                onClick={e => {
-                  e.stopPropagation();
-                  const snap = {
-                    title:    m.docCard.title,
-                    content:  m.docCard.snapshot,
-                    doc_type: m.docCard.doc_type,
-                    case_id:  s.activeDocument?.case_id || 'GENERAL',
-                    smartTitle: m.docCard.title,
-                  };
-                  updateSession(currentId, ss => ({ ...ss, pendingDraft: snap, activeDocument: snap }));
-                  setViewingSnapshot(null);
-                  setDrawerOpen(true);
-                  setTimeout(() => msgRefs.current[m.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
-                }}
-              >
-                <svg width="10" height="10" fill="none" stroke={m.docCard.isUpdate ? '#6366F1' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                </svg>
-                <span className="lex-doc-tree-label">
-                  {m.docCard.saved ? <span style={{ color: '#10B981', marginRight: 2 }}>✓</span> : m.docCard.isUpdate ? '↺ ' : ''}{truncate(m.docCard.title, 26)}
-                </span>
-              </button>
-            ))}
+            {/* Active Drafts section */}
+            {activeDrafts.length > 0 && (
+              <>
+                {vaultAssets.length > 0 && <div className="lex-doc-section-sep">Drafts</div>}
+                {activeDrafts.map((m, di) => (
+                  <button
+                    key={`draft-${di}`}
+                    className="lex-doc-tree-item"
+                    onClick={e => {
+                      e.stopPropagation();
+                      const snap = { title: m.docCard.title, content: m.docCard.snapshot, doc_type: m.docCard.doc_type, case_id: s.activeDocument?.case_id || 'GENERAL', smartTitle: m.docCard.title };
+                      updateSession(currentId, ss => ({ ...ss, pendingDraft: snap, activeDocument: snap }));
+                      setViewingSnapshot(null);
+                      setDrawerOpen(true);
+                      setTimeout(() => msgRefs.current[m.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+                    }}
+                  >
+                    <svg width="10" height="10" fill="none" stroke={m.docCard.isUpdate ? '#6366F1' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    <span className="lex-doc-tree-label">
+                      {m.docCard.isUpdate ? '↺ ' : ''}{truncate(m.docCard.title, 26)}
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+            {/* Vault Assets section — saved documents, click navigates to vault folder */}
+            {vaultAssets.length > 0 && (
+              <>
+                <div className="lex-doc-section-sep" style={{ marginTop: activeDrafts.length > 0 ? 4 : 0 }}>Vault</div>
+                {vaultAssets.map((m, di) => (
+                  <button
+                    key={`vault-${di}`}
+                    className="lex-doc-tree-item lex-saved-asset"
+                    onClick={e => {
+                      e.stopPropagation();
+                      navigate('/vault', { state: { targetFolderId: m.docCard.savedFolderId } });
+                    }}
+                  >
+                    <svg width="10" height="10" fill="none" stroke="#10B981" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    <span className="lex-doc-tree-label">{truncate(m.docCard.title, 26)}</span>
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -2329,7 +2367,7 @@ export default function CommandPalette() {
                       </div>
                       <div
                         className="lex-vault-save-card"
-                        onClick={() => navigate('/vault')}
+                        onClick={() => navigate('/vault', { state: { targetFolderId: vs.folderId, targetFolderPath: vs.folderPath } })}
                         title="Open Case Vault"
                         role="button"
                       >

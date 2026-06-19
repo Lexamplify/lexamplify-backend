@@ -4,6 +4,21 @@ import { uploadDocument, fetchTrackedCases, saveTrackedCase, fetchCauselist } fr
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
+// Reconstruct full breadcrumb path from any folderId using the flat folder list
+const buildPathFromId = (folderId, flat) => {
+  const path = [];
+  let id = folderId;
+  const seen = new Set();
+  while (id != null && !seen.has(id)) {
+    seen.add(id);
+    const f = flat.find(n => n.id === id);
+    if (!f) break;
+    path.unshift({ id: f.id, name: f.name });
+    id = f.parent_id;
+  }
+  return path;
+};
+
 const vaultStyles = `
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
@@ -253,7 +268,7 @@ function FolderCard({ folder, docCount, subFolderCount, onClick }) {
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export default function VaultView() {
+export default function VaultView({ targetFolderId = null }) {
   const [activeTab, setActiveTab] = useState('vault');
 
   // Document Vault
@@ -330,6 +345,19 @@ export default function VaultView() {
     if (activeTab === 'vault') { loadDocuments(); loadFolders(); }
     if (activeTab === 'tracker') loadCases();
   }, [activeTab]);
+
+  // ── Deep-link: navigate to a specific folder when targetFolderId is provided ──
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (!targetFolderId || !folders.length || deepLinked.current) return;
+    const path = buildPathFromId(targetFolderId, folders);
+    if (path.length) {
+      setCurrentFolderId(targetFolderId);
+      setFolderPath(path);
+      setActiveTab('vault');
+      deepLinked.current = true;
+    }
+  }, [targetFolderId, folders]);
 
   // ── Folder navigation ─────────────────────────────────────────────────────
   const navigateToFolder = (folder) => {

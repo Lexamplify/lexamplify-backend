@@ -51,6 +51,17 @@ def init_db():
             c.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
         except Exception:
             pass
+    # AI Provenance / Audit Trail — links saved docs to the agent conversation that produced them
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS vault_audit (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            folder_id      INTEGER REFERENCES vault_folders(id) ON DELETE SET NULL,
+            vault_doc_id   INTEGER,
+            session_title  TEXT,
+            messages_json  TEXT,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS document_chunks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -347,6 +358,12 @@ def create_app():
             if not case_id or not title or not content:
                 return jsonify({"error": True, "message": "Missing required fields (case_id, title, content)."}), 400
 
+            audit_messages  = data.get('audit_messages')   # JSON string of [{role, text, ts}]
+            session_title_s = data.get('session_title', '')
+
+            if not case_id or not title or not content:
+                return jsonify({"error": True, "message": "Missing required fields (case_id, title, content)."}), 400
+
             # Resolve folder path string for breadcrumb confirmation (best-effort)
             folder_path = ''
             if folder_id:
@@ -375,6 +392,17 @@ def create_app():
             conn.commit()
             inserted_id = c.lastrowid
 
+            # Write AI provenance / audit trail entry
+            if audit_messages and inserted_id:
+                try:
+                    c.execute(
+                        'INSERT INTO vault_audit (folder_id, vault_doc_id, session_title, messages_json) VALUES (?, ?, ?, ?)',
+                        (folder_id, inserted_id, session_title_s, audit_messages)
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+
             display_title = smart_title or title
             location_str  = f'{folder_path} / {display_title}' if folder_path else display_title
             return jsonify({
@@ -385,6 +413,56 @@ def create_app():
             }), 200
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/vault/audit-trail', methods=['GET', 'OPTIONS'])
+    def vault_audit_trail():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            folder_id = request.args.get('folder_id', type=int)
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                c = conn.cursor()
+                if folder_id is not None:
+                    c.execute('''
+                        SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
+                               va.messages_json, va.created_at,
+                               cv.title AS doc_title, cv.doc_type,
+                               vf.name  AS folder_name
+                        FROM   vault_audit va
+                        LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
+                        LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
+                        WHERE  va.folder_id = ?
+                        ORDER  BY va.created_at DESC
+                    ''', (folder_id,))
+                else:
+                    c.execute('''
+                        SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
+                               va.messages_json, va.created_at,
+                               cv.title AS doc_title, cv.doc_type,
+                               vf.name  AS folder_name
+                        FROM   vault_audit va
+                        LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
+                        LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
+                        ORDER  BY va.created_at DESC
+                        LIMIT  60
+                    ''')
+                rows = c.fetchall()
+                threads = []
+                for row in rows:
+                    d = dict(row)
+                    try:
+                        d['messages'] = json.loads(d.get('messages_json') or '[]')
+                    except Exception:
+                        d['messages'] = []
+                    threads.append(d)
+                return jsonify({'threads': threads}), 200
+            finally:
+                conn.row_factory = old_rf
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/documents', methods=['GET'])
     def get_vault_documents():
@@ -1154,6 +1232,16 @@ def create_app():
                 conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
             except Exception:
                 pass
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vault_audit (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                folder_id      INTEGER REFERENCES vault_folders(id) ON DELETE SET NULL,
+                vault_doc_id   INTEGER,
+                session_title  TEXT,
+                messages_json  TEXT,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
         # Build the Document Chunks table
         c.execute('''

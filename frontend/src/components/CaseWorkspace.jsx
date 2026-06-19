@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import VaultView from './VaultView';
 import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
 
@@ -229,20 +229,46 @@ const WS_CSS = `
   .cw-draft-date { font-size: 11px; color: var(--text-dark-muted, #8F9CAE); }
   .cw-draft-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
 
-  /* ── TAB 3: CHATS ────────────────────────────────────────────────── */
-  .cw-chat-list { display: flex; flex-direction: column; gap: 8px; }
-  .cw-chat-thread {
-    background: var(--bg-dark-panel, #171c26);
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    border-radius: 9px; padding: 14px 18px; cursor: default;
-    transition: border-color 0.2s, background 0.2s;
+  /* ── TAB 3: AI PROVENANCE LOG ────────────────────────────────────── */
+  .cw-audit-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 20px;
+    padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.05);
   }
-  .cw-chat-thread:hover { background: rgba(59,130,246,0.04); border-color: rgba(59,130,246,0.25); }
-  .cw-chat-thread-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
-  .cw-chat-preview { font-size: 13.5px; font-weight: 600; color: white; }
-  .cw-chat-ts { font-size: 11px; color: var(--text-dark-muted, #8F9CAE); white-space: nowrap; flex-shrink: 0; }
-  .cw-chat-response { font-size: 12.5px; color: var(--text-dark-muted, #8F9CAE); line-height: 1.55;
-    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .cw-audit-badge {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    padding: 3px 9px; border-radius: 4px; background: rgba(245,158,11,.1);
+    border: 1px solid rgba(245,158,11,.22); color: #F59E0B;
+  }
+  .cw-audit-scope { font-size: 12px; color: #475569; }
+  .cw-audit-list { display: flex; flex-direction: column; gap: 12px; }
+  .cw-audit-entry {
+    border: 1px solid rgba(255,255,255,.06); border-radius: 10px;
+    background: rgba(255,255,255,.018); overflow: hidden;
+  }
+  .cw-audit-entry-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 12px 16px; cursor: pointer; transition: background .12s;
+    border-bottom: 1px solid transparent;
+  }
+  .cw-audit-entry-head:hover { background: rgba(255,255,255,.02); }
+  .cw-audit-entry.expanded .cw-audit-entry-head { border-bottom-color: rgba(255,255,255,.06); }
+  .cw-audit-doc-title { font-size: 13px; font-weight: 600; color: #C8D8E8; }
+  .cw-audit-session-title { font-size: 11px; color: #475569; margin-top: 2px; }
+  .cw-audit-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .cw-audit-folder-tag {
+    font-size: 10px; padding: 2px 8px; border-radius: 4px;
+    background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.2); color: #7EB3F5;
+  }
+  .cw-audit-ts { font-size: 10.5px; color: #334155; white-space: nowrap; }
+  .cw-audit-chevron { color: #334155; transition: transform .15s; flex-shrink: 0; }
+  .cw-audit-entry.expanded .cw-audit-chevron { transform: rotate(90deg); }
+  .cw-audit-messages { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .cw-audit-msg { padding: 9px 12px; border-radius: 7px; font-size: 12.5px; line-height: 1.6; }
+  .cw-audit-msg-user { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); color: #94A3B8; align-self: flex-end; max-width: 88%; border-radius: 7px 7px 2px 7px; }
+  .cw-audit-msg-assistant { background: rgba(16,185,129,.04); border: 1px solid rgba(16,185,129,.1); color: #6B7F8F; align-self: flex-start; max-width: 94%; border-radius: 7px 7px 7px 2px; }
+  .cw-audit-msg-role { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; color: #334155; }
+  .cw-audit-msg-user .cw-audit-msg-role { color: #3D5168; }
+  .cw-audit-msg-assistant .cw-audit-msg-role { color: #10B981; }
 
   /* ── TAB 4: TIMELINE ─────────────────────────────────────────────── */
   .cw-timeline { display: flex; flex-direction: column; gap: 0; padding-left: 12px; }
@@ -519,9 +545,9 @@ function LegalDraftsTab({ documents, loadingDocs }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// TAB 3: Chat Audit Trail
+// TAB 3: AI Provenance / Audit Trail
 // ────────────────────────────────────────────────────────────────────────────
-function ChatsTab({ apiBase }) {
+function ChatsTab({ apiBase, folderId }) {
   const [threads, setThreads]   = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -529,19 +555,20 @@ function ChatsTab({ apiBase }) {
 
   useEffect(() => {
     const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-    fetch(`${apiBase}/api/ai/history`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    })
+    const url = folderId
+      ? `${apiBase}/api/vault/audit-trail?folder_id=${folderId}`
+      : `${apiBase}/api/vault/audit-trail`;
+    fetch(url, { headers: { ...(token && { Authorization: `Bearer ${token}` }) } })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(data => { setThreads(data.threads || []); setLoading(false); })
-      .catch(() => { setError('Could not load chat history.'); setLoading(false); });
-  }, []);
+      .catch(() => { setError('Could not load audit trail.'); setLoading(false); });
+  }, [apiBase, folderId]);
 
   if (loading) {
     return (
       <div className="cw-tab-panel">
         {[0,1,2,3].map(i => (
-          <div key={i} className="cw-skeleton" style={{ height: 68, borderRadius: 9, marginBottom: 8 }} />
+          <div key={i} className="cw-skeleton" style={{ height: 72, borderRadius: 10, marginBottom: 10 }} />
         ))}
       </div>
     );
@@ -550,9 +577,7 @@ function ChatsTab({ apiBase }) {
   if (error) {
     return (
       <div className="cw-tab-panel">
-        <div style={{ color: '#F87171', fontSize: 13, padding: '12px 16px', background: 'rgba(239,68,68,0.07)', borderRadius: 8 }}>
-          {error}
-        </div>
+        <div style={{ color: '#F87171', fontSize: 13, padding: '12px 16px', background: 'rgba(239,68,68,0.07)', borderRadius: 8 }}>{error}</div>
       </div>
     );
   }
@@ -561,10 +586,10 @@ function ChatsTab({ apiBase }) {
     return (
       <div className="cw-tab-panel">
         <div className="cw-empty-inline">
-          <div className="cw-empty-icon">💬</div>
-          <h2 className="cw-empty-title">No conversations yet</h2>
+          <div className="cw-empty-icon" style={{ fontSize: 28 }}>🔏</div>
+          <h2 className="cw-empty-title">No Provenance Records</h2>
           <p className="cw-empty-msg">
-            Every AI chat exchange will appear here as a searchable audit trail once you start using the Universal Agent or Document AI.
+            When you save a document to this folder via the Universal Agent, the full AI conversation that produced it is recorded here as a tamper-evident audit trail.
           </p>
         </div>
       </div>
@@ -573,42 +598,50 @@ function ChatsTab({ apiBase }) {
 
   return (
     <div className="cw-tab-panel">
-      <p style={{ fontSize: 12.5, color: 'var(--text-dark-muted)', marginBottom: 18 }}>
-        {threads.length} conversation{threads.length !== 1 ? 's' : ''} on record
-      </p>
-      <div className="cw-chat-list">
-        {threads.map(t => (
-          <div
-            key={t.id}
-            className="cw-chat-thread"
-            onClick={() => setExpanded(expanded === t.id ? null : t.id)}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="cw-chat-thread-header">
-              <span className="cw-chat-preview">
-                {t.preview || '(empty message)'}
-                {(t.user_message || '').length > 60 ? '…' : ''}
-              </span>
-              <span className="cw-chat-ts">{fmtTime(t.created_at)}</span>
-            </div>
-            {expanded !== t.id && (
-              <p className="cw-chat-response">{t.bot_response}</p>
-            )}
-            {expanded === t.id && (
-              <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ background: '#2563EB', color: '#EFF6FF', padding: '10px 14px', borderRadius: '10px 10px 4px 10px', fontSize: 13, lineHeight: 1.6, alignSelf: 'flex-end', maxWidth: '85%' }}>
-                  {t.user_message}
+      <div className="cw-audit-header">
+        <span className="cw-audit-badge">Provenance Log</span>
+        <span className="cw-audit-scope">
+          {folderId ? `${threads.length} record${threads.length !== 1 ? 's' : ''} in this folder` : `${threads.length} record${threads.length !== 1 ? 's' : ''} across all folders`}
+          {' · Read-only · Defensibility Log'}
+        </span>
+      </div>
+      <div className="cw-audit-list">
+        {threads.map(t => {
+          const msgs = t.messages || [];
+          const isExpanded = expanded === t.id;
+          return (
+            <div key={t.id} className={`cw-audit-entry${isExpanded ? ' expanded' : ''}`}>
+              <div className="cw-audit-entry-head" onClick={() => setExpanded(isExpanded ? null : t.id)}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="cw-audit-doc-title">📄 {t.doc_title || 'Document'}</div>
+                  <div className="cw-audit-session-title">From: {t.session_title || 'AI Session'}</div>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: '#CBD5E1', padding: '10px 14px', borderRadius: '10px 10px 10px 4px', fontSize: 13, lineHeight: 1.6, maxWidth: '94%' }}>
-                  <div
-                    className="md-body"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(t.bot_response) }}
-                  />
+                <div className="cw-audit-meta">
+                  {t.folder_name && <span className="cw-audit-folder-tag">📁 {t.folder_name}</span>}
+                  <span className="cw-audit-ts">{fmtTime(t.created_at)}</span>
+                  <svg className="cw-audit-chevron" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
                 </div>
               </div>
-            )}
-          </div>
-        ))}
+              {isExpanded && (
+                <div className="cw-audit-messages">
+                  {msgs.length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#334155', fontStyle: 'italic', padding: '4px 0' }}>No message records available.</div>
+                  ) : msgs.map((msg, mi) => (
+                    <div
+                      key={mi}
+                      className={`cw-audit-msg ${msg.role === 'user' ? 'cw-audit-msg-user' : 'cw-audit-msg-assistant'}`}
+                    >
+                      <div className="cw-audit-msg-role">{msg.role === 'user' ? 'Lawyer' : 'AI Counsel'}</div>
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{(msg.text || '').slice(0, 800)}{(msg.text || '').length > 800 ? '…' : ''}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -727,6 +760,8 @@ function EventsTab({ documents, loadingDocs, apiBase }) {
 // ROOT COMPONENT
 // ────────────────────────────────────────────────────────────────────────────
 export default function CaseWorkspace() {
+  const location = useLocation();
+  const targetFolderId = location.state?.targetFolderId ?? null;
   const [activeTab, setActiveTab] = useState('documents');
   const [caseInfo,  setCaseInfo]  = useState(null);
   const [documents, setDocuments] = useState([]);
@@ -758,9 +793,9 @@ export default function CaseWorkspace() {
       case 'legal-draft':
         return <LegalDraftsTab documents={documents} loadingDocs={loadingDocs} />;
       case 'documents':
-        return <VaultView />;
+        return <VaultView targetFolderId={targetFolderId} />;
       case 'chats':
-        return <ChatsTab apiBase={API_BASE} />;
+        return <ChatsTab apiBase={API_BASE} folderId={targetFolderId} />;
       case 'events':
         return <EventsTab documents={documents} loadingDocs={loadingDocs} apiBase={API_BASE} />;
       default:
