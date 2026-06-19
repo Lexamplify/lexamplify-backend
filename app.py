@@ -36,6 +36,21 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Adjacency-list folder hierarchy for Case Vault
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS vault_folders (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT    NOT NULL,
+            parent_id INTEGER REFERENCES vault_folders(id) ON DELETE CASCADE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Migration: add folder_id + smart_title to case_vault if not present
+    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT')):
+        try:
+            c.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
+        except Exception:
+            pass
     c.execute('''
         CREATE TABLE IF NOT EXISTS document_chunks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,19 +228,82 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    # ── Vault Folders API ─────────────────────────────────────────────────────
+    @app.route('/api/vault/folders', methods=['GET', 'OPTIONS'])
+    def get_vault_folders():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, name, parent_id, created_at FROM vault_folders ORDER BY name ASC'
+                ).fetchall()
+                folders = [dict(r) for r in rows]
+            finally:
+                conn.row_factory = old_rf
+
+            # Build adjacency list → nested tree
+            by_id = {f['id']: {**f, 'children': []} for f in folders}
+            roots = []
+            for f in by_id.values():
+                pid = f.get('parent_id')
+                if pid and pid in by_id:
+                    by_id[pid]['children'].append(f)
+                else:
+                    roots.append(f)
+
+            return jsonify({'folders': roots, 'flat': folders}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/vault/folders', methods=['POST'])
+    def create_vault_folder():
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            name = (data.get('name') or '').strip()
+            parent_id = data.get('parent_id')  # None = root folder
+
+            if not name:
+                return jsonify({'error': True, 'message': 'Folder name is required.'}), 400
+            if len(name) > 80:
+                return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
+
+            conn = db
+            # Uniqueness check: same name + same parent
+            existing = conn.execute(
+                'SELECT id FROM vault_folders WHERE name = ? AND (parent_id IS ? OR parent_id = ?)',
+                (name, parent_id, parent_id)
+            ).fetchone()
+            if existing:
+                return jsonify({'error': True, 'message': f'A folder named "{name}" already exists here.'}), 409
+
+            c = conn.cursor()
+            c.execute(
+                'INSERT INTO vault_folders (name, parent_id) VALUES (?, ?)',
+                (name, parent_id)
+            )
+            conn.commit()
+            folder_id = c.lastrowid
+            return jsonify({'success': True, 'id': folder_id, 'name': name, 'parent_id': parent_id}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     @app.route('/api/vault/save', methods=['POST', 'OPTIONS'])
     def save_vault_document():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
         try:
             data = request.get_json(force=True, silent=True) or {}
-            
-            # Check if it is the Virtual Courtroom simulator session save format
+
+            # Virtual Courtroom simulator session save format
             if 'case_facts' in data or 'history' in data:
                 case_facts = data.get("case_facts", "")
                 history = data.get("history", [])
                 title = data.get("title", "VC Session")
-                
+
                 import uuid
                 vault_path = os.path.join(os.getcwd(), "vc_vault_data.json")
                 if os.path.exists(vault_path):
@@ -233,36 +311,66 @@ def create_app():
                         vault_data = json.load(f)
                 else:
                     vault_data = {}
-                    
+
                 case_id = "VC_" + str(uuid.uuid4())[:8]
                 vault_data[case_id] = {
                     "title": title,
                     "case_facts": case_facts,
                     "history": history
                 }
-                
+
                 with open(vault_path, "w", encoding="utf-8") as f:
                     json.dump(vault_data, f, indent=4)
-                    
+
                 return jsonify({"status": "success", "message": f"Session locked to VC Vault (ID: {case_id}).", "id": case_id}), 200
-            
+
             # Case Vault save format
-            case_id = data.get('case_id')
-            title = data.get('title')
-            doc_type = data.get('doc_type')
-            content = data.get('content')
+            case_id   = data.get('case_id')
+            title     = data.get('title')
+            doc_type  = data.get('doc_type')
+            content   = data.get('content')
+            folder_id = data.get('folder_id')    # optional — from SaveToVaultModal
+            smart_title = data.get('smart_title')  # optional — auto-generated client-side
 
             if not case_id or not title or not content:
                 return jsonify({"error": True, "message": "Missing required fields (case_id, title, content)."}), 400
 
+            # Resolve folder path string for breadcrumb confirmation (best-effort)
+            folder_path = ''
+            if folder_id:
+                try:
+                    path_parts = []
+                    fid = folder_id
+                    seen = set()
+                    while fid and fid not in seen:
+                        seen.add(fid)
+                        row = db.execute('SELECT name, parent_id FROM vault_folders WHERE id = ?', (fid,)).fetchone()
+                        if row:
+                            path_parts.insert(0, row[0])
+                            fid = row[1]
+                        else:
+                            break
+                    folder_path = ' / '.join(path_parts)
+                except Exception:
+                    pass
+
             conn = db
             c = conn.cursor()
-            c.execute('''
-                INSERT INTO case_vault (case_id, title, doc_type, content)
-                VALUES (?, ?, ?, ?)
-            ''', (str(case_id), str(title), str(doc_type or ""), str(content)))
+            c.execute(
+                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title) VALUES (?, ?, ?, ?, ?, ?)',
+                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title)
+            )
             conn.commit()
-            return jsonify({"success": True, "message": "Document successfully saved."}), 200
+            inserted_id = c.lastrowid
+
+            display_title = smart_title or title
+            location_str  = f'{folder_path} / {display_title}' if folder_path else display_title
+            return jsonify({
+                'success': True,
+                'id': inserted_id,
+                'message': 'Document successfully saved.',
+                'location': location_str,
+            }), 200
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
 
@@ -1010,6 +1118,21 @@ def create_app():
         for _col in ('location', 'opposing_counsel'):
             try:
                 conn.execute(f'ALTER TABLE calendar_events ADD COLUMN {_col} TEXT')
+            except Exception:
+                pass
+
+        # Vault folders table + case_vault migration
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vault_folders (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                name      TEXT NOT NULL,
+                parent_id INTEGER REFERENCES vault_folders(id) ON DELETE CASCADE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT')):
+            try:
+                conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
             except Exception:
                 pass
 

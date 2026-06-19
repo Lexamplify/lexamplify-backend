@@ -270,9 +270,7 @@ const AGENT_CSS = `
   .lex-sess-item { cursor:pointer; padding:8px 10px; border-radius:7px; border:1px solid transparent; transition:all .15s; margin-bottom:2px; }
   .lex-sess-item:hover { background:rgba(59,130,246,.07); border-color:rgba(59,130,246,.14); }
   .lex-sess-item.active { background:rgba(59,130,246,.13); border-color:rgba(59,130,246,.28); }
-  .lex-sess-del  { opacity:0; transition:opacity .15s; background:none; border:none; cursor:pointer; color:#3D5168; padding:2px 5px; border-radius:3px; font-size:15px; line-height:1; }
-  .lex-sess-item:hover .lex-sess-del { opacity:1; }
-  .lex-sess-del:hover { color:#EF4444!important; }
+
 
   .lex-quick { cursor:pointer; padding:10px 14px; border-radius:8px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); display:flex; align-items:flex-start; gap:10px; transition:all .15s; text-align:left; width:100%; }
   .lex-quick:hover { background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); }
@@ -369,7 +367,729 @@ const AGENT_CSS = `
 
   /* ── RHS Drawer (upgraded transition) ── */
   .lex-drawer { transition: width 0.3s cubic-bezier(0.4,0,0.2,1); }
+
+  /* ══════════════════════════════════════════════
+       3-DOTS CONVERSATION MENU
+  ══════════════════════════════════════════════ */
+  .lex-3dots-btn {
+    opacity: 0; transition: opacity .15s;
+    background: none; border: none; cursor: pointer;
+    color: #3D5168; padding: 2px 5px; border-radius: 3px;
+    font-size: 15px; line-height: 1; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lex-sess-item:hover .lex-3dots-btn { opacity: 1; }
+  .lex-3dots-btn:hover { color: #7EB3F5!important; background: rgba(59,130,246,.1); }
+
+  .lex-ctx-menu {
+    position: absolute; z-index: 10010;
+    background: #0D1117; border: 1px solid rgba(255,255,255,.08);
+    border-radius: 9px; min-width: 170px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05);
+    backdrop-filter: blur(14px); overflow: hidden;
+    animation: lex-ctx-in .14s cubic-bezier(0.16,1,0.3,1);
+  }
+  @keyframes lex-ctx-in {
+    from { opacity: 0; transform: scale(0.93) translateY(-4px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .lex-ctx-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 14px; width: 100%; text-align: left;
+    background: none; border: none; border-bottom: 1px solid rgba(255,255,255,.04);
+    cursor: pointer; transition: background .12s; font-family: inherit;
+    font-size: 12.5px; color: #94A3B8; letter-spacing: .02em;
+  }
+  .lex-ctx-item:last-child { border-bottom: none; }
+  .lex-ctx-item:hover { background: rgba(59,130,246,.1); color: #E2E8F0; }
+  .lex-ctx-item.danger { color: #F87171; }
+  .lex-ctx-item.danger:hover { background: rgba(239,68,68,.1); }
+  .lex-ctx-item-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: .8; }
+
+  /* Inline rename input */
+  .lex-rename-input {
+    flex: 1; background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.3);
+    border-radius: 4px; padding: 2px 7px; font-size: 12px; color: #E2E8F0;
+    font-family: inherit; outline: none; min-width: 0;
+  }
+  .lex-rename-input:focus { border-color: rgba(59,130,246,.6); }
+
+  /* Pin badge */
+  .lex-pinned-badge {
+    font-size: 9px; background: rgba(245,158,11,.12);
+    border: 1px solid rgba(245,158,11,.25); color: #F59E0B;
+    border-radius: 3px; padding: 0px 5px; flex-shrink: 0;
+    font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  }
+
+  /* Confirm delete overlay */
+  .lex-confirm-delete {
+    position: absolute; inset: 0; z-index: 10; border-radius: 7px;
+    background: rgba(15,10,10,.96); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; padding: 12px 10px;
+    animation: lex-in .18s ease;
+  }
+
+  /* ══════════════════════════════════════════════
+       SAVE TO VAULT MODAL
+  ══════════════════════════════════════════════ */
+  .svm-backdrop {
+    position: fixed; inset: 0; z-index: 10020;
+    background: rgba(3,6,14,.82); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    animation: lex-in .18s ease;
+  }
+  .svm-panel {
+    background: var(--bg-panel, #171c26);
+    border: 1px solid rgba(59,130,246,.22);
+    border-radius: 14px; width: 540px; max-width: 95vw;
+    max-height: 82vh; display: flex; flex-direction: column;
+    box-shadow: 0 28px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.04);
+    overflow: hidden;
+  }
+  .svm-header {
+    padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,.06);
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(255,255,255,.015); flex-shrink: 0;
+  }
+  .svm-title { font-size: 14px; font-weight: 700; color: #E2E8F0; }
+  .svm-close { background: none; border: none; cursor: pointer; color: #475569; padding: 3px 6px; border-radius: 4px; transition: color .15s; }
+  .svm-close:hover { color: #EF4444; }
+
+  .svm-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+  .svm-body::-webkit-scrollbar { width: 4px; }
+  .svm-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 2px; }
+
+  .svm-section-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: #475569; margin-bottom: 6px;
+  }
+
+  /* Folder tree */
+  .svm-tree { display: flex; flex-direction: column; gap: 1px; }
+  .svm-folder-row {
+    display: flex; align-items: center; gap: 0;
+    border-radius: 6px; cursor: pointer; transition: background .12s;
+    user-select: none;
+  }
+  .svm-folder-row:hover { background: rgba(59,130,246,.08); }
+  .svm-folder-row.selected { background: rgba(59,130,246,.16)!important; }
+  .svm-folder-indent { flex-shrink: 0; }
+  .svm-folder-chevron {
+    width: 18px; height: 18px; display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0; color: #475569;
+    transition: transform .18s; font-size: 8px;
+  }
+  .svm-folder-chevron.open { transform: rotate(90deg); }
+  .svm-folder-icon { font-size: 13px; margin-right: 7px; flex-shrink: 0; }
+  .svm-folder-name { font-size: 12.5px; color: #94A3B8; flex: 1; }
+  .svm-folder-row.selected .svm-folder-name { color: #93C5FD; font-weight: 600; }
+  .svm-root-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border-radius: 6px; cursor: pointer; transition: background .12s;
+    font-size: 12px; color: #475569;
+  }
+  .svm-root-row:hover { background: rgba(59,130,246,.06); color: #7EB3F5; }
+  .svm-root-row.selected { background: rgba(59,130,246,.12)!important; color: #93C5FD; font-weight: 600; }
+
+  /* New folder inline creator */
+  .svm-new-folder-row {
+    display: flex; align-items: center; gap: 7px; padding: 5px 8px;
+    background: rgba(59,130,246,.06); border: 1px dashed rgba(59,130,246,.22);
+    border-radius: 6px; margin-top: 4px;
+  }
+  .svm-new-folder-input {
+    flex: 1; background: transparent; border: none; outline: none;
+    font-size: 12.5px; color: #E2E8F0; font-family: inherit;
+  }
+  .svm-new-folder-input::placeholder { color: #475569; }
+
+  /* Filename input */
+  .svm-filename-input {
+    width: 100%; background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.1); border-radius: 7px;
+    padding: 9px 12px; font-size: 13px; color: #E2E8F0;
+    font-family: inherit; outline: none; transition: border-color .15s; box-sizing: border-box;
+  }
+  .svm-filename-input:focus { border-color: rgba(59,130,246,.5); }
+
+  /* Last-used folder hint */
+  .svm-last-folder-hint {
+    display: flex; align-items: center; gap: 7px; padding: 8px 12px;
+    background: rgba(245,158,11,.06); border: 1px solid rgba(245,158,11,.18);
+    border-radius: 7px; font-size: 11.5px; color: #FCD34D; cursor: pointer;
+    transition: background .15s;
+  }
+  .svm-last-folder-hint:hover { background: rgba(245,158,11,.12); }
+
+  .svm-footer {
+    padding: 12px 20px; border-top: 1px solid rgba(255,255,255,.06);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-shrink: 0; background: rgba(255,255,255,.012);
+  }
+  .svm-dest-label { font-size: 11px; color: #475569; }
+  .svm-dest-path { font-size: 11.5px; color: #7EB3F5; font-weight: 600; }
+
+  .svm-btn-primary {
+    padding: 8px 20px; border-radius: 7px; background: #3B82F6;
+    border: none; color: #fff; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: background .15s; font-family: inherit;
+    flex-shrink: 0;
+  }
+  .svm-btn-primary:hover:not(:disabled) { background: #2563EB; }
+  .svm-btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .svm-btn-ghost {
+    padding: 8px 16px; border-radius: 7px; background: transparent;
+    border: 1px solid rgba(255,255,255,.1); color: #506275;
+    font-size: 12px; cursor: pointer; transition: all .15s; font-family: inherit;
+  }
+  .svm-btn-ghost:hover { border-color: rgba(255,255,255,.2); color: #94A3B8; }
+
+  /* Share modal */
+  .svm-share-url {
+    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 7px; padding: 10px 12px; font-size: 12px; color: #7EB3F5;
+    font-family: monospace; word-break: break-all; line-height: 1.5;
+  }
 `;
+
+// ═══════════════════════════════════════════════════════
+//  SMART NAMING HELPER
+// ═══════════════════════════════════════════════════════
+const DOC_TYPE_ABBREV = {
+  'nda': 'NDA', 'non-disclosure': 'NDA',
+  'bail': 'Bail', 'bail application': 'Bail',
+  'writ petition': 'Writ', 'writ': 'Writ',
+  'special leave petition': 'SLP', 'slp': 'SLP',
+  'legal notice': 'Notice', 'notice': 'Notice',
+  'affidavit': 'Affidavit',
+  'vakalatnama': 'Vakalatnama',
+  'fir': 'FIR', 'first information report': 'FIR',
+  'agreement': 'Agr', 'contract': 'Contract',
+  'employment agreement': 'EA',
+  'petition': 'Petition',
+  'plaint': 'Plaint',
+  'reply': 'Reply',
+  'other': 'Doc',
+};
+
+const generateSmartName = (doc_type, sessionTitle, docIndex) => {
+  const rawType = (doc_type || '').toLowerCase().trim();
+  let abbrev = DOC_TYPE_ABBREV[rawType];
+  if (!abbrev) {
+    // Try prefix match
+    const key = Object.keys(DOC_TYPE_ABBREV).find(k => rawType.startsWith(k));
+    abbrev = key ? DOC_TYPE_ABBREV[key] : (doc_type ? doc_type.split(' ')[0].slice(0, 8) : 'Doc');
+  }
+
+  // Derive 2-word topic slug from session title (skip generic "New conversation")
+  let slug = '';
+  const cleanTitle = (sessionTitle || '').replace(/^new conversation$/i, '').trim();
+  if (cleanTitle) {
+    slug = cleanTitle
+      .replace(/[^a-zA-Z0-9 ]/g, '')
+      .split(' ')
+      .filter(w => w.length > 2)
+      .slice(0, 2)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join('');
+  }
+
+  const version = `V${docIndex + 1}`;
+  const parts = [abbrev, slug, version].filter(Boolean);
+  return parts.join('_');
+};
+
+// ═══════════════════════════════════════════════════════
+//  SAVE TO VAULT MODAL
+// ═══════════════════════════════════════════════════════
+const LAST_FOLDER_KEY = 'lexai_last_vault_folder'; // { id, path }
+
+function FolderNode({ folder, depth, selectedId, expandedIds, onSelect, onToggle }) {
+  const isSelected = selectedId === folder.id;
+  const isExpanded = expandedIds.has(folder.id);
+  const hasChildren = folder.children && folder.children.length > 0;
+  const indent = depth * 16;
+
+  return (
+    <>
+      <div
+        className={`svm-folder-row${isSelected ? ' selected' : ''}`}
+        style={{ paddingLeft: 8 + indent, paddingTop: 6, paddingBottom: 6, paddingRight: 8 }}
+        onClick={() => onSelect(folder)}
+      >
+        {hasChildren ? (
+          <span
+            className={`svm-folder-chevron${isExpanded ? ' open' : ''}`}
+            onClick={e => { e.stopPropagation(); onToggle(folder.id); }}
+          >▶</span>
+        ) : (
+          <span className="svm-folder-chevron" style={{ visibility: 'hidden' }}>▶</span>
+        )}
+        <span className="svm-folder-icon">📁</span>
+        <span className="svm-folder-name">{folder.name}</span>
+      </div>
+      {hasChildren && isExpanded && (
+        <div>
+          {folder.children.map(child => (
+            <FolderNode
+              key={child.id}
+              folder={child}
+              depth={depth + 1}
+              selectedId={selectedId}
+              expandedIds={expandedIds}
+              onSelect={onSelect}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function SaveToVaultModal({ draft, sessionTitle, docIndex, apiBase, onConfirm, onClose }) {
+  const [folders,      setFolders]      = useState([]);         // root-level tree nodes
+  const [flatFolders,  setFlatFolders]  = useState([]);         // all folders flat
+  const [selectedFolder, setSelectedFolder] = useState(null);   // { id, name } or null = root
+  const [expandedIds,  setExpandedIds]  = useState(new Set());
+  const [fileName,     setFileName]     = useState('');
+  const [isCreating,   setIsCreating]   = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderError, setNewFolderError] = useState('');
+  const [saving,       setSaving]       = useState(false);
+  const [loadingFolders, setLoadingFolders] = useState(true);
+  const newFolderInputRef = useRef(null);
+
+  // Smart default filename
+  const smartDefault = generateSmartName(draft?.doc_type, sessionTitle, docIndex);
+
+  useEffect(() => {
+    setFileName(smartDefault);
+  }, [smartDefault]);
+
+  // Last-used folder hint
+  const lastFolder = (() => {
+    try { return JSON.parse(localStorage.getItem(LAST_FOLDER_KEY) || 'null'); } catch { return null; }
+  })();
+
+  // Load folder tree
+  useEffect(() => {
+    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+    fetch(`${apiBase}/api/vault/folders`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setFolders(data.folders || []);
+          setFlatFolders(data.flat || []);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingFolders(false));
+  }, [apiBase]);
+
+  const handleToggle = (id) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectFolder = (folder) => {
+    setSelectedFolder(folder);
+    // Auto-expand when selected
+    setExpandedIds(prev => new Set([...prev, folder.id]));
+  };
+
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    setNewFolderError('');
+    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+    try {
+      const res = await fetch(`${apiBase}/api/vault/folders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ name, parent_id: selectedFolder?.id ?? null }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setNewFolderError(data.message || 'Could not create folder.');
+        return;
+      }
+      // Inject new folder into tree state without refetch
+      const newNode = { id: data.id, name: data.name, parent_id: data.parent_id, children: [] };
+      setFlatFolders(prev => [...prev, newNode]);
+      if (data.parent_id == null) {
+        setFolders(prev => [...prev, newNode].sort((a,b) => a.name.localeCompare(b.name)));
+      } else {
+        // Inject into parent's children
+        const injectIntoTree = (nodes) => nodes.map(n => {
+          if (n.id === data.parent_id) return { ...n, children: [...(n.children || []), newNode].sort((a,b) => a.name.localeCompare(b.name)) };
+          if (n.children?.length) return { ...n, children: injectIntoTree(n.children) };
+          return n;
+        });
+        setFolders(prev => injectIntoTree(prev));
+      }
+      setSelectedFolder(newNode);
+      setExpandedIds(prev => new Set([...prev, data.parent_id, data.id].filter(Boolean)));
+      setNewFolderName('');
+      setIsCreating(false);
+    } catch {
+      setNewFolderError('Network error. Try again.');
+    }
+  };
+
+  // Build path string for display
+  const buildPath = (folderId, flat) => {
+    if (!folderId) return 'Root (Case Vault)';
+    const parts = [];
+    let id = folderId;
+    const seen = new Set();
+    while (id && !seen.has(id)) {
+      seen.add(id);
+      const node = flat.find(f => f.id === id);
+      if (!node) break;
+      parts.unshift(node.name);
+      id = node.parent_id;
+    }
+    return parts.join(' / ') || 'Root (Case Vault)';
+  };
+
+  const destPath = buildPath(selectedFolder?.id ?? null, flatFolders);
+  const fullPath = `${destPath} / ${fileName || smartDefault}`;
+
+  const handleConfirm = async () => {
+    const finalName = (fileName || smartDefault).trim();
+    if (!finalName) return;
+    setSaving(true);
+
+    // Persist last-used folder
+    if (selectedFolder) {
+      try {
+        localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify({
+          id: selectedFolder.id,
+          path: buildPath(selectedFolder.id, flatFolders),
+        }));
+      } catch {}
+    } else {
+      try { localStorage.removeItem(LAST_FOLDER_KEY); } catch {}
+    }
+
+    await onConfirm({
+      fileName: finalName,
+      folderId: selectedFolder?.id ?? null,
+      folderPath: destPath,
+      smartTitle: finalName,
+    });
+    setSaving(false);
+  };
+
+  const applyLastFolder = () => {
+    if (!lastFolder) return;
+    const node = flatFolders.find(f => f.id === lastFolder.id);
+    if (node) {
+      setSelectedFolder(node);
+      setExpandedIds(prev => {
+        const next = new Set(prev);
+        // Expand ancestors
+        let id = node.parent_id;
+        const seen = new Set();
+        while (id && !seen.has(id)) {
+          seen.add(id); next.add(id);
+          const anc = flatFolders.find(f => f.id === id);
+          id = anc?.parent_id;
+        }
+        return next;
+      });
+    }
+  };
+
+  return (
+    <div className="svm-backdrop" onClick={onClose}>
+      <div className="svm-panel" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="svm-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <svg width="15" height="15" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span className="svm-title">Save to Case Vault</span>
+          </div>
+          <button className="svm-close" onClick={onClose}>
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="svm-body">
+
+          {/* File name */}
+          <div>
+            <div className="svm-section-label">File Name</div>
+            <input
+              className="svm-filename-input"
+              value={fileName}
+              onChange={e => setFileName(e.target.value)}
+              placeholder={smartDefault}
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
+            />
+            <div style={{ fontSize: 10.5, color: '#475569', marginTop: 5 }}>
+              Smart default: <span style={{ color: '#7EB3F5' }}>{smartDefault}</span>
+            </div>
+          </div>
+
+          {/* Last-used folder shortcut */}
+          {lastFolder && (
+            <div className="svm-last-folder-hint" onClick={applyLastFolder}>
+              <span style={{ fontSize: 13 }}>📌</span>
+              <span>Last used: <strong>{lastFolder.path}</strong></span>
+              <span style={{ marginLeft: 'auto', fontSize: 10.5, opacity: .7 }}>Click to select →</span>
+            </div>
+          )}
+
+          {/* Folder picker */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span className="svm-section-label" style={{ marginBottom: 0 }}>Destination Folder</span>
+              <button
+                onClick={() => { setIsCreating(v => !v); setTimeout(() => newFolderInputRef.current?.focus(), 60); }}
+                style={{ background: 'none', border: '1px solid rgba(59,130,246,.25)', borderRadius: 5, color: '#7EB3F5', fontSize: 11, padding: '2px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                New Folder
+              </button>
+            </div>
+
+            {/* Root / top-level option */}
+            <div
+              className={`svm-root-row${!selectedFolder ? ' selected' : ''}`}
+              onClick={() => setSelectedFolder(null)}
+            >
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+              Root (Case Vault)
+            </div>
+
+            {/* Folder tree */}
+            <div className="svm-tree" style={{ marginTop: 4, maxHeight: 220, overflowY: 'auto' }}>
+              {loadingFolders ? (
+                <div style={{ padding: '14px 10px', fontSize: 12, color: '#475569', textAlign: 'center' }}>
+                  Loading folders…
+                </div>
+              ) : folders.length === 0 ? (
+                <div style={{ padding: '12px 10px', fontSize: 12, color: '#334155', textAlign: 'center', fontStyle: 'italic' }}>
+                  No folders yet — create one above
+                </div>
+              ) : (
+                folders.map(folder => (
+                  <FolderNode
+                    key={folder.id}
+                    folder={folder}
+                    depth={0}
+                    selectedId={selectedFolder?.id}
+                    expandedIds={expandedIds}
+                    onSelect={handleSelectFolder}
+                    onToggle={handleToggle}
+                  />
+                ))
+              )}
+            </div>
+
+            {/* Inline new-folder creator */}
+            {isCreating && (
+              <div className="svm-new-folder-row">
+                <svg width="12" height="12" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <input
+                  ref={newFolderInputRef}
+                  className="svm-new-folder-input"
+                  placeholder={selectedFolder ? `New folder inside "${selectedFolder.name}"…` : 'New root folder name…'}
+                  value={newFolderName}
+                  onChange={e => { setNewFolderName(e.target.value); setNewFolderError(''); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleCreateFolder();
+                    if (e.key === 'Escape') { setIsCreating(false); setNewFolderName(''); }
+                  }}
+                />
+                <button
+                  onClick={handleCreateFolder}
+                  disabled={!newFolderName.trim()}
+                  style={{ background: '#3B82F6', border: 'none', color: '#fff', padding: '3px 10px', borderRadius: 4, fontSize: 11.5, cursor: newFolderName.trim() ? 'pointer' : 'not-allowed', opacity: newFolderName.trim() ? 1 : .45, flexShrink: 0 }}
+                >
+                  Create
+                </button>
+                <button
+                  onClick={() => { setIsCreating(false); setNewFolderName(''); setNewFolderError(''); }}
+                  style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 14, padding: '0 3px', flexShrink: 0 }}
+                >×</button>
+              </div>
+            )}
+            {newFolderError && (
+              <div style={{ fontSize: 11, color: '#F87171', marginTop: 5, paddingLeft: 4 }}>{newFolderError}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="svm-footer">
+          <div>
+            <div className="svm-dest-label">Saving to</div>
+            <div className="svm-dest-path" style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullPath}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="svm-btn-ghost" onClick={onClose}>Cancel</button>
+            <button
+              className="svm-btn-primary"
+              disabled={saving || !(fileName || smartDefault).trim()}
+              onClick={handleConfirm}
+            >
+              {saving ? 'Saving…' : '💾 Confirm Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  CONVERSATION 3-DOTS MENU
+// ═══════════════════════════════════════════════════════
+function ConversationMenu({ session, isActive, onPin, onRename, onShare, onDelete, onClose }) {
+  const menuRef = useRef(null);
+  const [flipUp, setFlipUp] = useState(false);
+
+  useEffect(() => {
+    if (menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      if (rect.bottom > window.innerHeight - 20) setFlipUp(true);
+    }
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="lex-ctx-menu"
+      style={{
+        right: 0,
+        ...(flipUp ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }),
+      }}
+    >
+      <button className="lex-ctx-item" onClick={onPin}>
+        <svg className="lex-ctx-item-icon" fill="none" stroke={session.pinned ? '#F59E0B' : 'currentColor'} strokeWidth="2" viewBox="0 0 24 24">
+          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+        </svg>
+        {session.pinned ? 'Unpin' : 'Pin to top'}
+      </button>
+      <button className="lex-ctx-item" onClick={onRename}>
+        <svg className="lex-ctx-item-icon" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        Rename
+      </button>
+      <button className="lex-ctx-item" onClick={onShare}>
+        <svg className="lex-ctx-item-icon" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        Share
+      </button>
+      <button className="lex-ctx-item danger" onClick={onDelete}>
+        <svg className="lex-ctx-item-icon" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/>
+        </svg>
+        Delete
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  SHARE MODAL  (stub — no backend email route)
+// ═══════════════════════════════════════════════════════
+function ShareModal({ sessionTitle, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const shareUrl = `${window.location.origin}/vault?ref=${encodeURIComponent(sessionTitle.slice(0, 40))}`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="svm-backdrop" onClick={onClose}>
+      <div className="svm-panel" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="svm-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <svg width="15" height="15" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            <span className="svm-title">Share Conversation</span>
+          </div>
+          <button className="svm-close" onClick={onClose}>
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div className="svm-body" style={{ gap: 12 }}>
+          <div style={{ fontSize: 12.5, color: '#94A3B8', lineHeight: 1.6 }}>
+            Share this conversation with a colleague. They will need a LexAmplify account to view the full chat.
+          </div>
+          <div>
+            <div className="svm-section-label">Shareable Link</div>
+            <div className="svm-share-url">{shareUrl}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="svm-btn-primary"
+              style={{ flex: 1, textAlign: 'center' }}
+              onClick={handleCopy}
+            >
+              {copied ? '✓ Copied!' : '📋 Copy Link'}
+            </button>
+            <button
+              className="svm-btn-ghost"
+              onClick={() => window.open(`mailto:?subject=LexAmplify%20Session%3A%20${encodeURIComponent(sessionTitle)}&body=I%27ve%20shared%20a%20legal%20session%20with%20you%3A%20${encodeURIComponent(shareUrl)}`, '_blank')}
+            >
+              📧 Email
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: '#334155', textAlign: 'center', fontStyle: 'italic' }}>
+            Full session collaboration (real-time sync) is available on the Firm plan.
+          </div>
+        </div>
+        <div className="svm-footer" style={{ justifyContent: 'flex-end' }}>
+          <button className="svm-btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════
 //  COMPONENT
@@ -406,6 +1126,17 @@ export default function CommandPalette() {
   // ── File attachment ──────────────────────────────────
   const [attachedFile, setAttachedFile] = useState(null); // { name, content }
   const [fileLoading,  setFileLoading]  = useState(false);
+
+  // ── Save to Vault Modal ───────────────────────────────
+  const [showSaveModal,   setShowSaveModal]   = useState(false);
+  const [saveModalDocIdx, setSaveModalDocIdx] = useState(0); // doc count at modal open
+
+  // ── Conversation 3-dots menu ──────────────────────────
+  const [openMenuId,      setOpenMenuId]      = useState(null);   // session id with open menu
+  const [renamingId,      setRenamingId]      = useState(null);   // session being renamed
+  const [renameValue,     setRenameValue]     = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);   // session pending deletion
+  const [shareSessionId,  setShareSessionId]  = useState(null);   // session showing share modal
 
   // ── Refs ─────────────────────────────────────────────
   const inputRef       = useRef(null);
@@ -477,14 +1208,14 @@ export default function CommandPalette() {
     setNavRoute(null);
   }, []);
 
-  const deleteSession = useCallback((id, e) => {
-    e.stopPropagation();
+  const deleteSession = useCallback((id) => {
     mutateSessions(prev => {
       const next = prev.filter(s => s.id !== id);
       if (id === currentId) {
         if (next.length > 0) {
-          setCurrentId(next[0].id);
-          localStorage.setItem(CURRENT_KEY, next[0].id);
+          const nextActive = next.find(s => s.pinned) || next[0];
+          setCurrentId(nextActive.id);
+          localStorage.setItem(CURRENT_KEY, nextActive.id);
         } else {
           const fresh = makeSession();
           next.unshift(fresh);
@@ -495,6 +1226,19 @@ export default function CommandPalette() {
       return next;
     });
   }, [currentId, mutateSessions]);
+
+  const pinSession = useCallback((id) => {
+    mutateSessions(prev =>
+      prev.map(s => s.id === id ? { ...s, pinned: !s.pinned } : s)
+    );
+  }, [mutateSessions]);
+
+  const renameSession = useCallback((id, newTitle) => {
+    if (!newTitle.trim()) return;
+    mutateSessions(prev =>
+      prev.map(s => s.id === id ? { ...s, title: newTitle.trim() } : s)
+    );
+  }, [mutateSessions]);
 
   // Bootstrap: always have a session
   useEffect(() => {
@@ -825,12 +1569,18 @@ export default function CommandPalette() {
             }
 
             if (p.action === 'review_document') {
-              updateSession(sid, s => ({ ...s, pendingDraft: p.draft, activeDocument: p.draft }));
+              // Compute smart name using session's current doc count
+              const sess = sessions.find(s => s.id === sid);
+              const existingDocCount = (sess?.messages || []).filter(m => m.docCard).length;
+              const sessTitle = sess?.title || '';
+              const smart = generateSmartName(p.draft.doc_type, sessTitle, existingDocCount);
+              const enrichedDraft = { ...p.draft, smartTitle: smart };
+              updateSession(sid, s => ({ ...s, pendingDraft: enrichedDraft, activeDocument: enrichedDraft }));
               patchMessage(sid, msgId, m => ({
                 ...m,
                 text: 'Document drafted. Review and edit it in the draft panel →',
                 docCard: {
-                  title: p.draft.title,
+                  title: smart,
                   doc_type: p.draft.doc_type,
                   snapshot: p.draft.content,
                   ts: Date.now(),
@@ -877,8 +1627,18 @@ export default function CommandPalette() {
     } finally { setLoading(false); }
   }
 
-  // ── Approve draft ────────────────────────────────────
-  async function handleApproveDraft() {
+  // ── Approve draft — opens SaveToVaultModal ───────────
+  function handleApproveDraft() {
+    if (!activeDocument || !currentId) return;
+    // Count how many docs have already been saved in this session (for smart versioning)
+    const session = sessions.find(s => s.id === currentId);
+    const docCount = (session?.messages || []).filter(m => m.docCard).length;
+    setSaveModalDocIdx(docCount);
+    setShowSaveModal(true);
+  }
+
+  // ── Called by SaveToVaultModal on Confirm ────────────
+  async function handleSaveModalConfirm({ fileName, folderId, folderPath, smartTitle }) {
     if (!activeDocument || !currentId) return;
     setLoading(true);
     try {
@@ -887,20 +1647,28 @@ export default function CommandPalette() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
         body: JSON.stringify({
-          case_id:  activeDocument.case_id,
-          title:    activeDocument.title,
-          doc_type: activeDocument.doc_type || '',
-          content:  activeDocument.content,
+          case_id:     activeDocument.case_id || 'GENERAL',
+          title:       fileName,
+          doc_type:    activeDocument.doc_type || '',
+          content:     activeDocument.content,
+          folder_id:   folderId,
+          smart_title: smartTitle,
         }),
       });
+      const data = r.ok ? await r.json() : null;
       updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
       setDrawerOpen(false);
+      setShowSaveModal(false);
+      const displayPath = data?.location || (folderPath ? `${folderPath} / ${fileName}` : fileName);
       pushMessage(currentId, {
         id: `sys_${Date.now()}`, role: r.ok ? 'assistant' : 'error',
-        text: r.ok ? '✅ Document saved to Case Vault.' : 'Failed to save document. Please try again.',
+        text: r.ok
+          ? `✅ Saved → **${displayPath}**`
+          : 'Failed to save document. Please try again.',
       });
     } catch (_) {
       pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save to Case Vault.' });
+      setShowSaveModal(false);
     } finally { setLoading(false); }
   }
 
@@ -940,27 +1708,101 @@ export default function CommandPalette() {
 
   // Group sessions for sidebar
   const now = Date.now();
-  const todaySess     = sessions.filter(s => now - s.updatedAt < 86400000);
-  const yesterdaySess = sessions.filter(s => now - s.updatedAt >= 86400000 && now - s.updatedAt < 172800000);
-  const olderSess     = sessions.filter(s => now - s.updatedAt >= 172800000);
+  const pinnedSess    = sessions.filter(s => s.pinned);
+  const unpinned      = sessions.filter(s => !s.pinned);
+  const todaySess     = unpinned.filter(s => now - s.updatedAt < 86400000);
+  const yesterdaySess = unpinned.filter(s => now - s.updatedAt >= 86400000 && now - s.updatedAt < 172800000);
+  const olderSess     = unpinned.filter(s => now - s.updatedAt >= 172800000);
 
-  // Sidebar session row renderer (with nested document tree for active session)
+  // Sidebar session row renderer (with 3-dots menu + nested document tree)
   const SessionRow = ({ s }) => {
     const isActive   = s.id === currentId;
     const docHistory = isActive ? (s.messages || []).filter(m => m.docCard) : [];
+    const isRenaming = renamingId === s.id;
+    const isConfirmDelete = deleteConfirmId === s.id;
+    const menuIsOpen = openMenuId === s.id;
+
     return (
       <div
         className={`lex-sess-item ${isActive ? 'active' : ''}`}
-        onClick={() => selectSession(s.id)}
+        style={{ position: 'relative' }}
+        onClick={() => { if (!isRenaming) selectSession(s.id); }}
       >
+        {/* Delete confirmation overlay */}
+        {isConfirmDelete && (
+          <div className="lex-confirm-delete" onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 11.5, color: '#F87171', textAlign: 'center', lineHeight: 1.5 }}>
+              Delete "<strong>{truncate(s.title, 30)}</strong>"?<br/>
+              <span style={{ color: '#64748B', fontWeight: 400 }}>This cannot be undone.</span>
+            </div>
+            <div style={{ display: 'flex', gap: 7 }}>
+              <button
+                onClick={e => { e.stopPropagation(); setDeleteConfirmId(null); }}
+                style={{ padding: '5px 13px', background: 'transparent', border: '1px solid #1A2030', borderRadius: 5, color: '#64748B', fontSize: 11, cursor: 'pointer' }}
+              >Cancel</button>
+              <button
+                onClick={e => { e.stopPropagation(); deleteSession(s.id); setDeleteConfirmId(null); }}
+                style={{ padding: '5px 13px', background: '#EF4444', border: 'none', borderRadius: 5, color: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+              >Delete</button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '12px', fontWeight: isActive ? 600 : 400, color: isActive ? '#93C5FD' : '#9BAFC0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.35' }}>
-              {s.title}
-            </div>
+            {/* Pinned badge */}
+            {s.pinned && (
+              <span className="lex-pinned-badge" style={{ display: 'inline-block', marginBottom: 3 }}>Pinned</span>
+            )}
+
+            {isRenaming ? (
+              <input
+                className="lex-rename-input"
+                autoFocus
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                onClick={e => e.stopPropagation()}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
+                  if (e.key === 'Escape') setRenamingId(null);
+                }}
+                onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
+              />
+            ) : (
+              <div style={{ fontSize: '12px', fontWeight: isActive ? 600 : 400, color: isActive ? '#93C5FD' : '#9BAFC0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.35' }}>
+                {s.title}
+              </div>
+            )}
             <div style={{ fontSize: '10px', color: '#64748B', letterSpacing: '.03em', marginTop: '2px' }}>{relativeDate(s.updatedAt)}</div>
           </div>
-          <button className="lex-sess-del" onClick={(e) => deleteSession(s.id, e)} title="Delete conversation">×</button>
+
+          {/* 3-dots trigger */}
+          <div style={{ position: 'relative', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <button
+              className="lex-3dots-btn"
+              title="More options"
+              onClick={e => {
+                e.stopPropagation();
+                setOpenMenuId(v => v === s.id ? null : s.id);
+              }}
+            >
+              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+              </svg>
+            </button>
+
+            {menuIsOpen && (
+              <ConversationMenu
+                session={s}
+                isActive={isActive}
+                onClose={() => setOpenMenuId(null)}
+                onPin={() => { pinSession(s.id); setOpenMenuId(null); }}
+                onRename={() => { setRenamingId(s.id); setRenameValue(s.title); setOpenMenuId(null); }}
+                onShare={() => { setShareSessionId(s.id); setOpenMenuId(null); }}
+                onDelete={() => { setDeleteConfirmId(s.id); setOpenMenuId(null); }}
+              />
+            )}
+          </div>
         </div>
 
         {/* Nested document tree — only for current session */}
@@ -973,10 +1815,11 @@ export default function CommandPalette() {
                 onClick={e => {
                   e.stopPropagation();
                   const snap = {
-                    title:   m.docCard.title,
-                    content: m.docCard.snapshot,
+                    title:    m.docCard.title,
+                    content:  m.docCard.snapshot,
                     doc_type: m.docCard.doc_type,
-                    case_id: s.activeDocument?.case_id || 'Unknown',
+                    case_id:  s.activeDocument?.case_id || 'GENERAL',
+                    smartTitle: m.docCard.title,
                   };
                   updateSession(currentId, ss => ({ ...ss, pendingDraft: snap, activeDocument: snap }));
                   setViewingSnapshot(null);
@@ -1057,6 +1900,12 @@ export default function CommandPalette() {
                 </div>
               ) : (
                 <>
+                  {pinnedSess.length > 0 && (
+                    <>
+                      <SectionLabel label="Pinned Matters" />
+                      {pinnedSess.map(s => <SessionRow key={s.id} s={s} />)}
+                    </>
+                  )}
                   {todaySess.length > 0 && (
                     <><SectionLabel label="Today" />{todaySess.map(s => <SessionRow key={s.id} s={s} />)}</>
                   )}
@@ -1663,6 +2512,29 @@ export default function CommandPalette() {
 
         </div>
       </div>
+
+      {/* ── Save-to-Vault Modal ──────────────────────── */}
+      {showSaveModal && (
+        <SaveToVaultModal
+          draft={activeDocument}
+          sessionTitle={currentSession?.title || ''}
+          docIndex={saveModalDocIdx}
+          apiBase={API_BASE}
+          onConfirm={handleSaveModalConfirm}
+          onClose={() => setShowSaveModal(false)}
+        />
+      )}
+
+      {/* ── Share Modal ──────────────────────────────── */}
+      {shareSessionId && (() => {
+        const shareSess = sessions.find(s => s.id === shareSessionId);
+        return shareSess ? (
+          <ShareModal
+            sessionTitle={shareSess.title}
+            onClose={() => setShareSessionId(null)}
+          />
+        ) : null;
+      })()}
     </>
   );
 }
