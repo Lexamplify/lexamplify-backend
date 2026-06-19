@@ -553,6 +553,27 @@ const AGENT_CSS = `
     border-radius: 7px; padding: 10px 12px; font-size: 12px; color: #7EB3F5;
     font-family: monospace; word-break: break-all; line-height: 1.5;
   }
+
+  /* ══════════════════════════════════════════════
+       RICH TEXT EDITOR TOOLBAR
+  ══════════════════════════════════════════════ */
+  .lex-rte-toolbar {
+    display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+    padding: 5px 10px; flex-wrap: wrap;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    background: #080B12;
+  }
+  .lex-rte-btn {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 28px; height: 26px; padding: 0 6px;
+    background: transparent; border: 1px solid transparent;
+    border-radius: 4px; cursor: pointer; transition: all .12s;
+    color: #506275; font-size: 12.5px; font-family: inherit; line-height: 1;
+    user-select: none;
+  }
+  .lex-rte-btn:hover { background: rgba(59,130,246,.1); border-color: rgba(59,130,246,.22); color: #93C5FD; }
+  .lex-rte-sep { width: 1px; height: 18px; background: rgba(255,255,255,.07); margin: 0 3px; flex-shrink: 0; }
+  .lex-rte-group { display: flex; align-items: center; gap: 1px; }
 `;
 
 // ═══════════════════════════════════════════════════════
@@ -651,6 +672,104 @@ function FolderNode({ folder, depth, selectedId, expandedIds, onSelect, onToggle
         </div>
       )}
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  RICH TEXT EDITOR TOOLBAR
+//  onMouseDown + e.preventDefault() is the critical pattern:
+//  it prevents the button from stealing focus/selection from
+//  the contentEditable editor, so execCommand sees the right range.
+// ═══════════════════════════════════════════════════════
+function RichTextToolbar({ targetRef }) {
+  const exec = (cmd, value = null) => {
+    targetRef.current?.focus();
+    document.execCommand(cmd, false, value);
+  };
+
+  const BoldIcon = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/>
+    </svg>
+  );
+  const ItalicIcon = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>
+    </svg>
+  );
+  const UnderlineIcon = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3"/><line x1="4" y1="21" x2="20" y2="21"/>
+    </svg>
+  );
+  const StrikeIcon = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <line x1="4" y1="12" x2="20" y2="12"/>
+      <path d="M8 8c0-2.2 1.8-4 4-4s4 1.8 4 4c0 1.1-.4 2-1 2.7"/>
+      <path d="M8 16c0 2.2 1.8 4 4 4s4-1.8 4-4"/>
+    </svg>
+  );
+  const OLIcon = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/>
+      <text x="2" y="7" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">1.</text>
+      <text x="2" y="13" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">2.</text>
+      <text x="2" y="19" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">3.</text>
+    </svg>
+  );
+  const ULIcon = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/>
+      <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+  const ClearIcon = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.375-9.375z"/>
+      <line x1="6" y1="20" x2="10" y2="16" strokeWidth="2.5" stroke="#F87171"/>
+    </svg>
+  );
+
+  return (
+    <div className="lex-rte-toolbar" onMouseDown={e => e.preventDefault()}>
+      <div className="lex-rte-group">
+        <button className="lex-rte-btn" title="Bold (Ctrl+B)" onMouseDown={() => exec('bold')}>
+          <BoldIcon />
+        </button>
+        <button className="lex-rte-btn" title="Italic (Ctrl+I)" onMouseDown={() => exec('italic')}>
+          <ItalicIcon />
+        </button>
+        <button className="lex-rte-btn" title="Underline (Ctrl+U)" onMouseDown={() => exec('underline')}>
+          <UnderlineIcon />
+        </button>
+        <button className="lex-rte-btn" title="Strikethrough" onMouseDown={() => exec('strikeThrough')}>
+          <StrikeIcon />
+        </button>
+      </div>
+
+      <div className="lex-rte-sep" />
+
+      <div className="lex-rte-group">
+        <button className="lex-rte-btn" title="Numbered list" onMouseDown={() => exec('insertOrderedList')}>
+          <OLIcon />
+        </button>
+        <button className="lex-rte-btn" title="Bullet list" onMouseDown={() => exec('insertUnorderedList')}>
+          <ULIcon />
+        </button>
+      </div>
+
+      <div className="lex-rte-sep" />
+
+      <div className="lex-rte-group">
+        <button className="lex-rte-btn" title="Clear formatting" onMouseDown={() => exec('removeFormat')}
+          style={{ color: '#64748B' }}
+        >
+          <ClearIcon />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -2485,6 +2604,9 @@ export default function CommandPalette() {
                     Edit below · Highlighted fields <span style={{ color: '#FCD34D' }}>[require your input]</span> · Approve to save to vault
                   </div>
                 )}
+
+                {/* Formatting toolbar — only shown in edit mode (not viewing snapshot) */}
+                {!viewingSnapshot && <RichTextToolbar targetRef={drawerBodyRef} />}
 
                 {/* Document body — Smart Paper with placeholder highlighting.
                     Uses ref-based innerHTML (not dangerouslySetInnerHTML) so React re-renders

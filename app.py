@@ -382,7 +382,14 @@ def create_app():
             conn.row_factory = sqlite3.Row
             try:
                 c = conn.cursor()
-                c.execute("SELECT * FROM case_vault ORDER BY created_at DESC")
+                c.execute("""
+                    SELECT cv.*,
+                           vf.name       AS folder_name,
+                           vf.parent_id  AS folder_parent_id
+                    FROM   case_vault cv
+                    LEFT JOIN vault_folders vf ON cv.folder_id = vf.id
+                    ORDER BY cv.created_at DESC
+                """)
                 rows = c.fetchall()
                 dict_rows = [dict(row) for row in rows]
             finally:

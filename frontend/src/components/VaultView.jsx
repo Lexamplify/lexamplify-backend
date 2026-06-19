@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { uploadDocument, fetchTrackedCases, saveTrackedCase, fetchCauselist } from '../services/api';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
 const vaultStyles = `
   @keyframes fadeIn {
@@ -13,17 +15,48 @@ const vaultStyles = `
   }
   .animate-fade-in { animation: fadeIn 0.3s cubic-bezier(0.16,1,0.3,1) forwards; }
 
-  /* ── Document Grid Card ─── */
+  /* ── Folder Cards ── */
+  .vault-folder-card {
+    background: rgba(59,130,246,0.04);
+    border: 1px solid rgba(59,130,246,0.15);
+    border-radius: 9px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer; transition: all 0.18s; min-width: 0;
+  }
+  .vault-folder-card:hover {
+    background: rgba(59,130,246,0.1);
+    border-color: rgba(59,130,246,0.38);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(59,130,246,0.12);
+  }
+  .vault-folder-icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
+  .vault-folder-name { font-size: 13px; font-weight: 600; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vault-folder-meta { font-size: 10.5px; color: var(--text-dark-muted, #8F9CAE); margin-top: 2px; }
+
+  /* ── Breadcrumb ── */
+  .vault-breadcrumb {
+    display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+    padding: 8px 12px; margin-bottom: 16px;
+    background: rgba(59,130,246,0.04);
+    border: 1px solid rgba(59,130,246,0.12); border-radius: 7px;
+    font-size: 12.5px;
+  }
+  .vault-bc-btn {
+    background: none; border: none; cursor: pointer; padding: 0;
+    color: var(--accent-primary, #3B82F6); font-size: 12.5px; font-family: inherit;
+    font-weight: 500; transition: opacity 0.15s;
+  }
+  .vault-bc-btn:hover { opacity: 0.75; }
+  .vault-bc-sep { color: var(--text-dark-muted, #8F9CAE); font-size: 11px; }
+  .vault-bc-current { color: white; font-weight: 600; }
+
+  /* ── Document Grid Card ── */
   .vault-grid-card {
     background-color: var(--bg-dark-panel, #171c26);
     border: 1px solid var(--border-dark-subtle, #2C3241);
-    border-radius: 10px;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    position: relative;
-    overflow: hidden;
+    border-radius: 10px; padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    position: relative; overflow: hidden;
     transition: all 0.22s cubic-bezier(0.4,0,0.2,1);
   }
   .vault-grid-card:hover {
@@ -32,31 +65,25 @@ const vaultStyles = `
     box-shadow: 0 8px 24px rgba(59,130,246,0.1);
   }
   .vault-card-preview {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 11.5px;
-    line-height: 1.55;
-    color: var(--text-dark-muted, #8F9CAE);
-    font-family: monospace;
-    background: rgba(255,255,255,0.015);
-    padding: 8px 10px;
-    border-radius: 5px;
-    border: 1px solid rgba(255,255,255,0.04);
-    flex: 1;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; text-overflow: ellipsis;
+    font-size: 11.5px; line-height: 1.55; color: var(--text-dark-muted, #8F9CAE);
+    font-family: monospace; background: rgba(255,255,255,0.015);
+    padding: 8px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.04); flex: 1;
+  }
+  .vault-folder-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; color: #60A5FA;
+    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.15);
+    padding: 1px 6px; border-radius: 4px; font-weight: 500;
   }
 
   /* ── Upload Zone ── */
   .drag-drop-zone {
     border: 2px dashed var(--border-dark-subtle, #2C3241);
     background-color: var(--bg-dark-app, #0f131a);
-    border-radius: 10px;
-    padding: 28px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+    border-radius: 10px; padding: 28px 20px; text-align: center;
+    cursor: pointer; transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
     margin-bottom: 24px;
   }
   .drag-drop-zone:hover, .drag-drop-zone.dragover {
@@ -67,93 +94,56 @@ const vaultStyles = `
 
   /* ── Tabs ── */
   .tabs-wrapper {
-    display: flex;
-    overflow-x: auto;
+    display: flex; overflow-x: auto;
     border-bottom: 1px solid var(--border-dark-subtle, #2C3241);
-    margin-bottom: 24px;
-    gap: 4px;
-    padding-bottom: 0;
+    margin-bottom: 24px; gap: 4px; padding-bottom: 0;
   }
   .tab-btn {
-    background: transparent;
-    border: none;
+    background: transparent; border: none;
     border-bottom: 2px solid transparent;
     color: var(--text-dark-muted, #8F9CAE);
-    padding: 10px 16px;
-    font-size: 13.5px;
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.18s;
-    margin-bottom: -1px;
-    border-radius: 6px 6px 0 0;
+    padding: 10px 16px; font-size: 13.5px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; transition: all 0.18s;
+    margin-bottom: -1px; border-radius: 6px 6px 0 0;
   }
   .tab-btn:hover { color: var(--text-dark-primary, #fff); }
-  .tab-btn.active {
-    color: var(--accent-primary, #3B82F6);
-    border-bottom-color: var(--accent-primary, #3B82F6);
-    font-weight: 600;
-  }
+  .tab-btn.active { color: var(--accent-primary, #3B82F6); border-bottom-color: var(--accent-primary, #3B82F6); font-weight: 600; }
 
   /* ── Panels ── */
-  .dashboard-panel {
-    background-color: var(--bg-dark-panel, #171c26);
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    border-radius: 12px;
-    padding: 24px;
-  }
+  .dashboard-panel { background-color: var(--bg-dark-panel, #171c26); border: 1px solid var(--border-dark-subtle, #2C3241); border-radius: 12px; padding: 24px; }
   .panel-header h2 { font-size: 18px; margin-bottom: 5px; color: white; }
   .panel-header p  { font-size: 13px; color: var(--text-dark-muted, #8F9CAE); margin: 0; }
   .control-row { display: flex; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; align-items: flex-end; }
   .input-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 200px; }
   .input-label { font-size: 12px; color: var(--text-dark-muted, #8F9CAE); font-weight: 500; }
   .input-field {
-    background-color: var(--bg-dark-app, #0f131a);
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    color: white;
-    border-radius: 7px;
-    padding: 9px 13px;
-    font-family: var(--font-sans);
-    font-size: 13.5px;
-    outline: none;
-    transition: border-color 0.2s;
+    background-color: var(--bg-dark-app, #0f131a); border: 1px solid var(--border-dark-subtle, #2C3241);
+    color: white; border-radius: 7px; padding: 9px 13px; font-family: var(--font-sans);
+    font-size: 13.5px; outline: none; transition: border-color 0.2s;
   }
   .input-field:focus { border-color: var(--accent-primary, #3B82F6); }
   .btn-accent {
-    background-color: var(--accent-primary, #3B82F6);
-    color: white; border: none; border-radius: 7px;
-    padding: 9px 16px; font-size: 13px; font-weight: 600;
-    cursor: pointer; transition: background-color 0.2s, transform 0.1s;
-    white-space: nowrap;
+    background-color: var(--accent-primary, #3B82F6); color: white; border: none; border-radius: 7px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s; white-space: nowrap;
   }
   .btn-accent:hover { background-color: #2563EB; }
   .btn-secondary {
     background-color: transparent; color: var(--text-dark-primary, #fff);
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    border-radius: 7px; padding: 9px 16px; font-size: 13px;
-    font-weight: 600; cursor: pointer; transition: background-color 0.2s;
-    white-space: nowrap;
+    border: 1px solid var(--border-dark-subtle, #2C3241); border-radius: 7px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background-color 0.2s; white-space: nowrap;
   }
   .btn-secondary:hover { background-color: rgba(255,255,255,0.05); }
 
   /* ── Search ── */
   .vault-search-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--bg-dark-app, #0f131a);
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    border-radius: 8px;
-    padding: 8px 14px;
-    margin-bottom: 18px;
-    transition: border-color 0.2s;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-dark-app, #0f131a); border: 1px solid var(--border-dark-subtle, #2C3241);
+    border-radius: 8px; padding: 8px 14px; margin-bottom: 18px; transition: border-color 0.2s;
   }
   .vault-search-bar:focus-within { border-color: var(--accent-primary, #3B82F6); }
-  .vault-search-input {
-    background: transparent; border: none; outline: none;
-    color: white; font-size: 13.5px; font-family: var(--font-sans); flex: 1;
-    width: 100%;
-  }
+  .vault-search-input { background: transparent; border: none; outline: none; color: white; font-size: 13.5px; font-family: var(--font-sans); flex: 1; width: 100%; }
   .vault-search-input::placeholder { color: var(--text-dark-muted); }
 
   /* ── Table ── */
@@ -178,8 +168,6 @@ const vaultStyles = `
     transition: all 0.15s; display: flex; align-items: center; gap: 5px;
   }
   .vault-btn-analyze:hover { border-color: rgba(59,130,246,0.4); color: var(--accent-primary, #3B82F6); }
-
-  /* ── Quick AI Actions ── */
   .vault-card-quick-actions { display: flex; gap: 6px; padding: 0 0 2px; }
   .vault-btn-quick {
     flex: 1; padding: 6px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
@@ -201,7 +189,6 @@ const vaultStyles = `
   .form-group { display: flex; flex-direction: column; gap: 6px; }
 `;
 
-// Doc type → accent color
 const DOC_TYPE_STYLES = {
   'Legal Document':       { bg: 'rgba(59,130,246,0.1)',  color: '#3B82F6' },
   'Contract':             { bg: 'rgba(16,185,129,0.1)',  color: '#10B981' },
@@ -210,6 +197,7 @@ const DOC_TYPE_STYLES = {
   'Draft':                { bg: 'rgba(139,92,246,0.1)',  color: '#8B5CF6' },
   'Agreement':            { bg: 'rgba(6,182,212,0.1)',   color: '#06B6D4' },
   'Judgment':             { bg: 'rgba(236,72,153,0.1)',  color: '#EC4899' },
+  'Non-Disclosure Agreement': { bg: 'rgba(99,102,241,0.1)', color: '#818CF8' },
   'Courtroom Simulation': { bg: 'rgba(239,68,68,0.07)',  color: '#FCA5A5' },
 };
 
@@ -221,33 +209,77 @@ function getDocTypeStyle(type) {
 
 function formatDate(str) {
   if (!str) return '—';
-  try {
-    return new Date(str).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch { return str; }
+  try { return new Date(str).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return str; }
 }
 
+// ─── Breadcrumb Component ────────────────────────────────────────────────────
+function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo }) {
+  return (
+    <div className="vault-breadcrumb">
+      <button className="vault-bc-btn" onClick={onNavigateToRoot}>
+        🏠 Case Vault
+      </button>
+      {folderPath.map((crumb, i) => (
+        <React.Fragment key={crumb.id}>
+          <span className="vault-bc-sep">›</span>
+          {i === folderPath.length - 1 ? (
+            <span className="vault-bc-current">{crumb.name}</span>
+          ) : (
+            <button className="vault-bc-btn" onClick={() => onNavigateTo(i)}>
+              {crumb.name}
+            </button>
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// ─── Folder Card Component ───────────────────────────────────────────────────
+function FolderCard({ folder, docCount, subFolderCount, onClick }) {
+  return (
+    <div className="vault-folder-card" onClick={onClick}>
+      <span className="vault-folder-icon">📁</span>
+      <div style={{ minWidth: 0 }}>
+        <div className="vault-folder-name">{folder.name}</div>
+        <div className="vault-folder-meta">
+          {docCount} doc{docCount !== 1 ? 's' : ''}
+          {subFolderCount > 0 && ` · ${subFolderCount} folder${subFolderCount !== 1 ? 's' : ''}`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 export default function VaultView() {
   const [activeTab, setActiveTab] = useState('vault');
 
   // Document Vault
-  const [documents, setDocuments] = useState([]);
+  const [documents, setDocuments]     = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
-  const [docError, setDocError] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const fileInputRef = useRef(null);
+  const [docError, setDocError]       = useState(null);
+  const [uploading, setUploading]     = useState(false);
+  const [isDragOver, setIsDragOver]   = useState(false);
+  const [searchTerm, setSearchTerm]   = useState('');
+  const fileInputRef                  = useRef(null);
+
+  // Folder navigation
+  const [folders, setFolders]             = useState([]);   // flat list from API
+  const [currentFolderId, setCurrentFolderId] = useState(null);  // null = root
+  const [folderPath, setFolderPath]           = useState([]);    // [{id, name}]
 
   // Case Tracker
-  const [cases, setCases] = useState([]);
+  const [cases, setCases]               = useState([]);
   const [loadingCases, setLoadingCases] = useState(false);
-  const [fetchCnr, setFetchCnr] = useState('');
+  const [fetchCnr, setFetchCnr]         = useState('');
   const [fetchingStatus, setFetchingStatus] = useState(false);
-  const [fallbackUrl, setFallbackUrl] = useState('');
+  const [fallbackUrl, setFallbackUrl]   = useState('');
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [savingCase, setSavingCase] = useState(false);
+  const [savingCase, setSavingCase]   = useState(false);
   const [formData, setFormData] = useState({
     case_name: '', client_name: '', case_number: '', cnr_number: '',
     case_type: '', court: '', next_hearing: '', last_hearing: '', status: 'Active', notes: ''
@@ -255,21 +287,36 @@ export default function VaultView() {
 
   const navigate = useNavigate();
 
-  // ── Load docs ───────────────────────────────────────────────────────────────
+  // ── Load documents ────────────────────────────────────────────────────────
   const loadDocuments = async () => {
     setLoadingDocs(true);
     setDocError(null);
     try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
-      const response = await fetch(`${apiBase}/api/vault/documents`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
+      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+      const res = await fetch(`${API_BASE}/api/vault/documents`, {
+        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
       setDocuments(data.documents || []);
     } catch (err) {
       setDocError(err.message || 'Failed to fetch vault documents.');
     } finally {
       setLoadingDocs(false);
     }
+  };
+
+  // ── Load folders ──────────────────────────────────────────────────────────
+  const loadFolders = async () => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+      const res = await fetch(`${API_BASE}/api/vault/folders`, {
+        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setFolders(data.flat || []);
+    } catch (_) {}
   };
 
   const loadCases = async () => {
@@ -280,20 +327,93 @@ export default function VaultView() {
   };
 
   useEffect(() => {
-    if (activeTab === 'vault')   loadDocuments();
+    if (activeTab === 'vault') { loadDocuments(); loadFolders(); }
     if (activeTab === 'tracker') loadCases();
   }, [activeTab]);
 
-  // ── File upload ─────────────────────────────────────────────────────────────
+  // ── Folder navigation ─────────────────────────────────────────────────────
+  const navigateToFolder = (folder) => {
+    setCurrentFolderId(folder.id);
+    setFolderPath(prev => [...prev, { id: folder.id, name: folder.name }]);
+    setSearchTerm('');
+  };
+
+  const navigateToRoot = () => {
+    setCurrentFolderId(null);
+    setFolderPath([]);
+    setSearchTerm('');
+  };
+
+  const navigateToBreadcrumb = (index) => {
+    const crumb = folderPath[index];
+    setCurrentFolderId(crumb.id);
+    setFolderPath(prev => prev.slice(0, index + 1));
+    setSearchTerm('');
+  };
+
+  // ── Derived: current view ─────────────────────────────────────────────────
+  const isSearching = searchTerm.trim().length > 0;
+
+  const filteredDocs = useMemo(() => {
+    if (!searchTerm.trim()) return documents;
+    const term = searchTerm.toLowerCase();
+    return documents.filter(d =>
+      (d.title || '').toLowerCase().includes(term) ||
+      (d.doc_type || '').toLowerCase().includes(term) ||
+      (d.content || '').toLowerCase().includes(term)
+    );
+  }, [documents, searchTerm]);
+
+  // Folders visible in current directory
+  const currentSubFolders = useMemo(() => {
+    if (isSearching) return [];
+    return folders.filter(f =>
+      currentFolderId === null ? !f.parent_id : f.parent_id === currentFolderId
+    );
+  }, [folders, currentFolderId, isSearching]);
+
+  // Documents visible in current directory (or all when searching)
+  const currentDocs = useMemo(() => {
+    if (isSearching) return filteredDocs;
+    return filteredDocs.filter(d =>
+      currentFolderId === null
+        ? !d.folder_id                    // root: docs without a folder
+        : d.folder_id === currentFolderId // inside folder: matching docs
+    );
+  }, [filteredDocs, currentFolderId, isSearching]);
+
+  // Per-folder doc & subfolder counts (for folder card display)
+  const docCountByFolderId = useMemo(() => {
+    const m = {};
+    documents.forEach(d => {
+      const key = d.folder_id ?? null;
+      m[key] = (m[key] || 0) + 1;
+    });
+    return m;
+  }, [documents]);
+
+  const subFolderCountById = useMemo(() => {
+    const m = {};
+    folders.forEach(f => {
+      if (f.parent_id != null) m[f.parent_id] = (m[f.parent_id] || 0) + 1;
+    });
+    return m;
+  }, [folders]);
+
+  // Resolve folder name for document cards (when searching across folders)
+  const getFolderName = (folderId) => {
+    if (!folderId) return null;
+    return (folders.find(f => f.id === folderId) || {}).name || null;
+  };
+
+  // ── File upload ────────────────────────────────────────────────────────────
   const handleFileUpload = async (e) => {
     let file = null;
     if (e.dataTransfer?.files?.length > 0) { file = e.dataTransfer.files[0]; e.dataTransfer.clearData(); }
-    else if (e.target?.files?.length > 0)   { file = e.target.files[0]; }
+    else if (e.target?.files?.length > 0)  { file = e.target.files[0]; }
     if (!file) return;
-
     const ext = file.name.split('.').pop().toLowerCase();
     if (!['pdf', 'docx', 'txt'].includes(ext)) { alert('Invalid format. Upload PDF, DOCX, or TXT.'); return; }
-
     setUploading(true);
     const res = await uploadDocument(file, null, 'DMS Upload');
     setUploading(false);
@@ -301,54 +421,32 @@ export default function VaultView() {
     else loadDocuments();
   };
 
-  // ── BUG FIX: navigate to DocumentViewer, not ContractAnalyzer ──────────────
-  const handleViewDocument = (doc) => {
-    // Case Vault docs live in the case_vault SQLite table (/api/vault/documents),
-    // a separate store from the Document ORM model (/api/documents). Passing the full
-    // doc payload as route state lets DocumentViewer render without hitting the wrong
-    // API, which would return 404.
-    navigate(`/case/vault/doc/${doc.id}`, {
-      state: {
-        fromVault: true,
-        docData: {
-          id: doc.id,
-          filename: doc.title || doc.filename || 'Vault Document',
-          summary: doc.doc_type
-            ? `${doc.doc_type} — saved from Universal Agent`
-            : 'Document saved from Universal Agent to Case Vault',
-          text: doc.content || doc.text || '',
-          tags: doc.tags || null,
-          case_id: doc.case_id || null,
-        },
-      },
-    });
-  };
-
-  const handleAnalyzeDocument = (doc) => {
-    navigate('/analyzer', {
-      state: {
-        documentData: {
-          file_content: doc.content || doc.text || '',
-          document_reference: doc.title || doc.filename || 'Vault Document',
-        },
-      },
-    });
-  };
-
+  // ── Document actions ──────────────────────────────────────────────────────
   const buildDocData = (doc) => ({
     id: doc.id,
-    filename: doc.title || 'Vault Document',
+    filename: doc.smart_title || doc.title || 'Vault Document',
     summary: doc.doc_type ? `${doc.doc_type} — saved from Universal Agent` : 'Document from Case Vault',
     text: doc.content || '',
     tags: doc.tags || null,
     case_id: doc.case_id || null,
   });
 
+  const handleViewDocument = (doc) => {
+    navigate(`/case/vault/doc/${doc.id}`, {
+      state: { fromVault: true, docData: buildDocData(doc) },
+    });
+  };
+
+  const handleAnalyzeDocument = (doc) => {
+    navigate('/analyzer', {
+      state: { documentData: { file_content: doc.content || '', document_reference: doc.smart_title || doc.title || 'Vault Document' } },
+    });
+  };
+
   const handleSummarize = (doc) => {
     navigate(`/case/vault/doc/${doc.id}`, {
       state: {
-        fromVault: true,
-        docData: buildDocData(doc),
+        fromVault: true, docData: buildDocData(doc),
         autoQuery: 'Provide a comprehensive legal summary of this document, covering all key legal points, obligations, parties involved, and important clauses.',
       },
     });
@@ -357,14 +455,13 @@ export default function VaultView() {
   const handleExtractFacts = (doc) => {
     navigate(`/case/vault/doc/${doc.id}`, {
       state: {
-        fromVault: true,
-        docData: buildDocData(doc),
+        fromVault: true, docData: buildDocData(doc),
         autoQuery: 'Extract all key facts, dates, parties, legal citations, and obligations from this document. Present them in a structured numbered list.',
       },
     });
   };
 
-  // ── CNR fetch ───────────────────────────────────────────────────────────────
+  // ── CNR fetch ─────────────────────────────────────────────────────────────
   const handleFetchStatus = async () => {
     if (!fetchCnr.trim()) return;
     setFetchingStatus(true);
@@ -374,7 +471,11 @@ export default function VaultView() {
     if (res.error) { alert(res.message || 'Failed.'); }
     else if (res.source === 'fallback') { setFallbackUrl(res.fallback_url); }
     else {
-      setFormData(p => ({ ...p, case_name: res.case_title || '', case_number: res.case_number || '', cnr_number: fetchCnr.trim(), court: res.court || '', next_hearing: res.next_hearing || '', status: res.status || 'Active' }));
+      setFormData(p => ({
+        ...p, case_name: res.case_title || '', case_number: res.case_number || '',
+        cnr_number: fetchCnr.trim(), court: res.court || '',
+        next_hearing: res.next_hearing || '', status: res.status || 'Active',
+      }));
       setIsModalOpen(true);
     }
   };
@@ -393,18 +494,7 @@ export default function VaultView() {
     }
   };
 
-  // ── Filtered documents ──────────────────────────────────────────────────────
-  const filteredDocs = documents.filter(doc => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      (doc.title || '').toLowerCase().includes(term) ||
-      (doc.doc_type || '').toLowerCase().includes(term) ||
-      (doc.content || '').toLowerCase().includes(term)
-    );
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: '24px', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       <style>{vaultStyles}</style>
@@ -418,11 +508,8 @@ export default function VaultView() {
           </p>
         </div>
         {activeTab === 'vault' && (
-          <button
-            className="btn-accent"
-            onClick={() => fileInputRef.current?.click()}
-            style={{ display: 'flex', alignItems: 'center', gap: '7px' }}
-          >
+          <button className="btn-accent" onClick={() => fileInputRef.current?.click()}
+            style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
@@ -437,14 +524,24 @@ export default function VaultView() {
       {/* Tabs */}
       <div className="tabs-wrapper">
         <button className={`tab-btn ${activeTab === 'vault' ? 'active' : ''}`} onClick={() => setActiveTab('vault')}>
-          🗄️ Document Vault {documents.length > 0 && <span style={{ marginLeft: '6px', fontSize: '11px', background: 'rgba(59,130,246,0.15)', color: 'var(--accent-primary)', padding: '1px 6px', borderRadius: '8px' }}>{documents.length}</span>}
+          🗄️ Document Vault
+          {documents.length > 0 && (
+            <span style={{ marginLeft: '6px', fontSize: '11px', background: 'rgba(59,130,246,0.15)', color: 'var(--accent-primary)', padding: '1px 6px', borderRadius: '8px' }}>
+              {documents.length}
+            </span>
+          )}
         </button>
         <button className={`tab-btn ${activeTab === 'tracker' ? 'active' : ''}`} onClick={() => setActiveTab('tracker')}>
-          📋 Case Tracker {cases.length > 0 && <span style={{ marginLeft: '6px', fontSize: '11px', background: 'rgba(16,185,129,0.15)', color: '#10B981', padding: '1px 6px', borderRadius: '8px' }}>{cases.length}</span>}
+          📋 Case Tracker
+          {cases.length > 0 && (
+            <span style={{ marginLeft: '6px', fontSize: '11px', background: 'rgba(16,185,129,0.15)', color: '#10B981', padding: '1px 6px', borderRadius: '8px' }}>
+              {cases.length}
+            </span>
+          )}
         </button>
       </div>
 
-      {/* ── DOCUMENT VAULT TAB ─────────────────────────────────────────────── */}
+      {/* ── DOCUMENT VAULT TAB ──────────────────────────────────────────────── */}
       {activeTab === 'vault' && (
         <div className="animate-fade-in">
           {docError && (
@@ -454,7 +551,7 @@ export default function VaultView() {
             </div>
           )}
 
-          {/* Upload Dropzone */}
+          {/* Upload dropzone */}
           <div
             className={`drag-drop-zone ${isDragOver ? 'dragover' : ''}`}
             onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
@@ -467,7 +564,7 @@ export default function VaultView() {
             {uploading ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '26px', height: '26px', border: '3px solid var(--border-dark-subtle)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--accent-primary)' }}>Uploading & indexing into vector space...</span>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--accent-primary)' }}>Uploading &amp; indexing into vector space…</span>
               </div>
             ) : (
               <div>
@@ -478,6 +575,15 @@ export default function VaultView() {
             )}
           </div>
 
+          {/* Breadcrumb — shown when inside a folder */}
+          {folderPath.length > 0 && (
+            <Breadcrumb
+              folderPath={folderPath}
+              onNavigateToRoot={navigateToRoot}
+              onNavigateTo={navigateToBreadcrumb}
+            />
+          )}
+
           {/* Search bar */}
           {!loadingDocs && documents.length > 0 && (
             <div className="vault-search-bar">
@@ -487,7 +593,7 @@ export default function VaultView() {
               <input
                 className="vault-search-input"
                 type="text"
-                placeholder="Search documents by name, type, or content…"
+                placeholder={isSearching ? 'Searching all folders…' : `Search in ${folderPath.length > 0 ? folderPath[folderPath.length-1].name : 'Case Vault'}…`}
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
@@ -497,94 +603,126 @@ export default function VaultView() {
             </div>
           )}
 
-          {/* Document Grid */}
+          {/* ── Document + Folder Grid ─────────────────────────────────── */}
           {loadingDocs ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '250px', gap: '14px' }}>
               <div style={{ width: '32px', height: '32px', border: '3px solid var(--border-subtle)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-              <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading vault documents…</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading vault…</span>
             </div>
           ) : !docError && (
-            filteredDocs.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '180px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '10px', padding: '32px', color: 'var(--text-dark-muted)', gap: '10px' }}>
-                <span style={{ fontSize: '24px' }}>{searchTerm ? '🔍' : '🗄️'}</span>
-                <span style={{ fontSize: '14px', fontWeight: '600', color: 'white' }}>
-                  {searchTerm ? `No results for "${searchTerm}"` : 'No Documents in Vault'}
-                </span>
-                <span style={{ fontSize: '12px', opacity: 0.7 }}>
-                  {searchTerm ? 'Try a different search term.' : 'Upload a document above to index it into the RAG database.'}
-                </span>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(275px, 1fr))', gap: '16px' }}>
-                {filteredDocs.map(doc => {
-                  const typeStyle = getDocTypeStyle(doc.doc_type);
-                  const caseName = doc.case_id ? `Case ${doc.case_id}` : 'General Vault';
-                  return (
-                    <div key={doc.id} className="vault-grid-card">
-                      {/* Card header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                        <span style={{
-                          fontSize: '10px', fontWeight: '700',
-                          color: typeStyle.color,
-                          background: typeStyle.bg,
-                          padding: '2px 7px', borderRadius: '4px',
-                          textTransform: 'uppercase', letterSpacing: '0.4px', flexShrink: 0,
-                        }}>
-                          {doc.doc_type || 'Document'}
-                        </span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', opacity: 0.65, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {caseName}
-                        </span>
+            <>
+              {/* Folder cards row — hidden when searching */}
+              {!isSearching && currentSubFolders.length > 0 && (
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--text-dark-muted)', marginBottom: '10px' }}>
+                    Folders
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
+                    {currentSubFolders.map(folder => (
+                      <FolderCard
+                        key={folder.id}
+                        folder={folder}
+                        docCount={docCountByFolderId[folder.id] || 0}
+                        subFolderCount={subFolderCountById[folder.id] || 0}
+                        onClick={() => navigateToFolder(folder)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Section label for docs */}
+              {!isSearching && (currentSubFolders.length > 0 || currentDocs.length > 0) && (
+                <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--text-dark-muted)', marginBottom: '10px' }}>
+                  {currentSubFolders.length > 0 ? 'Files' : 'Documents'}
+                </div>
+              )}
+
+              {/* Document cards */}
+              {currentSubFolders.length === 0 && currentDocs.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '180px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '10px', padding: '32px', color: 'var(--text-dark-muted)', gap: '10px' }}>
+                  <span style={{ fontSize: '24px' }}>{isSearching ? '🔍' : (folderPath.length > 0 ? '📁' : '🗄️')}</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'white' }}>
+                    {isSearching ? `No results for "${searchTerm}"` : (folderPath.length > 0 ? 'This folder is empty' : 'No Documents in Vault')}
+                  </span>
+                  <span style={{ fontSize: '12px', opacity: 0.7 }}>
+                    {isSearching ? 'Try a different search term.'
+                      : folderPath.length > 0 ? 'Save documents here from the Universal Agent.'
+                      : 'Upload a document above or save a draft from the AI Legal Associate.'}
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(275px, 1fr))', gap: '16px' }}>
+                  {currentDocs.map(doc => {
+                    const typeStyle = getDocTypeStyle(doc.doc_type);
+                    const folderName = isSearching ? getFolderName(doc.folder_id) : null;
+                    return (
+                      <div key={doc.id} className="vault-grid-card">
+                        {/* Card header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '10px', fontWeight: '700', color: typeStyle.color, background: typeStyle.bg, padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.4px', flexShrink: 0 }}>
+                            {doc.doc_type || 'Document'}
+                          </span>
+                          {/* Show folder badge when searching across folders */}
+                          {folderName && (
+                            <span className="vault-folder-badge">📁 {folderName}</span>
+                          )}
+                          {!folderName && (
+                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', opacity: 0.65, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {doc.case_id ? `Case ${doc.case_id}` : 'General Vault'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Title */}
+                        <h3 style={{ fontSize: '14.5px', fontWeight: '600', color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.smart_title || doc.title}>
+                          {doc.smart_title || doc.title}
+                        </h3>
+
+                        {/* Content preview */}
+                        <div className="vault-card-preview">{doc.content || 'No preview available.'}</div>
+
+                        {/* Date */}
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', opacity: 0.55 }}>
+                          Created: {formatDate(doc.created_at)}
+                        </div>
+
+                        {/* Primary Actions */}
+                        <div className="vault-card-actions">
+                          <button className="vault-btn-view" onClick={() => handleViewDocument(doc)}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            View Document
+                          </button>
+                          <button className="vault-btn-analyze" onClick={() => handleAnalyzeDocument(doc)}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                            Analyze
+                          </button>
+                        </div>
+
+                        {/* Quick AI Actions */}
+                        <div className="vault-card-quick-actions">
+                          <button className="vault-btn-quick" onClick={() => handleSummarize(doc)} title="AI summary">
+                            📋 Summarize
+                          </button>
+                          <button className="vault-btn-quick" onClick={() => handleExtractFacts(doc)} title="Extract facts">
+                            ⚡ Extract Facts
+                          </button>
+                        </div>
                       </div>
-
-                      {/* Title */}
-                      <h3 style={{ fontSize: '14.5px', fontWeight: '600', color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.title}>
-                        {doc.title}
-                      </h3>
-
-                      {/* Content preview */}
-                      <div className="vault-card-preview">{doc.content || 'No preview available.'}</div>
-
-                      {/* Date */}
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', opacity: 0.55 }}>
-                        Created: {formatDate(doc.created_at)}
-                      </div>
-
-                      {/* Primary Actions */}
-                      <div className="vault-card-actions">
-                        <button className="vault-btn-view" onClick={() => handleViewDocument(doc)}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                          </svg>
-                          View Document
-                        </button>
-                        <button className="vault-btn-analyze" onClick={() => handleAnalyzeDocument(doc)}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                          </svg>
-                          Analyze
-                        </button>
-                      </div>
-
-                      {/* Quick AI Actions */}
-                      <div className="vault-card-quick-actions">
-                        <button className="vault-btn-quick" onClick={() => handleSummarize(doc)} title="AI-powered summary">
-                          📋 Summarize
-                        </button>
-                        <button className="vault-btn-quick" onClick={() => handleExtractFacts(doc)} title="Extract facts and dates">
-                          ⚡ Extract Facts
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {/* ── CASE TRACKER TAB ───────────────────────────────────────────────── */}
+      {/* ── CASE TRACKER TAB ─────────────────────────────────────────────── */}
       {activeTab === 'tracker' && (
         <div className="dashboard-panel animate-fade-in">
           <div className="panel-header" style={{ marginBottom: '20px' }}>
@@ -608,7 +746,8 @@ export default function VaultView() {
             <div style={{ padding: '14px 16px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', marginBottom: '20px' }}>
               <h4 style={{ color: '#F59E0B', marginBottom: '6px', fontSize: '13.5px', fontWeight: '600' }}>⚠️ eCourts Portal Busy</h4>
               <p style={{ color: 'var(--text-dark-muted)', fontSize: '13px', marginBottom: '10px' }}>The API is unresponsive. View the fallback URL directly.</p>
-              <button className="btn-secondary" style={{ borderColor: '#F59E0B', color: '#F59E0B' }} onClick={() => { const b = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com'; window.open(`${b}/api/proxy?target_url=${encodeURIComponent(fallbackUrl)}`, '_blank'); }}>
+              <button className="btn-secondary" style={{ borderColor: '#F59E0B', color: '#F59E0B' }}
+                onClick={() => window.open(`${API_BASE}/api/proxy?target_url=${encodeURIComponent(fallbackUrl)}`, '_blank')}>
                 Open Fallback URL ↗
               </button>
             </div>
@@ -627,12 +766,7 @@ export default function VaultView() {
               <table className="premium-table">
                 <thead>
                   <tr>
-                    <th>Case Name</th>
-                    <th>CNR / Case No.</th>
-                    <th>Court</th>
-                    <th>Client</th>
-                    <th>Next Hearing</th>
-                    <th>Status</th>
+                    <th>Case Name</th><th>CNR / Case No.</th><th>Court</th><th>Client</th><th>Next Hearing</th><th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -660,7 +794,7 @@ export default function VaultView() {
         </div>
       )}
 
-      {/* ── ADD CASE MODAL ─────────────────────────────────────────────────── */}
+      {/* ── ADD CASE MODAL ────────────────────────────────────────────────── */}
       {isModalOpen && (
         <div className="modal-overlay">
           <div className="modal-card animate-fade-in">
