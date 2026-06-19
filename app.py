@@ -45,8 +45,8 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Migration: add folder_id + smart_title to case_vault if not present
-    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT')):
+    # Migration: add folder_id + smart_title + tags to case_vault if not present
+    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT')):
         try:
             c.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
         except Exception:
@@ -325,12 +325,24 @@ def create_app():
                 return jsonify({"status": "success", "message": f"Session locked to VC Vault (ID: {case_id}).", "id": case_id}), 200
 
             # Case Vault save format
-            case_id   = data.get('case_id')
-            title     = data.get('title')
-            doc_type  = data.get('doc_type')
-            content   = data.get('content')
-            folder_id = data.get('folder_id')    # optional — from SaveToVaultModal
+            case_id     = data.get('case_id')
+            title       = data.get('title')
+            doc_type    = data.get('doc_type')
+            content     = data.get('content')
+            folder_id   = data.get('folder_id')    # optional — from SaveToVaultModal
             smart_title = data.get('smart_title')  # optional — auto-generated client-side
+            tags_raw    = data.get('tags')          # optional — JSON string or list
+            if isinstance(tags_raw, list):
+                tags = ','.join(str(t) for t in tags_raw)
+            elif isinstance(tags_raw, str):
+                try:
+                    import json as _json
+                    parsed = _json.loads(tags_raw)
+                    tags = ','.join(str(t) for t in parsed) if isinstance(parsed, list) else tags_raw
+                except Exception:
+                    tags = tags_raw
+            else:
+                tags = None
 
             if not case_id or not title or not content:
                 return jsonify({"error": True, "message": "Missing required fields (case_id, title, content)."}), 400
@@ -357,8 +369,8 @@ def create_app():
             conn = db
             c = conn.cursor()
             c.execute(
-                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title) VALUES (?, ?, ?, ?, ?, ?)',
-                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title)
+                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title, tags)
             )
             conn.commit()
             inserted_id = c.lastrowid
@@ -1137,7 +1149,7 @@ def create_app():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT')):
+        for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT')):
             try:
                 conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
             except Exception:

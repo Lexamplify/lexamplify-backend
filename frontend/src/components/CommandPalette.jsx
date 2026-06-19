@@ -444,8 +444,8 @@ const AGENT_CSS = `
   .svm-panel {
     background: var(--bg-panel, #171c26);
     border: 1px solid rgba(59,130,246,.22);
-    border-radius: 14px; width: 540px; max-width: 95vw;
-    max-height: 82vh; display: flex; flex-direction: column;
+    border-radius: 14px; width: 660px; max-width: 96vw;
+    max-height: 90vh; display: flex; flex-direction: column;
     box-shadow: 0 28px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.04);
     overflow: hidden;
   }
@@ -458,7 +458,7 @@ const AGENT_CSS = `
   .svm-close { background: none; border: none; cursor: pointer; color: #475569; padding: 3px 6px; border-radius: 4px; transition: color .15s; }
   .svm-close:hover { color: #EF4444; }
 
-  .svm-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+  .svm-body { flex: 1; overflow-y: auto; padding: 20px 26px; display: flex; flex-direction: column; gap: 20px; }
   .svm-body::-webkit-scrollbar { width: 4px; }
   .svm-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 2px; }
 
@@ -574,6 +574,31 @@ const AGENT_CSS = `
   .lex-rte-btn:hover { background: rgba(59,130,246,.1); border-color: rgba(59,130,246,.22); color: #93C5FD; }
   .lex-rte-sep { width: 1px; height: 18px; background: rgba(255,255,255,.07); margin: 0 3px; flex-shrink: 0; }
   .lex-rte-group { display: flex; align-items: center; gap: 1px; }
+
+  /* ── Document Tags Pill Selector ── */
+  .svm-tags-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .svm-tag-pill {
+    display: inline-flex; align-items: center; padding: 4px 11px;
+    border-radius: 20px; cursor: pointer; font-size: 11.5px; font-weight: 500;
+    transition: all .12s; border: 1px solid rgba(255,255,255,.1);
+    color: #475569; background: transparent; font-family: inherit; user-select: none;
+  }
+  .svm-tag-pill.active { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.35); color: #7EB3F5; }
+  .svm-tag-pill:hover:not(.active) { border-color: rgba(255,255,255,.2); color: #94A3B8; }
+
+  /* ── Vault Save Confirmation Card in Chat Feed ── */
+  .lex-vault-save-card {
+    display: flex; align-items: center; gap: 14px; padding: 11px 15px;
+    border-radius: 9px; border: 1px solid rgba(16,185,129,.2);
+    background: rgba(16,185,129,.05); cursor: pointer; transition: all .16s;
+    flex: 1; min-width: 0;
+  }
+  .lex-vault-save-card:hover { background: rgba(16,185,129,.1); border-color: rgba(16,185,129,.35); transform: translateY(-1px); }
+  .lex-vault-save-info { flex: 1; min-width: 0; }
+  .lex-vault-save-name { font-size: 12.5px; font-weight: 600; color: #DDE6F0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lex-vault-save-path { font-size: 11px; color: #475569; margin-top: 2px; }
+  .lex-vault-save-arrow { font-size: 11px; font-weight: 600; color: #10B981; white-space: nowrap; padding: 4px 10px; border: 1px solid rgba(16,185,129,.25); border-radius: 5px; background: rgba(16,185,129,.06); flex-shrink: 0; transition: all .12s; }
+  .lex-vault-save-card:hover .lex-vault-save-arrow { background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.4); }
 `;
 
 // ═══════════════════════════════════════════════════════
@@ -773,6 +798,8 @@ function RichTextToolbar({ targetRef }) {
   );
 }
 
+const VAULT_TAG_OPTIONS = ['Draft', 'Client Review', 'Final', 'Approved', 'Privileged', 'Court Filing'];
+
 function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) {
   const [folders,      setFolders]      = useState([]);         // root-level tree nodes
   const [flatFolders,  setFlatFolders]  = useState([]);         // all folders flat
@@ -784,7 +811,11 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   const [newFolderError, setNewFolderError] = useState('');
   const [saving,       setSaving]       = useState(false);
   const [loadingFolders, setLoadingFolders] = useState(true);
+  const [selectedTags, setSelectedTags] = useState([]);
   const newFolderInputRef = useRef(null);
+
+  const toggleTag = (tag) =>
+    setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
 
   // Smart default filename — unique per generation via timestamp inside generateSmartName
   const smartDefault = generateSmartName(draft?.doc_type, sessionTitle);
@@ -912,6 +943,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
       folderId: selectedFolder?.id ?? null,
       folderPath: destPath,
       smartTitle: finalName,
+      tags: selectedTags,
     });
     setSaving(false);
   };
@@ -974,6 +1006,24 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             </div>
           </div>
 
+          {/* Document Tags */}
+          <div>
+            <div className="svm-section-label">
+              Document Tags <span style={{ fontSize: 9, opacity: .55, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+            </div>
+            <div className="svm-tags-wrap">
+              {VAULT_TAG_OPTIONS.map(tag => (
+                <button
+                  key={tag}
+                  className={`svm-tag-pill${selectedTags.includes(tag) ? ' active' : ''}`}
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Last-used folder shortcut */}
           {lastFolder && (
             <div className="svm-last-folder-hint" onClick={applyLastFolder}>
@@ -1009,7 +1059,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             </div>
 
             {/* Folder tree */}
-            <div className="svm-tree" style={{ marginTop: 4, maxHeight: 220, overflowY: 'auto' }}>
+            <div className="svm-tree" style={{ marginTop: 4, maxHeight: 300, overflowY: 'auto' }}>
               {loadingFolders ? (
                 <div style={{ padding: '14px 10px', fontSize: 12, color: '#475569', textAlign: 'center' }}>
                   Loading folders…
@@ -1773,7 +1823,7 @@ export default function CommandPalette() {
   }
 
   // ── Called by SaveToVaultModal on Confirm ────────────
-  async function handleSaveModalConfirm({ fileName, folderId, folderPath, smartTitle }) {
+  async function handleSaveModalConfirm({ fileName, folderId, folderPath, smartTitle, tags }) {
     if (!activeDocument || !currentId) return;
     setLoading(true);
     try {
@@ -1788,19 +1838,45 @@ export default function CommandPalette() {
           content:     activeDocument.content,
           folder_id:   folderId,
           smart_title: smartTitle,
+          tags:        JSON.stringify(tags || []),
         }),
       });
       const data = r.ok ? await r.json() : null;
-      updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
+      const displayPath = data?.location || (folderPath ? `${folderPath} / ${fileName}` : fileName);
+
+      if (r.ok) {
+        // Clear draft + patch the most recent docCard in history as saved
+        updateSession(currentId, s => {
+          const msgs = s.messages || [];
+          let lastDocIdx = -1;
+          msgs.forEach((m, i) => { if (m.docCard) lastDocIdx = i; });
+          const patched = lastDocIdx >= 0
+            ? msgs.map((m, i) => i === lastDocIdx
+                ? { ...m, docCard: { ...m.docCard, saved: true, savedPath: displayPath, savedDocId: data?.id } }
+                : m)
+            : msgs;
+          return { ...s, pendingDraft: null, activeDocument: null, messages: patched };
+        });
+        pushMessage(currentId, {
+          id: `sys_${Date.now()}`,
+          role: 'vault_save',
+          vaultSave: {
+            docId:      data?.id,
+            docTitle:   fileName,
+            docType:    activeDocument.doc_type || '',
+            folderId,
+            folderPath,
+            displayPath,
+            tags:       tags || [],
+          },
+        });
+      } else {
+        updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
+        pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save document. Please try again.' });
+      }
+
       setDrawerOpen(false);
       setShowSaveModal(false);
-      const displayPath = data?.location || (folderPath ? `${folderPath} / ${fileName}` : fileName);
-      pushMessage(currentId, {
-        id: `sys_${Date.now()}`, role: r.ok ? 'assistant' : 'error',
-        text: r.ok
-          ? `✅ Saved → **${displayPath}**`
-          : 'Failed to save document. Please try again.',
-      });
     } catch (_) {
       pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save to Case Vault.' });
       setShowSaveModal(false);
@@ -1967,7 +2043,7 @@ export default function CommandPalette() {
                   <polyline points="14 2 14 8 20 8"/>
                 </svg>
                 <span className="lex-doc-tree-label">
-                  {m.docCard.isUpdate ? '↺ ' : ''}{truncate(m.docCard.title, 26)}
+                  {m.docCard.saved ? <span style={{ color: '#10B981', marginRight: 2 }}>✓</span> : m.docCard.isUpdate ? '↺ ' : ''}{truncate(m.docCard.title, 26)}
                 </span>
               </button>
             ))}
@@ -2240,6 +2316,36 @@ export default function CommandPalette() {
                           style={{ marginTop: '8px', padding: '5px 14px', background: '#EF4444', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
                         >Go to Login →</button>
                       )}
+                    </div>
+                  );
+                }
+                // vault_save — interactive clickable card
+                if (msg.role === 'vault_save') {
+                  const vs = msg.vaultSave || {};
+                  return (
+                    <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                      <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: 'linear-gradient(135deg,#10B981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                        <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.8" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                      </div>
+                      <div
+                        className="lex-vault-save-card"
+                        onClick={() => navigate('/vault')}
+                        title="Open Case Vault"
+                        role="button"
+                      >
+                        <div className="lex-vault-save-info">
+                          <div className="lex-vault-save-name">📄 {vs.docTitle || vs.displayPath}</div>
+                          <div className="lex-vault-save-path">Saved to: {vs.displayPath || 'Case Vault'}</div>
+                          {vs.tags?.length > 0 && (
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
+                              {vs.tags.map(t => (
+                                <span key={t} style={{ fontSize: 10, padding: '1px 7px', background: 'rgba(59,130,246,.12)', border: '1px solid rgba(59,130,246,.22)', borderRadius: 10, color: '#7EB3F5' }}>{t}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <span className="lex-vault-save-arrow">Open in Vault →</span>
+                      </div>
                     </div>
                   );
                 }
