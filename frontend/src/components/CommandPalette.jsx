@@ -372,14 +372,16 @@ const AGENT_CSS = `
        3-DOTS CONVERSATION MENU
   ══════════════════════════════════════════════ */
   .lex-3dots-btn {
-    opacity: 0; transition: opacity .15s;
+    opacity: 0.25; transition: opacity .15s, color .12s, background .12s;
     background: none; border: none; cursor: pointer;
     color: #3D5168; padding: 2px 5px; border-radius: 3px;
     font-size: 15px; line-height: 1; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
   }
   .lex-sess-item:hover .lex-3dots-btn { opacity: 1; }
-  .lex-3dots-btn:hover { color: #7EB3F5!important; background: rgba(59,130,246,.1); }
+  .lex-sess-item.active .lex-3dots-btn { opacity: 0.6; }
+  .lex-sess-item.active:hover .lex-3dots-btn { opacity: 1; }
+  .lex-3dots-btn:hover { color: #7EB3F5!important; background: rgba(59,130,246,.1); opacity: 1 !important; }
 
   .lex-ctx-menu {
     position: absolute; z-index: 10010;
@@ -573,16 +575,14 @@ const DOC_TYPE_ABBREV = {
   'other': 'Doc',
 };
 
-const generateSmartName = (doc_type, sessionTitle, docIndex) => {
+const generateSmartName = (doc_type, sessionTitle) => {
   const rawType = (doc_type || '').toLowerCase().trim();
   let abbrev = DOC_TYPE_ABBREV[rawType];
   if (!abbrev) {
-    // Try prefix match
     const key = Object.keys(DOC_TYPE_ABBREV).find(k => rawType.startsWith(k));
     abbrev = key ? DOC_TYPE_ABBREV[key] : (doc_type ? doc_type.split(' ')[0].slice(0, 8) : 'Doc');
   }
 
-  // Derive 2-word topic slug from session title (skip generic "New conversation")
   let slug = '';
   const cleanTitle = (sessionTitle || '').replace(/^new conversation$/i, '').trim();
   if (cleanTitle) {
@@ -595,8 +595,14 @@ const generateSmartName = (doc_type, sessionTitle, docIndex) => {
       .join('');
   }
 
-  const version = `V${docIndex + 1}`;
-  const parts = [abbrev, slug, version].filter(Boolean);
+  // Date-time stamp ensures every generated document has a unique name
+  const now = new Date();
+  const day = now.getDate();
+  const mon = now.toLocaleString('en-IN', { month: 'short' });
+  const hhmm = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+  const stamp = `${day}${mon}_${hhmm}`;
+
+  const parts = [abbrev, slug, stamp].filter(Boolean);
   return parts.join('_');
 };
 
@@ -648,7 +654,7 @@ function FolderNode({ folder, depth, selectedId, expandedIds, onSelect, onToggle
   );
 }
 
-function SaveToVaultModal({ draft, sessionTitle, docIndex, apiBase, onConfirm, onClose }) {
+function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) {
   const [folders,      setFolders]      = useState([]);         // root-level tree nodes
   const [flatFolders,  setFlatFolders]  = useState([]);         // all folders flat
   const [selectedFolder, setSelectedFolder] = useState(null);   // { id, name } or null = root
@@ -661,8 +667,8 @@ function SaveToVaultModal({ draft, sessionTitle, docIndex, apiBase, onConfirm, o
   const [loadingFolders, setLoadingFolders] = useState(true);
   const newFolderInputRef = useRef(null);
 
-  // Smart default filename
-  const smartDefault = generateSmartName(draft?.doc_type, sessionTitle, docIndex);
+  // Smart default filename — unique per generation via timestamp inside generateSmartName
+  const smartDefault = generateSmartName(draft?.doc_type, sessionTitle);
 
   useEffect(() => {
     setFileName(smartDefault);
@@ -1128,8 +1134,7 @@ export default function CommandPalette() {
   const [fileLoading,  setFileLoading]  = useState(false);
 
   // ── Save to Vault Modal ───────────────────────────────
-  const [showSaveModal,   setShowSaveModal]   = useState(false);
-  const [saveModalDocIdx, setSaveModalDocIdx] = useState(0); // doc count at modal open
+  const [showSaveModal, setShowSaveModal] = useState(false);
 
   // ── Conversation 3-dots menu ──────────────────────────
   const [openMenuId,      setOpenMenuId]      = useState(null);   // session id with open menu
@@ -1145,6 +1150,8 @@ export default function CommandPalette() {
   const searchRef      = useRef(null);
   const messagesEndRef = useRef(null);
   const msgRefs        = useRef({});
+  const drawerBodyRef  = useRef(null);   // contentEditable doc editor
+  const lastDocKeyRef  = useRef(null);   // guards against overwriting user edits on re-render
 
   // ── Derived ──────────────────────────────────────────
   const currentSession  = sessions.find(s => s.id === currentId) || null;
@@ -1246,6 +1253,21 @@ export default function CommandPalette() {
       startNew();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Drawer body: set innerHTML ONLY when the source document changes, never on arbitrary re-renders.
+  // This prevents React from wiping user's in-progress edits (the contentEditable + dangerouslySetInnerHTML
+  // anti-pattern — any state update resets the DOM and erases what the lawyer typed).
+  useEffect(() => {
+    const doc = viewingSnapshot || activeDocument;
+    if (!drawerBodyRef.current) return;
+    const key = doc ? `${doc.title}::${(doc.content || '').length}` : '__empty__';
+    if (key === lastDocKeyRef.current) return; // same doc version — don't clobber edits
+    lastDocKeyRef.current = key;
+    drawerBodyRef.current.innerHTML = doc
+      ? highlightPlaceholders(renderDraftHtml(doc.content))
+      : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingSnapshot, activeDocument]);
 
   // ── Keyboard / toggle ────────────────────────────────
   useEffect(() => {
@@ -1569,11 +1591,9 @@ export default function CommandPalette() {
             }
 
             if (p.action === 'review_document') {
-              // Compute smart name using session's current doc count
               const sess = sessions.find(s => s.id === sid);
-              const existingDocCount = (sess?.messages || []).filter(m => m.docCard).length;
               const sessTitle = sess?.title || '';
-              const smart = generateSmartName(p.draft.doc_type, sessTitle, existingDocCount);
+              const smart = generateSmartName(p.draft.doc_type, sessTitle);
               const enrichedDraft = { ...p.draft, smartTitle: smart };
               updateSession(sid, s => ({ ...s, pendingDraft: enrichedDraft, activeDocument: enrichedDraft }));
               patchMessage(sid, msgId, m => ({
@@ -1630,10 +1650,6 @@ export default function CommandPalette() {
   // ── Approve draft — opens SaveToVaultModal ───────────
   function handleApproveDraft() {
     if (!activeDocument || !currentId) return;
-    // Count how many docs have already been saved in this session (for smart versioning)
-    const session = sessions.find(s => s.id === currentId);
-    const docCount = (session?.messages || []).filter(m => m.docCard).length;
-    setSaveModalDocIdx(docCount);
     setShowSaveModal(true);
   }
 
@@ -2470,16 +2486,18 @@ export default function CommandPalette() {
                   </div>
                 )}
 
-                {/* Document body — Smart Paper with placeholder highlighting */}
+                {/* Document body — Smart Paper with placeholder highlighting.
+                    Uses ref-based innerHTML (not dangerouslySetInnerHTML) so React re-renders
+                    never wipe the lawyer's in-progress edits to the document. */}
                 <div
                   className="lex-drawer-body"
+                  ref={drawerBodyRef}
                   contentEditable={!viewingSnapshot}
                   suppressContentEditableWarning
-                  dangerouslySetInnerHTML={{
-                    __html: highlightPlaceholders(renderDraftHtml((viewingSnapshot || activeDocument).content))
-                  }}
                   onBlur={viewingSnapshot ? undefined : e => {
                     const plain = e.currentTarget.innerText || '';
+                    // Update the content fingerprint so the effect doesn't reset innerHTML
+                    lastDocKeyRef.current = `${(viewingSnapshot || activeDocument)?.title}::${plain.length}`;
                     updateSession(currentId, s => ({
                       ...s,
                       pendingDraft:   s.pendingDraft   ? { ...s.pendingDraft,   content: plain } : null,
@@ -2518,7 +2536,6 @@ export default function CommandPalette() {
         <SaveToVaultModal
           draft={activeDocument}
           sessionTitle={currentSession?.title || ''}
-          docIndex={saveModalDocIdx}
           apiBase={API_BASE}
           onConfirm={handleSaveModalConfirm}
           onClose={() => setShowSaveModal(false)}
