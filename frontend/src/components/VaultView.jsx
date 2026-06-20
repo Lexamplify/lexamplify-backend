@@ -48,6 +48,74 @@ const vaultStyles = `
   .vault-folder-name { font-size: 13px; font-weight: 600; color: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vault-folder-meta { font-size: 10.5px; color: var(--text-dark-muted, #8F9CAE); margin-top: 2px; }
 
+  /* ── Folder 3-dots context menu ── */
+  .vault-folder-dots {
+    opacity: 0; background: none; border: none; cursor: pointer; line-height: 1;
+    color: var(--text-dark-muted, #8F9CAE); font-size: 17px; letter-spacing: 1px;
+    padding: 2px 6px; border-radius: 5px; transition: all .12s; flex-shrink: 0; font-family: inherit;
+  }
+  .vault-folder-card:hover .vault-folder-dots { opacity: 1; }
+  .vault-folder-dots:hover { background: rgba(255,255,255,.1); color: white; }
+  .vault-folder-menu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 200;
+    background: #1A2030; border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px; padding: 4px; min-width: 156px;
+    box-shadow: 0 10px 28px rgba(0,0,0,.55); animation: fadeIn .12s ease;
+  }
+  .vault-folder-menu-item {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 7px 10px; background: none; border: none; border-radius: 5px;
+    cursor: pointer; font-size: 12.5px; color: #94A3B8; font-family: inherit; transition: all .1s;
+  }
+  .vault-folder-menu-item:hover { background: rgba(255,255,255,.07); color: white; }
+  .vault-folder-menu-danger { color: #F87171; }
+  .vault-folder-menu-danger:hover { background: rgba(239,68,68,.1); color: #EF4444; }
+  .vault-folder-menu-sep { height: 1px; background: rgba(255,255,255,.07); margin: 4px 0; }
+  .vault-rename-input {
+    flex: 1; min-width: 0; background: rgba(255,255,255,.06); border: 1px solid rgba(59,130,246,.45);
+    border-radius: 5px; padding: 4px 9px; color: white; font-size: 12.5px;
+    outline: none; font-family: inherit;
+  }
+  /* Inline delete confirmation over the folder card */
+  .vault-delete-overlay {
+    position: absolute; inset: 0; z-index: 10; border-radius: 9px;
+    background: rgba(10,12,22,.96); border: 1px solid rgba(239,68,68,.3);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; padding: 12px; text-align: center;
+  }
+  /* Move folder modal */
+  .vault-move-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(3,6,14,.84); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vault-move-panel {
+    background: #171c26; border: 1px solid rgba(59,130,246,.22);
+    border-radius: 12px; width: 460px; max-width: 96vw; max-height: 72vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 28px 60px rgba(0,0,0,.65);
+  }
+  .vault-move-header {
+    padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,.06);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .vault-move-title { font-size: 13px; font-weight: 700; color: #E2E8F0; }
+  .vault-move-body { flex: 1; overflow-y: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .vault-move-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,.06); display: flex; justify-content: flex-end; gap: 8px; }
+  .vault-move-root {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    border-radius: 6px; border: 1px solid rgba(255,255,255,.08); cursor: pointer;
+    font-size: 12.5px; color: #7EB3F5; transition: all .12s;
+  }
+  .vault-move-root:hover, .vault-move-root.selected { background: rgba(59,130,246,.1); border-color: rgba(59,130,246,.3); }
+  .vault-move-tree-row {
+    display: flex; align-items: center; padding: 6px 8px; border-radius: 5px;
+    cursor: pointer; font-size: 12px; color: #64748B; gap: 6px; transition: all .12s;
+  }
+  .vault-move-tree-row:hover { background: rgba(255,255,255,.04); color: #94A3B8; }
+  .vault-move-tree-row.selected { background: rgba(59,130,246,.1); color: #7EB3F5; }
+  .vault-move-tree-row.disabled { opacity: .3; cursor: not-allowed; pointer-events: none; }
+
   /* ── Breadcrumb ── */
   .vault-breadcrumb {
     display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
@@ -251,17 +319,147 @@ function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo }) {
   );
 }
 
-// ─── Folder Card Component ───────────────────────────────────────────────────
-function FolderCard({ folder, docCount, subFolderCount, onClick }) {
+// ─── Folder Move Modal ───────────────────────────────────────────────────────
+function FolderMoveModal({ movingFolder, allFolders, onConfirm, onClose }) {
+  const [selectedParentId, setSelectedParentId] = useState(movingFolder.parent_id ?? null);
+
+  // All descendants of movingFolder (can't move into self or child)
+  const getDescendants = (id) => {
+    const children = allFolders.filter(f => f.parent_id === id).map(f => f.id);
+    return children.reduce((acc, cid) => [...acc, cid, ...getDescendants(cid)], []);
+  };
+  const forbidden = new Set([movingFolder.id, ...getDescendants(movingFolder.id)]);
+
+  const renderTree = (parentId, depth) =>
+    allFolders.filter(f => (parentId === null ? !f.parent_id : f.parent_id === parentId)).map(f => (
+      <React.Fragment key={f.id}>
+        <div
+          className={`vault-move-tree-row${selectedParentId === f.id ? ' selected' : ''}${forbidden.has(f.id) ? ' disabled' : ''}`}
+          style={{ paddingLeft: 10 + depth * 16 }}
+          onClick={() => !forbidden.has(f.id) && setSelectedParentId(f.id)}
+        >
+          <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          {f.name}
+        </div>
+        {renderTree(f.id, depth + 1)}
+      </React.Fragment>
+    ));
+
   return (
-    <div className="vault-folder-card" onClick={onClick}>
+    <div className="vault-move-overlay" onClick={onClose}>
+      <div className="vault-move-panel" onClick={e => e.stopPropagation()}>
+        <div className="vault-move-header">
+          <span className="vault-move-title">Move "{movingFolder.name}" to…</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+        </div>
+        <div className="vault-move-body">
+          <div
+            className={`vault-move-root${selectedParentId === null ? ' selected' : ''}`}
+            onClick={() => setSelectedParentId(null)}
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            Root (Case Vault)
+          </div>
+          <div style={{ overflowY: 'auto', maxHeight: 260 }}>
+            {renderTree(null, 0)}
+          </div>
+        </div>
+        <div className="vault-move-footer">
+          <button
+            onClick={onClose}
+            style={{ padding: '7px 14px', background: 'transparent', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, color: '#475569', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}
+          >Cancel</button>
+          <button
+            onClick={() => onConfirm(selectedParentId)}
+            style={{ padding: '7px 16px', background: '#3B82F6', border: 'none', borderRadius: 6, color: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+          >Move Here</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Folder Card Component ───────────────────────────────────────────────────
+function FolderCard({ folder, docCount, subFolderCount, onClick, onRename, onDelete, onMove, isRenaming, renameValue, onRenameChange, onRenameSubmit, onRenameCancel, showDeleteConfirm, onDeleteConfirm, onDeleteCancel }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuOpen]);
+
+  if (showDeleteConfirm) {
+    return (
+      <div className="vault-folder-card" style={{ position: 'relative', minHeight: 72 }}>
+        <div className="vault-delete-overlay">
+          <div style={{ fontSize: 11.5, color: '#FCA5A5', fontWeight: 600 }}>Delete "{folder.name}"?</div>
+          <div style={{ fontSize: 10.5, color: '#64748B', lineHeight: 1.4 }}>All files and sub-folders will be permanently removed.</div>
+          <div style={{ display: 'flex', gap: 7 }}>
+            <button onClick={onDeleteCancel} style={{ padding: '4px 12px', background: 'transparent', border: '1px solid rgba(255,255,255,.12)', borderRadius: 5, color: '#64748B', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+            <button onClick={onDeleteConfirm} style={{ padding: '4px 12px', background: '#EF4444', border: 'none', borderRadius: 5, color: 'white', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isRenaming) {
+    return (
+      <div className="vault-folder-card" onClick={e => e.stopPropagation()} style={{ gap: 10 }}>
+        <span className="vault-folder-icon">📁</span>
+        <input
+          className="vault-rename-input"
+          value={renameValue}
+          onChange={e => onRenameChange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onRenameSubmit(); if (e.key === 'Escape') onRenameCancel(); }}
+          onBlur={onRenameSubmit}
+          autoFocus
+          onClick={e => e.stopPropagation()}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="vault-folder-card" onClick={onClick} style={{ position: 'relative' }}>
       <span className="vault-folder-icon">📁</span>
-      <div style={{ minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div className="vault-folder-name">{folder.name}</div>
         <div className="vault-folder-meta">
           {docCount} doc{docCount !== 1 ? 's' : ''}
           {subFolderCount > 0 && ` · ${subFolderCount} folder${subFolderCount !== 1 ? 's' : ''}`}
         </div>
+      </div>
+      <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
+        <button
+          className="vault-folder-dots"
+          title="Folder options"
+          onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
+        >⋮</button>
+        {menuOpen && (
+          <div className="vault-folder-menu">
+            <button className="vault-folder-menu-item" onClick={e => { e.stopPropagation(); setMenuOpen(false); onRename(); }}>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Rename
+            </button>
+            <button className="vault-folder-menu-item" onClick={e => { e.stopPropagation(); setMenuOpen(false); onMove(); }}>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Move to…
+            </button>
+            <div className="vault-folder-menu-sep"/>
+            <button className="vault-folder-menu-item vault-folder-menu-danger" onClick={e => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              Delete
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -284,6 +482,12 @@ export default function VaultView({ targetFolderId = null }) {
   const [folders, setFolders]             = useState([]);   // flat list from API
   const [currentFolderId, setCurrentFolderId] = useState(null);  // null = root
   const [folderPath, setFolderPath]           = useState([]);    // [{id, name}]
+
+  // Folder management (rename / move / delete)
+  const [renamingFolderId, setRenamingFolderId] = useState(null);
+  const [renameValue,       setRenameValue]      = useState('');
+  const [deletingFolderId,  setDeletingFolderId] = useState(null);
+  const [movingFolder,      setMovingFolder]     = useState(null); // { id, name, parent_id }
 
   // Case Tracker
   const [cases, setCases]               = useState([]);
@@ -334,6 +538,57 @@ export default function VaultView({ targetFolderId = null }) {
     } catch (_) {}
   };
 
+  // ── Folder management API calls ───────────────────────────────────────────
+  const apiToken = () => localStorage.getItem('token') || localStorage.getItem('lexai_token');
+
+  const handleRenameFolder = async (folderId, newName) => {
+    const trimmed = (newName || '').trim();
+    setRenamingFolderId(null);
+    if (!trimmed) return;
+    const token = apiToken();
+    const res = await fetch(`${API_BASE}/api/vault/folders/${folderId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (res.ok) {
+      setFolders(prev => prev.map(f => f.id === folderId ? { ...f, name: trimmed } : f));
+    }
+  };
+
+  const handleDeleteFolder = async (folderId) => {
+    setDeletingFolderId(null);
+    const token = apiToken();
+    const res = await fetch(`${API_BASE}/api/vault/folders/${folderId}`, {
+      method: 'DELETE',
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    });
+    if (res.ok) {
+      const getAllDesc = (id) => {
+        const kids = folders.filter(f => f.parent_id === id).map(f => f.id);
+        return kids.reduce((acc, cid) => [...acc, cid, ...getAllDesc(cid)], []);
+      };
+      const gone = new Set([folderId, ...getAllDesc(folderId)]);
+      setFolders(prev => prev.filter(f => !gone.has(f.id)));
+      if (gone.has(currentFolderId)) { setCurrentFolderId(null); setFolderPath([]); }
+      loadDocuments(); // some docs may have been deleted
+    }
+  };
+
+  const handleMoveFolder = async (folderId, newParentId) => {
+    setMovingFolder(null);
+    if (newParentId === folderId) return; // sanity
+    const token = apiToken();
+    const res = await fetch(`${API_BASE}/api/vault/folders/${folderId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+      body: JSON.stringify({ parent_id: newParentId }),
+    });
+    if (res.ok) {
+      setFolders(prev => prev.map(f => f.id === folderId ? { ...f, parent_id: newParentId } : f));
+    }
+  };
+
   const loadCases = async () => {
     setLoadingCases(true);
     const res = await fetchTrackedCases();
@@ -347,15 +602,17 @@ export default function VaultView({ targetFolderId = null }) {
   }, [activeTab]);
 
   // ── Deep-link: navigate to a specific folder when targetFolderId is provided ──
-  const deepLinked = useRef(false);
+  // Track by value so a new folderId triggers re-navigation, but the same one doesn't loop
+  const appliedFolderRef = useRef(null);
   useEffect(() => {
-    if (!targetFolderId || !folders.length || deepLinked.current) return;
+    if (!targetFolderId || !folders.length) return;
+    if (appliedFolderRef.current === targetFolderId) return;
     const path = buildPathFromId(targetFolderId, folders);
     if (path.length) {
       setCurrentFolderId(targetFolderId);
       setFolderPath(path);
       setActiveTab('vault');
-      deepLinked.current = true;
+      appliedFolderRef.current = targetFolderId;
     }
   }, [targetFolderId, folders]);
 
@@ -652,7 +909,18 @@ export default function VaultView({ targetFolderId = null }) {
                         folder={folder}
                         docCount={docCountByFolderId[folder.id] || 0}
                         subFolderCount={subFolderCountById[folder.id] || 0}
-                        onClick={() => navigateToFolder(folder)}
+                        onClick={() => { if (renamingFolderId !== folder.id && deletingFolderId !== folder.id) navigateToFolder(folder); }}
+                        isRenaming={renamingFolderId === folder.id}
+                        renameValue={renameValue}
+                        onRenameChange={setRenameValue}
+                        onRenameSubmit={() => handleRenameFolder(folder.id, renameValue)}
+                        onRenameCancel={() => setRenamingFolderId(null)}
+                        showDeleteConfirm={deletingFolderId === folder.id}
+                        onDeleteConfirm={() => handleDeleteFolder(folder.id)}
+                        onDeleteCancel={() => setDeletingFolderId(null)}
+                        onRename={() => { setRenameValue(folder.name); setRenamingFolderId(folder.id); }}
+                        onDelete={() => setDeletingFolderId(folder.id)}
+                        onMove={() => setMovingFolder({ id: folder.id, name: folder.name, parent_id: folder.parent_id })}
                       />
                     ))}
                   </div>
@@ -820,6 +1088,16 @@ export default function VaultView({ targetFolderId = null }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── FOLDER MOVE MODAL ────────────────────────────────────────────── */}
+      {movingFolder && (
+        <FolderMoveModal
+          movingFolder={movingFolder}
+          allFolders={folders}
+          onConfirm={(newParentId) => handleMoveFolder(movingFolder.id, newParentId)}
+          onClose={() => setMovingFolder(null)}
+        />
       )}
 
       {/* ── ADD CASE MODAL ────────────────────────────────────────────────── */}

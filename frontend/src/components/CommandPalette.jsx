@@ -2367,7 +2367,7 @@ export default function CommandPalette() {
                       </div>
                       <div
                         className="lex-vault-save-card"
-                        onClick={() => navigate('/vault', { state: { targetFolderId: vs.folderId, targetFolderPath: vs.folderPath } })}
+                        onClick={() => { navigate('/vault', { state: { targetFolderId: vs.folderId, targetFolderPath: vs.folderPath } }); setIsOpen(false); }}
                         title="Open Case Vault"
                         role="button"
                       >

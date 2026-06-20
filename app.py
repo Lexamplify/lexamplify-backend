@@ -302,6 +302,63 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    @app.route('/api/vault/folders/<int:folder_id>', methods=['PATCH', 'OPTIONS'])
+    def update_vault_folder(folder_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+
+            if 'name' in data:
+                new_name = (data.get('name') or '').strip()
+                if not new_name:
+                    return jsonify({'error': True, 'message': 'Folder name cannot be empty.'}), 400
+                if len(new_name) > 80:
+                    return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
+                db.execute('UPDATE vault_folders SET name = ? WHERE id = ?', (new_name, folder_id))
+                db.commit()
+                return jsonify({'success': True, 'id': folder_id, 'name': new_name}), 200
+
+            if 'parent_id' in data:
+                new_parent = data.get('parent_id')  # None = move to root
+                # Prevent circular parentage: new_parent must not be self or a descendant
+                def get_descendants(fid):
+                    kids = [r['id'] for r in db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()]
+                    result = list(kids)
+                    for k in kids:
+                        result.extend(get_descendants(k))
+                    return result
+                if new_parent == folder_id or new_parent in get_descendants(folder_id):
+                    return jsonify({'error': True, 'message': 'Cannot move a folder into itself or its own descendant.'}), 400
+                db.execute('UPDATE vault_folders SET parent_id = ? WHERE id = ?', (new_parent, folder_id))
+                db.commit()
+                return jsonify({'success': True, 'id': folder_id, 'parent_id': new_parent}), 200
+
+            return jsonify({'error': True, 'message': 'No valid fields provided (name or parent_id).'}), 400
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/vault/folders/<int:folder_id>', methods=['DELETE', 'OPTIONS'])
+    def delete_vault_folder(folder_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            def recursive_delete(fid):
+                # Delete all documents in this folder
+                db.execute('DELETE FROM case_vault WHERE folder_id = ?', (fid,))
+                # Get all child folders
+                children = [r['id'] for r in db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()]
+                for child_id in children:
+                    recursive_delete(child_id)
+                # Delete this folder
+                db.execute('DELETE FROM vault_folders WHERE id = ?', (fid,))
+
+            recursive_delete(folder_id)
+            db.commit()
+            return jsonify({'success': True, 'deleted_id': folder_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     @app.route('/api/vault/save', methods=['POST', 'OPTIONS'])
     def save_vault_document():
         if request.method == 'OPTIONS':
