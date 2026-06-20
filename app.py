@@ -359,6 +359,30 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    @app.route('/api/vault/documents/<int:doc_id>', methods=['PUT', 'OPTIONS'])
+    def update_vault_document(doc_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            new_content = data.get('content', '')
+            db.execute('UPDATE case_vault SET content = ? WHERE id = ?', (new_content, doc_id))
+            db.commit()
+            return jsonify({'success': True, 'id': doc_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/vault/documents/<int:doc_id>', methods=['DELETE', 'OPTIONS'])
+    def delete_vault_document(doc_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            db.execute('DELETE FROM case_vault WHERE id = ?', (doc_id,))
+            db.commit()
+            return jsonify({'success': True, 'deleted_id': doc_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     @app.route('/api/vault/save', methods=['POST', 'OPTIONS'])
     def save_vault_document():
         if request.method == 'OPTIONS':

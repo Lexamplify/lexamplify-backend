@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useLocation, Link } from 'react-router-dom';
+import { useParams, useLocation, Link, useNavigate } from 'react-router-dom';
 import { fetchDocumentDetails } from '../services/api';
 import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
 
@@ -208,11 +208,119 @@ const DV_STYLES = `
   }
   .dv-ai-send:hover:not(:disabled) { background: #1D4ED8; }
   .dv-ai-send:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* ── Objective 2: Bulletproof title on white paper ── */
+  .dv-doc-title {
+    color: #0F172A !important;
+    font-family: var(--font-serif, Georgia, serif);
+    font-weight: 700;
+    line-height: 1.3;
+    font-size: 26px;
+    margin: 6px 0 0;
+  }
+
+  /* ── Objective 3: Light-theme RTE toolbar ── */
+  .dv-rte-toolbar {
+    display: flex; align-items: center; gap: 2px;
+    padding: 6px 14px; flex-wrap: wrap; flex-shrink: 0;
+    background: #F1F5F9; border-bottom: 1px solid #E2E8F0;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .dv-rte-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: #94A3B8; margin-right: 4px;
+  }
+  .dv-rte-btn {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 30px; height: 28px; padding: 0 7px;
+    background: transparent; border: 1px solid transparent;
+    border-radius: 4px; cursor: pointer; transition: all .12s;
+    color: #475569; font-size: 12.5px; font-family: inherit; line-height: 1;
+    user-select: none;
+  }
+  .dv-rte-btn:hover { background: rgba(59,130,246,.1); border-color: rgba(59,130,246,.25); color: #2563EB; }
+  .dv-rte-sep { width: 1px; height: 20px; background: #CBD5E1; margin: 0 4px; flex-shrink: 0; }
+  .dv-rte-group { display: flex; align-items: center; gap: 1px; }
+
+  /* ── Floating save FAB ── */
+  @keyframes dv-fab-rise {
+    from { opacity: 0; transform: translateX(-50%) translateY(14px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+  .dv-save-fab {
+    position: fixed; bottom: 28px;
+    left: calc(50vw - 200px); transform: translateX(-50%);
+    z-index: 500;
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 26px; border-radius: 10px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 700; font-family: var(--font-sans);
+    transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+    animation: dv-fab-rise 0.28s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    white-space: nowrap;
+  }
+  .dv-save-fab.dirty  { background: #2563EB; color: white; }
+  .dv-save-fab.dirty:hover  { background: #1D4ED8; box-shadow: 0 8px 28px rgba(37,99,235,.4); transform: translateX(-50%) translateY(-1px); }
+  .dv-save-fab.saving { background: rgba(37,99,235,0.55); color: white; cursor: not-allowed; }
+  .dv-save-fab.success { background: #059669; color: white; cursor: default; }
+
+  /* ── Dirty indicator badge (sidebar) ── */
+  .dv-dirty-badge {
+    display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+    color: #F59E0B; background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.22); border-radius: 5px; padding: 5px 9px;
+  }
+
+  /* ── Editable body (no focus ring) ── */
+  .dv-editable-body { outline: none !important; caret-color: #2563EB; min-height: 200px; }
+  .dv-editable-body:focus { outline: none !important; }
 `;
+
+// ─── Light-theme Rich Text Toolbar ──────────────────────────────────────────
+// onMouseDown e.preventDefault() keeps selection/focus on the contentEditable
+// body instead of shifting to the button, so execCommand sees the right range.
+function DVRichTextToolbar({ targetRef }) {
+  const exec = (cmd, val = null) => { targetRef.current?.focus(); document.execCommand(cmd, false, val); };
+  return (
+    <div className="dv-rte-toolbar" onMouseDown={e => e.preventDefault()}>
+      <span className="dv-rte-label">Format</span>
+      <div className="dv-rte-group">
+        <button className="dv-rte-btn" title="Bold (Ctrl+B)" onMouseDown={() => exec('bold')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>
+        </button>
+        <button className="dv-rte-btn" title="Italic (Ctrl+I)" onMouseDown={() => exec('italic')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>
+        </button>
+        <button className="dv-rte-btn" title="Underline (Ctrl+U)" onMouseDown={() => exec('underline')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3"/><line x1="4" y1="21" x2="20" y2="21"/></svg>
+        </button>
+        <button className="dv-rte-btn" title="Strikethrough" onMouseDown={() => exec('strikeThrough')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="4" y1="12" x2="20" y2="12"/><path d="M8 8c0-2.2 1.8-4 4-4s4 1.8 4 4c0 1.1-.4 2-1 2.7"/><path d="M8 16c0 2.2 1.8 4 4 4s4-1.8 4-4"/></svg>
+        </button>
+      </div>
+      <div className="dv-rte-sep"/>
+      <div className="dv-rte-group">
+        <button className="dv-rte-btn" title="Numbered list" onMouseDown={() => exec('insertOrderedList')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="2" y="7" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">1.</text><text x="2" y="13" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">2.</text><text x="2" y="19" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">3.</text></svg>
+        </button>
+        <button className="dv-rte-btn" title="Bullet list" onMouseDown={() => exec('insertUnorderedList')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+      <div className="dv-rte-sep"/>
+      <div className="dv-rte-group">
+        <button className="dv-rte-btn" title="Clear formatting" onMouseDown={() => exec('removeFormat')} style={{ color: '#94A3B8' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.375-9.375z"/><line x1="6" y1="20" x2="10" y2="16" strokeWidth="2.5" stroke="#F87171"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function DocumentViewer({ focusMode, setFocusMode }) {
   const { caseId, docId } = useParams();
   const location = useLocation();
+  const navigate  = useNavigate();
   const fromVault = caseId === 'vault' || location.state?.fromVault;
   const backTo    = fromVault ? '/vault' : `/case/${caseId}`;
   const backLabel = fromVault ? 'Back to Document Vault' : 'Back to Case Directory';
@@ -230,11 +338,72 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
   const aiEndRef = useRef(null);
   const docRef   = useRef(null);
 
+  // Rich-text editor state
+  const [isDirty,     setIsDirty]     = useState(false);
+  const [isSaving,    setIsSaving]    = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError,   setSaveError]   = useState(null);
+  const docBodyRef = useRef(null);
+
   useEffect(() => { docRef.current = doc; }, [doc]);
 
   useEffect(() => {
     aiEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [aiMessages]);
+
+  // ── Initialize contentEditable with rendered HTML ─────────────────────────
+  useEffect(() => {
+    if (docBodyRef.current && doc !== null) {
+      docBodyRef.current.innerHTML = doc.text ? renderMarkdown(doc.text) : '';
+      setIsDirty(false);
+    }
+  }, [doc]);
+
+  // ── Warn before browser tab/window close with unsaved changes ─────────────
+  useEffect(() => {
+    const guard = (e) => {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+    };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [isDirty]);
+
+  // ── Save handler ──────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!doc?.id || isSaving) return;
+    setIsSaving(true);
+    setSaveError(null);
+    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
+    const newContent = docBodyRef.current?.innerText || '';
+    try {
+      const res = await fetch(`${API_BASE}/api/vault/documents/${doc.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ content: newContent }),
+      });
+      if (res.ok) {
+        setIsDirty(false);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2600);
+      } else {
+        setSaveError('Save failed — server error. Please retry.');
+      }
+    } catch {
+      setSaveError('Save failed — network error.');
+    }
+    setIsSaving(false);
+  };
+
+  // ── Navigate back with dirty-check ────────────────────────────────────────
+  const handleBack = () => {
+    if (isDirty && !window.confirm('You have unsaved changes. Are you sure you want to leave?')) return;
+    navigate(backTo);
+  };
 
   // ── Document load ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -336,41 +505,77 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
       <style>{DV_STYLES}</style>
       <style>{MARKDOWN_CSS}</style>
 
-      {/* ── LEFT: Document Reader (flex: 1, never resizes) ─── */}
+      {/* ── LEFT: Document Editor (flex: 1) ─── */}
       <div
         className={`document-viewer-panel${isAnalyzing ? ' anim-doc-pulse' : ''}`}
         style={{
           flex: 1,
           backgroundColor: 'var(--bg-paper-viewer, #FAFAF8)',
-          color: '#1E293B',
-          padding: '40px 60px',
+          display: 'flex',
+          flexDirection: 'column',
           overflowY: 'auto',
           fontFamily: 'var(--font-serif, Georgia, serif)',
           lineHeight: '1.8',
           fontSize: '15px',
         }}
       >
-        <div style={{ borderBottom: '1px solid var(--border-paper-subtle, #E2E8F0)', paddingBottom: '16px', marginBottom: '28px' }}>
-          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1.2px', color: '#64748B', fontWeight: '700' }}>
-            OFFICIAL VAULT COPY
-          </span>
-          <h1 style={{ fontSize: '26px', marginTop: '6px', color: '#0F172A', fontFamily: 'var(--font-serif, Georgia, serif)', fontWeight: '700', lineHeight: '1.3' }}>
-            {doc.filename}
-          </h1>
-        </div>
+        {/* Sticky Rich-Text Toolbar — Objective 3 */}
+        <DVRichTextToolbar targetRef={docBodyRef} />
 
-        {/* Task 1: vault-doc-theme wrapper forces dark text on light background */}
-        {doc.text ? (
-          <div
-            className="vault-doc-theme md-body"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(doc.text) }}
-          />
-        ) : (
-          <div style={{ fontStyle: 'italic', color: '#64748B' }}>
-            No text chunks found for this document. Try re-uploading the file.
+        {/* Paper content area */}
+        <div style={{ padding: '40px 60px', color: '#1E293B', flex: 1 }}>
+          {/* Title header — Objective 2 */}
+          <div style={{ borderBottom: '1px solid #E2E8F0', paddingBottom: '16px', marginBottom: '28px' }}>
+            <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1.2px', color: '#64748B', fontWeight: '700' }}>
+              OFFICIAL VAULT COPY
+            </span>
+            <h1 className="dv-doc-title">{doc.filename}</h1>
           </div>
-        )}
+
+          {/* Editable document body — Objective 3 */}
+          {doc.text !== undefined ? (
+            <div
+              ref={docBodyRef}
+              className="vault-doc-theme md-body dv-editable-body"
+              contentEditable={true}
+              suppressContentEditableWarning={true}
+              onInput={() => { if (!isDirty) setIsDirty(true); }}
+            />
+          ) : (
+            <div style={{ fontStyle: 'italic', color: '#64748B' }}>
+              No text chunks found for this document. Try re-uploading the file.
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* ── Floating Save FAB — Objective 3 ─── */}
+      {(isDirty || isSaving || saveSuccess) && (
+        <button
+          className={`dv-save-fab ${isSaving ? 'saving' : saveSuccess ? 'success' : 'dirty'}`}
+          onClick={handleSave}
+          disabled={isSaving || saveSuccess}
+          title={saveError || undefined}
+        >
+          {isSaving ? (
+            <>
+              <div style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'dv-spin 0.7s linear infinite', flexShrink: 0 }}/>
+              Saving…
+            </>
+          ) : saveSuccess ? (
+            <>✓ Saved to Vault</>
+          ) : (
+            <>
+              <svg width="12" height="12" fill="none" stroke="white" strokeWidth="2.5" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+              Save Changes
+            </>
+          )}
+        </button>
+      )}
 
       {/* ── RIGHT: Fixed 400px column — sidebar OR AI chat ─── */}
       <div className="dv-right-col">
@@ -431,9 +636,17 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
           /* Sidebar — info panel */
           <div className="dv-sidebar">
             <div>
-              <Link to={backTo} style={{ color: 'var(--accent-primary, #3B82F6)', textDecoration: 'none', fontSize: '13px' }}>
+              <button
+                onClick={handleBack}
+                style={{ background: 'none', border: 'none', color: 'var(--accent-primary, #3B82F6)', textDecoration: 'none', fontSize: '13px', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-sans)' }}
+              >
                 ← {backLabel}
-              </Link>
+              </button>
+              {isDirty && (
+                <div className="dv-dirty-badge" style={{ marginTop: '10px' }}>
+                  ✏️ Unsaved changes
+                </div>
+              )}
               <h2 style={{ fontSize: '18px', marginTop: '14px', marginBottom: '2px', color: 'white' }}>RAG Ingestion</h2>
               <span style={{ fontSize: '11px', color: 'var(--text-dark-muted, #8F9CAE)' }}>Indexed Database ID: #{doc.id}</span>
             </div>

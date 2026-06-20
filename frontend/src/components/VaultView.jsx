@@ -261,6 +261,31 @@ const vaultStyles = `
   }
   .vault-btn-quick:hover { background: rgba(59,130,246,0.13); border-color: rgba(59,130,246,0.4); color: #BFDBFE; }
 
+  /* ── Document Card 3-dots context menu ── */
+  .vault-doc-dots {
+    opacity: 0; background: none; border: none; cursor: pointer; line-height: 1;
+    color: var(--text-dark-muted, #8F9CAE); font-size: 16px; letter-spacing: 1.5px;
+    padding: 3px 7px; border-radius: 5px; transition: all .12s; flex-shrink: 0;
+    font-family: inherit;
+  }
+  .vault-grid-card:hover .vault-doc-dots { opacity: 1; }
+  .vault-doc-dots:hover { background: rgba(255,255,255,.1); color: white; }
+  .vault-doc-menu {
+    position: absolute; top: calc(100% + 4px); right: 0; z-index: 300;
+    background: #1A2030; border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px; padding: 4px; min-width: 175px;
+    box-shadow: 0 10px 28px rgba(0,0,0,.55); animation: fadeIn .12s ease;
+  }
+  .vault-doc-menu-item {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 7px 10px; background: none; border: none; border-radius: 5px;
+    cursor: pointer; font-size: 12.5px; color: #94A3B8; font-family: inherit; transition: all .1s;
+  }
+  .vault-doc-menu-item:hover { background: rgba(255,255,255,.07); color: white; }
+  .vault-doc-menu-danger { color: #F87171; }
+  .vault-doc-menu-danger:hover { background: rgba(239,68,68,.1) !important; color: #EF4444 !important; }
+  .vault-doc-menu-sep { height: 1px; background: rgba(255,255,255,.07); margin: 4px 0; }
+
   /* ── Modal ── */
   .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px); }
   .modal-card { background-color: var(--bg-dark-panel, #171c26); border: 1px solid var(--border-dark-subtle, #2C3241); border-radius: 12px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
@@ -477,6 +502,10 @@ export default function VaultView({ targetFolderId = null }) {
   const [isDragOver, setIsDragOver]   = useState(false);
   const [searchTerm, setSearchTerm]   = useState('');
   const fileInputRef                  = useRef(null);
+
+  // Document card context menu
+  const [openMenuDocId, setOpenMenuDocId] = useState(null);
+  const docMenuRef = useRef(null);
 
   // Folder navigation
   const [folders, setFolders]             = useState([]);   // flat list from API
@@ -746,6 +775,38 @@ export default function VaultView({ targetFolderId = null }) {
     });
   };
 
+  // ── Doc card menu close-on-outside-click ─────────────────────────────────
+  useEffect(() => {
+    if (!openMenuDocId) return;
+    const close = (e) => { if (!docMenuRef.current?.contains(e.target)) setOpenMenuDocId(null); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [openMenuDocId]);
+
+  // ── Document card actions ─────────────────────────────────────────────────
+  const handleDeleteDocument = async (doc) => {
+    setOpenMenuDocId(null);
+    if (!window.confirm(`Permanently delete "${doc.smart_title || doc.title}"? This cannot be undone.`)) return;
+    const token = apiToken();
+    const res = await fetch(`${API_BASE}/api/vault/documents/${doc.id}`, {
+      method: 'DELETE',
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    });
+    if (res.ok) setDocuments(prev => prev.filter(d => d.id !== doc.id));
+  };
+
+  const handleDownloadDocument = (doc) => {
+    setOpenMenuDocId(null);
+    const content = doc.content || '';
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(doc.smart_title || doc.title || 'document').replace(/[^a-z0-9_\-. ]/gi, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ── CNR fetch ─────────────────────────────────────────────────────────────
   const handleFetchStatus = async () => {
     if (!fetchCnr.trim()) return;
@@ -953,21 +1014,51 @@ export default function VaultView({ targetFolderId = null }) {
                     const typeStyle = getDocTypeStyle(doc.doc_type);
                     const folderName = isSearching ? getFolderName(doc.folder_id) : null;
                     return (
-                      <div key={doc.id} className="vault-grid-card">
-                        {/* Card header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '10px', fontWeight: '700', color: typeStyle.color, background: typeStyle.bg, padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.4px', flexShrink: 0 }}>
+                      <div key={doc.id} className="vault-grid-card" style={{ position: 'relative' }}>
+                        {/* Card header: type badge + folder badge + 3-dots menu */}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                          <span style={{ fontSize: '10px', fontWeight: '700', color: typeStyle.color, background: typeStyle.bg, padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.4px', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
                             {doc.doc_type || 'Document'}
                           </span>
-                          {/* Show folder badge when searching across folders */}
-                          {folderName && (
-                            <span className="vault-folder-badge">📁 {folderName}</span>
-                          )}
-                          {!folderName && (
-                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', opacity: 0.65, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {doc.case_id ? `Case ${doc.case_id}` : 'General Vault'}
-                            </span>
-                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                            {folderName && <span className="vault-folder-badge">📁 {folderName}</span>}
+                            {/* 3-dots context menu */}
+                            <div
+                              ref={openMenuDocId === doc.id ? docMenuRef : null}
+                              style={{ position: 'relative' }}
+                            >
+                              <button
+                                className="vault-doc-dots"
+                                title="Document options"
+                                onClick={e => { e.stopPropagation(); setOpenMenuDocId(openMenuDocId === doc.id ? null : doc.id); }}
+                              >⋮</button>
+                              {openMenuDocId === doc.id && (
+                                <div className="vault-doc-menu">
+                                  <button className="vault-doc-menu-item" onClick={() => { setOpenMenuDocId(null); handleAnalyzeDocument(doc); }}>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                                    Analyze
+                                  </button>
+                                  <button className="vault-doc-menu-item" onClick={() => { setOpenMenuDocId(null); handleSummarize(doc); }}>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                    Summarize
+                                  </button>
+                                  <button className="vault-doc-menu-item" onClick={() => { setOpenMenuDocId(null); handleExtractFacts(doc); }}>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                    Extract Facts
+                                  </button>
+                                  <button className="vault-doc-menu-item" onClick={() => handleDownloadDocument(doc)}>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Download
+                                  </button>
+                                  <div className="vault-doc-menu-sep"/>
+                                  <button className="vault-doc-menu-item vault-doc-menu-danger" onClick={() => handleDeleteDocument(doc)}>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         {/* Title */}
@@ -980,32 +1071,16 @@ export default function VaultView({ targetFolderId = null }) {
 
                         {/* Date */}
                         <div style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', opacity: 0.55 }}>
-                          Created: {formatDate(doc.created_at)}
+                          {formatDate(doc.created_at)}
                         </div>
 
-                        {/* Primary Actions */}
-                        <div className="vault-card-actions">
+                        {/* Single primary CTA */}
+                        <div className="vault-card-actions" style={{ marginTop: 'auto' }}>
                           <button className="vault-btn-view" onClick={() => handleViewDocument(doc)}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                             </svg>
                             View Document
-                          </button>
-                          <button className="vault-btn-analyze" onClick={() => handleAnalyzeDocument(doc)}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                            </svg>
-                            Analyze
-                          </button>
-                        </div>
-
-                        {/* Quick AI Actions */}
-                        <div className="vault-card-quick-actions">
-                          <button className="vault-btn-quick" onClick={() => handleSummarize(doc)} title="AI summary">
-                            📋 Summarize
-                          </button>
-                          <button className="vault-btn-quick" onClick={() => handleExtractFacts(doc)} title="Extract facts">
-                            ⚡ Extract Facts
                           </button>
                         </div>
                       </div>
