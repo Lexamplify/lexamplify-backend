@@ -208,6 +208,17 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+        e.preventDefault();
+        setFocusMode(f => !f);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [setFocusMode]);
+
   const closeSidebar = () => setIsSidebarOpen(false);
   const openAgent = () => window.dispatchEvent(new Event('toggle-rag-palette'));
   const handleSignOut = () => {
@@ -341,6 +352,42 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           </div>
         </div>
       </aside>
+
+      {/* ── FOCUS MODE ESCAPE HATCH ──────────────────────────────────────── */}
+      {focusMode && (
+        <button
+          onClick={() => setFocusMode(false)}
+          title="Exit Focus Mode (Ctrl+\)"
+          style={{
+            position: 'fixed',
+            bottom: '28px',
+            left: '24px',
+            zIndex: 999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '7px',
+            padding: '9px 16px',
+            background: 'rgba(15,23,42,0.88)',
+            border: '1px solid rgba(59,130,246,0.38)',
+            borderRadius: '10px',
+            color: 'var(--accent-primary)',
+            fontSize: '12.5px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
+            transition: 'all 0.18s ease',
+            letterSpacing: '0.01em',
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+          </svg>
+          Exit Focus Mode
+          <span style={{ fontSize: '10px', opacity: 0.55, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>Ctrl+\</span>
+        </button>
+      )}
 
       {/* ── WORKSPACE ────────────────────────────────────────────────────── */}
       <div className="workspace-container">

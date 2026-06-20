@@ -221,6 +221,7 @@ h1, h2, h3, h4, h5, h6 {
   width: 0;
   transform: translateX(-260px);
   border-right: none;
+  overflow: hidden;
 }
 
 .focus-mode-active .topbar {
