@@ -471,32 +471,45 @@ const AGENT_CSS = `
     letter-spacing: .07em; color: #475569; margin-bottom: 6px;
   }
 
-  /* Folder tree */
+  /* Breadcrumb navigation */
+  .svm-breadcrumb {
+    display: flex; align-items: center; gap: 2px; padding: 5px 8px;
+    background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
+    border-radius: 6px; margin-bottom: 6px; flex-wrap: wrap; min-height: 30px;
+  }
+  .svm-breadcrumb-item {
+    background: none; border: none; padding: 2px 6px; border-radius: 4px;
+    color: #7EB3F5; font-size: 11.5px; cursor: pointer; font-weight: 600;
+    transition: background .12s; display: flex; align-items: center; gap: 4px;
+    font-family: inherit;
+  }
+  .svm-breadcrumb-item:hover { background: rgba(59,130,246,.12); }
+  .svm-breadcrumb-item.current { color: #E2E8F0; cursor: default; pointer-events: none; }
+  .svm-breadcrumb-sep { color: #2D3748; font-size: 13px; flex-shrink: 0; user-select: none; }
+
+  /* Drill-down explorer */
   .svm-tree { display: flex; flex-direction: column; gap: 1px; }
-  .svm-folder-row {
-    display: flex; align-items: center; gap: 0;
-    border-radius: 6px; cursor: pointer; transition: background .12s;
-    user-select: none;
-  }
-  .svm-folder-row:hover { background: rgba(59,130,246,.08); }
-  .svm-folder-row.selected { background: rgba(59,130,246,.16)!important; }
-  .svm-folder-indent { flex-shrink: 0; }
-  .svm-folder-chevron {
-    width: 18px; height: 18px; display: flex; align-items: center;
-    justify-content: center; flex-shrink: 0; color: #475569;
-    transition: transform .18s; font-size: 8px;
-  }
-  .svm-folder-chevron.open { transform: rotate(90deg); }
-  .svm-folder-icon { font-size: 13px; margin-right: 7px; flex-shrink: 0; }
-  .svm-folder-name { font-size: 12.5px; color: #94A3B8; flex: 1; }
-  .svm-folder-row.selected .svm-folder-name { color: #93C5FD; font-weight: 600; }
-  .svm-root-row {
+  .svm-explorer { display: flex; flex-direction: column; gap: 1px; }
+  .svm-explorer-row {
     display: flex; align-items: center; gap: 8px; padding: 7px 10px;
     border-radius: 6px; cursor: pointer; transition: background .12s;
-    font-size: 12px; color: #475569;
+    font-size: 12.5px; color: #94A3B8; user-select: none;
   }
-  .svm-root-row:hover { background: rgba(59,130,246,.06); color: #7EB3F5; }
-  .svm-root-row.selected { background: rgba(59,130,246,.12)!important; color: #93C5FD; font-weight: 600; }
+  .svm-explorer-row:hover { background: rgba(59,130,246,.09); color: #CBD5E1; }
+  .svm-explorer-empty { font-size: 12px; color: #334155; padding: 12px 10px; text-align: center; font-style: italic; }
+
+  /* Format selector */
+  .svm-format-select {
+    width: 100%; background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.1); border-radius: 6px;
+    padding: 8px 32px 8px 10px; font-size: 12.5px; color: #CBD5E1;
+    cursor: pointer; outline: none; transition: border-color .15s; font-family: inherit;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23475569' stroke-width='2.5' viewBox='0 0 24 24'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; box-sizing: border-box;
+  }
+  .svm-format-select:focus { border-color: rgba(59,130,246,.5); }
+  .svm-format-select option { background: #1E2535; color: #E2E8F0; }
 
   /* New folder inline creator */
   .svm-new-folder-row {
@@ -661,48 +674,6 @@ const generateSmartName = (doc_type, sessionTitle) => {
 // ═══════════════════════════════════════════════════════
 const LAST_FOLDER_KEY = 'lexai_last_vault_folder'; // { id, path }
 
-function FolderNode({ folder, depth, selectedId, expandedIds, onSelect, onToggle }) {
-  const isSelected = selectedId === folder.id;
-  const isExpanded = expandedIds.has(folder.id);
-  const hasChildren = folder.children && folder.children.length > 0;
-  const indent = depth * 16;
-
-  return (
-    <>
-      <div
-        className={`svm-folder-row${isSelected ? ' selected' : ''}`}
-        style={{ paddingLeft: 8 + indent, paddingTop: 6, paddingBottom: 6, paddingRight: 8 }}
-        onClick={() => onSelect(folder)}
-      >
-        {hasChildren ? (
-          <span
-            className={`svm-folder-chevron${isExpanded ? ' open' : ''}`}
-            onClick={e => { e.stopPropagation(); onToggle(folder.id); }}
-          >▶</span>
-        ) : (
-          <span className="svm-folder-chevron" style={{ visibility: 'hidden' }}>▶</span>
-        )}
-        <span className="svm-folder-icon">📁</span>
-        <span className="svm-folder-name">{folder.name}</span>
-      </div>
-      {hasChildren && isExpanded && (
-        <div>
-          {folder.children.map(child => (
-            <FolderNode
-              key={child.id}
-              folder={child}
-              depth={depth + 1}
-              selectedId={selectedId}
-              expandedIds={expandedIds}
-              onSelect={onSelect}
-              onToggle={onToggle}
-            />
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
 
 // ═══════════════════════════════════════════════════════
 //  RICH TEXT EDITOR TOOLBAR
@@ -804,64 +775,63 @@ function RichTextToolbar({ targetRef }) {
 
 const VAULT_TAG_OPTIONS = ['Draft', 'Client Review', 'Final', 'Approved', 'Privileged', 'Court Filing'];
 
+const FORMAT_OPTIONS = [
+  { value: 'native', label: 'LexAmplify Native (HTML/Text)' },
+  { value: 'pdf',    label: 'PDF Document (.pdf)' },
+  { value: 'docx',   label: 'Word Document (.docx)' },
+];
+
 function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) {
-  const [folders,      setFolders]      = useState([]);         // root-level tree nodes
-  const [flatFolders,  setFlatFolders]  = useState([]);         // all folders flat
-  const [selectedFolder, setSelectedFolder] = useState(null);   // { id, name } or null = root
-  const [expandedIds,  setExpandedIds]  = useState(new Set());
-  const [fileName,     setFileName]     = useState('');
-  const [isCreating,   setIsCreating]   = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
+  const [flatFolders,    setFlatFolders]   = useState([]);
+  // navStack drives the drill-down breadcrumb — each entry is { id, name }; null id = root
+  const [navStack,       setNavStack]      = useState([{ id: null, name: 'Root (Case Vault)' }]);
+  const [fileName,       setFileName]      = useState('');
+  const [isCreating,     setIsCreating]    = useState(false);
+  const [newFolderName,  setNewFolderName] = useState('');
   const [newFolderError, setNewFolderError] = useState('');
-  const [saving,       setSaving]       = useState(false);
+  const [saving,         setSaving]        = useState(false);
   const [loadingFolders, setLoadingFolders] = useState(true);
-  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedTags,   setSelectedTags]  = useState([]);
+  const [saveFormat,     setSaveFormat]    = useState('native');
   const newFolderInputRef = useRef(null);
 
   const toggleTag = (tag) =>
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
 
-  // Smart default filename — unique per generation via timestamp inside generateSmartName
   const smartDefault = generateSmartName(draft?.doc_type, sessionTitle);
+  useEffect(() => { setFileName(smartDefault); }, [smartDefault]);
 
-  useEffect(() => {
-    setFileName(smartDefault);
-  }, [smartDefault]);
-
-  // Last-used folder hint
-  const lastFolder = (() => {
-    try { return JSON.parse(localStorage.getItem(LAST_FOLDER_KEY) || 'null'); } catch { return null; }
-  })();
-
-  // Load folder tree
+  // Load flat folder list
   useEffect(() => {
     const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     fetch(`${apiBase}/api/vault/folders`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setFolders(data.folders || []);
-          setFlatFolders(data.flat || []);
-        }
-      })
+      .then(data => { if (data) setFlatFolders(data.flat || []); })
       .catch(() => {})
       .finally(() => setLoadingFolders(false));
   }, [apiBase]);
 
-  const handleToggle = (id) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  // Derived: current view + children visible at this level
+  const currentView     = navStack[navStack.length - 1];
+  const currentChildren = flatFolders
+    .filter(f => f.parent_id === currentView.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const destFolderId = currentView.id;   // null = root
+
+  const enterFolder = (folder) => {
+    setNavStack(prev => [...prev, { id: folder.id, name: folder.name }]);
+    setIsCreating(false);
+    setNewFolderName('');
+    setNewFolderError('');
   };
 
-  const handleSelectFolder = (folder) => {
-    setSelectedFolder(folder);
-    // Auto-expand when selected
-    setExpandedIds(prev => new Set([...prev, folder.id]));
+  const navigateTo = (index) => {
+    setNavStack(prev => prev.slice(0, index + 1));
+    setIsCreating(false);
+    setNewFolderName('');
+    setNewFolderError('');
   };
 
   const handleCreateFolder = async () => {
@@ -872,104 +842,54 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
     try {
       const res = await fetch(`${apiBase}/api/vault/folders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: JSON.stringify({ name, parent_id: selectedFolder?.id ?? null }),
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        body: JSON.stringify({ name, parent_id: currentView.id }),
       });
       const data = await res.json();
-      if (!res.ok || data.error) {
-        setNewFolderError(data.message || 'Could not create folder.');
-        return;
-      }
-      // Inject new folder into tree state without refetch
+      if (!res.ok || data.error) { setNewFolderError(data.message || 'Could not create folder.'); return; }
       const newNode = { id: data.id, name: data.name, parent_id: data.parent_id, children: [] };
       setFlatFolders(prev => [...prev, newNode]);
-      if (data.parent_id == null) {
-        setFolders(prev => [...prev, newNode].sort((a,b) => a.name.localeCompare(b.name)));
-      } else {
-        // Inject into parent's children
-        const injectIntoTree = (nodes) => nodes.map(n => {
-          if (n.id === data.parent_id) return { ...n, children: [...(n.children || []), newNode].sort((a,b) => a.name.localeCompare(b.name)) };
-          if (n.children?.length) return { ...n, children: injectIntoTree(n.children) };
-          return n;
-        });
-        setFolders(prev => injectIntoTree(prev));
-      }
-      setSelectedFolder(newNode);
-      setExpandedIds(prev => new Set([...prev, data.parent_id, data.id].filter(Boolean)));
       setNewFolderName('');
       setIsCreating(false);
-    } catch {
-      setNewFolderError('Network error. Try again.');
-    }
+      enterFolder(newNode);
+    } catch { setNewFolderError('Network error. Try again.'); }
   };
 
-  // Build path string for display
-  const buildPath = (folderId, flat) => {
-    if (!folderId) return 'Root (Case Vault)';
+  // Last-used folder shortcut
+  const lastFolder = (() => {
+    try { return JSON.parse(localStorage.getItem(LAST_FOLDER_KEY) || 'null'); } catch { return null; }
+  })();
+
+  const applyLastFolder = () => {
+    if (!lastFolder || !flatFolders.length) return;
     const parts = [];
-    let id = folderId;
+    let id = lastFolder.id;
     const seen = new Set();
     while (id && !seen.has(id)) {
       seen.add(id);
-      const node = flat.find(f => f.id === id);
+      const node = flatFolders.find(f => f.id === id);
       if (!node) break;
-      parts.unshift(node.name);
+      parts.unshift({ id: node.id, name: node.name });
       id = node.parent_id;
     }
-    return parts.join(' / ') || 'Root (Case Vault)';
+    setNavStack([{ id: null, name: 'Root (Case Vault)' }, ...parts]);
   };
 
-  const destPath = buildPath(selectedFolder?.id ?? null, flatFolders);
+  // Build path from navStack for display
+  const destPath = navStack.map(s => s.name).join(' / ');
   const fullPath = `${destPath} / ${fileName || smartDefault}`;
 
   const handleConfirm = async () => {
     const finalName = (fileName || smartDefault).trim();
     if (!finalName) return;
     setSaving(true);
-
-    // Persist last-used folder
-    if (selectedFolder) {
-      try {
-        localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify({
-          id: selectedFolder.id,
-          path: buildPath(selectedFolder.id, flatFolders),
-        }));
-      } catch {}
+    if (destFolderId) {
+      try { localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify({ id: destFolderId, path: destPath })); } catch {}
     } else {
       try { localStorage.removeItem(LAST_FOLDER_KEY); } catch {}
     }
-
-    await onConfirm({
-      fileName: finalName,
-      folderId: selectedFolder?.id ?? null,
-      folderPath: destPath,
-      smartTitle: finalName,
-      tags: selectedTags,
-    });
+    await onConfirm({ fileName: finalName, folderId: destFolderId, folderPath: destPath, smartTitle: finalName, tags: selectedTags, format: saveFormat });
     setSaving(false);
-  };
-
-  const applyLastFolder = () => {
-    if (!lastFolder) return;
-    const node = flatFolders.find(f => f.id === lastFolder.id);
-    if (node) {
-      setSelectedFolder(node);
-      setExpandedIds(prev => {
-        const next = new Set(prev);
-        // Expand ancestors
-        let id = node.parent_id;
-        const seen = new Set();
-        while (id && !seen.has(id)) {
-          seen.add(id); next.add(id);
-          const anc = flatFolders.find(f => f.id === id);
-          id = anc?.parent_id;
-        }
-        return next;
-      });
-    }
   };
 
   return (
@@ -1010,6 +930,16 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             </div>
           </div>
 
+          {/* Save as Type */}
+          <div>
+            <div className="svm-section-label">Save as Type</div>
+            <select className="svm-format-select" value={saveFormat} onChange={e => setSaveFormat(e.target.value)}>
+              {FORMAT_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Document Tags */}
           <div>
             <div className="svm-section-label">
@@ -1037,7 +967,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             </div>
           )}
 
-          {/* Folder picker */}
+          {/* Explorer-style folder navigator */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <span className="svm-section-label" style={{ marginBottom: 0 }}>Destination Folder</span>
@@ -1050,40 +980,49 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
               </button>
             </div>
 
-            {/* Root / top-level option */}
-            <div
-              className={`svm-root-row${!selectedFolder ? ' selected' : ''}`}
-              onClick={() => setSelectedFolder(null)}
-            >
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                <polyline points="9 22 9 12 15 12 15 22"/>
-              </svg>
-              Root (Case Vault)
+            {/* Breadcrumb trail */}
+            <div className="svm-breadcrumb">
+              {navStack.map((crumb, idx) => (
+                <React.Fragment key={idx}>
+                  {idx > 0 && <span className="svm-breadcrumb-sep">/</span>}
+                  <button
+                    className={`svm-breadcrumb-item${idx === navStack.length - 1 ? ' current' : ''}`}
+                    onClick={() => navigateTo(idx)}
+                  >
+                    {idx === 0 ? (
+                      <>
+                        <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                          <polyline points="9 22 9 12 15 12 15 22"/>
+                        </svg>
+                        Root
+                      </>
+                    ) : crumb.name}
+                  </button>
+                </React.Fragment>
+              ))}
             </div>
 
-            {/* Folder tree */}
-            <div className="svm-tree" style={{ marginTop: 4, maxHeight: 300, overflowY: 'auto' }}>
+            {/* Children at current level */}
+            <div className="svm-tree" style={{ maxHeight: 190, overflowY: 'auto' }}>
               {loadingFolders ? (
-                <div style={{ padding: '14px 10px', fontSize: 12, color: '#475569', textAlign: 'center' }}>
-                  Loading folders…
-                </div>
-              ) : folders.length === 0 ? (
-                <div style={{ padding: '12px 10px', fontSize: 12, color: '#334155', textAlign: 'center', fontStyle: 'italic' }}>
-                  No folders yet — create one above
+                <div style={{ padding: '14px 10px', fontSize: 12, color: '#475569', textAlign: 'center' }}>Loading folders…</div>
+              ) : currentChildren.length === 0 ? (
+                <div className="svm-explorer-empty">
+                  {navStack.length === 1 ? 'No folders yet — create one above' : 'Empty folder — save here or create a sub-folder'}
                 </div>
               ) : (
-                folders.map(folder => (
-                  <FolderNode
-                    key={folder.id}
-                    folder={folder}
-                    depth={0}
-                    selectedId={selectedFolder?.id}
-                    expandedIds={expandedIds}
-                    onSelect={handleSelectFolder}
-                    onToggle={handleToggle}
-                  />
-                ))
+                <div className="svm-explorer">
+                  {currentChildren.map(folder => (
+                    <div key={folder.id} className="svm-explorer-row" onClick={() => enterFolder(folder)}>
+                      <span style={{ fontSize: 14 }}>📁</span>
+                      <span style={{ flex: 1 }}>{folder.name}</span>
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" style={{ color: '#2D3748', flexShrink: 0 }}>
+                        <polyline points="9 18 15 12 9 6"/>
+                      </svg>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -1096,7 +1035,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                 <input
                   ref={newFolderInputRef}
                   className="svm-new-folder-input"
-                  placeholder={selectedFolder ? `New folder inside "${selectedFolder.name}"…` : 'New root folder name…'}
+                  placeholder={navStack.length > 1 ? `New folder inside "${currentView.name}"…` : 'New root folder name…'}
                   value={newFolderName}
                   onChange={e => { setNewFolderName(e.target.value); setNewFolderError(''); }}
                   onKeyDown={e => {
@@ -1827,7 +1766,7 @@ export default function CommandPalette() {
   }
 
   // ── Called by SaveToVaultModal on Confirm ────────────
-  async function handleSaveModalConfirm({ fileName, folderId, folderPath, smartTitle, tags }) {
+  async function handleSaveModalConfirm({ fileName, folderId, folderPath, smartTitle, tags, format }) {
     if (!activeDocument || !currentId) return;
     setLoading(true);
     try {
@@ -1851,6 +1790,7 @@ export default function CommandPalette() {
           folder_id:      folderId,
           smart_title:    smartTitle,
           tags:           JSON.stringify(tags || []),
+          format:         format || 'native',
           session_title:  sessionTitleForAudit,
           audit_messages: JSON.stringify(auditMsgs),
         }),

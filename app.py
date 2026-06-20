@@ -6,6 +6,7 @@ from datetime import timedelta
 import os
 import sqlite3
 import json
+import io
 from groq import Groq
 from tavily import TavilyClient
 
@@ -45,8 +46,8 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Migration: add folder_id + smart_title + tags to case_vault if not present
-    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT')):
+    # Migration: add folder_id + smart_title + tags + file_blob + file_format to case_vault if not present
+    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'), ('file_blob', 'BLOB'), ('file_format', 'TEXT')):
         try:
             c.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
         except Exception:
@@ -191,6 +192,38 @@ def init_sqlite_db():
     )''')
     conn.commit()
     conn.close()
+
+
+def generate_pdf_blob(title, content):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm,
+                            leftMargin=2.5*cm, rightMargin=2.5*cm)
+    styles = getSampleStyleSheet()
+    story = [Paragraph(str(title), styles['Title']), Spacer(1, 0.4*cm)]
+    for line in str(content).split('\n'):
+        stripped = line.strip()
+        if stripped:
+            story.append(Paragraph(stripped, styles['Normal']))
+            story.append(Spacer(1, 0.15*cm))
+        else:
+            story.append(Spacer(1, 0.25*cm))
+    doc.build(story)
+    return buf.getvalue()
+
+
+def generate_docx_blob(title, content):
+    from docx import Document
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_heading(str(title), level=1)
+    for line in str(content).split('\n'):
+        doc.add_paragraph(line)
+    doc.save(buf)
+    return buf.getvalue()
 
 
 def create_app():
@@ -439,11 +472,23 @@ def create_app():
             if not case_id or not title or not content:
                 return jsonify({"error": True, "message": "Missing required fields (case_id, title, content)."}), 400
 
+            # Format conversion — generate binary blob if requested
+            save_format = data.get('format', 'native')
+            file_blob = None
+            file_format = save_format
+            if save_format == 'pdf':
+                try:
+                    file_blob = generate_pdf_blob(smart_title or title or 'Document', content)
+                except Exception as conv_err:
+                    return jsonify({'error': True, 'message': f'PDF generation failed: {str(conv_err)}'}), 500
+            elif save_format == 'docx':
+                try:
+                    file_blob = generate_docx_blob(smart_title or title or 'Document', content)
+                except Exception as conv_err:
+                    return jsonify({'error': True, 'message': f'DOCX generation failed: {str(conv_err)}'}), 500
+
             audit_messages  = data.get('audit_messages')   # JSON string of [{role, text, ts}]
             session_title_s = data.get('session_title', '')
-
-            if not case_id or not title or not content:
-                return jsonify({"error": True, "message": "Missing required fields (case_id, title, content)."}), 400
 
             # Resolve folder path string for breadcrumb confirmation (best-effort)
             folder_path = ''
@@ -467,8 +512,8 @@ def create_app():
             conn = db
             c = conn.cursor()
             c.execute(
-                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title, tags)
+                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title, tags, file_blob, file_format)
             )
             conn.commit()
             inserted_id = c.lastrowid
@@ -494,6 +539,34 @@ def create_app():
             }), 200
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/vault/documents/<int:doc_id>/download', methods=['GET', 'OPTIONS'])
+    def download_vault_document(doc_id):
+        from flask import Response as FlaskResponse
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            row = db.execute(
+                'SELECT file_blob, file_format, smart_title, title FROM case_vault WHERE id = ?', (doc_id,)
+            ).fetchone()
+            if not row or not row[0]:
+                return jsonify({'error': True, 'message': 'No binary file stored for this document.'}), 404
+            fmt = row[1] or 'native'
+            name = row[2] or row[3] or f'document_{doc_id}'
+            if fmt == 'pdf':
+                mime = 'application/pdf'
+                ext  = '.pdf'
+            else:
+                mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                ext  = '.docx'
+            safe_name = ''.join(c for c in name if c.isalnum() or c in ' _-.')
+            return FlaskResponse(
+                bytes(row[0]),
+                mimetype=mime,
+                headers={'Content-Disposition': f'attachment; filename="{safe_name}{ext}"'},
+            )
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/audit-trail', methods=['GET', 'OPTIONS'])
     def vault_audit_trail():
@@ -1308,7 +1381,7 @@ def create_app():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT')):
+        for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'), ('file_blob', 'BLOB'), ('file_format', 'TEXT')):
             try:
                 conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
             except Exception:
