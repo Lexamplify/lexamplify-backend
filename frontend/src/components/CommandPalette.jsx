@@ -489,14 +489,33 @@ const AGENT_CSS = `
 
   /* Drill-down explorer */
   .svm-tree { display: flex; flex-direction: column; gap: 1px; }
-  .svm-explorer { display: flex; flex-direction: column; gap: 1px; }
+  .svm-explorer { display: flex; flex-direction: column; gap: 2px; }
   .svm-explorer-row {
-    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
-    border-radius: 6px; cursor: pointer; transition: background .12s;
+    display: flex; align-items: center; gap: 9px; padding: 8px 11px;
+    border-radius: 7px; cursor: pointer;
+    transition: background .14s ease, border-color .14s ease, color .14s ease;
     font-size: 12.5px; color: #94A3B8; user-select: none;
+    border: 1px solid transparent;
   }
-  .svm-explorer-row:hover { background: rgba(59,130,246,.09); color: #CBD5E1; }
-  .svm-explorer-empty { font-size: 12px; color: #334155; padding: 12px 10px; text-align: center; font-style: italic; }
+  .svm-explorer-row:hover {
+    background: rgba(59,130,246,.11);
+    border-color: rgba(59,130,246,.22);
+    color: #CBD5E1;
+  }
+  .svm-explorer-row:hover .svm-row-chevron {
+    color: #3B82F6;
+    transform: translateX(3px);
+  }
+  .svm-row-chevron {
+    transition: transform .14s ease, color .14s ease;
+    color: #2D3748;
+    flex-shrink: 0;
+  }
+  .svm-explorer-empty {
+    font-size: 12px; color: #334155; padding: 14px 10px;
+    text-align: center; font-style: italic;
+    border: 1px dashed rgba(255,255,255,.06); border-radius: 6px;
+  }
 
   /* Format selector */
   .svm-format-select {
@@ -799,7 +818,14 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
 
   const smartDefault = generateSmartName(draft?.doc_type, sessionTitle);
-  useEffect(() => { setFileName(smartDefault); }, [smartDefault]);
+  const fileNameSeeded = useRef(false);
+  useEffect(() => {
+    if (!fileNameSeeded.current) {
+      setFileName(smartDefault);
+      fileNameSeeded.current = true;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load flat folder list
   useEffect(() => {
@@ -813,12 +839,20 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
       .finally(() => setLoadingFolders(false));
   }, [apiBase]);
 
-  // Derived: current view + children visible at this level
-  const currentView     = navStack[navStack.length - 1];
+  // Derived: current view + children visible at this level.
+  // isAtRoot uses loose null-check so parent_id null/undefined/0/"" all resolve to root.
+  const currentView  = navStack[navStack.length - 1];
+  const isAtRoot     = currentView.id == null;   // catches null AND undefined
   const currentChildren = flatFolders
-    .filter(f => f.parent_id === currentView.id)
+    .filter(f => {
+      if (isAtRoot) {
+        const pid = f.parent_id;
+        return pid == null || pid === 0 || pid === '';
+      }
+      return Number(f.parent_id) === Number(currentView.id);
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
-  const destFolderId = currentView.id;   // null = root
+  const destFolderId = isAtRoot ? null : currentView.id;
 
   const enterFolder = (folder) => {
     setNavStack(prev => [...prev, { id: folder.id, name: folder.name }]);
@@ -847,11 +881,12 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
       });
       const data = await res.json();
       if (!res.ok || data.error) { setNewFolderError(data.message || 'Could not create folder.'); return; }
-      const newNode = { id: data.id, name: data.name, parent_id: data.parent_id, children: [] };
+      const newNode = { id: data.id, name: data.name, parent_id: data.parent_id ?? null, children: [] };
       setFlatFolders(prev => [...prev, newNode]);
       setNewFolderName('');
       setIsCreating(false);
-      enterFolder(newNode);
+      // Do NOT auto-navigate — let the row appear in the current view so the user
+      // can see it rendered before deciding to enter it.
     } catch { setNewFolderError('Network error. Try again.'); }
   };
 
@@ -1015,9 +1050,9 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                 <div className="svm-explorer">
                   {currentChildren.map(folder => (
                     <div key={folder.id} className="svm-explorer-row" onClick={() => enterFolder(folder)}>
-                      <span style={{ fontSize: 14 }}>📁</span>
-                      <span style={{ flex: 1 }}>{folder.name}</span>
-                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" style={{ color: '#2D3748', flexShrink: 0 }}>
+                      <span style={{ fontSize: 14, flexShrink: 0 }}>📁</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</span>
+                      <svg className="svm-row-chevron" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                         <polyline points="9 18 15 12 9 6"/>
                       </svg>
                     </div>
