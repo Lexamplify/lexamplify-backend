@@ -939,7 +939,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             </svg>
             <span className="svm-title">Save to Case Vault</span>
           </div>
-          <button className="svm-close" onClick={onClose}>
+          <button type="button" className="svm-close" onClick={onClose}>
             <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
               <path d="M18 6L6 18M6 6l12 12"/>
             </svg>
@@ -984,6 +984,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
               {VAULT_TAG_OPTIONS.map(tag => (
                 <button
                   key={tag}
+                  type="button"
                   className={`svm-tag-pill${selectedTags.includes(tag) ? ' active' : ''}`}
                   onClick={() => toggleTag(tag)}
                 >
@@ -1007,6 +1008,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <span className="svm-section-label" style={{ marginBottom: 0 }}>Destination Folder</span>
               <button
+                type="button"
                 onClick={() => { setIsCreating(v => !v); setTimeout(() => newFolderInputRef.current?.focus(), 60); }}
                 style={{ background: 'none', border: '1px solid rgba(59,130,246,.25)', borderRadius: 5, color: '#7EB3F5', fontSize: 11, padding: '2px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
               >
@@ -1021,6 +1023,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                 <React.Fragment key={idx}>
                   {idx > 0 && <span className="svm-breadcrumb-sep">/</span>}
                   <button
+                    type="button"
                     className={`svm-breadcrumb-item${idx === navStack.length - 1 ? ' current' : ''}`}
                     onClick={() => navigateTo(idx)}
                   >
@@ -1049,13 +1052,18 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
               ) : (
                 <div className="svm-explorer">
                   {currentChildren.map(folder => (
-                    <div key={folder.id} className="svm-explorer-row" onClick={() => enterFolder(folder)}>
+                    <button
+                      key={folder.id}
+                      type="button"
+                      className="svm-explorer-row"
+                      onClick={() => enterFolder(folder)}
+                    >
                       <span style={{ fontSize: 14, flexShrink: 0 }}>📁</span>
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{folder.name}</span>
                       <svg className="svm-row-chevron" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                         <polyline points="9 18 15 12 9 6"/>
                       </svg>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -1079,6 +1087,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                   }}
                 />
                 <button
+                  type="button"
                   onClick={handleCreateFolder}
                   disabled={!newFolderName.trim()}
                   style={{ background: '#3B82F6', border: 'none', color: '#fff', padding: '3px 10px', borderRadius: 4, fontSize: 11.5, cursor: newFolderName.trim() ? 'pointer' : 'not-allowed', opacity: newFolderName.trim() ? 1 : .45, flexShrink: 0 }}
@@ -1086,6 +1095,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                   Create
                 </button>
                 <button
+                  type="button"
                   onClick={() => { setIsCreating(false); setNewFolderName(''); setNewFolderError(''); }}
                   style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 14, padding: '0 3px', flexShrink: 0 }}
                 >×</button>
@@ -1104,8 +1114,9 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             <div className="svm-dest-path" style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullPath}</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="svm-btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="svm-btn-ghost" onClick={onClose}>Cancel</button>
             <button
+              type="button"
               className="svm-btn-primary"
               disabled={saving || !(fileName || smartDefault).trim()}
               onClick={handleConfirm}
