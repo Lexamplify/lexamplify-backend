@@ -516,6 +516,34 @@ const AGENT_CSS = `
     text-align: center; font-style: italic;
     border: 1px dashed rgba(255,255,255,.06); border-radius: 6px;
   }
+  /* Existing document row — non-navigable, visual context only */
+  .svm-explorer-doc {
+    display: flex; align-items: center; gap: 9px; padding: 6px 11px;
+    border-radius: 6px; font-size: 12px; color: #334155; user-select: none;
+    border: 1px solid transparent; cursor: default;
+    transition: background .12s;
+  }
+  .svm-explorer-doc:hover { background: rgba(255,255,255,.02); }
+  .svm-explorer-doc-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #475569;
+  }
+  .svm-explorer-doc-type {
+    font-size: 10px; color: #1E293B; background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.07); border-radius: 3px;
+    padding: 1px 5px; flex-shrink: 0; font-family: monospace;
+  }
+  /* Divider between folder section and document section */
+  .svm-explorer-section-label {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: #1E293B; padding: 6px 11px 2px;
+    user-select: none;
+  }
+  /* Count badge on breadcrumb current segment */
+  .svm-crumb-count {
+    font-size: 9.5px; color: #334155; background: rgba(255,255,255,.05);
+    border-radius: 8px; padding: 0 5px; font-family: monospace; margin-left: 3px;
+  }
 
   /* Format selector */
   .svm-format-select {
@@ -802,6 +830,7 @@ const FORMAT_OPTIONS = [
 
 function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) {
   const [flatFolders,    setFlatFolders]   = useState([]);
+  const [flatDocs,       setFlatDocs]      = useState([]);   // lightweight meta — no content
   // navStack drives the drill-down breadcrumb — each entry is { id, name }; null id = root
   const [navStack,       setNavStack]      = useState([{ id: null, name: 'Root (Case Vault)' }]);
   const [fileName,       setFileName]      = useState('');
@@ -827,14 +856,22 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load flat folder list
+  // Load folders + document metadata in parallel (no content field)
   useEffect(() => {
     const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-    fetch(`${apiBase}/api/vault/folders`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setFlatFolders(data.flat || []); })
+    const hdrs  = token ? { Authorization: `Bearer ${token}` } : {};
+    Promise.all([
+      fetch(`${apiBase}/api/vault/folders`, { headers: hdrs }),
+      fetch(`${apiBase}/api/vault/meta`,    { headers: hdrs }),
+    ])
+      .then(([fRes, dRes]) => Promise.all([
+        fRes.ok ? fRes.json() : null,
+        dRes.ok ? dRes.json() : null,
+      ]))
+      .then(([fData, dData]) => {
+        if (fData) setFlatFolders(fData.flat || []);
+        if (dData) setFlatDocs(dData.documents || []);
+      })
       .catch(() => {})
       .finally(() => setLoadingFolders(false));
   }, [apiBase]);
@@ -843,15 +880,18 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   // isAtRoot uses loose null-check so parent_id null/undefined/0/"" all resolve to root.
   const currentView  = navStack[navStack.length - 1];
   const isAtRoot     = currentView.id == null;   // catches null AND undefined
+
+  const _rootPid = (pid) => pid == null || pid === 0 || pid === '';
+
   const currentChildren = flatFolders
-    .filter(f => {
-      if (isAtRoot) {
-        const pid = f.parent_id;
-        return pid == null || pid === 0 || pid === '';
-      }
-      return Number(f.parent_id) === Number(currentView.id);
-    })
+    .filter(f => isAtRoot ? _rootPid(f.parent_id) : Number(f.parent_id) === Number(currentView.id))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Documents that live in the current folder — lightweight meta, no content
+  const currentDocs = flatDocs
+    .filter(d => isAtRoot ? _rootPid(d.folder_id) : Number(d.folder_id) === Number(currentView.id))
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+
   const destFolderId = isAtRoot ? null : currentView.id;
 
   const enterFolder = (folder) => {
@@ -1036,35 +1076,72 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                         Root
                       </>
                     ) : crumb.name}
+                    {idx === navStack.length - 1 && !loadingFolders && (currentChildren.length + currentDocs.length) > 0 && (
+                      <span className="svm-crumb-count">{currentChildren.length + currentDocs.length}</span>
+                    )}
                   </button>
                 </React.Fragment>
               ))}
             </div>
 
-            {/* Children at current level */}
-            <div className="svm-tree" style={{ maxHeight: 190, overflowY: 'auto' }}>
+            {/* Explorer — folders then documents, like MS Word Save As */}
+            <div className="svm-tree" style={{ maxHeight: 220, overflowY: 'auto' }}>
               {loadingFolders ? (
-                <div style={{ padding: '14px 10px', fontSize: 12, color: '#475569', textAlign: 'center' }}>Loading folders…</div>
-              ) : currentChildren.length === 0 ? (
+                <div style={{ padding: '14px 10px', fontSize: 12, color: '#334155', textAlign: 'center' }}>
+                  <svg width="14" height="14" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6, opacity: .7 }}>
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                  </svg>
+                  Loading…
+                </div>
+              ) : (currentChildren.length === 0 && currentDocs.length === 0) ? (
                 <div className="svm-explorer-empty">
-                  {navStack.length === 1 ? 'No folders yet — create one above' : 'Empty folder — save here or create a sub-folder'}
+                  {isAtRoot
+                    ? 'Vault is empty — create a folder above or save here at root'
+                    : 'Empty folder — save here or create a sub-folder above'}
                 </div>
               ) : (
                 <div className="svm-explorer">
-                  {currentChildren.map(folder => (
-                    <button
-                      key={folder.id}
-                      type="button"
-                      className="svm-explorer-row"
-                      onClick={() => enterFolder(folder)}
-                    >
-                      <span style={{ fontSize: 14, flexShrink: 0 }}>📁</span>
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{folder.name}</span>
-                      <svg className="svm-row-chevron" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                        <polyline points="9 18 15 12 9 6"/>
-                      </svg>
-                    </button>
-                  ))}
+                  {/* ── Folders ── */}
+                  {currentChildren.length > 0 && (
+                    <>
+                      {currentDocs.length > 0 && (
+                        <div className="svm-explorer-section-label">Folders</div>
+                      )}
+                      {currentChildren.map(folder => (
+                        <button
+                          key={folder.id}
+                          type="button"
+                          className="svm-explorer-row"
+                          onClick={() => enterFolder(folder)}
+                        >
+                          <span style={{ fontSize: 14, flexShrink: 0 }}>📁</span>
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{folder.name}</span>
+                          <svg className="svm-row-chevron" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <polyline points="9 18 15 12 9 6"/>
+                          </svg>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {/* ── Existing Documents ── */}
+                  {currentDocs.length > 0 && (
+                    <>
+                      <div className="svm-explorer-section-label">
+                        {currentChildren.length > 0 ? 'Existing Documents' : 'Documents'}
+                      </div>
+                      {currentDocs.map(doc => (
+                        <div key={doc.id} className="svm-explorer-doc" title={doc.title}>
+                          <span style={{ fontSize: 13, flexShrink: 0, opacity: .65 }}>
+                            {doc.file_format === 'pdf' ? '📋' : doc.file_format === 'docx' ? '📝' : '📄'}
+                          </span>
+                          <span className="svm-explorer-doc-name">{doc.title}</span>
+                          {doc.doc_type && (
+                            <span className="svm-explorer-doc-type">{doc.doc_type}</span>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>

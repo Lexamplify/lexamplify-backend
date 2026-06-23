@@ -469,8 +469,10 @@ def create_app():
             else:
                 tags = None
 
-            if not case_id or not title or not content:
-                return jsonify({"error": True, "message": "Missing required fields (case_id, title, content)."}), 400
+            # Normalise content — allow empty string (blank draft is valid)
+            content = str(content) if content is not None else ''
+            if not case_id or not title:
+                return jsonify({"error": True, "message": "Missing required fields (case_id, title)."}), 400
 
             # Format conversion — generate binary blob if requested
             save_format = data.get('format', 'native')
@@ -641,6 +643,28 @@ def create_app():
             return jsonify({"documents": dict_rows}), 200
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/vault/meta', methods=['GET', 'OPTIONS'])
+    def get_vault_meta():
+        """Lightweight document metadata for the Save-to-Vault modal explorer.
+        Returns id, title, doc_type, folder_id, file_format, created_at — NO content field."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, title, doc_type, folder_id, file_format, created_at '
+                    'FROM case_vault ORDER BY created_at DESC'
+                ).fetchall()
+                docs = [dict(r) for r in rows]
+            finally:
+                conn.row_factory = old_rf
+            return jsonify({'documents': docs}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
 
     # Register blueprints
     from routes.auth_routes import auth_bp
