@@ -508,6 +508,69 @@ const styles = `
     align-items: center;
     gap: 8px;
   }
+
+  /* ── PDF Viewer Modal ──────────────────────────── */
+  .pdf-modal-overlay {
+    position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,.72);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    animation: pdfFadeIn .18s ease;
+  }
+  @keyframes pdfFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .pdf-modal-container {
+    width: min(92vw, 1080px);
+    height: min(90vh, 860px);
+    background: #0f1117;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 14px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0,0,0,.6);
+    animation: pdfSlideUp .2s ease;
+  }
+  @keyframes pdfSlideUp { from { transform: translateY(18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .pdf-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 18px;
+    background: #161a26;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    flex-shrink: 0;
+  }
+  .pdf-modal-title {
+    font-size: 13.5px; font-weight: 600; color: #E2E8F0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 70%;
+  }
+  .pdf-modal-actions { display: flex; align-items: center; gap: 8px; }
+  .pdf-modal-close {
+    background: none; border: none; color: #64748B; cursor: pointer;
+    padding: 4px 7px; border-radius: 6px; font-size: 18px; line-height: 1;
+    transition: color .13s, background .13s;
+  }
+  .pdf-modal-close:hover { color: #E2E8F0; background: rgba(255,255,255,.08); }
+
+  .pdf-modal-body {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; background: #1a1f2e;
+  }
+  .pdf-modal-iframe {
+    width: 100%; height: 100%; border: none;
+  }
+  .pdf-modal-state {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    color: #64748B; font-size: 13px;
+  }
+  .pdf-modal-spinner {
+    width: 32px; height: 32px;
+    border: 3px solid rgba(59,130,246,.2);
+    border-top-color: #3B82F6;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 `;
 
 // Judge roster DB for District courts matching the HTML page
@@ -578,6 +641,7 @@ export default function CourtResources() {
   const [eventModalData, setEventModalData] = useState(null);
   const [eventModalStatus, setEventModalStatus] = useState('idle'); // 'idle' | 'loading' | 'content' | 'error'
   const [eventModalError, setEventModalError] = useState('');
+  const [pdfModal, setPdfModal] = useState({ open: false, loading: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
   
   // Search Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -625,6 +689,39 @@ export default function CourtResources() {
   const handleCopy = (text) => {
     navigator.clipboard.writeText(text);
     triggerToast('VC Link Copied!');
+  };
+
+  // ── Legal Forms PDF viewer ────────────────────────────────────────────────
+  // For url_type:'pdf' — fetch binary via the existing /api/proxy (which already
+  // strips X-Frame-Options + CSP for gov.in/nic.in), convert to blob:// URL,
+  // and render in <iframe>.  blob:// is same-origin so X-Frame-Options is moot.
+  // For url_type:'page' — no direct PDF path exists; fall back to external tab.
+  const openFormInModal = async (form) => {
+    if (form.url_type !== 'pdf') {
+      window.open(form.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setPdfModal({ open: true, loading: true, error: false, blobUrl: null, title: form.name, fallbackUrl: form.url });
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+      const res = await fetch(`${apiBase}/api/proxy?target_url=${encodeURIComponent(form.url)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        // proxy returned an error JSON (e.g. domain not whitelisted)
+        throw new Error('Proxy blocked');
+      }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setPdfModal(prev => ({ ...prev, loading: false, blobUrl }));
+    } catch {
+      setPdfModal(prev => ({ ...prev, loading: false, error: true }));
+    }
+  };
+
+  const closePdfModal = () => {
+    if (pdfModal.blobUrl) URL.revokeObjectURL(pdfModal.blobUrl);
+    setPdfModal({ open: false, loading: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
   };
 
   // ── INIT: Load court-globals ──────────────────────────────────────────
@@ -1285,9 +1382,8 @@ export default function CourtResources() {
             }}>
               <span style={{ fontSize: '14px', flexShrink: 0 }}>ℹ️</span>
               <span>
-                <strong style={{ color: 'var(--text-dark-primary)' }}>📥 Download PDF</strong> — direct file from the court server, opens immediately.&nbsp;&nbsp;
-                <strong style={{ color: 'var(--text-dark-primary)' }}>🌐 Open Court Portal</strong> — opens the official court forms page in a new tab where you can find and download the specific document.
-                Supreme Court forms require you to browse the SCI portal; Delhi HC forms are direct PDFs.
+                <strong style={{ color: 'var(--text-dark-primary)' }}>📄 View Document</strong> — fetches the PDF internally and renders it inside LexAmplify — you never leave the dashboard.&nbsp;&nbsp;
+                <strong style={{ color: 'var(--text-dark-primary)' }}>🌐 Open Portal</strong> — no direct PDF path available; opens the official court forms page in a new tab.
               </span>
             </div>
 
@@ -1332,9 +1428,9 @@ export default function CourtResources() {
                             <button
                               className="btn-accent"
                               style={{ fontSize: '11px', padding: '4px 10px' }}
-                              onClick={() => openDirectLink(form.url)}
+                              onClick={() => openFormInModal(form)}
                             >
-                              {form.url_type === 'pdf' ? '📥 Download PDF' : '🌐 Open Court Portal'}
+                              {form.url_type === 'pdf' ? '📄 View Document' : '🌐 Open Portal'}
                             </button>
                           </td>
                         </tr>
@@ -1872,6 +1968,64 @@ export default function CourtResources() {
         <div className="toast-banner">
           <span>✅</span>
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* ── PDF VIEWER MODAL ── */}
+      {pdfModal.open && (
+        <div className="pdf-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closePdfModal(); }}>
+          <div className="pdf-modal-container">
+            <div className="pdf-modal-header">
+              <span className="pdf-modal-title">📄 {pdfModal.title}</span>
+              <div className="pdf-modal-actions">
+                {!pdfModal.loading && !pdfModal.error && pdfModal.blobUrl && (
+                  <a
+                    href={pdfModal.fallbackUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-accent"
+                    style={{ fontSize: '11px', padding: '4px 10px', textDecoration: 'none' }}
+                  >
+                    ↓ Download
+                  </a>
+                )}
+                <button className="pdf-modal-close" onClick={closePdfModal} title="Close">✕</button>
+              </div>
+            </div>
+
+            <div className="pdf-modal-body">
+              {pdfModal.loading && (
+                <div className="pdf-modal-state">
+                  <div className="pdf-modal-spinner" />
+                  <span>Fetching document from court server…</span>
+                </div>
+              )}
+              {pdfModal.error && (
+                <div className="pdf-modal-state">
+                  <span style={{ fontSize: '28px' }}>⚠️</span>
+                  <span style={{ color: '#94A3B8', textAlign: 'center', maxWidth: '340px', lineHeight: '1.5' }}>
+                    The government server blocked the fetch (bot-protection or temporary unavailability).
+                  </span>
+                  <a
+                    href={pdfModal.fallbackUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-accent"
+                    style={{ fontSize: '12px', padding: '7px 14px', textDecoration: 'none', marginTop: '4px' }}
+                  >
+                    🌐 Open on Court Website ↗
+                  </a>
+                </div>
+              )}
+              {!pdfModal.loading && !pdfModal.error && pdfModal.blobUrl && (
+                <iframe
+                  className="pdf-modal-iframe"
+                  src={pdfModal.blobUrl}
+                  title={pdfModal.title}
+                />
+              )}
+            </div>
+          </div>
         </div>
       )}
     </>
