@@ -12,6 +12,88 @@ import {
   deleteIPAsset
 } from '../services/api';
 
+// ── CSV-ingested High Court routing table (high courts.csv, June 2026) ──────
+// Keys match stateLabelMap. Each entry has exactly the 5 official portal links.
+const HIGH_COURT_LINKS = {
+  delhi: {
+    mainWebsite:  'https://delhihighcourt.nic.in/web/',
+    causeList:    'https://delhihighcourt.nic.in/app/online-causelist',
+    eFiling:      'https://dhcefiling.nic.in/eFiling/',
+    caseStatus:   'https://delhihighcourt.nic.in/app/get-case-type-status',
+    displayBoard: 'https://delhihighcourt.nic.in/app/physical-display-board',
+  },
+  maharashtra: {
+    mainWebsite:  'https://bombayhighcourt.gov.in/bhc/',
+    causeList:    'https://bombayhighcourt.gov.in/bhc/causelistFinal',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://bombayhighcourt.gov.in/bhc/casestatus/casenumber',
+    displayBoard: 'https://bombayhighcourt.gov.in/bhc/displayboard',
+  },
+  tamil_nadu: {
+    mainWebsite:  'https://hcmadras.tn.gov.in/',
+    causeList:    'https://mhc.tn.gov.in/judis/clists/clists-madras/index.php',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://hcmadras.tn.gov.in/case_status_mas.php',
+    displayBoard: 'https://hcmadras.tn.gov.in/display_board_mhc.php',
+  },
+  karnataka: {
+    mainWebsite:  'https://judiciary.karnataka.gov.in/',
+    causeList:    'https://judiciary.karnataka.gov.in/causelistSearch.php',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://judiciary.karnataka.gov.in/casemenu.php',
+    displayBoard: 'https://judiciary.karnataka.gov.in/display_board_bench.php',
+  },
+  up: {
+    mainWebsite:  'https://www.allahabadhighcourt.in/',
+    causeList:    'https://www.allahabadhighcourt.in/causelist/indexA.html',
+    eFiling:      'https://efiling-alld.allahabadhighcourt.in/onlinecasefiling/',
+    caseStatus:   'https://www.allahabadhighcourt.in/apps/status_ccms/',
+    displayBoard: 'https://courtview2.allahabadhighcourt.in/courtview/CourtViewAllahabad.do',
+  },
+  gujarat: {
+    mainWebsite:  'https://gujarathighcourt.nic.in/',
+    causeList:    'https://gujarathc-casestatus.nic.in/gujarathc/#',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://gujarathc-casestatus.nic.in/gujarathc/#',
+    displayBoard: 'https://gujarathighcourt.nic.in/boarddisplay',
+  },
+  rajasthan: {
+    mainWebsite:  'https://hcraj.nic.in/hcraj/',
+    causeList:    'https://hcraj.nic.in/cishcraj-jdp/causelists/',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://hcraj.nic.in/cishcraj_urn/',
+    displayBoard: 'https://hcraj.nic.in/displayboard/jodhpur.php',
+  },
+  west_bengal: {
+    mainWebsite:  'https://www.calcuttahighcourt.gov.in/',
+    causeList:    'https://www.calcuttahighcourt.gov.in/Cause-Lists',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://hcservices.ecourts.gov.in/ecourtindiaHC/index_highcourt.php?state_cd=16&dist_cd=1&court_code=2&stateNm=Calcutta#',
+    displayBoard: 'https://display.calcuttahighcourt.gov.in/principal.php',
+  },
+  kerala: {
+    mainWebsite:  'https://highcourt.kerala.gov.in/',
+    causeList:    'https://hckinfo.keralacourts.in/digicourt/Casedetailssearch/viewCauselist',
+    eFiling:      'https://ecourt.keralacourts.in/digicourt/',
+    caseStatus:   'https://hckinfo.keralacourts.in/digicourt/Casedetailssearch',
+    displayBoard: 'https://highcourt.kerala.gov.in/notice_board.php',
+  },
+  telangana: {
+    mainWebsite:  'https://tshc.gov.in/',
+    causeList:    'https://causelist.tshc.gov.in/showDailyCauseList',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://csis.tshc.gov.in/',
+    displayBoard: 'https://displayboard.tshc.gov.in/hcdbs/displayall',
+  },
+  andhra: {
+    mainWebsite:  'https://aphc.gov.in/index.php',
+    causeList:    'https://aphc.gov.in/Hcdbs/searchdates.action',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://digi-courts.aphc.ap.gov.in/csis_ap/',
+    displayBoard: 'https://aphc.gov.in/Hcdbs/displayboard.jsp',
+  },
+};
+
 const styles = `
   .resources-container {
     padding: 24px;
@@ -733,6 +815,8 @@ export default function CourtResources() {
     andhra: 'Andhra Pradesh'
   };
 
+  const hcLinks = HIGH_COURT_LINKS[hcState] || {};
+
   const formatIPDate = (dateStr) => {
     if (!dateStr) return '—';
     const d = new Date(dateStr + 'T00:00:00');
@@ -877,87 +961,75 @@ export default function CourtResources() {
                     </div>
                     
                     <div className="grid-container">
-                      <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.url)}>
+                      <div
+                        className="premium-card"
+                        onClick={hcLinks.mainWebsite ? () => openInAppBrowser(hcLinks.mainWebsite) : undefined}
+                        style={!hcLinks.mainWebsite ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : {}}
+                      >
                         <div className="card-top">
                           <span className="card-badge">Portal</span>
                           <span style={{ fontSize: '16px' }}>🏛️</span>
                         </div>
                         <h3 className="card-h3">Main Court Website</h3>
                         <p className="card-desc">Navigate directly to the official homepage announcements.</p>
-                        <div className="card-action-text">Launch Portal ↗</div>
+                        <div className="card-action-text">{hcLinks.mainWebsite ? 'Launch Portal ↗' : 'Not Available'}</div>
                       </div>
 
-                      <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.causelist)}>
+                      <div
+                        className="premium-card"
+                        onClick={hcLinks.causeList ? () => openInAppBrowser(hcLinks.causeList) : undefined}
+                        style={!hcLinks.causeList ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : {}}
+                      >
                         <div className="card-top">
                           <span className="card-badge">Daily</span>
                           <span style={{ fontSize: '16px' }}>📅</span>
                         </div>
                         <h3 className="card-h3">Cause List Directory</h3>
                         <p className="card-desc">Review and pull today's cause lists and board rosters.</p>
-                        <div className="card-action-text">Check Board ↗</div>
+                        <div className="card-action-text">{hcLinks.causeList ? 'Check Board ↗' : 'Not Available'}</div>
                       </div>
 
-                      <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.efiling)}>
+                      <div
+                        className="premium-card"
+                        onClick={hcLinks.eFiling ? () => openInAppBrowser(hcLinks.eFiling) : undefined}
+                        style={!hcLinks.eFiling ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : {}}
+                      >
                         <div className="card-top">
                           <span className="card-badge">Ingestion</span>
                           <span style={{ fontSize: '16px' }}>📤</span>
                         </div>
                         <h3 className="card-h3">E-Filing Portal</h3>
                         <p className="card-desc">Submit case files, plaints, and applications online.</p>
-                        <div className="card-action-text">Start Filing ↗</div>
+                        <div className="card-action-text">{hcLinks.eFiling ? 'Start Filing ↗' : 'Not Available'}</div>
                       </div>
 
-                      <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.casestatus)}>
+                      <div
+                        className="premium-card"
+                        onClick={hcLinks.caseStatus ? () => openInAppBrowser(hcLinks.caseStatus) : undefined}
+                        style={!hcLinks.caseStatus ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : {}}
+                      >
                         <div className="card-top">
                           <span className="card-badge">Search</span>
                           <span style={{ fontSize: '16px' }}>🔍</span>
                         </div>
                         <h3 className="card-h3">Case History Status</h3>
                         <p className="card-desc">Track progress, hearings, and orders by case number.</p>
-                        <div className="card-action-text">Query Status ↗</div>
+                        <div className="card-action-text">{hcLinks.caseStatus ? 'Query Status ↗' : 'Not Available'}</div>
                       </div>
 
-                      <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.displayboard)}>
+                      <div
+                        className="premium-card"
+                        onClick={hcLinks.displayBoard ? () => openInAppBrowser(hcLinks.displayBoard) : undefined}
+                        style={!hcLinks.displayBoard ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : {}}
+                      >
                         <div className="card-top">
                           <span className="card-badge">Live</span>
                           <span style={{ fontSize: '16px' }}>📺</span>
                         </div>
                         <h3 className="card-h3">Physical Display Board</h3>
                         <p className="card-desc">Real-time status board indicating which matter is active in courtroom.</p>
-                        <div className="card-action-text">Launch Board ↗</div>
+                        <div className="card-action-text">{hcLinks.displayBoard ? 'Launch Board ↗' : 'Not Available'}</div>
                       </div>
-
-                      <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.orders)}>
-                        <div className="card-top">
-                          <span className="card-badge">Records</span>
-                          <span style={{ fontSize: '16px' }}>📑</span>
-                        </div>
-                        <h3 className="card-h3">Case Orders</h3>
-                        <p className="card-desc">Search daily orders, trial summaries, and injunction rulings.</p>
-                        <div className="card-action-text">Retrieve Orders ↗</div>
-                      </div>
-
-                      <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.judgments)}>
-                        <div className="card-top">
-                          <span className="card-badge">Decisions</span>
-                          <span style={{ fontSize: '16px' }}>⚖️</span>
-                        </div>
-                        <h3 className="card-h3">Final Judgments</h3>
-                        <p className="card-desc">Search final judgements database for case precedent analysis.</p>
-                        <div className="card-action-text">Search Decisions ↗</div>
-                      </div>
-
-                      {hcData.hc.epass && (
-                        <div className="premium-card" onClick={() => openInAppBrowser(hcData.hc.epass)}>
-                          <div className="card-top">
-                            <span className="card-badge">Security</span>
-                            <span style={{ fontSize: '16px' }}>🎫</span>
-                          </div>
-                          <h3 className="card-h3">E-Gate Pass</h3>
-                          <p className="card-desc">Apply online for entry passes for advocates, interns, and clients.</p>
-                          <div className="card-action-text">Apply Pass ↗</div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
