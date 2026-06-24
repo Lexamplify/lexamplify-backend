@@ -262,7 +262,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
               </div>
               {!isIconOnly && (
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '15px', fontWeight: '700', color: 'white', letterSpacing: '-0.2px' }}>LexAmplify</div>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>LexAmplify</div>
                   <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Enterprise Console</div>
                 </div>
               )}
@@ -368,8 +368,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                 onClick={() => setFocusMode(f => !f)}
                 style={{
                   width: '32px', height: '17px', borderRadius: '10px', cursor: 'pointer',
-                  background: focusMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)',
-                  border: '1px solid rgba(255,255,255,0.1)', position: 'relative', transition: 'background 0.2s',
+                  background: focusMode ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                  border: '1px solid transparent', position: 'relative', transition: 'background 0.2s',
                 }}
               >
                 <div style={{
@@ -605,7 +605,7 @@ const DashboardView = () => {
           disabled={isSyncing}
           style={{
             flex: 1, background: 'transparent', border: 'none', outline: 'none',
-            padding: '13px 14px', fontSize: '13.5px', color: 'white',
+            padding: '13px 14px', fontSize: '13.5px', color: 'var(--text-primary)',
             fontFamily: 'var(--font-sans)',
           }}
         />
@@ -673,7 +673,7 @@ const DashboardView = () => {
           }}>
             <div style={{ color: s.accent, display: 'flex', alignItems: 'center' }}>{s.icon}</div>
             <div>
-              <div style={{ fontSize: '30px', fontWeight: '800', color: 'white', lineHeight: 1, fontFamily: 'var(--font-sans)' }}>
+              <div style={{ fontSize: '30px', fontWeight: '800', color: 'var(--text-primary)', lineHeight: 1, fontFamily: 'var(--font-sans)' }}>
                 {loading ? <Spinner size={22} /> : s.value}
               </div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '5px' }}>{s.label}</div>
@@ -711,11 +711,11 @@ const DashboardView = () => {
             ) : urgentEvents.map((ev, i) => (
               <div key={ev.id || i} style={{
                 padding: '12px 18px',
-                borderBottom: i < urgentEvents.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                borderBottom: i < urgentEvents.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                 borderLeft: `3px solid ${urgentAccent(ev.event_type)}`,
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                  <span style={{ fontSize: '13.5px', fontWeight: '600', color: '#F8FAFC', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                  <span style={{ fontSize: '13.5px', fontWeight: '600', color: 'var(--text-primary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
                   <span style={{ fontSize: '11px', color: urgentAccent(ev.event_type), fontWeight: '700', whiteSpace: 'nowrap', background: `${urgentAccent(ev.event_type)}1A`, padding: '2px 7px', borderRadius: '4px', flexShrink: 0 }}>
                     {new Date(ev.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                   </span>
@@ -751,11 +751,11 @@ const DashboardView = () => {
                 style={{ textDecoration: 'none', display: 'block' }}
               >
                 <div
-                  style={{ padding: '12px 16px', borderBottom: i < recentDocs.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', transition: 'background 0.15s' }}
+                  style={{ padding: '12px 16px', borderBottom: i < recentDocs.length - 1 ? '1px solid var(--border-subtle)' : 'none', transition: 'background 0.15s' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.06)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#F8FAFC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '5px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '5px' }}>
                     {doc.title}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
@@ -841,7 +841,7 @@ const DashboardView = () => {
             >
               <span style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>{a.icon}</span>
               <div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: 'white', marginBottom: '2px' }}>{a.label}</div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '2px' }}>{a.label}</div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{a.desc}</div>
               </div>
             </div>

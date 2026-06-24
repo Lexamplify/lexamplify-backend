@@ -1448,3 +1448,304 @@ textarea:focus,
 /* ── light-matte: Scrollbar (warm tones) ── */
 :root[data-theme="light-matte"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); }
 :root[data-theme="light-matte"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.22); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME — COMPONENT-INJECTED CSS OVERRIDES
+   These rules fix CSS injected via <style> tags inside React components
+   (VaultView.jsx vaultStyles, CourtResources.jsx, CaseWorkspace.jsx WS_CSS).
+   They use :root[data-theme="light"] prefix (specificity 0-2-0) which beats
+   the component's plain class selectors (specificity 0-1-0), so they win
+   regardless of injection order.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Drop zones — replace dark rgba borders with visible light-mode borders ── */
+:root[data-theme="light"] .drop-zone,
+:root[data-theme="light"] .drag-drop-zone {
+  border: 2px dashed #B0B9CC !important;
+  background-color: #F8FAFC !important;
+}
+:root[data-theme="light"] .drop-zone:hover,
+:root[data-theme="light"] .drag-drop-zone:hover,
+:root[data-theme="light"] .drop-zone.dragover,
+:root[data-theme="light"] .drag-drop-zone.dragover {
+  border-color: #3B82F6 !important;
+  background-color: rgba(59,130,246,.04) !important;
+}
+
+/* ── Form input hover — replace white-on-white rgba with visible border ── */
+:root[data-theme="light"] input[type="text"]:hover,
+:root[data-theme="light"] input[type="number"]:hover,
+:root[data-theme="light"] input[type="email"]:hover,
+:root[data-theme="light"] input[type="password"]:hover,
+:root[data-theme="light"] select:hover,
+:root[data-theme="light"] textarea:hover,
+:root[data-theme="light"] .form-input:hover,
+:root[data-theme="light"] .select-element:hover,
+:root[data-theme="light"] .search-input-field:hover {
+  border-color: #94A3B8 !important;
+}
+
+/* ── Sidebar collapse button hover — was white text on light bg ── */
+:root[data-theme="light"] .sidebar-collapse-btn:hover {
+  background: rgba(0,0,0,.06) !important;
+  color: #1A2234 !important;
+  border-color: #94A3B8 !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CourtResources.jsx — component-injected CSS class overrides
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Banner card gradient — dark-only gradient becomes light */
+:root[data-theme="light"] .banner-card {
+  background: linear-gradient(135deg, #F0F2F8 0%, #E4E8F4 100%) !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06) !important;
+}
+
+/* Card headings hardcoded white */
+:root[data-theme="light"] .card-h3 { color: #1A2234 !important; }
+:root[data-theme="light"] .panel-header h2 { color: #1A2234 !important; }
+
+/* Modal meta value hardcoded white */
+:root[data-theme="light"] .modal-meta-value { color: #374151 !important; }
+:root[data-theme="light"] .modal-card {
+  background-color: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .modal-header,
+:root[data-theme="light"] .modal-footer {
+  border-color: #E5E7EB !important;
+}
+
+/* Resource panel background */
+:root[data-theme="light"] .resource-panel {
+  background-color: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06) !important;
+}
+
+/* Skeleton shimmer — replace dark shimmer with light version */
+:root[data-theme="light"] .skeleton-line {
+  background: linear-gradient(90deg, #E8ECF4 25%, #F0F2F8 50%, #E8ECF4 75%) !important;
+  background-size: 200% 100% !important;
+}
+:root[data-theme="light"] .skel-line {
+  background: linear-gradient(90deg, rgba(0,0,0,.04) 25%, rgba(0,0,0,.08) 50%, rgba(0,0,0,.04) 75%) !important;
+  background-size: 200% 100% !important;
+}
+:root[data-theme="light"] .events-skeleton-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+
+/* Events source pill — visible on light bg */
+:root[data-theme="light"] .events-source-pill {
+  background: rgba(0,0,0,.05) !important;
+  border-color: rgba(0,0,0,.1) !important;
+  color: #4A5568 !important;
+}
+
+/* Events error state dashed border */
+:root[data-theme="light"] .events-error-state {
+  border-color: rgba(0,0,0,.1) !important;
+}
+
+/* Tab separator borders */
+:root[data-theme="light"] .sub-tabs-wrapper {
+  border-bottom-color: #C8CEDC !important;
+}
+
+/* Sub-tab active state was hardcoded white */
+:root[data-theme="light"] .sub-tab-btn.active {
+  color: #1A2234 !important;
+  background-color: rgba(0,0,0,.06) !important;
+}
+:root[data-theme="light"] .sub-tab-btn:hover {
+  color: #1A2234 !important;
+  background-color: rgba(0,0,0,.04) !important;
+}
+
+/* Copy button link hover was hardcoded white */
+:root[data-theme="light"] .copy-btn-link:hover { color: #1D4ED8 !important; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   VaultView.jsx — vaultStyles class overrides
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Folder name in card header was hardcoded white */
+:root[data-theme="light"] .vault-folder-name { color: #1A2234 !important; }
+
+/* Breadcrumb current segment hardcoded white */
+:root[data-theme="light"] .vault-bc-current { color: #1A2234 !important; }
+
+/* Folder context-menu */
+:root[data-theme="light"] .vault-folder-menu {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12) !important;
+}
+:root[data-theme="light"] .vault-folder-menu-item { color: #374151 !important; }
+:root[data-theme="light"] .vault-folder-menu-item:hover {
+  background: rgba(0,0,0,.04) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .vault-folder-menu-sep { background: #E5E7EB !important; }
+:root[data-theme="light"] .vault-folder-dots:hover {
+  background: rgba(0,0,0,.06) !important;
+  color: #374151 !important;
+}
+
+/* Same for document dot menu */
+:root[data-theme="light"] .vault-doc-menu {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12) !important;
+}
+:root[data-theme="light"] .vault-doc-menu-item { color: #374151 !important; }
+:root[data-theme="light"] .vault-doc-menu-item:hover {
+  background: rgba(0,0,0,.04) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .vault-doc-menu-sep { background: #E5E7EB !important; }
+:root[data-theme="light"] .vault-doc-dots:hover {
+  background: rgba(0,0,0,.06) !important;
+  color: #374151 !important;
+}
+
+/* Folder rename inline input */
+:root[data-theme="light"] .vault-folder-rename-input {
+  background: #FFFFFF !important;
+  border-color: rgba(59,130,246,.5) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .vault-folder-rename-input::placeholder { color: rgba(0,0,0,.3) !important; }
+
+/* New folder creation row */
+:root[data-theme="light"] .vault-new-folder-row { background: rgba(59,130,246,.04) !important; border-color: rgba(59,130,246,.18) !important; }
+:root[data-theme="light"] .vault-new-folder-input { color: #1A2234 !important; }
+:root[data-theme="light"] .vault-new-folder-input::placeholder { color: rgba(0,0,0,.3) !important; }
+:root[data-theme="light"] .vault-nf-confirm { color: #2563EB !important; }
+:root[data-theme="light"] .vault-nf-cancel {
+  color: #4A5568 !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .vault-nf-cancel:hover { color: #1A2234 !important; border-color: #94A3B8 !important; }
+
+/* Move document modal */
+:root[data-theme="light"] .vault-move-modal {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .vault-move-header { border-bottom-color: #E5E7EB !important; }
+:root[data-theme="light"] .vault-move-footer { border-top-color: #E5E7EB !important; }
+:root[data-theme="light"] .vault-move-tree-row { color: #374151 !important; border-color: #E5E7EB !important; }
+:root[data-theme="light"] .vault-move-tree-row:hover { background: rgba(0,0,0,.04) !important; color: #1A2234 !important; }
+:root[data-theme="light"] .vault-move-select-btn {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+
+/* Search input within vault was hardcoded white text */
+:root[data-theme="light"] .vault-search-input { color: #1A2234 !important; }
+
+/* Vault table — inner table had white text on cells */
+:root[data-theme="light"] .dashboard-panel {
+  background-color: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+
+/* Breadcrumb secondary button */
+:root[data-theme="light"] .btn-secondary {
+  color: #374151 !important;
+  border-color: #C8CEDC !important;
+  background: transparent !important;
+}
+:root[data-theme="light"] .btn-secondary:hover { background: rgba(0,0,0,.04) !important; }
+
+/* Breadcrumb "New Folder" button */
+:root[data-theme="light"] .vault-bc-new-btn {
+  color: #374151 !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .vault-bc-new-btn:hover { color: #1A2234 !important; background: rgba(0,0,0,.04) !important; }
+
+/* Vault shimmer skeleton */
+:root[data-theme="light"] .vault-shimmer-row {
+  background: linear-gradient(90deg, rgba(0,0,0,.04) 25%, rgba(59,130,246,.07) 50%, rgba(0,0,0,.04) 75%) !important;
+  background-size: 1200px 100% !important;
+}
+
+/* Vault empty state secondary text */
+:root[data-theme="light"] .vault-empty-sep { color: #94A3B8 !important; }
+:root[data-theme="light"] .vault-empty-link { color: #6B7280 !important; }
+
+/* Empty hero ring/icon area */
+:root[data-theme="light"] .vault-empty-hero { background: transparent !important; }
+
+/* SaveToVaultModal (CommandPalette) folder cards */
+:root[data-theme="light"] .svm-folder-card {
+  background: rgba(59,130,246,.04) !important;
+  border-color: rgba(59,130,246,.15) !important;
+}
+:root[data-theme="light"] .svm-folder-card:hover {
+  background: rgba(59,130,246,.1) !important;
+  border-color: rgba(59,130,246,.3) !important;
+}
+:root[data-theme="light"] .svm-folder-card-name { color: #1A2234 !important; }
+:root[data-theme="light"] .svm-folder-card-meta { color: #6B7280 !important; }
+:root[data-theme="light"] .svm-folder-card-chevron { color: #94A3B8 !important; }
+:root[data-theme="light"] .svm-grid-section-label { color: #6B7280 !important; }
+:root[data-theme="light"] .svm-vault-empty { border-color: rgba(0,0,0,.1) !important; color: #6B7280 !important; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CaseWorkspace.jsx — WS_CSS class overrides
+   ───────────────────────────────────────────────────────────────────────── */
+:root[data-theme="light"] .cw-container { background: var(--bg-app) !important; }
+:root[data-theme="light"] .cw-header {
+  background: var(--bg-sidebar) !important;
+  border-bottom-color: var(--border-subtle) !important;
+}
+:root[data-theme="light"] .cw-case-title { color: var(--text-primary) !important; }
+:root[data-theme="light"] .cw-case-subtitle { color: var(--text-muted) !important; }
+:root[data-theme="light"] .cw-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .cw-card-head {
+  background: rgba(0,0,0,.02) !important;
+  border-bottom-color: #E5E7EB !important;
+}
+:root[data-theme="light"] .cw-metric-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .cw-metric-value { color: #1A2234 !important; }
+:root[data-theme="light"] .cw-synopsis-output { color: #374151 !important; }
+:root[data-theme="light"] .cw-draft-item {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .cw-draft-title { color: #1A2234 !important; }
+:root[data-theme="light"] .cw-empty-title { color: #1A2234 !important; }
+:root[data-theme="light"] .cw-tl-desc { color: #374151 !important; }
+:root[data-theme="light"] .cw-audit-header { border-bottom-color: #E5E7EB !important; }
+:root[data-theme="light"] .cw-audit-entry {
+  border-color: #E5E7EB !important;
+  background: rgba(0,0,0,.015) !important;
+}
+:root[data-theme="light"] .cw-audit-entry-head:hover { background: rgba(0,0,0,.03) !important; }
+:root[data-theme="light"] .cw-audit-entry.expanded .cw-audit-entry-head { border-bottom-color: #E5E7EB !important; }
+:root[data-theme="light"] .cw-audit-doc-title { color: #1A2234 !important; }
+:root[data-theme="light"] .cw-audit-msg-user {
+  background: rgba(0,0,0,.03) !important;
+  border-color: rgba(0,0,0,.07) !important;
+}
+:root[data-theme="light"] .cw-btn-ghost {
+  color: #4A5568 !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .cw-btn-ghost:hover { color: #1A2234 !important; }
+:root[data-theme="light"] .cw-skeleton {
+  background: linear-gradient(90deg, rgba(0,0,0,.04) 25%, rgba(0,0,0,.08) 50%, rgba(0,0,0,.04) 75%) !important;
+  background-size: 800px 100% !important;
+}

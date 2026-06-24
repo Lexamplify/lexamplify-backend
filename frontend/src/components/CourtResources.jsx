@@ -1094,7 +1094,7 @@ export default function CourtResources() {
               {/* Sidebar Action Widget */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '10px', padding: '18px' }}>
-                  <h4 style={{ fontSize: '14px', marginBottom: '10px', color: 'white' }}>Today's Cause List</h4>
+                  <h4 style={{ fontSize: '14px', marginBottom: '10px', color: 'var(--text-dark-primary)' }}>Today's Cause List</h4>
                   <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '14px', lineHeight: '1.4' }}>
                     Pull the official day list for the Supreme Court.
                   </p>
@@ -1103,11 +1103,11 @@ export default function CourtResources() {
                   </button>
                 </div>
                 <div style={{ backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '10px', padding: '18px' }}>
-                  <h4 style={{ fontSize: '14px', marginBottom: '10px', color: 'white' }}>Supreme Court Calendar</h4>
+                  <h4 style={{ fontSize: '14px', marginBottom: '10px', color: 'var(--text-dark-primary)' }}>Supreme Court Calendar</h4>
                   <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '14px', lineHeight: '1.4' }}>
                     Official holiday and sitting scheduler.
                   </p>
-                  <button className="btn-accent" style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }} onClick={() => openInAppBrowser('https://sci.gov.in/sitting-judges-calendar')}>
+                  <button className="btn-accent" style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }} onClick={() => openInAppBrowser('https://sci.gov.in/sitting-judges-calendar')}>
                     📅 Sitting Calendar ↗
                   </button>
                 </div>
@@ -1258,7 +1258,7 @@ export default function CourtResources() {
                               .map((j, idx) => (
                                 <tr key={idx}>
                                   <td><strong>{j.name}</strong></td>
-                                  <td><span className="card-badge" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'white' }}>{j.room}</span></td>
+                                  <td><span className="card-badge" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-dark-primary)' }}>{j.room}</span></td>
                                   <td>
                                     {j.vc.startsWith('http') ? (
                                       <>
@@ -1333,7 +1333,7 @@ export default function CourtResources() {
               <div>
                 <div style={{ padding: '14px 18px', background: 'var(--bg-dark-card)', borderRadius: '10px', border: '1px solid var(--border-dark-subtle)', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <h3 style={{ fontSize: '16px', color: 'white', marginBottom: '2px' }}>{selectedDistrict}</h3>
+                    <h3 style={{ fontSize: '16px', color: 'var(--text-dark-primary)', marginBottom: '2px' }}>{selectedDistrict}</h3>
                     <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Subordinate Court System</span>
                   </div>
                   {distUrl ? (
@@ -1399,7 +1399,7 @@ export default function CourtResources() {
                   >
                     <div className="premium-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px' }}>
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '8px' }}>
-                        <span style={{ color: 'white', fontWeight: '500', fontSize: '13.5px' }}>📖 {act.name}</span>
+                        <span style={{ color: 'var(--text-dark-primary)', fontWeight: '500', fontSize: '13.5px' }}>📖 {act.name}</span>
                       </div>
                       <span style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600', flexShrink: 0 }}>Read ↗</span>
                     </div>
@@ -1489,12 +1489,12 @@ export default function CourtResources() {
                         <tr key={idx}>
                           <td><strong>📋 {form.name}</strong></td>
                           <td>
-                            <span className="card-badge" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'var(--text-dark-muted)', fontSize: '11px' }}>
+                            <span className="card-badge" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-dark-muted)', fontSize: '11px' }}>
                               {form.court || 'General'}
                             </span>
                           </td>
                           <td>
-                            <span className="card-badge" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'white' }}>{form.cat}</span>
+                            <span className="card-badge" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-dark-primary)' }}>{form.cat}</span>
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <button
@@ -1668,7 +1668,7 @@ export default function CourtResources() {
             {calculatedFee !== null && (
               <div style={{ marginTop: '24px', padding: '20px', backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '8px' }}>
                 <h4 style={{ fontSize: '13px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Estimated Filing Stamp Duty</h4>
-                <div style={{ fontSize: '28px', color: 'white', fontWeight: 'bold', fontFamily: 'var(--font-serif)', marginBottom: '8px' }}>
+                <div style={{ fontSize: '28px', color: 'var(--text-dark-primary)', fontWeight: 'bold', fontFamily: 'var(--font-serif)', marginBottom: '8px' }}>
                   {typeof calculatedFee === 'number' ? `₹ ${calculatedFee.toLocaleString('en-IN')}` : calculatedFee}
                 </div>
                 <p style={{ fontSize: '13px', color: 'var(--text-dark-muted)', lineHeight: '1.4' }}>{feeNote}</p>
@@ -1735,7 +1735,7 @@ export default function CourtResources() {
               <div className="premium-card" style={{ padding: '14px 18px' }} onClick={() => openInAppBrowser('https://www.meity.gov.in/content/information-technology-act')}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ overflow: 'hidden' }}>
-                    <div style={{ color: 'white', fontWeight: '500', fontSize: '13px' }}>IT Act, 2000 — Sections 3–5</div>
+                    <div style={{ color: 'var(--text-dark-primary)', fontWeight: '500', fontSize: '13px' }}>IT Act, 2000 — Sections 3–5</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-dark-muted)', marginTop: '2px' }}>Electronic Records &amp; Signatures validity</div>
                   </div>
                   <span style={{ color: 'var(--accent-primary)', fontSize: '16px' }}>↗</span>
@@ -1744,7 +1744,7 @@ export default function CourtResources() {
               <div className="premium-card" style={{ padding: '14px 18px' }} onClick={() => openInAppBrowser('https://www.cca.gov.in')}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ overflow: 'hidden' }}>
-                    <div style={{ color: 'white', fontWeight: '500', fontSize: '13px' }}>Controller of Certifying Authorities (CCA)</div>
+                    <div style={{ color: 'var(--text-dark-primary)', fontWeight: '500', fontSize: '13px' }}>Controller of Certifying Authorities (CCA)</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-dark-muted)', marginTop: '2px' }}>Licensing agency for DSC providers</div>
                   </div>
                   <span style={{ color: 'var(--accent-primary)', fontSize: '16px' }}>↗</span>
@@ -1845,7 +1845,7 @@ export default function CourtResources() {
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                               <button 
                                 className="btn-accent" 
-                                style={{ fontSize: '11px', padding: '5px 10px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
+                                style={{ fontSize: '11px', padding: '5px 10px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
                                 onClick={() => openIPModalForm('edit', asset)}
                               >
                                 ✏️
@@ -1878,7 +1878,7 @@ export default function CourtResources() {
             <div className="modal-header">
               <div>
                 <span className="card-badge" style={{ textTransform: 'capitalize', marginBottom: '8px', display: 'inline-block' }}>{eventModalData.type}</span>
-                <h2 style={{ fontSize: '18px', color: 'white', fontFamily: 'var(--font-serif)' }}>{eventModalData.title}</h2>
+                <h2 style={{ fontSize: '18px', color: 'var(--text-dark-primary)', fontFamily: 'var(--font-serif)' }}>{eventModalData.title}</h2>
               </div>
               <button 
                 onClick={closeEventModal}
@@ -1903,7 +1903,7 @@ export default function CourtResources() {
               {eventModalStatus === 'error' && (
                 <div style={{ padding: '16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', textAlign: 'center' }}>
                   <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠️</div>
-                  <h4 style={{ color: 'white', marginBottom: '6px' }}>Network Parsing Error</h4>
+                  <h4 style={{ color: 'var(--text-dark-primary)', marginBottom: '6px' }}>Network Parsing Error</h4>
                   <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '14px' }}>{eventModalError}</p>
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                     <button 
@@ -1916,7 +1916,7 @@ export default function CourtResources() {
                     {eventModalData.source_url && (
                       <button 
                         className="btn-accent" 
-                        style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
+                        style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
                         onClick={() => { closeEventModal(); openDirectLink(eventModalData.source_url); }}
                       >
                         Open Official Page
@@ -1957,7 +1957,7 @@ export default function CourtResources() {
             <div className="modal-footer">
               <button 
                 className="btn-accent" 
-                style={{ background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }} 
+                style={{ background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }} 
                 onClick={closeEventModal}
               >
                 Close Window
@@ -1981,7 +1981,7 @@ export default function CourtResources() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <form onSubmit={saveIPAssetItem}>
               <div className="modal-header">
-                <h2 style={{ fontSize: '18px', color: 'white', fontFamily: 'var(--font-serif)' }}>
+                <h2 style={{ fontSize: '18px', color: 'var(--text-dark-primary)', fontFamily: 'var(--font-serif)' }}>
                   {ipModal.mode === 'edit' ? 'Edit Tracked IP Asset' : 'Track New IP Asset'}
                 </h2>
                 <button 
@@ -2083,7 +2083,7 @@ export default function CourtResources() {
                 <button 
                   type="button"
                   className="btn-accent" 
-                  style={{ background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }} 
+                  style={{ background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }} 
                   onClick={() => setIpModal(prev => ({ ...prev, isOpen: false }))}
                 >
                   Cancel

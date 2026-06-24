@@ -544,7 +544,7 @@ export default function CalendarView() {
 
               {/* Actions */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
-                <button type="button" onClick={closeModal} style={{ padding: '8px 16px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-dark-subtle, #2C3241)', background: 'transparent', color: 'white', cursor: 'pointer' }}>
+                <button type="button" onClick={closeModal} style={{ padding: '8px 16px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-dark-subtle, #2C3241)', background: 'transparent', color: 'var(--text-dark-primary)', cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button

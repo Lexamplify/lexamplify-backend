@@ -748,7 +748,7 @@ function EventsTab({ documents, loadingDocs, apiBase }) {
       {!timelineLoading && timeline.length === 0 && !timelineError && (
         <div className="cw-tl-empty">
           <div style={{ fontSize: 28, marginBottom: 12 }}>📅</div>
-          <div style={{ fontWeight: 600, color: 'white', marginBottom: 7, fontSize: 15 }}>No timeline generated yet</div>
+          <div style={{ fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: 7, fontSize: 15 }}>No timeline generated yet</div>
           <div>Click "Extract Dates via AI" to build a chronological view from your vault documents.</div>
         </div>
       )}

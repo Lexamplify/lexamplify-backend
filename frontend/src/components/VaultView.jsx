@@ -1277,7 +1277,7 @@ export default function VaultView({ targetFolderId = null }) {
             ) : (
               <div>
                 <div style={{ fontSize: '26px', marginBottom: '10px' }}>📤</div>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: 'white', marginBottom: '5px' }}>Upload Document to Case Vault</div>
+                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-dark-primary)', marginBottom: '5px' }}>Upload Document to Case Vault</div>
                 <div style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>Drag &amp; drop a PDF, DOCX, or TXT file here, or click to browse</div>
               </div>
             )}
@@ -1411,7 +1411,7 @@ export default function VaultView({ targetFolderId = null }) {
               {!isInitializing && isSearching && currentDocs.length === 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '180px', border: '1px dashed rgba(255,255,255,0.06)', borderRadius: '10px', padding: '32px', color: 'var(--text-dark-muted)', gap: '10px' }}>
                   <span style={{ fontSize: '24px' }}>🔍</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'white' }}>No results for "{searchTerm}"</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-dark-primary)' }}>No results for "{searchTerm}"</span>
                   <span style={{ fontSize: '12px', opacity: 0.65 }}>Try a different search term or browse by folder.</span>
                 </div>
               )}
@@ -1532,7 +1532,7 @@ export default function VaultView({ targetFolderId = null }) {
                         </div>
 
                         {/* Title */}
-                        <h3 style={{ fontSize: '14.5px', fontWeight: '600', color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.smart_title || doc.title}>
+                        <h3 style={{ fontSize: '14.5px', fontWeight: '600', color: 'var(--text-dark-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.smart_title || doc.title}>
                           {doc.smart_title || doc.title}
                         </h3>
 
@@ -1673,7 +1673,7 @@ export default function VaultView({ targetFolderId = null }) {
         <div className="modal-overlay">
           <div className="modal-card animate-fade-in">
             <div className="modal-header">
-              <h3 style={{ margin: 0, fontSize: '17px', color: 'white' }}>Add / Edit Case</h3>
+              <h3 style={{ margin: 0, fontSize: '17px', color: 'var(--text-dark-primary)' }}>Add / Edit Case</h3>
               <button onClick={() => setIsModalOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}>&times;</button>
             </div>
             <form onSubmit={handleModalSave}>
