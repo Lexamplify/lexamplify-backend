@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Link, useParams, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { fetchTrackedCases, fetchDocuments } from './services/api';
 import CommandPalette from './components/CommandPalette';
@@ -15,6 +15,13 @@ import VaultView from './components/VaultView';
 import CaseWorkspace from './components/CaseWorkspace';
 import WarRoomView from './components/WarRoomView';
 import { useWakeWord, WS } from './hooks/useWakeWord';
+import { InzIQContext } from './context/InzIQContext';
+import InzIQView from './components/InzIQView';
+
+// ── Persists across Layout remounts within the same tab session.
+// Set to true after the first user interaction so subsequent Layout
+// mounts (e.g. after navigation) can start the mic immediately.
+let _micReady = false;
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -166,6 +173,7 @@ const Breadcrumbs = () => {
   else if (p === '/calendar')          items.push({ label: 'Legal Calendar',    url: p });
   else if (p === '/vault')             items.push({ label: 'Case Vault',        url: p });
   else if (p === '/war-room')          items.push({ label: 'Virtual Courtroom', url: p });
+  else if (p === '/agent')             items.push({ label: 'InzIQ',             url: p });
   else {
     if (params.caseId) {
       const label = params.caseId === 'vault' ? 'Document Vault' : `Case #${params.caseId}`;
@@ -239,17 +247,49 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
     localStorage.removeItem('lexai_token');
   };
 
-  // ── InzIQ wake word engine ──────────────────────────────────────────────
-  const { wakeState, isSupported: wakeSupported, startListening, stopListening } = useWakeWord();
+  const navigate = useNavigate();
 
+  // ── InzIQ always-on voice engine ────────────────────────────────────────
+  const { wakeState, startListening } = useWakeWord();
+  const [currentDictation, setCurrentDictation] = useState('');
+
+  // Stable ref wrapper so the hook's internal cbRef always calls the latest navigate
+  const wakeCallbackRef = useRef(null);
   const handleWakeWord = useCallback((query, autoSubmit = false) => {
-    window.dispatchEvent(new CustomEvent('inziq-open', { detail: { query, autoSubmit } }));
-  }, []);
+    navigate('/agent', { state: { query, autoSubmit } });
+  }, [navigate]);
+  useEffect(() => { wakeCallbackRef.current = handleWakeWord; }, [handleWakeWord]);
+  const stableWakeCallback = useCallback(
+    (q, a) => wakeCallbackRef.current?.(q, a),
+    []
+  );
 
-  const toggleWakeWord = useCallback(() => {
-    if (wakeState !== WS.IDLE) stopListening();
-    else startListening(handleWakeWord);
-  }, [wakeState, startListening, stopListening, handleWakeWord]);
+  // Silent first-interaction start: browsers block mic until a user gesture has
+  // occurred. We listen for the first click/key, then start the self-healing loop.
+  // The module-level _micReady flag means subsequent Layout mounts (after navigation)
+  // skip the wait and start immediately.
+  useEffect(() => {
+    if (_micReady) { startListening(stableWakeCallback); return; }
+    const onFirst = () => { _micReady = true; startListening(stableWakeCallback); };
+    document.addEventListener('click',      onFirst, { once: true });
+    document.addEventListener('touchstart', onFirst, { once: true });
+    document.addEventListener('keydown',    onFirst, { once: true, capture: true });
+    return () => {
+      document.removeEventListener('click',      onFirst);
+      document.removeEventListener('touchstart', onFirst);
+      document.removeEventListener('keydown',    onFirst, { capture: true });
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track live dictation for InzIQView via context
+  useEffect(() => {
+    const onDictate = (e) => setCurrentDictation(e.detail?.text || '');
+    window.addEventListener('inziq-dictate', onDictate);
+    return () => window.removeEventListener('inziq-dictate', onDictate);
+  }, []);
+  useEffect(() => {
+    if (wakeState !== WS.DICTATING) setCurrentDictation('');
+  }, [wakeState]);
 
   const p = location.pathname;
 
@@ -349,8 +389,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
               />
             )}
             <button
-              onClick={openAgent}
-              title={isIconOnly ? 'InzIQ (⌘K)' : undefined}
+              onClick={() => { closeSidebar(); navigate('/agent'); }}
+              title={isIconOnly ? 'InzIQ' : undefined}
               style={{
                 width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
                 background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
@@ -381,39 +421,12 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                   <span>InzIQ</span>
                   <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px' }}>
                     {wakeState !== WS.IDLE && <span className="inziq-live-badge">LIVE</span>}
-                    <span style={{ fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
+                    {wakeState === WS.IDLE && <span style={{ fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>}
                   </span>
                 </>
               )}
             </button>
 
-            {!isIconOnly && wakeSupported && (
-              <button
-                onClick={toggleWakeWord}
-                className={`inziq-wake-toggle${wakeState !== WS.IDLE ? ' inziq-wake-on' : ''}`}
-                title={wakeState !== WS.IDLE ? "Hey InzIQ active — click to disable" : "Enable 'Hey InzIQ' wake word"}
-              >
-                {wakeState === WS.IDLE && (
-                  <><span>🎤</span><span>Enable Hey InzIQ</span></>
-                )}
-                {wakeState === WS.PASSIVE && (
-                  <><span>🛡</span><span>Listening locally…</span></>
-                )}
-                {wakeState === WS.TRIGGERED && (
-                  <><span>⚡</span><span>InzIQ!</span></>
-                )}
-                {wakeState === WS.DICTATING && (
-                  <>
-                    <span className="inziq-wave-sm">
-                      {[0,1,2].map(i => (
-                        <span key={i} className="inziq-wave-bar-sm" style={{ animationDelay: `${i * 0.15}s` }} />
-                      ))}
-                    </span>
-                    <span>Dictating…</span>
-                  </>
-                )}
-              </button>
-            )}
           </div>
 
           {/* Log Out */}
@@ -524,9 +537,11 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         </header>
 
         <main style={{ flex: 1, overflowY: 'auto' }}>
-          <div key={location.pathname} className="page-enter">
-            {children}
-          </div>
+          <InzIQContext.Provider value={{ wakeState, currentDictation }}>
+            <div key={location.pathname} className="page-enter">
+              {children}
+            </div>
+          </InzIQContext.Provider>
         </main>
       </div>
     </div>
@@ -536,6 +551,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 // ── DASHBOARD VIEW — fully dynamic, zero hardcoded data ───────────────────────
 const DashboardView = () => {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+  const navigate = useNavigate();
 
   const [cases, setCases]               = useState([]);
   const [documents, setDocuments]       = useState([]);
@@ -717,7 +733,7 @@ const DashboardView = () => {
           </p>
         </div>
         <button
-          onClick={openAgent}
+          onClick={() => navigate('/agent')}
           style={{
             background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
             color: 'white', border: 'none', borderRadius: '9px',
@@ -942,6 +958,7 @@ function AppRouterContent() {
         <Route path="/war-room"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
         <Route path="/analyzer"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
+        <Route path="/agent"                  element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><InzIQView /></Layout>} />
       </Routes>
     </BrowserRouter>
   );
