@@ -116,14 +116,14 @@ const vaultStyles = `
   .vault-move-tree-row.selected { background: rgba(59,130,246,.1); color: #7EB3F5; }
   .vault-move-tree-row.disabled { opacity: .3; cursor: not-allowed; pointer-events: none; }
 
-  /* ── Breadcrumb ── */
+  /* ── Breadcrumb (always-visible, New Folder action on right) ────────── */
   .vault-breadcrumb {
-    display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-    padding: 8px 12px; margin-bottom: 16px;
-    background: rgba(59,130,246,0.04);
-    border: 1px solid rgba(59,130,246,0.12); border-radius: 7px;
-    font-size: 12.5px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px 8px 14px; margin-bottom: 16px;
+    background: rgba(59,130,246,0.04); border: 1px solid rgba(59,130,246,0.12);
+    border-radius: 7px; font-size: 12.5px; gap: 8px;
   }
+  .vault-bc-left { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; flex: 1; min-width: 0; }
   .vault-bc-btn {
     background: none; border: none; cursor: pointer; padding: 0;
     color: var(--accent-primary, #3B82F6); font-size: 12.5px; font-family: inherit;
@@ -132,6 +132,51 @@ const vaultStyles = `
   .vault-bc-btn:hover { opacity: 0.75; }
   .vault-bc-sep { color: var(--text-dark-muted, #8F9CAE); font-size: 11px; }
   .vault-bc-current { color: white; font-weight: 600; }
+  .vault-bc-new-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 10px; background: rgba(59,130,246,0.1);
+    border: 1px solid rgba(59,130,246,0.25); border-radius: 6px;
+    color: #93C5FD; font-size: 11.5px; font-weight: 600;
+    cursor: pointer; font-family: var(--font-sans); flex-shrink: 0; transition: all 0.15s;
+  }
+  .vault-bc-new-btn:hover { background: rgba(59,130,246,0.18); border-color: rgba(59,130,246,0.45); color: #BFDBFE; }
+
+  /* ── Folder nav micro-animations ─────────────────────────────────────── */
+  @keyframes vault-drill-in {
+    from { opacity: 0; transform: translateX(18px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes vault-drill-out {
+    from { opacity: 0; transform: translateX(-18px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .vault-nav-in  { animation: vault-drill-in  0.22s cubic-bezier(0.16,1,0.3,1); }
+  .vault-nav-out { animation: vault-drill-out 0.22s cubic-bezier(0.16,1,0.3,1); }
+
+  /* ── Inline folder creation row ──────────────────────────────────────── */
+  .vault-new-folder-row {
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+    background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.28);
+    border-radius: 8px; margin-bottom: 14px; animation: fadeIn 0.15s ease;
+  }
+  .vault-new-folder-input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: white; font-size: 13.5px; font-family: var(--font-sans);
+  }
+  .vault-new-folder-input::placeholder { color: rgba(255,255,255,0.22); }
+  .vault-nf-ok {
+    padding: 5px 12px; background: #3B82F6; border: none; border-radius: 5px;
+    color: white; font-size: 12px; font-weight: 600; cursor: pointer;
+    font-family: var(--font-sans); transition: background 0.15s; white-space: nowrap;
+  }
+  .vault-nf-ok:hover { background: #2563EB; }
+  .vault-nf-ok:disabled { opacity: 0.45; cursor: not-allowed; }
+  .vault-nf-cancel {
+    padding: 5px 10px; background: transparent; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px; color: #64748B; font-size: 12px; cursor: pointer;
+    font-family: var(--font-sans); transition: all 0.15s; white-space: nowrap;
+  }
+  .vault-nf-cancel:hover { color: #94A3B8; border-color: rgba(255,255,255,0.2); }
 
   /* ── Document Grid Card ── */
   .vault-grid-card {
@@ -322,24 +367,32 @@ function formatDate(str) {
 }
 
 // ─── Breadcrumb Component ────────────────────────────────────────────────────
-function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo }) {
+function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo, onNewFolder }) {
   return (
     <div className="vault-breadcrumb">
-      <button className="vault-bc-btn" onClick={onNavigateToRoot}>
-        🏠 Case Vault
+      <div className="vault-bc-left">
+        <button className="vault-bc-btn" onClick={onNavigateToRoot}>
+          📂 Case Vault
+        </button>
+        {folderPath.map((crumb, i) => (
+          <React.Fragment key={crumb.id}>
+            <span className="vault-bc-sep">›</span>
+            {i === folderPath.length - 1 ? (
+              <span className="vault-bc-current">{crumb.name}</span>
+            ) : (
+              <button className="vault-bc-btn" onClick={() => onNavigateTo(i)}>
+                {crumb.name}
+              </button>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+      <button className="vault-bc-new-btn" onClick={onNewFolder}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New Folder
       </button>
-      {folderPath.map((crumb, i) => (
-        <React.Fragment key={crumb.id}>
-          <span className="vault-bc-sep">›</span>
-          {i === folderPath.length - 1 ? (
-            <span className="vault-bc-current">{crumb.name}</span>
-          ) : (
-            <button className="vault-bc-btn" onClick={() => onNavigateTo(i)}>
-              {crumb.name}
-            </button>
-          )}
-        </React.Fragment>
-      ))}
     </div>
   );
 }
@@ -512,6 +565,15 @@ export default function VaultView({ targetFolderId = null }) {
   const [currentFolderId, setCurrentFolderId] = useState(null);  // null = root
   const [folderPath, setFolderPath]           = useState([]);    // [{id, name}]
 
+  // Folder creation (inline)
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName,    setNewFolderName]    = useState('');
+  const [creatingFolder,   setCreatingFolder]   = useState(false);
+
+  // Nav animation (drill-in / drill-out)
+  const [navKey, setNavKey] = useState(0);
+  const [navDir, setNavDir] = useState(''); // 'in' | 'out' | ''
+
   // Folder management (rename / move / delete)
   const [renamingFolderId, setRenamingFolderId] = useState(null);
   const [renameValue,       setRenameValue]      = useState('');
@@ -618,6 +680,29 @@ export default function VaultView({ targetFolderId = null }) {
     }
   };
 
+  const handleCreateFolder = async () => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed || creatingFolder) return;
+    setCreatingFolder(true);
+    try {
+      const token = apiToken();
+      const res = await fetch(`${API_BASE}/api/vault/folders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        body: JSON.stringify({ name: trimmed, parent_id: currentFolderId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.message || 'Failed to create folder.');
+      setFolders(prev => [...prev, { id: data.id, name: data.name, parent_id: data.parent_id ?? null }]);
+      setNewFolderName('');
+      setIsCreatingFolder(false);
+    } catch (err) {
+      alert(err.message || 'Failed to create folder.');
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
   const loadCases = async () => {
     setLoadingCases(true);
     const res = await fetchTrackedCases();
@@ -647,22 +732,31 @@ export default function VaultView({ targetFolderId = null }) {
 
   // ── Folder navigation ─────────────────────────────────────────────────────
   const navigateToFolder = (folder) => {
+    setNavDir('in');
+    setNavKey(k => k + 1);
     setCurrentFolderId(folder.id);
     setFolderPath(prev => [...prev, { id: folder.id, name: folder.name }]);
     setSearchTerm('');
+    setIsCreatingFolder(false);
   };
 
   const navigateToRoot = () => {
+    setNavDir('out');
+    setNavKey(k => k + 1);
     setCurrentFolderId(null);
     setFolderPath([]);
     setSearchTerm('');
+    setIsCreatingFolder(false);
   };
 
   const navigateToBreadcrumb = (index) => {
     const crumb = folderPath[index];
+    setNavDir('out');
+    setNavKey(k => k + 1);
     setCurrentFolderId(crumb.id);
     setFolderPath(prev => prev.slice(0, index + 1));
     setSearchTerm('');
+    setIsCreatingFolder(false);
   };
 
   // ── Derived: current view ─────────────────────────────────────────────────
@@ -854,13 +948,26 @@ export default function VaultView({ targetFolderId = null }) {
           </p>
         </div>
         {activeTab === 'vault' && (
-          <button className="btn-accent" onClick={() => fileInputRef.current?.click()}
-            style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            Upload Document
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="btn-secondary"
+              onClick={() => { setIsCreatingFolder(true); setNewFolderName(''); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+              </svg>
+              New Folder
+            </button>
+            <button className="btn-accent" onClick={() => fileInputRef.current?.click()}
+              style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              Upload Document
+            </button>
+          </div>
         )}
         {activeTab === 'tracker' && (
           <button className="btn-accent" onClick={() => setIsModalOpen(true)}>+ Add Case</button>
@@ -921,14 +1028,13 @@ export default function VaultView({ targetFolderId = null }) {
             )}
           </div>
 
-          {/* Breadcrumb — shown when inside a folder */}
-          {folderPath.length > 0 && (
-            <Breadcrumb
-              folderPath={folderPath}
-              onNavigateToRoot={navigateToRoot}
-              onNavigateTo={navigateToBreadcrumb}
-            />
-          )}
+          {/* Breadcrumb — always visible, context-aware New Folder on right */}
+          <Breadcrumb
+            folderPath={folderPath}
+            onNavigateToRoot={navigateToRoot}
+            onNavigateTo={navigateToBreadcrumb}
+            onNewFolder={() => { setIsCreatingFolder(true); setNewFolderName(''); }}
+          />
 
           {/* Search bar */}
           {!loadingDocs && documents.length > 0 && (
@@ -956,7 +1062,42 @@ export default function VaultView({ targetFolderId = null }) {
               <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading vault…</span>
             </div>
           ) : !docError && (
-            <>
+            <div key={navKey} className={navDir === 'in' ? 'vault-nav-in' : navDir === 'out' ? 'vault-nav-out' : ''}>
+              {/* Inline folder creation row */}
+              {isCreatingFolder && !isSearching && (
+                <div className="vault-new-folder-row">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <input
+                    className="vault-new-folder-input"
+                    autoFocus
+                    placeholder={currentFolderId
+                      ? `New subfolder in "${folderPath[folderPath.length - 1]?.name}"…`
+                      : 'New folder name…'}
+                    value={newFolderName}
+                    onChange={e => setNewFolderName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleCreateFolder();
+                      if (e.key === 'Escape') { setIsCreatingFolder(false); setNewFolderName(''); }
+                    }}
+                  />
+                  <button
+                    className="vault-nf-ok"
+                    onClick={handleCreateFolder}
+                    disabled={!newFolderName.trim() || creatingFolder}
+                  >
+                    {creatingFolder ? 'Creating…' : 'Create'}
+                  </button>
+                  <button
+                    className="vault-nf-cancel"
+                    onClick={() => { setIsCreatingFolder(false); setNewFolderName(''); }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
               {/* Folder cards row — hidden when searching */}
               {!isSearching && currentSubFolders.length > 0 && (
                 <div style={{ marginBottom: '20px' }}>
@@ -1088,7 +1229,7 @@ export default function VaultView({ targetFolderId = null }) {
                   })}
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       )}
