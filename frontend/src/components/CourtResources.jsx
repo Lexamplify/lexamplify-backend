@@ -1141,22 +1141,34 @@ export default function CourtResources() {
               </div>
             </div>
 
-            {selectedDistrict ? (
+            {selectedDistrict ? (() => {
+              const distUrl = (districtsDb[selectedDistState] || []).find(d => d.name === selectedDistrict)?.url || null;
+              return (
               <div>
                 <div style={{ padding: '14px 18px', background: 'var(--bg-dark-card)', borderRadius: '10px', border: '1px solid var(--border-dark-subtle)', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <h3 style={{ fontSize: '16px', color: 'white', marginBottom: '2px' }}>{selectedDistrict}</h3>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>getSubordinate Court System</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Subordinate Court System</span>
                   </div>
-                  <button 
-                    className="btn-accent" 
-                    onClick={() => {
-                      const distObj = districtsDb[selectedDistState].find(d => d.name === selectedDistrict);
-                      if (distObj && distObj.url) openInAppBrowser(distObj.url);
-                    }}
-                  >
-                    🏛️ Open Official Site ↗
-                  </button>
+                  {distUrl ? (
+                    <a
+                      href={distUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-accent"
+                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      🏛️ Open Official Site ↗
+                    </a>
+                  ) : (
+                    <button
+                      className="btn-accent"
+                      disabled
+                      style={{ opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' }}
+                    >
+                      🏛️ Site Not Available
+                    </button>
+                  )}
                 </div>
 
                 <div className="sub-tabs-wrapper">
@@ -1242,7 +1254,8 @@ export default function CourtResources() {
                   </div>
                 )}
               </div>
-            ) : (
+            );
+          })() : (
               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', border: '1px dashed var(--border-dark-subtle)', borderRadius: '8px' }}>
                 Please select a State and a Subordinate District Court above to display court services.
               </div>
