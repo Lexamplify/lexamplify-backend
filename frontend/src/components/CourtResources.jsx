@@ -509,6 +509,42 @@ const styles = `
     gap: 8px;
   }
 
+  /* ── Live Events Skeleton ───────────────────────── */
+  .events-skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .events-skeleton-card {
+    background: var(--bg-dark-card);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 12px;
+    padding: 18px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .skel-line {
+    background: linear-gradient(90deg, rgba(255,255,255,.04) 25%, rgba(255,255,255,.09) 50%, rgba(255,255,255,.04) 75%);
+    background-size: 200% 100%;
+    border-radius: 4px;
+    animation: skelShimmer 1.4s ease infinite;
+  }
+  @keyframes skelShimmer { to { background-position: -200% 0; } }
+
+  .events-source-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #1E293B;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; padding: 2px 7px; flex-shrink: 0;
+  }
+  .events-error-state {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: 48px 24px; text-align: center;
+    border: 1px dashed rgba(255,255,255,.08); border-radius: 12px;
+    color: var(--text-dark-muted);
+  }
+
   /* ── PDF Viewer Modal ──────────────────────────── */
   .pdf-modal-overlay {
     position: fixed; inset: 0; z-index: 9000;
@@ -642,6 +678,11 @@ export default function CourtResources() {
   const [eventModalStatus, setEventModalStatus] = useState('idle'); // 'idle' | 'loading' | 'content' | 'error'
   const [eventModalError, setEventModalError] = useState('');
   const [pdfModal, setPdfModal] = useState({ open: false, loading: false, isScraping: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
+
+  // Live Events feed state
+  const [liveEvents, setLiveEvents]     = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [eventsError, setEventsError]   = useState(null);
   
   // Search Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -730,6 +771,30 @@ export default function CourtResources() {
     if (pdfModal.blobUrl) URL.revokeObjectURL(pdfModal.blobUrl);
     setPdfModal({ open: false, loading: false, isScraping: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
   };
+
+  // ── Live Events RSS ingestion ─────────────────────────────────────────────
+  const fetchLiveEvents = async (forceRefresh = false) => {
+    setLoadingEvents(true);
+    setEventsError(null);
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+      const res  = await fetch(`${apiBase}/api/legal-events${forceRefresh ? '?refresh=1' : ''}`);
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || 'Feed unavailable');
+      setLiveEvents(data.events || []);
+    } catch (err) {
+      setEventsError(err.message || 'Failed to load live events');
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'events' && liveEvents.length === 0 && !loadingEvents && !eventsError) {
+      fetchLiveEvents();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // ── INIT: Load court-globals ──────────────────────────────────────────
   useEffect(() => {
@@ -1453,51 +1518,113 @@ export default function CourtResources() {
         {/* ────────── TAB 6: LEGAL EVENTS ────────── */}
         {activeTab === 'events' && (
           <div className="resource-panel">
-            <div className="panel-header">
-              <h2>Upcoming Legal Events &amp; Sitting Updates</h2>
-              <p>Notifications of seminars, bar association updates, NALSA meetings, and constitution benches.</p>
+            <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h2>Live Legal Feed</h2>
+                <p>Real-time legal news, SC orders, conference notices, and bar updates — aggregated from LiveLaw &amp; Bar &amp; Bench.</p>
+              </div>
+              <button
+                className="btn-accent"
+                style={{ fontSize: '11px', padding: '5px 12px', flexShrink: 0, marginTop: '4px' }}
+                onClick={() => fetchLiveEvents(true)}
+                disabled={loadingEvents}
+              >
+                {loadingEvents ? '…' : '↺ Refresh'}
+              </button>
             </div>
 
+            {/* Filter pills */}
             <div className="control-row">
               <div className="sub-tabs-wrapper" style={{ borderBottom: 'none', marginBottom: 0 }}>
-                <button className={`sub-tab-btn ${eventsFilter === 'all' ? 'active' : ''}`} onClick={() => setEventsFilter('all')}>All</button>
-                <button className={`sub-tab-btn ${eventsFilter === 'webinar' ? 'active' : ''}`} onClick={() => setEventsFilter('webinar')}>Webinars</button>
-                <button className={`sub-tab-btn ${eventsFilter === 'conference' ? 'active' : ''}`} onClick={() => setEventsFilter('conference')}>Conferences</button>
-                <button className={`sub-tab-btn ${eventsFilter === 'media' ? 'active' : ''}`} onClick={() => setEventsFilter('media')}>Press &amp; Media</button>
+                {[
+                  { key: 'all',        label: 'All' },
+                  { key: 'judgment',   label: '⚖️ Judgments' },
+                  { key: 'conference', label: '🎤 Conferences' },
+                  { key: 'webinar',    label: '💻 Webinars' },
+                  { key: 'media',      label: '📢 Press' },
+                  { key: 'news',       label: '📰 News' },
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    className={`sub-tab-btn ${eventsFilter === key ? 'active' : ''}`}
+                    onClick={() => setEventsFilter(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {loadingGlobals ? (
-              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-dark-muted)' }}>Loading events...</div>
-            ) : (
-              <div className="grid-container">
-                {globals.events
-                  .filter(e => eventsFilter === 'all' ? true : e.type === eventsFilter)
-                  .map(event => (
-                    <div key={event.id} className="premium-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      <div>
-                        <div className="card-top">
-                          <span className="card-badge" style={{ textTransform: 'capitalize' }}>{event.type}</span>
-                          <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>📅 {event.date}</span>
-                        </div>
-                        <h3 className="card-h3" style={{ fontSize: '14.5px', lineHeight: '1.4' }}>{event.title}</h3>
-                        <p className="card-desc" style={{ marginBottom: '16px' }}>{event.sub}</p>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn-accent" style={{ fontSize: '11px', padding: '5px 10px', flex: 1 }} onClick={() => openEventModal(event.id, event.title, event.url, event.type, event.date)}>
-                          View details
-                        </button>
-                        {event.url && (
-                          <button className="btn-accent" style={{ fontSize: '11px', padding: '5px 10px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }} onClick={() => openDirectLink(event.url)}>
-                            Link ↗
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                }
+            {/* Loading skeleton */}
+            {loadingEvents && (
+              <div className="events-skeleton-grid">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="events-skeleton-card">
+                    <div className="skel-line" style={{ height: '10px', width: '40%' }} />
+                    <div className="skel-line" style={{ height: '14px', width: '90%' }} />
+                    <div className="skel-line" style={{ height: '14px', width: '75%' }} />
+                    <div className="skel-line" style={{ height: '11px', width: '60%', marginTop: '4px' }} />
+                    <div className="skel-line" style={{ height: '11px', width: '80%' }} />
+                    <div className="skel-line" style={{ height: '30px', width: '100%', marginTop: '8px', borderRadius: '7px' }} />
+                  </div>
+                ))}
               </div>
             )}
+
+            {/* Error state */}
+            {!loadingEvents && eventsError && (
+              <div className="events-error-state">
+                <span style={{ fontSize: '32px' }}>📡</span>
+                <div>
+                  <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '6px', fontWeight: '600' }}>Live feed unavailable</p>
+                  <p style={{ fontSize: '12px', color: '#475569' }}>{eventsError}</p>
+                </div>
+                <button className="btn-accent" style={{ fontSize: '12px', padding: '7px 16px' }} onClick={() => fetchLiveEvents(true)}>
+                  ↺ Retry Feed
+                </button>
+              </div>
+            )}
+
+            {/* Live event cards */}
+            {!loadingEvents && !eventsError && (() => {
+              const filtered = liveEvents.filter(e =>
+                eventsFilter === 'all' ? true : e.category === eventsFilter
+              );
+              if (filtered.length === 0) return (
+                <div className="events-error-state">
+                  <span style={{ fontSize: '28px' }}>🔍</span>
+                  <p style={{ fontSize: '13px', color: '#475569' }}>No {eventsFilter} items in the current feed.</p>
+                </div>
+              );
+              return (
+                <div className="grid-container">
+                  {filtered.map(event => (
+                    <div key={event.id} className="premium-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <div className="card-top" style={{ marginBottom: '8px' }}>
+                          <span className="card-badge" style={{ textTransform: 'capitalize' }}>{event.category}</span>
+                          <span className="events-source-pill">{event.source}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', marginLeft: 'auto' }}>📅 {event.date}</span>
+                        </div>
+                        <h3 className="card-h3" style={{ fontSize: '13.5px', lineHeight: '1.45', marginBottom: '8px' }}>{event.title}</h3>
+                        {event.description && (
+                          <p className="card-desc" style={{ marginBottom: '14px', fontSize: '12px', lineHeight: '1.5' }}>{event.description}</p>
+                        )}
+                      </div>
+                      <a
+                        href={event.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-accent"
+                        style={{ fontSize: '11px', padding: '6px 10px', textDecoration: 'none', textAlign: 'center', display: 'block' }}
+                      >
+                        Read Article ↗
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
 

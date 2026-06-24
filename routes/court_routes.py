@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import email.utils
 import os
 import re
 import sqlite3
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse, quote
 
@@ -456,6 +458,137 @@ def get_court_globals():
         'events':         _EVENTS,
         'cause_list_urls': _CAUSE_LIST_URLS,
     })
+
+
+# ── Live Legal Events — RSS ingestion pipeline ────────────────────────────────
+# Strategy: aggregate two reliable WordPress RSS 2.0 feeds (LiveLaw + Bar & Bench).
+# Parsed with stdlib xml.etree.ElementTree — no new deps.
+# 30-minute in-memory cache prevents hammering upstream on every tab switch.
+
+_LIVE_EVENTS_CACHE: dict = {'data': [], 'ts': 0.0}
+_LIVE_EVENTS_TTL   = 1800   # 30 minutes
+
+_RSS_SOURCES = [
+    {'url': 'https://www.livelaw.in/feed/',       'source': 'LiveLaw'},
+    {'url': 'https://www.barandbench.com/feed',   'source': 'Bar & Bench'},
+]
+
+_RSS_HDRS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    ),
+    'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+}
+
+# Atom namespace
+_ATOM_NS = 'http://www.w3.org/2005/Atom'
+
+
+def _classify(title: str, desc: str) -> str:
+    t = (title + ' ' + desc).lower()
+    if any(k in t for k in ('webinar', 'virtual', 'zoom', 'online session', 'e-seminar')):
+        return 'webinar'
+    if any(k in t for k in ('conference', 'seminar', 'summit', 'workshop', 'convention', 'symposium')):
+        return 'conference'
+    if any(k in t for k in ('press release', 'statement', 'media briefing', 'communique')):
+        return 'media'
+    if any(k in t for k in ('judgment', 'judgement', 'verdict', 'order', 'ruled', 'held', 'acquitted', 'convicted')):
+        return 'judgment'
+    return 'news'
+
+
+def _rss_date(raw: str) -> str:
+    """RFC 2822 → 'June 24, 2026'. Falls back gracefully."""
+    if not raw:
+        return 'Recent'
+    try:
+        return email.utils.parsedate_to_datetime(raw.strip()).strftime('%B %d, %Y')
+    except Exception:
+        # ISO 8601 fallback (Atom)
+        try:
+            return datetime.fromisoformat(raw[:19]).strftime('%B %d, %Y')
+        except Exception:
+            return raw[:16]
+
+
+def _parse_rss_feed(source: dict) -> list[dict]:
+    r = requests.get(source['url'], headers=_RSS_HDRS, timeout=(8, 15))
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+
+    # RSS 2.0 <item> or Atom <entry>
+    items = root.findall('.//item')
+    if not items:
+        items = root.findall(f'.//{{{_ATOM_NS}}}entry')
+
+    events: list[dict] = []
+    for item in items[:18]:
+        def _t(tag: str) -> str:
+            el = item.find(tag)
+            if el is None:
+                el = item.find(f'{{{_ATOM_NS}}}{tag}')
+            return (el.text or '').strip() if el is not None else ''
+
+        title = _t('title')
+        link  = _t('link')
+        # Atom <link> stores URL in href attr, not text
+        if not link:
+            el = item.find(f'{{{_ATOM_NS}}}link')
+            if el is not None:
+                link = el.get('href', '')
+        pub   = _t('pubDate') or _t('published') or _t('updated')
+        desc  = re.sub(r'<[^>]+>', '', _t('description') or _t('summary'))[:240].strip()
+
+        if not title or not link:
+            continue
+
+        events.append({
+            'id':          f"{source['source']}_{abs(hash(link)) % 0xFFFFFF:06x}",
+            'title':       title,
+            'date':        _rss_date(pub),
+            'description': desc,
+            'category':    _classify(title, desc),
+            'source':      source['source'],
+            'link':        link,
+        })
+    return events
+
+
+@court_bp.route('/api/legal-events', methods=['GET', 'OPTIONS'])
+def get_live_legal_events():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    import time as _t2
+    now           = _t2.monotonic()
+    force_refresh = request.args.get('refresh') == '1'
+
+    if (not force_refresh
+            and _LIVE_EVENTS_CACHE['data']
+            and (now - _LIVE_EVENTS_CACHE['ts']) < _LIVE_EVENTS_TTL):
+        return jsonify({'events': _LIVE_EVENTS_CACHE['data'], 'cached': True}), 200
+
+    all_events: list[dict] = []
+    errors: list[str]      = []
+
+    for src in _RSS_SOURCES:
+        try:
+            all_events.extend(_parse_rss_feed(src))
+        except requests.Timeout:
+            errors.append(f"{src['source']}: timed out")
+        except requests.HTTPError as exc:
+            errors.append(f"{src['source']}: HTTP {exc.response.status_code}")
+        except Exception as exc:
+            errors.append(f"{src['source']}: {exc}")
+
+    if not all_events:
+        return jsonify({'error': 'All RSS feeds failed', 'details': errors}), 502
+
+    _LIVE_EVENTS_CACHE['data'] = all_events
+    _LIVE_EVENTS_CACHE['ts']   = now
+
+    return jsonify({'events': all_events, 'cached': False, 'errors': errors}), 200
 
 
 # ── Dynamic SC form scraper ───────────────────────────────────────────────────
