@@ -270,19 +270,20 @@ _DISTRICTS = {
 
 _FORMS = [
     # ── Supreme Court of India ────────────────────────────────────────────
-    # www.sci.gov.in is live and works in a real browser (Cloudflare blocks bots).
+    # www.sci.gov.in is live but sits behind Cloudflare; a Chrome UA is required.
     # main.sci.gov.in is DEAD — ECONNREFUSED. Never use that subdomain.
-    # All SC entries land on the official forms index; user clicks their specific form
-    # on that page (short table, ~20 items, each has a direct "View / Download" button).
-    {'name': 'SC — All Forms & Formats (SCI Official Portal)',              'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — Format of Special Leave Petition (SLP) — Form 28',      'cat': 'Civil',          'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — Format of Writ Petition',                                'cat': 'Constitutional', 'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — Application for Certified / Unauthenticated Copy (F-29)','cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — Modified Listing Proforma',                              'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — List of Mandatory Points to be Checked',                 'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — Modified Check List (Filing)',                           'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — Mentioning Matter Proforma',                             'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
-    {'name': 'SC — Advocate-on-Record Specimen Signature Form',             'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
+    # url_type:'dynamic_pdf' → /api/forms/fetch-dynamic scrapes the forms table at
+    # runtime, extracts the direct PDF href, and streams the binary back as a blob.
+    # sc_title is the case-insensitive substring searched inside each <tr> on that page.
+    {'name': 'SC — All Forms & Formats (SCI Portal)',               'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'page'},
+    {'name': 'SC — Special Leave Petition (Form 28)',               'cat': 'Civil',          'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'Special Leave Petition'},
+    {'name': 'SC — Writ Petition Format',                          'cat': 'Constitutional', 'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'Writ Petition'},
+    {'name': 'SC — Certified / Unauthenticated Copy (Form 29)',    'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'certified copy'},
+    {'name': 'SC — Modified Listing Proforma',                     'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'Listing Proforma'},
+    {'name': 'SC — List of Mandatory Points (Filing)',             'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'Mandatory Points'},
+    {'name': 'SC — Modified Check List (Filing)',                  'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'Check List'},
+    {'name': 'SC — Mentioning Matter Proforma',                    'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'Mentioning Matter'},
+    {'name': 'SC — Advocate-on-Record Signature Form',             'cat': 'General',        'court': 'Supreme Court', 'url': 'https://www.sci.gov.in/forms/', 'url_type': 'dynamic_pdf', 'sc_title': 'Specimen Signature'},
 
     # ── Delhi High Court ──────────────────────────────────────────────────
     # URLs verified by fetching https://delhihighcourt.nic.in/web/online-forms-downloadable-forms
@@ -455,6 +456,139 @@ def get_court_globals():
         'events':         _EVENTS,
         'cause_list_urls': _CAUSE_LIST_URLS,
     })
+
+
+# ── Dynamic SC form scraper ───────────────────────────────────────────────────
+# Fetches https://www.sci.gov.in/forms/, finds the row whose text contains
+# the requested sc_title fragment, extracts the PDF href, fetches the binary,
+# and returns it as application/pdf.  Results are cached for 5 min so repeated
+# clicks on the same page don't re-hit the government server.
+
+import time as _time
+
+_SCI_PAGE_CACHE: dict = {'html': b'', 'ts': 0.0}
+_SCI_CACHE_TTL  = 300   # seconds
+
+_SCRAPER_HDRS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/124.0.0.0 Safari/537.36'
+    ),
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Referer': 'https://www.sci.gov.in/',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+}
+
+# Whitelist of accepted sc_title fragments — prevents open-redirect / injection.
+# Only exact substring matches (case-insensitive) from this set are allowed.
+_SC_TITLE_WHITELIST: frozenset[str] = frozenset({
+    'special leave petition',
+    'writ petition',
+    'certified copy',
+    'listing proforma',
+    'mandatory points',
+    'check list',
+    'mentioning matter',
+    'specimen signature',
+    'advocate-on-record',
+})
+
+
+def _fetch_sci_html() -> bytes:
+    """Return (possibly cached) raw bytes of the SCI forms index page."""
+    now = _time.monotonic()
+    if _SCI_PAGE_CACHE['html'] and (now - _SCI_PAGE_CACHE['ts']) < _SCI_CACHE_TTL:
+        return _SCI_PAGE_CACHE['html']
+    r = requests.get(
+        'https://www.sci.gov.in/forms/',
+        headers=_SCRAPER_HDRS,
+        timeout=(10, 20),
+    )
+    r.raise_for_status()
+    # Cloudflare challenge page detection
+    if r.status_code in (403, 503) or 'just a moment' in r.text.lower():
+        raise RuntimeError('cloudflare_block')
+    _SCI_PAGE_CACHE['html'] = r.content
+    _SCI_PAGE_CACHE['ts']   = now
+    return r.content
+
+
+@court_bp.route('/api/forms/fetch-dynamic', methods=['GET', 'OPTIONS'])
+def fetch_dynamic_form():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    form_title = request.args.get('form_title', '').strip()
+    if not form_title:
+        return jsonify({'error': 'form_title parameter is required'}), 400
+
+    # SSRF / injection guard: reject if no whitelisted fragment matches
+    lower_title = form_title.lower()
+    if not any(w in lower_title for w in _SC_TITLE_WHITELIST):
+        return jsonify({'error': 'Unrecognised form title — not in allowed list'}), 400
+
+    try:
+        # ── 1. Fetch / read from cache ────────────────────────────────────
+        try:
+            html_bytes = _fetch_sci_html()
+        except RuntimeError as e:
+            if 'cloudflare' in str(e):
+                return jsonify({'error': 'SCI portal is behind bot-protection right now. Use the external link to download.'}), 503
+            raise
+
+        # ── 2. Parse ──────────────────────────────────────────────────────
+        soup = BeautifulSoup(html_bytes, 'html.parser')
+
+        # ── 3. Find matching <tr> ─────────────────────────────────────────
+        pdf_url: str | None = None
+        for row in soup.find_all('tr'):
+            row_text = row.get_text(separator=' ', strip=True).lower()
+            if lower_title in row_text:
+                for a in row.find_all('a', href=True):
+                    href = a['href'].strip()
+                    link_text = a.get_text(strip=True).lower()
+                    # Accept: explicit .pdf href OR anchor text says view/download
+                    if '.pdf' in href.lower() or 'view' in link_text or 'download' in link_text:
+                        pdf_url = urljoin('https://www.sci.gov.in/', href)
+                        break
+                if pdf_url:
+                    break
+
+        if not pdf_url:
+            return jsonify({
+                'error': f'Form not found on SCI portal',
+                'detail': f'No row on sci.gov.in/forms/ matched "{form_title}". '
+                           'The government may have renamed or removed this form.',
+            }), 404
+
+        # ── 4. SSRF guard on resolved URL ─────────────────────────────────
+        ok, _ = _proxy_validate_url(pdf_url)
+        if not ok:
+            return jsonify({'error': 'Resolved PDF URL is outside allowed domains'}), 403
+
+        # ── 5. Fetch PDF binary ───────────────────────────────────────────
+        pdf_r = requests.get(pdf_url, headers=_SCRAPER_HDRS, timeout=(10, 30))
+        pdf_r.raise_for_status()
+
+        # ── 6. Stream back ────────────────────────────────────────────────
+        resp = make_response(pdf_r.content)
+        resp.headers['Content-Type']        = pdf_r.headers.get('Content-Type', 'application/pdf')
+        resp.headers['Content-Disposition'] = f'inline; filename="{form_title[:80]}.pdf"'
+        resp.headers['Cache-Control']       = 'private, max-age=300'
+        return resp
+
+    except requests.Timeout:
+        return jsonify({'error': 'SCI portal timed out. Please try again.'}), 504
+    except requests.HTTPError as exc:
+        return jsonify({'error': f'SCI portal returned HTTP {exc.response.status_code}'}), 502
+    except requests.RequestException as exc:
+        return jsonify({'error': f'Network error reaching SCI portal: {exc}'}), 502
+    except Exception as exc:
+        return jsonify({'error': f'Scraper error: {exc}'}), 500
+
 
 # ── Event cache helpers ────────────────────────────────────────────────────────
 

@@ -641,7 +641,7 @@ export default function CourtResources() {
   const [eventModalData, setEventModalData] = useState(null);
   const [eventModalStatus, setEventModalStatus] = useState('idle'); // 'idle' | 'loading' | 'content' | 'error'
   const [eventModalError, setEventModalError] = useState('');
-  const [pdfModal, setPdfModal] = useState({ open: false, loading: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
+  const [pdfModal, setPdfModal] = useState({ open: false, loading: false, isScraping: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
   
   // Search Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -697,31 +697,38 @@ export default function CourtResources() {
   // and render in <iframe>.  blob:// is same-origin so X-Frame-Options is moot.
   // For url_type:'page' — no direct PDF path exists; fall back to external tab.
   const openFormInModal = async (form) => {
-    if (form.url_type !== 'pdf') {
+    if (form.url_type === 'page') {
       window.open(form.url, '_blank', 'noopener,noreferrer');
       return;
     }
-    setPdfModal({ open: true, loading: true, error: false, blobUrl: null, title: form.name, fallbackUrl: form.url });
+    const isScraping = form.url_type === 'dynamic_pdf';
+    setPdfModal({ open: true, loading: true, isScraping, error: false, blobUrl: null, title: form.name, fallbackUrl: form.url });
     try {
       const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
-      const res = await fetch(`${apiBase}/api/proxy?target_url=${encodeURIComponent(form.url)}`);
+      let fetchUrl;
+      if (isScraping) {
+        // dynamic_pdf: backend scrapes sci.gov.in/forms/, extracts direct PDF href, streams binary
+        const searchTitle = encodeURIComponent(form.sc_title || form.name);
+        fetchUrl = `${apiBase}/api/forms/fetch-dynamic?form_title=${searchTitle}`;
+      } else {
+        // pdf: direct proxy of a known static PDF URL
+        fetchUrl = `${apiBase}/api/proxy?target_url=${encodeURIComponent(form.url)}`;
+      }
+      const res = await fetch(fetchUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        // proxy returned an error JSON (e.g. domain not whitelisted)
-        throw new Error('Proxy blocked');
-      }
+      if (contentType.includes('application/json')) throw new Error('Backend returned error JSON');
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
-      setPdfModal(prev => ({ ...prev, loading: false, blobUrl }));
+      setPdfModal(prev => ({ ...prev, loading: false, isScraping: false, blobUrl }));
     } catch {
-      setPdfModal(prev => ({ ...prev, loading: false, error: true }));
+      setPdfModal(prev => ({ ...prev, loading: false, isScraping: false, error: true }));
     }
   };
 
   const closePdfModal = () => {
     if (pdfModal.blobUrl) URL.revokeObjectURL(pdfModal.blobUrl);
-    setPdfModal({ open: false, loading: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
+    setPdfModal({ open: false, loading: false, isScraping: false, error: false, blobUrl: null, title: '', fallbackUrl: '' });
   };
 
   // ── INIT: Load court-globals ──────────────────────────────────────────
@@ -1430,7 +1437,7 @@ export default function CourtResources() {
                               style={{ fontSize: '11px', padding: '4px 10px' }}
                               onClick={() => openFormInModal(form)}
                             >
-                              {form.url_type === 'pdf' ? '📄 View Document' : '🌐 Open Portal'}
+                              {(form.url_type === 'pdf' || form.url_type === 'dynamic_pdf') ? '📄 View Document' : '🌐 Open Portal'}
                             </button>
                           </td>
                         </tr>
@@ -1997,7 +2004,11 @@ export default function CourtResources() {
               {pdfModal.loading && (
                 <div className="pdf-modal-state">
                   <div className="pdf-modal-spinner" />
-                  <span>Fetching document from court server…</span>
+                  <span>
+                    {pdfModal.isScraping
+                      ? 'Scraping SCI forms index → extracting PDF link → fetching binary…'
+                      : 'Fetching document from court server…'}
+                  </span>
                 </div>
               )}
               {pdfModal.error && (
