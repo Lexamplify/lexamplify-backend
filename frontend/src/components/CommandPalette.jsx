@@ -1607,11 +1607,27 @@ export default function CommandPalette() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); onToggle(); }
       if (e.key === 'Escape' && isOpen) setIsOpen(false);
     };
+    // InzIQ voice: open modal with optional pre-filled query + auto-submit
+    const onInziqOpen = (e) => {
+      const { query: q = '', autoSubmit = false } = e.detail || {};
+      setIsOpen(true);
+      if (q) {
+        setQuery(q);
+        if (autoSubmit) setTimeout(() => searchRef.current?.(null, q), 120);
+      }
+    };
+    // InzIQ voice: real-time dictation text updates while user is speaking
+    const onInziqDictate = (e) => { setQuery(e.detail?.text || ''); };
+
     window.addEventListener('keydown', onKey);
     window.addEventListener('toggle-rag-palette', onToggle);
+    window.addEventListener('inziq-open', onInziqOpen);
+    window.addEventListener('inziq-dictate', onInziqDictate);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('toggle-rag-palette', onToggle);
+      window.removeEventListener('inziq-open', onInziqOpen);
+      window.removeEventListener('inziq-dictate', onInziqDictate);
     };
   }, [isOpen]);
 
@@ -1786,7 +1802,7 @@ export default function CommandPalette() {
       if (res.status === 401) {
         pushMessage(sid, {
           id: `e_${Date.now()}`, role: 'error',
-          text: '⚠️ Session expired. Please log in again to use the AI Legal Associate.',
+          text: '⚠️ Session expired. Please log in again to use InzIQ.',
           isAuth: true,
         });
         setLoading(false);
@@ -2285,7 +2301,7 @@ export default function CommandPalette() {
                   </svg>
                 </div>
                 <div>
-                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#E2E8F0', letterSpacing: '0.2px' }}>AI Legal Associate</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#E2E8F0', letterSpacing: '0.2px' }}>InzIQ</div>
                   <div style={{ fontSize: '10px', color: '#3D5168', marginTop: '1px' }}>LexAmplify · Junior Counsel</div>
                 </div>
               </div>
@@ -2417,7 +2433,7 @@ export default function CommandPalette() {
                           <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
                         </svg>
                       </div>
-                      <h2 style={{ fontSize: '21px', fontWeight: 700, color: '#DDE6F0', margin: '0 0 8px' }}>AI Legal Associate</h2>
+                      <h2 style={{ fontSize: '21px', fontWeight: 700, color: '#DDE6F0', margin: '0 0 8px' }}>InzIQ</h2>
                       <p style={{ fontSize: '13.5px', color: '#3E5470', lineHeight: '1.6', maxWidth: '420px', margin: '0 auto' }}>
                         Your junior counsel for LexAmplify. Draft documents, research law,
                         navigate any feature, manage schedules — all through natural conversation.
@@ -2477,14 +2493,14 @@ export default function CommandPalette() {
                           ) : null;
                         })()}
                         <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${isListening ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.08)'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
-                          <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={isListening ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command your AI Legal Associate… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
+                          <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={isListening ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command InzIQ… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
                           <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLocked || fileLoading} style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }} title="Attach file"><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
                           <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''}`} onClick={toggleMic} style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={isListening ? 'Stop listening' : 'Voice command'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
                           <button type="submit" className="lex-send-btn" disabled={isLocked || (!query.trim() && !attachedFile)} style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}>Send</button>
                         </form>
                       </div>
                       <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
-                        AI Legal Associate can make mistakes. Always verify critical legal information independently.
+                        InzIQ can make mistakes. Always verify critical legal information independently.
                       </div>
                     </div>
                   </div>
@@ -2778,7 +2794,7 @@ export default function CommandPalette() {
                       ? '🎤 Listening — speak your command…'
                       : attachedFile
                       ? `Ask something about ${attachedFile.name}…`
-                      : 'Command your AI Legal Associate… (Shift+Enter for new line)'
+                      : 'Command InzIQ… (Shift+Enter for new line)'
                   }
                   style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }}
                 />
@@ -2828,7 +2844,7 @@ export default function CommandPalette() {
               </div>{/* end slash-command wrapper */}
 
               <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
-                AI Legal Associate can make mistakes. Always verify critical legal information independently.
+                InzIQ can make mistakes. Always verify critical legal information independently.
               </div>
             </div>
             )}{/* end docked input bar */}

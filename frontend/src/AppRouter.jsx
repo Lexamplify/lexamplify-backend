@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Link, useParams, useLocation } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { fetchTrackedCases, fetchDocuments } from './services/api';
@@ -14,6 +14,7 @@ import CalendarView from './components/CalendarView';
 import VaultView from './components/VaultView';
 import CaseWorkspace from './components/CaseWorkspace';
 import WarRoomView from './components/WarRoomView';
+import { useWakeWord, WS } from './hooks/useWakeWord';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -238,6 +239,18 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
     localStorage.removeItem('lexai_token');
   };
 
+  // ── InzIQ wake word engine ──────────────────────────────────────────────
+  const { wakeState, isSupported: wakeSupported, startListening, stopListening } = useWakeWord();
+
+  const handleWakeWord = useCallback((query, autoSubmit = false) => {
+    window.dispatchEvent(new CustomEvent('inziq-open', { detail: { query, autoSubmit } }));
+  }, []);
+
+  const toggleWakeWord = useCallback(() => {
+    if (wakeState !== WS.IDLE) stopListening();
+    else startListening(handleWakeWord);
+  }, [wakeState, startListening, stopListening, handleWakeWord]);
+
   const p = location.pathname;
 
   return (
@@ -323,28 +336,85 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
         {/* Bottom Controls */}
         <div style={{ padding: isIconOnly ? '10px 8px' : '14px 12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-          {/* Universal Agent */}
-          <button
-            onClick={openAgent}
-            title={isIconOnly ? 'Universal Agent (⌘K)' : undefined}
-            style={{
-              width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
-              background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
-              border: '1px solid rgba(59,130,246,0.22)', borderRadius: '8px',
-              cursor: 'pointer', fontSize: '12.5px', fontWeight: '600',
-              color: 'var(--accent-primary)',
-              display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px',
-              transition: 'all 0.2s',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center' }}>{Icons.chat()}</span>
-            {!isIconOnly && (
-              <>
-                <span>Universal Agent</span>
-                <span style={{ marginLeft: 'auto', fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
-              </>
+          {/* InzIQ — ambient voice agent */}
+          <div style={{ position: 'relative', width: '100%' }}>
+            {wakeState !== WS.IDLE && (
+              <div
+                className={
+                  wakeState === WS.TRIGGERED ? 'inziq-ring inziq-ring-triggered' :
+                  wakeState === WS.DICTATING  ? 'inziq-ring inziq-ring-dictating'  :
+                                                'inziq-ring inziq-ring-passive'
+                }
+                aria-hidden="true"
+              />
             )}
-          </button>
+            <button
+              onClick={openAgent}
+              title={isIconOnly ? 'InzIQ (⌘K)' : undefined}
+              style={{
+                width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
+                border: `1px solid ${wakeState !== WS.IDLE ? 'rgba(99,102,241,0.4)' : 'rgba(59,130,246,0.22)'}`,
+                borderRadius: '8px', cursor: 'pointer', fontSize: '12.5px', fontWeight: '600',
+                color: 'var(--accent-primary)',
+                display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px',
+                transition: 'all 0.2s', position: 'relative', zIndex: 1,
+              }}
+            >
+              <span style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                {wakeState === WS.DICTATING ? (
+                  <span className="inziq-wave">
+                    {[0,1,2,3,4].map(i => (
+                      <span key={i} className="inziq-wave-bar" style={{ animationDelay: `${i * 0.1}s` }} />
+                    ))}
+                  </span>
+                ) : Icons.chat()}
+                {wakeState !== WS.IDLE && (
+                  <span className={`inziq-status-dot${
+                    wakeState === WS.DICTATING  ? ' inziq-dot-hot' :
+                    wakeState === WS.TRIGGERED  ? ' inziq-dot-triggered' : ''
+                  }`} />
+                )}
+              </span>
+              {!isIconOnly && (
+                <>
+                  <span>InzIQ</span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    {wakeState !== WS.IDLE && <span className="inziq-live-badge">LIVE</span>}
+                    <span style={{ fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
+                  </span>
+                </>
+              )}
+            </button>
+
+            {!isIconOnly && wakeSupported && (
+              <button
+                onClick={toggleWakeWord}
+                className={`inziq-wake-toggle${wakeState !== WS.IDLE ? ' inziq-wake-on' : ''}`}
+                title={wakeState !== WS.IDLE ? "Hey InzIQ active — click to disable" : "Enable 'Hey InzIQ' wake word"}
+              >
+                {wakeState === WS.IDLE && (
+                  <><span>🎤</span><span>Enable Hey InzIQ</span></>
+                )}
+                {wakeState === WS.PASSIVE && (
+                  <><span>🛡</span><span>Listening locally…</span></>
+                )}
+                {wakeState === WS.TRIGGERED && (
+                  <><span>⚡</span><span>InzIQ!</span></>
+                )}
+                {wakeState === WS.DICTATING && (
+                  <>
+                    <span className="inziq-wave-sm">
+                      {[0,1,2].map(i => (
+                        <span key={i} className="inziq-wave-bar-sm" style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </span>
+                    <span>Dictating…</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
 
           {/* Log Out */}
           <Link to="/" onClick={handleSignOut} style={{ textDecoration: 'none' }}>
@@ -658,7 +728,7 @@ const DashboardView = () => {
           onMouseEnter={e => { e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 6px 20px rgba(59,130,246,0.45)'; }}
           onMouseLeave={e => { e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 4px 14px rgba(59,130,246,0.35)'; }}
         >
-          {Icons.chat(14)} Universal Agent
+          {Icons.chat(14)} InzIQ
           <span style={{ fontSize: '10px', fontFamily: 'monospace', opacity: 0.75, background: 'rgba(255,255,255,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
         </button>
       </div>
