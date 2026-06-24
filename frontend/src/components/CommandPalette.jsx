@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 
 // ═══════════════════════════════════════════════════════
@@ -596,6 +596,57 @@ const AGENT_CSS = `
   .svm-dest-label { font-size: 11px; color: #475569; }
   .svm-dest-path { font-size: 11.5px; color: #7EB3F5; font-weight: 600; }
 
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  /* ── Mini vault folder cards (Save Modal directory browser) ─── */
+  .svm-folder-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 7px;
+  }
+  .svm-folder-card {
+    display: flex; align-items: center; gap: 9px; padding: 9px 11px;
+    background: rgba(59,130,246,.035); border: 1px solid rgba(59,130,246,.12);
+    border-radius: 8px; cursor: pointer; transition: all 0.17s ease; min-width: 0;
+    text-align: left;
+  }
+  .svm-folder-card:hover {
+    background: rgba(59,130,246,.1); border-color: rgba(59,130,246,.3);
+    transform: translateY(-1px); box-shadow: 0 4px 14px rgba(59,130,246,.1);
+  }
+  .svm-folder-card-icon { font-size: 18px; flex-shrink: 0; line-height: 1; }
+  .svm-folder-card-info { flex: 1; min-width: 0; }
+  .svm-folder-card-name {
+    font-size: 12.5px; font-weight: 600; color: #E2E8F0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .svm-folder-card-meta { font-size: 10px; color: #334155; margin-top: 1px; }
+  .svm-folder-card-chevron { color: #253244; flex-shrink: 0; transition: all .15s; }
+  .svm-folder-card:hover .svm-folder-card-chevron { color: #3B82F6; transform: translateX(3px); }
+
+  /* ── Section divider between folders and docs ────────────────── */
+  .svm-grid-section-label {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: #1E293B; padding: 0 2px; margin-bottom: 5px;
+  }
+
+  /* ── Drill-down micro-animations ─────────────────────────────── */
+  @keyframes svm-drill-in {
+    from { opacity: 0; transform: translateX(18px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes svm-drill-out {
+    from { opacity: 0; transform: translateX(-18px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .svm-nav-in  { animation: svm-drill-in  0.2s cubic-bezier(0.16,1,0.3,1); }
+  .svm-nav-out { animation: svm-drill-out 0.2s cubic-bezier(0.16,1,0.3,1); }
+
+  /* ── Empty folder state in modal ─────────────────────────────── */
+  .svm-vault-empty {
+    padding: 22px 14px; text-align: center;
+    border: 1px dashed rgba(255,255,255,.06); border-radius: 8px;
+    color: #334155; font-size: 12px; line-height: 1.6;
+  }
+
   .svm-btn-primary {
     padding: 8px 20px; border-radius: 7px; background: #3B82F6;
     border: none; color: #fff; font-size: 13px; font-weight: 600;
@@ -843,6 +894,11 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   const [saveFormat,     setSaveFormat]    = useState('native');
   const newFolderInputRef = useRef(null);
 
+  // Navigation animation state (mirrors VaultView navKey/navDir pattern)
+  const [navKey, setNavKey] = useState(0);
+  const [navDir, setNavDir] = useState('');
+  const [creatingFolderLoading, setCreatingFolderLoading] = useState(false);
+
   const toggleTag = (tag) =>
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
 
@@ -894,7 +950,22 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
 
   const destFolderId = isAtRoot ? null : currentView.id;
 
+  // Per-folder counts for card metadata
+  const docCountInFolder = useMemo(() => {
+    const m = {};
+    flatDocs.forEach(d => { if (d.folder_id != null) m[d.folder_id] = (m[d.folder_id] || 0) + 1; });
+    return m;
+  }, [flatDocs]);
+
+  const childFolderCount = useMemo(() => {
+    const m = {};
+    flatFolders.forEach(f => { if (f.parent_id != null) m[f.parent_id] = (m[f.parent_id] || 0) + 1; });
+    return m;
+  }, [flatFolders]);
+
   const enterFolder = (folder) => {
+    setNavDir('in');
+    setNavKey(k => k + 1);
     setNavStack(prev => [...prev, { id: folder.id, name: folder.name }]);
     setIsCreating(false);
     setNewFolderName('');
@@ -902,6 +973,8 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   };
 
   const navigateTo = (index) => {
+    setNavDir('out');
+    setNavKey(k => k + 1);
     setNavStack(prev => prev.slice(0, index + 1));
     setIsCreating(false);
     setNewFolderName('');
@@ -910,8 +983,9 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
 
   const handleCreateFolder = async () => {
     const name = newFolderName.trim();
-    if (!name) return;
+    if (!name || creatingFolderLoading) return;
     setNewFolderError('');
+    setCreatingFolderLoading(true);
     const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     try {
       const res = await fetch(`${apiBase}/api/vault/folders`, {
@@ -921,13 +995,11 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
       });
       const data = await res.json();
       if (!res.ok || data.error) { setNewFolderError(data.message || 'Could not create folder.'); return; }
-      const newNode = { id: data.id, name: data.name, parent_id: data.parent_id ?? null, children: [] };
-      setFlatFolders(prev => [...prev, newNode]);
+      setFlatFolders(prev => [...prev, { id: data.id, name: data.name, parent_id: data.parent_id ?? null }]);
       setNewFolderName('');
       setIsCreating(false);
-      // Do NOT auto-navigate — let the row appear in the current view so the user
-      // can see it rendered before deciding to enter it.
     } catch { setNewFolderError('Network error. Try again.'); }
+    finally { setCreatingFolderLoading(false); }
   };
 
   // Last-used folder shortcut
@@ -1084,62 +1156,81 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
               ))}
             </div>
 
-            {/* Explorer — folders then documents, like MS Word Save As */}
-            <div className="svm-tree" style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {/* Mini-Vault directory browser — card grid + drill animations */}
+            <div className="svm-tree" style={{ maxHeight: 260, overflowY: 'auto', paddingRight: 2 }}>
               {loadingFolders ? (
-                <div style={{ padding: '14px 10px', fontSize: 12, color: '#334155', textAlign: 'center' }}>
-                  <svg width="14" height="14" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6, opacity: .7 }}>
-                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                  </svg>
-                  Loading…
-                </div>
-              ) : (currentChildren.length === 0 && currentDocs.length === 0) ? (
-                <div className="svm-explorer-empty">
-                  {isAtRoot
-                    ? 'Vault is empty — create a folder above or save here at root'
-                    : 'Empty folder — save here or create a sub-folder above'}
+                <div style={{ padding: '16px 10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 12, color: '#334155' }}>
+                  <div style={{ width: 13, height: 13, border: '2px solid rgba(59,130,246,.2)', borderTopColor: '#3B82F6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  Loading vault…
                 </div>
               ) : (
-                <div className="svm-explorer">
-                  {/* ── Folders ── */}
-                  {currentChildren.length > 0 && (
+                <div
+                  key={navKey}
+                  className={navDir === 'in' ? 'svm-nav-in' : navDir === 'out' ? 'svm-nav-out' : ''}
+                >
+                  {currentChildren.length === 0 && currentDocs.length === 0 ? (
+                    <div className="svm-vault-empty">
+                      {isAtRoot
+                        ? <>📂 Vault is empty — create a folder or save directly at root</>
+                        : <>📁 This folder is empty — save here or add a sub-folder</>}
+                    </div>
+                  ) : (
                     <>
-                      {currentDocs.length > 0 && (
-                        <div className="svm-explorer-section-label">Folders</div>
-                      )}
-                      {currentChildren.map(folder => (
-                        <button
-                          key={folder.id}
-                          type="button"
-                          className="svm-explorer-row"
-                          onClick={() => enterFolder(folder)}
-                        >
-                          <span style={{ fontSize: 14, flexShrink: 0 }}>📁</span>
-                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{folder.name}</span>
-                          <svg className="svm-row-chevron" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                            <polyline points="9 18 15 12 9 6"/>
-                          </svg>
-                        </button>
-                      ))}
-                    </>
-                  )}
-                  {/* ── Existing Documents ── */}
-                  {currentDocs.length > 0 && (
-                    <>
-                      <div className="svm-explorer-section-label">
-                        {currentChildren.length > 0 ? 'Existing Documents' : 'Documents'}
-                      </div>
-                      {currentDocs.map(doc => (
-                        <div key={doc.id} className="svm-explorer-doc" title={doc.title}>
-                          <span style={{ fontSize: 13, flexShrink: 0, opacity: .65 }}>
-                            {doc.file_format === 'pdf' ? '📋' : doc.file_format === 'docx' ? '📝' : '📄'}
-                          </span>
-                          <span className="svm-explorer-doc-name">{doc.title}</span>
-                          {doc.doc_type && (
-                            <span className="svm-explorer-doc-type">{doc.doc_type}</span>
+                      {/* ── Folder card grid ── */}
+                      {currentChildren.length > 0 && (
+                        <div style={{ marginBottom: currentDocs.length > 0 ? 12 : 0 }}>
+                          {currentDocs.length > 0 && (
+                            <div className="svm-grid-section-label">Folders</div>
                           )}
+                          <div className="svm-folder-grid">
+                            {currentChildren.map(folder => {
+                              const docs  = docCountInFolder[folder.id]  || 0;
+                              const subs  = childFolderCount[folder.id]  || 0;
+                              const meta  = [
+                                docs  > 0 ? `${docs} doc${docs !== 1 ? 's' : ''}`   : null,
+                                subs  > 0 ? `${subs} folder${subs !== 1 ? 's' : ''}` : null,
+                              ].filter(Boolean).join(' · ');
+                              return (
+                                <div
+                                  key={folder.id}
+                                  className="svm-folder-card"
+                                  onClick={() => enterFolder(folder)}
+                                >
+                                  <span className="svm-folder-card-icon">📁</span>
+                                  <div className="svm-folder-card-info">
+                                    <div className="svm-folder-card-name">{folder.name}</div>
+                                    {meta && <div className="svm-folder-card-meta">{meta}</div>}
+                                  </div>
+                                  <svg className="svm-folder-card-chevron" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                    <polyline points="9 18 15 12 9 6"/>
+                                  </svg>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      ))}
+                      )}
+                      {/* ── Existing documents (reference context only) ── */}
+                      {currentDocs.length > 0 && (
+                        <div>
+                          <div className="svm-grid-section-label">
+                            {currentChildren.length > 0 ? 'Existing Documents' : 'Documents'}
+                          </div>
+                          <div className="svm-explorer">
+                            {currentDocs.map(doc => (
+                              <div key={doc.id} className="svm-explorer-doc" title={doc.title}>
+                                <span style={{ fontSize: 13, flexShrink: 0, opacity: .6 }}>
+                                  {doc.file_format === 'pdf' ? '📋' : doc.file_format === 'docx' ? '📝' : '📄'}
+                                </span>
+                                <span className="svm-explorer-doc-name">{doc.title}</span>
+                                {doc.doc_type && (
+                                  <span className="svm-explorer-doc-type">{doc.doc_type}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1148,10 +1239,14 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
 
             {/* Inline new-folder creator */}
             {isCreating && (
-              <div className="svm-new-folder-row">
-                <svg width="12" height="12" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                </svg>
+              <div className="svm-new-folder-row" style={{ marginTop: 8 }}>
+                {creatingFolderLoading ? (
+                  <div style={{ width: 12, height: 12, border: '2px solid rgba(59,130,246,.2)', borderTopColor: '#3B82F6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                ) : (
+                  <svg width="12" height="12" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                )}
                 <input
                   ref={newFolderInputRef}
                   className="svm-new-folder-input"
@@ -1162,14 +1257,15 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                     if (e.key === 'Enter') handleCreateFolder();
                     if (e.key === 'Escape') { setIsCreating(false); setNewFolderName(''); }
                   }}
+                  disabled={creatingFolderLoading}
                 />
                 <button
                   type="button"
                   onClick={handleCreateFolder}
-                  disabled={!newFolderName.trim()}
-                  style={{ background: '#3B82F6', border: 'none', color: '#fff', padding: '3px 10px', borderRadius: 4, fontSize: 11.5, cursor: newFolderName.trim() ? 'pointer' : 'not-allowed', opacity: newFolderName.trim() ? 1 : .45, flexShrink: 0 }}
+                  disabled={!newFolderName.trim() || creatingFolderLoading}
+                  style={{ background: '#3B82F6', border: 'none', color: '#fff', padding: '3px 10px', borderRadius: 4, fontSize: 11.5, cursor: (!newFolderName.trim() || creatingFolderLoading) ? 'not-allowed' : 'pointer', opacity: (!newFolderName.trim() || creatingFolderLoading) ? .45 : 1, flexShrink: 0 }}
                 >
-                  Create
+                  {creatingFolderLoading ? '…' : 'Create'}
                 </button>
                 <button
                   type="button"

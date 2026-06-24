@@ -341,6 +341,17 @@ const vaultStyles = `
   .form-row > * { flex: 1; }
   .form-group { display: flex; flex-direction: column; gap: 6px; }
 
+  /* ── Danger / destructive action button ─────────────────────────────────── */
+  .btn-danger {
+    background: transparent; color: #F87171;
+    border: 1px solid rgba(239,68,68,0.22); border-radius: 7px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; white-space: nowrap;
+    display: flex; align-items: center; gap: 6px; font-family: var(--font-sans);
+  }
+  .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.07); border-color: rgba(239,68,68,0.42); color: #EF4444; }
+  .btn-danger:disabled { opacity: 0.38; cursor: not-allowed; }
+
   /* ── Matter Blueprint: empty-state hero ─────────────────────────────────── */
   @keyframes bp-glow {
     0%, 100% { opacity: 0.35; transform: scale(1); }
@@ -897,6 +908,43 @@ export default function VaultView({ targetFolderId = null }) {
     setTimeout(() => setBlueprintToast(null), 6500);
   };
 
+  // ── Clear Workspace: bulk-delete all folders in current directory ─────────
+  // Strategy: Promise.allSettled() — existing backend recursive_delete handles
+  // full subtree per folder. Partial failure is accepted: succeeded IDs are pruned
+  // from local state, failed ones remain. loadCurrentView() then re-syncs from server.
+  const handleClearWorkspace = async () => {
+    if (currentSubFolders.length === 0) return;
+    const count = currentSubFolders.length;
+    const loc = folderPath.length > 0
+      ? `"${folderPath[folderPath.length - 1].name}"`
+      : 'this directory';
+    if (!window.confirm(
+      `Delete all ${count} folder${count !== 1 ? 's' : ''} in ${loc}?\n\n` +
+      `All subfolders and documents inside them will be permanently removed.\n\nThis cannot be undone.`
+    )) return;
+    setIsInitializing(true);
+    const token = apiToken();
+    const results = await Promise.allSettled(
+      currentSubFolders.map(f =>
+        fetch(`${API_BASE}/api/vault/folders/${f.id}`, {
+          method: 'DELETE',
+          headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        })
+      )
+    );
+    const deletedIds = new Set(
+      results.map((r, i) => r.status === 'fulfilled' ? currentSubFolders[i].id : null).filter(Boolean)
+    );
+    const getAllDesc = (id) => {
+      const kids = folders.filter(f => f.parent_id === id).map(f => f.id);
+      return kids.reduce((acc, cid) => [...acc, cid, ...getAllDesc(cid)], []);
+    };
+    const allGone = new Set([...deletedIds, ...[...deletedIds].flatMap(id => getAllDesc(id))]);
+    setFolders(prev => prev.filter(f => !allGone.has(f.id)));
+    await loadCurrentView();
+    setIsInitializing(false);
+  };
+
   const loadCases = async () => {
     setLoadingCases(true);
     const res = await fetchTrackedCases();
@@ -1143,6 +1191,19 @@ export default function VaultView({ targetFolderId = null }) {
         </div>
         {activeTab === 'vault' && (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {currentSubFolders.length > 0 && !isInitializing && (
+              <button
+                className="btn-danger"
+                onClick={handleClearWorkspace}
+                title={`Delete all ${currentSubFolders.length} folder${currentSubFolders.length !== 1 ? 's' : ''} in current directory`}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+                Clear Workspace
+              </button>
+            )}
             <button
               className="btn-secondary"
               onClick={() => { setIsCreatingFolder(true); setNewFolderName(''); }}
