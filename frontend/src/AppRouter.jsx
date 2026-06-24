@@ -110,11 +110,21 @@ const Icons = {
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
     </svg>
   ),
+  chevronLeft: (w = 14) => (
+    <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  ),
+  chevronRight: (w = 14) => (
+    <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>
+  ),
 };
 
 // ── SIDEBAR NAV ITEM ───────────────────────────────────────────────────────────
 const NavItem = ({ to, icon, label, isActive, onClick }) => (
-  <Link to={to} onClick={onClick} className={`sidebar-nav-item${isActive ? ' active' : ''}`}>
+  <Link to={to} onClick={onClick} title={label} className={`sidebar-nav-item${isActive ? ' active' : ''}`}>
     <span className="nav-icon">{icon}</span>
     <span className="nav-label">{label}</span>
   </Link>
@@ -199,6 +209,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const isIconOnly = isCollapsed || focusMode;
 
   // ── Sidebar case list — fetched live from the real API ──────────────────
   const [sidebarCases, setSidebarCases] = useState([]);
@@ -233,24 +245,37 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       <div className={`sidebar-overlay ${isSidebarOpen ? 'visible' : ''}`} onClick={closeSidebar} />
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
+      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed' : ''}`}>
 
         {/* Logo */}
-        <div style={{ padding: '18px 16px 16px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '34px', height: '34px',
-              background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
-              borderRadius: '9px', flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(59,130,246,0.35)',
-            }}>
-              {Icons.scales(18)}
+        <div style={{ padding: isIconOnly ? '14px 10px' : '18px 16px 16px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: isIconOnly ? 'center' : 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <div style={{
+                width: '34px', height: '34px',
+                background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
+                borderRadius: '9px', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(59,130,246,0.35)',
+              }}>
+                {Icons.scales(18)}
+              </div>
+              {!isIconOnly && (
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: 'white', letterSpacing: '-0.2px' }}>LexAmplify</div>
+                  <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Enterprise Console</div>
+                </div>
+              )}
             </div>
-            <div>
-              <div style={{ fontSize: '15px', fontWeight: '700', color: 'white', letterSpacing: '-0.2px' }}>LexAmplify</div>
-              <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Enterprise Console</div>
-            </div>
+            {!focusMode && (
+              <button
+                className="sidebar-collapse-btn"
+                onClick={() => setIsCollapsed(c => !c)}
+                title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {isCollapsed ? Icons.chevronRight(12) : Icons.chevronLeft(12)}
+              </button>
+            )}
           </div>
         </div>
 
@@ -265,7 +290,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           <NavItem to="/war-room"          icon={Icons.gavel()}     label="Virtual Courtroom" isActive={p === '/war-room'}         onClick={closeSidebar} />
 
           {/* Live case listing from API */}
-          {sidebarCases.length > 0 && (
+          {!isIconOnly && sidebarCases.length > 0 && (
             <>
               <div style={{ margin: '14px 0 6px', padding: '0 24px' }}>
                 <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.9px' }}>
@@ -297,59 +322,66 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         </nav>
 
         {/* Bottom Controls */}
-        <div style={{ padding: '14px 12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
+        <div style={{ padding: isIconOnly ? '10px 8px' : '14px 12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
           {/* Universal Agent */}
           <button
             onClick={openAgent}
+            title={isIconOnly ? 'Universal Agent (⌘K)' : undefined}
             style={{
-              width: '100%', padding: '9px 12px',
+              width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
               background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
               border: '1px solid rgba(59,130,246,0.22)', borderRadius: '8px',
               cursor: 'pointer', fontSize: '12.5px', fontWeight: '600',
               color: 'var(--accent-primary)',
-              display: 'flex', alignItems: 'center', gap: '8px',
+              display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px',
               transition: 'all 0.2s',
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center' }}>{Icons.chat()}</span>
-            <span>Universal Agent</span>
-            <span style={{ marginLeft: 'auto', fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
+            {!isIconOnly && (
+              <>
+                <span>Universal Agent</span>
+                <span style={{ marginLeft: 'auto', fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
+              </>
+            )}
           </button>
 
           {/* Log Out */}
           <Link to="/" onClick={handleSignOut} style={{ textDecoration: 'none' }}>
-            <button style={{
-              width: '100%', padding: '8px 12px',
+            <button title={isIconOnly ? 'Log Out' : undefined} style={{
+              width: '100%', padding: isIconOnly ? '8px' : '8px 12px',
               background: 'transparent', color: 'var(--text-muted)',
               border: '1px solid var(--border-subtle)', borderRadius: '7px',
               cursor: 'pointer', fontSize: '12.5px',
-              display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s',
+              display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px', transition: 'all 0.15s',
             }}>
               <span style={{ display: 'flex', alignItems: 'center', opacity: 0.7 }}>{Icons.logout()}</span>
-              Log Out
+              {!isIconOnly && 'Log Out'}
             </button>
           </Link>
 
-          {/* Focus Mode toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px', fontSize: '12px', color: 'var(--text-muted)' }}>
-            <span>Focus Mode</span>
-            <div
-              onClick={() => setFocusMode(f => !f)}
-              style={{
-                width: '32px', height: '17px', borderRadius: '10px', cursor: 'pointer',
-                background: focusMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.1)', position: 'relative', transition: 'background 0.2s',
-              }}
-            >
-              <div style={{
-                position: 'absolute', top: '2px',
-                left: focusMode ? '15px' : '2px',
-                width: '11px', height: '11px', borderRadius: '50%',
-                background: 'white', transition: 'left 0.2s',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-              }} />
+          {/* Focus Mode toggle — hidden when icon-only (Ctrl+\ still works) */}
+          {!isIconOnly && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px', fontSize: '12px', color: 'var(--text-muted)' }}>
+              <span>Focus Mode</span>
+              <div
+                onClick={() => setFocusMode(f => !f)}
+                style={{
+                  width: '32px', height: '17px', borderRadius: '10px', cursor: 'pointer',
+                  background: focusMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)',
+                  border: '1px solid rgba(255,255,255,0.1)', position: 'relative', transition: 'background 0.2s',
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: '2px',
+                  left: focusMode ? '15px' : '2px',
+                  width: '11px', height: '11px', borderRadius: '50%',
+                  background: 'white', transition: 'left 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                }} />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </aside>
 
@@ -361,7 +393,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           style={{
             position: 'fixed',
             bottom: '28px',
-            left: '24px',
+            left: '80px',
             zIndex: 999,
             display: 'flex',
             alignItems: 'center',
