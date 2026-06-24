@@ -340,6 +340,118 @@ const vaultStyles = `
   .form-row { display: flex; gap: 16px; }
   .form-row > * { flex: 1; }
   .form-group { display: flex; flex-direction: column; gap: 6px; }
+
+  /* ── Matter Blueprint: empty-state hero ─────────────────────────────────── */
+  @keyframes bp-glow {
+    0%, 100% { opacity: 0.35; transform: scale(1); }
+    50%       { opacity: 0.65; transform: scale(1.06); }
+  }
+  @keyframes bp-cta-pulse {
+    0%, 100% { box-shadow: 0 4px 20px rgba(59,130,246,0.32); }
+    60%       { box-shadow: 0 4px 32px rgba(59,130,246,0.6), 0 0 0 6px rgba(59,130,246,0.08); }
+  }
+  .vault-empty-hero {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 420px; border-radius: 14px; padding: 52px 32px 44px; text-align: center;
+    background: radial-gradient(ellipse at 50% -10%, rgba(59,130,246,0.09) 0%, transparent 65%),
+                linear-gradient(180deg, rgba(23,28,38,1) 0%, rgba(13,17,23,1) 100%);
+    border: 1px solid rgba(59,130,246,0.13); position: relative; overflow: hidden;
+  }
+  .vault-empty-hero::before {
+    content: ''; position: absolute; top: -60px; left: 50%; transform: translateX(-50%);
+    width: 340px; height: 340px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, rgba(59,130,246,0.07) 0%, transparent 70%);
+    animation: bp-glow 5s ease-in-out infinite;
+  }
+  .vault-empty-icon-ring {
+    width: 76px; height: 76px; border-radius: 50%; position: relative; z-index: 1;
+    background: linear-gradient(135deg, rgba(59,130,246,0.14) 0%, rgba(29,78,216,0.06) 100%);
+    border: 1px solid rgba(59,130,246,0.28);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 22px;
+  }
+  .vault-empty-title {
+    font-size: 21px; font-weight: 700; color: white; margin-bottom: 9px;
+    position: relative; z-index: 1; letter-spacing: -0.3px;
+  }
+  .vault-empty-sub {
+    font-size: 13px; color: #64748B; max-width: 400px;
+    line-height: 1.7; margin-bottom: 28px; position: relative; z-index: 1;
+  }
+  .vault-blueprint-tags {
+    display: flex; flex-wrap: wrap; gap: 7px; justify-content: center;
+    margin-bottom: 30px; position: relative; z-index: 1; max-width: 520px;
+  }
+  .vault-blueprint-tag {
+    font-size: 11.5px; color: #475569;
+    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06);
+    padding: 4px 11px; border-radius: 20px; font-weight: 500;
+  }
+  .vault-btn-blueprint-hero {
+    position: relative; z-index: 1;
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 14px 30px; border-radius: 10px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 700; color: white; font-family: var(--font-sans);
+    background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+    animation: bp-cta-pulse 2.8s ease-in-out infinite; transition: all 0.2s;
+  }
+  .vault-btn-blueprint-hero:hover:not(:disabled) {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #60A5FA 0%, #2563EB 100%);
+    animation: none; box-shadow: 0 10px 32px rgba(59,130,246,0.55);
+  }
+  .vault-btn-blueprint-hero:disabled { opacity: 0.65; cursor: not-allowed; animation: none; }
+  .vault-empty-secondary {
+    display: flex; gap: 14px; margin-top: 18px; position: relative; z-index: 1; align-items: center;
+  }
+  .vault-empty-link {
+    background: none; border: none; color: #334155; font-size: 12px; cursor: pointer;
+    font-family: var(--font-sans); text-decoration: underline; text-underline-offset: 2px; transition: color 0.15s;
+  }
+  .vault-empty-link:hover { color: #64748B; }
+  .vault-empty-sep { color: #1E293B; font-size: 11px; }
+
+  /* ── Blueprint inline button (breadcrumb / header) ────────────────────── */
+  .vault-btn-blueprint-inline {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; border-radius: 6px; cursor: pointer;
+    font-size: 11.5px; font-weight: 600; font-family: var(--font-sans);
+    color: #7EB3F5; background: rgba(59,130,246,0.07);
+    border: 1px solid rgba(59,130,246,0.18); transition: all 0.15s; white-space: nowrap;
+  }
+  .vault-btn-blueprint-inline:hover:not(:disabled) {
+    background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.38); color: #BAD6FF;
+  }
+  .vault-btn-blueprint-inline:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ── Blueprint shimmer skeleton rows ──────────────────────────────────── */
+  @keyframes shimmer {
+    0%   { background-position: -600px 0; }
+    100% { background-position:  600px 0; }
+  }
+  .vault-shimmer-row {
+    height: 58px; border-radius: 9px; margin-bottom: 9px;
+    background: linear-gradient(90deg,
+      rgba(255,255,255,0.018) 25%,
+      rgba(59,130,246,0.055) 50%,
+      rgba(255,255,255,0.018) 75%);
+    background-size: 1200px 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* ── Blueprint toast notification ─────────────────────────────────────── */
+  .vault-toast {
+    position: fixed; bottom: 28px; right: 28px; z-index: 9999;
+    padding: 13px 18px; border-radius: 10px; max-width: 360px;
+    font-size: 12.5px; font-weight: 500; font-family: var(--font-sans);
+    box-shadow: 0 10px 36px rgba(0,0,0,0.45); animation: fadeIn 0.22s ease;
+    display: flex; align-items: flex-start; gap: 11px; line-height: 1.5;
+  }
+  .vault-toast-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .vault-toast-success { background: #0A1F15; border: 1px solid rgba(16,185,129,0.28); color: #6EE7B7; }
+  .vault-toast-partial { background: #1E1608; border: 1px solid rgba(245,158,11,0.28); color: #FCD34D; }
+  .vault-toast-error   { background: #1A0A0A; border: 1px solid rgba(239,68,68,0.28);  color: #FCA5A5; }
+  .vault-toast-title   { font-weight: 700; margin-bottom: 2px; }
+  .vault-toast-body    { font-size: 11.5px; opacity: 0.8; }
 `;
 
 const DOC_TYPE_STYLES = {
@@ -366,8 +478,24 @@ function formatDate(str) {
   catch { return str; }
 }
 
+// ─── Matter Blueprint Taxonomy ───────────────────────────────────────────────
+// 7-folder structure covering the full lifecycle of complex Indian litigation:
+// Court Filings (stamped record) → Pleadings & Drafts (pre-filing) →
+// Interlocutory Applications (IA/stay track) → Evidence & Exhibits (factual matrix) →
+// Correspondence (notice trail) → Research & Precedents (legal backbone) →
+// Fee & Billing (matter admin) — mirrors how senior advocates physically organise case bundles.
+const MATTER_BLUEPRINT_FOLDERS = [
+  { name: 'Court Filings',              icon: '⚖️' },
+  { name: 'Pleadings & Drafts',         icon: '📝' },
+  { name: 'Interlocutory Applications', icon: '📌' },
+  { name: 'Evidence & Exhibits',        icon: '🗂️' },
+  { name: 'Correspondence',             icon: '✉️' },
+  { name: 'Research & Precedents',      icon: '🔬' },
+  { name: 'Fee & Billing',              icon: '💼' },
+];
+
 // ─── Breadcrumb Component ────────────────────────────────────────────────────
-function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo, onNewFolder }) {
+function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo, onNewFolder, onBlueprint, isInitializing, showBlueprintBtn }) {
   return (
     <div className="vault-breadcrumb">
       <div className="vault-bc-left">
@@ -387,12 +515,22 @@ function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo, onNewFolder })
           </React.Fragment>
         ))}
       </div>
-      <button className="vault-bc-new-btn" onClick={onNewFolder}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        New Folder
-      </button>
+      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+        {showBlueprintBtn && (
+          <button className="vault-btn-blueprint-inline" onClick={onBlueprint} disabled={isInitializing}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            {isInitializing ? 'Initializing…' : '⚡ Blueprint'}
+          </button>
+        )}
+        <button className="vault-bc-new-btn" onClick={onNewFolder}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New Folder
+        </button>
+      </div>
     </div>
   );
 }
@@ -580,6 +718,10 @@ export default function VaultView({ targetFolderId = null }) {
   const [deletingFolderId,  setDeletingFolderId] = useState(null);
   const [movingFolder,      setMovingFolder]     = useState(null); // { id, name, parent_id }
 
+  // Matter Blueprint engine
+  const [isInitializing,  setIsInitializing]  = useState(false);
+  const [blueprintToast,  setBlueprintToast]  = useState(null); // { type: 'success'|'partial'|'error', failed: string[] }
+
   // Case Tracker
   const [cases, setCases]               = useState([]);
   const [loadingCases, setLoadingCases] = useState(false);
@@ -701,6 +843,58 @@ export default function VaultView({ targetFolderId = null }) {
     } finally {
       setCreatingFolder(false);
     }
+  };
+
+  // ── Combined refresh (documents + folders) ────────────────────────────────
+  const loadCurrentView = () => Promise.all([loadDocuments(), loadFolders()]);
+
+  // ── Matter Blueprint: batch-create standard litigation folders ─────────────
+  // Strategy: Promise.allSettled() — all 7 POSTs fire concurrently; no short-circuit
+  // on failure. Partial success is preserved (optimistic local update) and surfaced
+  // via a toast listing the failed names. No rollback — a partial structure is better
+  // than nothing; the lawyer can re-click Blueprint to fill gaps idempotently.
+  const handleInitializeBlueprint = async () => {
+    if (isInitializing) return;
+    setIsInitializing(true);
+    setBlueprintToast(null);
+    const token = apiToken();
+
+    const results = await Promise.allSettled(
+      MATTER_BLUEPRINT_FOLDERS.map(folder =>
+        fetch(`${API_BASE}/api/vault/folders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+          body: JSON.stringify({ name: folder.name, parent_id: currentFolderId }),
+        }).then(async res => {
+          const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data.message || `Failed: ${folder.name}`);
+          return { id: data.id, name: folder.name, parent_id: data.parent_id ?? null };
+        })
+      )
+    );
+
+    const succeeded = results
+      .map((r, i) => r.status === 'fulfilled' ? r.value : null)
+      .filter(Boolean);
+    const failed = results
+      .map((r, i) => r.status === 'rejected' ? MATTER_BLUEPRINT_FOLDERS[i].name : null)
+      .filter(Boolean);
+
+    if (succeeded.length > 0) {
+      setFolders(prev => [...prev, ...succeeded]);
+    }
+
+    if (failed.length === 0) {
+      setBlueprintToast({ type: 'success', failed: [] });
+    } else if (succeeded.length > 0) {
+      setBlueprintToast({ type: 'partial', failed });
+    } else {
+      setBlueprintToast({ type: 'error', failed });
+    }
+
+    await loadCurrentView();
+    setIsInitializing(false);
+    setTimeout(() => setBlueprintToast(null), 6500);
   };
 
   const loadCases = async () => {
@@ -1028,12 +1222,15 @@ export default function VaultView({ targetFolderId = null }) {
             )}
           </div>
 
-          {/* Breadcrumb — always visible, context-aware New Folder on right */}
+          {/* Breadcrumb — always visible, context-aware New Folder + Blueprint on right */}
           <Breadcrumb
             folderPath={folderPath}
             onNavigateToRoot={navigateToRoot}
             onNavigateTo={navigateToBreadcrumb}
             onNewFolder={() => { setIsCreatingFolder(true); setNewFolderName(''); }}
+            onBlueprint={handleInitializeBlueprint}
+            isInitializing={isInitializing}
+            showBlueprintBtn={!isInitializing && (currentSubFolders.length > 0 || currentDocs.length > 0)}
           />
 
           {/* Search bar */}
@@ -1136,20 +1333,91 @@ export default function VaultView({ targetFolderId = null }) {
                 </div>
               )}
 
-              {/* Document cards */}
-              {currentSubFolders.length === 0 && currentDocs.length === 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '180px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '10px', padding: '32px', color: 'var(--text-dark-muted)', gap: '10px' }}>
-                  <span style={{ fontSize: '24px' }}>{isSearching ? '🔍' : (folderPath.length > 0 ? '📁' : '🗄️')}</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'white' }}>
-                    {isSearching ? `No results for "${searchTerm}"` : (folderPath.length > 0 ? 'This folder is empty' : 'No Documents in Vault')}
-                  </span>
-                  <span style={{ fontSize: '12px', opacity: 0.7 }}>
-                    {isSearching ? 'Try a different search term.'
-                      : folderPath.length > 0 ? 'Save documents here from the Universal Agent.'
-                      : 'Upload a document above or save a draft from the AI Legal Associate.'}
-                  </span>
+              {/* ── Blueprint shimmer: renders staggered rows during init ── */}
+              {isInitializing && !isSearching && (
+                <div style={{ marginTop: 4 }}>
+                  {MATTER_BLUEPRINT_FOLDERS.map((f, i) => (
+                    <div
+                      key={f.name}
+                      className="vault-shimmer-row"
+                      style={{ animationDelay: `${i * 0.07}s` }}
+                    />
+                  ))}
                 </div>
-              ) : (
+              )}
+
+              {/* ── Empty: search no results ───────────────────────────────── */}
+              {!isInitializing && isSearching && currentDocs.length === 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '180px', border: '1px dashed rgba(255,255,255,0.06)', borderRadius: '10px', padding: '32px', color: 'var(--text-dark-muted)', gap: '10px' }}>
+                  <span style={{ fontSize: '24px' }}>🔍</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'white' }}>No results for "{searchTerm}"</span>
+                  <span style={{ fontSize: '12px', opacity: 0.65 }}>Try a different search term or browse by folder.</span>
+                </div>
+              )}
+
+              {/* ── Empty: premium matter hero (not searching, no content) ── */}
+              {!isInitializing && !isSearching && currentSubFolders.length === 0 && currentDocs.length === 0 && (
+                <div className="vault-empty-hero">
+                  <div className="vault-empty-icon-ring">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                      <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+                    </svg>
+                  </div>
+                  <div className="vault-empty-title">
+                    {folderPath.length > 0
+                      ? `"${folderPath[folderPath.length - 1].name}" is empty`
+                      : 'Your Matter Workspace is Empty'}
+                  </div>
+                  <div className="vault-empty-sub">
+                    {folderPath.length > 0
+                      ? 'Upload documents or initialize this folder with a standard litigation structure in one click.'
+                      : 'Initialize your matter with a court-ready folder taxonomy — seven folders covering the full litigation lifecycle — or start by uploading a document.'}
+                  </div>
+                  {!folderPath.length && (
+                    <div className="vault-blueprint-tags">
+                      {MATTER_BLUEPRINT_FOLDERS.map(f => (
+                        <span key={f.name} className="vault-blueprint-tag">{f.icon} {f.name}</span>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    className="vault-btn-blueprint-hero"
+                    onClick={handleInitializeBlueprint}
+                    disabled={isInitializing}
+                  >
+                    {isInitializing ? (
+                      <>
+                        <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                        Initializing Structure…
+                      </>
+                    ) : (
+                      <>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                        Initialize Standard Matter Blueprint
+                      </>
+                    )}
+                  </button>
+                  <div className="vault-empty-secondary">
+                    <button className="vault-empty-link" onClick={() => fileInputRef.current?.click()}>
+                      Upload a document instead
+                    </button>
+                    {folderPath.length === 0 && (
+                      <>
+                        <span className="vault-empty-sep">·</span>
+                        <button className="vault-empty-link" onClick={() => { setIsCreatingFolder(true); setNewFolderName(''); }}>
+                          Create a custom folder
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Document grid (visible when not initializing and has docs) ── */}
+              {!isInitializing && currentDocs.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(275px, 1fr))', gap: '16px' }}>
                   {currentDocs.map(doc => {
                     const typeStyle = getDocTypeStyle(doc.doc_type);
@@ -1231,6 +1499,29 @@ export default function VaultView({ targetFolderId = null }) {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Blueprint toast notification (portal-rendered fixed position) ── */}
+      {blueprintToast && (
+        <div className={`vault-toast vault-toast-${blueprintToast.type}`}>
+          <span className="vault-toast-icon">
+            {blueprintToast.type === 'success' ? '✓' : blueprintToast.type === 'partial' ? '⚠' : '✕'}
+          </span>
+          <div>
+            <div className="vault-toast-title">
+              {blueprintToast.type === 'success'
+                ? `Matter Blueprint initialized — ${MATTER_BLUEPRINT_FOLDERS.length} folders created`
+                : blueprintToast.type === 'partial'
+                  ? `Partial success — ${MATTER_BLUEPRINT_FOLDERS.length - blueprintToast.failed.length} of ${MATTER_BLUEPRINT_FOLDERS.length} folders created`
+                  : 'Blueprint initialization failed'}
+            </div>
+            {blueprintToast.failed.length > 0 && (
+              <div className="vault-toast-body">
+                Failed: {blueprintToast.failed.join(', ')}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
