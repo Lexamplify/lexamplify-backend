@@ -12,6 +12,23 @@ import {
   deleteIPAsset
 } from '../services/api';
 
+// ── Curated Bare Acts — bypass proxy, open directly in new tab ───────────────
+// IndiaCode (nic.in) for new criminal codes; Indian Kanoon for legacy acts.
+const BARE_ACTS = [
+  { name: 'Constitution of India',                          url: 'https://indiankanoon.org/doc/237570/' },
+  { name: 'Bharatiya Nyaya Sanhita, 2023 (BNS)',            url: 'https://www.indiacode.nic.in/handle/123456789/20062' },
+  { name: 'Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)', url: 'https://www.indiacode.nic.in/handle/123456789/20064' },
+  { name: 'Bharatiya Sakshya Adhiniyam, 2023 (BSA)',        url: 'https://www.indiacode.nic.in/handle/123456789/20063' },
+  { name: 'Indian Penal Code, 1860 (IPC)',                  url: 'https://indiankanoon.org/doc/1569253/' },
+  { name: 'Code of Criminal Procedure, 1973 (CrPC)',        url: 'https://indiankanoon.org/doc/445276/' },
+  { name: 'Code of Civil Procedure, 1908 (CPC)',            url: 'https://indiankanoon.org/doc/74228/' },
+  { name: 'Indian Evidence Act, 1872',                      url: 'https://indiankanoon.org/doc/1167802/' },
+  { name: 'Indian Contract Act, 1872',                      url: 'https://indiankanoon.org/doc/172699/' },
+  { name: 'Transfer of Property Act, 1882',                 url: 'https://indiankanoon.org/doc/1601408/' },
+  { name: 'Specific Relief Act, 1963',                      url: 'https://indiankanoon.org/doc/1616744/' },
+  { name: 'Limitation Act, 1963',                          url: 'https://indiankanoon.org/doc/1271402/' },
+];
+
 // ── CSV-ingested High Court routing table (high courts.csv, June 2026) ──────
 // Keys match stateLabelMap. Each entry has exactly the 5 official portal links.
 const HIGH_COURT_LINKS = {
@@ -1171,88 +1188,6 @@ export default function CourtResources() {
                   )}
                 </div>
 
-                <div className="sub-tabs-wrapper">
-                  <button className={`sub-tab-btn ${distSubTab === 'overview' ? 'active' : ''}`} onClick={() => setDistSubTab('overview')}>🏛️ Overview &amp; e-Courts</button>
-                  <button className={`sub-tab-btn ${distSubTab === 'judges' ? 'active' : ''}`} onClick={() => setDistSubTab('judges')}>📋 Judges Roster</button>
-                  <button className={`sub-tab-btn ${distSubTab === 'cause' ? 'active' : ''}`} onClick={() => setDistSubTab('cause')}>🔍 Cause List</button>
-                  <button className={`sub-tab-btn ${distSubTab === 'orders' ? 'active' : ''}`} onClick={() => setDistSubTab('orders')}>📑 Orders &amp; Judgements</button>
-                </div>
-
-                {/* Sub-tab views for District Court */}
-                {distSubTab === 'overview' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <div style={{ backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '8px', padding: '16px' }}>
-                      <h4 style={{ fontSize: '14px', marginBottom: '8px', color: 'white' }}>eCourts Portal</h4>
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '12px' }}>Access subordinate case lookup database.</p>
-                      <button className="btn-accent" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => openInAppBrowser('https://districts.ecourts.gov.in/')}>Launch eCourts ↗</button>
-                    </div>
-                    <div style={{ backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '8px', padding: '16px' }}>
-                      <h4 style={{ fontSize: '14px', marginBottom: '8px', color: 'white' }}>Pay Court Fees</h4>
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '12px' }}>Make online judicial stamp payments and fees.</p>
-                      <button className="btn-accent" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => openInAppBrowser('https://pay.ecourts.gov.in/')}>Pay Fees ↗</button>
-                    </div>
-                  </div>
-                )}
-
-                {distSubTab === 'judges' && (() => {
-                  const judges = DISTRICT_JUDGES_DB[selectedDistrict.trim()] || [];
-                  return (
-                    <div>
-                      {judges.length > 0 ? (
-                        <div className="responsive-table-container">
-                          <table className="premium-table">
-                            <thead>
-                              <tr>
-                                <th>Judge Name</th>
-                                <th>Designation</th>
-                                <th>Courtroom / Hall No</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {judges.map((j, idx) => (
-                                <tr key={idx}>
-                                  <td><strong>{j.name}</strong></td>
-                                  <td>{j.designation}</td>
-                                  <td><span className="card-badge" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'white' }}>{j.room}</span></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div style={{ padding: '24px', background: 'var(--bg-dark-card)', borderRadius: '8px', border: '1px dashed var(--border-dark-subtle)', textAlign: 'center' }}>
-                          <p style={{ color: 'var(--text-dark-muted)', fontSize: '13px', marginBottom: '12px' }}>No native roster sync available for this district in our database.</p>
-                          <button className="btn-accent" style={{ fontSize: '12px' }} onClick={() => openInAppBrowser('https://districts.ecourts.gov.in/')}>Search Roster on eCourts</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {distSubTab === 'cause' && (
-                  <div style={{ padding: '20px', background: 'var(--bg-dark-card)', borderRadius: '8px', border: '1px solid var(--border-dark-subtle)' }}>
-                    <h4 style={{ fontSize: '15px', color: 'white', marginBottom: '8px' }}>Daily Subordinate Cause List</h4>
-                    <p style={{ fontSize: '13px', color: 'var(--text-dark-muted)', marginBottom: '16px', lineHeight: '1.5' }}>
-                      Cause lists for district courts are highly volatile and synced in real-time by court masters. We recommend opening the official live services portal.
-                    </p>
-                    <button className="btn-accent" onClick={() => openInAppBrowser('https://services.ecourts.gov.in/ecourtindia_v6/')}>🔍 Search Live Cause List ↗</button>
-                  </div>
-                )}
-
-                {distSubTab === 'orders' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <div style={{ backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '8px', padding: '16px' }}>
-                      <h4 style={{ fontSize: '14px', marginBottom: '8px', color: 'white' }}>eCourts Decisions Search</h4>
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '12px' }}>Search final judgments rendered in subordinate courts.</p>
-                      <button className="btn-accent" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => openInAppBrowser('https://judgments.ecourts.gov.in/')}>Search Judgments ↗</button>
-                    </div>
-                    <div style={{ backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '8px', padding: '16px' }}>
-                      <h4 style={{ fontSize: '14px', marginBottom: '8px', color: 'white' }}>Rulings &amp; Daily Orders</h4>
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '12px' }}>Retrieve interim daily orders and hearing status updates.</p>
-                      <button className="btn-accent" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => openInAppBrowser('https://services.ecourts.gov.in/ecourtindia_v6/')}>Open Orders ↗</button>
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })() : (
@@ -1282,23 +1217,27 @@ export default function CourtResources() {
               />
             </div>
 
-            {loadingGlobals ? (
-              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-dark-muted)' }}>Loading Bare Acts directory...</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
-                {globals.bare_acts
-                  .filter(act => act.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((act, index) => (
-                    <div key={index} className="premium-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px' }} onClick={() => openInAppBrowser(act.url)}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+              {BARE_ACTS
+                .filter(act => act.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((act, index) => (
+                  <a
+                    key={index}
+                    href={act.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <div className="premium-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px' }}>
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '8px' }}>
                         <span style={{ color: 'white', fontWeight: '500', fontSize: '13.5px' }}>📖 {act.name}</span>
                       </div>
-                      <span style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600' }}>Read ↗</span>
+                      <span style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600', flexShrink: 0 }}>Read ↗</span>
                     </div>
-                  ))
-                }
-              </div>
-            )}
+                  </a>
+                ))
+              }
+            </div>
           </div>
         )}
 
