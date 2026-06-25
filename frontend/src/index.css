@@ -2433,3 +2433,303 @@ textarea:focus,
   color: #1A2438;
   margin: 8px 0 0;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   INZIQ — DYNAMIC FOCUS STATE MACHINE
+   .inziq-focus-idle  → orb compact (scale .7), chip grid visible
+   .inziq-focus-active → orb full size (scale 1), chip grid fades out
+   Triggered by: voice dictating / triggered / ai loading
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* Add spring transition to the orb container */
+.inziq-orb {
+  transition: transform .45s cubic-bezier(.34,1.56,.64,1);
+}
+
+/* Idle (default empty state) — compact orb, less stage padding */
+.inziq-focus-idle .inziq-orb {
+  transform: scale(.7);
+}
+.inziq-focus-idle .inziq-orb-stage {
+  padding-top: 28px;
+  padding-bottom: 14px;
+}
+
+/* Active (voice or AI loading) — full orb, grid fades */
+.inziq-focus-active .inziq-orb {
+  transform: scale(1);
+}
+.inziq-focus-active .inziq-orb-stage {
+  padding-top: 40px;
+  padding-bottom: 22px;
+}
+.inziq-focus-active .inziq-grid-section {
+  opacity: 0;
+  transform: translateY(18px);
+  pointer-events: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   INZIQ — CURATED PROMPT CHIP GRID
+   2-column grid, 8 chips per mode, fades on focus-active
+══════════════════════════════════════════════════════════════════════════════ */
+
+.inziq-grid-section {
+  position: relative;
+  z-index: 5;
+  padding: 0 20px 16px;
+  transition: opacity .38s ease, transform .38s ease;
+}
+
+.inziq-chip-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.inziq-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 11px 13px 11px 15px;
+  background: rgba(255,255,255,.030);
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background .18s, border-color .18s, transform .18s;
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
+}
+.inziq-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 50%, rgba(99,102,241,.06) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity .2s;
+}
+.inziq-chip:hover { background: rgba(99,102,241,.07); border-color: rgba(99,102,241,.2); transform: translateY(-1px); }
+.inziq-chip:hover::before { opacity: 1; }
+.inziq-chip:active { transform: translateY(0); }
+
+.inziq-chip-cat {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+  color: #4B5674;
+}
+.inziq-chip-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #94A3B8;
+  line-height: 1.35;
+  flex: 1;
+}
+.inziq-chip-arrow {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  color: #2D3E56;
+  opacity: 0;
+  transition: opacity .18s, transform .18s;
+}
+.inziq-chip:hover .inziq-chip-arrow { opacity: 1; transform: translateX(2px); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ARCHITECT'S INNOVATION — LEGAL POSTURE MODE TOGGLE
+   Always visible above the input form. One click locks AI's cognitive lens.
+   Draft (✍ emerald) / Research (⚖ indigo) / Strategize (⚔ amber)
+══════════════════════════════════════════════════════════════════════════════ */
+
+.inziq-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.inziq-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+  color: #4B5E78;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .2s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.inziq-mode-btn:hover {
+  background: rgba(255,255,255,.06);
+  color: #8899AA;
+  border-color: rgba(255,255,255,.14);
+}
+
+.inziq-mode-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.inziq-mode-hint {
+  margin-left: 4px;
+  font-size: 10.5px;
+  color: #2A3A50;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+/* ── Draft mode — emerald ─────────────────────────────────────────────────── */
+.inziq-mode-draft .inziq-mode-btn[data-mode="draft"].inziq-mode-active {
+  background: rgba(16,185,129,.12);
+  border-color: rgba(16,185,129,.3);
+  color: #34D399;
+  box-shadow: 0 0 12px rgba(16,185,129,.15);
+}
+.inziq-mode-draft .inziq-chip-cat { color: #065F46; }
+.inziq-mode-draft .inziq-chip:hover { background: rgba(16,185,129,.07); border-color: rgba(16,185,129,.2); }
+.inziq-mode-draft .inziq-send-btn.inziq-send-active {
+  background: #059669;
+  box-shadow: 0 3px 12px rgba(16,185,129,.4);
+}
+.inziq-mode-draft .inziq-send-btn.inziq-send-active:hover { background: #10B981; }
+.inziq-mode-draft .inziq-input-form:focus-within { border-color: rgba(16,185,129,.3); }
+
+/* Draft orb core — emerald */
+.inziq-mode-draft .inziq-orb-passive .inziq-orb-core {
+  background: radial-gradient(circle at 35% 32%, #A7F3D0 0%, #34D399 18%, #059669 42%, #064E3B 75%, #020E08 100%);
+}
+.inziq-mode-draft .inziq-orb-dictating .inziq-orb-core {
+  background: radial-gradient(circle at 35% 32%, #ECFDF5 0%, #6EE7B7 18%, #10B981 42%, #065F46 65%, #020E08 100%);
+}
+
+/* ── Research mode — indigo (default, no override needed) ─────────────────── */
+.inziq-mode-research .inziq-mode-btn[data-mode="research"].inziq-mode-active {
+  background: rgba(99,102,241,.14);
+  border-color: rgba(99,102,241,.32);
+  color: #818CF8;
+  box-shadow: 0 0 12px rgba(99,102,241,.18);
+}
+
+/* ── Strategize mode — amber ──────────────────────────────────────────────── */
+.inziq-mode-strategize .inziq-mode-btn[data-mode="strategize"].inziq-mode-active {
+  background: rgba(245,158,11,.12);
+  border-color: rgba(245,158,11,.3);
+  color: #FCD34D;
+  box-shadow: 0 0 12px rgba(245,158,11,.15);
+}
+.inziq-mode-strategize .inziq-chip-cat { color: #78350F; }
+.inziq-mode-strategize .inziq-chip:hover { background: rgba(245,158,11,.07); border-color: rgba(245,158,11,.2); }
+.inziq-mode-strategize .inziq-send-btn.inziq-send-active {
+  background: #D97706;
+  box-shadow: 0 3px 12px rgba(245,158,11,.4);
+}
+.inziq-mode-strategize .inziq-send-btn.inziq-send-active:hover { background: #F59E0B; }
+.inziq-mode-strategize .inziq-input-form:focus-within { border-color: rgba(245,158,11,.28); }
+
+/* Strategize orb core — amber */
+.inziq-mode-strategize .inziq-orb-passive .inziq-orb-core {
+  background: radial-gradient(circle at 35% 32%, #FDE68A 0%, #FBBF24 18%, #D97706 42%, #78350F 75%, #1C0A00 100%);
+}
+.inziq-mode-strategize .inziq-orb-dictating .inziq-orb-core {
+  background: radial-gradient(circle at 35% 32%, #FFFBEB 0%, #FDE68A 18%, #F59E0B 42%, #92400E 65%, #1C0A00 100%);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   INZIQ — LIGHT THEME OVERRIDES
+   Specificity 0-2-0 via :root[data-theme="light"] prefix beats component 0-1-0
+══════════════════════════════════════════════════════════════════════════════ */
+
+:root[data-theme="light"] .inziq-page {
+  background: #F1F5F9;
+  color: #1E293B;
+}
+:root[data-theme="light"] .inziq-page-backdrop {
+  opacity: .18;
+}
+:root[data-theme="light"] .inziq-header {
+  background: rgba(241,245,249,.88);
+  border-bottom-color: rgba(0,0,0,.07);
+}
+:root[data-theme="light"] .inziq-back-btn {
+  color: #475569;
+  background: rgba(0,0,0,.04);
+  border-color: rgba(0,0,0,.09);
+}
+:root[data-theme="light"] .inziq-back-btn:hover {
+  background: rgba(0,0,0,.07);
+  color: #1E293B;
+}
+:root[data-theme="light"] .inziq-header-name { color: #1E293B; }
+:root[data-theme="light"] .inziq-header-sub  { color: #64748B; }
+
+:root[data-theme="light"] .inziq-chip {
+  background: rgba(255,255,255,.75);
+  border-color: rgba(0,0,0,.1);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+:root[data-theme="light"] .inziq-chip:hover {
+  background: #fff;
+  border-color: rgba(99,102,241,.25);
+  box-shadow: 0 2px 10px rgba(99,102,241,.12);
+}
+:root[data-theme="light"] .inziq-chip-cat   { color: #94A3B8; }
+:root[data-theme="light"] .inziq-chip-label { color: #334155; }
+:root[data-theme="light"] .inziq-chip-arrow { color: #94A3B8; }
+
+:root[data-theme="light"] .inziq-mode-bar       { background: transparent; }
+:root[data-theme="light"] .inziq-mode-btn        { background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.09); color: #64748B; }
+:root[data-theme="light"] .inziq-mode-btn:hover  { background: rgba(0,0,0,.07); color: #1E293B; }
+:root[data-theme="light"] .inziq-mode-hint       { color: #94A3B8; }
+
+:root[data-theme="light"] .inziq-input-area {
+  background: rgba(241,245,249,.92);
+  border-top-color: rgba(0,0,0,.07);
+}
+:root[data-theme="light"] .inziq-input-form {
+  background: #fff;
+  border-color: rgba(0,0,0,.12);
+  box-shadow: 0 2px 12px rgba(0,0,0,.07);
+}
+:root[data-theme="light"] .inziq-input-form:focus-within { border-color: rgba(99,102,241,.4); }
+:root[data-theme="light"] .inziq-textarea { color: #1E293B; }
+:root[data-theme="light"] .inziq-textarea::placeholder { color: #94A3B8; }
+:root[data-theme="light"] .inziq-disclaimer { color: #94A3B8; }
+
+:root[data-theme="light"] .inziq-orb-label { color: #64748B; }
+:root[data-theme="light"] .inziq-dictation-bubble {
+  background: rgba(99,102,241,.06);
+  border-color: rgba(99,102,241,.18);
+  color: #4338CA;
+}
+:root[data-theme="light"] .inziq-msg-user .inziq-msg-bubble {
+  background: rgba(99,102,241,.1);
+  border-color: rgba(99,102,241,.2);
+  color: #3730A3;
+}
+:root[data-theme="light"] .inziq-msg-assistant .inziq-msg-bubble {
+  background: #fff;
+  border-color: rgba(0,0,0,.1);
+  color: #1E293B;
+}
+
+/* light + draft */
+:root[data-theme="light"] .inziq-mode-draft .inziq-chip:hover { background: rgba(16,185,129,.05); border-color: rgba(16,185,129,.25); }
+:root[data-theme="light"] .inziq-mode-draft .inziq-chip-cat   { color: #10B981; }
+/* light + strategize */
+:root[data-theme="light"] .inziq-mode-strategize .inziq-chip:hover { background: rgba(245,158,11,.05); border-color: rgba(245,158,11,.25); }
+:root[data-theme="light"] .inziq-mode-strategize .inziq-chip-cat   { color: #D97706; }
