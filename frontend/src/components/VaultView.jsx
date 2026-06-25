@@ -341,6 +341,67 @@ const vaultStyles = `
   .form-row > * { flex: 1; }
   .form-group { display: flex; flex-direction: column; gap: 6px; }
 
+  /* ── Smart Case Intake Modal ────────────────────────────────────────────── */
+  .si-modal { max-width: 740px !important; }
+  .si-dropzone {
+    position: relative; overflow: hidden;
+    border: 2px dashed rgba(99,102,241,0.28);
+    border-radius: 11px; padding: 22px 20px; text-align: center;
+    cursor: pointer; transition: border-color 0.22s, background 0.22s;
+    background: rgba(99,102,241,0.025); margin-bottom: 20px;
+  }
+  .si-dropzone:hover, .si-dropzone.si-dragover {
+    border-color: rgba(99,102,241,0.52); background: rgba(99,102,241,0.06);
+  }
+  .si-dropzone.si-scanning {
+    border-color: rgba(99,102,241,0.4); cursor: default; pointer-events: none;
+  }
+  .si-dropzone.si-done {
+    border-color: rgba(16,185,129,0.45); background: rgba(16,185,129,0.04);
+    border-style: solid;
+  }
+  @keyframes si-beam {
+    0%   { transform: translateX(-120%); }
+    100% { transform: translateX(220%); }
+  }
+  .si-scan-beam {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg,
+      transparent 0%, rgba(99,102,241,0.1) 35%,
+      rgba(129,140,248,0.28) 50%,
+      rgba(99,102,241,0.1) 65%, transparent 100%
+    );
+    animation: si-beam 1.3s ease-in-out infinite;
+  }
+  @keyframes si-pulse-ring {
+    0%,100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+    50%      { box-shadow: 0 0 0 8px rgba(99,102,241,0); }
+  }
+  .si-scan-icon {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.3);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 10px; animation: si-pulse-ring 1.2s ease-in-out infinite;
+  }
+  @keyframes si-field-flash {
+    0%   { background-color: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.5); }
+    100% { background-color: rgba(245,158,11,0.055); border-color: rgba(245,158,11,0.28); }
+  }
+  .si-ai-field {
+    background-color: rgba(245,158,11,0.055) !important;
+    border-color: rgba(245,158,11,0.28) !important;
+    animation: si-field-flash 0.55s ease-out;
+  }
+  .si-ai-badge {
+    display: inline-flex; align-items: center; gap: 3px; margin-left: 6px;
+    padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 700;
+    letter-spacing: 0.4px; text-transform: uppercase;
+    background: rgba(245,158,11,0.1); color: #F59E0B;
+    border: 1px solid rgba(245,158,11,0.22); vertical-align: middle;
+  }
+  :root[data-theme="light"] .si-dropzone { background: rgba(99,102,241,0.03); border-color: rgba(99,102,241,0.22); }
+  :root[data-theme="light"] .si-ai-field { background-color: rgba(245,158,11,0.05) !important; border-color: rgba(245,158,11,0.35) !important; }
+
   /* ── Danger / destructive action button ─────────────────────────────────── */
   .btn-danger {
     background: transparent; color: #F87171;
@@ -466,15 +527,15 @@ const vaultStyles = `
 `;
 
 const DOC_TYPE_STYLES = {
-  'Legal Document':       { bg: 'rgba(59,130,246,0.1)',  color: '#3B82F6' },
-  'Contract':             { bg: 'rgba(16,185,129,0.1)',  color: '#10B981' },
-  'FIR':                  { bg: 'rgba(239,68,68,0.1)',   color: '#EF4444' },
-  'Petition':             { bg: 'rgba(245,158,11,0.1)',  color: '#F59E0B' },
-  'Draft':                { bg: 'rgba(139,92,246,0.1)',  color: '#8B5CF6' },
-  'Agreement':            { bg: 'rgba(6,182,212,0.1)',   color: '#06B6D4' },
-  'Judgment':             { bg: 'rgba(236,72,153,0.1)',  color: '#EC4899' },
+  'Legal Document': { bg: 'rgba(59,130,246,0.1)', color: '#3B82F6' },
+  'Contract': { bg: 'rgba(16,185,129,0.1)', color: '#10B981' },
+  'FIR': { bg: 'rgba(239,68,68,0.1)', color: '#EF4444' },
+  'Petition': { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B' },
+  'Draft': { bg: 'rgba(139,92,246,0.1)', color: '#8B5CF6' },
+  'Agreement': { bg: 'rgba(6,182,212,0.1)', color: '#06B6D4' },
+  'Judgment': { bg: 'rgba(236,72,153,0.1)', color: '#EC4899' },
   'Non-Disclosure Agreement': { bg: 'rgba(99,102,241,0.1)', color: '#818CF8' },
-  'Courtroom Simulation': { bg: 'rgba(239,68,68,0.07)',  color: '#FCA5A5' },
+  'Courtroom Simulation': { bg: 'rgba(239,68,68,0.07)', color: '#FCA5A5' },
 };
 
 function getDocTypeStyle(type) {
@@ -496,13 +557,13 @@ function formatDate(str) {
 // Correspondence (notice trail) → Research & Precedents (legal backbone) →
 // Fee & Billing (matter admin) — mirrors how senior advocates physically organise case bundles.
 const MATTER_BLUEPRINT_FOLDERS = [
-  { name: 'Court Filings',              icon: '⚖️' },
-  { name: 'Pleadings & Drafts',         icon: '📝' },
+  { name: 'Court Filings', icon: '⚖️' },
+  { name: 'Pleadings & Drafts', icon: '📝' },
   { name: 'Interlocutory Applications', icon: '📌' },
-  { name: 'Evidence & Exhibits',        icon: '🗂️' },
-  { name: 'Correspondence',             icon: '✉️' },
-  { name: 'Research & Precedents',      icon: '🔬' },
-  { name: 'Fee & Billing',              icon: '💼' },
+  { name: 'Evidence & Exhibits', icon: '🗂️' },
+  { name: 'Correspondence', icon: '✉️' },
+  { name: 'Research & Precedents', icon: '🔬' },
+  { name: 'Fee & Billing', icon: '💼' },
 ];
 
 // ─── Breadcrumb Component ────────────────────────────────────────────────────
@@ -530,14 +591,14 @@ function Breadcrumb({ folderPath, onNavigateToRoot, onNavigateTo, onNewFolder, o
         {showBlueprintBtn && (
           <button className="vault-btn-blueprint-inline" onClick={onBlueprint} disabled={isInitializing}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
             </svg>
             {isInitializing ? 'Initializing…' : '⚡ Blueprint'}
           </button>
         )}
         <button className="vault-bc-new-btn" onClick={onNewFolder}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           New Folder
         </button>
@@ -566,7 +627,7 @@ function FolderMoveModal({ movingFolder, allFolders, onConfirm, onClose }) {
           onClick={() => !forbidden.has(f.id) && setSelectedParentId(f.id)}
         >
           <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
           {f.name}
         </div>
@@ -587,7 +648,7 @@ function FolderMoveModal({ movingFolder, allFolders, onConfirm, onClose }) {
             onClick={() => setSelectedParentId(null)}
           >
             <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
             </svg>
             Root (Case Vault)
           </div>
@@ -673,16 +734,16 @@ function FolderCard({ folder, docCount, subFolderCount, onClick, onRename, onDel
         {menuOpen && (
           <div className="vault-folder-menu">
             <button className="vault-folder-menu-item" onClick={e => { e.stopPropagation(); setMenuOpen(false); onRename(); }}>
-              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
               Rename
             </button>
             <button className="vault-folder-menu-item" onClick={e => { e.stopPropagation(); setMenuOpen(false); onMove(); }}>
-              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
               Move to…
             </button>
-            <div className="vault-folder-menu-sep"/>
+            <div className="vault-folder-menu-sep" />
             <button className="vault-folder-menu-item vault-folder-menu-danger" onClick={e => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}>
-              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
               Delete
             </button>
           </div>
@@ -697,27 +758,27 @@ export default function VaultView({ targetFolderId = null }) {
   const [activeTab, setActiveTab] = useState('vault');
 
   // Document Vault
-  const [documents, setDocuments]     = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
-  const [docError, setDocError]       = useState(null);
-  const [uploading, setUploading]     = useState(false);
-  const [isDragOver, setIsDragOver]   = useState(false);
-  const [searchTerm, setSearchTerm]   = useState('');
-  const fileInputRef                  = useRef(null);
+  const [docError, setDocError] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const fileInputRef = useRef(null);
 
   // Document card context menu
   const [openMenuDocId, setOpenMenuDocId] = useState(null);
   const docMenuRef = useRef(null);
 
   // Folder navigation
-  const [folders, setFolders]             = useState([]);   // flat list from API
+  const [folders, setFolders] = useState([]);   // flat list from API
   const [currentFolderId, setCurrentFolderId] = useState(null);  // null = root
-  const [folderPath, setFolderPath]           = useState([]);    // [{id, name}]
+  const [folderPath, setFolderPath] = useState([]);    // [{id, name}]
 
   // Folder creation (inline)
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName,    setNewFolderName]    = useState('');
-  const [creatingFolder,   setCreatingFolder]   = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
 
   // Nav animation (drill-in / drill-out)
   const [navKey, setNavKey] = useState(0);
@@ -725,28 +786,37 @@ export default function VaultView({ targetFolderId = null }) {
 
   // Folder management (rename / move / delete)
   const [renamingFolderId, setRenamingFolderId] = useState(null);
-  const [renameValue,       setRenameValue]      = useState('');
-  const [deletingFolderId,  setDeletingFolderId] = useState(null);
-  const [movingFolder,      setMovingFolder]     = useState(null); // { id, name, parent_id }
+  const [renameValue, setRenameValue] = useState('');
+  const [deletingFolderId, setDeletingFolderId] = useState(null);
+  const [movingFolder, setMovingFolder] = useState(null); // { id, name, parent_id }
 
   // Matter Blueprint engine
-  const [isInitializing,  setIsInitializing]  = useState(false);
-  const [blueprintToast,  setBlueprintToast]  = useState(null); // { type: 'success'|'partial'|'error', failed: string[] }
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [blueprintToast, setBlueprintToast] = useState(null); // { type: 'success'|'partial'|'error', failed: string[] }
 
   // Case Tracker
-  const [cases, setCases]               = useState([]);
+  const [cases, setCases] = useState([]);
   const [loadingCases, setLoadingCases] = useState(false);
-  const [fetchCnr, setFetchCnr]         = useState('');
+  const [fetchCnr, setFetchCnr] = useState('');
   const [fetchingStatus, setFetchingStatus] = useState(false);
-  const [fallbackUrl, setFallbackUrl]   = useState('');
+  const [fallbackUrl, setFallbackUrl] = useState('');
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [savingCase, setSavingCase]   = useState(false);
+  const [savingCase, setSavingCase] = useState(false);
   const [formData, setFormData] = useState({
-    case_name: '', client_name: '', case_number: '', cnr_number: '',
-    case_type: '', court: '', next_hearing: '', last_hearing: '', status: 'Active', notes: ''
+    case_name: '', case_number: '', cnr_number: '', court: '', judge_name: '',
+    case_type: '', petitioner_name: '', respondent_name: '',
+    petitioner_counsel: '', respondent_counsel: '',
+    client_name: '', filing_date: '', next_hearing: '', last_hearing: '',
+    status: 'Active', summary: '', notes: '',
   });
+
+  // Smart Intake extraction
+  const [extractionState, setExtractionState] = useState('idle'); // idle | scanning | populating | done
+  const [aiFilledFields, setAiFilledFields] = useState(new Set());
+  const [modalDropOver, setModalDropOver] = useState(false);
+  const intakeFileRef = useRef(null);
 
   const navigate = useNavigate();
 
@@ -779,7 +849,7 @@ export default function VaultView({ targetFolderId = null }) {
       if (!res.ok) return;
       const data = await res.json();
       setFolders(data.flat || []);
-    } catch (_) {}
+    } catch (_) { }
   };
 
   // ── Folder management API calls ───────────────────────────────────────────
@@ -1060,7 +1130,7 @@ export default function VaultView({ targetFolderId = null }) {
   const handleFileUpload = async (e) => {
     let file = null;
     if (e.dataTransfer?.files?.length > 0) { file = e.dataTransfer.files[0]; e.dataTransfer.clearData(); }
-    else if (e.target?.files?.length > 0)  { file = e.target.files[0]; }
+    else if (e.target?.files?.length > 0) { file = e.target.files[0]; }
     if (!file) return;
     const ext = file.name.split('.').pop().toLowerCase();
     if (!['pdf', 'docx', 'txt'].includes(ext)) { alert('Invalid format. Upload PDF, DOCX, or TXT.'); return; }
@@ -1075,7 +1145,7 @@ export default function VaultView({ targetFolderId = null }) {
   const buildDocData = (doc) => ({
     id: doc.id,
     filename: doc.smart_title || doc.title || 'Vault Document',
-    summary: doc.doc_type ? `${doc.doc_type} — saved from Universal Agent` : 'Document from Case Vault',
+    summary: doc.doc_type ? `${doc.doc_type} — saved from InzIQ` : 'Document from Case Vault',
     text: doc.content || '',
     tags: doc.tags || null,
     case_id: doc.case_id || null,
@@ -1162,6 +1232,14 @@ export default function VaultView({ targetFolderId = null }) {
     }
   };
 
+  const EMPTY_FORM = {
+    case_name: '', case_number: '', cnr_number: '', court: '', judge_name: '',
+    case_type: '', petitioner_name: '', respondent_name: '',
+    petitioner_counsel: '', respondent_counsel: '',
+    client_name: '', filing_date: '', next_hearing: '', last_hearing: '',
+    status: 'Active', summary: '', notes: '',
+  };
+
   const handleModalSave = async (e) => {
     e.preventDefault();
     if (!formData.case_name.trim()) { alert('Case Name is required.'); return; }
@@ -1171,8 +1249,89 @@ export default function VaultView({ targetFolderId = null }) {
     if (res.error) { alert(res.message || 'Failed to save.'); }
     else {
       setIsModalOpen(false);
-      setFormData({ case_name: '', client_name: '', case_number: '', cnr_number: '', case_type: '', court: '', next_hearing: '', last_hearing: '', status: 'Active', notes: '' });
+      setFormData(EMPTY_FORM);
+      setAiFilledFields(new Set());
+      setExtractionState('idle');
       loadCases();
+    }
+  };
+
+  // ── Stagger-fill form fields with extracted data ───────────────────────────
+  const animateFill = (extracted) => {
+    const fieldMap = [
+      ['case_name',          extracted.case_name],
+      ['case_number',        extracted.case_number],
+      ['court',              extracted.court_name || extracted.court],
+      ['judge_name',         extracted.judge_name],
+      ['case_type',          extracted.case_type],
+      ['petitioner_name',    extracted.petitioner_name],
+      ['respondent_name',    extracted.respondent_name],
+      ['petitioner_counsel', extracted.petitioner_counsel],
+      ['respondent_counsel', extracted.respondent_counsel],
+      ['filing_date',        extracted.filing_date],
+      ['next_hearing',       extracted.next_hearing],
+      ['summary',            extracted.summary],
+    ].filter(([, v]) => v && String(v).trim());
+
+    setExtractionState('populating');
+    fieldMap.forEach(([key, value], idx) => {
+      setTimeout(() => {
+        setFormData(prev => ({ ...prev, [key]: value }));
+        setAiFilledFields(prev => new Set([...prev, key]));
+        if (idx === fieldMap.length - 1) {
+          setTimeout(() => setExtractionState('done'), 250);
+        }
+      }, 200 + idx * 155);
+    });
+  };
+
+  // ── Handle file drop on modal intake zone ─────────────────────────────────
+  const handleIntakeFileDrop = async (file) => {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!['pdf', 'docx', 'txt'].includes(ext)) {
+      alert('Please drop a PDF, DOCX, or TXT legal document.');
+      return;
+    }
+    setExtractionState('scanning');
+    setAiFilledFields(new Set());
+    try {
+      // Upload file to backend to extract text
+      const uploadRes = await uploadDocument(file, null, 'Case Intake');
+      const docId = uploadRes?.document?.id;
+      let docContent = uploadRes?.document?.content || '';
+
+      // If content not in upload response, fetch the document
+      if (!docContent && docId) {
+        const token = apiToken();
+        const fetchRes = await fetch(`${API_BASE}/api/vault/documents`, {
+          headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (fetchRes.ok) {
+          const data = await fetchRes.json();
+          const doc = (data.documents || []).find(d => d.id === docId);
+          docContent = doc?.content || '';
+        }
+      }
+
+      if (!docContent) throw new Error('Could not extract document text.');
+
+      // Ask AI to extract case metadata as JSON
+      const token = apiToken();
+      const aiRes = await fetch(`${API_BASE}/api/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        body: JSON.stringify({
+          message: `You are a legal data extraction AI. Extract case metadata from the legal document below. Return ONLY a valid JSON object with exactly these keys (empty string if not found, no extra text, no markdown):\n{"case_name":"","case_number":"","court_name":"","judge_name":"","case_type":"","petitioner_name":"","respondent_name":"","petitioner_counsel":"","respondent_counsel":"","filing_date":"","next_hearing":"","summary":""}\n\nDocument text:\n${docContent.slice(0, 14000)}`,
+        }),
+      });
+      const aiData = await aiRes.json();
+      const raw = (aiData.response || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const jsonStart = raw.indexOf('{');
+      const jsonEnd = raw.lastIndexOf('}');
+      const extracted = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+      animateFill(extracted);
+    } catch {
+      setExtractionState('idle');
     }
   };
 
@@ -1198,8 +1357,8 @@ export default function VaultView({ targetFolderId = null }) {
                 title={`Delete all ${currentSubFolders.length} folder${currentSubFolders.length !== 1 ? 's' : ''} in current directory`}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 6 5 6 21 6"/>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                 </svg>
                 Clear Workspace
               </button>
@@ -1210,15 +1369,15 @@ export default function VaultView({ targetFolderId = null }) {
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
               </svg>
               New Folder
             </button>
             <button className="btn-accent" onClick={() => fileInputRef.current?.click()}
               style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
               </svg>
               Upload Document
             </button>
@@ -1298,12 +1457,12 @@ export default function VaultView({ targetFolderId = null }) {
           {!loadingDocs && documents.length > 0 && (
             <div className="vault-search-bar">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
               </svg>
               <input
                 className="vault-search-input"
                 type="text"
-                placeholder={isSearching ? 'Searching all folders…' : `Search in ${folderPath.length > 0 ? folderPath[folderPath.length-1].name : 'Case Vault'}…`}
+                placeholder={isSearching ? 'Searching all folders…' : `Search in ${folderPath.length > 0 ? folderPath[folderPath.length - 1].name : 'Case Vault'}…`}
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
@@ -1325,7 +1484,7 @@ export default function VaultView({ targetFolderId = null }) {
               {isCreatingFolder && !isSearching && (
                 <div className="vault-new-folder-row">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   </svg>
                   <input
                     className="vault-new-folder-input"
@@ -1421,8 +1580,8 @@ export default function VaultView({ targetFolderId = null }) {
                 <div className="vault-empty-hero">
                   <div className="vault-empty-icon-ring">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                      <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
                     </svg>
                   </div>
                   <div className="vault-empty-title">
@@ -1455,7 +1614,7 @@ export default function VaultView({ targetFolderId = null }) {
                     ) : (
                       <>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
                         </svg>
                         Initialize Standard Matter Blueprint
                       </>
@@ -1505,24 +1664,24 @@ export default function VaultView({ targetFolderId = null }) {
                               {openMenuDocId === doc.id && (
                                 <div className="vault-doc-menu">
                                   <button className="vault-doc-menu-item" onClick={() => { setOpenMenuDocId(null); handleAnalyzeDocument(doc); }}>
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
                                     Analyze
                                   </button>
                                   <button className="vault-doc-menu-item" onClick={() => { setOpenMenuDocId(null); handleSummarize(doc); }}>
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
                                     Summarize
                                   </button>
                                   <button className="vault-doc-menu-item" onClick={() => { setOpenMenuDocId(null); handleExtractFacts(doc); }}>
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
                                     Extract Facts
                                   </button>
                                   <button className="vault-doc-menu-item" onClick={() => handleDownloadDocument(doc)}>
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                                     Download
                                   </button>
-                                  <div className="vault-doc-menu-sep"/>
+                                  <div className="vault-doc-menu-sep" />
                                   <button className="vault-doc-menu-item vault-doc-menu-danger" onClick={() => handleDeleteDocument(doc)}>
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                                     Delete
                                   </button>
                                 </div>
@@ -1548,7 +1707,7 @@ export default function VaultView({ targetFolderId = null }) {
                         <div className="vault-card-actions" style={{ marginTop: 'auto' }}>
                           <button className="vault-btn-view" onClick={() => handleViewDocument(doc)}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                             </svg>
                             View Document
                           </button>
@@ -1671,44 +1830,173 @@ export default function VaultView({ targetFolderId = null }) {
       {/* ── ADD CASE MODAL ────────────────────────────────────────────────── */}
       {isModalOpen && (
         <div className="modal-overlay">
-          <div className="modal-card animate-fade-in">
+          <div className="modal-card si-modal animate-fade-in"
+            onDragOver={e => { e.preventDefault(); setModalDropOver(true); }}
+            onDragLeave={() => setModalDropOver(false)}
+            onDrop={e => { e.preventDefault(); setModalDropOver(false); const f = e.dataTransfer.files[0]; if (f) handleIntakeFileDrop(f); }}
+          >
             <div className="modal-header">
-              <h3 style={{ margin: 0, fontSize: '17px', color: 'var(--text-dark-primary)' }}>Add / Edit Case</h3>
-              <button onClick={() => setIsModalOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}>&times;</button>
+              <h3 style={{ margin: 0, fontSize: '17px', color: 'var(--text-dark-primary)' }}>Add Case</h3>
+              <button onClick={() => { setIsModalOpen(false); setFormData(EMPTY_FORM); setAiFilledFields(new Set()); setExtractionState('idle'); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}>&times;</button>
             </div>
-            <form onSubmit={handleModalSave}>
+
+            {/* ── AI DROPZONE ── */}
+            {extractionState !== 'done' && (
+              <div
+                className={`si-dropzone${extractionState === 'scanning' || extractionState === 'populating' ? ' si-scanning' : ''}${modalDropOver ? ' si-dragover' : ''}`}
+                onClick={() => extractionState === 'idle' && intakeFileRef.current?.click()}
+                style={{ cursor: extractionState === 'idle' ? 'pointer' : 'default' }}
+              >
+                <input ref={intakeFileRef} type="file" accept=".pdf,.docx,.txt" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleIntakeFileDrop(f); e.target.value = ''; }}
+                />
+                {(extractionState === 'scanning' || extractionState === 'populating') && (
+                  <div className="si-scan-beam" />
+                )}
+                <div className="si-scan-icon">
+                  {extractionState === 'idle' ? (
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/>
+                      <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+                    </svg>
+                  ) : (
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                    </svg>
+                  )}
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)', marginTop: 6 }}>
+                  {extractionState === 'idle' && 'Drop a legal document for ML Triage'}
+                  {extractionState === 'scanning' && 'Scanning document…'}
+                  {extractionState === 'populating' && 'Extracting case metadata…'}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dark-muted)', marginTop: 3 }}>
+                  {extractionState === 'idle' ? 'PDF · DOCX · TXT — or fill manually below' : 'AI is populating the form fields automatically'}
+                </div>
+              </div>
+            )}
+
+            {extractionState === 'done' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', background: 'rgba(16,185,129,0.08)', borderBottom: '1px solid rgba(16,185,129,0.25)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+                <span style={{ fontSize: '13px', color: '#10B981', fontWeight: 600 }}>ML Triage complete — review highlighted fields</span>
+                <button onClick={() => setExtractionState('idle')} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', fontSize: '11px', color: 'var(--text-dark-muted)', cursor: 'pointer' }}>Re-scan</button>
+              </div>
+            )}
+
+            <form id="si-form" onSubmit={handleModalSave}>
               <div className="modal-body">
+                {/* Row 1: Case Name + Case Number */}
                 <div className="form-row">
-                  <div className="form-group"><label className="input-label">Case Name *</label><input required type="text" className="input-field" value={formData.case_name} onChange={e => setFormData({...formData, case_name: e.target.value})} placeholder="e.g., State vs. John Doe" /></div>
-                  <div className="form-group"><label className="input-label">Client Name</label><input type="text" className="input-field" value={formData.client_name} onChange={e => setFormData({...formData, client_name: e.target.value})} placeholder="Internal reference" /></div>
+                  <div className="form-group">
+                    <label className="input-label">Case Name *{aiFilledFields.has('case_name') && <span className="si-ai-badge">AI</span>}</label>
+                    <input required type="text" className={`input-field${aiFilledFields.has('case_name') ? ' si-ai-field' : ''}`} value={formData.case_name} onChange={e => setFormData(p => ({ ...p, case_name: e.target.value }))} placeholder="e.g., State vs. John Doe" />
+                  </div>
+                  <div className="form-group">
+                    <label className="input-label">Case Number{aiFilledFields.has('case_number') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('case_number') ? ' si-ai-field' : ''}`} value={formData.case_number} onChange={e => setFormData(p => ({ ...p, case_number: e.target.value }))} placeholder="e.g., CRA/123/2026" />
+                  </div>
                 </div>
+
+                {/* Row 2: Court + Judge */}
                 <div className="form-row">
-                  <div className="form-group"><label className="input-label">Case Number</label><input type="text" className="input-field" value={formData.case_number} onChange={e => setFormData({...formData, case_number: e.target.value})} placeholder="e.g., CRA/123/2026" /></div>
-                  <div className="form-group"><label className="input-label">CNR Number</label><input type="text" className="input-field" value={formData.cnr_number} onChange={e => setFormData({...formData, cnr_number: e.target.value})} placeholder="16-digit official ID" /></div>
+                  <div className="form-group">
+                    <label className="input-label">Court Name{aiFilledFields.has('court') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('court') ? ' si-ai-field' : ''}`} value={formData.court} onChange={e => setFormData(p => ({ ...p, court: e.target.value }))} placeholder="e.g., Delhi High Court" />
+                  </div>
+                  <div className="form-group">
+                    <label className="input-label">Judge Name{aiFilledFields.has('judge_name') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('judge_name') ? ' si-ai-field' : ''}`} value={formData.judge_name} onChange={e => setFormData(p => ({ ...p, judge_name: e.target.value }))} placeholder="Hon. Justice…" />
+                  </div>
                 </div>
+
+                {/* Row 3: Case Type + CNR */}
                 <div className="form-row">
-                  <div className="form-group"><label className="input-label">Case Type</label><input type="text" className="input-field" value={formData.case_type} onChange={e => setFormData({...formData, case_type: e.target.value})} placeholder="e.g., Civil, Criminal, IP" /></div>
-                  <div className="form-group"><label className="input-label">Court</label><input type="text" className="input-field" value={formData.court} onChange={e => setFormData({...formData, court: e.target.value})} placeholder="e.g., Delhi High Court" /></div>
+                  <div className="form-group">
+                    <label className="input-label">Case Type{aiFilledFields.has('case_type') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('case_type') ? ' si-ai-field' : ''}`} value={formData.case_type} onChange={e => setFormData(p => ({ ...p, case_type: e.target.value }))} placeholder="Civil / Criminal / IP…" />
+                  </div>
+                  <div className="form-group">
+                    <label className="input-label">CNR Number</label>
+                    <input type="text" className="input-field" value={formData.cnr_number} onChange={e => setFormData(p => ({ ...p, cnr_number: e.target.value }))} placeholder="16-digit official ID" />
+                  </div>
                 </div>
+
+                {/* Row 4: Petitioner + Respondent */}
                 <div className="form-row">
-                  <div className="form-group"><label className="input-label">Next Hearing</label><input type="date" className="input-field" value={formData.next_hearing} onChange={e => setFormData({...formData, next_hearing: e.target.value})} /></div>
-                  <div className="form-group"><label className="input-label">Last Hearing</label><input type="date" className="input-field" value={formData.last_hearing} onChange={e => setFormData({...formData, last_hearing: e.target.value})} /></div>
+                  <div className="form-group">
+                    <label className="input-label">Petitioner{aiFilledFields.has('petitioner_name') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('petitioner_name') ? ' si-ai-field' : ''}`} value={formData.petitioner_name} onChange={e => setFormData(p => ({ ...p, petitioner_name: e.target.value }))} placeholder="Petitioner / Plaintiff" />
+                  </div>
+                  <div className="form-group">
+                    <label className="input-label">Respondent{aiFilledFields.has('respondent_name') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('respondent_name') ? ' si-ai-field' : ''}`} value={formData.respondent_name} onChange={e => setFormData(p => ({ ...p, respondent_name: e.target.value }))} placeholder="Respondent / Defendant" />
+                  </div>
                 </div>
+
+                {/* Row 5: Petitioner Counsel + Respondent Counsel */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="input-label">Petitioner Counsel{aiFilledFields.has('petitioner_counsel') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('petitioner_counsel') ? ' si-ai-field' : ''}`} value={formData.petitioner_counsel} onChange={e => setFormData(p => ({ ...p, petitioner_counsel: e.target.value }))} placeholder="Adv. Name" />
+                  </div>
+                  <div className="form-group">
+                    <label className="input-label">Respondent Counsel{aiFilledFields.has('respondent_counsel') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="text" className={`input-field${aiFilledFields.has('respondent_counsel') ? ' si-ai-field' : ''}`} value={formData.respondent_counsel} onChange={e => setFormData(p => ({ ...p, respondent_counsel: e.target.value }))} placeholder="Adv. Name" />
+                  </div>
+                </div>
+
+                {/* Row 6: Client Name + Filing Date */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="input-label">Client Name</label>
+                    <input type="text" className="input-field" value={formData.client_name} onChange={e => setFormData(p => ({ ...p, client_name: e.target.value }))} placeholder="Internal reference" />
+                  </div>
+                  <div className="form-group">
+                    <label className="input-label">Filing Date{aiFilledFields.has('filing_date') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="date" className={`input-field${aiFilledFields.has('filing_date') ? ' si-ai-field' : ''}`} value={formData.filing_date} onChange={e => setFormData(p => ({ ...p, filing_date: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* Row 7: Next Hearing + Last Hearing */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="input-label">Next Hearing{aiFilledFields.has('next_hearing') && <span className="si-ai-badge">AI</span>}</label>
+                    <input type="date" className={`input-field${aiFilledFields.has('next_hearing') ? ' si-ai-field' : ''}`} value={formData.next_hearing} onChange={e => setFormData(p => ({ ...p, next_hearing: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="input-label">Last Hearing</label>
+                    <input type="date" className="input-field" value={formData.last_hearing} onChange={e => setFormData(p => ({ ...p, last_hearing: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* Status */}
                 <div className="form-row">
                   <div className="form-group" style={{ flex: 1 }}>
                     <label className="input-label">Status</label>
-                    <select className="input-field" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                    <select className="input-field" value={formData.status} onChange={e => setFormData(p => ({ ...p, status: e.target.value }))}>
                       <option value="Active">Active</option>
                       <option value="Disposed">Disposed</option>
                       <option value="Pending Filing">Pending Filing</option>
                     </select>
                   </div>
                 </div>
-                <div className="form-group"><label className="input-label">Notes</label><textarea className="input-field" rows="3" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Strategy notes or updates…" style={{ resize: 'none' }}></textarea></div>
+
+                {/* Summary */}
+                <div className="form-group">
+                  <label className="input-label">Summary{aiFilledFields.has('summary') && <span className="si-ai-badge">AI</span>}</label>
+                  <textarea className={`input-field${aiFilledFields.has('summary') ? ' si-ai-field' : ''}`} rows="3" value={formData.summary} onChange={e => setFormData(p => ({ ...p, summary: e.target.value }))} placeholder="Brief case synopsis…" style={{ resize: 'none' }} />
+                </div>
+
+                {/* Notes */}
+                <div className="form-group">
+                  <label className="input-label">Notes</label>
+                  <textarea className="input-field" rows="2" value={formData.notes} onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))} placeholder="Strategy notes or updates…" style={{ resize: 'none' }} />
+                </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-accent" disabled={savingCase}>{savingCase ? 'Saving…' : 'Save Case'}</button>
+                <button type="button" className="btn-secondary" onClick={() => { setIsModalOpen(false); setFormData(EMPTY_FORM); setAiFilledFields(new Set()); setExtractionState('idle'); }}>Cancel</button>
+                <button type="submit" form="si-form" className="btn-accent" disabled={savingCase}>{savingCase ? 'Saving…' : 'Save Case'}</button>
               </div>
             </form>
           </div>

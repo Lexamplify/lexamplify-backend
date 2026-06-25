@@ -650,7 +650,7 @@ export const sendUniversalChat = async (payload) => {
     console.error('[API Service] sendUniversalChat error:', error);
     return {
       error: true,
-      message: error.message || 'Universal Agent Chat failed. Connection timed out or server is offline.'
+      message: error.message || 'InzIQ Chat failed. Connection timed out or server is offline.'
     };
   }
 };

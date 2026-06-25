@@ -17,12 +17,12 @@ import WarRoomView from './components/WarRoomView';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
-  'Active':            { bg: 'rgba(16,185,129,0.12)',  color: '#10B981', dot: '#10B981' },
-  'Active Sprint':     { bg: 'rgba(16,185,129,0.12)',  color: '#10B981', dot: '#10B981' },
-  'Hearing scheduled': { bg: 'rgba(245,158,11,0.12)',  color: '#F59E0B', dot: '#F59E0B' },
-  'Hearing Scheduled': { bg: 'rgba(245,158,11,0.12)',  color: '#F59E0B', dot: '#F59E0B' },
-  'Pending Filing':    { bg: 'rgba(239,68,68,0.12)',   color: '#EF4444', dot: '#EF4444' },
-  'Disposed':          { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF', dot: '#6B7280' },
+  'Active': { bg: 'rgba(16,185,129,0.12)', color: '#10B981', dot: '#10B981' },
+  'Active Sprint': { bg: 'rgba(16,185,129,0.12)', color: '#10B981', dot: '#10B981' },
+  'Hearing scheduled': { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', dot: '#F59E0B' },
+  'Hearing Scheduled': { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', dot: '#F59E0B' },
+  'Pending Filing': { bg: 'rgba(239,68,68,0.12)', color: '#EF4444', dot: '#EF4444' },
+  'Disposed': { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF', dot: '#6B7280' },
 };
 const getStatusStyle = (status) =>
   STATUS_STYLES[status] || { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF', dot: '#6B7280' };
@@ -31,93 +31,93 @@ const getStatusStyle = (status) =>
 const Icons = {
   dashboard: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-      <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
     </svg>
   ),
   contract: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
     </svg>
   ),
   scales: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z"/>
-      <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z"/>
-      <path d="M7 21h10M12 3v18M3 7h2c2 0 4-1 7-1s5 1 7 1h2"/>
+      <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z" />
+      <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z" />
+      <path d="M7 21h10M12 3v18M3 7h2c2 0 4-1 7-1s5 1 7 1h2" />
     </svg>
   ),
   search: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
     </svg>
   ),
   calendar: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-      <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-      <line x1="3" y1="10" x2="21" y2="10"/>
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
   ),
   lock: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   ),
   gavel: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m14.5 12.5-8 8a2.12 2.12 0 0 1-3-3l8-8"/><path d="m16 16 6-6"/>
-      <path d="m8 8 6-6"/><path d="m9 7 8 8"/>
+      <path d="m14.5 12.5-8 8a2.12 2.12 0 0 1-3-3l8-8" /><path d="m16 16 6-6" />
+      <path d="m8 8 6-6" /><path d="m9 7 8 8" />
     </svg>
   ),
   folder: (w = 14) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
   ),
   chat: (w = 14) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   ),
   logout: (w = 14) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-      <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   ),
   lightning: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </svg>
   ),
   upload: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-      <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
     </svg>
   ),
   sun: (w = 16) => (
     <svg width={w} height={w} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="5"/>
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
     </svg>
   ),
   moon: (w = 16) => (
     <svg width={w} height={w} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
     </svg>
   ),
   chevronLeft: (w = 14) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="15 18 9 12 15 6"/>
+      <polyline points="15 18 9 12 15 6" />
     </svg>
   ),
   chevronRight: (w = 14) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="9 18 15 12 9 6"/>
+      <polyline points="9 18 15 12 9 6" />
     </svg>
   ),
 };
@@ -159,12 +159,12 @@ const Breadcrumbs = () => {
   // Build breadcrumb items from pathname — no hardcoded data lookups
   const items = [{ label: 'Dashboard', url: '/dashboard' }];
   const p = location.pathname;
-  if (p === '/court-resources')    items.push({ label: 'Court Resources',    url: p });
+  if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
   else if (p === '/contract-analyzer') items.push({ label: 'Contract Analyzer', url: p });
-  else if (p === '/conflict-engine')   items.push({ label: 'Conflict Engine',   url: p });
-  else if (p === '/calendar')          items.push({ label: 'Legal Calendar',    url: p });
-  else if (p === '/vault')             items.push({ label: 'Case Vault',        url: p });
-  else if (p === '/war-room')          items.push({ label: 'Virtual Courtroom', url: p });
+  else if (p === '/conflict-engine') items.push({ label: 'Conflict Engine', url: p });
+  else if (p === '/calendar') items.push({ label: 'Legal Calendar', url: p });
+  else if (p === '/vault') items.push({ label: 'Case Vault', url: p });
+  else if (p === '/war-room') items.push({ label: 'Virtual Courtroom', url: p });
   else {
     if (params.caseId) {
       const label = params.caseId === 'vault' ? 'Document Vault' : `Case #${params.caseId}`;
@@ -217,7 +217,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   useEffect(() => {
     fetchTrackedCases()
       .then(data => { if (Array.isArray(data)) setSidebarCases(data); })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -281,13 +281,13 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
         {/* Navigation */}
         <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
-          <NavItem to="/dashboard"         icon={Icons.dashboard()} label="Dashboard Home"    isActive={p === '/dashboard'}         onClick={closeSidebar} />
-          <NavItem to="/contract-analyzer" icon={Icons.contract()}  label="Contract Analyzer" isActive={p === '/contract-analyzer'} onClick={closeSidebar} />
-          <NavItem to="/court-resources"   icon={Icons.scales()}    label="Court Resources"   isActive={p === '/court-resources'}  onClick={closeSidebar} />
-          <NavItem to="/conflict-engine"   icon={Icons.search()}    label="Conflict Engine"   isActive={p === '/conflict-engine'}  onClick={closeSidebar} />
-          <NavItem to="/calendar"          icon={Icons.calendar()}  label="Legal Calendar"    isActive={p === '/calendar'}         onClick={closeSidebar} />
-          <NavItem to="/vault"             icon={Icons.lock()}      label="Case Vault"        isActive={p === '/vault'}            onClick={closeSidebar} />
-          <NavItem to="/war-room"          icon={Icons.gavel()}     label="Virtual Courtroom" isActive={p === '/war-room'}         onClick={closeSidebar} />
+          <NavItem to="/dashboard" icon={Icons.dashboard()} label="Dashboard Home" isActive={p === '/dashboard'} onClick={closeSidebar} />
+          <NavItem to="/contract-analyzer" icon={Icons.contract()} label="Contract Analyzer" isActive={p === '/contract-analyzer'} onClick={closeSidebar} />
+          <NavItem to="/court-resources" icon={Icons.scales()} label="Court Resources" isActive={p === '/court-resources'} onClick={closeSidebar} />
+          <NavItem to="/conflict-engine" icon={Icons.search()} label="Conflict Engine" isActive={p === '/conflict-engine'} onClick={closeSidebar} />
+          <NavItem to="/calendar" icon={Icons.calendar()} label="Legal Calendar" isActive={p === '/calendar'} onClick={closeSidebar} />
+          <NavItem to="/vault" icon={Icons.lock()} label="Case Vault" isActive={p === '/vault'} onClick={closeSidebar} />
+          <NavItem to="/war-room" icon={Icons.gavel()} label="Virtual Courtroom" isActive={p === '/war-room'} onClick={closeSidebar} />
 
           {/* Live case listing from API */}
           {!isIconOnly && sidebarCases.length > 0 && (
@@ -323,10 +323,10 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
         {/* Bottom Controls */}
         <div style={{ padding: isIconOnly ? '10px 8px' : '14px 12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-          {/* Universal Agent */}
+          {/* InzIQ */}
           <button
             onClick={openAgent}
-            title={isIconOnly ? 'Universal Agent (⌘K)' : undefined}
+            title={isIconOnly ? 'InzIQ (⌘K)' : undefined}
             style={{
               width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
               background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
@@ -340,7 +340,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             <span style={{ display: 'flex', alignItems: 'center' }}>{Icons.chat()}</span>
             {!isIconOnly && (
               <>
-                <span>Universal Agent</span>
+                <span>InzIQ</span>
                 <span style={{ marginLeft: 'auto', fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
               </>
             )}
@@ -414,7 +414,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
           </svg>
           Exit Focus Mode
           <span style={{ fontSize: '10px', opacity: 0.55, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>Ctrl+\</span>
@@ -426,7 +426,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         <header className="topbar">
           <button className="hamburger-btn" onClick={() => setIsSidebarOpen(v => !v)} aria-label="Toggle navigation">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="3" y1="6"  x2="21" y2="6" />
+              <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
@@ -467,16 +467,16 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 const DashboardView = () => {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
-  const [cases, setCases]               = useState([]);
-  const [documents, setDocuments]       = useState([]);
-  const [calendarEvents, setCalEvents]  = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState(null);
+  const [cases, setCases] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [calendarEvents, setCalEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // CNR sync bar
   const [cnrNumber, setCnrNumber] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [cnrToast, setCnrToast]   = useState('');
+  const [cnrToast, setCnrToast] = useState('');
 
   const openAgent = () => window.dispatchEvent(new Event('toggle-rag-palette'));
 
@@ -491,7 +491,7 @@ const DashboardView = () => {
       } else if (casesRes.status === 'rejected' || casesRes.value?.error) {
         setError('Could not load cases from server.');
       }
-      if (docsRes.status === 'fulfilled')   setDocuments(docsRes.value?.documents || []);
+      if (docsRes.status === 'fulfilled') setDocuments(docsRes.value?.documents || []);
       if (eventsRes.status === 'fulfilled') setCalEvents(eventsRes.value?.events || []);
     }).finally(() => setLoading(false));
   }, []);
@@ -526,9 +526,9 @@ const DashboardView = () => {
   };
 
   // ── Legal triage metrics (derived from live data) ───────────────────────────
-  const now  = new Date();
-  const in7d = new Date(now.getTime() + 7  * 86400000);
-  const in48h= new Date(now.getTime() + 48 * 3600000);
+  const now = new Date();
+  const in7d = new Date(now.getTime() + 7 * 86400000);
+  const in48h = new Date(now.getTime() + 48 * 3600000);
 
   const limitationExpiries = calendarEvents.filter(ev => {
     const t = (ev.event_type || '').toLowerCase();
@@ -551,10 +551,10 @@ const DashboardView = () => {
   ).length;
 
   const stats = [
-    { label: 'Limitation Expiries',   value: limitationExpiries, accent: '#EF4444', icon: Icons.scales(22),   sub: 'next 7 days' },
-    { label: 'Pending Judgments',     value: pendingJudgments,   accent: '#F59E0B', icon: Icons.lightning(22), sub: 'awaiting orders' },
-    { label: 'Drafts Pending Review', value: draftsCount,         accent: '#8B5CF6', icon: Icons.contract(22), sub: 'in vault' },
-    { label: 'Tracked Cases',         value: cases.length,        accent: '#3B82F6', icon: Icons.calendar(22), sub: 'on record' },
+    { label: 'Limitation Expiries', value: limitationExpiries, accent: '#EF4444', icon: Icons.scales(22), sub: 'next 7 days' },
+    { label: 'Pending Judgments', value: pendingJudgments, accent: '#F59E0B', icon: Icons.lightning(22), sub: 'awaiting orders' },
+    { label: 'Drafts Pending Review', value: draftsCount, accent: '#8B5CF6', icon: Icons.contract(22), sub: 'in vault' },
+    { label: 'Tracked Cases', value: cases.length, accent: '#3B82F6', icon: Icons.calendar(22), sub: 'on record' },
   ];
 
   // ── Morning Triage data ─────────────────────────────────────────────────────
@@ -574,12 +574,12 @@ const DashboardView = () => {
   };
 
   const quickActions = [
-    { label: 'Upload Document',   desc: 'Add to case vault',     icon: Icons.upload(18),   to: '/vault' },
-    { label: 'Contract Analyzer', desc: 'Risk scan & drafting',  icon: Icons.contract(18), to: '/contract-analyzer' },
-    { label: 'Court Resources',   desc: 'IPC, BNS, CrPC & more',icon: Icons.scales(18),   to: '/court-resources' },
-    { label: 'Legal Calendar',    desc: 'Manage hearing dates',  icon: Icons.calendar(18), to: '/calendar' },
-    { label: 'Conflict Engine',   desc: 'Check matter conflicts',icon: Icons.search(18),   to: '/conflict-engine' },
-    { label: 'Virtual Courtroom', desc: 'Run litigation sim',    icon: Icons.gavel(18),    to: '/war-room' },
+    { label: 'Upload Document', desc: 'Add to case vault', icon: Icons.upload(18), to: '/vault' },
+    { label: 'Contract Analyzer', desc: 'Risk scan & drafting', icon: Icons.contract(18), to: '/contract-analyzer' },
+    { label: 'Court Resources', desc: 'IPC, BNS, CrPC & more', icon: Icons.scales(18), to: '/court-resources' },
+    { label: 'Legal Calendar', desc: 'Manage hearing dates', icon: Icons.calendar(18), to: '/calendar' },
+    { label: 'Conflict Engine', desc: 'Check matter conflicts', icon: Icons.search(18), to: '/conflict-engine' },
+    { label: 'Virtual Courtroom', desc: 'Run litigation sim', icon: Icons.gavel(18), to: '/war-room' },
   ];
 
   return (
@@ -655,10 +655,10 @@ const DashboardView = () => {
             cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
             boxShadow: '0 4px 14px rgba(59,130,246,0.35)', transition: 'transform 0.15s, box-shadow 0.15s', flexShrink: 0,
           }}
-          onMouseEnter={e => { e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 6px 20px rgba(59,130,246,0.45)'; }}
-          onMouseLeave={e => { e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 4px 14px rgba(59,130,246,0.35)'; }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(59,130,246,0.45)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(59,130,246,0.35)'; }}
         >
-          {Icons.chat(14)} Universal Agent
+          {Icons.chat(14)} InzIQ
           <span style={{ fontSize: '10px', fontFamily: 'monospace', opacity: 0.75, background: 'rgba(255,255,255,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
         </button>
       </div>
@@ -722,7 +722,7 @@ const DashboardView = () => {
                 </div>
                 <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <span style={{ textTransform: 'capitalize' }}>{(ev.event_type || 'event').replace(/_/g, ' ')}</span>
-                  {ev.location        && <span>📍 {ev.location}</span>}
+                  {ev.location && <span>📍 {ev.location}</span>}
                   {ev.opposing_counsel && <span>⚖️ {ev.opposing_counsel}</span>}
                 </div>
               </div>
@@ -787,8 +787,8 @@ const DashboardView = () => {
               return (
                 <div key={c.id}
                   style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', transition: 'border-color 0.2s, box-shadow 0.2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(59,130,246,0.35)'; e.currentTarget.style.boxShadow='0 4px 20px rgba(59,130,246,0.08)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border-subtle)'; e.currentTarget.style.boxShadow='none'; }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(59,130,246,0.35)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(59,130,246,0.08)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '20px', background: st.bg, color: st.color, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
@@ -816,8 +816,8 @@ const DashboardView = () => {
                     <button
                       onClick={openAgent}
                       style={{ padding: '8px 12px', borderRadius: '7px', cursor: 'pointer', background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.18)', color: 'var(--accent-primary)', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background='rgba(59,130,246,0.12)'}
-                      onMouseLeave={e => e.currentTarget.style.background='rgba(59,130,246,0.06)'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.12)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.06)'}
                     >
                       {Icons.chat()} <span>AI</span>
                     </button>
@@ -836,8 +836,8 @@ const DashboardView = () => {
           <Link key={i} to={a.to} style={{ textDecoration: 'none' }}>
             <div
               style={{ padding: '14px 16px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(59,130,246,0.4)'; e.currentTarget.style.background='rgba(59,130,246,0.04)'; e.currentTarget.style.transform='translateY(-1px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border-subtle)'; e.currentTarget.style.background='var(--bg-panel)'; e.currentTarget.style.transform='translateY(0)'; }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'; e.currentTarget.style.background = 'rgba(59,130,246,0.04)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.background = 'var(--bg-panel)'; e.currentTarget.style.transform = 'translateY(0)'; }}
             >
               <span style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>{a.icon}</span>
               <div>
@@ -860,17 +860,17 @@ function AppRouterContent() {
     <BrowserRouter>
       <CommandPalette />
       <Routes>
-        <Route path="/"                       element={<LandingPage />} />
-        <Route path="/login"                  element={<LoginPage />} />
-        <Route path="/dashboard"              element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
-        <Route path="/contract-analyzer"      element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
-        <Route path="/court-resources"        element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
-        <Route path="/conflict-engine"        element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ConflictEngine /></Layout>} />
-        <Route path="/case/:caseId"           element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />
-        <Route path="/calendar"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CalendarView /></Layout>} />
-        <Route path="/vault"                  element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
-        <Route path="/war-room"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
-        <Route path="/analyzer"               element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
+        <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
+        <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
+        <Route path="/conflict-engine" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ConflictEngine /></Layout>} />
+        <Route path="/case/:caseId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />
+        <Route path="/calendar" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CalendarView /></Layout>} />
+        <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
+        <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
+        <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
       </Routes>
     </BrowserRouter>

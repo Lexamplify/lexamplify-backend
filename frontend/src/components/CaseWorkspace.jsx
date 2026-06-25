@@ -321,11 +321,11 @@ const WS_CSS = `
 // ────────────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'dashboard',   label: 'Dashboard' },
+  { id: 'dashboard', label: 'Dashboard' },
   { id: 'legal-draft', label: 'Legal Drafts' },
-  { id: 'documents',   label: 'Documents' },
-  { id: 'chats',       label: 'Chats' },
-  { id: 'events',      label: 'Events' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'chats', label: 'Chats' },
+  { id: 'events', label: 'Events' },
 ];
 
 // ── Spinner helper ───────────────────────────────────────────────────────────
@@ -366,10 +366,10 @@ function DashboardTab({ documents, loadingDocs, apiBase }) {
   };
 
   // Derived metrics
-  const totalDocs  = documents.length;
+  const totalDocs = documents.length;
   const latestDate = documents[0]?.created_at ? fmtDate(documents[0].created_at) : '—';
   const uniqueTypes = [...new Set(documents.map(d => d.doc_type).filter(Boolean))].length;
-  const draftCount  = documents.filter(d =>
+  const draftCount = documents.filter(d =>
     (d.doc_type || '').toLowerCase().includes('draft') ||
     (d.title || '').toLowerCase().includes('draft')
   ).length;
@@ -378,7 +378,7 @@ function DashboardTab({ documents, loadingDocs, apiBase }) {
     return (
       <div className="cw-tab-panel">
         <div className="cw-metrics-grid">
-          {[0,1,2,3].map(i => (
+          {[0, 1, 2, 3].map(i => (
             <div key={i} className="cw-metric-card">
               <div className="cw-skeleton" style={{ height: 13, width: '55%', marginBottom: 10 }} />
               <div className="cw-skeleton" style={{ height: 32, width: '40%' }} />
@@ -449,7 +449,7 @@ function DashboardTab({ documents, loadingDocs, apiBase }) {
           )}
           {synopsisLoading && !synopsis && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-              {[1,2,3].map(i => (
+              {[1, 2, 3].map(i => (
                 <div key={i} className="cw-skeleton" style={{ height: 16, width: `${90 - i * 12}%` }} />
               ))}
             </div>
@@ -484,9 +484,9 @@ function LegalDraftsTab({ documents, loadingDocs }) {
 
   const handleDownload = (doc) => {
     const blob = new Blob([doc.content || '(empty)'], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
     a.download = `${(doc.title || 'draft').replace(/[^a-zA-Z0-9_\- ]/g, '')}.txt`;
     a.click();
     URL.revokeObjectURL(url);
@@ -495,7 +495,7 @@ function LegalDraftsTab({ documents, loadingDocs }) {
   if (loadingDocs) {
     return (
       <div className="cw-tab-panel">
-        {[0,1,2].map(i => (
+        {[0, 1, 2].map(i => (
           <div key={i} className="cw-skeleton" style={{ height: 74, borderRadius: 9, marginBottom: 10 }} />
         ))}
       </div>
@@ -509,7 +509,7 @@ function LegalDraftsTab({ documents, loadingDocs }) {
           <div className="cw-empty-icon">📝</div>
           <h2 className="cw-empty-title">No drafts found</h2>
           <p className="cw-empty-msg">
-            Documents saved with "Draft" in their title or type will appear here. Use the Universal Agent to generate petitions, notices, or agreements.
+            Documents saved with "Draft" in their title or type will appear here. Use the InzIQ to generate petitions, notices, or agreements.
           </p>
         </div>
       </div>
@@ -548,9 +548,9 @@ function LegalDraftsTab({ documents, loadingDocs }) {
 // TAB 3: AI Provenance / Audit Trail
 // ────────────────────────────────────────────────────────────────────────────
 function ChatsTab({ apiBase, folderId }) {
-  const [threads, setThreads]   = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
+  const [threads, setThreads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
@@ -567,7 +567,7 @@ function ChatsTab({ apiBase, folderId }) {
   if (loading) {
     return (
       <div className="cw-tab-panel">
-        {[0,1,2,3].map(i => (
+        {[0, 1, 2, 3].map(i => (
           <div key={i} className="cw-skeleton" style={{ height: 72, borderRadius: 10, marginBottom: 10 }} />
         ))}
       </div>
@@ -589,7 +589,7 @@ function ChatsTab({ apiBase, folderId }) {
           <div className="cw-empty-icon" style={{ fontSize: 28 }}>🔏</div>
           <h2 className="cw-empty-title">No Provenance Records</h2>
           <p className="cw-empty-msg">
-            When you save a document to this folder via the Universal Agent, the full AI conversation that produced it is recorded here as a tamper-evident audit trail.
+            When you save a document to this folder via the InzIQ, the full AI conversation that produced it is recorded here as a tamper-evident audit trail.
           </p>
         </div>
       </div>
@@ -620,7 +620,7 @@ function ChatsTab({ apiBase, folderId }) {
                   {t.folder_name && <span className="cw-audit-folder-tag">📁 {t.folder_name}</span>}
                   <span className="cw-audit-ts">{fmtTime(t.created_at)}</span>
                   <svg className="cw-audit-chevron" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                    <polyline points="9 18 15 12 9 6"/>
+                    <polyline points="9 18 15 12 9 6" />
                   </svg>
                 </div>
               </div>
@@ -651,9 +651,9 @@ function ChatsTab({ apiBase, folderId }) {
 // TAB 4: Events / AI Timeline
 // ────────────────────────────────────────────────────────────────────────────
 function EventsTab({ documents, loadingDocs, apiBase }) {
-  const [timeline, setTimeline]         = useState([]);
+  const [timeline, setTimeline] = useState([]);
   const [timelineLoading, setTlLoading] = useState(false);
-  const [timelineError, setTlError]     = useState('');
+  const [timelineError, setTlError] = useState('');
 
   const handleExtract = async () => {
     if (!documents.length) return;
@@ -716,7 +716,7 @@ function EventsTab({ documents, loadingDocs, apiBase }) {
 
       {timelineLoading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingLeft: 12 }}>
-          {[0,1,2,3].map(i => (
+          {[0, 1, 2, 3].map(i => (
             <div key={i} style={{ display: 'flex', gap: 18 }}>
               <div className="cw-skeleton" style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, marginTop: 3 }} />
               <div style={{ flex: 1 }}>
@@ -763,7 +763,7 @@ export default function CaseWorkspace() {
   const location = useLocation();
   const targetFolderId = location.state?.targetFolderId ?? null;
   const [activeTab, setActiveTab] = useState('documents');
-  const [caseInfo,  setCaseInfo]  = useState(null);
+  const [caseInfo, setCaseInfo] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
 

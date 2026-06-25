@@ -613,28 +613,28 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [rawText, setRawText] = useState('');
   const [clauses, setClauses] = useState([]);
   const [summary, setSummary] = useState('');
-  
+
   // Tab states
   const [activeTab, setActiveTab] = useState('risks');
   const [leftTab, setLeftTab] = useState('scanner');
-  
+
   // Tab opacity fade-in transition state
   const [tabOpacity, setTabOpacity] = useState('opacity-100');
 
   // Document editor states
   const [editorHtml, setEditorHtml] = useState('');
   const [activeClauseId, setActiveClauseId] = useState(null);
-  
+
   // Interactive Rewrite states
   const [intent, setIntent] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [rewrittenText, setRewrittenText] = useState('');
   const [rewriting, setRewriting] = useState(false);
-  
+
   // Recommendations states
   const [recommendations, setRecommendations] = useState([]);
   const [loadingRecs, setLoadingRecs] = useState(false);
-  
+
   // Appended clause extensions
   const [appendedClauses, setAppendedClauses] = useState([]);
 
@@ -652,7 +652,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [sendingChat, setSendingChat] = useState(false);
-  
+
   const [summaryCollapsed, setSummaryCollapsed] = useState(true);
 
   // Export Modal states
@@ -670,7 +670,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   const location = useLocation();
 
-  // Auto-ingest document piped from Case Vault (or Universal Agent tool-routing)
+  // Auto-ingest document piped from Case Vault (or InzIQ tool-routing)
   useEffect(() => {
     const incoming = location.state?.documentData;
     if (!incoming?.file_content) return;
@@ -737,7 +737,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return;
     const file = files[0];
-    
+
     // Limits
     const extension = file.name.split('.').pop().toLowerCase();
     if (!['pdf', 'docx'].includes(extension)) {
@@ -748,7 +748,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setIsAnalyzing(true);
     const res = await analyzeContract(file, '', scanStrategy);
     setIsAnalyzing(false);
-    
+
     if (res.error) {
       alert(res.message || 'Analysis failed. Please verify the backend status.');
     } else {
@@ -761,7 +761,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       alert('Please paste contract text or select a file to analyze.');
       return;
     }
-    
+
     setIsAnalyzing(true);
     const res = await analyzeContract(null, rawText, scanStrategy);
     setIsAnalyzing(false);
@@ -781,7 +781,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       risk: c.risk || (c.risk_level === 'High' ? 'RED' : c.risk_level === 'Medium' ? 'AMBER' : 'GREEN'),
       issue: c.issue || c.explanation || 'Risk identified.'
     }));
-    
+
     setClauses(mapped);
     setRawText(data.raw_text || mapped.map(c => c.text).join('\n\n'));
     setSummary(data.summary || 'Summary generated successfully.');
@@ -978,7 +978,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
         body: JSON.stringify({ prompt: autoDraftPrompt.trim(), context: selectedDocId })
       });
       const data = await response.json();
-      
+
       setDrafting(false);
       setDraftStatus('');
 
@@ -989,7 +989,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       } else {
         alert(data.error || 'Failed to synthesize auto-draft clause.');
       }
-    } catch(err) {
+    } catch (err) {
       setDrafting(false);
       setDraftStatus('');
       alert('Network timeout in AI reasoning engine.');
@@ -1077,8 +1077,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
     try {
       const defaultFilename = `LexAI_Export.${exportFormat === 'docx' ? 'docx' : 'pdf'}`;
-      const mimeType = exportFormat === 'docx' 
-        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+      const mimeType = exportFormat === 'docx'
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         : 'application/pdf';
 
       let fileHandle;
@@ -1100,7 +1100,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       }
 
       const blob = await exportContract(documentText, draftText, exportFormat);
-      
+
       if (fileHandle) {
         const writable = await fileHandle.createWritable();
         await writable.write(blob);
@@ -1185,12 +1185,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // contentEditable editor blur syncing
   const handleEditorBlur = (e) => {
     const editorEl = e.currentTarget;
-    
+
     // 1. Read updates from del, mark, and ins tags to keep clauses state in sync
     const delElements = editorEl.querySelectorAll('del.revised-del');
     const insElements = editorEl.querySelectorAll('ins.revised-ins, ins.newly-revised-ins');
     const markElements = editorEl.querySelectorAll('mark.risk-mark');
-    
+
     const delUpdates = {};
     delElements.forEach(del => {
       const id = del.getAttribute('data-id');
@@ -1272,7 +1272,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
           {/* Mode selector + actions */}
           <div className="analyzer-actions">
             <div className="strategy-select-container" style={{ padding: '5px 10px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
               <span style={{ fontSize: '10px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mode</span>
               <select
                 className="strategy-dropdown"
@@ -1291,14 +1291,14 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   onClick={() => setShowExportModal(true)}
                   style={{ fontSize: '12px', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '5px' }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                   Export
                 </button>
                 <button
                   onClick={() => { setIsAnalyzed(false); setRawText(''); setClauses([]); setSummary(''); setAppendedClauses([]); setActiveClauseId(null); setRewrittenText(''); setSummaryCollapsed(true); }}
                   style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='rgba(255,255,255,0.3)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color='#9CA3AF'; e.currentTarget.style.borderColor='var(--border-dark-subtle)'; }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#9CA3AF'; e.currentTarget.style.borderColor = 'var(--border-dark-subtle)'; }}
                 >
                   New
                 </button>
@@ -1364,7 +1364,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); }}
                     >
                       <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></svg>
                       <h3 style={{ fontSize: '14.5px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop your contract here</h3>
                       <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
                       <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Max 10 MB</span>
@@ -1390,7 +1390,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       onClick={handleTextAnalyze}
                       style={{ width: '100%', padding: '13px', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                     >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
                       Start Contract Risk Scan
                     </button>
                   </div>
@@ -1399,28 +1399,28 @@ export default function ContractAnalyzer({ setFocusMode }) {
             </div>
           </div>
         ) : (
-          
+
           // ────────── INTERACTIVE SPLIT PANE WORKSPACE ──────────
           <div className="workspace-pane">
-            
+
             {/* LEFT COLUMN: Document Editor */}
             <div className="editor-column">
               <div className="editor-header-bar">
                 <div className="editor-tabs">
-                  <button 
+                  <button
                     className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'scanner' ? 'active' : ''}`}
                     onClick={() => setLeftTab('scanner')}
                   >
                     📝 Contract Text
                   </button>
-                  <button 
+                  <button
                     className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'autodraft' ? 'active' : ''}`}
                     onClick={() => setLeftTab('autodraft')}
                   >
                     🤖 Auto-Draft
                   </button>
                 </div>
-                
+
                 {leftTab === 'scanner' && (
                   <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>
                     Editable Workspace. Click highlights to inspect risks.
@@ -1432,36 +1432,36 @@ export default function ContractAnalyzer({ setFocusMode }) {
               {leftTab === 'scanner' && (
                 <div className="rich-text-toolbar">
                   {/* Undo */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('undo')} title="Undo" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('undo')} title="Undo" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" /></svg>
                   </button>
                   {/* Redo */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('redo')} title="Redo" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('redo')} title="Redo" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" /></svg>
                   </button>
                   <div className="toolbar-divider"></div>
                   {/* Bold */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '14px' }}>B</button>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '14px' }}>B</button>
                   {/* Italic */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '14px' }}>I</button>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '14px' }}>I</button>
                   {/* Underline */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('underline')} title="Underline" className="toolbar-btn" style={{ textDecoration: 'underline', fontSize: '14px' }}>U</button>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('underline')} title="Underline" className="toolbar-btn" style={{ textDecoration: 'underline', fontSize: '14px' }}>U</button>
                   <div className="toolbar-divider"></div>
                   {/* Align Left */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyLeft')} title="Align Left" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyLeft')} title="Align Left" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="15" y2="12" /><line x1="3" y1="18" x2="18" y2="18" /></svg>
                   </button>
                   {/* Align Center */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyCenter')} title="Align Center" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyCenter')} title="Align Center" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="6" y1="12" x2="18" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></svg>
                   </button>
                   {/* Align Right */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyRight')} title="Align Right" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyRight')} title="Align Right" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="6" y1="18" x2="21" y2="18" /></svg>
                   </button>
                   {/* Justify */}
-                  <button onMouseDown={e=>e.preventDefault()} onClick={()=>handleFormat('justifyFull')} title="Justify" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyFull')} title="Justify" className="toolbar-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
                   </button>
                 </div>
               )}
@@ -1487,7 +1487,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               <strong className="extension-title" style={{ userSelect: 'none' }}>
                                 Added Missing Clause: {ac.title}
                               </strong>
-                              <div 
+                              <div
                                 className="extension-body"
                                 contentEditable
                                 suppressContentEditableWarning
@@ -1512,7 +1512,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 ) : (
                   <div>
                     {autoDraftText ? (
-                      <div 
+                      <div
                         style={{ fontFamily: 'var(--font-serif)', fontSize: '18px', lineHeight: '1.625', whiteSpace: 'pre-wrap', color: '#1F2937', minHeight: '70vh', padding: '40px', backgroundColor: '#ffffff', borderRadius: '4px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
                         contentEditable
                         suppressContentEditableWarning
@@ -1551,7 +1551,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
               </div>
 
               <div className={`analysis-panel-body transition-opacity duration-300 ${tabOpacity}`}>
-                
+
                 {/* SUB TAB: Risks (Actions) */}
                 {activeTab === 'risks' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
@@ -1563,7 +1563,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           onClick={() => { setActiveClauseId(null); setRewrittenText(''); setIntent(''); }}
                           style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '12px', cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center', gap: '4px' }}
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
                           All clauses
                         </button>
                         <div className="inspected-risk-card">
@@ -1573,7 +1573,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               {activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause'}
                             </h3>
                           </div>
-                          
+
                           <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>ORIGINAL TEXT:</span>
                           <div className="original-clause-box">{activeClause.text}</div>
                         </div>
@@ -1598,7 +1598,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           {showSuggestions && dynamicIntents.length > 0 && (
                             <div className="autocomplete-dropdown" ref={suggestionsRef}>
                               {dynamicIntents.map((item, idx) => (
-                                <div 
+                                <div
                                   key={idx}
                                   className="autocomplete-item"
                                   onClick={() => { setIntent(item); setShowSuggestions(false); }}
@@ -1610,8 +1610,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           )}
                         </div>
 
-                        <button 
-                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" 
+                        <button
+                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
                           onClick={handleRewrite}
                           disabled={rewriting}
                           style={{ width: '100%', padding: '12px' }}
@@ -1631,8 +1631,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                 onChange={(e) => setRewrittenText(e.target.value)}
                               />
                             </div>
-                            <button 
-                              className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" 
+                            <button
+                              className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
                               onClick={applyRevision}
                               style={{ width: '100%', padding: '12px', background: 'var(--accent-success)' }}
                             >
@@ -1684,8 +1684,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Missing Indian Protections</h3>
-                      <button 
-                        className="btn-accent transition-all duration-300 ease-in-out hover:bg-gray-700" 
+                      <button
+                        className="btn-accent transition-all duration-300 ease-in-out hover:bg-gray-700"
                         style={{ fontSize: '11px', padding: '4px 10px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
                         onClick={fetchMissingProtections}
                         disabled={loadingRecs}
@@ -1711,7 +1711,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                             <div key={idx} className="rec-protection-card" style={{ marginBottom: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                                 <strong style={{ fontSize: '13.5px', color: 'white' }}>{item.title}</strong>
-                                <input 
+                                <input
                                   type="checkbox"
                                   style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                   checked={item.selected}
@@ -1728,8 +1728,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           ))}
                         </div>
 
-                        <button 
-                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" 
+                        <button
+                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
                           onClick={addSelectedRecommendations}
                           style={{ width: '100%', padding: '12px' }}
                         >
@@ -1747,7 +1747,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                         <div className="input-group">
                           <label className="input-label">Reference Context File *</label>
-                          <select 
+                          <select
                             className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
                             style={{ width: '100%' }}
                             required
@@ -1763,7 +1763,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                         <div className="input-group">
                           <label className="input-label">Drafting Instructions *</label>
-                          <input 
+                          <input
                             type="text"
                             placeholder="e.g. Synthesize a non-disclosure agreement clause..."
                             className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
@@ -1805,7 +1805,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     </div>
 
                     <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-dark-subtle)', paddingTop: '10px' }}>
-                      <input 
+                      <input
                         type="text"
                         placeholder="Ask a grounded contract query..."
                         className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
@@ -1824,7 +1824,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 {activeTab === 'citations' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                     <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Landmark Indian Contract Precedents</h3>
-                    
+
                     {matchedPrecedents.length === 0 ? (
                       <div style={{ padding: '20px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '8px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px', textAlign: 'center' }}>
                         No keyword matches. Write or paste clauses regarding liability limits, notice, or IP to trigger citations.
@@ -1863,7 +1863,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
           <div className="export-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 style={{ fontSize: '18px', color: 'white', fontFamily: 'var(--font-serif)' }}>Export Document Settings</h2>
-              <button 
+              <button
                 onClick={() => setShowExportModal(false)}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', fontSize: '20px', cursor: 'pointer' }}
               >
@@ -1875,7 +1875,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
               <div>
                 <label className="input-label" style={{ display: 'block', marginBottom: '8px' }}>Export Format</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div 
+                  <div
                     className={`format-selection-card ${exportFormat === 'pdf' ? 'selected' : ''}`}
                     onClick={() => setExportFormat('pdf')}
                   >
@@ -1885,7 +1885,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Print-ready layout</span>
                     </div>
                   </div>
-                  <div 
+                  <div
                     className={`format-selection-card ${exportFormat === 'docx' ? 'selected' : ''}`}
                     onClick={() => setExportFormat('docx')}
                   >
@@ -1902,7 +1902,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 <label className="input-label" style={{ display: 'block', marginBottom: '8px' }}>Include Content Sections</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13.5px', cursor: 'pointer' }}>
-                    <input 
+                    <input
                       type="checkbox"
                       checked={includeDoc}
                       onChange={(e) => setIncludeDoc(e.target.checked)}
@@ -1911,7 +1911,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     <span>Contract Scanner Text</span>
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13.5px', cursor: 'pointer' }}>
-                    <input 
+                    <input
                       type="checkbox"
                       checked={includeDraft}
                       onChange={(e) => setIncludeDraft(e.target.checked)}
@@ -1930,14 +1930,14 @@ export default function ContractAnalyzer({ setFocusMode }) {
             </div>
 
             <div className="modal-footer">
-              <button 
-                className="btn-accent" 
-                style={{ background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }} 
+              <button
+                className="btn-accent"
+                style={{ background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
                 onClick={() => setShowExportModal(false)}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 className="btn-accent"
                 onClick={executeExport}
                 disabled={exporting}
@@ -1957,12 +1957,12 @@ const renderDocumentScanner = (rawText, clauses) => {
   if (!rawText) return '';
   const riskClauses = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER' || c.isRevised);
   const sortedClauses = [...riskClauses].sort((a, b) => b.text.length - a.text.length);
-  
+
   const ranges = [];
   sortedClauses.forEach(c => {
     const trimmed = c.text.trim();
     if (!trimmed) return;
-    
+
     const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const flexible = escaped.replace(/\s+/g, '[\\s]+');
     try {
@@ -1979,16 +1979,16 @@ const renderDocumentScanner = (rawText, clauses) => {
       // safe fallback
     }
   });
-  
+
   ranges.sort((a, b) => a.start - b.start);
-  
+
   let html = '';
   let cursor = 0;
   ranges.forEach(r => {
     const c = r.clause;
-    
+
     html += escapeHtml(rawText.slice(cursor, r.start));
-    
+
     if (c.isRevised) {
       const animationClass = c.isNewlyRevised ? 'newly-revised-ins' : 'revised-ins';
       html += `<del class="revised-del" data-id="${c.id}">${escapeHtml(rawText.slice(r.start, r.end))}</del><ins class="${animationClass}" data-id="${c.id}">${escapeHtml(c.revisedText)}</ins>`;
@@ -1997,10 +1997,10 @@ const renderDocumentScanner = (rawText, clauses) => {
       const borderColor = c.risk === 'RED' ? 'var(--accent-danger)' : 'var(--accent-warning)';
       html += `<mark id="clause-left-${c.id}" data-id="${c.id}" class="risk-mark" style="background-color: ${bgColor}; border-left: 2px solid ${borderColor}; cursor: pointer; padding: 2px 4px; border-radius: 3px; color: inherit; box-decoration-break: clone; -webkit-box-decoration-break: clone;">${escapeHtml(rawText.slice(r.start, r.end))}</mark>`;
     }
-    
+
     cursor = r.end;
   });
-  
+
   html += escapeHtml(rawText.slice(cursor));
   html = html.replace(/\n\n/g, '</p><p style="margin-bottom: 15px;">').replace(/\n/g, '<br>');
   return `<p style="margin-bottom: 15px;">${html}</p>`;
@@ -2032,11 +2032,11 @@ const getRawTextFromNode = (node) => {
         text += '\n';
         return;
       }
-      
+
       const isBlock = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName);
-      
+
       n.childNodes.forEach(child => traverse(child));
-      
+
       if (tagName === 'p') {
         text += '\n\n';
       } else if (isBlock && tagName !== 'div') {

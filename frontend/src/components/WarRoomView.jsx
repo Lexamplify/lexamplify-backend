@@ -30,7 +30,7 @@ const parseRobotResponse = (raw) => {
   const idx = raw.indexOf(DELIM);
   if (idx === -1) return { mainText: raw, rebuttals: [] };
 
-  const mainText    = raw.slice(0, idx).trim();
+  const mainText = raw.slice(0, idx).trim();
   const rebuttalRaw = raw.slice(idx + DELIM.length).trim();
 
   let rebuttals = [];
@@ -575,7 +575,7 @@ function ThreatCard({ threat, index, expanded, onToggle, onUseRebuttal }) {
           <div className="wr-threat-q">{renderParagraphs(threat.question)}</div>
         </div>
         <svg className={`wr-chevron${expanded ? ' open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 12 15 18 9"/>
+          <polyline points="6 9 12 15 18 9" />
         </svg>
       </div>
       <div className={`wr-rebuttal-panel${expanded ? ' open' : ''}`}>
@@ -589,7 +589,7 @@ function ThreatCard({ threat, index, expanded, onToggle, onUseRebuttal }) {
               onClick={(e) => { e.stopPropagation(); onUseRebuttal?.(threat.suggested_rebuttal); }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
               Use this Rebuttal
             </button>
@@ -720,12 +720,12 @@ export default function WarRoomView() {
   useEffect(() => {
     const raf = requestAnimationFrame(() => setIsMounted(true));
 
-    const docData  = location.state?.documentData;
-    const pending  = location.state?.pendingSimulation;
+    const docData = location.state?.documentData;
+    const pending = location.state?.pendingSimulation;
     const existing = location.state?.simulationData;
 
     const fileContent = docData?.file_content || '';
-    const docRef      = docData?.document_reference || '';
+    const docRef = docData?.document_reference || '';
 
     if (fileContent || docRef) {
       // Immediately wipe the router state so a browser refresh doesn't re-fire the API
@@ -747,7 +747,7 @@ export default function WarRoomView() {
           setSimulationData(parsed);
           setRevealedSections(new Set([1, 2, 3, 4, 5]));
           const excerpt = (parsed.extracted_issues || '').split('\n')[0] || 'this matter';
-          const qCount  = parsed.red_team?.opposing_counter_questions?.length || 3;
+          const qCount = parsed.red_team?.opposing_counter_questions?.length || 3;
           setChatMessages([{
             role: 'bot',
             text: `⚖️ Session restored. I have reviewed your argument on "${excerpt.substring(0, 100).trim()}…" ${qCount} challenges remain active. State your position.`,
@@ -857,9 +857,9 @@ export default function WarRoomView() {
     e.target.value = '';
   };
 
-  const onDragOver  = (e) => { e.preventDefault(); setIsDragOver(true); };
-  const onDragLeave = ()  => setIsDragOver(false);
-  const onDrop      = (e) => {
+  const onDragOver = (e) => { e.preventDefault(); setIsDragOver(true); };
+  const onDragLeave = () => setIsDragOver(false);
+  const onDrop = (e) => {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files?.[0];
@@ -998,7 +998,7 @@ export default function WarRoomView() {
 
   if (!simulationData) {
     const steps = [
-      { num: '01', title: 'Open the Universal Agent', desc: 'Press Ctrl+K or click "Universal Agent" in the sidebar.' },
+      { num: '01', title: 'Open the InzIQ', desc: 'Press Ctrl+K or click "InzIQ" in the sidebar.' },
       { num: '02', title: 'Trigger the simulation', desc: 'Type a command and the AI routes you here instantly.', chip: '"Pull the [document] and start virtual courtroom simulation"' },
       { num: '03', title: 'War Room activates', desc: '5-Stage AI pipeline runs and populates this dashboard automatically.' },
     ];
@@ -1020,7 +1020,7 @@ export default function WarRoomView() {
               <div style={{ fontSize: '42px', marginBottom: '12px', filter: 'drop-shadow(0 4px 12px rgba(59,130,246,0.3))' }}>⚖️</div>
               <h2 style={{ fontSize: '21px', fontWeight: '700', color: 'white', margin: '0 0 8px' }}>Virtual Courtroom — Ready</h2>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
-                Upload a document directly or trigger via the Universal Agent.
+                Upload a document directly or trigger via the InzIQ.
               </p>
             </div>
 
@@ -1042,9 +1042,9 @@ export default function WarRoomView() {
                 <>
                   <span className="wr-dropzone-icon">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(59,130,246,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="17 8 12 3 7 8"/>
-                      <line x1="12" y1="3" x2="12" y2="15"/>
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
                   </span>
                   <div className="wr-dropzone-title">Drop your case document here</div>
@@ -1057,7 +1057,7 @@ export default function WarRoomView() {
             )}
 
             {/* ── OR DIVIDER ── */}
-            <div className="wr-or-divider">or use the Universal Agent</div>
+            <div className="wr-or-divider">or use the InzIQ</div>
 
             {/* ── STEP LIST ── */}
             <div style={{ marginBottom: '22px' }}>
@@ -1080,9 +1080,9 @@ export default function WarRoomView() {
                 style={{ padding: '10px 22px', display: 'flex', alignItems: 'center', gap: '7px' }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
-                Open Universal Agent
+                Open InzIQ
               </button>
               <button
                 style={{ padding: '10px 22px', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '7px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' }}
@@ -1339,7 +1339,7 @@ export default function WarRoomView() {
                   />
                   <button className="wr-send-btn" type="submit" disabled={chatLoading || !chatInput.trim()}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                      <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
                     </svg>
                     Send
                   </button>
@@ -1358,7 +1358,7 @@ export default function WarRoomView() {
                     {savingSession ? (
                       <>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 0.9s linear infinite' }}>
-                          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.73-8.56"/>
+                          <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.73-8.56" />
                         </svg>
                         Saving…
                       </>
@@ -1367,7 +1367,7 @@ export default function WarRoomView() {
                     ) : (
                       <>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
                         </svg>
                         Save Full Session to Case Vault
                       </>

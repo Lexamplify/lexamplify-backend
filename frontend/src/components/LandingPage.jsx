@@ -895,7 +895,7 @@ export default function LandingPage() {
                     <span className="dot dot-yellow"></span>
                     <span className="dot dot-green"></span>
                   </div>
-                  <div className="terminal-title">Universal Agent Terminal</div>
+                  <div className="terminal-title">InzIQ Terminal</div>
                   <div className="terminal-status">
                     <span className="pulse-indicator"></span> SECURE
                   </div>
@@ -914,7 +914,7 @@ export default function LandingPage() {
                   <div className="terminal-output">
                     <div className="output-header">GENERATED STRATEGY PREVIEW</div>
                     <pre className="output-content">
-{`STAGE 1: Legal Issue Extraction
+                      {`STAGE 1: Legal Issue Extraction
 - Unforeseen government ban qualifies as force majeure.
 - Appellant has zero liability post-event duration.
 

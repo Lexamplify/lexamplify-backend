@@ -90,6 +90,70 @@ const calendarStyles = `
     display: block;
     margin-bottom: 6px;
   }
+
+  /* ── Day-at-a-Glance Split Modal ────────────────────────────────────────── */
+  .dag-shell {
+    display: flex;
+    width: min(860px, 96vw);
+    max-height: 88vh;
+    background: var(--bg-dark-panel, #171c26);
+    border: 1px solid var(--border-dark-subtle, #2C3241);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 28px 60px -8px rgba(0,0,0,0.72), 0 0 0 1px rgba(255,255,255,0.04);
+  }
+  .dag-agenda {
+    width: 295px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-dark-subtle, #2C3241);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .dag-agenda-head {
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--border-dark-subtle, #2C3241);
+    background: rgba(0,0,0,0.18);
+    flex-shrink: 0;
+  }
+  .dag-events-scroll { flex: 1; overflow-y: auto; padding: 14px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .dag-event-card {
+    border-radius: 8px;
+    padding: 11px 13px;
+    transition: transform 0.15s;
+    animation: cal-scale 0.18s ease-out;
+  }
+  .dag-event-card:hover { transform: translateX(3px); }
+  .dag-empty-day {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    flex: 1; padding: 32px 16px; gap: 10px; opacity: 0.45; text-align: center;
+  }
+  .dag-form-pane {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+  }
+  .dag-form-head {
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--border-dark-subtle, #2C3241);
+    display: flex; justify-content: space-between; align-items: flex-start;
+    flex-shrink: 0;
+  }
+  .dag-form-body { flex: 1; overflow-y: auto; padding: 18px 22px; }
+  .dag-form-footer {
+    padding: 13px 22px;
+    border-top: 1px solid var(--border-dark-subtle, #2C3241);
+    display: flex; justify-content: flex-end; gap: 10px;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.1);
+  }
+  .dag-conflict {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 11px 14px; border-radius: 8px; margin-bottom: 16px;
+    background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.28);
+    animation: cal-scale 0.22s cubic-bezier(0.16,1,0.3,1);
+  }
+  :root[data-theme="light"] .dag-shell { background: #fff; border-color: rgba(0,0,0,0.1); }
+  :root[data-theme="light"] .dag-agenda-head { background: rgba(0,0,0,0.03); }
+  :root[data-theme="light"] .dag-form-footer { background: rgba(0,0,0,0.02); }
 `;
 
 // ── Hover Brief Tooltip (rendered via ReactDOM.createPortal) ─────────────────
@@ -345,6 +409,21 @@ export default function CalendarView() {
   const monthName = currentMonth.toLocaleString('default', { month: 'long' });
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  // ── Day-at-a-Glance: derive events for selected date ──────────────────────
+  const selectedDayEvents = selectedDate ? (() => {
+    const y = selectedDate.getFullYear();
+    const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const d = String(selectedDate.getDate()).padStart(2, '0');
+    return events.filter(e => e.event_date === `${y}-${m}-${d}`);
+  })() : [];
+
+  // Conflict: user is adding a high-priority type to a day that already has one
+  const HIGH_PRIO = new Set(['drop_dead', 'appearance']);
+  const hasConflict =
+    newTitle.trim() !== '' &&
+    HIGH_PRIO.has(newType) &&
+    selectedDayEvents.some(e => HIGH_PRIO.has(e.event_type));
+
   return (
     <div style={{ padding: '24px', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
       <style>{calendarStyles}</style>
@@ -468,94 +547,181 @@ export default function CalendarView() {
         </div>
       )}
 
-      {/* ── Schedule Event Modal ── */}
+      {/* ── Day-at-a-Glance Split Modal ── */}
       {isModalOpen && selectedDate && (
         <div
           onClick={closeModal}
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(5,5,8,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, animation: 'cal-fade 0.2s ease-out' }}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(5,5,8,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, animation: 'cal-fade 0.2s ease-out', padding: '16px' }}
         >
-          <div
-            onClick={e => e.stopPropagation()}
-            className="animate-scale"
-            style={{ width: '480px', maxHeight: '90vh', overflowY: 'auto', backgroundColor: 'var(--bg-dark-panel, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', borderRadius: '12px', padding: '24px', boxShadow: '0 24px 48px -8px rgba(0,0,0,0.6)' }}
-          >
-            {/* Modal header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-dark-subtle, #2C3241)', paddingBottom: '14px', marginBottom: '20px' }}>
-              <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>📅 Schedule Event</span>
-              <button onClick={closeModal} style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>✕</button>
-            </div>
+          <div onClick={e => e.stopPropagation()} className="animate-scale dag-shell">
 
-            {/* Date chip */}
-            <div style={{ marginBottom: '18px', padding: '10px 14px', background: 'rgba(59,130,246,0.06)', borderRadius: '7px', border: '1px solid rgba(59,130,246,0.18)' }}>
-              <span style={{ fontSize: '10.5px', textTransform: 'uppercase', color: 'var(--text-dark-muted)', display: 'block', marginBottom: '2px', letterSpacing: '0.5px' }}>Target Date</span>
-              <strong style={{ fontSize: '14px', color: '#3B82F6' }}>
-                {selectedDate.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </strong>
-            </div>
-
-            <form onSubmit={handleAddEventSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Title */}
-              <div>
-                <label className="cal-label">Event Title *</label>
-                <input type="text" required className="cal-input" placeholder="e.g. Bail application deadline" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
-              </div>
-
-              {/* Type + Case ID */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label className="cal-label">Event Type</label>
-                  <select value={newType} onChange={e => setNewType(e.target.value)} className="cal-input" style={{ backgroundColor: '#171c26' }}>
-                    <option value="task">Task / Internal</option>
-                    <option value="tickler">Tickler Alert</option>
-                    <option value="appearance">Court Appearance</option>
-                    <option value="drop_dead">Drop Dead Deadline</option>
-                  </select>
+            {/* ── LEFT: Day Agenda Pane ───────────────────────────────── */}
+            <div className="dag-agenda">
+              <div className="dag-agenda-head">
+                <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.7px', color: 'var(--text-dark-muted)', marginBottom: '5px' }}>
+                  Day Agenda
                 </div>
-                <div>
-                  <label className="cal-label">Related Case ID</label>
-                  <input type="text" className="cal-input" placeholder="e.g. 101" value={newCaseId} onChange={e => setNewCaseId(e.target.value)} />
+                <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-dark-primary, #fff)', lineHeight: 1.1 }}>
+                  {selectedDate.toLocaleDateString(undefined, { weekday: 'long' })}
+                </div>
+                <div style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '3px' }}>
+                  {selectedDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+                </div>
+                <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ height: '1px', flex: 1, background: 'rgba(255,255,255,0.06)' }} />
+                  <span style={{ fontSize: '10px', color: 'var(--text-dark-muted)', fontWeight: '600' }}>
+                    {selectedDayEvents.length} event{selectedDayEvents.length !== 1 ? 's' : ''}
+                  </span>
+                  <div style={{ height: '1px', flex: 1, background: 'rgba(255,255,255,0.06)' }} />
                 </div>
               </div>
 
-              {/* Location */}
-              <div>
-                <label className="cal-label">Location / Court</label>
-                <input type="text" className="cal-input" placeholder="e.g. Delhi High Court, Court Room 7" value={newLocation} onChange={e => setNewLocation(e.target.value)} />
-              </div>
-
-              {/* Opposing Counsel */}
-              <div>
-                <label className="cal-label">Opposing Counsel</label>
-                <input type="text" className="cal-input" placeholder="e.g. Adv. Rajesh Kumar, Singh & Co." value={newOpposingCounsel} onChange={e => setNewOpposingCounsel(e.target.value)} />
-              </div>
-
-              {/* Type legend */}
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                {[['drop_dead', 'Deadline'], ['appearance', 'Hearing'], ['task', 'Task']].map(([t, lbl]) => {
-                  const a = getEventAccent(t);
-                  return (
-                    <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: a.text }}>
-                      <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: a.border }} />
-                      {lbl}
+              <div className="dag-events-scroll">
+                {selectedDayEvents.length === 0 ? (
+                  <div className="dag-empty-day">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-dark-muted)', opacity: 0.5 }}>
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <div style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', lineHeight: 1.55 }}>
+                      No hearings or events<br />scheduled for this day
                     </div>
-                  );
-                })}
+                  </div>
+                ) : (
+                  selectedDayEvents.map(ev => {
+                    const acc = getEventAccent(ev.event_type);
+                    return (
+                      <div
+                        key={ev.id}
+                        className="dag-event-card"
+                        style={{ background: acc.bg, border: `1px solid ${acc.border}44`, borderLeft: `3px solid ${acc.border}` }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: ev.location || ev.opposing_counsel ? '7px' : 0 }}>
+                          <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#E2E8F0', lineHeight: 1.35 }}>{ev.title}</div>
+                          <div style={{ fontSize: '9px', fontWeight: '700', textTransform: 'uppercase', color: acc.text, background: `${acc.border}20`, padding: '2px 6px', borderRadius: '3px', flexShrink: 0, letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
+                            {(ev.event_type || 'event').replace(/_/g, ' ')}
+                          </div>
+                        </div>
+                        {ev.location && (
+                          <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', gap: '5px', alignItems: 'flex-start', marginTop: '3px' }}>
+                            <span style={{ flexShrink: 0, marginTop: '1px' }}>📍</span>
+                            <span>{ev.location}</span>
+                          </div>
+                        )}
+                        {ev.opposing_counsel && (
+                          <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', gap: '5px', alignItems: 'flex-start', marginTop: '3px' }}>
+                            <span style={{ flexShrink: 0, marginTop: '1px' }}>⚖️</span>
+                            <span>{ev.opposing_counsel}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* ── RIGHT: Quick Add Pane ───────────────────────────────── */}
+            <div className="dag-form-pane">
+              <div className="dag-form-head">
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.7px', color: 'var(--text-dark-muted)', marginBottom: '4px' }}>Quick Add</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Schedule Event</div>
+                </div>
+                <button onClick={closeModal} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '5px 8px', borderRadius: '6px', transition: 'all 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'white'}
+                  onMouseLeave={e => e.currentTarget.style.color = ''}
+                >✕</button>
               </div>
 
-              {/* Actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+              <div className="dag-form-body">
+                {/* ── Architect's Innovation: Conflict Warning ── */}
+                {hasConflict && (
+                  <div className="dag-conflict">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '1px' }}>
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <div>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: '#F59E0B', marginBottom: '2px' }}>Scheduling Conflict Detected</div>
+                      <div style={{ fontSize: '11px', color: '#92400E', lineHeight: 1.5 }}>
+                        This day already has {selectedDayEvents.filter(e => HIGH_PRIO.has(e.event_type)).map(e => `"${e.title}"`).join(' and ')}. Verify before confirming.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Date chip */}
+                <div style={{ marginBottom: '16px', padding: '9px 13px', background: 'rgba(59,130,246,0.06)', borderRadius: '7px', border: '1px solid rgba(59,130,246,0.18)' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-dark-muted)', display: 'block', marginBottom: '1px', letterSpacing: '0.5px' }}>Target Date</span>
+                  <strong style={{ fontSize: '13.5px', color: '#3B82F6' }}>
+                    {selectedDate.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </strong>
+                </div>
+
+                <form onSubmit={handleAddEventSubmit} id="dag-form" style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
+                  <div>
+                    <label className="cal-label">Event Title *</label>
+                    <input type="text" required className="cal-input" placeholder="e.g. Bail application deadline" value={newTitle} onChange={e => setNewTitle(e.target.value)} autoFocus />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label className="cal-label">Event Type</label>
+                      <select value={newType} onChange={e => setNewType(e.target.value)} className="cal-input" style={{ backgroundColor: 'var(--bg-dark-panel, #171c26)' }}>
+                        <option value="task">Task / Internal</option>
+                        <option value="tickler">Tickler Alert</option>
+                        <option value="appearance">Court Appearance</option>
+                        <option value="drop_dead">Drop Dead Deadline</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="cal-label">Related Case ID</label>
+                      <input type="text" className="cal-input" placeholder="e.g. 101" value={newCaseId} onChange={e => setNewCaseId(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="cal-label">Location / Court</label>
+                    <input type="text" className="cal-input" placeholder="e.g. Delhi High Court, Court Room 7" value={newLocation} onChange={e => setNewLocation(e.target.value)} />
+                  </div>
+
+                  <div>
+                    <label className="cal-label">Opposing Counsel</label>
+                    <input type="text" className="cal-input" placeholder="e.g. Adv. Rajesh Kumar, Singh & Co." value={newOpposingCounsel} onChange={e => setNewOpposingCounsel(e.target.value)} />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '9px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    {[['drop_dead', 'Deadline'], ['appearance', 'Hearing'], ['task', 'Task']].map(([t, lbl]) => {
+                      const a = getEventAccent(t);
+                      return (
+                        <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: a.text }}>
+                          <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: a.border }} />
+                          {lbl}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </form>
+              </div>
+
+              <div className="dag-form-footer">
                 <button type="button" onClick={closeModal} style={{ padding: '8px 16px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-dark-subtle, #2C3241)', background: 'transparent', color: 'var(--text-dark-primary)', cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button
                   type="submit"
+                  form="dag-form"
                   disabled={modalSaving || !newTitle.trim()}
-                  style={{ padding: '8px 18px', fontSize: '12px', fontWeight: '600', borderRadius: '6px', border: 'none', background: '#3B82F6', color: 'white', cursor: modalSaving ? 'not-allowed' : 'pointer', opacity: modalSaving ? 0.65 : 1 }}
+                  style={{ padding: '8px 20px', fontSize: '12px', fontWeight: '600', borderRadius: '6px', border: 'none', background: hasConflict ? '#D97706' : '#3B82F6', color: 'white', cursor: modalSaving ? 'not-allowed' : 'pointer', opacity: modalSaving ? 0.65 : 1, transition: 'background 0.2s' }}
                 >
-                  {modalSaving ? 'Saving…' : 'Add Event'}
+                  {modalSaving ? 'Saving…' : hasConflict ? 'Add Anyway' : 'Add Event'}
                 </button>
               </div>
-            </form>
+            </div>
+
           </div>
         </div>
       )}

@@ -8,42 +8,42 @@ const fs = require('fs');
 
 // ── Colour palette ──────────────────────────────────────────────────────────
 const C = {
-  navy:      '0A0E17',
-  blue:      '2563EB',
+  navy: '0A0E17',
+  blue: '2563EB',
   blueLight: '3B82F6',
-  bluePale:  'DBEAFE',
-  teal:      '0F766E',
-  tealPale:  'CCFBF1',
-  green:     '059669',
+  bluePale: 'DBEAFE',
+  teal: '0F766E',
+  tealPale: 'CCFBF1',
+  green: '059669',
   greenPale: 'D1FAE5',
-  amber:     'B45309',
+  amber: 'B45309',
   amberPale: 'FEF3C7',
-  red:       'B91C1C',
-  redPale:   'FEE2E2',
-  purple:    '6D28D9',
-  purplePale:'EDE9FE',
-  slate:     '475569',
-  slateLight:'94A3B8',
-  white:     'FFFFFF',
-  offwhite:  'F8FAFC',
-  border:    'CBD5E1',
-  darkBg:    '1E293B',
-  mid:       '64748B',
+  red: 'B91C1C',
+  redPale: 'FEE2E2',
+  purple: '6D28D9',
+  purplePale: 'EDE9FE',
+  slate: '475569',
+  slateLight: '94A3B8',
+  white: 'FFFFFF',
+  offwhite: 'F8FAFC',
+  border: 'CBD5E1',
+  darkBg: '1E293B',
+  mid: '64748B',
 };
 
 // ── Shared border style ─────────────────────────────────────────────────────
 const cellBorder = (color = C.border) => ({
-  top:    { style: BorderStyle.SINGLE, size: 1, color },
+  top: { style: BorderStyle.SINGLE, size: 1, color },
   bottom: { style: BorderStyle.SINGLE, size: 1, color },
-  left:   { style: BorderStyle.SINGLE, size: 1, color },
-  right:  { style: BorderStyle.SINGLE, size: 1, color },
+  left: { style: BorderStyle.SINGLE, size: 1, color },
+  right: { style: BorderStyle.SINGLE, size: 1, color },
 });
 
 const noBorder = {
-  top:    { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+  top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
   bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-  left:   { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-  right:  { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+  left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+  right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
 };
 
 // ── Helper: plain paragraph ─────────────────────────────────────────────────
@@ -135,103 +135,119 @@ const kvRow = (key, val, shade = false) => new TableRow({
 
 // ── Helper: status badge text ───────────────────────────────────────────────
 const badge = (text, bgColor, textColor) =>
-  new TextRun({ text: `  ${text}  `, font: 'Arial', size: 18, bold: true, color: textColor,
+  new TextRun({
+    text: `  ${text}  `, font: 'Arial', size: 18, bold: true, color: textColor,
     highlight: bgColor === C.greenPale ? 'green' :
-               bgColor === C.amberPale ? 'yellow' : 'none' });
+      bgColor === C.amberPale ? 'yellow' : 'none'
+  });
 
 // ── Helper: stat box row ────────────────────────────────────────────────────
 const statRow = (stats) => new Table({
   width: { size: 9360, type: WidthType.DXA },
   columnWidths: [2340, 2340, 2340, 2340],
   rows: [
-    new TableRow({ children: stats.map(s => new TableCell({
-      borders: noBorder,
-      width: { size: 2340, type: WidthType.DXA },
-      shading: { fill: s.bg, type: ShadingType.CLEAR },
-      margins: { top: 180, bottom: 180, left: 180, right: 180 },
-      verticalAlign: VerticalAlign.CENTER,
-      children: [
-        new Paragraph({ alignment: AlignmentType.CENTER, children: [
-          new TextRun({ text: s.value, font: 'Arial', size: 64, bold: true, color: s.color }),
-        ]}),
-        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 40 }, children: [
-          new TextRun({ text: s.label, font: 'Arial', size: 19, color: C.mid }),
-        ]}),
-      ],
-    }))}),
+    new TableRow({
+      children: stats.map(s => new TableCell({
+        borders: noBorder,
+        width: { size: 2340, type: WidthType.DXA },
+        shading: { fill: s.bg, type: ShadingType.CLEAR },
+        margins: { top: 180, bottom: 180, left: 180, right: 180 },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER, children: [
+              new TextRun({ text: s.value, font: 'Arial', size: 64, bold: true, color: s.color }),
+            ]
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER, spacing: { before: 40 }, children: [
+              new TextRun({ text: s.label, font: 'Arial', size: 19, color: C.mid }),
+            ]
+          }),
+        ],
+      }))
+    }),
   ],
 });
 
 // ── Helper: module table row ────────────────────────────────────────────────
 const moduleRow = (icon, name, route, desc, status, statusColor, statusBg, shade) =>
-  new TableRow({ children: [
-    new TableCell({
-      borders: cellBorder(),
-      width: { size: 1600, type: WidthType.DXA },
-      shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-      margins: { top: 100, bottom: 100, left: 120, right: 80 },
-      verticalAlign: VerticalAlign.TOP,
-      children: [
-        new Paragraph({ children: [new TextRun({ text: `${icon} ${name}`, font: 'Arial', size: 21, bold: true, color: C.darkBg })]}),
-        new Paragraph({ spacing: { before: 40 }, children: [new TextRun({ text: route, font: 'Arial', size: 17, color: C.slateLight, italics: true })]}),
-      ],
-    }),
-    new TableCell({
-      borders: cellBorder(),
-      width: { size: 5960, type: WidthType.DXA },
-      shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-      margins: { top: 100, bottom: 100, left: 120, right: 80 },
-      children: [new Paragraph({ children: [new TextRun({ text: desc, font: 'Arial', size: 21, color: C.slate })]})],
-    }),
-    new TableCell({
-      borders: cellBorder(),
-      width: { size: 1800, type: WidthType.DXA },
-      shading: { fill: statusBg, type: ShadingType.CLEAR },
-      margins: { top: 100, bottom: 100, left: 120, right: 80 },
-      verticalAlign: VerticalAlign.CENTER,
-      children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [
-        new TextRun({ text: status, font: 'Arial', size: 19, bold: true, color: statusColor }),
-      ]})],
-    }),
-  ]});
+  new TableRow({
+    children: [
+      new TableCell({
+        borders: cellBorder(),
+        width: { size: 1600, type: WidthType.DXA },
+        shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+        margins: { top: 100, bottom: 100, left: 120, right: 80 },
+        verticalAlign: VerticalAlign.TOP,
+        children: [
+          new Paragraph({ children: [new TextRun({ text: `${icon} ${name}`, font: 'Arial', size: 21, bold: true, color: C.darkBg })] }),
+          new Paragraph({ spacing: { before: 40 }, children: [new TextRun({ text: route, font: 'Arial', size: 17, color: C.slateLight, italics: true })] }),
+        ],
+      }),
+      new TableCell({
+        borders: cellBorder(),
+        width: { size: 5960, type: WidthType.DXA },
+        shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+        margins: { top: 100, bottom: 100, left: 120, right: 80 },
+        children: [new Paragraph({ children: [new TextRun({ text: desc, font: 'Arial', size: 21, color: C.slate })] })],
+      }),
+      new TableCell({
+        borders: cellBorder(),
+        width: { size: 1800, type: WidthType.DXA },
+        shading: { fill: statusBg, type: ShadingType.CLEAR },
+        margins: { top: 100, bottom: 100, left: 120, right: 80 },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+          alignment: AlignmentType.CENTER, children: [
+            new TextRun({ text: status, font: 'Arial', size: 19, bold: true, color: statusColor }),
+          ]
+        })],
+      }),
+    ]
+  });
 
 // ── Helper: gap table row ───────────────────────────────────────────────────
 const gapRow = (num, module, desc, priority, priColor, priBg, shade) =>
-  new TableRow({ children: [
-    new TableCell({
-      borders: cellBorder(),
-      width: { size: 600, type: WidthType.DXA },
-      shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-      margins: { top: 80, bottom: 80, left: 100, right: 60 },
-      verticalAlign: VerticalAlign.TOP,
-      children: [new Paragraph({ children: [new TextRun({ text: num, font: 'Arial', size: 21, bold: true, color: C.slateLight })]})],
-    }),
-    new TableCell({
-      borders: cellBorder(),
-      width: { size: 1600, type: WidthType.DXA },
-      shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-      margins: { top: 80, bottom: 80, left: 100, right: 60 },
-      verticalAlign: VerticalAlign.TOP,
-      children: [new Paragraph({ children: [new TextRun({ text: module, font: 'Arial', size: 21, bold: true, color: C.blue })]})],
-    }),
-    new TableCell({
-      borders: cellBorder(),
-      width: { size: 5360, type: WidthType.DXA },
-      shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-      margins: { top: 80, bottom: 80, left: 100, right: 60 },
-      children: [new Paragraph({ children: [new TextRun({ text: desc, font: 'Arial', size: 21, color: C.slate })]})],
-    }),
-    new TableCell({
-      borders: cellBorder(),
-      width: { size: 1800, type: WidthType.DXA },
-      shading: { fill: priBg, type: ShadingType.CLEAR },
-      margins: { top: 80, bottom: 80, left: 100, right: 60 },
-      verticalAlign: VerticalAlign.CENTER,
-      children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [
-        new TextRun({ text: priority, font: 'Arial', size: 19, bold: true, color: priColor }),
-      ]})],
-    }),
-  ]});
+  new TableRow({
+    children: [
+      new TableCell({
+        borders: cellBorder(),
+        width: { size: 600, type: WidthType.DXA },
+        shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+        margins: { top: 80, bottom: 80, left: 100, right: 60 },
+        verticalAlign: VerticalAlign.TOP,
+        children: [new Paragraph({ children: [new TextRun({ text: num, font: 'Arial', size: 21, bold: true, color: C.slateLight })] })],
+      }),
+      new TableCell({
+        borders: cellBorder(),
+        width: { size: 1600, type: WidthType.DXA },
+        shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+        margins: { top: 80, bottom: 80, left: 100, right: 60 },
+        verticalAlign: VerticalAlign.TOP,
+        children: [new Paragraph({ children: [new TextRun({ text: module, font: 'Arial', size: 21, bold: true, color: C.blue })] })],
+      }),
+      new TableCell({
+        borders: cellBorder(),
+        width: { size: 5360, type: WidthType.DXA },
+        shading: shade ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+        margins: { top: 80, bottom: 80, left: 100, right: 60 },
+        children: [new Paragraph({ children: [new TextRun({ text: desc, font: 'Arial', size: 21, color: C.slate })] })],
+      }),
+      new TableCell({
+        borders: cellBorder(),
+        width: { size: 1800, type: WidthType.DXA },
+        shading: { fill: priBg, type: ShadingType.CLEAR },
+        margins: { top: 80, bottom: 80, left: 100, right: 60 },
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+          alignment: AlignmentType.CENTER, children: [
+            new TextRun({ text: priority, font: 'Arial', size: 19, bold: true, color: priColor }),
+          ]
+        })],
+      }),
+    ]
+  });
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  BUILD DOCUMENT
@@ -240,23 +256,31 @@ const doc = new Document({
   numbering: {
     config: [{
       reference: 'bullets',
-      levels: [{ level: 0, format: LevelFormat.BULLET, text: '•',
+      levels: [{
+        level: 0, format: LevelFormat.BULLET, text: '•',
         alignment: AlignmentType.LEFT,
-        style: { paragraph: { indent: { left: 540, hanging: 260 } } } }],
+        style: { paragraph: { indent: { left: 540, hanging: 260 } } }
+      }],
     }],
   },
   styles: {
     default: { document: { run: { font: 'Arial', size: 22, color: C.slate } } },
     paragraphStyles: [
-      { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+      {
+        id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true,
         run: { size: 36, bold: true, font: 'Arial', color: C.navy },
-        paragraph: { spacing: { before: 360, after: 160 }, outlineLevel: 0 } },
-      { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+        paragraph: { spacing: { before: 360, after: 160 }, outlineLevel: 0 }
+      },
+      {
+        id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true,
         run: { size: 28, bold: true, font: 'Arial', color: C.blue },
-        paragraph: { spacing: { before: 280, after: 120 }, outlineLevel: 1 } },
-      { id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+        paragraph: { spacing: { before: 280, after: 120 }, outlineLevel: 1 }
+      },
+      {
+        id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true,
         run: { size: 24, bold: true, font: 'Arial', color: C.slate },
-        paragraph: { spacing: { before: 200, after: 100 }, outlineLevel: 2 } },
+        paragraph: { spacing: { before: 200, after: 100 }, outlineLevel: 2 }
+      },
     ],
   },
 
@@ -287,8 +311,10 @@ const doc = new Document({
         new Paragraph({
           spacing: { before: 120, after: 200 },
           children: [
-            new TextRun({ text: 'PRODUCT UX AUDIT', font: 'Arial', size: 22, bold: true,
-              color: C.blueLight, characterSpacing: 140 }),
+            new TextRun({
+              text: 'PRODUCT UX AUDIT', font: 'Arial', size: 22, bold: true,
+              color: C.blueLight, characterSpacing: 140
+            }),
           ],
         }),
 
@@ -312,36 +338,66 @@ const doc = new Document({
           width: { size: 5400, type: WidthType.DXA },
           columnWidths: [1800, 3600],
           rows: [
-            new TableRow({ children: [
-              new TableCell({ borders: noBorder, width: { size: 1800, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Prepared by', font: 'Arial', size: 21, color: C.mid })]})] }),
-              new TableCell({ borders: noBorder, width: { size: 3600, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Narendar V', font: 'Arial', size: 21, bold: true, color: C.darkBg })]})] }),
-            ]}),
-            new TableRow({ children: [
-              new TableCell({ borders: noBorder, width: { size: 1800, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Date', font: 'Arial', size: 21, color: C.mid })]})] }),
-              new TableCell({ borders: noBorder, width: { size: 3600, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'June 2026', font: 'Arial', size: 21, bold: true, color: C.darkBg })]})] }),
-            ]}),
-            new TableRow({ children: [
-              new TableCell({ borders: noBorder, width: { size: 1800, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Platform', font: 'Arial', size: 21, color: C.mid })]})] }),
-              new TableCell({ borders: noBorder, width: { size: 3600, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'React 18 + Flask (Python)', font: 'Arial', size: 21, bold: true, color: C.darkBg })]})] }),
-            ]}),
-            new TableRow({ children: [
-              new TableCell({ borders: noBorder, width: { size: 1800, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Domain', font: 'Arial', size: 21, color: C.mid })]})] }),
-              new TableCell({ borders: noBorder, width: { size: 3600, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Indian Legal Technology', font: 'Arial', size: 21, bold: true, color: C.darkBg })]})] }),
-            ]}),
-            new TableRow({ children: [
-              new TableCell({ borders: noBorder, width: { size: 1800, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Build Stage', font: 'Arial', size: 21, color: C.mid })]})] }),
-              new TableCell({ borders: noBorder, width: { size: 3600, type: WidthType.DXA },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Production-Grade MVP', font: 'Arial', size: 21, bold: true, color: C.green })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: noBorder, width: { size: 1800, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Prepared by', font: 'Arial', size: 21, color: C.mid })] })]
+                }),
+                new TableCell({
+                  borders: noBorder, width: { size: 3600, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Narendar V', font: 'Arial', size: 21, bold: true, color: C.darkBg })] })]
+                }),
+              ]
+            }),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: noBorder, width: { size: 1800, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Date', font: 'Arial', size: 21, color: C.mid })] })]
+                }),
+                new TableCell({
+                  borders: noBorder, width: { size: 3600, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'June 2026', font: 'Arial', size: 21, bold: true, color: C.darkBg })] })]
+                }),
+              ]
+            }),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: noBorder, width: { size: 1800, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Platform', font: 'Arial', size: 21, color: C.mid })] })]
+                }),
+                new TableCell({
+                  borders: noBorder, width: { size: 3600, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'React 18 + Flask (Python)', font: 'Arial', size: 21, bold: true, color: C.darkBg })] })]
+                }),
+              ]
+            }),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: noBorder, width: { size: 1800, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Domain', font: 'Arial', size: 21, color: C.mid })] })]
+                }),
+                new TableCell({
+                  borders: noBorder, width: { size: 3600, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Indian Legal Technology', font: 'Arial', size: 21, bold: true, color: C.darkBg })] })]
+                }),
+              ]
+            }),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: noBorder, width: { size: 1800, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Build Stage', font: 'Arial', size: 21, color: C.mid })] })]
+                }),
+                new TableCell({
+                  borders: noBorder, width: { size: 3600, type: WidthType.DXA },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Production-Grade MVP', font: 'Arial', size: 21, bold: true, color: C.green })] })]
+                }),
+              ]
+            }),
           ],
         }),
 
@@ -403,10 +459,10 @@ const doc = new Document({
         h2('1.1 At a Glance'),
         spacer(80),
         statRow([
-          { value: '8',   label: 'Modules Built',        color: C.green,  bg: C.greenPale },
-          { value: '17',  label: 'React Components',     color: C.blue,   bg: C.bluePale },
-          { value: '40+', label: 'Backend API Routes',   color: C.purple, bg: C.purplePale },
-          { value: '12',  label: 'Gaps / Next Items',    color: C.amber,  bg: C.amberPale },
+          { value: '8', label: 'Modules Built', color: C.green, bg: C.greenPale },
+          { value: '17', label: 'React Components', color: C.blue, bg: C.bluePale },
+          { value: '40+', label: 'Backend API Routes', color: C.purple, bg: C.purplePale },
+          { value: '12', label: 'Gaps / Next Items', color: C.amber, bg: C.amberPale },
         ]),
         spacer(200),
         new Paragraph({ children: [new PageBreak()] }),
@@ -419,16 +475,22 @@ const doc = new Document({
           width: { size: 9360, type: WidthType.DXA },
           columnWidths: [3200, 6160],
           rows: [
-            new TableRow({ children: [
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 3200, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Component', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 6160, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Detail', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 3200, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Component', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 6160, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Detail', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+              ]
+            }),
             ...[
               ['Framework', 'React 18 + Vite (SPA)'],
               ['Routing', 'React Router v6 with nested layouts'],
@@ -448,16 +510,22 @@ const doc = new Document({
           width: { size: 9360, type: WidthType.DXA },
           columnWidths: [3200, 6160],
           rows: [
-            new TableRow({ children: [
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 3200, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Component', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 6160, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Detail', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 3200, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Component', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 6160, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Detail', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+              ]
+            }),
             ...[
               ['Framework', 'Python Flask — single create_app() factory in app.py'],
               ['Database', 'SQLite (lex_assistant.db) — adjacency-list folder tree'],
@@ -477,16 +545,22 @@ const doc = new Document({
           width: { size: 9360, type: WidthType.DXA },
           columnWidths: [2200, 7160],
           rows: [
-            new TableRow({ children: [
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 2200, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Table', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 7160, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Purpose & Key Columns', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 2200, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Table', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 7160, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR },
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Purpose & Key Columns', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+              ]
+            }),
             ...[
               ['cases', 'Core case registry — case_id, title, status, client, opposing_counsel, court'],
               ['case_vault', 'Document storage — content (TEXT), file_blob (BLOB), file_format, folder_id, smart_title, tags'],
@@ -495,16 +569,22 @@ const doc = new Document({
               ['calendar_events', 'Hearing dates — event_date, event_type (hearing/drop_dead/tickler), title, related_case_id'],
               ['ip_assets', 'IP tracker — ip_type, registration_number, filing_date, renewal_due, status'],
               ['tasks', 'Internal task assignments — title, assigned_to, status'],
-            ].map(([k, v], i) => new TableRow({ children: [
-              new TableCell({ borders: cellBorder(), width: { size: 2200, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: k, font: 'Courier New', size: 19, bold: true, color: C.blue })]})] }),
-              new TableCell({ borders: cellBorder(), width: { size: 7160, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: v, font: 'Arial', size: 21, color: C.slate })]})] }),
-            ]})),
+            ].map(([k, v], i) => new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(), width: { size: 2200, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: k, font: 'Courier New', size: 19, bold: true, color: C.blue })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(), width: { size: 7160, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: v, font: 'Arial', size: 21, color: C.slate })] })]
+                }),
+              ]
+            })),
           ],
         }),
         new Paragraph({ children: [new PageBreak()] }),
@@ -518,17 +598,25 @@ const doc = new Document({
           columnWidths: [1600, 5960, 1800],
           rows: [
             // Header
-            new TableRow({ children: [
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 1600, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 100, bottom: 100, left: 120, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Module', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 5960, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 100, bottom: 100, left: 120, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Description', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 1800, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 100, bottom: 100, left: 120, right: 80 },
-                children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Status', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 1600, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 100, bottom: 100, left: 120, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Module', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 5960, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 100, bottom: 100, left: 120, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Description', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 1800, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 100, bottom: 100, left: 120, right: 80 },
+                  children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Status', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+              ]
+            }),
             moduleRow('🏠', 'Landing Page', '/ (public)',
               'Dark glassmorphic hero with split layout, animated terminal mockup, feature showcase, testimonials, pricing teaser, sticky header, light/dark theme toggle, and CTA buttons to Login.',
               'Complete', C.green, C.greenPale, false),
@@ -538,7 +626,7 @@ const doc = new Document({
             moduleRow('📊', 'Dashboard', '/dashboard',
               'Live triage stats (limitation expiries, pending judgments, draft counts, tracked cases) from API. CNR number sync bar linking to eCourts. Morning brief of 48-hour events. Quick-action tiles for all tools. Zero hardcoded data.',
               'Complete', C.green, C.greenPale, false),
-            moduleRow('💬', 'Universal Agent', '⌘K global overlay',
+            moduleRow('💬', 'InzIQ', '⌘K global overlay',
               'Full-screen AI command palette with SSE streaming. Multi-session sidebar (pin, rename, share, delete). Rich-text draft editor with toolbar. File upload mid-conversation. Save-to-Vault with PDF/DOCX/Native format selector. AI provenance audit trail. LLM intent-driven navigation to any module.',
               'Complete', C.green, C.greenPale, true),
             moduleRow('📄', 'Contract Analyzer', '/contract-analyzer',
@@ -560,7 +648,7 @@ const doc = new Document({
               'Split-panel — left: paper-styled document with contentEditable body and light-theme markdown. Right: AI analysis sidebar. Rich-text toolbar (Bold, Italic, Underline, Strikethrough, Lists). Floating animated Save FAB. isDirty guard with beforeunload warning and navigation confirmation.',
               'Complete', C.green, C.greenPale, true),
             moduleRow('⚔️', 'Virtual Courtroom', '/war-room',
-              '5-stage animated pipeline loader. Live Indian Kanoon precedent search. AI-drafted strategic opening argument. Red-team opposing counsel simulation. Results: Issues cards, Arguments panel, Rebuttal cards, Precedents rail. Export to Vault. Triggered from direct route or via LLM intent from Universal Agent.',
+              '5-stage animated pipeline loader. Live Indian Kanoon precedent search. AI-drafted strategic opening argument. Red-team opposing counsel simulation. Results: Issues cards, Arguments panel, Rebuttal cards, Precedents rail. Export to Vault. Triggered from direct route or via LLM intent from InzIQ.',
               'Complete', C.green, C.greenPale, false),
             moduleRow('🗂️', 'Case Workspace', '/case/:caseId',
               'Per-case deep-dive view with case header (title, status badge, suit number). Embedded VaultView filtered to case ID. Case timeline, parties, hearing history. AI insights tab. Deep-linked from sidebar tracked-cases list and Dashboard.',
@@ -583,7 +671,7 @@ const doc = new Document({
         checkItem('○', 'Multi-user firm accounts with role-based access', C.slateLight),
         spacer(100),
 
-        h2('4.2 Universal Agent (AI Chat)'),
+        h2('4.2 InzIQ (AI Chat)'),
         checkItem('✓', 'Server-Sent Events (SSE) real-time streaming responses', C.green),
         checkItem('✓', 'Multi-session history — pin, rename, share, delete', C.green),
         checkItem('✓', 'File upload mid-conversation (PDF, DOCX, images)', C.green),
@@ -591,7 +679,7 @@ const doc = new Document({
         checkItem('✓', 'Save-to-Vault from chat (Native / PDF / DOCX format selector)', C.green),
         checkItem('✓', 'AI provenance audit trail (agent session linked to saved doc)', C.green),
         checkItem('✓', 'LLM intent routing — navigates to any module from chat', C.green),
-        checkItem('✓', 'Courtroom simulation trigger from Universal Agent', C.green),
+        checkItem('✓', 'Courtroom simulation trigger from InzIQ', C.green),
         checkItem('○', 'Voice input (microphone button)', C.slateLight),
         checkItem('○', 'Inline citation hyperlinks to Indian Kanoon judgments', C.slateLight),
         spacer(100),
@@ -680,20 +768,30 @@ const doc = new Document({
           columnWidths: [600, 1600, 5360, 1800],
           rows: [
             // Header
-            new TableRow({ children: [
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 600, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
-                children: [new Paragraph({ children: [new TextRun({ text: '#', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 1600, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Module', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 5360, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Gap Description', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 1800, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
-                children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Priority', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 600, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
+                  children: [new Paragraph({ children: [new TextRun({ text: '#', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 1600, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Module', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 5360, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Gap Description', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 1800, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 100, right: 60 },
+                  children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Priority', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+              ]
+            }),
             gapRow('01', 'Case Vault', 'Download button for PDF/DOCX blobs — backend route /api/vault/documents/<id>/download exists but is not yet wired to the VaultView card context menu.', 'P1 Critical', C.red, C.redPale, false),
             gapRow('02', 'Auth', 'Password reset / forgot-password flow is completely absent. Any lawyer who forgets their password has no recovery path — a hard deployment blocker for real users.', 'P1 Critical', C.red, C.redPale, true),
             gapRow('03', 'Case Vault', 'Full-text search across all vault documents. Currently only folder navigation exists. Lawyers need to find documents by keyword, case name, or tag across the entire vault.', 'P1 Critical', C.red, C.redPale, false),
@@ -702,7 +800,7 @@ const doc = new Document({
             gapRow('06', 'Auth', 'Multi-user / firm-level accounts. All data is currently per-device with no concept of a firm, team, or shared vault. Required before any firm-level sale.', 'P2 High', C.amber, C.amberPale, true),
             gapRow('07', 'Virtual Courtroom', 'Interactive turn-by-turn debate mode — the lawyer types a response, the opposing AI rebuts. Currently the simulation is a single one-shot generation, not a real conversation.', 'P2 High', C.amber, C.amberPale, false),
             gapRow('08', 'Case Vault', 'Bulk select operations — checkboxes, select-all, bulk move-to-folder, bulk delete, bulk download as ZIP. Standard file-manager behaviour lawyers expect from a Windows-explorer-style UI.', 'P2 High', C.amber, C.amberPale, true),
-            gapRow('09', 'Universal Agent', 'Inline citation hyperlinks — when the LLM cites a judgment, the text should be a clickable link to Indian Kanoon rather than plain text. Builds verifiability and trust.', 'P2 High', C.amber, C.amberPale, false),
+            gapRow('09', 'InzIQ', 'Inline citation hyperlinks — when the LLM cites a judgment, the text should be a clickable link to Indian Kanoon rather than plain text. Builds verifiability and trust.', 'P2 High', C.amber, C.amberPale, false),
             gapRow('10', 'Calendar', 'Google Calendar / Outlook two-way sync. Lawyers use external calendars on mobile. Hearing dates added via CNR sync should propagate automatically to their existing calendar.', 'P3 Medium', C.purple, C.purplePale, true),
             gapRow('11', 'Shell', 'Onboarding flow for new users — empty-state screens with guided first-action prompts (e.g. "Upload your first contract", "Sync your first CNR case"). Currently new users land on a blank dashboard.', 'P3 Medium', C.purple, C.purplePale, false),
             gapRow('12', 'Conflict Engine', 'Search history / log for past conflict checks. Lawyers need to go back to a previous clearance memo without re-running the full check. No persistence of check history currently.', 'P3 Medium', C.purple, C.purplePale, true),
@@ -718,42 +816,58 @@ const doc = new Document({
           width: { size: 9360, type: WidthType.DXA },
           columnWidths: [2400, 2400, 4560],
           rows: [
-            new TableRow({ children: [
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Token', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Hex Value', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 4560, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Usage', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Token', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Hex Value', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 4560, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Usage', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+              ]
+            }),
             ...[
-              ['--accent-primary',   '#3B82F6', 'Primary interactive colour — buttons, links, active states'],
-              ['--accent-success',   '#10B981', 'Success states, complete badges, positive metrics'],
-              ['--accent-danger',    '#EF4444', 'Errors, deletions, high-risk flags, deadlines'],
-              ['--accent-warning',   '#F59E0B', 'Warnings, amber risk, partial states'],
-              ['--accent-purple',    '#8B5CF6', 'Progressive set badges, draft-pending indicators'],
-              ['--bg-app',           '#0A0E17', 'Main application background (dark mode)'],
-              ['--bg-sidebar',       '#121620', 'Sidebar and navigation surface'],
-              ['--bg-panel',         '#171c26', 'Cards, modals, floating panels'],
-              ['--text-primary',     '#E2E8F0', 'Primary readable text'],
-              ['--text-muted',       '#64748B', 'Secondary / supporting text, placeholders'],
-            ].map(([token, hex, usage], i) => new TableRow({ children: [
-              new TableCell({ borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: token, font: 'Courier New', size: 19, color: C.blue })]})] }),
-              new TableCell({ borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: hex, font: 'Courier New', size: 19, color: C.slate })]})] }),
-              new TableCell({ borders: cellBorder(), width: { size: 4560, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: usage, font: 'Arial', size: 21, color: C.slate })]})] }),
-            ]})),
+              ['--accent-primary', '#3B82F6', 'Primary interactive colour — buttons, links, active states'],
+              ['--accent-success', '#10B981', 'Success states, complete badges, positive metrics'],
+              ['--accent-danger', '#EF4444', 'Errors, deletions, high-risk flags, deadlines'],
+              ['--accent-warning', '#F59E0B', 'Warnings, amber risk, partial states'],
+              ['--accent-purple', '#8B5CF6', 'Progressive set badges, draft-pending indicators'],
+              ['--bg-app', '#0A0E17', 'Main application background (dark mode)'],
+              ['--bg-sidebar', '#121620', 'Sidebar and navigation surface'],
+              ['--bg-panel', '#171c26', 'Cards, modals, floating panels'],
+              ['--text-primary', '#E2E8F0', 'Primary readable text'],
+              ['--text-muted', '#64748B', 'Secondary / supporting text, placeholders'],
+            ].map(([token, hex, usage], i) => new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: token, font: 'Courier New', size: 19, color: C.blue })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: hex, font: 'Courier New', size: 19, color: C.slate })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(), width: { size: 4560, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: usage, font: 'Arial', size: 21, color: C.slate })] })]
+                }),
+              ]
+            })),
           ],
         }),
 
@@ -763,35 +877,51 @@ const doc = new Document({
           width: { size: 9360, type: WidthType.DXA },
           columnWidths: [2400, 2400, 4560],
           rows: [
-            new TableRow({ children: [
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Role', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Font', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-              new TableCell({ borders: cellBorder(C.blue), width: { size: 4560, type: WidthType.DXA },
-                shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: 'Notes', font: 'Arial', size: 21, bold: true, color: C.white })]})] }),
-            ]}),
+            new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Role', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 2400, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Font', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(C.blue), width: { size: 4560, type: WidthType.DXA },
+                  shading: { fill: '1E3A5F', type: ShadingType.CLEAR }, margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: 'Notes', font: 'Arial', size: 21, bold: true, color: C.white })] })]
+                }),
+              ]
+            }),
             ...[
               ['Module headings', 'Georgia (--font-serif)', 'Conveys authority and legal gravitas — used on all H1 page titles'],
               ['UI labels / body', 'System-UI (--font-sans)', 'Maximum legibility at small sizes — all buttons, inputs, tables'],
               ['Monospace / code', 'System monospace', 'Code tokens, keyboard shortcuts, API references, CNR numbers'],
-            ].map(([role, font, notes], i) => new TableRow({ children: [
-              new TableCell({ borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: role, font: 'Arial', size: 21, bold: true, color: C.darkBg })]})] }),
-              new TableCell({ borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: font, font: 'Arial', size: 21, color: C.blue })]})] }),
-              new TableCell({ borders: cellBorder(), width: { size: 4560, type: WidthType.DXA },
-                shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
-                margins: { top: 80, bottom: 80, left: 140, right: 80 },
-                children: [new Paragraph({ children: [new TextRun({ text: notes, font: 'Arial', size: 21, color: C.slate })]})] }),
-            ]})),
+            ].map(([role, font, notes], i) => new TableRow({
+              children: [
+                new TableCell({
+                  borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: role, font: 'Arial', size: 21, bold: true, color: C.darkBg })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(), width: { size: 2400, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: font, font: 'Arial', size: 21, color: C.blue })] })]
+                }),
+                new TableCell({
+                  borders: cellBorder(), width: { size: 4560, type: WidthType.DXA },
+                  shading: i % 2 === 0 ? { fill: C.offwhite, type: ShadingType.CLEAR } : undefined,
+                  margins: { top: 80, bottom: 80, left: 140, right: 80 },
+                  children: [new Paragraph({ children: [new TextRun({ text: notes, font: 'Arial', size: 21, color: C.slate })] })]
+                }),
+              ]
+            })),
           ],
         }),
 
