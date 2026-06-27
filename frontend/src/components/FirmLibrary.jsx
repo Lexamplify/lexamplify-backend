@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// ── Seed data — realistic Indian law firm KM entries ──────────────────────────
+// ── Seed data ─────────────────────────────────────────────────────────────────
 const SEED_ENTRIES = [
   {
     id: 1,
@@ -98,14 +98,76 @@ const SEED_ENTRIES = [
 const CATEGORIES = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
 
 const CAT_COLORS = {
-  Template:        { bg: 'rgba(59,130,246,0.12)',  color: '#60A5FA', border: 'rgba(59,130,246,0.25)' },
-  Precedent:       { bg: 'rgba(245,158,11,0.12)', color: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
-  'Research Memo': { bg: 'rgba(139,92,246,0.12)', color: '#A78BFA', border: 'rgba(139,92,246,0.25)' },
-  'Standard Form': { bg: 'rgba(16,185,129,0.12)', color: '#34D399', border: 'rgba(16,185,129,0.25)' },
-  'Practice Guide':{ bg: 'rgba(20,184,166,0.12)', color: '#2DD4BF', border: 'rgba(20,184,166,0.25)' },
+  Template:         { bg: 'rgba(59,130,246,0.12)',  color: '#60A5FA', border: 'rgba(59,130,246,0.25)' },
+  Precedent:        { bg: 'rgba(245,158,11,0.12)',  color: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
+  'Research Memo':  { bg: 'rgba(139,92,246,0.12)',  color: '#A78BFA', border: 'rgba(139,92,246,0.25)' },
+  'Standard Form':  { bg: 'rgba(16,185,129,0.12)',  color: '#34D399', border: 'rgba(16,185,129,0.25)' },
+  'Practice Guide': { bg: 'rgba(20,184,166,0.12)',  color: '#2DD4BF', border: 'rgba(20,184,166,0.25)' },
 };
 
-const getCatStyle = (cat) => CAT_COLORS[cat] || { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF', border: 'rgba(107,114,128,0.2)' };
+const getCatStyle = (cat) =>
+  CAT_COLORS[cat] || { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF', border: 'rgba(107,114,128,0.2)' };
+
+// ── Clause DNA data — per category ───────────────────────────────────────────
+const CLAUSE_DNA = {
+  Template: [
+    { id: 'def',   name: 'Definitions',             risk: 'low',    summary: 'Standard defined terms — verify "Material Breach" threshold aligns with client tolerance' },
+    { id: 'pay',   name: 'Payment Terms',             risk: 'medium', summary: 'Net-30, 18% p.a. compound interest on overdue amounts; S.73 Contract Act exposure' },
+    { id: 'liab',  name: 'Limitation of Liability',  risk: 'high',   summary: 'Cap at 3× monthly fee — aggressive vendor carve; inadequate for high-value transactions' },
+    { id: 'indem', name: 'Indemnification',           risk: 'high',   summary: 'Mutual; excludes gross negligence — verify scope covers third-party IP infringement claims' },
+    { id: 'adr',   name: 'Dispute Resolution',        risk: 'low',    summary: 'DIAC arbitration, seat New Delhi, 3-member tribunal per DIAC Rules 2023' },
+    { id: 'fm',    name: 'Force Majeure',              risk: 'medium', summary: 'Excludes cyber-attacks and pandemic events — review for SaaS/cloud deployment contexts' },
+    { id: 'term',  name: 'Termination',                risk: 'medium', summary: '30-day convenience notice; immediate on material breach with 15-day cure right' },
+  ],
+  Precedent: [
+    { id: 'court', name: 'Jurisdiction & Forum',    risk: 'low',    summary: 'Delhi HC, Original Side — verify pecuniary limits under Commercial Courts Act 2015' },
+    { id: 'facts', name: 'Statement of Facts',       risk: 'medium', summary: '14 paragraphs — confirm chronological accuracy; gaps in para 6–8 need corroborating evidence' },
+    { id: 'grnd',  name: 'Legal Grounds',            risk: 'low',    summary: '4 statutes cited; SC authority at each ground — strong primary authority chain' },
+    { id: 'intm',  name: 'Interim Relief Prayer',    risk: 'high',   summary: 'Ex-parte injunction — balance of convenience critical; urgency affidavit is mandatory' },
+    { id: 'costs', name: 'Prayer for Costs',         risk: 'low',    summary: 'Actual costs + 12% interest from filing date — within High Court established norms' },
+  ],
+  'Research Memo': [
+    { id: 'issue', name: 'Issue Presented',          risk: 'low',    summary: 'Precisely framed single dispositive question with clean scope limitation' },
+    { id: 'find',  name: 'Primary Findings',         risk: 'low',    summary: '6 propositions, each supported by HC/SC authority — citation density adequate' },
+    { id: 'div',   name: 'Diverging Precedents',     risk: 'high',   summary: '2 conflicting Division Bench rulings — refer to Full Bench; do not rely without resolution' },
+    { id: 'risk',  name: 'Risk Assessment',          risk: 'medium', summary: 'Moderate risk overall, 60–70% favourable outcome; caveated on witness availability' },
+    { id: 'rec',   name: 'Recommendations',          risk: 'low',    summary: '3 ranked action items with cost-benefit analysis and 45-day implementation window' },
+  ],
+  'Standard Form': [
+    { id: 'scope', name: 'Scope of Work',            risk: 'medium', summary: 'Defined by Schedule A — ensure all attachments are physically annexed before execution' },
+    { id: 'ip',    name: 'IP Assignment',             risk: 'high',   summary: 'Broad "work made for hire" language — may conflict with existing employee IP rights' },
+    { id: 'conf',  name: 'Confidentiality',           risk: 'low',    summary: '3-year post-termination obligation; standard carve-outs for public domain and court orders' },
+    { id: 'comp',  name: 'Non-Compete',               risk: 'high',   summary: '2-year, all-India, all competing businesses — enforceability doubtful per S.27 CA 1872' },
+    { id: 'sev',   name: 'Severability',              risk: 'low',    summary: 'Blue-pencil doctrine incorporated — non-compete void on face; severs cleanly from agreement' },
+  ],
+  'Practice Guide': [
+    { id: 'pre',   name: 'Pre-Filing Checklist',     risk: 'low',    summary: '12 mandatory items — court rejects filings missing even one; validate before submission' },
+    { id: 'doc',   name: 'Document Requirements',    risk: 'medium', summary: 'Attestation rules changed Q1 2026 for e-filed documents — verify current HC circular' },
+    { id: 'lim',   name: 'Limitation Period',        risk: 'high',   summary: 'STRICT: missed limitation is fatal — calculate from cause of action, not date of discovery' },
+    { id: 'fee',   name: 'Court Fee Schedule',       risk: 'low',    summary: 'Updated April 2026 per Finance Act — use current schedule; old amounts will be rejected' },
+    { id: 'svc',   name: 'Service of Process',       risk: 'medium', summary: 'E-service accepted in Delhi, Bombay, Madras HC — verify Calcutta and other HCs separately' },
+  ],
+};
+
+// Simulated clause headings for the Document Preview scaffold
+const DOC_PREVIEW_CLAUSES = {
+  Template:         ['1. Definitions and Interpretation', '2. Term and Commencement', '3. Obligations of the Parties', '4. Consideration and Payment'],
+  Precedent:        ['IN THE HIGH COURT OF DELHI', 'Statement of Facts', 'Grounds for Relief', 'Prayer'],
+  'Research Memo':  ['I. Issue Presented', 'II. Brief Answer', 'III. Analysis', 'IV. Conclusion and Recommendations'],
+  'Standard Form':  ['Recitals', 'Article I — Definitions', 'Article II — Scope of Work', 'Article III — Consideration'],
+  'Practice Guide': ['A. Overview and Applicability', 'B. Step 1: Pre-Filing Checklist', 'C. Step 2: Document Preparation', 'D. Step 3: Filing and Service'],
+};
+
+const RISK_COLOR = {
+  low:    { bg: 'rgba(16,185,129,0.1)',  color: 'var(--accent-success)', border: 'rgba(16,185,129,0.28)' },
+  medium: { bg: 'rgba(245,158,11,0.1)',  color: '#FBBF24',               border: 'rgba(245,158,11,0.28)' },
+  high:   { bg: 'rgba(239,68,68,0.1)',   color: 'var(--accent-danger)',  border: 'rgba(239,68,68,0.28)' },
+};
+
+// ── localStorage keys ─────────────────────────────────────────────────────────
+const LS_KEY       = 'lexai_firm_library';
+const NOTES_KEY    = 'lexai_fl_notes';
+const REVIEWED_KEY = 'lexai_fl_reviewed';
 
 // ── Sort icon ─────────────────────────────────────────────────────────────────
 const SortIcon = ({ active, dir }) => (
@@ -119,84 +181,63 @@ const SortIcon = ({ active, dir }) => (
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const flStyles = `
-  .fl-page { padding: 28px 32px; font-family: var(--font-sans); color: var(--text-primary); }
-  .fl-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
-  .fl-toolbar {
-    display: flex; gap: 10px; align-items: center;
-    margin-bottom: 16px; flex-wrap: wrap;
+  .fl-page {
+    padding: 28px 32px;
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+    transition: padding-right 0.32s cubic-bezier(0.16,1,0.3,1);
   }
-  .fl-search-wrap {
-    flex: 1; min-width: 220px;
-    position: relative; display: flex; align-items: center;
+  .fl-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
   }
-  .fl-search-icon {
-    position: absolute; left: 12px;
-    color: var(--text-muted); pointer-events: none;
-    display: flex; align-items: center;
-  }
+  .fl-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .fl-search-wrap { flex: 1; min-width: 220px; position: relative; display: flex; align-items: center; }
+  .fl-search-icon { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; display: flex; align-items: center; }
   .fl-search-input {
     width: 100%; padding: 9px 12px 9px 36px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel); border: 1px solid var(--border-subtle);
     border-radius: 8px; outline: none;
-    color: var(--text-primary); font-family: var(--font-sans);
-    font-size: 13.5px; transition: border-color 0.18s, box-shadow 0.18s;
+    color: var(--text-primary); font-family: var(--font-sans); font-size: 13.5px;
+    transition: border-color 0.18s, box-shadow 0.18s;
   }
   .fl-search-input::placeholder { color: var(--text-muted); }
-  .fl-search-input:focus {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
-  }
-  .fl-cat-filter {
-    display: flex; gap: 4px; flex-wrap: wrap;
-  }
+  .fl-search-input:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+  .fl-cat-filter { display: flex; gap: 4px; flex-wrap: wrap; }
   .fl-cat-btn {
     padding: 7px 13px; border-radius: 7px; font-size: 12px; font-weight: 500;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel); color: var(--text-muted);
-    cursor: pointer; transition: all 0.15s; white-space: nowrap;
-    font-family: var(--font-sans);
+    border: 1px solid var(--border-subtle); background: var(--bg-panel); color: var(--text-muted);
+    cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: var(--font-sans);
   }
   .fl-cat-btn:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
-  .fl-cat-btn.active {
-    background: var(--accent-primary); color: #fff;
-    border-color: var(--accent-primary);
-    font-weight: 600;
-  }
+  .fl-cat-btn.active { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); font-weight: 600; }
   /* Table */
-  .fl-table-wrap {
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
-    border-radius: 12px; overflow: hidden;
-  }
+  .fl-table-wrap { background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; }
   .fl-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .fl-table th {
-    padding: 12px 18px;
-    background: var(--bg-card);
+    padding: 12px 18px; background: var(--bg-card);
     color: var(--text-muted); font-size: 11px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.06em;
-    border-bottom: 1px solid var(--border-subtle);
-    cursor: pointer; user-select: none;
-    white-space: nowrap;
+    border-bottom: 1px solid var(--border-subtle); cursor: pointer; user-select: none; white-space: nowrap;
   }
   .fl-table th:hover { color: var(--text-primary); }
   .fl-table th.sorted { color: var(--accent-primary); }
-  .fl-table th-inner { display: flex; align-items: center; gap: 2px; }
   .fl-table td {
-    padding: 13px 18px;
-    border-bottom: 1px solid var(--border-subtle);
+    padding: 13px 18px; border-bottom: 1px solid var(--border-subtle);
     color: var(--text-primary); vertical-align: middle;
   }
-  .fl-table tbody tr { transition: background 0.12s; position: relative; }
-  .fl-table tbody tr:hover { background: rgba(59,130,246,0.04); }
+  .fl-table tbody tr { transition: background 0.12s; cursor: pointer; }
+  .fl-table tbody tr:hover { background: rgba(59,130,246,0.05); }
+  .fl-table tbody tr.fl-row-selected {
+    background: rgba(59,130,246,0.07);
+    box-shadow: inset 3px 0 0 var(--accent-primary);
+  }
+  .fl-table tbody tr.fl-row-selected:hover { background: rgba(59,130,246,0.1); }
   .fl-table tbody tr:last-child td { border-bottom: none; }
   /* Category chip */
   .fl-cat-chip {
-    display: inline-flex; align-items: center;
-    padding: 2px 9px; border-radius: 20px;
-    font-size: 11px; font-weight: 700;
-    letter-spacing: 0.03em; white-space: nowrap;
-    border: 1px solid;
+    display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em; white-space: nowrap; border: 1px solid;
   }
   /* Three-dot action menu */
   .fl-row-actions { position: relative; }
@@ -210,10 +251,8 @@ const flStyles = `
   .fl-dots-btn:hover, .fl-dots-btn.open { background: rgba(59,130,246,0.1); color: var(--accent-primary); }
   .fl-action-menu {
     position: fixed; z-index: 1000;
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px; padding: 4px;
-    min-width: 168px;
+    background: var(--bg-card); border: 1px solid var(--border-subtle);
+    border-radius: 8px; padding: 4px; min-width: 168px;
     box-shadow: 0 8px 30px rgba(0,0,0,0.22);
     animation: fl-menu-in 0.14s cubic-bezier(0.16,1,0.3,1);
   }
@@ -222,59 +261,34 @@ const flStyles = `
     to   { opacity: 1; transform: scale(1) translateY(0); }
   }
   .fl-menu-item {
-    display: flex; align-items: center; gap: 9px;
-    padding: 8px 12px; border-radius: 5px; font-size: 13px;
-    color: var(--text-primary); cursor: pointer; transition: background 0.12s;
+    display: flex; align-items: center; gap: 9px; padding: 8px 12px; border-radius: 5px;
+    font-size: 13px; color: var(--text-primary); cursor: pointer; transition: background 0.12s;
   }
   .fl-menu-item:hover { background: rgba(59,130,246,0.07); }
   .fl-menu-item.danger { color: var(--accent-danger); }
   .fl-menu-item.danger:hover { background: rgba(239,68,68,0.07); }
   .fl-menu-divider { height: 1px; background: var(--border-subtle); margin: 3px 0; }
-  /* Quick Preview panel — Architect's Innovation */
+  /* Quick Preview panel */
   .fl-preview-panel {
-    position: fixed; z-index: 1100;
-    width: 308px;
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    position: fixed; z-index: 1100; width: 308px;
+    background: var(--bg-card); border: 1px solid var(--border-subtle);
     border-radius: 12px; padding: 18px;
     box-shadow: 0 12px 40px rgba(0,0,0,0.28), 0 0 0 1px rgba(59,130,246,0.1);
     pointer-events: auto;
     transition: opacity 0.2s cubic-bezier(0.16,1,0.3,1), transform 0.2s cubic-bezier(0.16,1,0.3,1);
-    opacity: 0; transform: scale(0.94) translateY(8px);
-    transform-origin: top center;
+    opacity: 0; transform: scale(0.94) translateY(8px); transform-origin: top center;
     will-change: opacity, transform;
   }
-  .fl-preview-panel.visible {
-    opacity: 1; transform: scale(1) translateY(0);
-  }
-  .fl-preview-title {
-    font-size: 14px; font-weight: 700; font-family: var(--font-serif);
-    color: var(--text-primary); line-height: 1.35; margin-bottom: 10px;
-  }
-  .fl-preview-desc {
-    font-size: 12.5px; color: var(--text-muted); line-height: 1.6;
-    margin-bottom: 12px;
-  }
+  .fl-preview-panel.visible { opacity: 1; transform: scale(1) translateY(0); }
+  .fl-preview-title { font-size: 14px; font-weight: 700; font-family: var(--font-serif); color: var(--text-primary); line-height: 1.35; margin-bottom: 10px; }
+  .fl-preview-desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px; }
   .fl-preview-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 14px; }
-  .fl-preview-tag {
-    font-size: 10px; font-weight: 600; padding: 2px 7px;
-    border-radius: 4px; background: rgba(59,130,246,0.08);
-    color: var(--accent-primary); border: 1px solid rgba(59,130,246,0.18);
-  }
+  .fl-preview-tag { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; background: rgba(59,130,246,0.08); color: var(--accent-primary); border: 1px solid rgba(59,130,246,0.18); }
   .fl-preview-actions { display: flex; gap: 7px; }
-  .fl-preview-btn {
-    flex: 1; padding: 7px 10px; border-radius: 6px;
-    font-size: 11.5px; font-weight: 600; cursor: pointer;
-    font-family: var(--font-sans); transition: all 0.15s; text-align: center;
-  }
-  .fl-preview-btn.primary {
-    background: var(--accent-primary); color: #fff; border: none;
-  }
+  .fl-preview-btn { flex: 1; padding: 7px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: var(--font-sans); transition: all 0.15s; text-align: center; }
+  .fl-preview-btn.primary { background: var(--accent-primary); color: #fff; border: none; }
   .fl-preview-btn.primary:hover { background: var(--accent-hover); }
-  .fl-preview-btn.secondary {
-    background: transparent; color: var(--accent-primary);
-    border: 1px solid rgba(59,130,246,0.3);
-  }
+  .fl-preview-btn.secondary { background: transparent; color: var(--accent-primary); border: 1px solid rgba(59,130,246,0.3); }
   .fl-preview-btn.secondary:hover { background: rgba(59,130,246,0.08); }
   /* Skeleton */
   .fl-skeleton-row td { padding: 16px 18px; }
@@ -285,34 +299,24 @@ const flStyles = `
   }
   @keyframes fl-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   /* Empty state */
-  .fl-empty {
-    padding: 56px 24px; text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
-  }
+  .fl-empty { padding: 56px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .fl-empty-icon { font-size: 32px; }
   /* Add entry modal */
   .fl-modal-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
     z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px;
   }
-  .fl-modal {
-    background: var(--bg-panel); border: 1px solid var(--border-subtle);
-    border-radius: 14px; width: 100%; max-width: 520px;
-    box-shadow: 0 24px 60px rgba(0,0,0,0.35);
-    animation: fl-modal-in 0.22s cubic-bezier(0.16,1,0.3,1);
-  }
+  .fl-modal { background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 14px; width: 100%; max-width: 520px; box-shadow: 0 24px 60px rgba(0,0,0,0.35); animation: fl-modal-in 0.22s cubic-bezier(0.16,1,0.3,1); }
   @keyframes fl-modal-in { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: none; } }
-  .fl-modal-header {
-    padding: 18px 20px; border-bottom: 1px solid var(--border-subtle);
-    display: flex; align-items: center; justify-content: space-between;
-  }
+  .fl-modal-header { padding: 18px 20px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; }
   .fl-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
   .fl-modal-footer { padding: 14px 20px; border-top: 1px solid var(--border-subtle); display: flex; gap: 10px; justify-content: flex-end; }
   .fl-input {
     width: 100%; padding: 9px 12px;
     background: var(--bg-card); border: 1px solid var(--border-subtle);
     border-radius: 7px; outline: none; color: var(--text-primary);
-    font-family: var(--font-sans); font-size: 13.5px; transition: border-color 0.18s, box-shadow 0.18s;
+    font-family: var(--font-sans); font-size: 13.5px;
+    transition: border-color 0.18s, box-shadow 0.18s;
   }
   .fl-input::placeholder { color: var(--text-muted); }
   .fl-input:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
@@ -320,22 +324,161 @@ const flStyles = `
   /* Toast */
   .fl-toast {
     position: fixed; bottom: 24px; right: 24px; z-index: 1300;
-    background: var(--bg-card); border: 1px solid var(--accent-success);
-    color: var(--accent-success); padding: 10px 20px; border-radius: 8px;
-    font-size: 13px; font-weight: 600;
+    background: var(--bg-card); border: 1px solid var(--accent-success); color: var(--accent-success);
+    padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600;
     box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-    opacity: 0; transform: translateY(8px); transition: all 0.25s;
-    pointer-events: none;
+    opacity: 0; transform: translateY(8px); transition: all 0.25s; pointer-events: none;
   }
   .fl-toast.show { opacity: 1; transform: translateY(0); }
-  /* Light theme */
+
+  /* ── Workspace Drawer ──────────────────────────────────────────────────── */
+  .fl-workspace-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 480px;
+    background: var(--bg-panel); border-left: 1px solid var(--border-subtle);
+    z-index: 1050; display: flex; flex-direction: column; overflow: hidden;
+    transform: translateX(100%);
+    transition: transform 0.32s cubic-bezier(0.16,1,0.3,1), box-shadow 0.32s ease;
+  }
+  .fl-workspace-drawer.open {
+    transform: translateX(0);
+    box-shadow: -16px 0 56px rgba(0,0,0,0.22);
+  }
+  /* Header */
+  .fl-ws-header {
+    padding: 18px 20px 0 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+  }
+  .fl-ws-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .fl-ws-close-btn {
+    width: 28px; height: 28px; border-radius: 6px; border: none; cursor: pointer;
+    background: transparent; color: var(--text-muted);
+    display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0;
+  }
+  .fl-ws-close-btn:hover { background: rgba(239,68,68,0.08); color: var(--accent-danger); }
+  .fl-ws-title { font-size: 15.5px; font-weight: 700; font-family: var(--font-serif); color: var(--text-primary); line-height: 1.35; margin-bottom: 8px; }
+  .fl-ws-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fl-ws-meta-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--border-subtle); flex-shrink: 0; }
+  /* Tab bar */
+  .fl-ws-tabs { display: flex; padding: 0 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; background: var(--bg-panel); }
+  .fl-ws-tab {
+    padding: 12px 14px; font-size: 13px; font-weight: 500; color: var(--text-muted);
+    background: transparent; border: none; cursor: pointer;
+    font-family: var(--font-sans); transition: color 0.15s; position: relative; white-space: nowrap;
+  }
+  .fl-ws-tab:hover { color: var(--text-primary); }
+  .fl-ws-tab.active { color: var(--accent-primary); font-weight: 600; }
+  .fl-ws-tab.active::after {
+    content: ''; position: absolute; bottom: 0; left: 14px; right: 14px;
+    height: 2px; background: var(--accent-primary); border-radius: 2px 2px 0 0;
+  }
+  .fl-ws-tab-new { font-size: 9px; vertical-align: super; color: var(--accent-primary); margin-left: 2px; }
+  /* Scrollable body */
+  .fl-ws-body {
+    flex: 1; overflow-y: auto; padding: 20px;
+    animation: fl-ws-content-in 0.22s cubic-bezier(0.16,1,0.3,1);
+  }
+  .fl-ws-body::-webkit-scrollbar { width: 4px; }
+  .fl-ws-body::-webkit-scrollbar-track { background: transparent; }
+  .fl-ws-body::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
+  @keyframes fl-ws-content-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  /* Overview: sections */
+  .fl-ws-section { margin-bottom: 22px; }
+  .fl-ws-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 8px; }
+  .fl-ws-description { font-size: 13.5px; color: var(--text-primary); line-height: 1.7; }
+  .fl-ws-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .fl-ws-meta-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px; }
+  .fl-ws-meta-card-label { font-size: 10px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .fl-ws-meta-card-value { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  /* Overview: document preview */
+  .fl-ws-doc-preview {
+    background: var(--bg-card); border: 1px solid var(--border-subtle);
+    border-radius: 10px; padding: 16px 18px;
+  }
+  .fl-ws-clause-heading {
+    font-size: 10.5px; font-weight: 700; color: var(--text-primary);
+    margin: 14px 0 6px 0; font-family: var(--font-serif);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .fl-ws-clause-heading:first-child { margin-top: 0; }
+  .fl-ws-clause-line { height: 8px; border-radius: 3px; margin-bottom: 5px; background: var(--border-subtle); opacity: 0.6; }
+  /* Clause DNA tab */
+  .fl-dna-intro { text-align: center; padding: 20px 0 28px; }
+  .fl-dna-icon { font-size: 36px; margin-bottom: 14px; }
+  .fl-dna-headline { font-size: 16px; font-weight: 700; font-family: var(--font-serif); color: var(--text-primary); margin-bottom: 8px; }
+  .fl-dna-subtext { font-size: 13px; color: var(--text-muted); line-height: 1.65; margin-bottom: 22px; max-width: 320px; display: block; margin-left: auto; margin-right: auto; }
+  .fl-dna-scan-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 26px; border-radius: 8px;
+    background: var(--accent-primary); color: #fff; border: none;
+    font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: var(--font-sans);
+    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 2px 12px rgba(59,130,246,0.3);
+  }
+  .fl-dna-scan-btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(59,130,246,0.38); }
+  .fl-dna-scanning-banner {
+    display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+    background: var(--bg-card); border: 1px solid var(--border-subtle);
+    border-radius: 10px; margin-bottom: 12px;
+  }
+  .fl-spinner {
+    width: 16px; height: 16px; flex-shrink: 0;
+    border: 2px solid rgba(59,130,246,0.2); border-top-color: var(--accent-primary);
+    border-radius: 50%; animation: fl-spin 0.75s linear infinite;
+  }
+  @keyframes fl-spin { to { transform: rotate(360deg); } }
+  .fl-dna-skel { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 12px 14px; margin-bottom: 8px; }
+  .fl-dna-clause-card {
+    background: var(--bg-card); border: 1px solid var(--border-subtle);
+    border-radius: 9px; padding: 12px 14px; margin-bottom: 8px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .fl-dna-clause-card:hover { border-color: rgba(59,130,246,0.3); box-shadow: 0 2px 10px rgba(59,130,246,0.06); }
+  .fl-dna-clause-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; gap: 8px; }
+  .fl-dna-clause-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .fl-dna-risk-badge {
+    font-size: 9.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+    border: 1px solid; text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0;
+  }
+  .fl-dna-clause-summary { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
+  .fl-dna-rescan-btn {
+    font-size: 11.5px; background: transparent; border: none;
+    color: var(--accent-primary); cursor: pointer; padding: 4px 8px; border-radius: 4px;
+    transition: background 0.12s;
+  }
+  .fl-dna-rescan-btn:hover { background: rgba(59,130,246,0.08); }
+  /* Actions tab */
+  .fl-ws-action-btn {
+    width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 16px;
+    border-radius: 9px; border: 1px solid var(--border-subtle);
+    background: var(--bg-card); color: var(--text-primary);
+    font-size: 13.5px; font-weight: 500; cursor: pointer;
+    font-family: var(--font-sans); transition: all 0.15s; margin-bottom: 8px; text-align: left;
+  }
+  .fl-ws-action-btn:hover { border-color: var(--accent-primary); background: rgba(59,130,246,0.04); color: var(--accent-primary); }
+  .fl-ws-action-btn.primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); font-weight: 600; }
+  .fl-ws-action-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+  .fl-ws-action-btn.reviewed { background: rgba(16,185,129,0.08); color: var(--accent-success); border-color: rgba(16,185,129,0.3); font-weight: 600; }
+  .fl-ws-action-btn.reviewed:hover { background: rgba(16,185,129,0.13); border-color: var(--accent-success); color: var(--accent-success); }
+  .fl-ws-notes {
+    width: 100%; padding: 10px 12px;
+    background: var(--bg-card); border: 1px solid var(--border-subtle);
+    border-radius: 7px; outline: none; color: var(--text-primary);
+    font-family: var(--font-sans); font-size: 13px;
+    transition: border-color 0.18s, box-shadow 0.18s;
+    resize: vertical; min-height: 96px; box-sizing: border-box; line-height: 1.6;
+  }
+  .fl-ws-notes::placeholder { color: var(--text-muted); }
+  .fl-ws-notes:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  /* Light theme overrides */
   :root[data-theme="light"] .fl-table-wrap { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
   :root[data-theme="light"] .fl-action-menu { box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
   :root[data-theme="light"] .fl-preview-panel { box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(59,130,246,0.1); }
+  :root[data-theme="light"] .fl-workspace-drawer.open { box-shadow: -8px 0 40px rgba(0,0,0,0.1); }
 `;
 
 // ── LS helpers ────────────────────────────────────────────────────────────────
-const LS_KEY = 'lexai_firm_library';
 const loadEntries = () => {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -353,32 +496,52 @@ const saveEntries = (entries) => {
 export default function FirmLibrary() {
   const navigate = useNavigate();
 
-  const [entries, setEntries] = useState(loadEntries);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [catFilter, setCatFilter] = useState('All');
-  const [sortCol, setSortCol] = useState('updated');
-  const [sortDir, setSortDir] = useState('desc');
-  const [menuRow, setMenuRow] = useState(null);
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
-  const [preview, setPreview] = useState(null);
+  // ── Core state ──────────────────────────────────────────────────────────────
+  const [entries, setEntries]       = useState(loadEntries);
+  const [loading, setLoading]       = useState(true);
+  const [search, setSearch]         = useState('');
+  const [catFilter, setCatFilter]   = useState('All');
+  const [sortCol, setSortCol]       = useState('updated');
+  const [sortDir, setSortDir]       = useState('desc');
+  const [menuRow, setMenuRow]       = useState(null);
+  const [menuPos, setMenuPos]       = useState({ x: 0, y: 0 });
+  const [preview, setPreview]       = useState(null);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
-  const [showModal, setShowModal] = useState(false);
-  const [toast, setToast] = useState('');
-  const [newEntry, setNewEntry] = useState({ title: '', category: 'Template', author: '', description: '', tags: '' });
+  const [showModal, setShowModal]   = useState(false);
+  const [toast, setToast]           = useState('');
+  const [newEntry, setNewEntry]     = useState({ title: '', category: 'Template', author: '', description: '', tags: '' });
 
-  const hoverTimerRef = useRef(null);
+  // ── Workspace state ─────────────────────────────────────────────────────────
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [activeTab, setActiveTab]         = useState('overview');
+  const [dnaScanning, setDnaScanning]     = useState(false);
+  const [dnaReady, setDnaReady]           = useState(false);
+  const [entryKey, setEntryKey]           = useState(0);
+  const [entryNotes, setEntryNotes]       = useState(() => {
+    try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch { return {}; }
+  });
+  const [reviewedSet, setReviewedSet]     = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(REVIEWED_KEY) || '[]')); } catch { return new Set(); }
+  });
+
+  // ── Refs ────────────────────────────────────────────────────────────────────
+  const hoverTimerRef     = useRef(null);
   const previewHoveredRef = useRef(false);
-  // Tracks live cursor position; updated on every mousemove over the table
-  const mousePosRef = useRef({ x: 0, y: 0 });
+  const mousePosRef       = useRef({ x: 0, y: 0 });
+  const selectedEntryRef  = useRef(null);  // mirrors selectedEntry for stable callbacks
+  const wsLastEntryRef    = useRef(null);  // holds last entry during slide-out animation
+  const drawerTimerRef    = useRef(null);  // DNA scan timer
 
-  // Simulated load
+  // Keep wsLastEntryRef in sync — content stays rendered during drawer close animation
+  if (selectedEntry) wsLastEntryRef.current = selectedEntry;
+  const wsEntry = wsLastEntryRef.current;
+
+  // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 480);
     return () => clearTimeout(t);
   }, []);
 
-  // Close action menu on outside click
   useEffect(() => {
     if (!menuRow) return;
     const handler = () => setMenuRow(null);
@@ -386,12 +549,25 @@ export default function FirmLibrary() {
     return () => document.removeEventListener('click', handler);
   }, [menuRow]);
 
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && selectedEntryRef.current) closeWorkspace();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []); // stable — reads from ref
+
+  useEffect(() => {
+    return () => clearTimeout(drawerTimerRef.current);
+  }, []);
+
+  // ── Toast ────────────────────────────────────────────────────────────────────
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   };
 
-  // ── Sort ──────────────────────────────────────────────────────────────────
+  // ── Sort ─────────────────────────────────────────────────────────────────────
   const handleSort = (col) => {
     if (sortCol === col) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -401,7 +577,7 @@ export default function FirmLibrary() {
     }
   };
 
-  // ── Filter + Search + Sort pipeline ───────────────────────────────────────
+  // ── Filter + Search + Sort pipeline ──────────────────────────────────────────
   const filtered = entries
     .filter(e => catFilter === 'All' || e.category === catFilter)
     .filter(e => {
@@ -418,61 +594,31 @@ export default function FirmLibrary() {
       let va = a[sortCol] || '';
       let vb = b[sortCol] || '';
       if (sortCol === 'updated') { va = new Date(va); vb = new Date(vb); }
-      else { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+      else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
       if (va < vb) return sortDir === 'asc' ? -1 : 1;
       if (va > vb) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
 
-  // ── Quick Preview (Architect's Innovation) ─────────────────────────────────
-  //
-  // WHY mouse-relative, not <tr> bounding rect:
-  //   getBoundingClientRect() on a <tr> in a full-width table returns
-  //   rect.left ≈ sidebarWidth (~224px) and rect.right ≈ window.innerWidth.
-  //   "Right of row" = window.innerWidth + offset = off-screen.
-  //   "Left of row"  = 224 - 308 - 10 = -94px  = behind sidebar.
-  //   No amount of clamping fixes a panel anchored to a full-viewport-width row.
-  //
-  //   Mouse-relative anchoring uses e.clientX / e.clientY, the actual pixel
-  //   where the user's cursor is. The cursor is ALWAYS inside the viewport,
-  //   so "right-of-cursor" or "left-of-cursor" is always a valid, visible position.
-  //   This is the pattern used by Notion, Linear, and Airtable for hover previews.
-  //
-  // Capture strategy: mousePosRef is updated on every mousemove over the table
-  // wrapper (one lightweight global handler). At row-enter we also sync the ref
-  // immediately from `e.clientX/Y` so there's always a valid initial position even
-  // before the first mousemove fires.
+  // ── Quick Preview (hover) ─────────────────────────────────────────────────────
   const handleMouseMove = useCallback((e) => {
     mousePosRef.current = { x: e.clientX, y: e.clientY };
   }, []);
 
   const handleRowMouseEnter = useCallback((entry, e) => {
+    // Suppress hover preview when workspace drawer is open
+    if (selectedEntryRef.current) return;
     clearTimeout(hoverTimerRef.current);
-    // Seed the ref at row-enter as a reliable initial position
     mousePosRef.current = { x: e.clientX, y: e.clientY };
     hoverTimerRef.current = setTimeout(() => {
       if (previewHoveredRef.current) return;
-
-      const PANEL_W  = 308;
-      const PANEL_H  = 300;
-      const OFFSET   = 18;  // gap between cursor and panel edge
-      const VP_PAD   = 12;
-      const SIDEBAR_SAFE = 256; // hard left wall — never clip the sidebar
-
+      const PANEL_W = 308, PANEL_H = 300, OFFSET = 18, VP_PAD = 12, SIDEBAR_SAFE = 256;
       const { x: mx, y: my } = mousePosRef.current;
-
-      // Try right of cursor; if panel would bleed past right viewport edge → go left
       let x = mx + OFFSET;
-      if (x + PANEL_W > window.innerWidth - VP_PAD) {
-        x = mx - PANEL_W - OFFSET;
-      }
-      // Hard clamp: [sidebar-safe, right-viewport-edge]
+      if (x + PANEL_W > window.innerWidth - VP_PAD) x = mx - PANEL_W - OFFSET;
       x = Math.max(SIDEBAR_SAFE, Math.min(x, window.innerWidth - PANEL_W - VP_PAD));
-
-      // Y: slightly above cursor, clamped to viewport height
       let y = my - 60;
       y = Math.max(VP_PAD, Math.min(y, window.innerHeight - PANEL_H - VP_PAD));
-
       setPreviewPos({ x, y });
       setPreview(entry);
     }, 620);
@@ -489,13 +635,72 @@ export default function FirmLibrary() {
     previewHoveredRef.current = true;
     clearTimeout(hoverTimerRef.current);
   };
-
   const handlePreviewMouseLeave = () => {
     previewHoveredRef.current = false;
     setPreview(null);
   };
 
-  // ── Action menu ──────────────────────────────────────────────────────────
+  // ── Workspace open / close ────────────────────────────────────────────────────
+  const openWorkspace = useCallback((entry, e) => {
+    e.stopPropagation();
+    clearTimeout(hoverTimerRef.current);
+    clearTimeout(drawerTimerRef.current);
+    previewHoveredRef.current = false;
+    setPreview(null);
+
+    if (selectedEntryRef.current?.id === entry.id) {
+      // Toggle: clicking the same row again closes the workspace
+      selectedEntryRef.current = null;
+      setSelectedEntry(null);
+      return;
+    }
+
+    selectedEntryRef.current = entry;
+    setSelectedEntry(entry);
+    setActiveTab('overview');
+    setDnaScanning(false);
+    setDnaReady(false);
+    setEntryKey(k => k + 1);
+  }, []);
+
+  const closeWorkspace = useCallback(() => {
+    clearTimeout(drawerTimerRef.current);
+    selectedEntryRef.current = null;
+    setSelectedEntry(null);
+    setDnaScanning(false);
+    setDnaReady(false);
+  }, []);
+
+  // ── Clause DNA scan ───────────────────────────────────────────────────────────
+  const runDnaScan = useCallback(() => {
+    clearTimeout(drawerTimerRef.current);
+    setDnaScanning(true);
+    setDnaReady(false);
+    drawerTimerRef.current = setTimeout(() => {
+      setDnaScanning(false);
+      setDnaReady(true);
+    }, 1800);
+  }, []);
+
+  // ── Notes & Reviewed persistence ──────────────────────────────────────────────
+  const saveNote = useCallback((id, text) => {
+    setEntryNotes(prev => {
+      const updated = { ...prev, [id]: text };
+      try { localStorage.setItem(NOTES_KEY, JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }, []);
+
+  const toggleReviewed = useCallback((id) => {
+    setReviewedSet(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      try { localStorage.setItem(REVIEWED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
+
+  // ── Action menu ───────────────────────────────────────────────────────────────
   const openMenu = (id, e) => {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
@@ -509,6 +714,7 @@ export default function FirmLibrary() {
       saveEntries(updated);
       return updated;
     });
+    if (selectedEntryRef.current?.id === id) closeWorkspace();
     setMenuRow(null);
     showToast('Entry removed from library');
   };
@@ -524,7 +730,8 @@ export default function FirmLibrary() {
     navigate(`/conflict-engine?entity=${encodeURIComponent(title)}`);
   };
 
-  // ── Add new entry ─────────────────────────────────────────────────────────
+  // ── Add new entry ─────────────────────────────────────────────────────────────
+  const EMPTY_FORM = { title: '', category: 'Template', author: '', description: '', tags: '' };
   const handleAddEntry = (e) => {
     e.preventDefault();
     if (!newEntry.title.trim()) return;
@@ -543,16 +750,12 @@ export default function FirmLibrary() {
       return updated;
     });
     setShowModal(false);
-    setNewEntry({ title: '', category: 'Template', author: '', description: '', tags: '' });
+    setNewEntry(EMPTY_FORM);
     showToast('Entry added to Firm Library');
   };
 
   const ThHeader = ({ col, label, style }) => (
-    <th
-      onClick={() => handleSort(col)}
-      className={sortCol === col ? 'sorted' : ''}
-      style={style}
-    >
+    <th onClick={() => handleSort(col)} className={sortCol === col ? 'sorted' : ''} style={style}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         {label}
         <SortIcon active={sortCol === col} dir={sortDir} />
@@ -560,12 +763,18 @@ export default function FirmLibrary() {
     </th>
   );
 
+  // ── Workspace render helpers ──────────────────────────────────────────────────
+  const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
   return (
     <>
       <style>{flStyles}</style>
 
-      <div className="fl-page">
-
+      {/* Main page — padding-right compresses to make room for the drawer */}
+      <div
+        className="fl-page"
+        style={{ paddingRight: selectedEntry ? 'calc(32px + 480px)' : '32px' }}
+      >
         {/* Header */}
         <div className="fl-header">
           <div>
@@ -581,7 +790,9 @@ export default function FirmLibrary() {
             onClick={() => setShowModal(true)}
             style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7 }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
             Add Entry
           </button>
         </div>
@@ -590,7 +801,9 @@ export default function FirmLibrary() {
         <div className="fl-toolbar">
           <div className="fl-search-wrap">
             <span className="fl-search-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
             </span>
             <input
               type="text"
@@ -617,7 +830,12 @@ export default function FirmLibrary() {
         {!loading && (
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
             {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
-            {search || catFilter !== 'All' ? ` matching filters` : ` in library`}
+            {search || catFilter !== 'All' ? ' matching filters' : ' in library'}
+            {selectedEntry && (
+              <span style={{ marginLeft: 12, color: 'var(--accent-primary)', fontWeight: 600 }}>
+                · Workspace open
+              </span>
+            )}
           </div>
         )}
 
@@ -626,10 +844,10 @@ export default function FirmLibrary() {
           <table className="fl-table">
             <thead>
               <tr>
-                <ThHeader col="title" label="Document Title" style={{ width: '38%' }} />
-                <ThHeader col="category" label="Category" style={{ width: '14%' }} />
-                <ThHeader col="updated" label="Last Updated" style={{ width: '13%' }} />
-                <ThHeader col="author" label="Author / Source" style={{ width: '18%' }} />
+                <ThHeader col="title"    label="Document Title"   style={{ width: '38%' }} />
+                <ThHeader col="category" label="Category"         style={{ width: '14%' }} />
+                <ThHeader col="updated"  label="Last Updated"     style={{ width: '13%' }} />
+                <ThHeader col="author"   label="Author / Source"  style={{ width: '18%' }} />
                 <th style={{ width: '48px' }} />
               </tr>
             </thead>
@@ -658,9 +876,12 @@ export default function FirmLibrary() {
                 </tr>
               ) : filtered.map(entry => {
                 const catStyle = getCatStyle(entry.category);
+                const isSelected = selectedEntry?.id === entry.id;
                 return (
                   <tr
                     key={entry.id}
+                    className={isSelected ? 'fl-row-selected' : ''}
+                    onClick={e => openWorkspace(entry, e)}
                     onMouseEnter={e => handleRowMouseEnter(entry, e)}
                     onMouseLeave={handleRowMouseLeave}
                   >
@@ -683,10 +904,10 @@ export default function FirmLibrary() {
                       </span>
                     </td>
                     <td style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                      {new Date(entry.updated).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {fmtDate(entry.updated)}
                     </td>
                     <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                       <div className="fl-row-actions">
                         <button
                           className={`fl-dots-btn${menuRow === entry.id ? ' open' : ''}`}
@@ -705,110 +926,376 @@ export default function FirmLibrary() {
             </tbody>
           </table>
         </div>
+      </div>{/* end .fl-page */}
 
-        {/* Action menu dropdown */}
-        {menuRow && (
-          <div
-            className="fl-action-menu"
-            style={{ top: menuPos.y, left: Math.max(8, menuPos.x) }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="fl-menu-item" onClick={() => copyTitle(entries.find(e => e.id === menuRow)?.title || '')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      {/* Action menu dropdown */}
+      {menuRow && (
+        <div
+          className="fl-action-menu"
+          style={{ top: menuPos.y, left: Math.max(8, menuPos.x) }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="fl-menu-item" onClick={() => copyTitle(entries.find(e => e.id === menuRow)?.title || '')}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy Title
+          </div>
+          <div className="fl-menu-item" onClick={() => sendToConflict(entries.find(e => e.id === menuRow)?.title || '')}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            Send to Conflict Engine
+          </div>
+          <div className="fl-menu-divider" />
+          <div className="fl-menu-item danger" onClick={() => deleteEntry(menuRow)}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+            </svg>
+            Remove from Library
+          </div>
+        </div>
+      )}
+
+      {/* Quick Preview panel — 620ms hover reveal */}
+      {preview && !selectedEntry && (
+        <div
+          className="fl-preview-panel visible"
+          style={{ top: previewPos.y, left: previewPos.x }}
+          onMouseEnter={handlePreviewMouseEnter}
+          onMouseLeave={handlePreviewMouseLeave}
+        >
+          <span className="fl-cat-chip" style={{ ...getCatStyle(preview.category), marginBottom: 10, display: 'inline-flex' }}>
+            {preview.category}
+          </span>
+          <div className="fl-preview-title">{preview.title}</div>
+          {preview.description && (
+            <div className="fl-preview-desc">
+              {preview.description.length > 200 ? preview.description.slice(0, 200) + '…' : preview.description}
+            </div>
+          )}
+          {preview.tags?.length > 0 && (
+            <div className="fl-preview-tags">
+              {preview.tags.map(t => <span key={t} className="fl-preview-tag">{t}</span>)}
+            </div>
+          )}
+          <div className="fl-preview-actions">
+            <button className="fl-preview-btn secondary" onClick={() => { copyTitle(preview.title); setPreview(null); }}>
               Copy Title
-            </div>
-            <div className="fl-menu-item" onClick={() => sendToConflict(entries.find(e => e.id === menuRow)?.title || '')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              Send to Conflict Engine
-            </div>
-            <div className="fl-menu-divider" />
-            <div className="fl-menu-item danger" onClick={() => deleteEntry(menuRow)}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-              Remove from Library
-            </div>
+            </button>
+            <button className="fl-preview-btn primary" onClick={() => { sendToConflict(preview.title); setPreview(null); }}>
+              Conflict Check →
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Quick Preview panel — 600ms hover reveal */}
-        {preview && (
-          <div
-            className={`fl-preview-panel${preview ? ' visible' : ''}`}
-            style={{ top: previewPos.y, left: previewPos.x }}
-            onMouseEnter={handlePreviewMouseEnter}
-            onMouseLeave={handlePreviewMouseLeave}
-          >
-            <span className="fl-cat-chip" style={{ ...getCatStyle(preview.category), marginBottom: 10, display: 'inline-flex' }}>
-              {preview.category}
-            </span>
-            <div className="fl-preview-title">{preview.title}</div>
-            {preview.description && (
-              <div className="fl-preview-desc">
-                {preview.description.length > 200 ? preview.description.slice(0, 200) + '…' : preview.description}
+      {/* ── Workspace Drawer ──────────────────────────────────────────────────── */}
+      <div className={`fl-workspace-drawer${selectedEntry ? ' open' : ''}`}>
+        {wsEntry && (() => {
+          const e        = wsEntry;
+          const catStyle = getCatStyle(e.category);
+          const clauses  = CLAUSE_DNA[e.category] || CLAUSE_DNA['Template'];
+          const previewClauses = DOC_PREVIEW_CLAUSES[e.category] || DOC_PREVIEW_CLAUSES['Template'];
+          const isReviewed = reviewedSet.has(e.id);
+          const noteText   = entryNotes[e.id] || '';
+
+          return (
+            <>
+              {/* Header */}
+              <div className="fl-ws-header">
+                <div className="fl-ws-header-row">
+                  <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
+                    {e.category}
+                  </span>
+                  <button className="fl-ws-close-btn" onClick={closeWorkspace} title="Close (Esc)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+                <div className="fl-ws-title">{e.title}</div>
+                <div className="fl-ws-meta">
+                  <span>{e.author}</span>
+                  <div className="fl-ws-meta-dot" />
+                  <span>Updated {fmtDate(e.updated)}</span>
+                  {isReviewed && (
+                    <>
+                      <div className="fl-ws-meta-dot" />
+                      <span style={{ color: 'var(--accent-success)', fontWeight: 600 }}>✓ Reviewed</span>
+                    </>
+                  )}
+                </div>
               </div>
-            )}
-            {preview.tags?.length > 0 && (
-              <div className="fl-preview-tags">
-                {preview.tags.map(t => <span key={t} className="fl-preview-tag">{t}</span>)}
+
+              {/* Tab bar */}
+              <div className="fl-ws-tabs">
+                <button className={`fl-ws-tab${activeTab === 'overview' ? ' active' : ''}`} onClick={() => setActiveTab('overview')}>
+                  Overview
+                </button>
+                <button className={`fl-ws-tab${activeTab === 'dna' ? ' active' : ''}`} onClick={() => setActiveTab('dna')}>
+                  Clause DNA <span className="fl-ws-tab-new">✦NEW</span>
+                </button>
+                <button className={`fl-ws-tab${activeTab === 'actions' ? ' active' : ''}`} onClick={() => setActiveTab('actions')}>
+                  Actions
+                </button>
               </div>
-            )}
-            <div className="fl-preview-actions">
-              <button className="fl-preview-btn secondary" onClick={() => { copyTitle(preview.title); setPreview(null); }}>
-                Copy Title
-              </button>
-              <button className="fl-preview-btn primary" onClick={() => { sendToConflict(preview.title); setPreview(null); }}>
-                Conflict Check →
-              </button>
+
+              {/* Tab body — key triggers fade-in animation on row switch */}
+              <div className="fl-ws-body" key={entryKey}>
+
+                {/* ── OVERVIEW TAB ── */}
+                {activeTab === 'overview' && (
+                  <>
+                    <div className="fl-ws-section">
+                      <div className="fl-ws-section-label">Description</div>
+                      <div className="fl-ws-description">{e.description}</div>
+                    </div>
+
+                    {e.tags?.length > 0 && (
+                      <div className="fl-ws-section">
+                        <div className="fl-ws-section-label">Tags</div>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {e.tags.map(t => <span key={t} className="fl-preview-tag">{t}</span>)}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="fl-ws-section">
+                      <div className="fl-ws-section-label">Metadata</div>
+                      <div className="fl-ws-meta-grid">
+                        <div className="fl-ws-meta-card">
+                          <div className="fl-ws-meta-card-label">Author / Source</div>
+                          <div className="fl-ws-meta-card-value">{e.author}</div>
+                        </div>
+                        <div className="fl-ws-meta-card">
+                          <div className="fl-ws-meta-card-label">Category</div>
+                          <div className="fl-ws-meta-card-value">{e.category}</div>
+                        </div>
+                        <div className="fl-ws-meta-card">
+                          <div className="fl-ws-meta-card-label">Last Updated</div>
+                          <div className="fl-ws-meta-card-value">{fmtDate(e.updated)}</div>
+                        </div>
+                        <div className="fl-ws-meta-card">
+                          <div className="fl-ws-meta-card-label">Tag Count</div>
+                          <div className="fl-ws-meta-card-value">{e.tags?.length || 0} tag{e.tags?.length !== 1 ? 's' : ''}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="fl-ws-section">
+                      <div className="fl-ws-section-label">Document Preview</div>
+                      <div className="fl-ws-doc-preview">
+                        {previewClauses.map((clause, i) => (
+                          <React.Fragment key={i}>
+                            <div className="fl-ws-clause-heading">{clause}</div>
+                            <div className="fl-ws-clause-line" style={{ width: '100%' }} />
+                            <div className="fl-ws-clause-line" style={{ width: `${80 - i * 6}%` }} />
+                            {i < previewClauses.length - 1 && (
+                              <div className="fl-ws-clause-line" style={{ width: `${62 + i * 5}%` }} />
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* ── CLAUSE DNA TAB ── */}
+                {activeTab === 'dna' && (
+                  <>
+                    {/* Intro state */}
+                    {!dnaScanning && !dnaReady && (
+                      <div className="fl-dna-intro">
+                        <div className="fl-dna-icon">🔬</div>
+                        <div className="fl-dna-headline">Clause DNA Extractor</div>
+                        <span className="fl-dna-subtext">
+                          AI-powered clause taxonomy analysis. Identifies key legal provisions, surfaces risk signals, and flags non-standard or aggressive terms for immediate review.
+                        </span>
+                        <button className="fl-dna-scan-btn" onClick={runDnaScan}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                          </svg>
+                          Run Extraction
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Scanning state */}
+                    {dnaScanning && (
+                      <div>
+                        <div className="fl-dna-scanning-banner" style={{ marginBottom: 16 }}>
+                          <div className="fl-spinner" />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Extracting clause taxonomy…</div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Analysing document structure and legal provisions</div>
+                          </div>
+                        </div>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <div key={i} className="fl-dna-skel" style={{ marginBottom: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
+                              <div className="fl-skel-bar" style={{ width: `${38 + i * 8}%`, height: 11 }} />
+                              <div className="fl-skel-bar" style={{ width: '18%', height: 11 }} />
+                            </div>
+                            <div className="fl-skel-bar" style={{ width: '92%', height: 8 }} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Results state */}
+                    {dnaReady && (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                            <span style={{ color: 'var(--accent-success)', fontWeight: 700 }}>✓</span>{' '}
+                            {clauses.length} clauses detected
+                          </div>
+                          <button className="fl-dna-rescan-btn" onClick={runDnaScan}>↻ Re-scan</button>
+                        </div>
+                        {/* Risk legend */}
+                        <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                          {['low', 'medium', 'high'].map(r => (
+                            <span key={r} className="fl-dna-risk-badge" style={{ background: RISK_COLOR[r].bg, color: RISK_COLOR[r].color, borderColor: RISK_COLOR[r].border }}>
+                              {r}
+                            </span>
+                          ))}
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', alignSelf: 'center' }}>— Risk level indicators</span>
+                        </div>
+                        {clauses.map(clause => {
+                          const rc = RISK_COLOR[clause.risk];
+                          return (
+                            <div key={clause.id} className="fl-dna-clause-card">
+                              <div className="fl-dna-clause-header">
+                                <div className="fl-dna-clause-name">{clause.name}</div>
+                                <span className="fl-dna-risk-badge" style={{ background: rc.bg, color: rc.color, borderColor: rc.border }}>
+                                  {clause.risk}
+                                </span>
+                              </div>
+                              <div className="fl-dna-clause-summary">{clause.summary}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ── ACTIONS TAB ── */}
+                {activeTab === 'actions' && (
+                  <>
+                    <div style={{ marginBottom: 22 }}>
+                      <button className="fl-ws-action-btn primary" onClick={() => sendToConflict(e.title)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        Run Conflict Check
+                      </button>
+
+                      <button
+                        className={`fl-ws-action-btn${isReviewed ? ' reviewed' : ''}`}
+                        onClick={() => toggleReviewed(e.id)}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        {isReviewed ? '✓ Marked as Reviewed' : 'Mark as Reviewed'}
+                      </button>
+
+                      <button
+                        className="fl-ws-action-btn"
+                        onClick={() => {
+                          navigator.clipboard.writeText(e.description || e.title).catch(() => {});
+                          showToast('Description copied to clipboard');
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                        Copy Description
+                      </button>
+
+                      <button
+                        className="fl-ws-action-btn"
+                        onClick={() => showToast(`"${e.title.slice(0, 40)}…" added to active matter`)}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                          <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+                        </svg>
+                        Export to Matter
+                      </button>
+                    </div>
+
+                    <div className="fl-ws-section">
+                      <div className="fl-ws-section-label">Case Notes</div>
+                      <textarea
+                        className="fl-ws-notes"
+                        placeholder="Add private notes — observations, client feedback, usage history, risks identified…"
+                        value={noteText}
+                        onChange={ev => saveNote(e.id, ev.target.value)}
+                      />
+                      {noteText && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 5 }}>
+                          Notes saved automatically
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+              </div>{/* end .fl-ws-body */}
+            </>
+          );
+        })()}
+      </div>{/* end .fl-workspace-drawer */}
+
+      {/* Add Entry Modal */}
+      {showModal && (
+        <div className="fl-modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="fl-modal" onClick={ev => ev.stopPropagation()}>
+            <div className="fl-modal-header">
+              <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Add to Firm Library</span>
+              <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}>&times;</button>
             </div>
-          </div>
-        )}
-
-        {/* Add Entry Modal */}
-        {showModal && (
-          <div className="fl-modal-overlay" onClick={() => setShowModal(false)}>
-            <div className="fl-modal" onClick={e => e.stopPropagation()}>
-              <div className="fl-modal-header">
-                <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Add to Firm Library</span>
-                <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}>&times;</button>
-              </div>
-              <form onSubmit={handleAddEntry}>
-                <div className="fl-modal-body">
+            <form onSubmit={handleAddEntry}>
+              <div className="fl-modal-body">
+                <div>
+                  <label className="fl-label">Document Title *</label>
+                  <input required className="fl-input" placeholder="e.g., Standard Lease Agreement — Residential" value={newEntry.title} onChange={ev => setNewEntry(p => ({ ...p, title: ev.target.value }))} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <label className="fl-label">Document Title *</label>
-                    <input required className="fl-input" placeholder="e.g., Standard Lease Agreement — Residential" value={newEntry.title} onChange={e => setNewEntry(p => ({ ...p, title: e.target.value }))} />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <label className="fl-label">Category</label>
-                      <select className="fl-input" value={newEntry.category} onChange={e => setNewEntry(p => ({ ...p, category: e.target.value }))}>
-                        {CATEGORIES.filter(c => c !== 'All').map(c => <option key={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="fl-label">Author / Source</label>
-                      <input className="fl-input" placeholder="Firm Library" value={newEntry.author} onChange={e => setNewEntry(p => ({ ...p, author: e.target.value }))} />
-                    </div>
+                    <label className="fl-label">Category</label>
+                    <select className="fl-input" value={newEntry.category} onChange={ev => setNewEntry(p => ({ ...p, category: ev.target.value }))}>
+                      {CATEGORIES.filter(c => c !== 'All').map(c => <option key={c}>{c}</option>)}
+                    </select>
                   </div>
                   <div>
-                    <label className="fl-label">Tags (comma-separated)</label>
-                    <input className="fl-input" placeholder="Contract Act, Commercial, High Court" value={newEntry.tags} onChange={e => setNewEntry(p => ({ ...p, tags: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="fl-label">Description</label>
-                    <textarea className="fl-input" rows="3" placeholder="Brief description of this document's use case and legal basis…" value={newEntry.description} onChange={e => setNewEntry(p => ({ ...p, description: e.target.value }))} style={{ resize: 'none' }} />
+                    <label className="fl-label">Author / Source</label>
+                    <input className="fl-input" placeholder="Firm Library" value={newEntry.author} onChange={ev => setNewEntry(p => ({ ...p, author: ev.target.value }))} />
                   </div>
                 </div>
-                <div className="fl-modal-footer">
-                  <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="btn-accent" style={{ padding: '9px 24px' }}>Add to Library</button>
+                <div>
+                  <label className="fl-label">Tags (comma-separated)</label>
+                  <input className="fl-input" placeholder="Contract Act, Commercial, High Court" value={newEntry.tags} onChange={ev => setNewEntry(p => ({ ...p, tags: ev.target.value }))} />
                 </div>
-              </form>
-            </div>
+                <div>
+                  <label className="fl-label">Description</label>
+                  <textarea className="fl-input" rows="3" placeholder="Brief description of this document's use case and legal basis…" value={newEntry.description} onChange={ev => setNewEntry(p => ({ ...p, description: ev.target.value }))} style={{ resize: 'none' }} />
+                </div>
+              </div>
+              <div className="fl-modal-footer">
+                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+                <button type="submit" className="btn-accent" style={{ padding: '9px 24px' }}>Add to Library</button>
+              </div>
+            </form>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Toast */}
-        <div className={`fl-toast${toast ? ' show' : ''}`}>{toast}</div>
-      </div>
+      {/* Toast */}
+      <div className={`fl-toast${toast ? ' show' : ''}`}>{toast}</div>
     </>
   );
 }
