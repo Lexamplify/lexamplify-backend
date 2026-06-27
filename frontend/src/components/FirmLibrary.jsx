@@ -233,17 +233,19 @@ const flStyles = `
   /* Quick Preview panel — Architect's Innovation */
   .fl-preview-panel {
     position: fixed; z-index: 1100;
-    width: 300px;
+    width: 308px;
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: 12px; padding: 18px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.25), 0 0 0 1px rgba(59,130,246,0.08);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.28), 0 0 0 1px rgba(59,130,246,0.1);
     pointer-events: auto;
-    transition: opacity 0.18s, transform 0.18s;
-    opacity: 0; transform: translateX(6px);
+    transition: opacity 0.2s cubic-bezier(0.16,1,0.3,1), transform 0.2s cubic-bezier(0.16,1,0.3,1);
+    opacity: 0; transform: scale(0.94) translateY(8px);
+    transform-origin: top center;
+    will-change: opacity, transform;
   }
   .fl-preview-panel.visible {
-    opacity: 1; transform: translateX(0);
+    opacity: 1; transform: scale(1) translateY(0);
   }
   .fl-preview-title {
     font-size: 14px; font-weight: 700; font-family: var(--font-serif);
@@ -426,12 +428,38 @@ export default function FirmLibrary() {
     const rect = e.currentTarget.getBoundingClientRect();
     hoverTimerRef.current = setTimeout(() => {
       if (previewHoveredRef.current) return;
-      const panelW = 308;
-      const spaceRight = window.innerWidth - rect.right;
-      const x = spaceRight >= panelW + 12
-        ? rect.right + 10
-        : rect.left - panelW - 10;
-      const y = Math.max(8, Math.min(rect.top, window.innerHeight - 260));
+
+      const PANEL_W = 308;
+      const PANEL_H = 300;
+      const VP_PAD = 16;
+      // Hard left boundary: never bleed into or behind the sidebar.
+      // Sidebar is ~224px expanded; workspace has 32px left padding.
+      const SIDEBAR_SAFE = 256;
+
+      // Three-tier cascade:
+      // 1. Right of row (outside table bounds) — only possible on very wide viewports
+      // 2. Left of row (outside table, right of sidebar)
+      // 3. Overlap right — panel floats over the table's last column (acceptable UX for dense tables)
+      const rightOfRow = rect.right + 10;
+      const leftOfRow  = rect.left  - PANEL_W - 10;
+
+      let x;
+      if (rightOfRow + PANEL_W <= window.innerWidth - VP_PAD) {
+        x = rightOfRow;
+      } else if (leftOfRow >= SIDEBAR_SAFE) {
+        x = leftOfRow;
+      } else {
+        // Full-width table: anchor panel to safe right zone, overlapping last columns
+        x = window.innerWidth - PANEL_W - VP_PAD;
+      }
+
+      // Hard clamp — absolute guarantee: never left of sidebar, never right of viewport
+      x = Math.max(SIDEBAR_SAFE, Math.min(x, window.innerWidth - PANEL_W - VP_PAD));
+
+      // Y: vertically centred on the row, clamped within viewport
+      const rowMid = rect.top + rect.height / 2;
+      const y = Math.max(VP_PAD, Math.min(rowMid - 80, window.innerHeight - PANEL_H - VP_PAD));
+
       setPreviewPos({ x, y });
       setPreview(entry);
     }, 620);
