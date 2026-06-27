@@ -369,6 +369,8 @@ export default function FirmLibrary() {
 
   const hoverTimerRef = useRef(null);
   const previewHoveredRef = useRef(false);
+  // Tracks live cursor position; updated on every mousemove over the table
+  const mousePosRef = useRef({ x: 0, y: 0 });
 
   // Simulated load
   useEffect(() => {
@@ -423,42 +425,53 @@ export default function FirmLibrary() {
     });
 
   // ── Quick Preview (Architect's Innovation) ─────────────────────────────────
+  //
+  // WHY mouse-relative, not <tr> bounding rect:
+  //   getBoundingClientRect() on a <tr> in a full-width table returns
+  //   rect.left ≈ sidebarWidth (~224px) and rect.right ≈ window.innerWidth.
+  //   "Right of row" = window.innerWidth + offset = off-screen.
+  //   "Left of row"  = 224 - 308 - 10 = -94px  = behind sidebar.
+  //   No amount of clamping fixes a panel anchored to a full-viewport-width row.
+  //
+  //   Mouse-relative anchoring uses e.clientX / e.clientY, the actual pixel
+  //   where the user's cursor is. The cursor is ALWAYS inside the viewport,
+  //   so "right-of-cursor" or "left-of-cursor" is always a valid, visible position.
+  //   This is the pattern used by Notion, Linear, and Airtable for hover previews.
+  //
+  // Capture strategy: mousePosRef is updated on every mousemove over the table
+  // wrapper (one lightweight global handler). At row-enter we also sync the ref
+  // immediately from `e.clientX/Y` so there's always a valid initial position even
+  // before the first mousemove fires.
+  const handleMouseMove = useCallback((e) => {
+    mousePosRef.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
   const handleRowMouseEnter = useCallback((entry, e) => {
     clearTimeout(hoverTimerRef.current);
-    const rect = e.currentTarget.getBoundingClientRect();
+    // Seed the ref at row-enter as a reliable initial position
+    mousePosRef.current = { x: e.clientX, y: e.clientY };
     hoverTimerRef.current = setTimeout(() => {
       if (previewHoveredRef.current) return;
 
-      const PANEL_W = 308;
-      const PANEL_H = 300;
-      const VP_PAD = 16;
-      // Hard left boundary: never bleed into or behind the sidebar.
-      // Sidebar is ~224px expanded; workspace has 32px left padding.
-      const SIDEBAR_SAFE = 256;
+      const PANEL_W  = 308;
+      const PANEL_H  = 300;
+      const OFFSET   = 18;  // gap between cursor and panel edge
+      const VP_PAD   = 12;
+      const SIDEBAR_SAFE = 256; // hard left wall — never clip the sidebar
 
-      // Three-tier cascade:
-      // 1. Right of row (outside table bounds) — only possible on very wide viewports
-      // 2. Left of row (outside table, right of sidebar)
-      // 3. Overlap right — panel floats over the table's last column (acceptable UX for dense tables)
-      const rightOfRow = rect.right + 10;
-      const leftOfRow  = rect.left  - PANEL_W - 10;
+      const { x: mx, y: my } = mousePosRef.current;
 
-      let x;
-      if (rightOfRow + PANEL_W <= window.innerWidth - VP_PAD) {
-        x = rightOfRow;
-      } else if (leftOfRow >= SIDEBAR_SAFE) {
-        x = leftOfRow;
-      } else {
-        // Full-width table: anchor panel to safe right zone, overlapping last columns
-        x = window.innerWidth - PANEL_W - VP_PAD;
+      // Try right of cursor; if panel would bleed past right viewport edge → go left
+      let x = mx + OFFSET;
+      if (x + PANEL_W > window.innerWidth - VP_PAD) {
+        x = mx - PANEL_W - OFFSET;
       }
-
-      // Hard clamp — absolute guarantee: never left of sidebar, never right of viewport
+      // Hard clamp: [sidebar-safe, right-viewport-edge]
       x = Math.max(SIDEBAR_SAFE, Math.min(x, window.innerWidth - PANEL_W - VP_PAD));
 
-      // Y: vertically centred on the row, clamped within viewport
-      const rowMid = rect.top + rect.height / 2;
-      const y = Math.max(VP_PAD, Math.min(rowMid - 80, window.innerHeight - PANEL_H - VP_PAD));
+      // Y: slightly above cursor, clamped to viewport height
+      let y = my - 60;
+      y = Math.max(VP_PAD, Math.min(y, window.innerHeight - PANEL_H - VP_PAD));
 
       setPreviewPos({ x, y });
       setPreview(entry);
@@ -609,7 +622,7 @@ export default function FirmLibrary() {
         )}
 
         {/* Data Grid */}
-        <div className="fl-table-wrap">
+        <div className="fl-table-wrap" onMouseMove={handleMouseMove}>
           <table className="fl-table">
             <thead>
               <tr>
