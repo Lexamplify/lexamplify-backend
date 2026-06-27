@@ -344,75 +344,101 @@ const styles = `
     padding-right: 32px;
   }
 
-  /* ── Upload Slots ── */
-  .upload-slots {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px;
-    margin-bottom: 24px;
+  /* ── Intelligence Dropzone ── */
+  .intel-dz {
+    position: relative; overflow: hidden;
+    border: 2px dashed rgba(59,130,246,0.25);
+    border-radius: 16px;
+    background: var(--bg-dark-app);
+    min-height: 230px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    cursor: pointer; text-align: center;
+    padding: 44px 32px;
+    margin-bottom: 20px;
+    transition: border-color 0.22s, background 0.22s, box-shadow 0.22s;
   }
-
-  .upload-slot {
-    background-color: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 12px;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    transition: all 0.2s ease-in-out;
-    box-shadow: var(--shadow-card);
-  }
-
-  .upload-slot:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  }
-
-  .drop-zone {
-    border: 2px dashed var(--border-dark-subtle);
-    background-color: var(--bg-dark-app);
-    border-radius: 10px;
-    min-height: 150px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    cursor: pointer;
-    transition: all 0.2s ease-in-out;
-    padding: 20px;
-    text-align: center;
-  }
-
-  .drop-zone:hover, .drop-zone.dragover {
+  .intel-dz:hover, .intel-dz.dragover {
     border-color: var(--accent-primary);
-    background-color: var(--accent-muted);
+    background: var(--accent-muted);
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.06), 0 8px 32px rgba(59,130,246,0.1);
   }
-
-  .drop-zone.has-file {
-    border-color: var(--accent-success);
-    background-color: var(--badge-clear-bg);
+  .intel-dz.has-files {
+    min-height: 130px; border-style: solid;
+    border-color: rgba(59,130,246,0.3);
   }
-
-  .dz-filename {
-    font-weight: 600;
-    color: var(--accent-success);
-    word-break: break-all;
+  .intel-dz-glow {
+    position: absolute; inset: 0; pointer-events: none; border-radius: 16px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(59,130,246,0.1) 0%, transparent 68%);
+    opacity: 0; transition: opacity 0.3s;
   }
-
-  .slot-remove-btn {
-    background: transparent;
-    border: none;
-    color: var(--accent-danger);
-    font-size: 12.5px;
-    cursor: pointer;
-    align-self: flex-end;
-    font-weight: 600;
-    transition: opacity 0.2s;
+  .intel-dz.dragover .intel-dz-glow { opacity: 1; }
+  .intel-dz-icon {
+    width: 62px; height: 62px; border-radius: 14px;
+    background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.22);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent-primary); flex-shrink: 0;
+    transition: transform 0.22s cubic-bezier(0.16,1,0.3,1), background 0.22s;
   }
-
-  .slot-remove-btn:hover { opacity: 0.8; }
+  .intel-dz:hover .intel-dz-icon, .intel-dz.dragover .intel-dz-icon {
+    transform: scale(1.08) translateY(-3px);
+    background: rgba(59,130,246,0.18);
+  }
+  /* File session chips */
+  .file-session { display: flex; flex-direction: column; gap: 7px; margin-bottom: 20px; }
+  .file-chip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px;
+    background: var(--bg-dark-panel);
+    border: 1px solid var(--border-dark-subtle); border-radius: 8px;
+    transition: border-color 0.15s;
+    animation: chip-in 0.22s cubic-bezier(0.16,1,0.3,1);
+  }
+  @keyframes chip-in {
+    from { opacity: 0; transform: translateY(5px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)  scale(1); }
+  }
+  .file-chip:hover { border-color: rgba(59,130,246,0.3); }
+  .file-chip-idx {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(59,130,246,0.12); color: var(--accent-primary);
+    font-size: 10px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .file-chip-meta { flex: 1; min-width: 0; }
+  .file-chip-name { font-size: 13px; font-weight: 600; color: var(--text-dark-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-chip-size { font-size: 11px; color: var(--text-dark-muted); margin-top: 1px; }
+  .file-chip-remove {
+    background: transparent; border: none; color: var(--text-dark-muted);
+    cursor: pointer; width: 26px; height: 26px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .file-chip-remove:hover { color: var(--accent-danger); background: rgba(239,68,68,0.1); }
+  /* Recent Reports */
+  .recent-reports {
+    background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle);
+    border-radius: 12px; overflow: hidden; margin-bottom: 24px;
+  }
+  .recent-reports-head {
+    padding: 11px 18px; border-bottom: 1px solid var(--border-dark-subtle);
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(59,130,246,0.03);
+  }
+  .report-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 18px; border-bottom: 1px solid var(--border-dark-subtle);
+    cursor: pointer; transition: background 0.15s;
+  }
+  .report-item:last-child { border-bottom: none; }
+  .report-item:hover { background: var(--accent-muted); }
+  .report-item.selected { background: rgba(59,130,246,0.07); }
+  .report-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .report-detail-panel {
+    background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle);
+    border-left: 3px solid var(--accent-primary);
+    border-radius: 0 0 10px 10px; padding: 16px 18px;
+  }
 
   /* ── Cross-Document results ── */
   .cross-results-grid {
@@ -564,46 +590,20 @@ const styles = `
 
   /* ── Add to current session button ── */
   .btn-add-session {
-    width: 100%;
-    padding: 11px;
-    background: rgba(59, 130, 246, 0.07);
-    border: 1px dashed rgba(59, 130, 246, 0.30);
-    border-radius: 8px;
-    color: var(--accent-primary);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
+    width: 100%; padding: 11px;
+    background: rgba(59,130,246,0.07);
+    border: 1px dashed rgba(59,130,246,0.3);
+    border-radius: 8px; color: var(--accent-primary);
+    font-size: 13px; font-weight: 600; cursor: pointer;
     transition: all 0.18s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    font-family: var(--font-sans);
-    margin-bottom: 8px;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    font-family: var(--font-sans); margin-bottom: 8px;
   }
   .btn-add-session:hover {
-    background: rgba(59, 130, 246, 0.14);
-    border-color: rgba(59, 130, 246, 0.55);
+    background: rgba(59,130,246,0.14);
+    border-color: rgba(59,130,246,0.55);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
-  }
-
-  /* ── Preserved-slot indicator (in uploader after "Add to Set") ── */
-  .drop-zone.has-file.preserved {
-    border-color: rgba(99, 102, 241, 0.45);
-    background-color: rgba(99, 102, 241, 0.07);
-  }
-  .slot-preserved-badge {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #818CF8;
-    background: rgba(99, 102, 241, 0.12);
-    border: 1px solid rgba(99, 102, 241, 0.25);
-    border-radius: 4px;
-    padding: 2px 7px;
-    align-self: flex-end;
+    box-shadow: 0 4px 12px rgba(59,130,246,0.12);
   }
 `;
 
@@ -622,17 +622,18 @@ export default function ConflictEngine() {
   const [memoText, setMemoText] = useState('');
 
   // ── Cross-Doc ──
-  const [slots, setSlots] = useState([
-    { id: 1, file: null, label: 'Document 1 (e.g. NDA)',           inputRef: React.createRef() },
-    { id: 2, file: null, label: 'Document 2 (e.g. MSA)',           inputRef: React.createRef() },
-    { id: 3, file: null, label: 'Document 3 (e.g. SOW/Annexure)', inputRef: React.createRef() },
-  ]);
+  const [sessionFiles, setSessionFiles] = useState([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [recentReports, setRecentReports] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('lexai_conflict_reports') || '[]'); } catch { return []; }
+  });
+  const [selectedReport, setSelectedReport] = useState(null);
   const [crossResults, setCrossResults] = useState(null);
-  const [addingToSet, setAddingToSet] = useState(false); // true = uploader shown with preserved slots
+  const [addingToSet, setAddingToSet] = useState(false);
   const [showToast, setShowToast] = useState(false);
-  const [toastMsg, setToastMsg]   = useState('✅ Copied to clipboard');
+  const [toastMsg, setToastMsg] = useState('✅ Copied to clipboard');
   const [toastWarn, setToastWarn] = useState(false);
-  const batchInputRef = useRef(null);
+  const filePickerRef = useRef(null);
 
   const matterRisk = MATTER_RISK[triageForm.matterType] || { level: 'Medium Risk', cls: 'potential' };
 
@@ -731,92 +732,43 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
 
   // ── 3. CROSS-DOCUMENT FILE MANAGEMENT ─────────────────────────────
 
-  // Core batch ingest: deduplicates, fills empty slots, creates overflow slots
-  const ingestFiles = (fileList, preferredSlotId = null) => {
-    const incoming = Array.from(fileList || []);
+  const addFiles = (fileList) => {
+    const incoming = Array.from(fileList || []).filter(f => /\.(pdf|docx)$/i.test(f.name));
     if (!incoming.length) return;
-
-    setSlots(prev => {
-      const existingNames = new Set(prev.filter(s => s.file).map(s => s.file.name));
-      const dupes = [];
-      const fresh = [];
-
-      for (const f of incoming) {
-        if (existingNames.has(f.name)) {
-          dupes.push(f.name);
-        } else {
-          fresh.push(f);
-          existingNames.add(f.name); // prevent within-batch duplicates
-        }
-      }
-
+    setSessionFiles(prev => {
+      const existing = new Set(prev.map(f => f.name));
+      const fresh = incoming.filter(f => !existing.has(f.name));
+      const dupes = incoming.filter(f => existing.has(f.name));
       if (dupes.length) {
-        const label = dupes.slice(0, 2).join(', ') + (dupes.length > 2 ? '…' : '');
-        setTimeout(() => showToastMsg(
-          `⚠️ ${dupes.length} duplicate${dupes.length > 1 ? 's' : ''} skipped: ${label}`, true
-        ), 0);
+        const label = dupes.slice(0, 2).map(f => f.name).join(', ') + (dupes.length > 2 ? '…' : '');
+        setTimeout(() => showToastMsg(`⚠️ ${dupes.length} duplicate(s) skipped: ${label}`, true), 0);
       }
-
-      if (!fresh.length) return prev;
-
-      const result = prev.map(s => ({ ...s }));
-      const queue  = [...fresh];
-
-      // Assign first file to the preferred slot (replaces existing if occupied)
-      if (preferredSlotId != null) {
-        const idx = result.findIndex(s => s.id === preferredSlotId);
-        if (idx >= 0 && queue.length) {
-          result[idx] = { ...result[idx], file: queue.shift() };
-        }
-      }
-
-      // Fill remaining empty slots in order
-      for (let i = 0; i < result.length && queue.length; i++) {
-        if (!result[i].file) {
-          result[i] = { ...result[i], file: queue.shift() };
-        }
-      }
-
-      // Create new slots for any remaining overflow
-      while (queue.length) {
-        const f = queue.shift();
-        result.push({
-          id: Date.now() + Math.random(),
-          file: f,
-          label: f.name.replace(/\.[^/.]+$/, ''),
-          inputRef: React.createRef(),
-        });
-      }
-
-      return result;
+      return [...prev, ...fresh];
     });
   };
 
-  const removeFile = (slotId, e) => {
-    e.stopPropagation();
-    setSlots(prev => prev.map(s => {
-      if (s.id !== slotId) return s;
-      if (s.inputRef.current) s.inputRef.current.value = '';
-      return { ...s, file: null };
-    }));
+  const removeSessionFile = (idx) => {
+    setSessionFiles(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const removeSlot = (slotId, e) => {
-    e.stopPropagation();
-    setSlots(prev => prev.filter(s => s.id !== slotId));
+  const persistReport = (result, files) => {
+    const entry = {
+      id: Date.now(),
+      title: files.length >= 2
+        ? `${files[0].name.replace(/\.[^.]+$/, '')} vs. ${files[1].name.replace(/\.[^.]+$/, '')}`
+        : (files[0]?.name || 'Conflict Report'),
+      timestamp: new Date().toISOString(),
+      fileNames: files.map(f => f.name),
+      conflictsCount: result.conflicts?.length ?? 0,
+      summary: result.summary || '',
+    };
+    setRecentReports(prev => {
+      const updated = [entry, ...prev].slice(0, 8);
+      try { localStorage.setItem('lexai_conflict_reports', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
-  const handleLabelChange = (slotId, value) => {
-    setSlots(prev => prev.map(s => s.id === slotId ? { ...s, label: value } : s));
-  };
-
-  const addSlot = () => {
-    const nextId = Date.now();
-    const slotNum = slots.length + 1;
-    setSlots(prev => [...prev, { id: nextId, file: null, label: `Document ${slotNum}`, inputRef: React.createRef() }]);
-  };
-
-  // Returns to uploader WITHOUT resetting slots — user appends new documents
   const addToCurrentSet = () => {
     setAddingToSet(true);
     setCrossResults(null);
@@ -824,30 +776,29 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
   };
 
   const handleCrossDocAnalyze = async () => {
-    setAddingToSet(false); // clear session-append mode on fresh run
-    const loaded = slots.filter(s => s.file);
-    if (loaded.length < 2) {
-      alert('Please upload at least 2 documents to compare.');
+    setAddingToSet(false);
+    setSelectedReport(null);
+    if (sessionFiles.length < 2) {
+      alert('Load at least 2 documents to compare.');
       return;
     }
-
     setIsLoading(true);
     setError('');
     setCrossResults(null);
 
     const formData = new FormData();
-    loaded.forEach((s, idx) => {
-      formData.append(`doc${idx + 1}`, s.file);
-      formData.append(`label${idx + 1}`, s.label || `Document ${idx + 1}`);
+    sessionFiles.forEach((f, idx) => {
+      formData.append(`doc${idx + 1}`, f);
+      formData.append(`label${idx + 1}`, f.name.replace(/\.[^.]+$/, ''));
     });
 
     const res = await analyzeConflicts(formData);
     setIsLoading(false);
-
     if (res.error) {
-      setError(res.message || 'AI Cross-Document conflict scanning failed.');
+      setError(res.message || 'AI cross-document conflict scanning failed.');
     } else {
       setCrossResults(res);
+      persistReport(res, sessionFiles);
     }
   };
 
@@ -857,13 +808,10 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
   };
 
   const resetCrossDoc = () => {
-    setSlots([
-      { id: 1, file: null, label: 'Document 1 (e.g. NDA)',           inputRef: React.createRef() },
-      { id: 2, file: null, label: 'Document 2 (e.g. MSA)',           inputRef: React.createRef() },
-      { id: 3, file: null, label: 'Document 3 (e.g. SOW/Annexure)', inputRef: React.createRef() },
-    ]);
+    setSessionFiles([]);
     setCrossResults(null);
     setAddingToSet(false);
+    setSelectedReport(null);
     setError('');
   };
 
@@ -1180,238 +1128,201 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
 
         {/* ══ MODE 2: CROSS-DOCUMENT UPLOADER ═══════════════════════════════ */}
         {activeMode === 'cross-doc' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
             {!crossResults ? (
               <>
-                <div className="upload-slots">
-                  {slots.map((slot) => {
-                    const isPreserved = addingToSet && !!slot.file;
-                    return (
-                    <div className="upload-slot" key={slot.id}>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <input
-                          className="field-input"
-                          style={{ padding: '6px 10px', fontSize: '12px' }}
-                          type="text"
-                          value={slot.label}
-                          onChange={(e) => handleLabelChange(slot.id, e.target.value)}
-                        />
-                        {slots.length > 2 && (
-                          <button className="slot-remove-btn" onClick={(e) => removeSlot(slot.id, e)} title="Remove slot"
-                            style={{ padding: '4px 8px', fontSize: '11px', opacity: 0.7 }}>
-                            ✕
-                          </button>
-                        )}
+                {/* Hidden file picker */}
+                <input
+                  type="file" ref={filePickerRef} style={{ display: 'none' }}
+                  accept=".pdf,.docx" multiple
+                  onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+                />
+
+                {/* Intelligence Dropzone */}
+                <div
+                  className={`intel-dz${sessionFiles.length > 0 ? ' has-files' : ''}${isDragOver ? ' dragover' : ''}`}
+                  onClick={() => filePickerRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={e => { e.preventDefault(); setIsDragOver(false); }}
+                  onDrop={e => { e.preventDefault(); setIsDragOver(false); addFiles(e.dataTransfer.files); }}
+                >
+                  <div className="intel-dz-glow" />
+                  <div className="intel-dz-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <path d="M12 18v-6M9 15l3-3 3 3"/>
+                    </svg>
+                  </div>
+                  {sessionFiles.length === 0 ? (
+                    <>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-dark-primary)' }}>
+                        Drop all documents here
                       </div>
-
-                      <div
-                        className={`drop-zone ${slot.file ? 'has-file' : ''}${isPreserved ? ' preserved' : ''}`}
-                        onClick={() => !isPreserved && slot.inputRef.current?.click()}
-                        style={{ cursor: isPreserved ? 'default' : 'pointer' }}
-                        onDragOver={(e) => { if (isPreserved) return; e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                        onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          e.currentTarget.classList.remove('dragover');
-                          ingestFiles(e.dataTransfer.files, slot.id);
-                        }}
-                      >
-                        <input
-                          type="file"
-                          ref={slot.inputRef}
-                          style={{ display: 'none' }}
-                          accept=".pdf,.docx"
-                          multiple
-                          onChange={(e) => { ingestFiles(e.target.files, slot.id); e.target.value = ''; }}
-                        />
-
-                        {slot.file ? (
-                          <>
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={isPreserved ? '#818CF8' : 'var(--accent-success)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                            </svg>
-                            <span className="dz-filename" style={{ color: isPreserved ? '#818CF8' : undefined }}>{slot.file.name}</span>
-                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{formatBytes(slot.file.size)}</span>
-                            {isPreserved && <span className="slot-preserved-badge">From previous run</span>}
-                          </>
-                        ) : (
-                          <>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                              <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
-                            </svg>
-                            <span style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>Click or drag files here</span>
-                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', opacity: 0.6 }}>PDF or DOCX — batch drop supported</span>
-                          </>
-                        )}
+                      <div style={{ fontSize: '13px', color: 'var(--text-dark-muted)', maxWidth: '400px', lineHeight: 1.55 }}>
+                        Drag & drop multiple PDFs or DOCXs — or click to browse.
+                        The engine runs clause-level cross-document conflict detection across all uploaded files simultaneously.
                       </div>
-
-                      {slot.file && !isPreserved && (
-                        <button className="slot-remove-btn" onClick={(e) => removeFile(slot.id, e)}>✕ Remove file</button>
-                      )}
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        {['PDF', 'DOCX', 'Multi-file drop'].map(t => (
+                          <span key={t} style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '3px 9px', borderRadius: '20px', background: 'rgba(59,130,246,0.1)', color: 'var(--accent-primary)', border: '1px solid rgba(59,130,246,0.2)' }}>{t}</span>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent-primary)' }}>
+                      {sessionFiles.length} document{sessionFiles.length !== 1 ? 's' : ''} in session — drop more or click to add
                     </div>
-                  );})}
+                  )}
+                </div>
 
-                  {/* Batch add tile — opens multi-file picker */}
-                  <div
-                    className="upload-slot"
-                    onClick={() => batchInputRef.current?.click()}
-                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                    onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                    onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); ingestFiles(e.dataTransfer.files); }}
-                    style={{ cursor: 'pointer', justifyContent: 'center', alignItems: 'center', border: '2px dashed var(--border-dark-subtle)', background: 'var(--accent-muted)', minHeight: '180px' }}
-                    title="Add one or more documents"
-                  >
-                    <input
-                      type="file"
-                      ref={batchInputRef}
-                      style={{ display: 'none' }}
-                      accept=".pdf,.docx"
-                      multiple
-                      onChange={(e) => { ingestFiles(e.target.files); e.target.value = ''; }}
-                    />
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--text-dark-muted)', pointerEvents: 'none' }}>
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
-                      </svg>
-                      <span style={{ fontSize: '13px' }}>Add Documents</span>
-                      <span style={{ fontSize: '11px', opacity: 0.6 }}>Select multiple — batch drop supported</span>
+                {/* File chips */}
+                {sessionFiles.length > 0 && (
+                  <div className="file-session">
+                    {sessionFiles.map((f, idx) => (
+                      <div className="file-chip" key={idx}>
+                        <div className="file-chip-idx">{idx + 1}</div>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.7 }}>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                        <div className="file-chip-meta">
+                          <div className="file-chip-name">{f.name}</div>
+                          <div className="file-chip-size">{formatBytes(f.size)}</div>
+                        </div>
+                        <button className="file-chip-remove" onClick={() => removeSessionFile(idx)} title="Remove">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 2px', marginTop: '4px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>{sessionFiles.length} file{sessionFiles.length !== 1 ? 's' : ''} loaded</span>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <button className="btn-reset" style={{ padding: '8px 16px', fontSize: '12px' }} onClick={resetCrossDoc}>Clear All</button>
+                        <button
+                          className="btn-accent"
+                          style={{ padding: '11px 34px', fontSize: '13.5px', fontWeight: '700' }}
+                          onClick={handleCrossDocAnalyze}
+                          disabled={sessionFiles.length < 2 || isLoading}
+                        >
+                          {isLoading ? 'Scanning…' : '⚡ Run Conflict Analysis'}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>
-                    {slots.filter(s => s.file).length} / {slots.length} documents loaded
-                  </span>
-                  <button className="btn-accent" style={{ padding: '13px 44px', fontSize: '14px' }}
-                    onClick={handleCrossDocAnalyze}
-                    disabled={slots.filter(s => s.file).length < 2 || isLoading}>
-                    {isLoading ? 'Scanning…' : '⚡ Run Cross-Document Check'}
-                  </button>
-                </div>
+                )}
 
                 {isLoading && (
-                  <div className="skeleton-pulse-wrapper" style={{ marginTop: '24px' }}>
+                  <div className="skeleton-pulse-wrapper" style={{ marginTop: '8px', marginBottom: '20px' }}>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       <div className="loading-spinner" style={{ width: '20px', height: '20px' }}></div>
                       <strong style={{ color: 'var(--accent-primary)', fontSize: '13px' }}>
-                        Extracting files and running clause-level RAG analysis…
+                        Extracting {sessionFiles.length} documents and running clause-level RAG analysis…
                       </strong>
                     </div>
                     <div className="skeleton-bar" style={{ width: '85%' }}></div>
-                    <div className="skeleton-bar" style={{ width: '75%' }}></div>
+                    <div className="skeleton-bar" style={{ width: '70%' }}></div>
+                    <div className="skeleton-bar" style={{ width: '78%' }}></div>
+                  </div>
+                )}
+
+                {/* Recent Conflict Reports */}
+                {recentReports.length > 0 && !isLoading && (
+                  <div className="recent-reports">
+                    <div className="recent-reports-head">
+                      <span style={{ fontSize: '11.5px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-dark-muted)' }}>
+                        Recent Conflict Reports
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{recentReports.length} saved</span>
+                    </div>
+                    {recentReports.map(r => (
+                      <div
+                        key={r.id}
+                        className={`report-item${selectedReport?.id === r.id ? ' selected' : ''}`}
+                        onClick={() => setSelectedReport(prev => prev?.id === r.id ? null : r)}
+                      >
+                        <div className="report-dot" style={{ background: r.conflictsCount > 0 ? 'var(--accent-danger)' : 'var(--accent-success)' }} />
+                        <span style={{ flex: 1, fontSize: '13px', fontWeight: '600', color: 'var(--text-dark-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r.title}
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', whiteSpace: 'nowrap', marginRight: '10px' }}>
+                          {new Date(r.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}
+                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 8px', borderRadius: '10px', whiteSpace: 'nowrap', background: r.conflictsCount > 0 ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', color: r.conflictsCount > 0 ? 'var(--accent-danger)' : 'var(--accent-success)' }}>
+                          {r.conflictsCount} conflict{r.conflictsCount !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    ))}
+                    {selectedReport && (
+                      <div className="report-detail-panel">
+                        <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent-primary)', marginBottom: '6px', letterSpacing: '0.06em' }}>Report Summary</div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.6, marginBottom: '10px' }}>
+                          {selectedReport.summary || 'No summary stored for this report.'}
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {selectedReport.fileNames.map((n, i) => (
+                            <span key={i} style={{ fontSize: '10.5px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59,130,246,0.1)', color: 'var(--accent-primary)', border: '1px solid rgba(59,130,246,0.18)' }}>
+                              📄 {n}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
             ) : (
               /* ── Results Panel ── */
               <div className="cross-results-grid">
-
-                {/* Summary Card */}
                 <div className="summary-col">
                   <div className="summary-card">
                     <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-dark-subtle)', paddingBottom: '12px' }}>
                       📊 AI Summary
                     </h3>
-
-                    <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', fontWeight: '600' }}>
-                      Documents Analyzed
-                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Documents Analyzed</span>
                     <ul style={{ paddingLeft: '20px', margin: '8px 0 20px 0', fontSize: '13px', color: 'var(--text-dark-primary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {slots.filter(s => s.file).map(s => (
-                        <li key={s.id}>📂 {s.label} ({s.file.name})</li>
-                      ))}
+                      {sessionFiles.map((f, i) => <li key={i}>📂 {f.name}</li>)}
                     </ul>
-
                     <div style={{ textAlign: 'center', padding: '16px', backgroundColor: 'var(--stat-bg)', border: '1px solid var(--stat-border)', borderRadius: '8px', marginBottom: '20px' }}>
-                      <div style={{ fontSize: '36px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                        {crossResults.conflicts ? crossResults.conflicts.length : 0}
-                      </div>
-                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase' }}>
-                        Conflicts Found
-                      </span>
+                      <div style={{ fontSize: '36px', fontWeight: '700', color: 'var(--text-primary)' }}>{crossResults.conflicts?.length ?? 0}</div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase' }}>Conflicts Found</span>
                     </div>
-
-                    <div style={{
-                      fontSize: '13px', color: 'var(--text-dark-muted)', lineHeight: '1.6',
-                      background: 'var(--stat-bg)', border: '1px solid var(--stat-border)',
-                      padding: '14px', borderRadius: '8px', marginBottom: '20px',
-                    }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-dark-muted)', lineHeight: '1.6', background: 'var(--stat-bg)', border: '1px solid var(--stat-border)', padding: '14px', borderRadius: '8px', marginBottom: '20px' }}>
                       {crossResults.summary}
                     </div>
-
-                    <button className="btn-add-session" onClick={addToCurrentSet}>
-                      ➕ Add Document to Current Set
-                    </button>
-                    <button className="btn-reset" style={{ width: '100%', padding: '12px' }} onClick={resetCrossDoc}>
-                      🔄 Analyze New Documents
-                    </button>
+                    <button className="btn-add-session" onClick={addToCurrentSet}>➕ Add Document to Current Set</button>
+                    <button className="btn-reset" style={{ width: '100%', padding: '12px' }} onClick={resetCrossDoc}>🔄 Analyze New Documents</button>
                   </div>
                 </div>
-
-                {/* Conflict Detail Cards */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: 'var(--text-primary)' }}>
-                    Conflict Audit Logs
-                  </h3>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: 'var(--text-primary)' }}>Conflict Audit Logs</h3>
                   {crossResults.conflicts && crossResults.conflicts.length > 0 ? (
                     crossResults.conflicts.map((c, idx) => {
                       const sev = (c.severity || 'minor').toLowerCase();
                       return (
                         <div key={idx} className={`conflict-detail-card ${sev}`}>
                           <div className="conflict-card-header">
-                            <strong style={{ color: 'var(--text-primary)', fontSize: '14.5px' }}>
-                              {c.title || `Conflict ${idx + 1}`}
-                            </strong>
-                            <span className={`badge-status ${sev === 'critical' ? 'high' : sev === 'major' ? 'potential' : 'clear'}`}>
-                              {c.severity}
-                            </span>
+                            <strong style={{ color: 'var(--text-primary)', fontSize: '14.5px' }}>{c.title || `Conflict ${idx + 1}`}</strong>
+                            <span className={`badge-status ${sev === 'critical' ? 'high' : sev === 'major' ? 'potential' : 'clear'}`}>{c.severity}</span>
                           </div>
-
-                          {/* Clause-level side-by-side excerpts */}
                           <div className="excerpts-container">
                             <div className="excerpt-box doc-a">
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-danger)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                                📄 {c.doc_a_name || 'Document A'}
-                              </span>
-                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic', lineHeight: '1.6' }}>
-                                "{c.doc_a_excerpt}"
-                              </div>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-danger)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>📄 {c.doc_a_name || 'Document A'}</span>
+                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic', lineHeight: '1.6' }}>"{c.doc_a_excerpt}"</div>
                             </div>
-
                             <div className="excerpt-box doc-b">
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-warning)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                                📄 {c.doc_b_name || 'Document B'}
-                              </span>
-                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic', lineHeight: '1.6' }}>
-                                "{c.doc_b_excerpt}"
-                              </div>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-warning)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>📄 {c.doc_b_name || 'Document B'}</span>
+                              <div style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontStyle: 'italic', lineHeight: '1.6' }}>"{c.doc_b_excerpt}"</div>
                             </div>
                           </div>
-
-                          <div style={{ padding: '0 20px 20px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             <div style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: '8px', padding: '12px 14px' }}>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-primary)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                                ⚖️ Legal Explanation
-                              </span>
-                              <div style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>
-                                {c.legal_explanation}
-                              </div>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-primary)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>⚖️ Legal Explanation</span>
+                              <div style={{ fontSize: '13px', color: 'var(--text-dark-muted)' }}>{c.legal_explanation}</div>
                             </div>
-
                             <div style={{ backgroundColor: 'var(--badge-clear-bg)', border: '1px solid var(--badge-clear-border)', borderRadius: '8px', padding: '12px 14px' }}>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--badge-clear-color)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                                ✅ Recommended Harmonization
-                              </span>
-                              <div style={{ fontSize: '13.5px', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                                {c.recommended_resolution}
-                              </div>
-                              <button
-                                className="btn-copy"
-                                style={{ backgroundColor: 'var(--badge-clear-bg)', border: '1px solid var(--badge-clear-border)', color: 'var(--badge-clear-color)', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px' }}
-                                onClick={() => copyResolutionToClipboard(c.recommended_resolution)}
-                              >
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--badge-clear-color)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>✅ Recommended Harmonization</span>
+                              <div style={{ fontSize: '13.5px', color: 'var(--text-primary)', marginBottom: '8px' }}>{c.recommended_resolution}</div>
+                              <button className="btn-copy" style={{ backgroundColor: 'var(--badge-clear-bg)', border: '1px solid var(--badge-clear-border)', color: 'var(--badge-clear-color)', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px' }} onClick={() => copyResolutionToClipboard(c.recommended_resolution)}>
                                 Copy Harmonized Clause
                               </button>
                             </div>
@@ -1425,7 +1336,6 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                     </div>
                   )}
                 </div>
-
               </div>
             )}
           </div>

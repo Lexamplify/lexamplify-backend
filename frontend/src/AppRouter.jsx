@@ -13,7 +13,8 @@ import LoginPage from './components/LoginPage';
 import CalendarView from './components/CalendarView';
 import VaultView from './components/VaultView';
 import CaseWorkspace from './components/CaseWorkspace';
-import VirtualCourtroom from './components/VirtualCourtroom';
+import WarRoomView from './components/WarRoomView';
+import FirmLibrary from './components/FirmLibrary';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -120,6 +121,12 @@ const Icons = {
       <polyline points="9 18 15 12 9 6" />
     </svg>
   ),
+  library: (w = 16) => (
+    <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+  ),
 };
 
 // ── SIDEBAR NAV ITEM ───────────────────────────────────────────────────────────
@@ -165,6 +172,7 @@ const Breadcrumbs = () => {
   else if (p === '/calendar') items.push({ label: 'Legal Calendar', url: p });
   else if (p === '/vault') items.push({ label: 'Case Vault', url: p });
   else if (p === '/war-room') items.push({ label: 'Virtual Courtroom', url: p });
+  else if (p === '/firm-library') items.push({ label: 'Firm Library', url: p });
   else {
     if (params.caseId) {
       const label = params.caseId === 'vault' ? 'Document Vault' : `Case #${params.caseId}`;
@@ -288,6 +296,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           <NavItem to="/calendar" icon={Icons.calendar()} label="Legal Calendar" isActive={p === '/calendar'} onClick={closeSidebar} />
           <NavItem to="/vault" icon={Icons.lock()} label="Case Vault" isActive={p === '/vault'} onClick={closeSidebar} />
           <NavItem to="/war-room" icon={Icons.gavel()} label="Virtual Courtroom" isActive={p === '/war-room'} onClick={closeSidebar} />
+          <NavItem to="/firm-library" icon={Icons.library()} label="Firm Library" isActive={p === '/firm-library'} onClick={closeSidebar} />
 
           {/* Live case listing from API */}
           {!isIconOnly && sidebarCases.length > 0 && (
@@ -869,7 +878,8 @@ function AppRouterContent() {
         <Route path="/case/:caseId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />
         <Route path="/calendar" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CalendarView /></Layout>} />
         <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
-        <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><VirtualCourtroom /></Layout>} />
+        <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
+        <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />
         <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
       </Routes>
