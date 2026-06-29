@@ -8,7 +8,7 @@ Never import from Flask or share state with it — these are fully independent p
 Architecture
 ------------
 POST /api/search
-  ├── Step 1 — Semantic Router (gpt-4o-mini, temp=0.0)
+  ├── Step 1 — Semantic Router (llama-3.1-8b-instant via Groq, temp=0.0)
   │     Classifies query as INTERNAL or EXTERNAL
   │
   ├── Brain: INTERNAL
@@ -17,11 +17,13 @@ POST /api/search
   │     No LLM synthesis, no ChromaDB hit.
   │
   └── Brain: EXTERNAL
-        ├── Embed query   (text-embedding-3-small)
-        ├── Query ChromaDB PersistentClient  (cosine similarity, top-5)
-        └── Synthesize    (gpt-4o-mini, structured JSON)
+        ├── Query ChromaDB (query_texts → default SentenceTransformer embedder)
+        └── Synthesize    (llama-3.3-70b-versatile via Groq, structured JSON)
               Returns: citations[], reliability_index, risk_warnings,
                        facts_vs_ruling, synthesis text
+
+Embeddings: ChromaDB's built-in SentenceTransformerEmbeddingFunction (all-MiniLM-L6-v2, local).
+            Groq has no embedding endpoint — do NOT add one.
 
 ChromaDB is seeded with 8 realistic Indian case law entries on first boot
 so the pipeline can be tested immediately without any manual ingestion.
@@ -39,7 +41,7 @@ import chromadb
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
+from groq import Groq
 from pydantic import BaseModel, Field
 
 # ── Environment ───────────────────────────────────────────────────────────────
@@ -47,12 +49,12 @@ from pydantic import BaseModel, Field
 _ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=_ENV_PATH)
 
-OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 CHROMA_DIR: Path = Path(__file__).resolve().parent / "chroma_db"
 COLLECTION_NAME: str = "case_law"
 
 # ── Module-level singletons (populated in lifespan) ───────────────────────────
-_openai: Optional[OpenAI] = None
+_groq: Optional[Groq] = None
 _collection = None          # chromadb.Collection
 
 
@@ -217,33 +219,21 @@ def _seed(collection: chromadb.Collection) -> None:
     ids = [e["id"] for e in _SEED]
     docs = [e["text"] for e in _SEED]
     metas = [e["meta"] for e in _SEED]
-
-    if _openai:
-        try:
-            resp = _openai.embeddings.create(model="text-embedding-3-small", input=docs)
-            embeddings = [item.embedding for item in resp.data]
-            collection.add(ids=ids, documents=docs, embeddings=embeddings, metadatas=metas)
-            print("[RAG] Seed embeddings generated via OpenAI text-embedding-3-small.")
-            return
-        except Exception as exc:
-            print(f"[RAG] OpenAI seed embedding failed ({exc}); falling back to default embedder.")
-
-    # ChromaDB will use its built-in sentence-transformers model when no embeddings are supplied.
     collection.add(ids=ids, documents=docs, metadatas=metas)
-    print("[RAG] Seeded using ChromaDB default embeddings (no OpenAI key).")
+    print("[RAG] Seeded using ChromaDB default embeddings (all-MiniLM-L6-v2).")
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _openai, _collection
+    global _groq, _collection
 
-    if OPENAI_API_KEY:
-        _openai = OpenAI(api_key=OPENAI_API_KEY)
-        print("[RAG] OpenAI client initialized.")
+    if GROQ_API_KEY:
+        _groq = Groq(api_key=GROQ_API_KEY)
+        print("[RAG] Groq client initialized.")
     else:
-        print("[RAG] WARNING: OPENAI_API_KEY not set — EXTERNAL brain will be unavailable.")
+        print("[RAG] WARNING: GROQ_API_KEY not set — EXTERNAL brain will be unavailable.")
 
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     _collection = client.get_or_create_collection(
@@ -346,8 +336,8 @@ filter_terms: 2–4 short keywords extracted from the query (always populate, re
 
 
 def _route(query: str) -> dict:
-    resp = _openai.chat.completions.create(
-        model="gpt-4o-mini",
+    resp = _groq.chat.completions.create(
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": _ROUTER_SYSTEM},
             {"role": "user", "content": f"Query: {query}"},
@@ -357,13 +347,6 @@ def _route(query: str) -> dict:
         response_format={"type": "json_object"},
     )
     return json.loads(resp.choices[0].message.content or "{}")
-
-
-# ── Embedding ─────────────────────────────────────────────────────────────────
-
-def _embed(text: str) -> list[float]:
-    resp = _openai.embeddings.create(model="text-embedding-3-small", input=text)
-    return resp.data[0].embedding
 
 
 # ── Synthesis ─────────────────────────────────────────────────────────────────
@@ -427,8 +410,8 @@ def _synthesize(query: str, chunks: list[dict], avg_distance: float) -> dict:
         f"{context_str}"
     )
 
-    resp = _openai.chat.completions.create(
-        model="gpt-4o-mini",
+    resp = _groq.chat.completions.create(
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": _SYNTHESIS_SYSTEM},
             {"role": "user", "content": user_msg},
@@ -446,7 +429,7 @@ def _synthesize(query: str, chunks: list[dict], avg_distance: float) -> dict:
 async def health():
     return {
         "status": "ok",
-        "openai_configured": bool(_openai),
+        "groq_configured": bool(_groq),
         "chroma_documents": _collection.count() if _collection else 0,
         "collection": COLLECTION_NAME,
     }
@@ -462,13 +445,13 @@ async def search(req: SearchRequest) -> SearchResponse:
       the `lexai_firm_library` localStorage array client-side.
 
     EXTERNAL path (full RAG):
-      Embeds query → ChromaDB top-5 → GPT-4o-mini synthesis →
+      ChromaDB top-5 (query_texts → SentenceTransformer) → Groq synthesis →
       citations[], reliability_index, risk_warnings, facts_vs_ruling.
     """
-    if not _openai:
+    if not _groq:
         raise HTTPException(
             status_code=503,
-            detail="RAG service not configured. Add OPENAI_API_KEY to .env and restart.",
+            detail="RAG service not configured. Add GROQ_API_KEY to .env and restart.",
         )
 
     # ── 1. Route ──────────────────────────────────────────────────────────────
@@ -489,20 +472,14 @@ async def search(req: SearchRequest) -> SearchResponse:
             filter_terms=filter_terms,
         )
 
-    # ── 2b. EXTERNAL — embed ──────────────────────────────────────────────────
-    try:
-        query_vector = _embed(req.query)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Embedding error: {exc}")
-
-    # ── 3. ChromaDB retrieval ─────────────────────────────────────────────────
+    # ── 2b. EXTERNAL — ChromaDB retrieval ────────────────────────────────────
     doc_count = _collection.count() if _collection else 0
     if doc_count == 0:
         raise HTTPException(status_code=503, detail="ChromaDB collection is empty — seed data not loaded.")
 
     try:
         results = _collection.query(
-            query_embeddings=[query_vector],
+            query_texts=[req.query],
             n_results=min(5, doc_count),
             include=["documents", "metadatas", "distances"],
         )
@@ -516,7 +493,7 @@ async def search(req: SearchRequest) -> SearchResponse:
     chunks = [{"document": d, "metadata": m} for d, m in zip(docs, metas)]
     avg_distance = sum(distances) / len(distances) if distances else 1.0
 
-    # ── 4. Synthesize ─────────────────────────────────────────────────────────
+    # ── 3. Synthesize ─────────────────────────────────────────────────────────
     try:
         raw = _synthesize(req.query, chunks, avg_distance)
     except Exception as exc:

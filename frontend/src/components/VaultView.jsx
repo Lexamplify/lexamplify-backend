@@ -634,6 +634,124 @@ const vaultStyles = `
   .vault-toast-error   { background: #1A0A0A; border: 1px solid rgba(239,68,68,0.28);  color: #FCA5A5; }
   .vault-toast-title   { font-weight: 700; margin-bottom: 2px; }
   .vault-toast-body    { font-size: 11.5px; opacity: 0.8; }
+
+  /* ── Slide-Over Document Canvas ─────────────────────────────────────────── */
+  .soc-backdrop {
+    position: fixed; inset: 0; z-index: 1500;
+    background: rgba(3,6,14,0.72); backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s cubic-bezier(0.16,1,0.3,1);
+  }
+  .soc-backdrop.soc-open { opacity: 1; pointer-events: auto; }
+  .soc-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 1501;
+    width: min(700px, 96vw);
+    background: #0E1420;
+    border-left: 1px solid rgba(59,130,246,0.2);
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.38s cubic-bezier(0.16,1,0.3,1);
+    box-shadow: -40px 0 96px rgba(0,0,0,0.75);
+  }
+  .soc-panel.soc-open { transform: translateX(0); }
+  .soc-header {
+    padding: 18px 22px 15px; flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.012);
+    display: flex; flex-direction: column; gap: 11px;
+  }
+  .soc-header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .soc-title {
+    font-size: 15.5px; font-weight: 700; color: #F1F5F9; letter-spacing: -0.2px;
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .soc-close {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 7px; color: #64748B; width: 30px; height: 30px; flex-shrink: 0;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; transition: all 0.15s; font-family: inherit;
+  }
+  .soc-close:hover { background: rgba(255,255,255,0.1); color: #CBD5E1; border-color: rgba(255,255,255,0.18); }
+  .soc-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .soc-body {
+    flex: 1; overflow-y: auto; padding: 28px 28px 24px;
+  }
+  .soc-body::-webkit-scrollbar { width: 5px; }
+  .soc-body::-webkit-scrollbar-track { background: transparent; }
+  .soc-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 3px; }
+  .soc-content p {
+    margin: 0 0 1.2em; font-size: 13.5px; line-height: 1.82;
+    color: #94A3B8; font-family: var(--font-sans);
+  }
+  .soc-content p:first-child { margin-top: 0; }
+  .soc-content p:empty { display: none; }
+  .soc-footer-actions {
+    padding: 13px 20px; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+    display: flex; gap: 8px; background: rgba(255,255,255,0.01);
+  }
+
+  /* ── Library drawer — search hint ──────────────────────────────────────── */
+  .dc-search-hint {
+    font-size: 11.5px; font-weight: 400; margin: 8px 2px 0;
+    color: var(--text-secondary, #94A3B8);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    line-height: 1.5;
+  }
+
+  /* ── Library drawer — RAG intelligence dossier ──────────────────────────── */
+  @keyframes rag-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.42; } }
+  .lib-rag-loading {
+    display: flex; align-items: center; gap: 9px;
+    padding: 13px 14px; border-radius: 9px;
+    background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.18);
+    font-size: 12px; color: #A78BFA;
+    animation: rag-pulse 1.2s ease-in-out infinite;
+    margin-bottom: 4px;
+  }
+  .lib-rag-dossier {
+    background: rgba(99,102,241,0.055); border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 11px; padding: 15px; margin-bottom: 4px;
+    display: flex; flex-direction: column; gap: 12px;
+    animation: fadeIn 0.2s ease;
+  }
+  .lib-rag-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .lib-rag-brain-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 4px;
+    background: rgba(99,102,241,0.15); color: #A78BFA; border: 1px solid rgba(99,102,241,0.28);
+  }
+  .lib-rag-reliability { display: flex; align-items: center; gap: 7px; }
+  .lib-rag-reliability-bar {
+    width: 64px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+  }
+  .lib-rag-reliability-fill { height: 100%; border-radius: 2px; transition: width 0.7s cubic-bezier(0.16,1,0.3,1); }
+  .lib-rag-reliability-label { font-size: 10.5px; font-weight: 700; }
+  .lib-rag-synthesis {
+    font-size: 12.5px; line-height: 1.72; color: #64748B;
+    display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .lib-rag-section-label {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+    color: #334155; margin-bottom: 6px;
+  }
+  .lib-rag-citations { display: flex; flex-direction: column; gap: 5px; }
+  .lib-rag-citation {
+    font-size: 11.5px; padding: 8px 10px; border-radius: 6px;
+    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); color: #475569;
+  }
+  .lib-rag-citation strong { color: #7EB3F5; display: block; margin-bottom: 2px; font-size: 12px; font-weight: 600; }
+  .lib-rag-warnings { display: flex; flex-direction: column; gap: 5px; }
+  .lib-rag-warning {
+    font-size: 11px; color: #D97706; display: flex; align-items: flex-start; gap: 6px;
+    padding: 6px 9px; border-radius: 5px;
+    background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.14); line-height: 1.5;
+  }
+  .lib-rag-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0 8px; }
+  .lib-rag-local-label {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+    color: #334155; padding: 0 2px 6px;
+  }
 `;
 
 const DOC_TYPE_STYLES = {
@@ -930,6 +1048,13 @@ export default function VaultView({ targetFolderId = null }) {
   const [injectedIds, setInjectedIds]                 = useState(new Set());
   const [injectToast, setInjectToast]                 = useState(null);
 
+  // Slide-Over Document Canvas
+  const [canvasDoc, setCanvasDoc]                     = useState(null);
+
+  // Library drawer — Dual-Brain RAG
+  const [libRagResult, setLibRagResult]               = useState(null);
+  const [libRagLoading, setLibRagLoading]             = useState(false);
+
   const navigate = useNavigate();
 
   // ── Load documents ────────────────────────────────────────────────────────
@@ -1210,7 +1335,36 @@ export default function VaultView({ targetFolderId = null }) {
       setLibEntries(FL_SEED);
     }
     setLibSearch('');
+    setLibRagResult(null);
+    setLibRagLoading(false);
   }, [isLibraryDrawerOpen]);
+
+  // ── Library drawer: debounced Dual-Brain RAG query (400ms) ───────────────
+  useEffect(() => {
+    if (libSearch.trim().length < 3) {
+      setLibRagResult(null);
+      setLibRagLoading(false);
+      return;
+    }
+    setLibRagLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('http://localhost:8001/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: libSearch.trim() }),
+        });
+        if (!res.ok) throw new Error('RAG unavailable');
+        const data = await res.json();
+        setLibRagResult(data);
+      } catch {
+        setLibRagResult(null);
+      } finally {
+        setLibRagLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [libSearch]);
 
   // ── Folder navigation ─────────────────────────────────────────────────────
   const navigateToFolder = (folder) => {
@@ -1352,9 +1506,7 @@ export default function VaultView({ targetFolderId = null }) {
   });
 
   const handleViewDocument = (doc) => {
-    navigate(`/case/vault/doc/${doc.id}`, {
-      state: { fromVault: true, docData: buildDocData(doc) },
-    });
+    setCanvasDoc(doc);
   };
 
   const handleAnalyzeDocument = (doc) => {
@@ -1388,6 +1540,18 @@ export default function VaultView({ targetFolderId = null }) {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [openMenuDocId]);
+
+  // ── SlideOverCanvas: Escape to close + body scroll lock ──────────────────
+  useEffect(() => {
+    document.body.style.overflow = canvasDoc ? 'hidden' : '';
+    if (!canvasDoc) return;
+    const handler = (e) => { if (e.key === 'Escape') setCanvasDoc(null); };
+    document.addEventListener('keydown', handler);
+    return () => {
+      document.removeEventListener('keydown', handler);
+      document.body.style.overflow = '';
+    };
+  }, [canvasDoc]);
 
   // ── Document card actions ─────────────────────────────────────────────────
   const handleDeleteDocument = async (doc) => {
@@ -1942,8 +2106,12 @@ export default function VaultView({ targetFolderId = null }) {
           <div>
             <div className="lib-drawer-title">📚 Firm Library</div>
             <div className="lib-drawer-sub">
-              {filteredLibEntries.length} template{filteredLibEntries.length !== 1 ? 's' : ''}
-              {libSearch && ` matching "${libSearch}"`}
+              {libRagLoading
+                ? 'Querying intelligence layer…'
+                : libRagResult?.brain === 'EXTERNAL'
+                  ? `External precedents retrieved · ${filteredLibEntries.length} local template${filteredLibEntries.length !== 1 ? 's' : ''}`
+                  : `${filteredLibEntries.length} template${filteredLibEntries.length !== 1 ? 's' : ''}${libSearch ? ` matching "${libSearch}"` : ''}`
+              }
             </div>
           </div>
           <button className="lib-close-btn" onClick={() => setIsLibraryDrawerOpen(false)} aria-label="Close">✕</button>
@@ -1966,10 +2134,82 @@ export default function VaultView({ targetFolderId = null }) {
               <button onClick={() => setLibSearch('')} style={{ background: 'none', border: 'none', color: 'var(--text-dark-muted,#8F9CAE)', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1 }}>✕</button>
             )}
           </div>
+          {libSearch.trim().length > 0 && libSearch.trim().length < 3 && (
+            <p className="dc-search-hint">Type 3+ characters to search firm templates or query Case Law intelligence…</p>
+          )}
         </div>
 
         {/* Entry list */}
         <div className="lib-list">
+          {/* ── RAG loading indicator ── */}
+          {libRagLoading && (
+            <div className="lib-rag-loading">
+              <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+              Dual-Brain RAG querying case law…
+            </div>
+          )}
+
+          {/* ── EXTERNAL brain: Legal Intelligence Dossier ── */}
+          {!libRagLoading && libRagResult?.brain === 'EXTERNAL' && libRagResult.synthesis && (
+            <>
+              <div className="lib-rag-dossier">
+                <div className="lib-rag-header">
+                  <span className="lib-rag-brain-badge">⚡ External Intelligence</span>
+                  {libRagResult.reliability_index != null && (() => {
+                    const pct = Math.round(libRagResult.reliability_index * 100);
+                    const color = pct >= 75 ? '#34D399' : pct >= 50 ? '#FBBF24' : '#F87171';
+                    return (
+                      <div className="lib-rag-reliability">
+                        <div className="lib-rag-reliability-bar">
+                          <div className="lib-rag-reliability-fill" style={{ width: `${pct}%`, background: color }} />
+                        </div>
+                        <span className="lib-rag-reliability-label" style={{ color }}>{pct}%</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="lib-rag-synthesis">{libRagResult.synthesis}</div>
+                {libRagResult.citations?.length > 0 && (
+                  <div>
+                    <div className="lib-rag-section-label">Citations</div>
+                    <div className="lib-rag-citations">
+                      {libRagResult.citations.slice(0, 3).map((c, i) => (
+                        <div key={i} className="lib-rag-citation">
+                          <strong>{c.case_name} ({c.year})</strong>
+                          {c.relevance_note}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {libRagResult.facts_vs_ruling?.ruling_summary && (
+                  <div>
+                    <div className="lib-rag-section-label">Ratio Decidendi</div>
+                    <div style={{ fontSize: 11.5, color: '#475569', lineHeight: 1.6, padding: '7px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.05)' }}>
+                      {libRagResult.facts_vs_ruling.ruling_summary}
+                    </div>
+                  </div>
+                )}
+                {libRagResult.risk_warnings?.length > 0 && (
+                  <div>
+                    <div className="lib-rag-section-label">Risk Advisories</div>
+                    <div className="lib-rag-warnings">
+                      {libRagResult.risk_warnings.slice(0, 2).map((w, i) => (
+                        <div key={i} className="lib-rag-warning">⚠ {w}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {filteredLibEntries.length > 0 && (
+                <>
+                  <div className="lib-rag-divider" />
+                  <div className="lib-rag-local-label">Firm Templates</div>
+                </>
+              )}
+            </>
+          )}
+
           {filteredLibEntries.length === 0 ? (
             <div className="lib-empty-state">
               <div style={{ fontSize: 28, marginBottom: 6 }}>🔍</div>
@@ -2024,6 +2264,94 @@ export default function VaultView({ targetFolderId = null }) {
             })
           )}
         </div>
+      </div>
+
+      {/* ── Slide-Over Document Canvas ──────────────────────────────────────── */}
+      <div
+        className={`soc-backdrop${canvasDoc ? ' soc-open' : ''}`}
+        onClick={() => setCanvasDoc(null)}
+        aria-hidden="true"
+      />
+      <div
+        className={`soc-panel${canvasDoc ? ' soc-open' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={canvasDoc ? (canvasDoc.smart_title || canvasDoc.title || 'Document') : undefined}
+      >
+        {canvasDoc && (
+          <>
+            {/* Canvas header */}
+            <div className="soc-header">
+              <div className="soc-header-top">
+                <div className="soc-title" title={canvasDoc.smart_title || canvasDoc.title}>
+                  {canvasDoc.smart_title || canvasDoc.title || 'Document'}
+                </div>
+                <button className="soc-close" onClick={() => setCanvasDoc(null)} aria-label="Close canvas">✕</button>
+              </div>
+              <div className="soc-meta">
+                {canvasDoc.doc_type && (() => {
+                  const s = getDocTypeStyle(canvasDoc.doc_type);
+                  return (
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.45px', padding: '2px 8px', borderRadius: 4, background: s.bg, color: s.color }}>
+                      {canvasDoc.doc_type}
+                    </span>
+                  );
+                })()}
+                {canvasDoc.created_at && (
+                  <span style={{ fontSize: 11, color: '#334155' }}>{formatDate(canvasDoc.created_at)}</span>
+                )}
+                {canvasDoc.folder_id && getFolderName(canvasDoc.folder_id) && (
+                  <span style={{ fontSize: 10.5, color: '#3B5172', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    📁 {getFolderName(canvasDoc.folder_id)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Canvas body — scrollable document content */}
+            <div className="soc-body">
+              <div className="soc-content">
+                {(canvasDoc.content || 'No content available.')
+                  .split('\n\n')
+                  .map((para, i) => (
+                    <p key={i}>
+                      {para.split('\n').map((line, j, arr) => (
+                        <React.Fragment key={j}>
+                          {line}
+                          {j < arr.length - 1 && <br />}
+                        </React.Fragment>
+                      ))}
+                    </p>
+                  ))
+                }
+              </div>
+            </div>
+
+            {/* Canvas footer actions */}
+            <div className="soc-footer-actions">
+              <button
+                className="vault-btn-analyze"
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => { setCanvasDoc(null); handleAnalyzeDocument(canvasDoc); }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                Analyze with AI
+              </button>
+              <button
+                className="vault-btn-quick"
+                onClick={() => handleDownloadDocument(canvasDoc)}
+                style={{ gap: 5 }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Download
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Inject success toast ────────────────────────────────────────────── */}
