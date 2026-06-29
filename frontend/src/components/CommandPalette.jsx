@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
+import { SEED_ENTRIES as FL_SEED } from './FirmLibrary';
+
+// ── Dual-Brain RAG server (FastAPI, port 8001) ─────────────────────────────────
+const RAG_SERVER  = 'http://localhost:8001';
+const DEBOUNCE_MS = 400;
 
 // ═══════════════════════════════════════════════════════
 //  SESSION STORE  (localStorage-persisted)
@@ -1431,7 +1436,7 @@ function ShareModal({ sessionTitle, onClose }) {
 // ═══════════════════════════════════════════════════════
 //  COMPONENT
 // ═══════════════════════════════════════════════════════
-export default function CommandPalette() {
+function CommandPalette() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
   const location      = useLocation();
@@ -1604,7 +1609,7 @@ export default function CommandPalette() {
   useEffect(() => {
     const onToggle = () => setIsOpen(v => !v);
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); onToggle(); }
+      // Ctrl+K is owned by IntelligencePalette — chat opens via toggle-rag-palette event only
       if (e.key === 'Escape' && isOpen) setIsOpen(false);
     };
     window.addEventListener('keydown', onKey);
@@ -2977,6 +2982,563 @@ export default function CommandPalette() {
           />
         ) : null;
       })()}
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  INTELLIGENCE PALETTE  (Ctrl+K — Dual-Brain RAG)
+//  Spotlight-style overlay. Routes queries to the FastAPI
+//  RAG server on port 8001.
+//  INTERNAL → filter lexai_firm_library client-side
+//  EXTERNAL → synthesized legal intelligence payload
+// ═══════════════════════════════════════════════════════
+const IP_CSS = `
+  @keyframes ip-in {
+    from { opacity:0; transform:translateY(-16px) scale(0.97); }
+    to   { opacity:1; transform:translateY(0)     scale(1);    }
+  }
+  @keyframes ip-out {
+    from { opacity:1; transform:translateY(0)     scale(1);    }
+    to   { opacity:0; transform:translateY(-10px) scale(0.98); }
+  }
+  @keyframes ip-results-in {
+    from { opacity:0; transform:translateY(6px); }
+    to   { opacity:1; transform:translateY(0);   }
+  }
+
+  .ip-overlay {
+    position:fixed; inset:0; z-index:9500;
+    background:rgba(3,6,18,.78);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:12vh;
+    animation:ip-in .22s cubic-bezier(0.16,1,0.3,1) both;
+  }
+  .ip-overlay.ip-closing {
+    animation:ip-out .18s cubic-bezier(0.4,0,1,1) forwards;
+  }
+
+  .ip-modal {
+    width:700px; max-width:94vw;
+    background:#0C101C;
+    border:1px solid rgba(59,130,246,.18);
+    border-radius:16px;
+    box-shadow:0 32px 80px rgba(0,0,0,.72),0 0 0 1px rgba(255,255,255,.04),inset 0 1px 0 rgba(255,255,255,.05);
+    overflow:hidden;
+  }
+
+  /* ── Input row ── */
+  .ip-search-row {
+    display:flex; align-items:center; gap:14px;
+    padding:18px 22px;
+    border-bottom:1px solid rgba(255,255,255,.05);
+  }
+  .ip-search-icon { flex-shrink:0; color:#3B82F6; opacity:.8; }
+  .ip-input {
+    flex:1; background:transparent; border:none; outline:none;
+    font-size:22px; font-weight:400; color:#E2E8F0;
+    font-family:inherit; letter-spacing:-.01em;
+    caret-color:#3B82F6;
+  }
+  .ip-input::placeholder { color:#1E2A3A; }
+  .ip-kbd {
+    flex-shrink:0; font-size:11px; color:#2D3748;
+    background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
+    border-radius:5px; padding:2px 7px; font-family:monospace; letter-spacing:.05em;
+  }
+
+  /* ── Status bar ── */
+  .ip-status-bar {
+    display:flex; align-items:center; gap:10px;
+    padding:7px 22px; font-size:11.5px; color:#2A3348;
+    border-bottom:1px solid rgba(255,255,255,.03);
+    min-height:34px;
+  }
+  .ip-brain-badge {
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:10px; font-weight:700; letter-spacing:.06em;
+    padding:2px 9px; border-radius:20px; text-transform:uppercase;
+  }
+  .ip-brain-badge.internal {
+    background:rgba(99,102,241,.15); border:1px solid rgba(99,102,241,.3); color:#A5B4FC;
+  }
+  .ip-brain-badge.external {
+    background:rgba(59,130,246,.15); border:1px solid rgba(59,130,246,.3); color:#93C5FD;
+  }
+  .ip-brain-dot { width:5px; height:5px; border-radius:50%; }
+  .ip-brain-badge.internal .ip-brain-dot { background:#818CF8; }
+  .ip-brain-badge.external .ip-brain-dot { background:#60A5FA; }
+
+  /* ── Results container ── */
+  .ip-results { max-height:440px; overflow-y:auto; animation:ip-results-in .18s ease; }
+  .ip-results::-webkit-scrollbar { width:3px; }
+  .ip-results::-webkit-scrollbar-thumb { background:rgba(59,130,246,.2); border-radius:4px; }
+
+  /* ── INTERNAL: firm library list ── */
+  .ip-lib-item {
+    display:flex; align-items:center; gap:14px;
+    padding:12px 22px; cursor:pointer;
+    border-bottom:1px solid rgba(255,255,255,.03);
+    transition:background .12s;
+  }
+  .ip-lib-item:last-child { border-bottom:none; }
+  .ip-lib-item:hover { background:rgba(59,130,246,.07); }
+  .ip-lib-item.ip-selected { background:rgba(59,130,246,.12); }
+  .ip-lib-icon {
+    width:32px; height:32px; border-radius:7px; flex-shrink:0;
+    background:rgba(99,102,241,.1); border:1px solid rgba(99,102,241,.18);
+    display:flex; align-items:center; justify-content:center; font-size:14px;
+  }
+  .ip-lib-info { flex:1; min-width:0; }
+  .ip-lib-title {
+    font-size:13.5px; font-weight:600; color:#CBD5E1;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ip-lib-meta {
+    font-size:11px; color:#2D3D52; margin-top:2px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ip-lib-hint { font-size:10.5px; color:#253040; flex-shrink:0; white-space:nowrap; }
+  .ip-lib-item.ip-selected .ip-lib-hint { color:#93C5FD; }
+
+  /* ── EXTERNAL: Legal Intelligence panel ── */
+  .ip-ext { padding:20px 22px; animation:ip-results-in .2s ease; }
+
+  .ip-trust-row {
+    display:flex; align-items:center; gap:12px; margin-bottom:16px;
+  }
+  .ip-trust-label {
+    font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.07em; color:#334155; flex-shrink:0; min-width:70px;
+  }
+  .ip-trust-track {
+    flex:1; height:5px; background:rgba(255,255,255,.07); border-radius:10px; overflow:hidden;
+  }
+  .ip-trust-fill {
+    height:100%; border-radius:10px;
+    transition:width .5s cubic-bezier(0.16,1,0.3,1);
+  }
+  .ip-trust-fill.high   { background:linear-gradient(90deg,#10B981,#34D399); }
+  .ip-trust-fill.medium { background:linear-gradient(90deg,#F59E0B,#FBBF24); }
+  .ip-trust-fill.low    { background:linear-gradient(90deg,#EF4444,#F87171); }
+  .ip-trust-pct { font-size:12px; font-weight:700; font-family:monospace; flex-shrink:0; min-width:36px; text-align:right; }
+  .ip-trust-pct.high   { color:#34D399; }
+  .ip-trust-pct.medium { color:#FBBF24; }
+  .ip-trust-pct.low    { color:#F87171; }
+
+  .ip-synthesis {
+    font-size:13px; line-height:1.75; color:#94A3B8;
+    margin-bottom:16px; padding:14px 16px;
+    background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.04);
+    border-radius:9px; max-height:150px; overflow-y:auto;
+  }
+  .ip-synthesis::-webkit-scrollbar { width:3px; }
+  .ip-synthesis::-webkit-scrollbar-thumb { background:rgba(255,255,255,.08); border-radius:4px; }
+
+  .ip-citations-label {
+    font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.07em; color:#334155; margin-bottom:8px;
+  }
+  .ip-citation-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
+  .ip-citation-badge {
+    display:inline-flex; flex-direction:column; gap:1px;
+    padding:6px 12px; border-radius:7px; cursor:default;
+    border:1px solid rgba(59,130,246,.2); background:rgba(59,130,246,.06);
+    transition:all .14s; max-width:210px;
+  }
+  .ip-citation-badge:hover {
+    background:rgba(59,130,246,.13); border-color:rgba(59,130,246,.38);
+    transform:translateY(-1px); box-shadow:0 4px 12px rgba(59,130,246,.15);
+  }
+  .ip-citation-name { font-size:11px; font-weight:600; color:#93C5FD; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ip-citation-ref  { font-size:10px; color:#334155; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .ip-fvr {
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;
+  }
+  .ip-fvr-panel {
+    padding:10px 13px; border-radius:8px;
+    background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.05);
+  }
+  .ip-fvr-label {
+    font-size:9.5px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.07em; margin-bottom:5px;
+  }
+  .ip-fvr-panel:first-child .ip-fvr-label { color:#F59E0B; }
+  .ip-fvr-panel:last-child  .ip-fvr-label { color:#3B82F6; }
+  .ip-fvr-text { font-size:11.5px; line-height:1.6; color:#475569; }
+
+  .ip-risks { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+  .ip-risk-chip {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:4px 10px; border-radius:6px; font-size:11px; color:#F87171;
+    background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.18);
+  }
+
+  /* ── Idle / Loading / Error states ── */
+  .ip-idle {
+    padding:36px 22px; text-align:center; font-size:13px; color:#1E2A3A;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+  }
+  .ip-idle-icon { font-size:30px; }
+  .ip-idle-sub  { font-size:11px; color:#172030; margin-top:2px; }
+
+  .ip-loading {
+    padding:28px 22px; display:flex; align-items:center; justify-content:center;
+    gap:12px; font-size:12.5px; color:#2A3A52;
+  }
+  .ip-spinner {
+    width:18px; height:18px; border-radius:50%;
+    border:2px solid rgba(59,130,246,.15); border-top-color:#3B82F6;
+    animation:spin .75s linear infinite; flex-shrink:0;
+  }
+
+  .ip-no-results { padding:28px 22px; text-align:center; font-size:12.5px; color:#1E2A3A; }
+
+  /* ── Footer ── */
+  .ip-footer {
+    display:flex; align-items:center; gap:14px;
+    padding:8px 20px;
+    border-top:1px solid rgba(255,255,255,.04);
+    background:rgba(0,0,0,.22);
+  }
+  .ip-footer-hint { display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:#1E2A3A; }
+  .ip-footer-key {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:18px; height:16px; padding:0 4px;
+    background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
+    border-radius:3px; font-size:9.5px; color:#253040; font-family:monospace;
+  }
+`;
+
+function IntelligencePalette() {
+  const navigate = useNavigate();
+
+  const [open,        setOpen]        = useState(false);
+  const [closing,     setClosing]     = useState(false);
+  const [query,       setQuery]       = useState('');
+  const [status,      setStatus]      = useState('idle');  // 'idle'|'loading'|'loaded'|'error'
+  const [result,      setResult]      = useState(null);    // SearchResponse from RAG server
+  const [libResults,  setLibResults]  = useState([]);      // INTERNAL: filtered firm lib entries
+  const [selectedIdx, setSelectedIdx] = useState(0);
+
+  const debounceRef = useRef(null);
+  const inputRef    = useRef(null);
+
+  // ── Firm Library loader (with FL_SEED fallback) ──────────────────────────────
+  const loadLibEntries = useCallback(() => {
+    try {
+      const raw    = localStorage.getItem('lexai_firm_library');
+      const parsed = raw ? JSON.parse(raw) : null;
+      return (Array.isArray(parsed) && parsed.length > 0) ? parsed : FL_SEED;
+    } catch { return FL_SEED; }
+  }, []);
+
+  // ── Open / close ─────────────────────────────────────────────────────────────
+  const doClose = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => {
+      setOpen(false); setClosing(false); setQuery('');
+      setResult(null); setLibResults([]); setStatus('idle'); setSelectedIdx(0);
+    }, 180);
+  }, []);
+
+  const doOpen = useCallback(() => { setOpen(true); setClosing(false); }, []);
+
+  // ── Global Ctrl+K listener ───────────────────────────────────────────────────
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        // Don't steal focus from the AI chat if it is already open
+        if (open) doClose(); else doOpen();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, doClose, doOpen]);
+
+  // ── Focus input on open ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (open && !closing) setTimeout(() => inputRef.current?.focus(), 60);
+  }, [open, closing]);
+
+  // ── RAG search ───────────────────────────────────────────────────────────────
+  const performSearch = useCallback(async (q) => {
+    if (!q || q.trim().length < 3) {
+      setResult(null); setLibResults([]); setStatus('idle'); return;
+    }
+    setStatus('loading');
+    try {
+      const res = await fetch(`${RAG_SERVER}/api/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q.trim() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setResult(data);
+      setSelectedIdx(0);
+
+      if (data.brain === 'INTERNAL') {
+        const terms = data.filter_terms || [];
+        const entries = loadLibEntries();
+        const filtered = terms.length === 0 ? entries : entries.filter(e =>
+          terms.some(t => {
+            const tl = t.toLowerCase();
+            return (
+              (e.title    || '').toLowerCase().includes(tl) ||
+              (e.category || '').toLowerCase().includes(tl) ||
+              (e.tags     || []).some(tag => tag.toLowerCase().includes(tl))
+            );
+          })
+        );
+        setLibResults(filtered.slice(0, 8));
+      }
+
+      setStatus('loaded');
+    } catch (err) {
+      console.error('[IntelligencePalette]', err);
+      setStatus('error');
+    }
+  }, [loadLibEntries]);
+
+  // ── Debounced input handler ──────────────────────────────────────────────────
+  const handleQueryChange = useCallback((e) => {
+    const q = e.target.value;
+    setQuery(q);
+    clearTimeout(debounceRef.current);
+    if (!q.trim()) { setResult(null); setLibResults([]); setStatus('idle'); return; }
+    debounceRef.current = setTimeout(() => performSearch(q), DEBOUNCE_MS);
+  }, [performSearch]);
+
+  // ── Keyboard navigation inside palette ──────────────────────────────────────
+  const listLength = result?.brain === 'INTERNAL' ? libResults.length : 0;
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); doClose(); return; }
+    if (listLength === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIdx(i => Math.min(i + 1, listLength - 1));
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIdx(i => Math.max(i - 1, 0));
+    }
+    if (e.key === 'Enter' && result?.brain === 'INTERNAL' && libResults[selectedIdx]) {
+      e.preventDefault();
+      const entry = libResults[selectedIdx];
+      navigator.clipboard?.writeText(entry.title).catch(() => {});
+      doClose();
+    }
+  }, [doClose, result, libResults, selectedIdx, listLength]);
+
+  // ── Trust gauge helpers ──────────────────────────────────────────────────────
+  const trustTier = (idx) => idx >= 0.8 ? 'high' : idx >= 0.5 ? 'medium' : 'low';
+
+  if (!open && !closing) return null;
+
+  const ri      = result?.reliability_index ?? 0;
+  const tier    = trustTier(ri);
+  const trustPct = Math.round(ri * 100);
+
+  return (
+    <>
+      <style>{IP_CSS}</style>
+      <div className={`ip-overlay${closing ? ' ip-closing' : ''}`} onClick={doClose}>
+        <div className="ip-modal" onClick={e => e.stopPropagation()}>
+
+          {/* ── Search input ── */}
+          <div className="ip-search-row">
+            <span className="ip-search-icon">
+              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+            </span>
+            <input
+              ref={inputRef}
+              className="ip-input"
+              placeholder="Search case law, firm templates, BNS / IPC statutes…"
+              value={query}
+              onChange={handleQueryChange}
+              onKeyDown={handleKeyDown}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <span className="ip-kbd">Esc</span>
+          </div>
+
+          {/* ── Status bar ── */}
+          <div className="ip-status-bar">
+            {result && (
+              <span className={`ip-brain-badge ${result.brain.toLowerCase()}`}>
+                <span className="ip-brain-dot" />
+                {result.brain === 'INTERNAL' ? 'Firm Library' : 'Legal Intelligence'}
+              </span>
+            )}
+            {status === 'loading' && <span>Routing through Dual-Brain pipeline…</span>}
+            {status === 'loaded' && result?.brain === 'INTERNAL' && (
+              <span>{libResults.length} template{libResults.length !== 1 ? 's' : ''} matched</span>
+            )}
+            {status === 'loaded' && result?.brain === 'EXTERNAL' && (
+              <span>{result.retrieved_chunks ?? 0} case law fragments retrieved</span>
+            )}
+            {status === 'error' && (
+              <span style={{ color: '#F87171' }}>
+                RAG server unreachable — start it with: <code style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,.05)', padding: '0 4px', borderRadius: 3 }}>uvicorn rag_server.main:app --port 8001</code>
+              </span>
+            )}
+          </div>
+
+          {/* ── Loading ── */}
+          {status === 'loading' && (
+            <div className="ip-loading">
+              <div className="ip-spinner" />
+              <span>Querying Dual-Brain pipeline…</span>
+            </div>
+          )}
+
+          {/* ── INTERNAL: Firm Library results ── */}
+          {status === 'loaded' && result?.brain === 'INTERNAL' && (
+            <div className="ip-results" key="internal">
+              {libResults.length === 0 ? (
+                <div className="ip-no-results">
+                  No firm library templates matched — try rephrasing, or open the Firm Library directly.
+                </div>
+              ) : libResults.map((entry, idx) => (
+                <div
+                  key={entry.id}
+                  className={`ip-lib-item${idx === selectedIdx ? ' ip-selected' : ''}`}
+                  onClick={() => {
+                    navigator.clipboard?.writeText(entry.title).catch(() => {});
+                    doClose();
+                  }}
+                  onMouseEnter={() => setSelectedIdx(idx)}
+                >
+                  <div className="ip-lib-icon">📄</div>
+                  <div className="ip-lib-info">
+                    <div className="ip-lib-title">{entry.title}</div>
+                    <div className="ip-lib-meta">
+                      {[entry.category, entry.author, entry.updated ? `Updated ${entry.updated}` : null]
+                        .filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                  <span className="ip-lib-hint">{idx === selectedIdx ? '↵ Copy title' : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── EXTERNAL: Legal Intelligence ── */}
+          {status === 'loaded' && result?.brain === 'EXTERNAL' && (
+            <div className="ip-results" key="external">
+              <div className="ip-ext">
+
+                {/* Trust gauge */}
+                <div className="ip-trust-row">
+                  <span className="ip-trust-label">Trust Index</span>
+                  <div className="ip-trust-track">
+                    <div className={`ip-trust-fill ${tier}`} style={{ width: `${trustPct}%` }} />
+                  </div>
+                  <span className={`ip-trust-pct ${tier}`}>{trustPct}%</span>
+                </div>
+
+                {/* Synthesis */}
+                {result.synthesis && (
+                  <div className="ip-synthesis">{result.synthesis}</div>
+                )}
+
+                {/* Facts vs Ruling */}
+                {result.facts_vs_ruling && (
+                  <div className="ip-fvr">
+                    <div className="ip-fvr-panel">
+                      <div className="ip-fvr-label">Facts</div>
+                      <div className="ip-fvr-text">{result.facts_vs_ruling.facts_summary}</div>
+                    </div>
+                    <div className="ip-fvr-panel">
+                      <div className="ip-fvr-label">Ruling</div>
+                      <div className="ip-fvr-text">{result.facts_vs_ruling.ruling_summary}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Citations */}
+                {result.citations?.length > 0 && (
+                  <>
+                    <div className="ip-citations-label">Citations</div>
+                    <div className="ip-citation-list">
+                      {result.citations.map((c, i) => (
+                        <div key={i} className="ip-citation-badge" title={c.relevance_note}>
+                          <span className="ip-citation-name">{c.case_name}</span>
+                          <span className="ip-citation-ref">{c.citation_ref || `${c.court} ${c.year}`}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Risk warnings */}
+                {result.risk_warnings?.length > 0 && (
+                  <div className="ip-risks">
+                    {result.risk_warnings.map((w, i) => (
+                      <span key={i} className="ip-risk-chip">
+                        <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        {w}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+              </div>
+            </div>
+          )}
+
+          {/* ── Idle state ── */}
+          {status === 'idle' && (
+            <div className="ip-idle">
+              <div className="ip-idle-icon">⚖️</div>
+              <span>Search Indian case law, firm templates, and BNS / IPC statutes.</span>
+              <span className="ip-idle-sub">Type 3+ characters to activate the Dual-Brain pipeline.</span>
+            </div>
+          )}
+
+          {/* ── Keyboard hints footer ── */}
+          <div className="ip-footer">
+            <span className="ip-footer-hint">
+              <span className="ip-footer-key">↑</span>
+              <span className="ip-footer-key">↓</span>
+              Navigate
+            </span>
+            <span className="ip-footer-hint">
+              <span className="ip-footer-key">↵</span>
+              Select
+            </span>
+            <span className="ip-footer-hint">
+              <span className="ip-footer-key">Esc</span>
+              Close
+            </span>
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: '#172030' }}>
+              Dual-Brain RAG · Port 8001
+            </span>
+          </div>
+
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Root export: renders IntelligencePalette (Ctrl+K) + InzIQ chat (sidebar) ──
+export default function LexCommandSuite() {
+  return (
+    <>
+      <IntelligencePalette />
+      <CommandPalette />
     </>
   );
 }

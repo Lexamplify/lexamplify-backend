@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
-const SEED_ENTRIES = [
+export const SEED_ENTRIES = [
   {
     id: 1,
     title: 'Standard NDA (Mutual) — Commercial Disputes',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { uploadDocument, fetchTrackedCases, saveTrackedCase, fetchCauselist } from '../services/api';
+import { SEED_ENTRIES as FL_SEED } from './FirmLibrary';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
@@ -402,6 +403,115 @@ const vaultStyles = `
   :root[data-theme="light"] .si-dropzone { background: rgba(99,102,241,0.03); border-color: rgba(99,102,241,0.22); }
   :root[data-theme="light"] .si-ai-field { background-color: rgba(245,158,11,0.05) !important; border-color: rgba(245,158,11,0.35) !important; }
 
+  /* ── Library Injector Drawer ─────────────────────────────────────────────── */
+  .lib-overlay {
+    position: fixed; inset: 0; z-index: 1200;
+    background: rgba(3,6,14,0.6); backdrop-filter: blur(3px);
+    animation: fadeIn 0.2s ease;
+  }
+  .lib-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 1201;
+    width: min(480px, 96vw);
+    background: var(--bg-dark-panel, #171c26);
+    border-left: 1px solid var(--border-dark-subtle, #2C3241);
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.38s cubic-bezier(0.16,1,0.3,1);
+    box-shadow: -24px 0 64px rgba(0,0,0,0.6);
+  }
+  .lib-drawer.lib-open { transform: translateX(0); }
+  .lib-drawer-head {
+    padding: 18px 20px 14px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border-dark-subtle, #2C3241);
+    display: flex; align-items: flex-start; justify-content: space-between;
+    background: rgba(255,255,255,0.015);
+  }
+  .lib-drawer-title { font-size: 15px; font-weight: 700; color: white; margin: 0 0 3px; }
+  .lib-drawer-sub  { font-size: 11.5px; color: var(--text-dark-muted, #8F9CAE); }
+  .lib-close-btn {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border-dark-subtle, #2C3241);
+    border-radius: 6px; color: var(--text-dark-muted, #8F9CAE); width: 28px; height: 28px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; flex-shrink: 0; transition: all 0.15s; font-family: inherit;
+  }
+  .lib-close-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+  .lib-search-row {
+    padding: 14px 16px 10px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border-dark-subtle, #2C3241);
+  }
+  .lib-search-wrap {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--bg-dark-app, #0f131a);
+    border: 1px solid var(--border-dark-subtle, #2C3241);
+    border-radius: 7px; padding: 8px 12px; transition: border-color 0.15s;
+  }
+  .lib-search-wrap:focus-within { border-color: var(--accent-primary, #3B82F6); }
+  .lib-search-input {
+    background: transparent; border: none; outline: none;
+    color: white; font-size: 13px; font-family: var(--font-sans); flex: 1;
+  }
+  .lib-search-input::placeholder { color: var(--text-dark-muted, #8F9CAE); }
+  .lib-list {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .lib-list::-webkit-scrollbar { width: 4px; }
+  .lib-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
+  .lib-item {
+    background: var(--bg-dark-app, #0f131a);
+    border: 1px solid var(--border-dark-subtle, #2C3241);
+    border-radius: 9px; padding: 13px 14px;
+    display: flex; flex-direction: column; gap: 7px;
+    transition: border-color 0.18s, background 0.18s;
+  }
+  .lib-item:hover { border-color: rgba(59,130,246,0.28); background: rgba(59,130,246,0.025); }
+  .lib-item-top { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; }
+  .lib-item-title { font-size: 13px; font-weight: 600; color: white; line-height: 1.4; flex: 1; min-width: 0; }
+  .lib-cat-badge {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+    padding: 2px 7px; border-radius: 4px; flex-shrink: 0; white-space: nowrap;
+  }
+  .lib-item-meta { font-size: 11px; color: var(--text-dark-muted, #8F9CAE); }
+  .lib-item-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .lib-tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+    color: var(--text-dark-muted, #8F9CAE);
+  }
+  .lib-inject-btn {
+    align-self: flex-end; display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    font-size: 11.5px; font-weight: 700; font-family: var(--font-sans);
+    background: rgba(59,130,246,0.1); color: #93C5FD;
+    border: 1px solid rgba(59,130,246,0.22); transition: all 0.15s;
+  }
+  .lib-inject-btn:hover { background: rgba(59,130,246,0.2); border-color: rgba(59,130,246,0.45); color: #BFDBFE; }
+  .lib-inject-btn.lib-injected {
+    background: rgba(16,185,129,0.1); color: #6EE7B7;
+    border-color: rgba(16,185,129,0.28); cursor: default;
+  }
+  .lib-empty-state {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; padding: 40px; text-align: center;
+    color: var(--text-dark-muted, #8F9CAE);
+  }
+  .lib-inject-toast {
+    position: fixed; bottom: 28px; right: 28px; z-index: 9999;
+    padding: 13px 18px; border-radius: 10px; max-width: 360px;
+    background: #0A1F15; border: 1px solid rgba(16,185,129,0.28); color: #6EE7B7;
+    font-size: 12.5px; font-weight: 500; font-family: var(--font-sans);
+    box-shadow: 0 10px 36px rgba(0,0,0,0.45); animation: fadeIn 0.22s ease;
+    display: flex; align-items: flex-start; gap: 11px; line-height: 1.5;
+  }
+  .lib-browse-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 7px; cursor: pointer;
+    font-size: 13px; font-weight: 600; font-family: var(--font-sans);
+    background: rgba(139,92,246,0.1); color: #C4B5FD;
+    border: 1px solid rgba(139,92,246,0.25); transition: all 0.15s; white-space: nowrap;
+  }
+  .lib-browse-btn:hover { background: rgba(139,92,246,0.18); border-color: rgba(139,92,246,0.45); color: #DDD6FE; }
+
   /* ── Danger / destructive action button ─────────────────────────────────── */
   .btn-danger {
     background: transparent; color: #F87171;
@@ -551,19 +661,14 @@ function formatDate(str) {
 }
 
 // ─── Matter Blueprint Taxonomy ───────────────────────────────────────────────
-// 7-folder structure covering the full lifecycle of complex Indian litigation:
-// Court Filings (stamped record) → Pleadings & Drafts (pre-filing) →
-// Interlocutory Applications (IA/stay track) → Evidence & Exhibits (factual matrix) →
-// Correspondence (notice trail) → Research & Precedents (legal backbone) →
-// Fee & Billing (matter admin) — mirrors how senior advocates physically organise case bundles.
+// 5-folder court-ready litigation workspace with auto-injected Firm Library templates.
+// templateIds map to SEED_ENTRIES ids in FirmLibrary.jsx.
 const MATTER_BLUEPRINT_FOLDERS = [
-  { name: 'Court Filings', icon: '⚖️' },
-  { name: 'Pleadings & Drafts', icon: '📝' },
-  { name: 'Interlocutory Applications', icon: '📌' },
-  { name: 'Evidence & Exhibits', icon: '🗂️' },
-  { name: 'Correspondence', icon: '✉️' },
-  { name: 'Research & Precedents', icon: '🔬' },
-  { name: 'Fee & Billing', icon: '💼' },
+  { name: '01 - Pleadings & Drafts',   icon: '📝', templateIds: [1, 3] },
+  { name: '02 - Court Filings',         icon: '⚖️', templateIds: [2, 5] },
+  { name: '03 - Evidence & Exhibits',   icon: '🗂️', templateIds: []     },
+  { name: '04 - Correspondence',        icon: '✉️', templateIds: []     },
+  { name: '05 - Research & Precedents', icon: '🔬', templateIds: [6, 8] },
 ];
 
 // ─── Breadcrumb Component ────────────────────────────────────────────────────
@@ -818,6 +923,13 @@ export default function VaultView({ targetFolderId = null }) {
   const [modalDropOver, setModalDropOver] = useState(false);
   const intakeFileRef = useRef(null);
 
+  // Library Injector Drawer
+  const [isLibraryDrawerOpen, setIsLibraryDrawerOpen] = useState(false);
+  const [libSearch, setLibSearch]                     = useState('');
+  const [libEntries, setLibEntries]                   = useState([]);
+  const [injectedIds, setInjectedIds]                 = useState(new Set());
+  const [injectToast, setInjectToast]                 = useState(null);
+
   const navigate = useNavigate();
 
   // ── Load documents ────────────────────────────────────────────────────────
@@ -929,53 +1041,98 @@ export default function VaultView({ targetFolderId = null }) {
   // ── Combined refresh (documents + folders) ────────────────────────────────
   const loadCurrentView = () => Promise.all([loadDocuments(), loadFolders()]);
 
-  // ── Matter Blueprint: batch-create standard litigation folders ─────────────
-  // Strategy: Promise.allSettled() — all 7 POSTs fire concurrently; no short-circuit
-  // on failure. Partial success is preserved (optimistic local update) and surfaced
-  // via a toast listing the failed names. No rollback — a partial structure is better
-  // than nothing; the lawyer can re-click Blueprint to fill gaps idempotently.
+  // ── Matter Blueprint: create numbered litigation folders + auto-inject templates ──
+  // Creates folders via API concurrently with a 1200ms minimum UX delay, then
+  // injects relevant Firm Library templates as synthetic docs into each folder.
+  // State updates are optimistic — no server refetch needed after success.
   const handleInitializeBlueprint = async () => {
     if (isInitializing) return;
     setIsInitializing(true);
     setBlueprintToast(null);
     const token = apiToken();
 
-    const results = await Promise.allSettled(
-      MATTER_BLUEPRINT_FOLDERS.map(folder =>
-        fetch(`${API_BASE}/api/vault/folders`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
-          body: JSON.stringify({ name: folder.name, parent_id: currentFolderId }),
-        }).then(async res => {
-          const data = await res.json();
-          if (!res.ok || data.error) throw new Error(data.message || `Failed: ${folder.name}`);
-          return { id: data.id, name: folder.name, parent_id: data.parent_id ?? null };
-        })
-      )
-    );
+    // Load firm library entries (localStorage or seed fallback)
+    const allLibEntries = (() => {
+      try {
+        const raw = localStorage.getItem('lexai_firm_library');
+        const parsed = raw ? JSON.parse(raw) : null;
+        return Array.isArray(parsed) && parsed.length > 0 ? parsed : FL_SEED;
+      } catch { return FL_SEED; }
+    })();
+
+    // Fire folder creation + 1200ms minimum delay in parallel
+    const [results] = await Promise.all([
+      Promise.allSettled(
+        MATTER_BLUEPRINT_FOLDERS.map(folder =>
+          fetch(`${API_BASE}/api/vault/folders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+            body: JSON.stringify({ name: folder.name, parent_id: currentFolderId }),
+          }).then(async res => {
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.message || `Failed: ${folder.name}`);
+            return { id: data.id, name: folder.name, parent_id: data.parent_id ?? null };
+          })
+        )
+      ),
+      new Promise(resolve => setTimeout(resolve, 1200)),
+    ]);
 
     const succeeded = results
-      .map((r, i) => r.status === 'fulfilled' ? r.value : null)
+      .map((r, i) => r.status === 'fulfilled'
+        ? { ...r.value, templateIds: MATTER_BLUEPRINT_FOLDERS[i].templateIds }
+        : null)
       .filter(Boolean);
     const failed = results
       .map((r, i) => r.status === 'rejected' ? MATTER_BLUEPRINT_FOLDERS[i].name : null)
       .filter(Boolean);
 
+    let totalTemplates = 0;
+
     if (succeeded.length > 0) {
-      setFolders(prev => [...prev, ...succeeded]);
+      // Persist folders to state
+      setFolders(prev => [...prev, ...succeeded.map(({ id, name, parent_id }) => ({ id, name, parent_id }))]);
+
+      // Build synthetic template docs for each succeeded folder
+      const syntheticDocs = [];
+      const newInjectedIds = new Set(injectedIds);
+      const now = new Date().toISOString();
+
+      for (const folder of succeeded) {
+        for (const tplId of (folder.templateIds || [])) {
+          const entry = allLibEntries.find(e => e.id === tplId);
+          if (!entry) continue;
+          syntheticDocs.push({
+            id: `bp_${folder.id}_${tplId}`,
+            title: entry.title,
+            smart_title: entry.title,
+            doc_type: entry.category,
+            content: `[FIRM LIBRARY — ${entry.category}]\n\nTitle: ${entry.title}\nAuthor: ${entry.author || 'Firm Library'}\nLast Updated: ${entry.updated || ''}\n\n${entry.description || ''}`,
+            created_at: now,
+            folder_id: folder.id,
+            tags: entry.tags || [],
+          });
+          newInjectedIds.add(tplId);
+        }
+      }
+
+      if (syntheticDocs.length > 0) {
+        setDocuments(prev => [...syntheticDocs, ...prev]);
+        setInjectedIds(newInjectedIds);
+        totalTemplates = syntheticDocs.length;
+      }
     }
 
     if (failed.length === 0) {
-      setBlueprintToast({ type: 'success', failed: [] });
+      setBlueprintToast({ type: 'success', failed: [], foldersCreated: succeeded.length, templatesInjected: totalTemplates });
     } else if (succeeded.length > 0) {
-      setBlueprintToast({ type: 'partial', failed });
+      setBlueprintToast({ type: 'partial', failed, foldersCreated: succeeded.length, templatesInjected: totalTemplates });
     } else {
-      setBlueprintToast({ type: 'error', failed });
+      setBlueprintToast({ type: 'error', failed, foldersCreated: 0, templatesInjected: 0 });
     }
 
-    await loadCurrentView();
     setIsInitializing(false);
-    setTimeout(() => setBlueprintToast(null), 6500);
+    setTimeout(() => setBlueprintToast(null), 7000);
   };
 
   // ── Clear Workspace: bulk-delete all folders in current directory ─────────
@@ -1041,6 +1198,19 @@ export default function VaultView({ targetFolderId = null }) {
       appliedFolderRef.current = targetFolderId;
     }
   }, [targetFolderId, folders]);
+
+  // ── Library drawer: load entries from localStorage (or seed fallback) ────────
+  useEffect(() => {
+    if (!isLibraryDrawerOpen) return;
+    try {
+      const raw = localStorage.getItem('lexai_firm_library');
+      const parsed = raw ? JSON.parse(raw) : null;
+      setLibEntries(Array.isArray(parsed) && parsed.length > 0 ? parsed : FL_SEED);
+    } catch {
+      setLibEntries(FL_SEED);
+    }
+    setLibSearch('');
+  }, [isLibraryDrawerOpen]);
 
   // ── Folder navigation ─────────────────────────────────────────────────────
   const navigateToFolder = (folder) => {
@@ -1119,6 +1289,36 @@ export default function VaultView({ targetFolderId = null }) {
     });
     return m;
   }, [folders]);
+
+  // ── Library search filter ────────────────────────────────────────────────
+  const filteredLibEntries = useMemo(() => {
+    if (!libSearch.trim()) return libEntries;
+    const term = libSearch.toLowerCase();
+    return libEntries.filter(e =>
+      (e.title || '').toLowerCase().includes(term) ||
+      (e.category || '').toLowerCase().includes(term) ||
+      (e.author || '').toLowerCase().includes(term) ||
+      (e.tags || []).some(t => t.toLowerCase().includes(term))
+    );
+  }, [libEntries, libSearch]);
+
+  // ── Inject library entry as a local document ─────────────────────────────
+  const handleInjectEntry = (entry) => {
+    const syntheticDoc = {
+      id: `lib_${Date.now()}_${entry.id}`,
+      title: entry.title,
+      smart_title: entry.title,
+      doc_type: entry.category,
+      content: `[FIRM LIBRARY — ${entry.category}]\n\nTitle: ${entry.title}\nAuthor: ${entry.author || 'Firm Library'}\nLast Updated: ${entry.updated || ''}\n\n${entry.description || ''}`,
+      created_at: new Date().toISOString(),
+      folder_id: currentFolderId,
+      tags: entry.tags || [],
+    };
+    setDocuments(prev => [syntheticDoc, ...prev]);
+    setInjectedIds(prev => new Set([...prev, entry.id]));
+    setInjectToast(entry.title);
+    setTimeout(() => setInjectToast(null), 3200);
+  };
 
   // Resolve folder name for document cards (when searching across folders)
   const getFolderName = (folderId) => {
@@ -1374,6 +1574,12 @@ export default function VaultView({ targetFolderId = null }) {
               </svg>
               New Folder
             </button>
+            <button className="lib-browse-btn" onClick={() => setIsLibraryDrawerOpen(true)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              Browse Firm Library
+            </button>
             <button className="btn-accent" onClick={() => fileInputRef.current?.click()}
               style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1624,6 +1830,10 @@ export default function VaultView({ targetFolderId = null }) {
                     <button className="vault-empty-link" onClick={() => fileInputRef.current?.click()}>
                       Upload a document instead
                     </button>
+                    <span className="vault-empty-sep">·</span>
+                    <button className="vault-empty-link" onClick={() => setIsLibraryDrawerOpen(true)}>
+                      Browse Firm Library
+                    </button>
                     {folderPath.length === 0 && (
                       <>
                         <span className="vault-empty-sep">·</span>
@@ -1722,6 +1932,111 @@ export default function VaultView({ targetFolderId = null }) {
         </div>
       )}
 
+      {/* ── Library Injector Drawer ────────────────────────────────────────── */}
+      {isLibraryDrawerOpen && (
+        <div className="lib-overlay" onClick={() => setIsLibraryDrawerOpen(false)} />
+      )}
+      <div className={`lib-drawer${isLibraryDrawerOpen ? ' lib-open' : ''}`} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="lib-drawer-head">
+          <div>
+            <div className="lib-drawer-title">📚 Firm Library</div>
+            <div className="lib-drawer-sub">
+              {filteredLibEntries.length} template{filteredLibEntries.length !== 1 ? 's' : ''}
+              {libSearch && ` matching "${libSearch}"`}
+            </div>
+          </div>
+          <button className="lib-close-btn" onClick={() => setIsLibraryDrawerOpen(false)} aria-label="Close">✕</button>
+        </div>
+
+        {/* Search */}
+        <div className="lib-search-row">
+          <div className="lib-search-wrap">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted,#8F9CAE)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              className="lib-search-input"
+              placeholder="Search templates, precedents, guides…"
+              value={libSearch}
+              onChange={e => setLibSearch(e.target.value)}
+              autoComplete="off"
+            />
+            {libSearch && (
+              <button onClick={() => setLibSearch('')} style={{ background: 'none', border: 'none', color: 'var(--text-dark-muted,#8F9CAE)', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1 }}>✕</button>
+            )}
+          </div>
+        </div>
+
+        {/* Entry list */}
+        <div className="lib-list">
+          {filteredLibEntries.length === 0 ? (
+            <div className="lib-empty-state">
+              <div style={{ fontSize: 28, marginBottom: 6 }}>🔍</div>
+              <div style={{ fontWeight: 600, color: 'var(--text-dark-primary,#fff)', fontSize: 14 }}>No results</div>
+              <div style={{ fontSize: 12 }}>Try a different search term.</div>
+            </div>
+          ) : (
+            filteredLibEntries.map(entry => {
+              const catStyle = (() => {
+                const map = {
+                  Template:         { bg: 'rgba(59,130,246,0.12)',  color: '#60A5FA' },
+                  Precedent:        { bg: 'rgba(245,158,11,0.12)',  color: '#FBBF24' },
+                  'Research Memo':  { bg: 'rgba(139,92,246,0.12)',  color: '#A78BFA' },
+                  'Standard Form':  { bg: 'rgba(16,185,129,0.12)',  color: '#34D399' },
+                  'Practice Guide': { bg: 'rgba(20,184,166,0.12)',  color: '#2DD4BF' },
+                };
+                return map[entry.category] || { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF' };
+              })();
+              const alreadyInjected = injectedIds.has(entry.id);
+              return (
+                <div key={entry.id} className="lib-item">
+                  <div className="lib-item-top">
+                    <div className="lib-item-title">{entry.title}</div>
+                    <span className="lib-cat-badge" style={{ background: catStyle.bg, color: catStyle.color }}>{entry.category}</span>
+                  </div>
+                  <div className="lib-item-meta">
+                    {entry.author && <span>{entry.author}</span>}
+                    {entry.updated && <span style={{ marginLeft: 8, opacity: 0.6 }}>· {entry.updated}</span>}
+                  </div>
+                  {entry.tags?.length > 0 && (
+                    <div className="lib-item-tags">
+                      {entry.tags.slice(0, 4).map(t => <span key={t} className="lib-tag">{t}</span>)}
+                    </div>
+                  )}
+                  <button
+                    className={`lib-inject-btn${alreadyInjected ? ' lib-injected' : ''}`}
+                    onClick={() => !alreadyInjected && handleInjectEntry(entry)}
+                  >
+                    {alreadyInjected ? (
+                      <>✓ Injected into Vault</>
+                    ) : (
+                      <>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 5v14M5 12l7 7 7-7" />
+                        </svg>
+                        Inject into Vault
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* ── Inject success toast ────────────────────────────────────────────── */}
+      {injectToast && (
+        <div className="lib-inject-toast">
+          <span style={{ fontSize: 16, flexShrink: 0 }}>✓</span>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>Template Injected</div>
+            <div style={{ fontSize: 11.5, opacity: 0.8 }}>"{injectToast}" added to your vault.</div>
+          </div>
+        </div>
+      )}
+
       {/* ── Blueprint toast notification (portal-rendered fixed position) ── */}
       {blueprintToast && (
         <div className={`vault-toast vault-toast-${blueprintToast.type}`}>
@@ -1731,9 +2046,9 @@ export default function VaultView({ targetFolderId = null }) {
           <div>
             <div className="vault-toast-title">
               {blueprintToast.type === 'success'
-                ? `Matter Blueprint initialized — ${MATTER_BLUEPRINT_FOLDERS.length} folders created`
+                ? `Litigation Blueprint Applied — ${blueprintToast.foldersCreated} folders, ${blueprintToast.templatesInjected} templates injected`
                 : blueprintToast.type === 'partial'
-                  ? `Partial success — ${MATTER_BLUEPRINT_FOLDERS.length - blueprintToast.failed.length} of ${MATTER_BLUEPRINT_FOLDERS.length} folders created`
+                  ? `Partial Blueprint — ${blueprintToast.foldersCreated} of ${MATTER_BLUEPRINT_FOLDERS.length} folders created, ${blueprintToast.templatesInjected} templates injected`
                   : 'Blueprint initialization failed'}
             </div>
             {blueprintToast.failed.length > 0 && (

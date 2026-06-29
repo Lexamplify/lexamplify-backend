@@ -1,0 +1,11 @@
+# RAG Server — separate dependency set from the Flask backend.
+# Install in its own venv:  python -m venv rag_venv && rag_venv\Scripts\activate && pip install -r rag_server/requirements.txt
+# Run:  uvicorn rag_server.main:app --port 8001 --reload
+#   OR: cd rag_server && python main.py
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+openai>=1.35.0
+chromadb>=0.5.0
+python-dotenv>=1.0.0

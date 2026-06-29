@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import districtsJson from '../../../data/districts.json';
 import {
   fetchCourtGlobals,
   fetchCourtData,
-  fetchDistricts,
   fetchEventDetails,
   calculateCourtFee,
   fetchIPAssets,
@@ -11,6 +11,19 @@ import {
   updateIPAsset,
   deleteIPAsset
 } from '../services/api';
+
+// ── Algorithmic cause-list URL generator (no scraping) ───────────────────────
+// 95% of Indian district courts run the NIC standard dcourts.gov.in CMS which
+// exposes /cause-list/ at a predictable path. Legacy domains fall back to the
+// central eCourts portal's public cause-list page.
+const generateCauseListUrl = (districtUrl) => {
+  if (!districtUrl) return '#';
+  const cleanBase = districtUrl.endsWith('/') ? districtUrl.slice(0, -1) : districtUrl;
+  if (cleanBase.includes('dcourts.gov.in')) {
+    return `${cleanBase}/cause-list/`;
+  }
+  return 'https://services.ecourts.gov.in/ecourtindia_v6/?p=casestatus/causelist';
+};
 
 // ── Curated Bare Acts — bypass proxy, open directly in new tab ───────────────
 // IndiaCode (nic.in) for new criminal codes; Indian Kanoon for legacy acts.
@@ -607,6 +620,113 @@ const styles = `
     animation: spin .7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── District Court Action Panel ─────────────────────────────── */
+  .dc-action-panel {
+    animation: dc-fade-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes dc-fade-up {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .dc-court-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    background: var(--bg-dark-card);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 10px 10px 0 0;
+    border-bottom: none;
+  }
+  .dc-court-icon {
+    width: 40px; height: 40px; flex-shrink: 0;
+    border-radius: 9px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 19px;
+  }
+  .dc-court-name {
+    font-size: 15px; font-weight: 700; color: var(--text-dark-primary);
+    margin-bottom: 2px;
+  }
+  .dc-court-meta {
+    font-size: 11.5px; color: var(--text-dark-muted);
+  }
+  .dc-state-chip {
+    margin-left: auto;
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-dark-muted);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 6px; padding: 3px 9px; flex-shrink: 0;
+  }
+
+  .dc-actions-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: var(--bg-dark-card);
+    border: 1px solid var(--border-dark-subtle);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    border-radius: 0 0 10px 10px;
+    overflow: hidden;
+  }
+
+  .dc-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.18s cubic-bezier(0.16,1,0.3,1), color 0.18s;
+    font-family: var(--font-sans);
+    line-height: 1.2;
+    cursor: pointer;
+    border: none;
+  }
+  .dc-btn-primary {
+    background: var(--accent-primary);
+    color: #fff;
+    border-right: 1px solid rgba(255,255,255,0.14);
+  }
+  .dc-btn-primary:hover {
+    background: #2563EB;
+  }
+  .dc-btn-secondary {
+    background: transparent;
+    color: var(--text-dark-primary);
+    border-left: 1px solid rgba(255,255,255,0.05);
+  }
+  .dc-btn-secondary:hover {
+    background: rgba(59, 130, 246, 0.08);
+    color: var(--accent-primary);
+  }
+  .dc-btn-icon {
+    font-size: 15px; flex-shrink: 0;
+  }
+  .dc-btn.dc-disabled {
+    opacity: 0.35;
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+
+  .dc-url-hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-dark-muted);
+    display: flex; align-items: center; gap: 5px;
+    padding: 0 2px;
+  }
+  .dc-url-hint code {
+    font-family: monospace; font-size: 10.5px;
+    color: rgba(99, 102, 241, 0.8);
+    word-break: break-all;
+  }
 `;
 
 // Judge roster DB for District courts matching the HTML page
@@ -649,12 +769,11 @@ export default function CourtResources() {
   const [loadingHC, setLoadingHC] = useState(true);
   const [hcSubTab, setHcSubTab] = useState('overview');
   
-  // District Court States
-  const [districtsDb, setDistrictsDb] = useState({});
+  // District Court States — seeded directly from bundled districts.json (no API call)
+  const [districtsDb] = useState(districtsJson);
   const [selectedDistState, setSelectedDistState] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [distSubTab, setDistSubTab] = useState('overview');
-  const [loadingDistricts, setLoadingDistricts] = useState(false);
   
   // IP Tracker States
   const [ipAssets, setIpAssets] = useState([]);
@@ -822,18 +941,7 @@ export default function CourtResources() {
     loadHCData();
   }, [hcState]);
 
-  // ── Load District Database once for cascading select ─────────────────
-  useEffect(() => {
-    const loadDistrictsDb = async () => {
-      setLoadingDistricts(true);
-      const res = await fetchDistricts();
-      if (!res.error) {
-        setDistrictsDb(res);
-      }
-      setLoadingDistricts(false);
-    };
-    loadDistrictsDb();
-  }, []);
+  // districts.json is bundled at build time — no async load needed.
 
   // ── Load IP Assets ──────────────────────────────────────────────────
   const loadIP = async () => {
@@ -1328,40 +1436,53 @@ export default function CourtResources() {
             </div>
 
             {selectedDistrict ? (() => {
-              const distUrl = (districtsDb[selectedDistState] || []).find(d => d.name === selectedDistrict)?.url || null;
+              const distData   = (districtsDb[selectedDistState] || []).find(d => d.name === selectedDistrict);
+              const officialUrl  = distData?.url || null;
+              const causeListUrl = generateCauseListUrl(officialUrl);
               return (
-              <div>
-                <div style={{ padding: '14px 18px', background: 'var(--bg-dark-card)', borderRadius: '10px', border: '1px solid var(--border-dark-subtle)', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h3 style={{ fontSize: '16px', color: 'var(--text-dark-primary)', marginBottom: '2px' }}>{selectedDistrict}</h3>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Subordinate Court System</span>
+                <div className="dc-action-panel">
+                  {/* Court identity header */}
+                  <div className="dc-court-header">
+                    <div className="dc-court-icon">🏛️</div>
+                    <div>
+                      <div className="dc-court-name">{selectedDistrict}</div>
+                      <div className="dc-court-meta">District &amp; Sessions Court · Subordinate Judiciary</div>
+                    </div>
+                    <span className="dc-state-chip">{selectedDistState}</span>
                   </div>
-                  {distUrl ? (
+
+                  {/* Action buttons */}
+                  <div className="dc-actions-row">
                     <a
-                      href={distUrl}
+                      href={officialUrl || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn-accent"
-                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      className={`dc-btn dc-btn-primary${!officialUrl ? ' dc-disabled' : ''}`}
                     >
-                      🏛️ Open Official Site ↗
+                      <span className="dc-btn-icon">🌐</span>
+                      Official Website ↗
                     </a>
-                  ) : (
-                    <button
-                      className="btn-accent"
-                      disabled
-                      style={{ opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' }}
+                    <a
+                      href={causeListUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`dc-btn dc-btn-secondary${causeListUrl === '#' ? ' dc-disabled' : ''}`}
                     >
-                      🏛️ Site Not Available
-                    </button>
-                  )}
-                </div>
+                      <span className="dc-btn-icon">📅</span>
+                      Daily Cause List ↗
+                    </a>
+                  </div>
 
-              </div>
-            );
-          })() : (
+                  {/* Transparent URL hint */}
+                  <div className="dc-url-hint">
+                    <span>Cause list routed to</span>
+                    <code>{causeListUrl === '#' ? '—' : causeListUrl}</code>
+                  </div>
+                </div>
+              );
+            })() : (
               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', border: '1px dashed var(--border-dark-subtle)', borderRadius: '8px' }}>
-                Please select a State and a Subordinate District Court above to display court services.
+                Select a State and District Court above to reveal portal access.
               </div>
             )}
           </div>
