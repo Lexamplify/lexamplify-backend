@@ -457,10 +457,57 @@ export const analyzeContract = async (file = null, text = '', scanStrategy = 'De
 };
 
 /**
+ * Extracts raw text from a PDF or DOCX file without running analysis.
+ * Hits the Flask backend /api/contract/extract-text — reuses the same
+ * extract_text_for_summary utility used by the main analyze route.
+ * @param {File} file
+ */
+export const extractContractText = async (file) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: formData,
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] extractContractText error:', error);
+    return { error: true, message: error.message || 'Failed to extract text from file.' };
+  }
+};
+
+/**
+ * Analyzes contract text via the Groq-powered RAG sidecar (port 8001).
+ * Supports an optional Rule Book for custom override rules.
+ * @param {string} text
+ * @param {string} ruleBook
+ * @param {string} scanStrategy
+ */
+export const analyzeContractWithGroq = async (text = '', ruleBook = '', scanStrategy = 'Defensive') => {
+  try {
+    const response = await fetch('http://localhost:8001/api/analyze-contract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contract_text: text, rule_book: ruleBook || null, scan_strategy: scanStrategy }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return { error: true, message: err.detail || `RAG server error ${response.status}` };
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('[API Service] analyzeContractWithGroq error:', error);
+    return { error: true, message: error.message || 'Failed to reach RAG server.' };
+  }
+};
+
+/**
  * Rewrites a high-risk clause based on a specified user intent.
- * @param {string} originalClause 
- * @param {string} issue 
- * @param {string} userIntent 
+ * @param {string} originalClause
+ * @param {string} issue
+ * @param {string} userIntent
  */
 export const rewriteContractClause = async (originalClause, issue, userIntent) => {
   try {

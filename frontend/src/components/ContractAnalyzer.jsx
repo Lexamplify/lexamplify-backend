@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  analyzeContract,
+  extractContractText,
+  analyzeContractWithGroq,
   rewriteContractClause,
   fetchContractSummary,
   fetchContractRecommendations,
@@ -266,8 +267,8 @@ const styles = `
 
   /* ── UPLOAD / LANDING SCREEN ────────────────────────────────────── */
   .upload-layout-container {
-    max-width: 680px;
-    margin: 32px auto;
+    max-width: 1120px;
+    margin: 28px auto;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -278,23 +279,61 @@ const styles = `
     background: linear-gradient(135deg, var(--bg-dark-panel) 0%, #0F172A 100%);
     border: 1px solid var(--border-dark-subtle);
     border-radius: 16px 16px 0 0;
-    padding: 32px 32px 24px;
+    padding: 28px 32px 22px;
     text-align: center;
   }
 
   .upload-icon-ring {
-    width: 64px; height: 64px; border-radius: 50%;
+    width: 56px; height: 56px; border-radius: 50%;
     background: rgba(59,130,246,0.1); border: 2px solid rgba(59,130,246,0.25);
     display: flex; align-items: center; justify-content: center;
-    margin: 0 auto 16px;
-    font-size: 26px;
+    margin: 0 auto 14px;
+    font-size: 24px;
   }
 
+  /* ── Split grid ────────────────────────────────────────────── */
+  .upload-split-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid var(--border-dark-subtle);
+    border-top: none;
+  }
+
+  .upload-col-card {
+    background: var(--bg-dark-panel);
+    padding: 24px 28px;
+  }
+  .upload-col-card:first-child {
+    border-right: 1px solid var(--border-dark-subtle);
+  }
+
+  .upload-col-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-dark-muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .upload-col-label--rulebook { color: rgba(167,139,250,0.7); }
+
+  .upload-analyze-bar {
+    background: var(--bg-dark-panel);
+    border: 1px solid var(--border-dark-subtle);
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    padding: 18px 28px 24px;
+  }
+
+  /* ── Drop zones ────────────────────────────────────────────── */
   .drag-drop-zone {
     border: 2px dashed rgba(59,130,246,0.3);
     background: rgba(59,130,246,0.02);
     border-radius: 12px;
-    padding: 36px 20px;
+    padding: 28px 20px;
     text-align: center;
     cursor: pointer;
     transition: all 0.2s;
@@ -304,13 +343,31 @@ const styles = `
     border-color: var(--accent-primary);
     background: rgba(59,130,246,0.05);
   }
+  .drag-drop-zone--rulebook {
+    border-color: rgba(139,92,246,0.3);
+    background: rgba(139,92,246,0.02);
+  }
+  .drag-drop-zone--rulebook:hover, .drag-drop-zone--rulebook.dragover {
+    border-color: rgba(139,92,246,0.65);
+    background: rgba(139,92,246,0.05);
+  }
+  .drag-drop-zone--loading {
+    pointer-events: none;
+    opacity: 0.7;
+  }
 
+  /* Legacy single-col body kept for scanning-state overlay */
   .upload-body {
     background: var(--bg-dark-panel);
     border: 1px solid var(--border-dark-subtle);
     border-top: none;
     border-radius: 0 0 16px 16px;
     padding: 24px 32px 32px;
+  }
+
+  @media (max-width: 720px) {
+    .upload-split-grid { grid-template-columns: 1fr; }
+    .upload-col-card:first-child { border-right: none; border-bottom: 1px solid var(--border-dark-subtle); }
   }
 
   .input-textarea {
@@ -604,6 +661,15 @@ const styles = `
   .risk-indicator-dot.red   { background: var(--accent-danger);   box-shadow: 0 0 5px var(--accent-danger); }
   .risk-indicator-dot.amber { background: var(--accent-warning);  box-shadow: 0 0 5px var(--accent-warning); }
   .risk-indicator-dot.green { background: var(--accent-success);  box-shadow: 0 0 5px var(--accent-success); }
+
+  /* ── RULE BOOK VIOLATION BADGE ────────────────────────────── */
+  .rulebook-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 10px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    background: rgba(139,92,246,0.15); color: #A78BFA;
+    border: 1px solid rgba(139,92,246,0.35); flex-shrink: 0; white-space: nowrap;
+  }
 `;
 
 export default function ContractAnalyzer({ setFocusMode }) {
@@ -663,7 +729,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
 
+  // Rule Book states
+  const [ruleBookText, setRuleBookText] = useState('');
+  const [ruleBookFile, setRuleBookFile] = useState(null);
+  const [ruleBookUploadLoading, setRuleBookUploadLoading] = useState(false);
+
   const fileInputRef = useRef(null);
+  const ruleBookFileInputRef = useRef(null);
   const editorRef = useRef(null);
   const suggestionsRef = useRef(null);
   const chatStreamRef = useRef(null);
@@ -678,7 +750,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setRawText(content);
     (async () => {
       setIsAnalyzing(true);
-      const res = await analyzeContract(null, content, scanStrategy);
+      const res = await analyzeContractWithGroq(content, '', scanStrategy);
       setIsAnalyzing(false);
       if (!res.error) loadAnalysisResults(res);
     })();
@@ -737,22 +809,60 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return;
     const file = files[0];
-
-    // Limits
     const extension = file.name.split('.').pop().toLowerCase();
     if (!['pdf', 'docx'].includes(extension)) {
       alert('Invalid format. Please upload PDF or DOCX.');
       return;
     }
+    if (file.size > 104857600) {
+      alert('File exceeds 100MB. Please compress the PDF or split it into smaller parts.');
+      return;
+    }
 
     setIsAnalyzing(true);
-    const res = await analyzeContract(file, '', scanStrategy);
+
+    // Step 1: extract text via Flask (same utility as the existing analyze route)
+    const extracted = await extractContractText(file);
+    if (extracted.error) {
+      setIsAnalyzing(false);
+      alert(extracted.message || 'Failed to extract document text.');
+      return;
+    }
+    const contractText = extracted.text;
+    setRawText(contractText);
+
+    // Step 2: analyze via Groq sidecar (includes rule book if provided)
+    const res = await analyzeContractWithGroq(contractText, ruleBookText, scanStrategy);
     setIsAnalyzing(false);
 
     if (res.error) {
-      alert(res.message || 'Analysis failed. Please verify the backend status.');
+      alert(res.message || 'Analysis failed. Please verify the RAG server is running.');
     } else {
       loadAnalysisResults(res);
+    }
+  };
+
+  const handleRuleBookFileUpload = async (files) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const extension = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'docx'].includes(extension)) {
+      alert('Invalid format. Please upload PDF or DOCX.');
+      return;
+    }
+    if (file.size > 104857600) {
+      alert('File exceeds 100MB. Please compress the PDF or split it into smaller parts.');
+      return;
+    }
+    setRuleBookFile(file);
+    setRuleBookUploadLoading(true);
+    const res = await extractContractText(file);
+    setRuleBookUploadLoading(false);
+    if (res.error) {
+      alert(res.message || 'Failed to extract Rule Book text.');
+      setRuleBookFile(null);
+    } else {
+      setRuleBookText(res.text);
     }
   };
 
@@ -763,7 +873,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
 
     setIsAnalyzing(true);
-    const res = await analyzeContract(null, rawText, scanStrategy);
+    const res = await analyzeContractWithGroq(rawText, ruleBookText, scanStrategy);
     setIsAnalyzing(false);
 
     if (res.error) {
@@ -774,16 +884,25 @@ export default function ContractAnalyzer({ setFocusMode }) {
   };
 
   const loadAnalysisResults = (data) => {
-    const rawClauses = data.clauses || [];
+    const rawClauses = data.flagged_clauses || data.clauses || [];
     const mapped = rawClauses.map((c, idx) => ({
       id: c.id != null ? String(c.id) : `auto-${idx}`,
       text: c.text || c.original_text || '',
-      risk: c.risk || (c.risk_level === 'High' ? 'RED' : c.risk_level === 'Medium' ? 'AMBER' : 'GREEN'),
-      issue: c.issue || c.explanation || 'Risk identified.'
+      risk: c.risk || (
+        c.risk_level === 'Red'    ? 'RED'   :
+        c.risk_level === 'Amber'  ? 'AMBER' :
+        c.risk_level === 'Green'  ? 'GREEN' :
+        c.risk_level === 'High'   ? 'RED'   :
+        c.risk_level === 'Medium' ? 'AMBER' : 'GREEN'
+      ),
+      issue: c.issue || c.explanation || 'Risk identified.',
+      suggestedRewrite: c.suggested_rewrite || '',
+      isRuleBookViolation: c.is_rule_book_violation || false,
+      clauseTitle: c.clause_title || '',
     }));
 
     setClauses(mapped);
-    setRawText(data.raw_text || mapped.map(c => c.text).join('\n\n'));
+    if (data.raw_text) setRawText(data.raw_text);
     setSummary(data.summary || 'Summary generated successfully.');
     setIsAnalyzed(true);
     setActiveClauseId(null);
@@ -797,7 +916,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setScanStrategy(newStrategy);
     if (isAnalyzed && rawText) {
       setIsAnalyzing(true);
-      const res = await analyzeContract(null, rawText, newStrategy);
+      const res = await analyzeContractWithGroq(rawText, ruleBookText, newStrategy);
       setIsAnalyzing(false);
       if (!res.error) {
         loadAnalysisResults(res);
@@ -812,7 +931,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setActiveClauseId(id);
     switchTab('risks');
     setIntent('');
-    setRewrittenText('');
+    const clause = clauses.find(c => c.id === id);
+    setRewrittenText(clause?.suggestedRewrite || '');
   };
 
   const handleEditorClick = (e) => {
@@ -1348,43 +1468,120 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   {/* ── HERO ── */}
                   <div className="upload-hero">
                     <div className="upload-icon-ring">⚖️</div>
-                    <h2 style={{ fontSize: '20px', color: 'var(--text-dark-primary)', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Analyze a Contract</h2>
+                    <h2 style={{ fontSize: '20px', color: 'var(--text-dark-primary)', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Senior Counsel Workspace</h2>
                     <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
-                      Upload an NDA, employment agreement, MSA, or any Indian law contract to scan liability clauses, get AI rewrites, and find missing protections.
+                      Upload or paste a contract on the left. Optionally define your firm's non-negotiable rules on the right to enforce them as absolute overrides during analysis.
                     </p>
                   </div>
 
-                  <div className="upload-body">
-                    {/* Drop zone */}
-                    <div
-                      className="drag-drop-zone transition-all duration-300 ease-in-out"
-                      onClick={() => fileInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                      onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); }}
-                    >
-                      <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></svg>
-                      <h3 style={{ fontSize: '14.5px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop your contract here</h3>
-                      <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
-                      <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Max 10 MB</span>
+                  {/* ── SPLIT GRID ── */}
+                  <div className="upload-split-grid">
+
+                    {/* LEFT COLUMN — Contract Subject */}
+                    <div className="upload-col-card">
+                      <div className="upload-col-label">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                        Contract Document
+                      </div>
+
+                      {/* Contract drop zone */}
+                      <div
+                        className="drag-drop-zone transition-all duration-300 ease-in-out"
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                        onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
+                        onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); }}
+                      >
+                        <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></svg>
+                        <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop your contract here</h3>
+                        <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
+                        <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Supports large scanned files (up to 100MB)</span>
+                      </div>
+
+                      {/* Contract divider */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
+                        <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or paste text</span>
+                        <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                      </div>
+
+                      <textarea
+                        className="input-textarea"
+                        placeholder="Paste the raw text of your contract here…"
+                        value={rawText}
+                        onChange={(e) => setRawText(e.target.value)}
+                        style={{ marginBottom: 0 }}
+                      />
                     </div>
 
-                    {/* Divider */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '18px 0' }}>
-                      <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or paste text</span>
-                      <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                    {/* RIGHT COLUMN — Rule Book Strategy */}
+                    <div className="upload-col-card">
+                      <div className="upload-col-label upload-col-label--rulebook">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                        Custom Rule Book &amp; Directives
+                        <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '10px', color: 'var(--text-dark-muted)' }}>(Optional)</span>
+                        {ruleBookText.trim() && (
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block', marginLeft: 'auto', flexShrink: 0 }} />
+                        )}
+                      </div>
+
+                      <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 14px', lineHeight: 1.55 }}>
+                        Upload or type your firm's non-negotiable rules. The AI will enforce these as{' '}
+                        <strong style={{ color: '#A78BFA' }}>absolute overrides</strong>{' '}
+                        and flag any violation with a <strong style={{ color: '#A78BFA' }}>Rule Book</strong> badge.
+                      </p>
+
+                      {/* Rule Book drop zone */}
+                      {ruleBookUploadLoading ? (
+                        <div className="drag-drop-zone drag-drop-zone--rulebook drag-drop-zone--loading" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2.5px solid rgba(139,92,246,0.2)', borderTopColor: '#8B5CF6', animation: 'spin 0.9s linear infinite' }} />
+                          <span style={{ fontSize: '12.5px', color: 'rgba(139,92,246,0.8)' }}>Extracting text…</span>
+                        </div>
+                      ) : (
+                        <div
+                          className="drag-drop-zone drag-drop-zone--rulebook transition-all duration-300 ease-in-out"
+                          onClick={() => ruleBookFileInputRef.current?.click()}
+                          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                          onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
+                          onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleRuleBookFileUpload(e.dataTransfer.files); }}
+                        >
+                          <input type="file" ref={ruleBookFileInputRef} style={{ display: 'none' }} onChange={(e) => handleRuleBookFileUpload(e.target.files)} accept=".pdf,.docx" />
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                          {ruleBookFile ? (
+                            <>
+                              <h3 style={{ fontSize: '13px', color: '#A78BFA', marginBottom: '4px' }}>{ruleBookFile.name}</h3>
+                              <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Text extracted — click to replace</p>
+                            </>
+                          ) : (
+                            <>
+                              <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop Rule Book here</h3>
+                              <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
+                            </>
+                          )}
+                          <span style={{ fontSize: '11px', color: 'rgba(139,92,246,0.8)', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Extracts text automatically</span>
+                        </div>
+                      )}
+
+                      {/* Rule Book divider */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
+                        <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or type directives</span>
+                        <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                      </div>
+
+                      <textarea
+                        className="input-textarea"
+                        placeholder={"Examples:\n• No arbitration clauses — all disputes must go to Delhi High Court.\n• Liability cap must not exceed 3× contract value.\n• Payment terms must not exceed Net-30.\n• Indemnification must always be mutual, never one-sided."}
+                        value={ruleBookText}
+                        onChange={(e) => setRuleBookText(e.target.value)}
+                        style={{ marginBottom: 0, borderColor: ruleBookText.trim() ? 'rgba(139,92,246,0.35)' : undefined, fontSize: '12.5px', resize: 'vertical' }}
+                      />
                     </div>
+                  </div>
 
-                    <textarea
-                      className="input-textarea"
-                      placeholder="Paste the raw text of your contract here…"
-                      value={rawText}
-                      onChange={(e) => setRawText(e.target.value)}
-                      style={{ marginBottom: '16px' }}
-                    />
-
+                  {/* ── ANALYZE BAR ── */}
+                  <div className="upload-analyze-bar">
                     <button
                       className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
                       onClick={handleTextAnalyze}
@@ -1393,6 +1590,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
                       Start Contract Risk Scan
                     </button>
+                    {ruleBookText.trim() && (
+                      <p style={{ margin: '10px 0 0', textAlign: 'center', fontSize: '11.5px', color: 'rgba(167,139,250,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block' }} />
+                        Rule Book active — {ruleBookText.trim().length} chars of directives will be enforced
+                      </p>
+                    )}
                   </div>
                 </>
               )}
@@ -1567,11 +1770,14 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           All clauses
                         </button>
                         <div className="inspected-risk-card">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                             <span className={`risk-indicator-dot ${activeClause.risk === 'RED' ? 'red' : 'amber'}`}></span>
                             <h3 style={{ fontSize: '14px', color: 'white', margin: 0, fontWeight: '600' }}>
-                              {activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause'}
+                              {activeClause.clauseTitle || (activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause')}
                             </h3>
+                            {activeClause.isRuleBookViolation && (
+                              <span className="rulebook-badge">⚡ Rule Book Override</span>
+                            )}
                           </div>
 
                           <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>ORIGINAL TEXT:</span>
@@ -1664,6 +1870,9 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                 <span className={`clause-risk-badge ${c.risk === 'RED' ? 'red' : 'amber'}`}>
                                   {c.risk === 'RED' ? 'HIGH' : 'MED'}
                                 </span>
+                                {c.isRuleBookViolation && (
+                                  <span className="rulebook-badge">⚡ Rule Book</span>
+                                )}
                               </div>
                             ))}
                             {greenCount > 0 && (

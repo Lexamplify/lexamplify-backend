@@ -245,7 +245,7 @@ def create_app():
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'secret')
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
     app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'static/uploads')
-    app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 16777216))
+    app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 104857600))  # 100 MB
     app.config['SQLITE_DB_PATH'] = DB_PATH
 
     sqlalchemy_db.init_app(app)

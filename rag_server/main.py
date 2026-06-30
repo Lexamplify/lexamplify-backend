@@ -33,11 +33,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Literal, Optional
+from urllib.parse import quote_plus
 
 import chromadb
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -435,6 +438,36 @@ async def health():
     }
 
 
+_IK_DOC     = "https://indiankanoon.org/doc/{}/"
+_IK_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; LexAmplify/1.0; legal-research-tool)",
+    "Accept": "text/html,application/xhtml+xml",
+}
+
+@app.get("/api/resolve-citation")
+async def resolve_citation(query: str):
+    """
+    Resolve a case citation string to its direct Indian Kanoon document URL.
+    Scrapes the first /doc/{id}/ link from Kanoon search results.
+    Falls back to the search URL on any failure or timeout.
+    """
+    fallback = f"https://indiankanoon.org/search/?formInput={quote_plus(query)}"
+    try:
+        async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
+            resp = await client.get(
+                "https://indiankanoon.org/search/",
+                params={"formInput": query},
+                headers=_IK_HEADERS,
+            )
+        if resp.status_code == 200:
+            match = re.search(r'/doc/(\d+)/', resp.text)
+            if match:
+                return {"exact_url": _IK_DOC.format(match.group(1))}
+    except Exception:
+        pass
+    return {"exact_url": fallback}
+
+
 @app.post("/api/search", response_model=SearchResponse)
 async def search(req: SearchRequest) -> SearchResponse:
     """
@@ -536,6 +569,96 @@ async def search(req: SearchRequest) -> SearchResponse:
         facts_vs_ruling=facts_vs_ruling,
         retrieved_chunks=len(docs),
     )
+
+
+# ── Contract Analyzer ────────────────────────────────────────────────────────
+
+class ContractAnalysisRequest(BaseModel):
+    contract_text: str = Field(..., min_length=10, max_length=60000)
+    rule_book: Optional[str] = Field(None, max_length=8000)
+    scan_strategy: str = Field("Defensive", description="Defensive | Aggressive | Standard")
+
+
+@app.post("/api/analyze-contract")
+async def analyze_contract(req: ContractAnalysisRequest):
+    """
+    Two-step contract risk scanner powered by llama-3.3-70b-versatile.
+
+    Step 1 — General Indian law analysis (Contract Act 1872, NI Act, IT Act, etc.)
+    Step 2 — Rule Book enforcement: if rule_book is provided, its directives are
+              ABSOLUTE OVERRIDES; violating clauses are flagged Red with
+              is_rule_book_violation: true regardless of general legal compliance.
+    """
+    if _groq is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Groq client not initialised — set GROQ_API_KEY in .env",
+        )
+
+    rule_book_block = ""
+    if req.rule_book and req.rule_book.strip():
+        rule_book_block = f"""
+RULE BOOK (ABSOLUTE OVERRIDE — enforce after general analysis):
+The following directives were set by the client. ANY clause that contradicts them
+MUST be flagged as risk_level "Red" with is_rule_book_violation set to true and a
+suggested_rewrite that brings the clause into full compliance.
+
+{req.rule_book.strip()}
+
+"""
+
+    system_prompt = f"""You are a specialist Indian Contract Law AI attorney performing a rigorous {req.scan_strategy} scan.
+
+STEP 1 — GENERAL LEGAL ANALYSIS:
+Identify all clauses that pose High (Red) or Medium (Amber) risk under Indian law:
+Indian Contract Act 1872, NI Act, IT Act 2000, Consumer Protection Act, IPC/BNS,
+GDPR-equivalent data provisions, and sector-specific regulations.
+For each flagged clause include a verbatim excerpt (max 200 chars), the legal issue, and a suggested attorney-quality rewrite.
+{rule_book_block}
+STEP 2 — RULE BOOK ENFORCEMENT (applies only when Rule Book is provided above):
+Re-examine every clause against the Rule Book. Even legally-standard clauses that
+violate any Rule Book directive must be marked Red with is_rule_book_violation: true.
+
+Return ONLY a valid JSON object — no markdown, no commentary:
+{{
+  "overall_risk_score": <integer 0-100, 100 = maximum risk>,
+  "summary": "<2–3 sentence executive risk summary>",
+  "flagged_clauses": [
+    {{
+      "clause_title": "<short descriptive title>",
+      "original_text": "<verbatim excerpt from contract, max 200 chars>",
+      "risk_level": "<Red|Amber|Green>",
+      "explanation": "<specific Indian legal issue or Rule Book violation>",
+      "suggested_rewrite": "<attorney-quality replacement clause>",
+      "is_rule_book_violation": <true|false>
+    }}
+  ],
+  "missing_clauses": [
+    {{
+      "title": "<clause name>",
+      "clause": "<suggested clause text>",
+      "explanation": "<why this protection is legally significant>"
+    }}
+  ]
+}}"""
+
+    try:
+        response = _groq.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            temperature=0.15,
+            max_tokens=3000,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"CONTRACT TEXT:\n\n{req.contract_text[:14000]}"},
+            ],
+        )
+        result = json.loads(response.choices[0].message.content or "{}")
+        return result
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"Groq returned invalid JSON: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

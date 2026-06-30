@@ -635,61 +635,6 @@ const vaultStyles = `
   .vault-toast-title   { font-weight: 700; margin-bottom: 2px; }
   .vault-toast-body    { font-size: 11.5px; opacity: 0.8; }
 
-  /* ── Slide-Over Document Canvas ─────────────────────────────────────────── */
-  .soc-backdrop {
-    position: fixed; inset: 0; z-index: 1500;
-    background: rgba(3,6,14,0.72); backdrop-filter: blur(4px);
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.3s cubic-bezier(0.16,1,0.3,1);
-  }
-  .soc-backdrop.soc-open { opacity: 1; pointer-events: auto; }
-  .soc-panel {
-    position: fixed; top: 0; right: 0; bottom: 0; z-index: 1501;
-    width: min(700px, 96vw);
-    background: #0E1420;
-    border-left: 1px solid rgba(59,130,246,0.2);
-    display: flex; flex-direction: column;
-    transform: translateX(100%);
-    transition: transform 0.38s cubic-bezier(0.16,1,0.3,1);
-    box-shadow: -40px 0 96px rgba(0,0,0,0.75);
-  }
-  .soc-panel.soc-open { transform: translateX(0); }
-  .soc-header {
-    padding: 18px 22px 15px; flex-shrink: 0;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-    background: rgba(255,255,255,0.012);
-    display: flex; flex-direction: column; gap: 11px;
-  }
-  .soc-header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .soc-title {
-    font-size: 15.5px; font-weight: 700; color: #F1F5F9; letter-spacing: -0.2px;
-    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .soc-close {
-    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 7px; color: #64748B; width: 30px; height: 30px; flex-shrink: 0;
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-    font-size: 14px; transition: all 0.15s; font-family: inherit;
-  }
-  .soc-close:hover { background: rgba(255,255,255,0.1); color: #CBD5E1; border-color: rgba(255,255,255,0.18); }
-  .soc-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-  .soc-body {
-    flex: 1; overflow-y: auto; padding: 28px 28px 24px;
-  }
-  .soc-body::-webkit-scrollbar { width: 5px; }
-  .soc-body::-webkit-scrollbar-track { background: transparent; }
-  .soc-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 3px; }
-  .soc-content p {
-    margin: 0 0 1.2em; font-size: 13.5px; line-height: 1.82;
-    color: #94A3B8; font-family: var(--font-sans);
-  }
-  .soc-content p:first-child { margin-top: 0; }
-  .soc-content p:empty { display: none; }
-  .soc-footer-actions {
-    padding: 13px 20px; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
-    display: flex; gap: 8px; background: rgba(255,255,255,0.01);
-  }
-
   /* ── Library drawer — search hint ──────────────────────────────────────── */
   .dc-search-hint {
     font-size: 11.5px; font-weight: 400; margin: 8px 2px 0;
@@ -742,6 +687,12 @@ const vaultStyles = `
     color: var(--text-secondary, #E2E8F0);
   }
   .lib-rag-citation strong { color: #7EB3F5; display: block; margin-bottom: 2px; font-size: 12px; font-weight: 600; }
+  .lib-rag-citation-link {
+    color: #7EB3F5; display: block; margin-bottom: 2px; font-size: 12px; font-weight: 600;
+    text-decoration: none; transition: color 0.18s, text-decoration-color 0.18s;
+    text-decoration-color: transparent;
+  }
+  .lib-rag-citation-link:hover { color: #93C5FD; text-decoration: underline; text-decoration-color: rgba(147,197,253,0.5); }
   .lib-rag-warnings { display: flex; flex-direction: column; gap: 5px; }
   .lib-rag-warning {
     font-size: 11px; color: #FBBF24; font-weight: 500; display: flex; align-items: flex-start; gap: 6px;
@@ -1064,13 +1015,11 @@ export default function VaultView({ targetFolderId = null }) {
   const [injectedIds, setInjectedIds]                 = useState(new Set());
   const [injectToast, setInjectToast]                 = useState(null);
 
-  // Slide-Over Document Canvas
-  const [canvasDoc, setCanvasDoc]                     = useState(null);
-
   // Library drawer — Dual-Brain RAG
   const [libRagResult, setLibRagResult]               = useState(null);
   const [libRagLoading, setLibRagLoading]             = useState(false);
   const [ragCopied, setRagCopied]                     = useState(false);
+  const [resolvingCitation, setResolvingCitation]     = useState(null); // case_name string being resolved
 
   const navigate = useNavigate();
 
@@ -1523,7 +1472,7 @@ export default function VaultView({ targetFolderId = null }) {
   });
 
   const handleViewDocument = (doc) => {
-    setCanvasDoc(doc);
+    navigate(`/case/vault/doc/${doc.id}`, { state: { fromVault: true, docData: buildDocData(doc) } });
   };
 
   const handleAnalyzeDocument = (doc) => {
@@ -1557,18 +1506,6 @@ export default function VaultView({ targetFolderId = null }) {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [openMenuDocId]);
-
-  // ── SlideOverCanvas: Escape to close + body scroll lock ──────────────────
-  useEffect(() => {
-    document.body.style.overflow = canvasDoc ? 'hidden' : '';
-    if (!canvasDoc) return;
-    const handler = (e) => { if (e.key === 'Escape') setCanvasDoc(null); };
-    document.addEventListener('keydown', handler);
-    return () => {
-      document.removeEventListener('keydown', handler);
-      document.body.style.overflow = '';
-    };
-  }, [canvasDoc]);
 
   // ── Document card actions ─────────────────────────────────────────────────
   const handleDeleteDocument = async (doc) => {
@@ -2190,12 +2127,35 @@ export default function VaultView({ targetFolderId = null }) {
                   <div>
                     <div className="lib-rag-section-label">Citations</div>
                     <div className="lib-rag-citations">
-                      {libRagResult.citations.slice(0, 3).map((c, i) => (
+                      {libRagResult.citations.slice(0, 3).map((c, i) => {
+                        const citKey = `${c.case_name}-${c.year}`;
+                        const isResolving = resolvingCitation === citKey;
+                        return (
                         <div key={i} className="lib-rag-citation">
-                          <strong>{c.case_name} ({c.year})</strong>
+                          <button
+                            className="lib-rag-citation-link"
+                            disabled={isResolving}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: isResolving ? 'default' : 'pointer', fontFamily: 'inherit' }}
+                            onClick={async () => {
+                              const win = window.open('', '_blank');
+                              setResolvingCitation(citKey);
+                              try {
+                                const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
+                                const { exact_url } = await res.json();
+                                win.location.href = exact_url;
+                              } catch {
+                                win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
+                              } finally {
+                                setResolvingCitation(null);
+                              }
+                            }}
+                          >
+                            {isResolving ? '⟳ Resolving…' : `${c.case_name} (${c.year})`}
+                          </button>
                           {c.relevance_note}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2333,94 +2293,6 @@ export default function VaultView({ targetFolderId = null }) {
             })
           )}
         </div>
-      </div>
-
-      {/* ── Slide-Over Document Canvas ──────────────────────────────────────── */}
-      <div
-        className={`soc-backdrop${canvasDoc ? ' soc-open' : ''}`}
-        onClick={() => setCanvasDoc(null)}
-        aria-hidden="true"
-      />
-      <div
-        className={`soc-panel${canvasDoc ? ' soc-open' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={canvasDoc ? (canvasDoc.smart_title || canvasDoc.title || 'Document') : undefined}
-      >
-        {canvasDoc && (
-          <>
-            {/* Canvas header */}
-            <div className="soc-header">
-              <div className="soc-header-top">
-                <div className="soc-title" title={canvasDoc.smart_title || canvasDoc.title}>
-                  {canvasDoc.smart_title || canvasDoc.title || 'Document'}
-                </div>
-                <button className="soc-close" onClick={() => setCanvasDoc(null)} aria-label="Close canvas">✕</button>
-              </div>
-              <div className="soc-meta">
-                {canvasDoc.doc_type && (() => {
-                  const s = getDocTypeStyle(canvasDoc.doc_type);
-                  return (
-                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.45px', padding: '2px 8px', borderRadius: 4, background: s.bg, color: s.color }}>
-                      {canvasDoc.doc_type}
-                    </span>
-                  );
-                })()}
-                {canvasDoc.created_at && (
-                  <span style={{ fontSize: 11, color: '#334155' }}>{formatDate(canvasDoc.created_at)}</span>
-                )}
-                {canvasDoc.folder_id && getFolderName(canvasDoc.folder_id) && (
-                  <span style={{ fontSize: 10.5, color: '#3B5172', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    📁 {getFolderName(canvasDoc.folder_id)}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Canvas body — scrollable document content */}
-            <div className="soc-body">
-              <div className="soc-content">
-                {(canvasDoc.content || 'No content available.')
-                  .split('\n\n')
-                  .map((para, i) => (
-                    <p key={i}>
-                      {para.split('\n').map((line, j, arr) => (
-                        <React.Fragment key={j}>
-                          {line}
-                          {j < arr.length - 1 && <br />}
-                        </React.Fragment>
-                      ))}
-                    </p>
-                  ))
-                }
-              </div>
-            </div>
-
-            {/* Canvas footer actions */}
-            <div className="soc-footer-actions">
-              <button
-                className="vault-btn-analyze"
-                style={{ flex: 1, justifyContent: 'center' }}
-                onClick={() => { setCanvasDoc(null); handleAnalyzeDocument(canvasDoc); }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                </svg>
-                Analyze with AI
-              </button>
-              <button
-                className="vault-btn-quick"
-                onClick={() => handleDownloadDocument(canvasDoc)}
-                style={{ gap: 5 }}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                Download
-              </button>
-            </div>
-          </>
-        )}
       </div>
 
       {/* ── Inject success toast ────────────────────────────────────────────── */}

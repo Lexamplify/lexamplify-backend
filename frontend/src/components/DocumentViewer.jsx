@@ -489,11 +489,18 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
   }
 
   if (error || !doc) {
+    const isSynthetic = String(docId).startsWith('rag-') || String(docId).startsWith('template-') || String(docId).startsWith('fl-');
     return (
-      <div style={{ padding: '40px', color: 'var(--accent-danger)' }}>
-        <h3>⚠️ Load Failed</h3>
-        <p style={{ marginTop: '8px', color: 'var(--text-dark-muted)' }}>{error || 'Unable to locate document records.'}</p>
-        <Link to={backTo} style={{ display: 'inline-block', marginTop: '16px', color: 'var(--accent-primary)', textDecoration: 'none' }}>
+      <div style={{ padding: '48px 40px', display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 520 }}>
+        <h3 style={{ margin: 0, fontSize: 18, color: isSynthetic ? 'var(--text-primary, #F8FAFC)' : 'var(--accent-danger)' }}>
+          {isSynthetic ? '📄 Document not synced' : '⚠️ Load Failed'}
+        </h3>
+        <p style={{ margin: 0, fontSize: 13.5, color: 'var(--text-dark-muted)', lineHeight: 1.6 }}>
+          {isSynthetic
+            ? 'This document was generated in-session and has not been persisted to the backend. Navigate back to the Vault and open it again — the editor will load from the injected content.'
+            : (error || 'Unable to locate document records.')}
+        </p>
+        <Link to={backTo} style={{ display: 'inline-block', marginTop: 8, color: 'var(--accent-primary)', textDecoration: 'none', fontSize: 13 }}>
           ← {backLabel}
         </Link>
       </div>

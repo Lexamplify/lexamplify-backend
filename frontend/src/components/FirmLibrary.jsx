@@ -521,6 +521,12 @@ const flStyles = `
     color: var(--text-secondary, #E2E8F0);
   }
   .fl-rag-citation strong { color: #7EB3F5; display: block; margin-bottom: 3px; font-size: 12.5px; font-weight: 600; }
+  .fl-rag-citation-link {
+    color: #7EB3F5; display: block; margin-bottom: 3px; font-size: 12.5px; font-weight: 600;
+    text-decoration: none; transition: color 0.18s, text-decoration-color 0.18s;
+    text-decoration-color: transparent;
+  }
+  .fl-rag-citation-link:hover { color: #93C5FD; text-decoration: underline; text-decoration-color: rgba(147,197,253,0.5); }
   .fl-rag-ratio {
     font-size: 12px; font-weight: 500; line-height: 1.65;
     color: var(--text-secondary, #E2E8F0);
@@ -604,7 +610,8 @@ export default function FirmLibrary() {
   // ── Dual-Brain RAG state ────────────────────────────────────────────────────
   const [ragResult, setRagResult]   = useState(null);
   const [ragLoading, setRagLoading] = useState(false);
-  const [ragCopied, setRagCopied]   = useState(false);
+  const [ragCopied, setRagCopied]         = useState(false);
+  const [resolvingCitation, setResolvingCitation] = useState(null);
 
   // ── Refs ────────────────────────────────────────────────────────────────────
   const hoverTimerRef     = useRef(null);
@@ -955,12 +962,35 @@ export default function FirmLibrary() {
                 <div>
                   <div className="fl-rag-section-label">Citations</div>
                   <div className="fl-rag-citations">
-                    {ragResult.citations.slice(0, 3).map((c, i) => (
+                    {ragResult.citations.slice(0, 3).map((c, i) => {
+                      const citKey = `${c.case_name}-${c.year}`;
+                      const isResolving = resolvingCitation === citKey;
+                      return (
                       <div key={i} className="fl-rag-citation">
-                        <strong>{c.case_name} ({c.year})</strong>
+                        <button
+                          className="fl-rag-citation-link"
+                          disabled={isResolving}
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: isResolving ? 'default' : 'pointer', fontFamily: 'inherit' }}
+                          onClick={async () => {
+                            const win = window.open('', '_blank');
+                            setResolvingCitation(citKey);
+                            try {
+                              const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
+                              const { exact_url } = await res.json();
+                              win.location.href = exact_url;
+                            } catch {
+                              win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
+                            } finally {
+                              setResolvingCitation(null);
+                            }
+                          }}
+                        >
+                          {isResolving ? '⟳ Resolving…' : `${c.case_name} (${c.year})`}
+                        </button>
                         {c.relevance_note}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

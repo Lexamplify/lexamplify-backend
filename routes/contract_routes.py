@@ -311,6 +311,35 @@ def analyze():
             "pdf_url": pdf_url if pdf_url else ""
         }), 200
 
+
+@contract_bp.route("/extract-text", methods=["POST"])
+def extract_text():
+    """
+    Extract raw text from a PDF or DOCX upload without running analysis.
+    Used by the frontend to populate the contract textarea and the Rule Book textarea.
+    Reuses the same extract_text_for_summary utility as /analyze.
+    """
+    from werkzeug.utils import secure_filename
+
+    if not request.files.get("file"):
+        return jsonify({"error": "No file provided."}), 400
+
+    f = request.files["file"]
+    fname = secure_filename(f.filename.lower())
+    data = f.read()
+
+    if fname.endswith(".pdf"):
+        text = extract_text_for_summary(data, "pdf")
+    elif fname.endswith(".docx"):
+        text = extract_text_for_summary(data, "docx")
+    else:
+        return jsonify({"error": "Unsupported format. Use PDF or DOCX."}), 400
+
+    if not text or not text.strip():
+        return jsonify({"error": "No content could be extracted from this file."}), 400
+
+    return jsonify({"text": text}), 200
+
 @contract_bp.route("/rewrite", methods=["POST"])
 def rewrite():
     data = request.get_json()

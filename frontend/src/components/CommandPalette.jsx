@@ -199,6 +199,9 @@ const AGENT_CSS = `
 
   .lex-shimmer      { animation: lex-pulse 1.5s infinite ease-in-out; }
   .lex-mic-live     { animation: lex-mic-ring 1.4s infinite!important; background:rgba(239,68,68,.12)!important; color:#ef4444!important; border-color:#ef4444!important; }
+  @keyframes lex-send-wake { 0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,.55)} 50%{box-shadow:0 0 0 5px rgba(59,130,246,0)} }
+  .lex-send-awake   { animation: lex-send-wake 1.1s ease-in-out infinite!important; }
+  .lex-mic-denied   { opacity:.45; cursor:not-allowed!important; }
   .lex-msg-in       { animation: lex-in .2s ease; }
   .lex-nav-bar      { height:2px; background:linear-gradient(90deg,#3B82F6,#6366F1); animation:lex-navbar 1.1s ease forwards; border-radius:2px; }
   .lex-dot-1        { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:0s;   }
@@ -1453,6 +1456,8 @@ function CommandPalette() {
   const [navRoute,    setNavRoute]    = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [micError,    setMicError]    = useState(null);
+  const [isAwake,       setIsAwake]       = useState(false);
+  const [wakeSupported, setWakeSupported] = useState(null); // null=unknown, true=ok, false=denied/unsupported
   const [sidebarOpen,     setSidebarOpen]     = useState(true);
   const [drawerOpen,      setDrawerOpen]      = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState(null); // { content, title, doc_type }
@@ -1478,6 +1483,10 @@ function CommandPalette() {
   const inputRef       = useRef(null);
   const fileInputRef   = useRef(null);
   const recognitionRef = useRef(null);
+  const wakeRecRef     = useRef(null);
+  const isAwakeRef     = useRef(false);
+  const wakeActiveRef  = useRef(false);
+  const isOpenRef      = useRef(false);
   const searchRef      = useRef(null);
   const messagesEndRef = useRef(null);
   const msgRefs        = useRef({});
@@ -1619,8 +1628,8 @@ function CommandPalette() {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 80);
   }, [isOpen]);
 
-  // Keep searchRef always pointing to latest handleSearch
-  useEffect(() => { searchRef.current = handleSearch; });
+  // Keep searchRef and isOpenRef always current (no dep array = runs every render)
+  useEffect(() => { searchRef.current = handleSearch; isOpenRef.current = isOpen; });
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -1648,7 +1657,13 @@ function CommandPalette() {
       setIsListening(false);
       setTimeout(() => setMicError(null), 3000);
     };
-    rec.onend = () => setIsListening(false);
+    rec.onend = () => {
+      setIsListening(false);
+      if (isAwakeRef.current) {
+        isAwakeRef.current = false;
+        setIsAwake(false);
+      }
+    };
     recognitionRef.current = rec;
     return () => { try { rec.abort(); } catch (_) {} };
   }, []);
@@ -1657,6 +1672,85 @@ function CommandPalette() {
     if (!recognitionRef.current) return alert('Speech recognition not supported in this browser.');
     isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
   };
+
+  // ── Background "Hey InzIQ" wake word listener ─────────
+  useEffect(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setWakeSupported(false); return; }
+
+    let dead = false;
+    // Matches variations browsers transcribe for "hey inziq":
+    //   "hey inziq", "hey inzig", "hey inzick", "in z i q", "a inziq", etc.
+    const WAKE_RE = /inz[iy][qck]|in\s+z\s+i\s+q/i;
+
+    const wakeRec = new SR();
+    wakeRec.continuous = true;
+    wakeRec.interimResults = false; // final only — avoids false positives from partial audio
+    wakeRec.lang = 'en-IN';
+
+    const tryRestart = () => {
+      if (dead || isAwakeRef.current || !isOpenRef.current || wakeActiveRef.current) return;
+      setTimeout(() => {
+        if (dead || isAwakeRef.current || !isOpenRef.current || wakeActiveRef.current) return;
+        try { wakeRec.start(); wakeActiveRef.current = true; } catch (_) {}
+      }, 400);
+    };
+
+    wakeRec.onstart = () => setWakeSupported(true);
+
+    wakeRec.onresult = (ev) => {
+      if (isAwakeRef.current) return;
+      let text = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        text += ev.results[i][0].transcript;
+      }
+      if (!WAKE_RE.test(text)) return;
+      // Wake word detected — hand off to command mic
+      isAwakeRef.current = true;
+      setIsAwake(true);
+      wakeActiveRef.current = false;
+      try { wakeRec.stop(); } catch (_) {}
+      // Chrome needs ~250ms to release mic before a new SR instance can start
+      setTimeout(() => {
+        if (dead || !recognitionRef.current) return;
+        try { recognitionRef.current.start(); } catch (_) {}
+      }, 280);
+    };
+
+    wakeRec.onerror = (ev) => {
+      wakeActiveRef.current = false;
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        dead = true;
+        setWakeSupported(false);
+        return;
+      }
+      // Transient errors (network, audio-capture) — onend fires and calls tryRestart
+    };
+
+    wakeRec.onend = () => {
+      wakeActiveRef.current = false;
+      tryRestart();
+    };
+
+    wakeRecRef.current = wakeRec;
+    return () => {
+      dead = true;
+      wakeActiveRef.current = false;
+      try { wakeRec.abort(); } catch (_) {}
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Start / pause wake listener whenever panel visibility or mic-button state changes
+  useEffect(() => {
+    if (!wakeRecRef.current || wakeSupported === false) return;
+    const shouldRun = isOpen && !isListening && !isAwake;
+    if (shouldRun && !wakeActiveRef.current) {
+      try { wakeRecRef.current.start(); wakeActiveRef.current = true; } catch (_) {}
+    } else if (!shouldRun && wakeActiveRef.current) {
+      try { wakeRecRef.current.stop(); } catch (_) {}
+      wakeActiveRef.current = false;
+    }
+  }, [isOpen, isListening, isAwake, wakeSupported]);
 
   // ── File attachment handler ───────────────────────────
   const handleFileAttach = async (e) => {
@@ -2081,6 +2175,9 @@ function CommandPalette() {
   // ── Close  (does NOT wipe messages) ─────────────────
   const handleClose = () => {
     if (isListening) try { recognitionRef.current?.stop(); } catch (_) {}
+    // Immediately update isOpenRef so the wake tryRestart loop sees the panel is closed
+    isOpenRef.current = false;
+    if (isAwakeRef.current) { isAwakeRef.current = false; setIsAwake(false); }
     setIsOpen(false);
     setQuery('');
     // Session state is fully preserved — conversation continues on reopen
@@ -2476,11 +2573,11 @@ function CommandPalette() {
                             </div>
                           ) : null;
                         })()}
-                        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${isListening ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.08)'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
-                          <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={isListening ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command your AI Legal Associate… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
+                        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.08)'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
+                          <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={(isAwake || isListening) ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command your AI Legal Associate… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
                           <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLocked || fileLoading} style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }} title="Attach file"><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
-                          <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''}`} onClick={toggleMic} style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={isListening ? 'Stop listening' : 'Voice command'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
-                          <button type="submit" className="lex-send-btn" disabled={isLocked || (!query.trim() && !attachedFile)} style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}>Send</button>
+                          <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`} onClick={wakeSupported === false ? undefined : toggleMic} style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : wakeSupported === false ? '#3D5168' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={wakeSupported === false ? 'Mic access denied — say "Hey InzIQ" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey InzIQ"'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>{wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5"/>}</svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
+                          <button type="submit" className={`lex-send-btn${isAwake ? ' lex-send-awake' : ''}`} disabled={isLocked || (!query.trim() && !attachedFile)} style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}>Send</button>
                         </form>
                       </div>
                       <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
@@ -2754,7 +2851,7 @@ function CommandPalette() {
               })()}
               <form
                 onSubmit={handleSearch}
-                style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${isListening ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
+                style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
               >
                 <textarea
                   ref={inputRef}
@@ -2774,7 +2871,7 @@ function CommandPalette() {
                   }}
                   disabled={isLocked}
                   placeholder={
-                    isListening
+                    (isAwake || isListening)
                       ? '🎤 Listening — speak your command…'
                       : attachedFile
                       ? `Ask something about ${attachedFile.name}…`
@@ -2799,14 +2896,15 @@ function CommandPalette() {
                 {/* Mic button */}
                 <button
                   type="button"
-                  className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''}`}
-                  onClick={toggleMic}
-                  style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }}
-                  title={isListening ? 'Stop listening' : 'Voice command'}
+                  className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`}
+                  onClick={wakeSupported === false ? undefined : toggleMic}
+                  style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }}
+                  title={wakeSupported === false ? 'Mic access denied — say "Hey InzIQ" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey InzIQ"'}
                 >
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+                    {wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5"/>}
                   </svg>
                   {micError && (
                     <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>
@@ -2818,7 +2916,7 @@ function CommandPalette() {
                 {/* Send button */}
                 <button
                   type="submit"
-                  className="lex-send-btn"
+                  className={`lex-send-btn${isAwake ? ' lex-send-awake' : ''}`}
                   disabled={isLocked || (!query.trim() && !attachedFile)}
                   style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}
                 >
