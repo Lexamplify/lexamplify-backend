@@ -476,6 +476,83 @@ const flStyles = `
   :root[data-theme="light"] .fl-action-menu { box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
   :root[data-theme="light"] .fl-preview-panel { box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(59,130,246,0.1); }
   :root[data-theme="light"] .fl-workspace-drawer.open { box-shadow: -8px 0 40px rgba(0,0,0,0.1); }
+
+  /* ── Dual-Brain RAG dossier ────────────────────────────────────────────────── */
+  @keyframes fl-rag-in { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes fl-rag-pulse { 0%,100% { opacity:1; } 50% { opacity:0.42; } }
+  .fl-rag-loading {
+    display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+    border-radius: 10px; margin-bottom: 14px;
+    background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.18);
+    font-size: 12.5px; font-weight: 500; color: #A78BFA;
+    animation: fl-rag-pulse 1.2s ease-in-out infinite;
+  }
+  .fl-rag-dossier {
+    background: rgba(99,102,241,0.055); border: 1px solid rgba(99,102,241,0.22);
+    border-radius: 12px; padding: 18px; margin-bottom: 16px;
+    display: flex; flex-direction: column; gap: 14px;
+    animation: fl-rag-in 0.22s cubic-bezier(0.16,1,0.3,1);
+  }
+  .fl-rag-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  .fl-rag-brain-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 4px;
+    background: rgba(99,102,241,0.15); color: #A78BFA; border: 1px solid rgba(99,102,241,0.3);
+  }
+  .fl-rag-reliability { display: flex; align-items: center; gap: 8px; }
+  .fl-rag-reliability-bar {
+    width: 70px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+  }
+  .fl-rag-reliability-fill { height: 100%; border-radius: 2px; transition: width 0.7s cubic-bezier(0.16,1,0.3,1); }
+  .fl-rag-reliability-label { font-size: 10.5px; font-weight: 700; }
+  .fl-rag-synthesis {
+    font-size: 13px; line-height: 1.75; font-weight: 500;
+    color: var(--text-primary, #F8FAFC);
+  }
+  .fl-rag-section-label {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--text-muted, #94A3B8); margin-bottom: 7px;
+  }
+  .fl-rag-citations { display: flex; flex-direction: column; gap: 6px; }
+  .fl-rag-citation {
+    font-size: 12px; padding: 9px 12px; border-radius: 7px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.09);
+    color: var(--text-secondary, #E2E8F0);
+  }
+  .fl-rag-citation strong { color: #7EB3F5; display: block; margin-bottom: 3px; font-size: 12.5px; font-weight: 600; }
+  .fl-rag-ratio {
+    font-size: 12px; font-weight: 500; line-height: 1.65;
+    color: var(--text-secondary, #E2E8F0);
+    padding: 8px 12px; background: rgba(255,255,255,0.04);
+    border-radius: 7px; border: 1px solid rgba(255,255,255,0.09);
+  }
+  .fl-rag-warnings { display: flex; flex-direction: column; gap: 6px; }
+  .fl-rag-warning {
+    font-size: 11.5px; font-weight: 500; color: #FBBF24;
+    display: flex; align-items: flex-start; gap: 7px;
+    padding: 7px 11px; border-radius: 6px;
+    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.22); line-height: 1.55;
+  }
+  .fl-rag-actions { display: flex; gap: 9px; padding-top: 2px; }
+  .fl-rag-action-btn {
+    flex: 1; padding: 9px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid; transition: all 0.15s; font-family: var(--font-sans);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .fl-rag-action-btn.copy {
+    background: rgba(59,130,246,0.08); color: #7EB3F5; border-color: rgba(59,130,246,0.25);
+  }
+  .fl-rag-action-btn.copy:hover { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.45); }
+  .fl-rag-action-btn.inject {
+    background: rgba(99,102,241,0.1); color: #A78BFA; border-color: rgba(99,102,241,0.28);
+  }
+  .fl-rag-action-btn.inject:hover { background: rgba(99,102,241,0.18); border-color: rgba(99,102,241,0.5); }
+  .fl-rag-action-btn.done { color: #34D399; border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.07); }
+  :root[data-theme="light"] .fl-rag-dossier { background: rgba(99,102,241,0.04); }
+  :root[data-theme="light"] .fl-rag-synthesis { color: var(--text-primary, #0F172A); }
+  :root[data-theme="light"] .fl-rag-citation { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
+  :root[data-theme="light"] .fl-rag-ratio { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
 `;
 
 // ── LS helpers ────────────────────────────────────────────────────────────────
@@ -524,6 +601,11 @@ export default function FirmLibrary() {
     try { return new Set(JSON.parse(localStorage.getItem(REVIEWED_KEY) || '[]')); } catch { return new Set(); }
   });
 
+  // ── Dual-Brain RAG state ────────────────────────────────────────────────────
+  const [ragResult, setRagResult]   = useState(null);
+  const [ragLoading, setRagLoading] = useState(false);
+  const [ragCopied, setRagCopied]   = useState(false);
+
   // ── Refs ────────────────────────────────────────────────────────────────────
   const hoverTimerRef     = useRef(null);
   const previewHoveredRef = useRef(false);
@@ -560,6 +642,25 @@ export default function FirmLibrary() {
   useEffect(() => {
     return () => clearTimeout(drawerTimerRef.current);
   }, []);
+
+  // ── Dual-Brain RAG debounced search ─────────────────────────────────────────
+  useEffect(() => {
+    if (search.trim().length < 3) { setRagResult(null); setRagLoading(false); return; }
+    setRagLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('http://localhost:8001/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: search.trim() }),
+        });
+        if (!res.ok) throw new Error('RAG unavailable');
+        const data = await res.json();
+        setRagResult(data);
+      } catch { setRagResult(null); } finally { setRagLoading(false); }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
   const showToast = (msg) => {
@@ -825,6 +926,117 @@ export default function FirmLibrary() {
             ))}
           </div>
         </div>
+
+        {/* ── RAG Intelligence Dossier ── */}
+        {ragLoading && (
+          <div className="fl-rag-loading">
+            <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+            Querying Dual-Brain intelligence layer…
+          </div>
+        )}
+        {!ragLoading && ragResult?.brain === 'EXTERNAL' && ragResult.synthesis && (() => {
+          const pct = ragResult.reliability_index != null ? Math.round(ragResult.reliability_index * 100) : null;
+          const reliColor = pct == null ? '#94A3B8' : pct >= 75 ? '#34D399' : pct >= 50 ? '#FBBF24' : '#F87171';
+          return (
+            <div className="fl-rag-dossier">
+              <div className="fl-rag-header">
+                <span className="fl-rag-brain-badge">⚡ External Intelligence</span>
+                {pct != null && (
+                  <div className="fl-rag-reliability">
+                    <div className="fl-rag-reliability-bar">
+                      <div className="fl-rag-reliability-fill" style={{ width: `${pct}%`, background: reliColor }} />
+                    </div>
+                    <span className="fl-rag-reliability-label" style={{ color: reliColor }}>{pct}% reliable</span>
+                  </div>
+                )}
+              </div>
+              <div className="fl-rag-synthesis">{ragResult.synthesis}</div>
+              {ragResult.citations?.length > 0 && (
+                <div>
+                  <div className="fl-rag-section-label">Citations</div>
+                  <div className="fl-rag-citations">
+                    {ragResult.citations.slice(0, 3).map((c, i) => (
+                      <div key={i} className="fl-rag-citation">
+                        <strong>{c.case_name} ({c.year})</strong>
+                        {c.relevance_note}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {ragResult.facts_vs_ruling?.ruling_summary && (
+                <div>
+                  <div className="fl-rag-section-label">Ratio Decidendi</div>
+                  <div className="fl-rag-ratio">{ragResult.facts_vs_ruling.ruling_summary}</div>
+                </div>
+              )}
+              {ragResult.risk_warnings?.length > 0 && (
+                <div>
+                  <div className="fl-rag-section-label">Risk Advisories</div>
+                  <div className="fl-rag-warnings">
+                    {ragResult.risk_warnings.slice(0, 2).map((w, i) => (
+                      <div key={i} className="fl-rag-warning">⚠ {w}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* ── Action buttons ── */}
+              <div className="fl-rag-actions">
+                <button
+                  className={`fl-rag-action-btn copy${ragCopied ? ' done' : ''}`}
+                  onClick={() => {
+                    const lines = (ragResult.citations || [])
+                      .map(c => `${c.case_name} (${c.year}) — ${c.relevance_note}`)
+                      .join('\n');
+                    navigator.clipboard.writeText(lines || ragResult.synthesis || '').then(() => {
+                      setRagCopied(true);
+                      showToast('Citation copied to clipboard');
+                      setTimeout(() => setRagCopied(false), 2200);
+                    });
+                  }}
+                >
+                  {ragCopied ? '✓ Copied' : '⎘ Copy Citation'}
+                </button>
+                <button
+                  className="fl-rag-action-btn inject"
+                  onClick={() => {
+                    const memoContent = [
+                      `[DUAL-BRAIN INTELLIGENCE — External Case Law]`,
+                      `Query: ${search.trim()}`,
+                      ``,
+                      `SYNTHESIS:`,
+                      ragResult.synthesis || '',
+                      ``,
+                      `CITATIONS:`,
+                      ...(ragResult.citations || []).map(c => `• ${c.case_name} (${c.year}) — ${c.relevance_note}`),
+                      ``,
+                      `RATIO DECIDENDI:`,
+                      ragResult.facts_vs_ruling?.ruling_summary || 'N/A',
+                      ``,
+                      `RISK ADVISORIES:`,
+                      ...(ragResult.risk_warnings || []).map(w => `⚠ ${w}`),
+                    ].join('\n');
+                    const syntheticEntry = {
+                      id: Date.now(),
+                      title: `Research Brief: ${search.trim()}`,
+                      category: 'Research Memo',
+                      author: 'AI Intelligence Layer',
+                      updated: new Date().toISOString().slice(0, 10),
+                      tags: ['Research', 'AI-Generated', 'Case Law'],
+                      description: memoContent,
+                    };
+                    const updated = [syntheticEntry, ...entries];
+                    setEntries(updated);
+                    saveEntries(updated);
+                    showToast(`Brief injected into library`);
+                  }}
+                >
+                  + Inject Brief as Memo
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Count */}
         {!loading && (

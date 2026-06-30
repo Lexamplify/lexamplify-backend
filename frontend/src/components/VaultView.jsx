@@ -728,30 +728,46 @@ const vaultStyles = `
   .lib-rag-reliability-fill { height: 100%; border-radius: 2px; transition: width 0.7s cubic-bezier(0.16,1,0.3,1); }
   .lib-rag-reliability-label { font-size: 10.5px; font-weight: 700; }
   .lib-rag-synthesis {
-    font-size: 12.5px; line-height: 1.72; color: #64748B;
+    font-size: 12.5px; line-height: 1.72; color: var(--text-secondary, #E2E8F0); font-weight: 500;
     display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
   }
   .lib-rag-section-label {
     font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
-    color: #334155; margin-bottom: 6px;
+    color: var(--text-muted, #94A3B8); margin-bottom: 6px;
   }
   .lib-rag-citations { display: flex; flex-direction: column; gap: 5px; }
   .lib-rag-citation {
     font-size: 11.5px; padding: 8px 10px; border-radius: 6px;
-    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); color: #475569;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.09);
+    color: var(--text-secondary, #E2E8F0);
   }
   .lib-rag-citation strong { color: #7EB3F5; display: block; margin-bottom: 2px; font-size: 12px; font-weight: 600; }
   .lib-rag-warnings { display: flex; flex-direction: column; gap: 5px; }
   .lib-rag-warning {
-    font-size: 11px; color: #D97706; display: flex; align-items: flex-start; gap: 6px;
+    font-size: 11px; color: #FBBF24; font-weight: 500; display: flex; align-items: flex-start; gap: 6px;
     padding: 6px 9px; border-radius: 5px;
-    background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.14); line-height: 1.5;
+    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); line-height: 1.5;
   }
-  .lib-rag-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0 8px; }
+  .lib-rag-divider { height: 1px; background: rgba(255,255,255,0.08); margin: 4px 0 8px; }
   .lib-rag-local-label {
     font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
-    color: #334155; padding: 0 2px 6px;
+    color: var(--text-muted, #94A3B8); padding: 0 2px 6px;
   }
+  .lib-rag-actions { display: flex; gap: 8px; padding-top: 4px; }
+  .lib-rag-action-btn {
+    flex: 1; padding: 8px 12px; border-radius: 7px; font-size: 11.5px; font-weight: 600;
+    cursor: pointer; border: 1px solid; transition: all 0.15s; font-family: var(--font-sans);
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .lib-rag-action-btn.copy {
+    background: rgba(59,130,246,0.08); color: #7EB3F5; border-color: rgba(59,130,246,0.25);
+  }
+  .lib-rag-action-btn.copy:hover { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.45); }
+  .lib-rag-action-btn.inject {
+    background: rgba(99,102,241,0.1); color: #A78BFA; border-color: rgba(99,102,241,0.28);
+  }
+  .lib-rag-action-btn.inject:hover { background: rgba(99,102,241,0.18); border-color: rgba(99,102,241,0.5); }
+  .lib-rag-action-btn.done { color: #34D399; border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.07); }
 `;
 
 const DOC_TYPE_STYLES = {
@@ -1054,6 +1070,7 @@ export default function VaultView({ targetFolderId = null }) {
   // Library drawer — Dual-Brain RAG
   const [libRagResult, setLibRagResult]               = useState(null);
   const [libRagLoading, setLibRagLoading]             = useState(false);
+  const [ragCopied, setRagCopied]                     = useState(false);
 
   const navigate = useNavigate();
 
@@ -2185,7 +2202,7 @@ export default function VaultView({ targetFolderId = null }) {
                 {libRagResult.facts_vs_ruling?.ruling_summary && (
                   <div>
                     <div className="lib-rag-section-label">Ratio Decidendi</div>
-                    <div style={{ fontSize: 11.5, color: '#475569', lineHeight: 1.6, padding: '7px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--text-secondary, #E2E8F0)', lineHeight: 1.6, padding: '7px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.09)' }}>
                       {libRagResult.facts_vs_ruling.ruling_summary}
                     </div>
                   </div>
@@ -2200,6 +2217,58 @@ export default function VaultView({ targetFolderId = null }) {
                     </div>
                   </div>
                 )}
+                {/* ── Action buttons ── */}
+                <div className="lib-rag-actions">
+                  <button
+                    className={`lib-rag-action-btn copy${ragCopied ? ' done' : ''}`}
+                    onClick={() => {
+                      const lines = [
+                        ...(libRagResult.citations || []).map(c => `${c.case_name} (${c.year}) — ${c.relevance_note}`),
+                      ].join('\n');
+                      navigator.clipboard.writeText(lines || libRagResult.synthesis || '').then(() => {
+                        setRagCopied(true);
+                        setTimeout(() => setRagCopied(false), 2200);
+                      });
+                    }}
+                  >
+                    {ragCopied ? '✓ Copied' : '⎘ Copy Citation'}
+                  </button>
+                  <button
+                    className="lib-rag-action-btn inject"
+                    onClick={() => {
+                      const query = libSearch.trim();
+                      const syntheticDoc = {
+                        id: `rag-brief-${Date.now()}`,
+                        name: `Research Brief: ${query}`,
+                        type: 'Research Memo',
+                        content: [
+                          `[DUAL-BRAIN INTELLIGENCE — External Case Law]`,
+                          `Query: ${query}`,
+                          ``,
+                          `SYNTHESIS:`,
+                          libRagResult.synthesis || '',
+                          ``,
+                          `CITATIONS:`,
+                          ...(libRagResult.citations || []).map(c => `• ${c.case_name} (${c.year}) — ${c.relevance_note}`),
+                          ``,
+                          `RATIO DECIDENDI:`,
+                          libRagResult.facts_vs_ruling?.ruling_summary || 'N/A',
+                          ``,
+                          `RISK ADVISORIES:`,
+                          ...(libRagResult.risk_warnings || []).map(w => `⚠ ${w}`),
+                        ].join('\n'),
+                        created_at: new Date().toISOString(),
+                        folder_id: currentFolderId,
+                        tags: ['Research', 'AI-Generated', 'Case Law'],
+                      };
+                      setDocuments(prev => [syntheticDoc, ...prev]);
+                      setInjectToast(`Research Brief: ${query}`);
+                      setTimeout(() => setInjectToast(null), 3500);
+                    }}
+                  >
+                    + Inject Brief as Memo
+                  </button>
+                </div>
               </div>
               {filteredLibEntries.length > 0 && (
                 <>

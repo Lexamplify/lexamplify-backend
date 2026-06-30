@@ -1,10 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
-import { SEED_ENTRIES as FL_SEED } from './FirmLibrary';
-
-// ── Dual-Brain RAG server (FastAPI, port 8001) ─────────────────────────────────
-const RAG_SERVER  = 'http://localhost:8001';
-const DEBOUNCE_MS = 400;
 
 // ═══════════════════════════════════════════════════════
 //  SESSION STORE  (localStorage-persisted)
@@ -2986,14 +2981,9 @@ function CommandPalette() {
   );
 }
 
-// ═══════════════════════════════════════════════════════
-//  INTELLIGENCE PALETTE  (Ctrl+K — Dual-Brain RAG)
-//  Spotlight-style overlay. Routes queries to the FastAPI
-//  RAG server on port 8001.
-//  INTERNAL → filter lexai_firm_library client-side
-//  EXTERNAL → synthesized legal intelligence payload
-// ═══════════════════════════════════════════════════════
-const IP_CSS = `
+const IP_CSS = `/* removed */`; // sentinel — keep variable so the file parses during transition
+function _IntelligencePalette_REMOVED() { return null; } // placeholder
+const __REMOVED_BLOCK_START__ = `
   @keyframes ip-in {
     from { opacity:0; transform:translateY(-16px) scale(0.97); }
     to   { opacity:1; transform:translateY(0)     scale(1);    }
@@ -3533,12 +3523,7 @@ function IntelligencePalette() {
   );
 }
 
-// ── Root export: renders IntelligencePalette (Ctrl+K) + InzIQ chat (sidebar) ──
+// ── Root export: InzIQ chat sidebar only (Ctrl+K global RAG removed — Directive 3) ──
 export default function LexCommandSuite() {
-  return (
-    <>
-      <IntelligencePalette />
-      <CommandPalette />
-    </>
-  );
+  return <CommandPalette />;
 }
