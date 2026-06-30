@@ -1681,7 +1681,9 @@ function CommandPalette() {
     let dead = false;
     // Matches variations browsers transcribe for "hey inziq":
     //   "hey inziq", "hey inzig", "hey inzick", "in z i q", "a inziq", etc.
-    const WAKE_RE = /inz[iy][qck]|in\s+z\s+i\s+q/i;
+    // Phonetic fallbacks — Web Speech API frequently mishears "InzIQ".
+    // Match against a normalized (lowercased, whitespace-collapsed) transcript.
+    const WAKE_PHRASES = ['hey inziq', 'hey inzik', 'hey in z i q', 'inziq', 'in zik', 'hey insight', 'hey in sync'];
 
     const wakeRec = new SR();
     wakeRec.continuous = true;
@@ -1704,7 +1706,8 @@ function CommandPalette() {
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         text += ev.results[i][0].transcript;
       }
-      if (!WAKE_RE.test(text)) return;
+      const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!WAKE_PHRASES.some(p => normalized.includes(p))) return;
       // Wake word detected — hand off to command mic
       isAwakeRef.current = true;
       setIsAwake(true);

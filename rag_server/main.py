@@ -601,7 +601,10 @@ async def analyze_contract(req: ContractAnalysisRequest):
 RULE BOOK (ABSOLUTE OVERRIDE — enforce after general analysis):
 The following directives were set by the client. ANY clause that contradicts them
 MUST be flagged as risk_level "Red" with is_rule_book_violation set to true and a
-suggested_rewrite that brings the clause into full compliance.
+suggested_rewrite that brings the clause into full compliance. Whenever
+is_rule_book_violation is true you MUST also populate "rule_book_reference" with the
+EXACT verbatim quote (or the single most relevant line) from the Rule Book below that
+the clause violates — copy it word-for-word, do not paraphrase.
 
 {req.rule_book.strip()}
 
@@ -630,7 +633,8 @@ Return ONLY a valid JSON object — no markdown, no commentary:
       "risk_level": "<Red|Amber|Green>",
       "explanation": "<specific Indian legal issue or Rule Book violation>",
       "suggested_rewrite": "<attorney-quality replacement clause>",
-      "is_rule_book_violation": <true|false>
+      "is_rule_book_violation": <true|false>,
+      "rule_book_reference": "<exact verbatim quote from the Rule Book that this clause violates — REQUIRED when is_rule_book_violation is true, otherwise empty string>"
     }}
   ],
   "missing_clauses": [
