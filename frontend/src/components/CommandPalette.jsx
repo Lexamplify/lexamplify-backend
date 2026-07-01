@@ -1487,6 +1487,7 @@ function CommandPalette() {
   const isAwakeRef     = useRef(false);
   const wakeActiveRef  = useRef(false);
   const isOpenRef      = useRef(false);
+  const isListeningRef = useRef(false);   // mirrors isListening for SR callbacks (avoids stale closures)
   const searchRef      = useRef(null);
   const messagesEndRef = useRef(null);
   const msgRefs        = useRef({});
@@ -1628,44 +1629,70 @@ function CommandPalette() {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 80);
   }, [isOpen]);
 
-  // Keep searchRef and isOpenRef always current (no dep array = runs every render)
-  useEffect(() => { searchRef.current = handleSearch; isOpenRef.current = isOpen; });
+  // Keep refs current for SR callbacks (no dep array = runs every render)
+  useEffect(() => {
+    searchRef.current = handleSearch;
+    isOpenRef.current = isOpen;
+    isListeningRef.current = isListening;
+  });
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, loading, pendingSchedule, pendingDraft]);
 
-  // ── Speech recognition ────────────────────────────────
+  // ── Command speech recognition (en-IN, pause-tolerant capture) ─────────
+  // continuous + interim with a settle debounce: finals accumulate and submit
+  // only ~1.1s after speech stops, so natural pauses no longer truncate a
+  // command. Locale is pinned to en-IN to stabilise Indian-English phonetics
+  // and cut processing latency.
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
     const rec = new SR();
-    rec.continuous = false; rec.interimResults = true;
-    rec.onstart  = () => { setIsListening(true); setMicError(null); };
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-IN';
+
+    let finalBuffer = '';
+    let settleTimer = null;
+    const clearSettle = () => { if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; } };
+
+    rec.onstart = () => { finalBuffer = ''; setIsListening(true); setMicError(null); };
+
     rec.onresult = (ev) => {
-      let final = '', interim = '';
+      let interim = '';
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        if (ev.results[i].isFinal) final   += ev.results[i][0].transcript;
-        else                       interim += ev.results[i][0].transcript;
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finalBuffer += t;
+        else                       interim += t;
       }
-      if (final || interim) setQuery(final || interim);
-      if (final) { rec.stop(); searchRef.current?.(null, final); }
+      setQuery((finalBuffer + interim).trim());
+      // Re-arm the submit debounce on every token; fire only once speech settles.
+      clearSettle();
+      if (finalBuffer.trim()) {
+        settleTimer = setTimeout(() => { try { rec.stop(); } catch (_) {} }, 1100);
+      }
     };
+
     rec.onerror = (ev) => {
+      clearSettle();
       setMicError(ev.error === 'not-allowed' ? 'Mic access denied' : 'Mic error');
       setIsListening(false);
       setTimeout(() => setMicError(null), 3000);
     };
+
     rec.onend = () => {
+      clearSettle();
       setIsListening(false);
-      if (isAwakeRef.current) {
-        isAwakeRef.current = false;
-        setIsAwake(false);
-      }
+      if (isAwakeRef.current) { isAwakeRef.current = false; setIsAwake(false); }
+      const toSubmit = finalBuffer.trim();
+      finalBuffer = '';
+      if (toSubmit) searchRef.current?.(null, toSubmit);
     };
+
     recognitionRef.current = rec;
-    return () => { try { rec.abort(); } catch (_) {} };
+    return () => { clearSettle(); try { rec.abort(); } catch (_) {} };
   }, []);
 
   const toggleMic = () => {
@@ -1690,10 +1717,12 @@ function CommandPalette() {
     wakeRec.interimResults = false; // final only — avoids false positives from partial audio
     wakeRec.lang = 'en-IN';
 
+    // Global daemon: restart is gated only by our own live command mic /
+    // awake state (single SR instance at a time) — never by panel visibility.
     const tryRestart = () => {
-      if (dead || isAwakeRef.current || !isOpenRef.current || wakeActiveRef.current) return;
+      if (dead || isAwakeRef.current || isListeningRef.current || wakeActiveRef.current) return;
       setTimeout(() => {
-        if (dead || isAwakeRef.current || !isOpenRef.current || wakeActiveRef.current) return;
+        if (dead || isAwakeRef.current || isListeningRef.current || wakeActiveRef.current) return;
         try { wakeRec.start(); wakeActiveRef.current = true; } catch (_) {}
       }, 400);
     };
@@ -1708,9 +1737,11 @@ function CommandPalette() {
       }
       const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
       if (!WAKE_PHRASES.some(p => normalized.includes(p))) return;
-      // Wake word detected — hand off to command mic
+      // Wake word detected — surface the InzIQ command view (works from any
+      // route, panel open or closed) and hand off to the command mic.
       isAwakeRef.current = true;
       setIsAwake(true);
+      setIsOpen(true);
       wakeActiveRef.current = false;
       try { wakeRec.stop(); } catch (_) {}
       // Chrome needs ~250ms to release mic before a new SR instance can start
@@ -1743,17 +1774,21 @@ function CommandPalette() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Start / pause wake listener whenever panel visibility or mic-button state changes
+  // Global wake daemon: runs on any authenticated app route (not the public
+  // landing/login pages, and never while the command mic is already live).
+  // Boots silently on mount; pauses only for our own single-SR-instance rule.
   useEffect(() => {
     if (!wakeRecRef.current || wakeSupported === false) return;
-    const shouldRun = isOpen && !isListening && !isAwake;
+    const authed = !!(localStorage.getItem('token') || localStorage.getItem('lexai_token'));
+    const isPublic = location.pathname === '/' || location.pathname === '/login';
+    const shouldRun = authed && !isPublic && !isListening && !isAwake;
     if (shouldRun && !wakeActiveRef.current) {
       try { wakeRecRef.current.start(); wakeActiveRef.current = true; } catch (_) {}
     } else if (!shouldRun && wakeActiveRef.current) {
       try { wakeRecRef.current.stop(); } catch (_) {}
       wakeActiveRef.current = false;
     }
-  }, [isOpen, isListening, isAwake, wakeSupported]);
+  }, [location.pathname, isListening, isAwake, wakeSupported]);
 
   // ── File attachment handler ───────────────────────────
   const handleFileAttach = async (e) => {
@@ -1880,7 +1915,10 @@ function CommandPalette() {
         }),
       });
 
-      if (res.status === 401) {
+      // 401 = missing token; 422 = Flask-JWT-Extended rejecting a malformed/
+      // expired token on this @jwt_required() route. Both mean "re-authenticate"
+      // — not a payload defect (voice and manual submit share this exact body).
+      if (res.status === 401 || res.status === 422) {
         pushMessage(sid, {
           id: `e_${Date.now()}`, role: 'error',
           text: '⚠️ Session expired. Please log in again to use the AI Legal Associate.',
@@ -1925,6 +1963,23 @@ function CommandPalette() {
                           || q.match(/(?:simulate|courtroom|war.?room)\s+(?:for\s+)?(?:the\s+)?(\w+(?:\s+\w+){0,2})/i);
                    return m ? m[1].trim() : q.slice(0, 60).trim();
                  })();
+
+            // ── Contextual same-route execution ──────────────────────
+            // If the tool target IS the page we're already on, don't re-navigate
+            // (a remount would wipe in-progress work). Hand the payload to the
+            // live page via a global command event so it runs its local action.
+            if (actionPayload.destination === location.pathname) {
+              window.dispatchEvent(new CustomEvent('inziq-page-command', {
+                detail: {
+                  destination: actionPayload.destination,
+                  data: { ...actionPayload.data, document_reference: finalRef, file_content: finalContent },
+                },
+              }));
+              setLoading(false);
+              setIsOpen(false);
+              return;
+            }
+
             setLoading(false);
             setNavRoute(actionPayload.destination);
             setTimeout(() => {

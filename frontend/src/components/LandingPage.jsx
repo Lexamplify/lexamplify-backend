@@ -3,1054 +3,918 @@ import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import LandingNavbar from './LandingNavbar';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CSS
+// ─────────────────────────────────────────────────────────────────────────────
 const landingStyles = `
-  .landing-container {
-    background-color: #0A0E17;
+  /* ── Base ── */
+  .lp {
+    background-color: #080B12;
     color: #F3F4F6;
     min-height: 100vh;
     font-family: var(--font-sans);
     overflow-x: hidden;
     position: relative;
-    transition: background-color 0.5s ease-in-out, color 0.5s ease-in-out;
+    transition: background-color 0.45s ease, color 0.45s ease;
   }
-  
-  /* Absolute-positioned glow backdrops */
-  .glow-backdrop {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(140px);
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.15;
-    transition: opacity 0.5s ease;
-  }
-  .glow-1 {
-    width: 600px;
-    height: 600px;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%);
-    top: -10%;
-    right: -10%;
-  }
-  .glow-2 {
-    width: 500px;
-    height: 500px;
-    background: radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%);
-    bottom: 20%;
-    left: -10%;
-  }
-  .glow-3 {
-    width: 700px;
-    height: 700px;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%);
-    top: 40%;
-    right: 20%;
-  }
-
-  .landing-header {
-    background-color: rgba(10, 14, 23, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    transition: background-color 0.5s, border-color 0.5s;
-  }
-
-  /* Hero split layout */
-  .hero-wrapper {
-    position: relative;
-    padding: 120px 24px 80px;
-    overflow: hidden;
-  }
-  .hero-container {
-    display: grid;
-    grid-template-columns: 1.2fr 1fr;
-    gap: 60px;
-    align-items: center;
-    max-width: 1200px;
-    margin: 0 auto;
-    position: relative;
-    z-index: 1;
-  }
-  @media (max-width: 968px) {
-    .hero-container {
-      grid-template-columns: 1fr;
-      text-align: center;
-      gap: 40px;
-    }
-  }
-
-  .hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 30px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #9CA3AF;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    margin-bottom: 24px;
-  }
-
-  .hero-h1 {
-    font-family: var(--font-serif);
-    font-size: 2.8rem;
-    line-height: 1.15;
-    margin-bottom: 20px;
-    letter-spacing: -0.8px;
-    font-weight: 700;
-    color: #FFFFFF;
-  }
-  @media (min-width: 769px) {
-    .hero-h1 {
-      font-size: 3.8rem;
-    }
-  }
-  .hero-p {
-    font-size: 18px;
-    color: #9CA3AF;
-    line-height: 1.6;
-    margin-bottom: 36px;
-    max-width: 600px;
-  }
-  @media (max-width: 968px) {
-    .hero-p {
-      margin-left: auto;
-      margin-right: auto;
-    }
-  }
-
-  .hero-buttons {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-  @media (max-width: 968px) {
-    .hero-buttons {
-      justify-content: center;
-    }
-  }
-
-  /* Luxury Buttons */
-  .btn-luxury-primary {
-    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-    color: #FFFFFF;
-    font-weight: 500;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 12px 28px;
-    font-size: 15px;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
-  }
-  .btn-luxury-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 24px rgba(37, 99, 235, 0.45);
-  }
-  .btn-luxury-secondary {
-    background-color: rgba(255, 255, 255, 0.02);
-    color: #FFFFFF;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    font-weight: 500;
-    border-radius: 8px;
-    padding: 12px 28px;
-    font-size: 15px;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .btn-luxury-secondary:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.15);
-    transform: translateY(-2px);
-  }
-
-  /* Chat Terminal Mockup */
-  .luxury-terminal {
-    background: rgba(18, 22, 35, 0.5);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
-    overflow: hidden;
-    width: 100%;
-    max-width: 500px;
-    margin: 0 auto;
-    font-family: monospace;
-    font-size: 13px;
-    transition: background-color 0.5s, border-color 0.5s, box-shadow 0.5s;
-  }
-  .terminal-header {
-    background-color: rgba(10, 14, 23, 0.7);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    padding: 12px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: background-color 0.5s, border-color 0.5s;
-  }
-  .terminal-dots {
-    display: flex;
-    gap: 6px;
-  }
-  .terminal-dots .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-  }
-  .dot-red { background-color: #EF4444; }
-  .dot-yellow { background-color: #F59E0B; }
-  .dot-green { background-color: #10B981; }
-  .terminal-title {
-    color: #9CA3AF;
-    font-size: 11px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-  }
-  .terminal-status {
-    color: #10B981;
-    font-size: 10px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .pulse-indicator {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: #10B981;
-    box-shadow: 0 0 6px #10B981;
-    animation: branding-pulse 2s infinite alternate;
-  }
-  @keyframes branding-pulse {
-    0% { opacity: 0.4; }
-    100% { opacity: 1; }
-  }
-
-  .terminal-body {
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .chat-msg {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .msg-meta {
-    font-size: 10px;
-    text-transform: uppercase;
-    color: #6B7280;
-    font-weight: 600;
-  }
-  .user-msg .msg-text {
-    color: #FFFFFF;
-    background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    padding: 10px 12px;
-    border-radius: 6px;
-    transition: background-color 0.5s, border-color 0.5s, color 0.5s;
-  }
-  .ai-msg .msg-text {
-    color: #3B82F6;
-    padding: 0 4px;
-    line-height: 1.5;
-  }
-  .terminal-output {
-    background-color: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.03);
-    border-radius: 6px;
-    padding: 12px;
-    transition: background-color 0.5s, border-color 0.5s;
-  }
-  .output-header {
-    font-size: 9px;
-    text-transform: uppercase;
-    color: #6B7280;
-    margin-bottom: 6px;
-    border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
-    padding-bottom: 4px;
-  }
-  .output-content {
-    color: #9CA3AF;
-    font-size: 11.5px;
-    line-height: 1.5;
-    margin: 0;
-    white-space: pre-wrap;
-  }
-
-  /* typing cursor effect */
-  .typing-effect {
-    border-right: 2px solid #3B82F6;
-    white-space: normal;
-    animation: blink-cursor 0.75s step-end infinite;
-  }
-  @keyframes blink-cursor {
-    from, to { border-color: transparent }
-    50% { border-color: #3B82F6 }
-  }
-
-  /* Bento Grid */
-  .features-section {
-    padding: 80px 24px 100px;
-    position: relative;
-  }
-  .features-badge {
-    display: inline-flex;
-    margin: 0 auto 12px;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 30px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #9CA3AF;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-  }
-  .section-title {
-    font-family: var(--font-serif);
-    font-size: 2.2rem;
-    text-align: center;
-    color: #FFFFFF;
-    margin-bottom: 8px;
-  }
-  .section-subtitle {
-    font-size: 16px;
-    color: #9CA3AF;
-    text-align: center;
-    margin-bottom: 50px;
-  }
-  .bento-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-auto-rows: minmax(280px, auto);
-    gap: 24px;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  .bento-card {
-    background: rgba(18, 22, 35, 0.4);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 16px;
-    padding: 32px;
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  
-  .bento-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(59, 130, 246, 0.3);
-    box-shadow: 0 12px 30px rgba(59, 130, 246, 0.1);
-  }
-  /* Alternate hover accent color for card-medium (gold accent) */
-  .bento-card-medium:hover {
-    border-color: rgba(212, 175, 55, 0.3);
-    box-shadow: 0 12px 30px rgba(212, 175, 55, 0.08);
-  }
-  .bento-card-large {
-    grid-column: span 2;
-  }
-  .bento-card-medium {
-    grid-column: span 1;
-  }
-  .bento-card-span {
-    grid-column: span 3;
-  }
-
-  .bento-card-glow {
-    position: absolute;
-    width: 200px;
-    height: 200px;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
-    top: -50px;
-    right: -50px;
-    pointer-events: none;
-    z-index: 0;
-  }
-  .bento-card-content {
-    position: relative;
-    z-index: 1;
-  }
-  .bento-header {
-    margin-bottom: 16px;
-  }
-  .bento-tag {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #6B7280;
-    font-weight: 600;
-    display: block;
-    margin-bottom: 6px;
-  }
-  .bento-title {
-    font-family: var(--font-serif);
-    font-size: 24px;
-    color: #FFFFFF;
-  }
-  .bento-description {
-    font-size: 14px;
-    color: #9CA3AF;
-    line-height: 1.6;
-    margin-bottom: 24px;
-  }
-  .bento-footer {
-    position: relative;
-    z-index: 1;
-  }
-  .bento-link {
-    font-size: 13.5px;
-    font-weight: 600;
-    color: #3B82F6;
-    text-decoration: none;
-    transition: color 0.2s;
-  }
-  .bento-link:hover {
-    color: #2563EB;
-  }
-
-  /* Bento specific mini-mockups */
-  .bento-mini-mockup {
-    background-color: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
-    padding: 16px;
-    transition: background-color 0.5s, border-color 0.5s;
-  }
-  .mockup-clause-box {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    font-size: 12px;
-  }
-  .clause-tag {
-    font-size: 9px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    width: fit-content;
-    font-weight: 600;
-  }
-  .clause-tag.warning {
-    background-color: rgba(245, 158, 11, 0.1);
-    color: #F59E0B;
-  }
-  .clause-title {
-    color: #FFFFFF;
-    font-weight: 600;
-  }
-  .clause-text {
-    color: #6B7280;
-    font-style: italic;
-    margin: 0;
-  }
-  .clause-rebuttal {
-    color: #10B981;
-    font-size: 11px;
-  }
-
-  .bento-mini-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .mini-list-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background-color: rgba(0, 0, 0, 0.2);
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 12px;
-    transition: background-color 0.5s;
-  }
-  .status-pill {
-    font-size: 9px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 4px;
-  }
-  .status-pill.red {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: #EF4444;
-  }
-  .status-pill.yellow {
-    background-color: rgba(245, 158, 11, 0.1);
-    color: #F59E0B;
-  }
-
-  .bento-flex-row {
-    display: flex;
-    gap: 40px;
-    align-items: center;
-  }
-  .bento-flex-left {
-    flex: 1.2;
-    display: flex;
-    flex-direction: column;
-  }
-  .bento-flex-right {
-    flex: 1;
-    width: 100%;
-  }
-
-  .terminal-mini {
-    background-color: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
-    padding: 16px;
-    font-family: monospace;
-    font-size: 12px;
-    transition: background-color 0.5s, border-color 0.5s;
-  }
-  .terminal-line {
-    color: #9CA3AF;
-    margin-bottom: 6px;
-  }
-  .terminal-line.success {
-    color: #10B981;
-    margin-bottom: 0;
-  }
-  .term-prompt {
-    color: #3B82F6;
-    margin-right: 8px;
-  }
-
-  /* Enterprise Trust Section */
-  .trust-section {
-    padding: 100px 24px;
-    background-color: rgba(10, 14, 23, 0.5);
-    border-top: 1px solid rgba(255, 255, 255, 0.03);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    position: relative;
-    transition: background-color 0.5s, border-color 0.5s;
-  }
-  .trust-header {
-    text-align: center;
-    margin-bottom: 60px;
-  }
-  .trust-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 30px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #9CA3AF;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    margin-bottom: 12px;
-  }
-  .trust-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 32px;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  .trust-card {
-    background-color: rgba(255, 255, 255, 0.01);
-    border: 1px solid rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
-    padding: 28px;
-    transition: all 0.3s ease;
-  }
-  .trust-card:hover {
-    background-color: rgba(255, 255, 255, 0.02);
-    border-color: rgba(255, 255, 255, 0.08);
-  }
-  .trust-icon {
-    font-size: 28px;
-    margin-bottom: 16px;
-  }
-  .trust-card-title {
-    font-size: 18px;
-    color: #FFFFFF;
-    margin-bottom: 10px;
-  }
-  .trust-card-description {
-    font-size: 13.5px;
-    color: #9CA3AF;
-    line-height: 1.6;
-  }
-  .trust-seals {
-    display: flex;
-    justify-content: center;
-    gap: 40px;
-    margin-top: 60px;
-    flex-wrap: wrap;
-  }
-  .seal-item {
-    font-size: 11px;
-    font-weight: 700;
-    color: #6B7280;
-    letter-spacing: 1px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .seal-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: #10B981;
-  }
-
-  /* Light Theme Overrides */
-  .landing-container[data-theme="light"] {
+  [data-theme="light"] .lp {
     background-color: #F8FAFC;
     color: #0F172A;
   }
-  .landing-container[data-theme="light"] .landing-header {
-    background-color: rgba(248, 250, 252, 0.8);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+
+  /* ── Scroll reveal ── */
+  .sr {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .landing-container[data-theme="light"] .hero-badge,
-  .landing-container[data-theme="light"] .features-badge,
-  .landing-container[data-theme="light"] .trust-badge {
-    background-color: rgba(0, 0, 0, 0.02);
-    border: 1px solid rgba(0, 0, 0, 0.05);
-    color: #475569;
+  .sr.visible { opacity: 1; transform: translateY(0); }
+  .sr.d1 { transition-delay: 0.08s; }
+  .sr.d2 { transition-delay: 0.16s; }
+  .sr.d3 { transition-delay: 0.24s; }
+  .sr.d4 { transition-delay: 0.32s; }
+  .sr.d5 { transition-delay: 0.40s; }
+  .sr.d6 { transition-delay: 0.48s; }
+
+  /* ── Glow orbs ── */
+  .glow-orb {
+    position: absolute; border-radius: 50%;
+    filter: blur(120px); pointer-events: none; z-index: 0;
   }
-  .landing-container[data-theme="light"] .hero-h1,
-  .landing-container[data-theme="light"] .section-title,
-  .landing-container[data-theme="light"] .bento-title,
-  .landing-container[data-theme="light"] .trust-card-title {
-    color: #0F172A;
+  .glow-orb-1 { width:700px; height:700px; background:radial-gradient(circle,rgba(59,130,246,0.18) 0%,transparent 70%); top:-15%; right:-10%; }
+  .glow-orb-2 { width:500px; height:500px; background:radial-gradient(circle,rgba(139,92,246,0.14) 0%,transparent 70%); bottom:5%; left:-8%; }
+  .glow-orb-3 { width:600px; height:600px; background:radial-gradient(circle,rgba(16,185,129,0.1) 0%,transparent 70%); top:45%; right:15%; }
+  [data-theme="light"] .glow-orb { filter: blur(120px); }
+  [data-theme="light"] .glow-orb-1 { background: radial-gradient(circle,rgba(59,130,246,0.07) 0%,transparent 70%); }
+  [data-theme="light"] .glow-orb-2 { background: radial-gradient(circle,rgba(139,92,246,0.05) 0%,transparent 70%); }
+  [data-theme="light"] .glow-orb-3 { background: radial-gradient(circle,rgba(16,185,129,0.04) 0%,transparent 70%); }
+
+  /* ── Section utilities ── */
+  .lp-section { padding: 96px 24px; position: relative; }
+  .lp-inner { max-width: 1200px; margin: 0 auto; }
+  .lp-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 13px; border-radius: 30px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+    font-size: 10.5px; font-weight: 700; color: #6B7280;
+    letter-spacing: 1.3px; text-transform: uppercase;
+    margin-bottom: 14px;
+    transition: background 0.4s, border-color 0.4s, color 0.4s;
   }
-  .landing-container[data-theme="light"] .hero-p,
-  .landing-container[data-theme="light"] .section-subtitle,
-  .landing-container[data-theme="light"] .bento-description,
-  .landing-container[data-theme="light"] .trust-card-description {
-    color: #475569;
+  [data-theme="light"] .lp-badge { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.07); color: #64748B; }
+  .lp-section-title {
+    font-family: var(--font-serif);
+    font-size: clamp(1.85rem, 3.5vw, 2.6rem);
+    text-align: center; color: #FFFFFF;
+    margin-bottom: 10px; letter-spacing: -0.5px;
+    transition: color 0.4s;
   }
-  .landing-container[data-theme="light"] .btn-luxury-secondary {
-    background-color: rgba(0, 0, 0, 0.02);
-    color: #0F172A;
-    border: 1px solid rgba(0, 0, 0, 0.08);
+  [data-theme="light"] .lp-section-title { color: #0F172A; }
+  .lp-section-sub {
+    font-size: 16px; color: #9CA3AF; text-align: center;
+    margin-bottom: 56px; line-height: 1.65;
+    transition: color 0.4s;
   }
-  .landing-container[data-theme="light"] .btn-luxury-secondary:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-    border-color: rgba(0, 0, 0, 0.15);
+  [data-theme="light"] .lp-section-sub { color: #475569; }
+
+  /* ── Hero ── */
+  .hero-wrap {
+    padding: 128px 24px 88px;
+    position: relative; overflow: hidden;
   }
-  .landing-container[data-theme="light"] .luxury-terminal {
-    background: rgba(255, 255, 255, 0.8);
-    border-color: rgba(0, 0, 0, 0.06);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+  .hero-grid {
+    display: grid; grid-template-columns: 1.15fr 1fr;
+    gap: 64px; align-items: center;
+    max-width: 1200px; margin: 0 auto; position: relative; z-index: 1;
   }
-  .landing-container[data-theme="light"] .terminal-header {
-    background-color: rgba(0, 0, 0, 0.02);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  @media (max-width: 968px) {
+    .hero-grid { grid-template-columns: 1fr; text-align: center; gap: 44px; }
+    .hero-btns { justify-content: center; }
+    .hero-p { margin-left: auto; margin-right: auto; }
   }
-  .landing-container[data-theme="light"] .user-msg .msg-text {
-    background-color: rgba(0, 0, 0, 0.02);
-    border-color: rgba(0, 0, 0, 0.04);
-    color: #0F172A;
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 30px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+    font-size: 11px; font-weight: 700; color: #9CA3AF;
+    letter-spacing: 1.3px; text-transform: uppercase; margin-bottom: 24px;
+    transition: background 0.4s, border-color 0.4s;
   }
-  .landing-container[data-theme="light"] .bento-card {
-    background: rgba(255, 255, 255, 0.8);
-    border-color: rgba(0, 0, 0, 0.05);
+  [data-theme="light"] .hero-eyebrow { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.07); color: #64748B; }
+  .hero-h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(2.6rem, 5.5vw, 4.1rem);
+    line-height: 1.12; margin-bottom: 22px;
+    letter-spacing: -1px; font-weight: 700; color: #FFFFFF;
+    transition: color 0.4s;
   }
-  .landing-container[data-theme="light"] .bento-card:hover {
-    border-color: rgba(59, 130, 246, 0.4);
-    box-shadow: 0 12px 30px rgba(59, 130, 246, 0.08);
+  [data-theme="light"] .hero-h1 { color: #0F172A; }
+  .hero-h1 em { font-style: normal; color: #3B82F6; }
+  .hero-p {
+    font-size: 18px; color: #9CA3AF; line-height: 1.65;
+    margin-bottom: 38px; max-width: 560px;
+    transition: color 0.4s;
   }
-  .landing-container[data-theme="light"] .bento-card-medium:hover {
-    border-color: rgba(212, 175, 55, 0.4);
-    box-shadow: 0 12px 30px rgba(212, 175, 55, 0.06);
+  [data-theme="light"] .hero-p { color: #475569; }
+  .hero-btns { display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn-primary {
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+    color: #FFFFFF; font-weight: 600; border: none;
+    border-radius: 9px; padding: 13px 28px; font-size: 15px;
+    cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 22px rgba(37,99,235,0.32);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .landing-container[data-theme="light"] .trust-card {
-    background-color: rgba(0, 0, 0, 0.01);
-    border-color: rgba(0, 0, 0, 0.03);
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(37,99,235,0.46); }
+  .btn-secondary {
+    background: rgba(255,255,255,0.03); color: #FFFFFF;
+    border: 1px solid rgba(255,255,255,0.09); font-weight: 500;
+    border-radius: 9px; padding: 13px 28px; font-size: 15px;
+    cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .landing-container[data-theme="light"] .trust-card:hover {
-    background-color: rgba(0, 0, 0, 0.02);
-    border-color: rgba(0, 0, 0, 0.06);
+  .btn-secondary:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.16); transform: translateY(-2px); }
+  [data-theme="light"] .btn-secondary { background: rgba(0,0,0,0.03); color: #0F172A; border-color: rgba(0,0,0,0.09); }
+  [data-theme="light"] .btn-secondary:hover { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.15); }
+
+  /* ── Terminal mockup ── */
+  .lp-terminal {
+    background: rgba(14, 18, 28, 0.7);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    box-shadow: 0 32px 64px rgba(0,0,0,0.55);
+    overflow: hidden; width: 100%; max-width: 500px;
+    margin: 0 auto; font-family: monospace; font-size: 13px;
+    animation: terminal-float 6s ease-in-out infinite;
+    transition: background 0.45s, border-color 0.45s, box-shadow 0.45s;
   }
-  .landing-container[data-theme="light"] .bento-mini-mockup,
-  .landing-container[data-theme="light"] .bento-mini-list,
-  .landing-container[data-theme="light"] .mini-list-item,
-  .landing-container[data-theme="light"] .terminal-mini {
-    background-color: rgba(0, 0, 0, 0.02);
-    border-color: rgba(0, 0, 0, 0.04);
+  @keyframes terminal-float {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-10px); }
   }
-  .landing-container[data-theme="light"] .mockup-clause-box .clause-title {
-    color: #0F172A;
+  [data-theme="light"] .lp-terminal {
+    background: rgba(255,255,255,0.85);
+    border-color: rgba(0,0,0,0.07);
+    box-shadow: 0 24px 48px rgba(0,0,0,0.1);
   }
-  .landing-container[data-theme="light"] .glow-backdrop {
-    opacity: 0.06;
+  .term-topbar {
+    background: rgba(8,11,18,0.6); border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding: 11px 16px; display: flex; justify-content: space-between; align-items: center;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .term-topbar { background: rgba(0,0,0,0.03); border-bottom-color: rgba(0,0,0,0.06); }
+  .term-dots { display: flex; gap: 6px; }
+  .term-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .term-title { color: #6B7280; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .term-status { color: #10B981; font-size: 10px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
+  .term-pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #10B981; box-shadow: 0 0 6px #10B981;
+    animation: lp-pulse 2s infinite alternate;
+  }
+  @keyframes lp-pulse { 0% { opacity: 0.4; } 100% { opacity: 1; } }
+  .term-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .term-msg-meta { font-size: 10px; text-transform: uppercase; color: #4B5563; font-weight: 700; margin-bottom: 4px; }
+  .term-user-text {
+    color: #E2E8F0; background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.04);
+    padding: 10px 12px; border-radius: 7px; line-height: 1.5;
+    transition: background 0.45s, border-color 0.45s, color 0.45s;
+  }
+  [data-theme="light"] .term-user-text { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); color: #1E293B; }
+  .term-ai-text { color: #3B82F6; padding: 0 4px; line-height: 1.55; }
+  .term-output {
+    background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.03);
+    border-radius: 7px; padding: 12px;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .term-output { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); }
+  .term-output-hdr {
+    font-size: 9px; text-transform: uppercase; color: #4B5563;
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1px dashed rgba(255,255,255,0.05);
+  }
+  .term-output-pre { color: #9CA3AF; font-size: 11.5px; line-height: 1.55; margin: 0; white-space: pre-wrap; }
+  [data-theme="light"] .term-output-pre { color: #475569; }
+  .term-cursor { border-right: 2px solid #3B82F6; animation: lp-blink 0.75s step-end infinite; }
+  @keyframes lp-blink { from,to { border-color: transparent } 50% { border-color: #3B82F6 } }
+
+  /* ── Features bento ── */
+  .bento {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: auto; gap: 20px;
+  }
+  .bc {
+    background: rgba(14,18,28,0.55);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px; padding: 30px;
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+  }
+  .bc:hover {
+    transform: translateY(-4px);
+    border-color: rgba(59,130,246,0.28);
+    box-shadow: 0 16px 36px rgba(59,130,246,0.1);
+  }
+  [data-theme="light"] .bc {
+    background: rgba(255,255,255,0.82);
+    border-color: rgba(0,0,0,0.06);
+  }
+  [data-theme="light"] .bc:hover {
+    border-color: rgba(59,130,246,0.3);
+    box-shadow: 0 12px 30px rgba(59,130,246,0.07);
+  }
+  .bc--lg { grid-column: span 2; }
+  .bc--sm { grid-column: span 1; }
+  .bc--fw { grid-column: span 3; }
+  .bc-glow {
+    position: absolute; width: 240px; height: 240px;
+    background: radial-gradient(circle, rgba(59,130,246,0.07) 0%, transparent 70%);
+    top: -60px; right: -60px; pointer-events: none; z-index: 0;
+  }
+  .bc-tag {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1.1px;
+    color: #4B5563; font-weight: 700; margin-bottom: 7px; display: block;
+    transition: color 0.4s;
+  }
+  [data-theme="light"] .bc-tag { color: #64748B; }
+  .bc-title {
+    font-family: var(--font-serif);
+    font-size: 22px; color: #FFFFFF; margin-bottom: 10px;
+    line-height: 1.25; position: relative; z-index: 1;
+    transition: color 0.4s;
+  }
+  [data-theme="light"] .bc-title { color: #0F172A; }
+  .bc-desc {
+    font-size: 13.5px; color: #9CA3AF; line-height: 1.65;
+    margin-bottom: 22px; position: relative; z-index: 1;
+    transition: color 0.4s;
+  }
+  [data-theme="light"] .bc-desc { color: #475569; }
+  .bc-content { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; }
+  .bc-footer { position: relative; z-index: 1; margin-top: auto; padding-top: 18px; }
+  .bc-link {
+    font-size: 13px; font-weight: 600; color: #3B82F6;
+    text-decoration: none; transition: color 0.2s;
+  }
+  .bc-link:hover { color: #2563EB; }
+
+  /* Bento mini mockups */
+  .mini-box {
+    background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.03);
+    border-radius: 9px; padding: 14px; font-size: 12px;
+    margin-bottom: 16px;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .mini-box { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); }
+  .risk-pill {
+    font-size: 9px; padding: 2px 7px; border-radius: 4px;
+    font-weight: 700; width: fit-content; margin-bottom: 7px;
+  }
+  .risk-pill.red { background: rgba(239,68,68,0.12); color: #EF4444; }
+  .risk-pill.amber { background: rgba(245,158,11,0.12); color: #F59E0B; }
+  .risk-pill.green { background: rgba(16,185,129,0.12); color: #10B981; }
+  .mini-clause-title { color: #FFFFFF; font-weight: 600; margin-bottom: 4px; transition: color 0.4s; }
+  [data-theme="light"] .mini-clause-title { color: #0F172A; }
+  .mini-clause-text { color: #6B7280; font-style: italic; margin: 0 0 6px; }
+  .mini-clause-sug { color: #10B981; font-size: 11.5px; }
+  .mini-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-radius: 7px;
+    background: rgba(0,0,0,0.18); margin-bottom: 7px; font-size: 12px;
+    transition: background 0.45s;
+  }
+  [data-theme="light"] .mini-row { background: rgba(0,0,0,0.03); }
+  .mini-row:last-child { margin-bottom: 0; }
+  .mini-row-label { color: #D1D5DB; transition: color 0.4s; }
+  [data-theme="light"] .mini-row-label { color: #1E293B; }
+  .status-tag {
+    font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  }
+  .status-tag.conflict { background: rgba(239,68,68,0.12); color: #EF4444; }
+  .status-tag.warn     { background: rgba(245,158,11,0.12); color: #F59E0B; }
+  .status-tag.ok       { background: rgba(16,185,129,0.12); color: #10B981; }
+  .mini-term {
+    background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.03);
+    border-radius: 8px; padding: 14px; font-family: monospace; font-size: 12px;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .mini-term { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); }
+  .mini-term-line { color: #9CA3AF; margin-bottom: 5px; }
+  .mini-term-line.ok { color: #10B981; margin-bottom: 0; }
+  .mini-term-prompt { color: #3B82F6; margin-right: 7px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin-bottom: 10px; }
+  .cal-item {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 7px; padding: 9px 8px; text-align: center;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .cal-item { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); }
+  .cal-item.urgent { border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.06); }
+  .cal-item.soon   { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.06); }
+  .cal-date { font-size: 18px; font-weight: 700; color: #FFFFFF; line-height: 1; transition: color 0.4s; }
+  [data-theme="light"] .cal-date { color: #0F172A; }
+  .cal-label { font-size: 9.5px; color: #6B7280; margin-top: 3px; }
+  .cal-badge { font-size: 9px; font-weight: 700; margin-top: 4px; }
+  .cal-badge.urgent { color: #EF4444; }
+  .cal-badge.soon   { color: #F59E0B; }
+  .wr-step {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.02); margin-bottom: 8px;
+    transition: background 0.45s;
+  }
+  [data-theme="light"] .wr-step { background: rgba(0,0,0,0.02); }
+  .wr-step:last-child { margin-bottom: 0; }
+  .wr-step-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .wr-step-text { font-size: 12px; color: #9CA3AF; line-height: 1.5; transition: color 0.4s; }
+  [data-theme="light"] .wr-step-text { color: #475569; }
+  .wr-step-title { font-size: 12.5px; font-weight: 600; color: #E2E8F0; margin-bottom: 2px; transition: color 0.4s; }
+  [data-theme="light"] .wr-step-title { color: #1E293B; }
+  .vault-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.03);
+    margin-bottom: 8px; transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .vault-row { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.04); }
+  .vault-row:last-child { margin-bottom: 0; }
+  .vault-icon { font-size: 16px; flex-shrink: 0; }
+  .vault-name { font-size: 12.5px; color: #D1D5DB; flex: 1; transition: color 0.4s; }
+  [data-theme="light"] .vault-name { color: #1E293B; }
+  .vault-size { font-size: 10.5px; color: #4B5563; }
+  .inziq-cmd {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; border-radius: 8px;
+    background: rgba(139,92,246,0.06);
+    border: 1px solid rgba(139,92,246,0.12);
+    margin-bottom: 7px; font-size: 12px;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .inziq-cmd { background: rgba(139,92,246,0.05); border-color: rgba(139,92,246,0.12); }
+  .inziq-cmd:last-child { margin-bottom: 0; }
+  .inziq-mic { font-size: 14px; }
+  .inziq-text { color: #C4B5FD; }
+  .inziq-arrow { margin-left: auto; color: #6B7280; font-size: 11px; }
+
+  /* Bento row flex layouts */
+  .bc-flex { display: flex; gap: 36px; align-items: flex-start; }
+  .bc-flex-l { flex: 1.1; display: flex; flex-direction: column; }
+  .bc-flex-r { flex: 1; }
+  @media (max-width: 768px) {
+    .bc-flex { flex-direction: column; gap: 20px; }
+    .bento { grid-template-columns: 1fr !important; }
+    .bc--lg, .bc--fw { grid-column: span 1 !important; }
   }
 
-  @media (max-width: 768px) {
-    .bento-grid {
-      grid-template-columns: 1fr !important;
-      grid-auto-rows: auto !important;
-      padding: 0;
-    }
-    .bento-card, .bento-card-large, .bento-card-medium, .bento-card-span {
-      grid-column: span 1 !important;
-      padding: 24px;
-    }
-    .bento-flex-row {
-      flex-direction: column;
-      gap: 20px;
-    }
-    .trust-grid {
-      grid-template-columns: 1fr;
-      gap: 24px;
-    }
-    .trust-seals {
-      gap: 20px;
-      flex-direction: column;
-      align-items: center;
-    }
-    .hero-wrapper {
-      padding-top: 80px;
-      padding-bottom: 40px;
-    }
-    .features-section {
-      padding-bottom: 60px;
-    }
-    .trust-section {
-      padding-top: 60px;
-      padding-bottom: 60px;
-    }
+  /* ── How it works ── */
+  .workflow-steps {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px;
+    position: relative;
   }
+  .workflow-steps::before {
+    content: ''; position: absolute;
+    top: 32px; left: calc(16.66% + 16px); right: calc(16.66% + 16px);
+    height: 1px; background: rgba(255,255,255,0.07);
+    pointer-events: none;
+  }
+  [data-theme="light"] .workflow-steps::before { background: rgba(0,0,0,0.06); }
+  .wf-step {
+    position: relative; text-align: center; padding-top: 0;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .wf-num {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(14,18,28,0.8);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 700; color: #3B82F6;
+    font-family: var(--font-serif);
+    margin-bottom: 20px; position: relative; z-index: 1;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .wf-num { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
+  .wf-title {
+    font-size: 18px; font-weight: 700; color: #FFFFFF;
+    margin-bottom: 10px; font-family: var(--font-serif);
+    transition: color 0.4s;
+  }
+  [data-theme="light"] .wf-title { color: #0F172A; }
+  .wf-desc {
+    font-size: 14px; color: #6B7280; line-height: 1.6;
+    transition: color 0.4s;
+  }
+  [data-theme="light"] .wf-desc { color: #475569; }
+  @media (max-width: 768px) {
+    .workflow-steps { grid-template-columns: 1fr; gap: 40px; }
+    .workflow-steps::before { display: none; }
+  }
+
+  /* ── Trust / Security ── */
+  .trust-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px;
+  }
+  .trust-card {
+    background: rgba(14,18,28,0.5);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 14px; padding: 28px;
+    transition: all 0.3s ease;
+  }
+  .trust-card:hover { background: rgba(14,18,28,0.7); border-color: rgba(255,255,255,0.08); }
+  [data-theme="light"] .trust-card { background: rgba(255,255,255,0.7); border-color: rgba(0,0,0,0.05); }
+  [data-theme="light"] .trust-card:hover { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.1); }
+  .trust-icon { font-size: 28px; margin-bottom: 14px; }
+  .trust-title { font-size: 17px; font-weight: 700; color: #FFFFFF; margin-bottom: 8px; transition: color 0.4s; }
+  [data-theme="light"] .trust-title { color: #0F172A; }
+  .trust-desc { font-size: 13.5px; color: #9CA3AF; line-height: 1.6; transition: color 0.4s; }
+  [data-theme="light"] .trust-desc { color: #475569; }
+  .trust-seals { display: flex; justify-content: center; gap: 36px; margin-top: 52px; flex-wrap: wrap; }
+  .seal { font-size: 11px; font-weight: 700; color: #4B5563; letter-spacing: 0.9px; display: flex; align-items: center; gap: 8px; transition: color 0.4s; }
+  [data-theme="light"] .seal { color: #64748B; }
+  .seal-dot { width: 6px; height: 6px; border-radius: 50%; background: #10B981; }
+  @media (max-width: 768px) { .trust-grid { grid-template-columns: 1fr; gap: 20px; } }
+
+  /* ── CTA banner ── */
+  .cta-band {
+    margin: 0 24px 96px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, rgba(30,41,80,0.85) 0%, rgba(15,23,42,0.9) 100%);
+    border: 1px solid rgba(59,130,246,0.2);
+    padding: 72px 40px;
+    text-align: center; position: relative; overflow: hidden;
+    transition: background 0.45s, border-color 0.45s;
+  }
+  [data-theme="light"] .cta-band {
+    background: linear-gradient(135deg, rgba(239,246,255,0.95) 0%, rgba(224,231,255,0.95) 100%);
+    border-color: rgba(37,99,235,0.2);
+  }
+  .cta-band-glow {
+    position: absolute; width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%);
+    top: 50%; left: 50%; transform: translate(-50%,-50%);
+    pointer-events: none;
+  }
+  .cta-h2 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.9rem,4vw,2.8rem);
+    color: #FFFFFF; margin-bottom: 12px; letter-spacing: -0.5px;
+    position: relative; z-index: 1; transition: color 0.4s;
+  }
+  [data-theme="light"] .cta-h2 { color: #0F172A; }
+  .cta-sub {
+    font-size: 17px; color: #9CA3AF; margin-bottom: 36px;
+    position: relative; z-index: 1; line-height: 1.6; transition: color 0.4s;
+  }
+  [data-theme="light"] .cta-sub { color: #475569; }
+  .cta-btns {
+    display: flex; gap: 14px; justify-content: center;
+    flex-wrap: wrap; position: relative; z-index: 1;
+  }
+
+  /* ── Footer ── */
+  .lp-footer {
+    border-top: 1px solid rgba(255,255,255,0.04);
+    padding: 40px 24px;
+    position: relative; z-index: 1;
+    transition: border-color 0.45s, background 0.45s;
+  }
+  [data-theme="light"] .lp-footer { border-top-color: rgba(0,0,0,0.06); }
+  .footer-inner {
+    max-width: 1200px; margin: 0 auto;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 20px; font-size: 13px; color: #4B5563;
+    transition: color 0.4s;
+  }
+  [data-theme="light"] .footer-inner { color: #64748B; }
+  .footer-links { display: flex; gap: 20px; }
+  .footer-link { color: #4B5563; text-decoration: none; transition: color 0.2s; }
+  .footer-link:hover { color: #9CA3AF; }
+  [data-theme="light"] .footer-link { color: #64748B; }
+  [data-theme="light"] .footer-link:hover { color: #0F172A; }
+
+  /* ── Section divider ── */
+  .sec-divider {
+    max-width: 1200px; margin: 0 auto;
+    height: 1px; background: rgba(255,255,255,0.04);
+    transition: background 0.45s;
+  }
+  [data-theme="light"] .sec-divider { background: rgba(0,0,0,0.05); }
 `;
 
-function ScrollReveal({ children }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Scroll-reveal hook
+// ─────────────────────────────────────────────────────────────────────────────
+function useSR() {
   const ref = useRef(null);
-  const [isVisible, setIsVisible] = useState(false);
-
+  const [visible, setVisible] = useState(false);
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.unobserve(entry.target);
-        }
-      },
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect(); } },
       { threshold: 0.1 }
     );
-
-    if (ref.current) {
-      observer.observe(ref.current);
-    }
-
-    return () => {
-      if (ref.current) {
-        observer.unobserve(ref.current);
-      }
-    };
+    obs.observe(el);
+    return () => obs.disconnect();
   }, []);
+  return [ref, visible];
+}
 
+// Wrap a block in scroll-reveal
+function SR({ children, delay = '', style = {} }) {
+  const [ref, visible] = useSR();
   return (
-    <div ref={ref} className={`scroll-animate ${isVisible ? 'animated' : ''}`}>
+    <div ref={ref} className={`sr ${visible ? 'visible' : ''} ${delay}`} style={style}>
       {children}
     </div>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const { theme } = useTheme();
-  const [typedText, setTypedText] = useState('');
+  const [typed, setTyped] = useState('');
   const fullText = "Connecting to Case Vault... Found 3 documents. Extracting core issues under Indian Contract Act, Section 56. Compiling opening argument...";
 
   useEffect(() => {
-    let index = 0;
-    let isMounted = true;
-    const type = () => {
-      if (!isMounted) return;
-      setTypedText(fullText.slice(0, index));
-      index++;
-      if (index > fullText.length) {
-        setTimeout(() => {
-          index = 0;
-          type();
-        }, 5000);
-      } else {
-        setTimeout(type, 40);
-      }
+    let idx = 0, alive = true;
+    const go = () => {
+      if (!alive) return;
+      setTyped(fullText.slice(0, idx));
+      idx++;
+      if (idx > fullText.length) { setTimeout(() => { idx = 0; go(); }, 4800); }
+      else { setTimeout(go, 38); }
     };
-    type();
-    return () => {
-      isMounted = false;
-    };
+    go();
+    return () => { alive = false; };
   }, []);
 
   return (
-    <div className="landing-container" data-theme={theme}>
+    <div className="lp" data-theme={theme}>
       <style>{landingStyles}</style>
 
-      {/* Premium glassmorphism top bar (fixed) + spacer to offset its height */}
       <LandingNavbar />
       <div style={{ height: '64px' }} aria-hidden="true" />
 
-      {/* Hero Section */}
-      <div className="hero-wrapper">
-        <div className="glow-backdrop glow-1" />
-        <div className="glow-backdrop glow-2" />
-        <div className="hero-container">
-          <div className="hero-text-block">
-            <ScrollReveal>
-              <span className="hero-badge">Sovereign Legal Intelligence</span>
+      {/* ══════════════════ HERO ══════════════════ */}
+      <div className="hero-wrap">
+        <div className="glow-orb glow-orb-1" />
+        <div className="glow-orb glow-orb-2" />
+        <div className="hero-grid">
+          <div>
+            <SR>
+              <span className="hero-eyebrow">Sovereign Legal Intelligence</span>
               <h1 className="hero-h1">
-                The Intelligence<br />Behind Elite Legal Counsel.
+                The Intelligence<br />Behind <em>Elite</em><br />Legal Counsel.
               </h1>
               <p className="hero-p">
-                Synthesize contracts, run cross-document conflict audits, and query your case database with context-grounded AI precision. Engineered for elite advocates.
+                Synthesize contracts, run cross-document conflict audits, and query your entire case database with context-grounded AI precision. Built for Indian advocates.
               </p>
-              <div className="hero-buttons">
-                <Link to="/login" className="btn-luxury-primary">
+              <div className="hero-btns">
+                <Link to="/login" className="btn-primary">
                   Get Started
-                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                   </svg>
                 </Link>
-                <a href="#features" className="btn-luxury-secondary">
-                  Explore Platform
-                </a>
+                <a href="#features" className="btn-secondary">Explore Platform</a>
               </div>
-            </ScrollReveal>
+            </SR>
           </div>
-
-          <div className="hero-mockup-block">
-            <ScrollReveal>
-              <div className="luxury-terminal">
-                <div className="terminal-header">
-                  <div className="terminal-dots">
-                    <span className="dot dot-red"></span>
-                    <span className="dot dot-yellow"></span>
-                    <span className="dot dot-green"></span>
+          <div>
+            <SR delay="d2">
+              <div className="lp-terminal">
+                <div className="term-topbar">
+                  <div className="term-dots">
+                    <span className="term-dot" style={{ background: '#EF4444' }} />
+                    <span className="term-dot" style={{ background: '#F59E0B' }} />
+                    <span className="term-dot" style={{ background: '#10B981' }} />
                   </div>
-                  <div className="terminal-title">InzIQ Terminal</div>
-                  <div className="terminal-status">
-                    <span className="pulse-indicator"></span> SECURE
-                  </div>
+                  <span className="term-title">InzIQ Terminal</span>
+                  <span className="term-status"><span className="term-pulse" /> SECURE</span>
                 </div>
-                <div className="terminal-body">
-                  <div className="chat-msg user-msg">
-                    <div className="msg-meta">Advocate Prompt</div>
-                    <div className="msg-text">Analyze case files and generate the appellant opening argument for case 101.</div>
+                <div className="term-body">
+                  <div>
+                    <div className="term-msg-meta">Advocate Prompt</div>
+                    <div className="term-user-text">Analyze case files and generate the appellant opening argument for case 101.</div>
                   </div>
-                  <div className="chat-msg ai-msg">
-                    <div className="msg-meta">AI Agent</div>
-                    <div className="msg-text">
-                      <span className="typing-effect">{typedText}</span>
-                    </div>
+                  <div>
+                    <div className="term-msg-meta">AI Agent</div>
+                    <div className="term-ai-text"><span className="term-cursor">{typed}</span></div>
                   </div>
-                  <div className="terminal-output">
-                    <div className="output-header">GENERATED STRATEGY PREVIEW</div>
-                    <pre className="output-content">
-                      {`STAGE 1: Legal Issue Extraction
-- Unforeseen government ban qualifies as force majeure.
-- Appellant has zero liability post-event duration.
-
-STAGE 2: Opening Argument
-"My Lords, the performance of the contract was rendered legally impossible..."`}
-                    </pre>
+                  <div className="term-output">
+                    <div className="term-output-hdr">Generated Strategy Preview</div>
+                    <pre className="term-output-pre">{`STAGE 1: Legal Issue Extraction\n- Force majeure qualifies under Section 56.\n- Appellant bears zero liability post-event.\n\nSTAGE 2: Opening Argument\n"My Lords, performance was rendered legally\nimpossible..."`}</pre>
                   </div>
                 </div>
               </div>
-            </ScrollReveal>
+            </SR>
           </div>
         </div>
       </div>
 
-      {/* Bento Grid Features Section */}
-      <section id="features" className="features-section">
-        <div className="glow-backdrop glow-3" />
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
-          <div style={{ textAlign: 'center' }}>
-            <ScrollReveal>
-              <span className="features-badge">Platform Capability</span>
-              <h2 className="section-title">Engineered for Sovereign Precision</h2>
-              <p className="section-subtitle">A cohesive suite of modules designed for high-stakes litigation.</p>
-            </ScrollReveal>
-          </div>
+      {/* ══════════════════ FEATURES ══════════════════ */}
+      <section id="features" className="lp-section" style={{ paddingTop: '88px' }}>
+        <div className="glow-orb glow-orb-3" />
+        <div className="lp-inner">
+          <SR style={{ textAlign: 'center' }}>
+            <span className="lp-badge">Platform Modules</span>
+            <h2 className="lp-section-title">Every Tool an Elite Advocate Needs</h2>
+            <p className="lp-section-sub">Eight purpose-built modules. One sovereign console.</p>
+          </SR>
 
-          <div className="bento-grid">
-            {/* Card 1: Contract Risk (Large) */}
-            <div className="bento-card bento-card-large">
-              <div className="bento-card-glow" />
-              <div className="bento-card-content">
-                <ScrollReveal>
-                  <div className="bento-header">
-                    <span className="bento-tag">Module 01</span>
-                    <h3 className="bento-title">Contract Risk Analyzer</h3>
-                  </div>
-                  <p className="bento-description">
-                    Instantly scan agreements for liability flags, draft customized clause updates, and identify missing provisions standard to Indian Law.
-                  </p>
-                  <div className="bento-mini-mockup">
-                    <div className="mockup-clause-box">
-                      <span className="clause-tag warning">⚠️ RISK DETECTED</span>
-                      <div className="clause-title">Clause 2.4: Suspension right</div>
-                      <p className="clause-text">"...Client reserves the absolute right to suspend all payments..."</p>
-                      <div className="clause-rebuttal">AI Suggestion: Revise to mutual suspension upon 15-day written notice.</div>
-                    </div>
-                  </div>
-                </ScrollReveal>
-              </div>
-              <div className="bento-footer">
-                <ScrollReveal>
-                  <Link to="/login" className="bento-link">Launch Risk Scan ↗</Link>
-                </ScrollReveal>
-              </div>
-            </div>
+          <div className="bento">
 
-            {/* Card 2: Conflict Check (Medium) */}
-            <div className="bento-card bento-card-medium">
-              <div className="bento-card-glow" />
-              <div className="bento-card-content">
-                <ScrollReveal>
-                  <div className="bento-header">
-                    <span className="bento-tag">Module 02</span>
-                    <h3 className="bento-title">Conflict Check</h3>
+            {/* ── Contract Risk Analyzer (large) ── */}
+            <SR delay="d1" style={{ display: 'contents' }}>
+              <div className="bc bc--lg">
+                <div className="bc-glow" />
+                <div className="bc-content">
+                  <span className="bc-tag">Module 01</span>
+                  <h3 className="bc-title">Contract Risk Analyzer</h3>
+                  <p className="bc-desc">Flag liabilities in under 2 minutes. Enforce your firm's non-negotiable rule book as an absolute override on every clause.</p>
+                  <div className="mini-box">
+                    <div className="risk-pill amber">⚠️ RISK DETECTED</div>
+                    <div className="mini-clause-title">Clause 2.4 — Unilateral Suspension</div>
+                    <p className="mini-clause-text">"Client reserves absolute right to suspend all payments…"</p>
+                    <div className="mini-clause-sug">AI Fix: Mutual suspension — 15-day written notice required.</div>
                   </div>
-                  <p className="bento-description">
-                    Execute cross-file comparison audits. Locate direct representation overlaps or potential conflict tags.
-                  </p>
-                  <div className="bento-mini-list">
-                    <div className="mini-list-item conflict">
-                      <span>Tech Corp India</span>
-                      <span className="status-pill red">HIGH CONFLICT</span>
-                    </div>
-                    <div className="mini-list-item warning">
-                      <span>Rajesh Sharma</span>
-                      <span className="status-pill yellow">POTENTIAL</span>
-                    </div>
-                  </div>
-                </ScrollReveal>
+                </div>
+                <div className="bc-footer">
+                  <Link to="/login" className="bc-link">Launch Risk Scan ↗</Link>
+                </div>
               </div>
-              <div className="bento-footer">
-                <ScrollReveal>
-                  <Link to="/login" className="bento-link">Audit Roster ↗</Link>
-                </ScrollReveal>
-              </div>
-            </div>
+            </SR>
 
-            {/* Card 3: Universal RAG Chat (Full Width / Span 3) */}
-            <div className="bento-card bento-card-span">
-              <div className="bento-card-glow" />
-              <div className="bento-card-content bento-flex-row">
-                <div className="bento-flex-left">
-                  <ScrollReveal>
-                    <div className="bento-header">
-                      <span className="bento-tag">Module 03</span>
-                      <h3 className="bento-title">Universal RAG Chat</h3>
+            {/* ── Conflict Engine (small) ── */}
+            <SR delay="d2" style={{ display: 'contents' }}>
+              <div className="bc bc--sm">
+                <div className="bc-glow" style={{ background: 'radial-gradient(circle,rgba(239,68,68,0.07) 0%,transparent 70%)' }} />
+                <div className="bc-content">
+                  <span className="bc-tag">Module 02</span>
+                  <h3 className="bc-title">Conflict Engine</h3>
+                  <p className="bc-desc">Cross-file audit in seconds. No representation overlap reaches the bench.</p>
+                  <div>
+                    {[
+                      { name: 'Tech Corp India', tag: 'HIGH CONFLICT', cls: 'conflict' },
+                      { name: 'Rajesh Sharma',   tag: 'POTENTIAL',     cls: 'warn'     },
+                      { name: 'Arora & Sons Ltd', tag: 'CLEAR',        cls: 'ok'       },
+                    ].map(({ name, tag, cls }) => (
+                      <div key={name} className="mini-row">
+                        <span className="mini-row-label">{name}</span>
+                        <span className={`status-tag ${cls}`}>{tag}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bc-footer">
+                  <Link to="/login" className="bc-link">Audit Roster ↗</Link>
+                </div>
+              </div>
+            </SR>
+
+            {/* ── InzIQ AI Suite (small) ── */}
+            <SR delay="d1" style={{ display: 'contents' }}>
+              <div className="bc bc--sm" style={{ borderColor: 'rgba(139,92,246,0.12)' }}>
+                <div className="bc-glow" style={{ background: 'radial-gradient(circle,rgba(139,92,246,0.09) 0%,transparent 70%)' }} />
+                <div className="bc-content">
+                  <span className="bc-tag">Module 03</span>
+                  <h3 className="bc-title">InzIQ AI Suite</h3>
+                  <p className="bc-desc">Speak a command. Your entire case database responds in real time.</p>
+                  {[
+                    { cmd: '"Draft notice to Tech Corp"',      result: 'Drafting → /contract...' },
+                    { cmd: '"Find limitation for Arora case"', result: '14 days remaining' },
+                  ].map(({ cmd, result }) => (
+                    <div key={cmd} className="inziq-cmd">
+                      <span className="inziq-mic">🎤</span>
+                      <div>
+                        <div className="inziq-text">{cmd}</div>
+                        <div style={{ fontSize: '11px', color: '#10B981', marginTop: '2px' }}>{result}</div>
+                      </div>
                     </div>
-                    <p className="bento-description" style={{ marginBottom: '16px' }}>
-                      Query context-grounded data from vault files. Give natural directions to route screens, retrieve case documents, or search court listings.
-                    </p>
-                    <Link to="/login" className="btn-luxury-primary" style={{ alignSelf: 'flex-start' }}>
-                      Query Console
+                  ))}
+                </div>
+                <div className="bc-footer">
+                  <Link to="/login" className="bc-link">Open Console ↗</Link>
+                </div>
+              </div>
+            </SR>
+
+            {/* ── Legal Calendar (small) ── */}
+            <SR delay="d2" style={{ display: 'contents' }}>
+              <div className="bc bc--sm">
+                <div className="bc-content">
+                  <span className="bc-tag">Module 04</span>
+                  <h3 className="bc-title">Legal Calendar</h3>
+                  <p className="bc-desc">Limitation periods, hearing dates, filing deadlines — auto-tracked. Never miss a critical date.</p>
+                  <div className="cal-grid">
+                    {[
+                      { date: '07', label: 'HC Hearing', type: 'urgent', badge: 'TODAY' },
+                      { date: '14', label: 'Limitation', type: 'soon',   badge: '7 DAYS' },
+                      { date: '28', label: 'NCLT Filing', type: '',      badge: '' },
+                    ].map(({ date, label, type, badge }) => (
+                      <div key={date} className={`cal-item ${type}`}>
+                        <div className="cal-date">{date}</div>
+                        <div className="cal-label">{label}</div>
+                        {badge && <div className={`cal-badge ${type}`}>{badge}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bc-footer">
+                  <Link to="/login" className="bc-link">Open Calendar ↗</Link>
+                </div>
+              </div>
+            </SR>
+
+            {/* ── Virtual Courtroom (large) ── */}
+            <SR delay="d3" style={{ display: 'contents' }}>
+              <div className="bc bc--lg" style={{ borderColor: 'rgba(16,185,129,0.1)' }}>
+                <div className="bc-glow" style={{ background: 'radial-gradient(circle,rgba(16,185,129,0.07) 0%,transparent 70%)' }} />
+                <div className="bc-content bc-flex">
+                  <div className="bc-flex-l">
+                    <span className="bc-tag">Module 05</span>
+                    <h3 className="bc-title">Virtual Courtroom</h3>
+                    <p className="bc-desc">Stress-test every argument before the bench. AI opposition counsel probes every weak point.</p>
+                    <Link to="/login" className="btn-primary" style={{ alignSelf: 'flex-start', fontSize: '13px', padding: '10px 20px' }}>
+                      Enter War Room
                     </Link>
-                  </ScrollReveal>
+                  </div>
+                  <div className="bc-flex-r">
+                    {[
+                      { icon: '⚖️', title: 'Bench Q: "Section 56 applies?"',      text: 'AI surfaces 3 contrary precedents for drill.' },
+                      { icon: '🔥', title: 'Weakness flagged in Para 7',           text: 'Rewrite prompted before live hearing.' },
+                      { icon: '✅', title: 'Cross-exam simulated',                  text: 'Argument stress-score: 87/100.' },
+                    ].map(({ icon, title, text }) => (
+                      <div key={title} className="wr-step">
+                        <span className="wr-step-icon">{icon}</span>
+                        <div>
+                          <div className="wr-step-title">{title}</div>
+                          <div className="wr-step-text">{text}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="bento-flex-right">
-                  <ScrollReveal>
-                    <div className="terminal-mini">
-                      <div className="terminal-line"><span className="term-prompt">&gt;</span> search court calendar for June 2026</div>
-                      <div className="terminal-line success"><span className="term-prompt">&gt;</span> Found 5 events. Directing to /calendar...</div>
+              </div>
+            </SR>
+
+            {/* ── Case Vault (full width) ── */}
+            <SR delay="d1" style={{ display: 'contents' }}>
+              <div className="bc bc--fw">
+                <div className="bc-glow" />
+                <div className="bc-content bc-flex">
+                  <div className="bc-flex-l">
+                    <span className="bc-tag">Module 06 — 08</span>
+                    <h3 className="bc-title">Case Vault, Workspace & Firm Library</h3>
+                    <p className="bc-desc">
+                      All case files, briefs, and plaints — indexed, encrypted, and retrieved in seconds. Zero-retention protocol ensures client privilege is never compromised.
+                    </p>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px' }}>
+                      <Link to="/login" className="bc-link">Open Vault ↗</Link>
+                      <Link to="/login" className="bc-link" style={{ marginLeft: '8px' }}>Firm Library ↗</Link>
                     </div>
-                  </ScrollReveal>
+                  </div>
+                  <div className="bc-flex-r">
+                    {[
+                      { icon: '📄', name: 'Arora_NDA_Draft_v3.pdf',     size: '2.1 MB' },
+                      { icon: '⚖️', name: 'TechCorp_Plaint_HC.docx',    size: '840 KB' },
+                      { icon: '📋', name: 'Limitation_Matrix_2026.xlsx', size: '420 KB' },
+                      { icon: '🔒', name: 'Confidential_LOA.pdf',        size: '1.3 MB' },
+                    ].map(({ icon, name, size }) => (
+                      <div key={name} className="vault-row">
+                        <span className="vault-icon">{icon}</span>
+                        <span className="vault-name">{name}</span>
+                        <span className="vault-size">{size}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            </SR>
           </div>
         </div>
       </section>
 
-      {/* Enterprise Trust Section */}
-      <section className="trust-section">
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
-          <div className="trust-header">
-            <ScrollReveal>
-              <span className="trust-badge">Security Architecture</span>
-              <h2 className="section-title">Authoritative Data Custody</h2>
-              <p className="section-subtitle">Engineered to exceed high-stakes enterprise compliance standards.</p>
-            </ScrollReveal>
+      <div className="lp-inner" style={{ padding: '0 24px' }}><div className="sec-divider" /></div>
+
+      {/* ══════════════════ HOW IT WORKS ══════════════════ */}
+      <section className="lp-section" style={{ paddingTop: '80px', paddingBottom: '80px' }}>
+        <div className="lp-inner">
+          <SR style={{ textAlign: 'center' }}>
+            <span className="lp-badge">Workflow</span>
+            <h2 className="lp-section-title">From Upload to Strategy in 3 Steps</h2>
+            <p className="lp-section-sub">No onboarding sessions. No consultant fees. Open the console and go.</p>
+          </SR>
+          <div className="workflow-steps">
+            {[
+              {
+                n: '01',
+                title: 'Upload',
+                desc: 'Drop a contract, plaint, or case file. LexAmplify extracts, indexes, and encrypts it instantly — PDFs up to 100MB.',
+              },
+              {
+                n: '02',
+                title: 'Analyze',
+                desc: 'AI benchmarks every clause against the Indian Contract Act, IPC, RERA, and your firm\'s custom rule book simultaneously.',
+              },
+              {
+                n: '03',
+                title: 'Act',
+                desc: 'Draft rewrites, flag risk clauses, schedule hearings, and build your litigation strategy — all from a single command console.',
+              },
+            ].map(({ n, title, desc }, i) => (
+              <SR key={n} delay={`d${i + 1}`}>
+                <div className="wf-step">
+                  <div className="wf-num">{n}</div>
+                  <div className="wf-title">{title}</div>
+                  <div className="wf-desc">{desc}</div>
+                </div>
+              </SR>
+            ))}
           </div>
+        </div>
+      </section>
+
+      <div className="lp-inner" style={{ padding: '0 24px' }}><div className="sec-divider" /></div>
+
+      {/* ══════════════════ SECURITY ══════════════════ */}
+      <section id="security" className="lp-section" style={{ paddingTop: '80px', background: 'rgba(8,11,18,0.3)', transition: 'background 0.45s' }}>
+        <div className="lp-inner">
+          <SR style={{ textAlign: 'center' }}>
+            <span className="lp-badge">Security Architecture</span>
+            <h2 className="lp-section-title">Client Privilege, Engineered In</h2>
+            <p className="lp-section-sub">Not just compliance checkboxes — architecture that treats every brief as a state secret.</p>
+          </SR>
           <div className="trust-grid">
-            <div className="trust-card">
-              <ScrollReveal>
-                <div className="trust-icon">🛡️</div>
-                <h3 className="trust-card-title">AES-256 Cryptography</h3>
-                <p className="trust-card-description">All case files, plaints, and contracts are encrypted in transit and at rest using military-grade AES-256 protocols.</p>
-              </ScrollReveal>
-            </div>
-            <div className="trust-card">
-              <ScrollReveal>
-                <div className="trust-icon">🇮🇳</div>
-                <h3 className="trust-card-title">Sovereign Data Storage</h3>
-                <p className="trust-card-description">Vector databases and index engines reside strictly on sovereign cloud nodes within the territorial borders of India.</p>
-              </ScrollReveal>
-            </div>
-            <div className="trust-card">
-              <ScrollReveal>
-                <div className="trust-icon">🔒</div>
-                <h3 className="trust-card-title">Zero Retention Protocol</h3>
-                <p className="trust-card-description">Document processing vectors do not train base foundational LLMs. All database instances remain isolated.</p>
-              </ScrollReveal>
-            </div>
+            {[
+              { icon: '🛡️', title: 'AES-256 Cryptography', desc: 'Every case file, plaint, and contract encrypted in transit and at rest. Military-grade, no exceptions.' },
+              { icon: '🇮🇳', title: 'Sovereign Data Storage', desc: 'Vector databases reside exclusively on cloud nodes within Indian territorial borders. No data leaves sovereignty.' },
+              { icon: '🔒', title: 'Zero Retention Protocol', desc: 'Document vectors never train base LLMs. All instances are isolated. Your strategy stays yours.' },
+            ].map(({ icon, title, desc }) => (
+              <SR key={title}>
+                <div className="trust-card">
+                  <div className="trust-icon">{icon}</div>
+                  <h3 className="trust-title">{title}</h3>
+                  <p className="trust-desc">{desc}</p>
+                </div>
+              </SR>
+            ))}
           </div>
-          <div className="trust-seals">
-            <ScrollReveal>
-              <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <div className="seal-item">
-                  <span className="seal-dot"></span> SOC 2 TYPE II COMPLIANT
-                </div>
-                <div className="seal-item">
-                  <span className="seal-dot"></span> ISO 27001 CERTIFIED
-                </div>
-                <div className="seal-item">
-                  <span className="seal-dot"></span> GDPR &amp; DPDPA ALIGNED
-                </div>
-              </div>
-            </ScrollReveal>
-          </div>
+          <SR>
+            <div className="trust-seals">
+              {['SOC 2 TYPE II COMPLIANT', 'ISO 27001 CERTIFIED', 'GDPR & DPDPA ALIGNED'].map(s => (
+                <div key={s} className="seal"><span className="seal-dot" />{s}</div>
+              ))}
+            </div>
+          </SR>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer style={{ borderTop: '1px solid var(--border-subtle)', padding: '40px 24px', backgroundColor: 'var(--bg-sidebar)', position: 'relative', zIndex: 1 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
+      {/* ══════════════════ CTA BANNER ══════════════════ */}
+      <section id="about" className="lp-section" style={{ paddingTop: '80px', paddingBottom: '0' }}>
+        <div className="cta-band">
+          <div className="cta-band-glow" />
+          <SR>
+            <h2 className="cta-h2">Stop billing for research hours.<br />Start billing for strategy.</h2>
+            <p className="cta-sub">Join 380+ law firms already operating at elite speed.</p>
+            <div className="cta-btns">
+              <Link to="/login" className="btn-primary" style={{ fontSize: '15px', padding: '13px 30px' }}>
+                Enter Advocate Console
+                <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+              </Link>
+              <a href="mailto:enterprise@lexamplify.in" className="btn-secondary" style={{ fontSize: '15px', padding: '13px 30px' }}>
+                Talk to Sales
+              </a>
+            </div>
+          </SR>
+        </div>
+      </section>
+
+      {/* ══════════════════ FOOTER ══════════════════ */}
+      <footer className="lp-footer" style={{ marginTop: '80px' }}>
+        <div className="footer-inner">
           <div>© 2026 LexAmplify India Software Solutions. All rights reserved.</div>
-          <div style={{ display: 'flex', gap: '20px' }}>
-            <Link to="/login" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Advocate Console</Link>
-            <span style={{ color: 'var(--border-subtle)' }}>|</span>
-            <span style={{ cursor: 'help' }}>India Kanoon Citations Compliant</span>
+          <div className="footer-links">
+            <Link to="/login"  className="footer-link">Advocate Console</Link>
+            <a href="#security" className="footer-link">Security</a>
+            <a href="#pricing"  className="footer-link">Pricing</a>
+            <span style={{ cursor: 'default' }}>India Kanoon Citations Compliant</span>
           </div>
         </div>
       </footer>
+
     </div>
   );
 }

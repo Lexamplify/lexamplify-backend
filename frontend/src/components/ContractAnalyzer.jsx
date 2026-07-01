@@ -962,14 +962,15 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
   };
 
-  const handleTextAnalyze = async () => {
-    if (!rawText.trim()) {
+  const handleTextAnalyze = async (overrideText = null) => {
+    const target = (typeof overrideText === 'string' ? overrideText : rawText).trim();
+    if (!target) {
       alert('Please paste contract text or select a file to analyze.');
       return;
     }
 
     setIsAnalyzing(true);
-    const res = await analyzeContractWithGroq(rawText, ruleBookText, scanStrategy);
+    const res = await analyzeContractWithGroq(target, ruleBookText, scanStrategy);
     setIsAnalyzing(false);
 
     if (res.error) {
@@ -978,6 +979,25 @@ export default function ContractAnalyzer({ setFocusMode }) {
       loadAnalysisResults(res);
     }
   };
+
+  // Contextual voice hook: when InzIQ resolves an "analyze this contract" command
+  // while the user is already on /contract-analyzer, run the local analysis
+  // instead of re-navigating (which would remount and wipe the loaded document).
+  useEffect(() => {
+    const onPageCommand = (e) => {
+      if (e.detail?.destination !== '/contract-analyzer') return;
+      const incoming = e.detail?.data?.file_content;
+      if (incoming && incoming.trim()) {
+        const cleaned = cleanExtractedText(incoming);
+        setRawText(cleaned);
+        handleTextAnalyze(cleaned);
+      } else {
+        handleTextAnalyze();
+      }
+    };
+    window.addEventListener('inziq-page-command', onPageCommand);
+    return () => window.removeEventListener('inziq-page-command', onPageCommand);
+  }, [rawText, ruleBookText, scanStrategy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadAnalysisResults = (data) => {
     const rawClauses = data.flagged_clauses || data.clauses || [];
