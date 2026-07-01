@@ -518,6 +518,38 @@ const styles = `
     100% { background-position: -200% 0; }
   }
 
+  /* ── DOCUMENT EXTRACTION SKELETON ────────────────────────────────── */
+  .doc-skeleton {
+    background: var(--bg-dark-panel);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 16px;
+    padding: 32px 36px;
+  }
+  .doc-skeleton__head {
+    display: flex; align-items: center; gap: 12px;
+    padding-bottom: 20px; margin-bottom: 24px;
+    border-bottom: 1px solid var(--border-dark-subtle);
+  }
+  .doc-skeleton__badge {
+    width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+    background: linear-gradient(90deg, var(--bg-dark-card) 25%, var(--bg-dark-panel) 50%, var(--bg-dark-card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer-animation 1.4s infinite;
+  }
+  .doc-skel-line {
+    height: 12px; border-radius: 6px; margin-bottom: 14px;
+    background: linear-gradient(90deg, var(--bg-dark-card) 25%, var(--bg-dark-panel) 50%, var(--bg-dark-card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer-animation 1.4s infinite;
+  }
+  /* Staggered offsets make the sweep read like line-by-line document parsing */
+  .doc-skel-line:nth-child(6n+1) { animation-delay: 0s;    }
+  .doc-skel-line:nth-child(6n+2) { animation-delay: .12s;  }
+  .doc-skel-line:nth-child(6n+3) { animation-delay: .24s;  }
+  .doc-skel-line:nth-child(6n+4) { animation-delay: .36s;  }
+  .doc-skel-line:nth-child(6n+5) { animation-delay: .48s;  }
+  .doc-skel-line:nth-child(6n)   { animation-delay: .60s;  }
+
   /* ── MODALS ──────────────────────────────────────────────────────── */
   .modal-overlay {
     position: fixed; inset: 0;
@@ -753,7 +785,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   useEffect(() => {
     const incoming = location.state?.documentData;
     if (!incoming?.file_content) return;
-    const content = incoming.file_content;
+    const content = cleanExtractedText(incoming.file_content);
     setRawText(content);
     (async () => {
       setIsAnalyzing(true);
@@ -844,6 +876,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
     document.execCommand(command, false, null);
   };
 
+  // Preprocessing: extraction fuses section labels ("word.2.") to surrounding
+  // words, which shifts character indices and breaks highlight alignment.
+  // Re-insert the missing space so index tracking matches the rendered text.
+  const cleanExtractedText = (text) => (text || '').replace(/(\w+)\.(\d+)\./g, '$1. $2.');
+
   // ── 1. FILE UPLOAD & ANALYZE HANDLERS ────────────────────────────────
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return;
@@ -871,7 +908,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       return;
     }
     // Populate the contract text and surface the "Ready to Analyze" state.
-    setRawText(extracted.text);
+    setRawText(cleanExtractedText(extracted.text));
   };
 
   const RULE_BOOK_SEPARATOR = '\n\n--- [Next Document] ---\n\n';
@@ -1523,6 +1560,24 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   </div>
                   <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginTop: '20px', opacity: 0.6 }}>Dense PDFs can take up to 20 seconds</p>
                 </div>
+              ) : contractUploadLoading ? (
+                /* ── TEXT EXTRACTION STATE — layout-wide document skeleton ── */
+                <div className="doc-skeleton">
+                  <div className="doc-skeleton__head">
+                    <div className="doc-skeleton__badge" />
+                    <div style={{ flex: 1 }}>
+                      <div className="doc-skel-line" style={{ width: '45%', height: '15px', marginBottom: '9px' }} />
+                      <div className="doc-skel-line" style={{ width: '28%', marginBottom: 0 }} />
+                    </div>
+                    <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--accent-primary)', animation: 'branding-pulse 1s infinite alternate' }} />
+                      Reading document…
+                    </span>
+                  </div>
+                  {['96%', '88%', '92%', '70%', '84%', '90%', '60%', '94%', '78%', '86%', '52%', '91%'].map((w, i) => (
+                    <div key={i} className="doc-skel-line" style={{ width: w }} />
+                  ))}
+                </div>
               ) : (
                 <>
                   {/* ── HERO ── */}
@@ -1544,13 +1599,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         Contract Document
                       </div>
 
-                      {/* Contract drop zone */}
-                      {contractUploadLoading ? (
-                        <div className="drag-drop-zone" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2.5px solid rgba(99,102,241,0.2)', borderTopColor: '#6366F1', animation: 'spin 0.9s linear infinite' }} />
-                          <span style={{ fontSize: '12.5px', color: 'rgba(99,102,241,0.85)' }}>Extracting text…</span>
-                        </div>
-                      ) : (
+                      {/* Contract drop zone (extraction shows a layout-wide skeleton at panel level) */}
+                      {(
                         <div
                           className="drag-drop-zone transition-all duration-300 ease-in-out"
                           onClick={() => fileInputRef.current?.click()}
