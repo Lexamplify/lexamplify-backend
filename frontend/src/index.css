@@ -126,7 +126,7 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   height: 100%;
-  transition: transform 0.3s ease, width 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
 }
 
@@ -822,6 +822,36 @@ textarea:focus,
 .sidebar.sidebar-collapsed .nav-icon {
   opacity: 1 !important;
 }
+/* ── Brand header + logo (Task 1) ─────────────────────────────────────── */
+.sidebar-header {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transform-origin: center center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Collapsed: text is unmounted; the mark scales down and centers in the strip */
+.sidebar.sidebar-collapsed .sidebar-logo-mark {
+  transform: scale(0.86);
+}
+/* Expanded brand text fades/slides in via the container transition */
+.sidebar-brand-text {
+  overflow: hidden;
+  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .sidebar-collapse-btn {
   display: flex;
   align-items: center;
@@ -833,7 +863,7 @@ textarea:focus,
   background: transparent;
   color: var(--text-dark-muted);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
   padding: 0;
 }
@@ -841,6 +871,35 @@ textarea:focus,
   background: rgba(255,255,255,0.06);
   color: white;
   border-color: rgba(255,255,255,0.15);
+}
+
+/* ── Merge logic: collapsed button animates left, sits over the logo ───── */
+.sidebar-collapse-btn.merged {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border-color: transparent;
+  background: transparent;
+  color: transparent;         /* hidden chevron — logo shows through */
+  z-index: 3;
+}
+.sidebar-collapse-btn.merged svg {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(2px);
+}
+/* On hover the button opaquely covers the logo and reveals the expand chevron */
+.sidebar-collapse-btn.merged:hover {
+  background: var(--bg-dark-sidebar);
+  border-color: rgba(255,255,255,0.15);
+  color: white;
+  box-shadow: 0 0 0 4px rgba(0,0,0,0.25);
+}
+.sidebar-collapse-btn.merged:hover svg {
+  transform: translateX(0) rotate(0deg);
 }
 @media (max-width: 768px) {
   .sidebar.sidebar-collapsed {
@@ -893,20 +952,6 @@ textarea:focus,
   box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
-   SIDEBAR LOGO MARK BOX
-   ───────────────────────────────────────────────────────────────────────── */
-.sidebar-logo-mark {
-  width: 34px;
-  height: 34px;
-  background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
-}
 
 /* ─────────────────────────────────────────────────────────────────────────
    UNIVERSAL AGENT BOTTOM BUTTON (sidebar glow button)

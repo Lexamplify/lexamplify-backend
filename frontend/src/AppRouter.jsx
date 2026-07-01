@@ -15,6 +15,7 @@ import VaultView from './components/VaultView';
 import CaseWorkspace from './components/CaseWorkspace';
 import WarRoomView from './components/WarRoomView';
 import FirmLibrary from './components/FirmLibrary';
+import LexLogoMark from './components/LexLogoMark';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -255,21 +256,18 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
       <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed' : ''}`}>
 
-        {/* Logo */}
-        <div style={{ padding: isIconOnly ? '14px 10px' : '18px 16px 16px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: isIconOnly ? 'center' : 'space-between' }}>
+        {/* Logo / brand header */}
+        <div
+          className={`sidebar-header ${isIconOnly ? 'collapsed' : ''}`}
+          style={{ padding: isIconOnly ? '14px 10px' : '18px 16px 16px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
+        >
+          <div className="sidebar-brand" style={{ justifyContent: isIconOnly ? 'center' : 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-              <div style={{
-                width: '34px', height: '34px',
-                background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
-                borderRadius: '9px', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(59,130,246,0.35)',
-              }}>
-                {Icons.scales(18)}
+              <div className="sidebar-logo-mark">
+                <LexLogoMark size={34} />
               </div>
               {!isIconOnly && (
-                <div style={{ minWidth: 0 }}>
+                <div className="sidebar-brand-text" style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>LexAmplify</div>
                   <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Enterprise Console</div>
                 </div>
@@ -277,11 +275,12 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             </div>
             {!focusMode && (
               <button
-                className="sidebar-collapse-btn"
+                className={`sidebar-collapse-btn${isCollapsed ? ' merged' : ''}`}
                 onClick={() => setIsCollapsed(c => !c)}
                 title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
-                {isCollapsed ? Icons.chevronRight(12) : Icons.chevronLeft(12)}
+                {isCollapsed ? Icons.chevronRight(14) : Icons.chevronLeft(12)}
               </button>
             )}
           </div>

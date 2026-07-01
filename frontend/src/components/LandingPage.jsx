@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import LandingNavbar from './LandingNavbar';
 
 const landingStyles = `
   .landing-container {
@@ -778,7 +779,7 @@ function ScrollReveal({ children }) {
 }
 
 export default function LandingPage() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const [typedText, setTypedText] = useState('');
   const fullText = "Connecting to Case Vault... Found 3 documents. Extracting core issues under Indian Contract Act, Section 56. Compiling opening argument...";
 
@@ -808,55 +809,9 @@ export default function LandingPage() {
     <div className="landing-container" data-theme={theme}>
       <style>{landingStyles}</style>
 
-      {/* Header */}
-      <header className="landing-header">
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px' }}>
-          {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '20px', fontWeight: '700', letterSpacing: '0.5px' }}>LexAmplify</span>
-            <span style={{ fontSize: '10px', textTransform: 'uppercase', background: 'var(--accent-muted)', color: 'var(--accent-primary)', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
-              India
-            </span>
-          </div>
-
-          {/* Navigation Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {/* Theme Toggle Button */}
-            <button
-              onClick={toggleTheme}
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '8px',
-                width: '40px',
-                height: '40px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: 'var(--text-primary)',
-              }}
-              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-            >
-              {theme === 'dark' ? (
-                <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="5" />
-                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                </svg>
-              ) : (
-                <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-              )}
-            </button>
-
-            {/* Enter Console Button */}
-            <Link to="/login" className="btn-luxury-primary" style={{ padding: '8px 18px', fontSize: '14px' }}>
-              Enter Console
-            </Link>
-          </div>
-        </div>
-      </header>
+      {/* Premium glassmorphism top bar (fixed) + spacer to offset its height */}
+      <LandingNavbar />
+      <div style={{ height: '64px' }} aria-hidden="true" />
 
       {/* Hero Section */}
       <div className="hero-wrapper">
