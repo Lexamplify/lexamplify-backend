@@ -199,17 +199,25 @@ const styles = `
     outline: none;
     font-family: Georgia, 'Times New Roman', serif;
     font-size: 15px !important;
-    line-height: 1.8 !important;
-    white-space: pre-wrap;
+    line-height: 1.85 !important;
+    word-break: break-word;
     color: var(--text-dark-primary);
     min-height: 65vh !important;
-    padding: 40px 48px !important;
+    padding: 44px 52px !important;
     background: var(--bg-dark-card);
-    border-radius: 2px;
-    box-shadow: 0 2px 20px rgba(0,0,0,0.15);
+    border-radius: 3px;
+    box-shadow: 0 4px 32px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12);
     box-sizing: border-box;
     border: 1px solid var(--border-dark-subtle);
     letter-spacing: 0.01em;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  /* Paragraph blocks inside the document scanner */
+  .scanner-body .doc-para {
+    margin: 0 0 1.1em;
+    text-align: justify;
+    color: inherit;
   }
   /* Defeat global p/span { color } rule for scanner content */
   .scanner-body p,
@@ -220,11 +228,12 @@ const styles = `
     background: #ffffff;
     color: #1a1a1a;
     border-color: #e8e4de;
-    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+    box-shadow: 0 4px 32px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.06);
   }
   [data-theme="light"] .scanner-body p,
   [data-theme="light"] .scanner-body span,
   [data-theme="light"] .scanner-body div { color: #1a1a1a; }
+  [data-theme="light"] .scanner-body .doc-para { color: #1a1a1a; }
 
   /* ── ANALYSIS COLUMN ─────────────────────────────────────────────── */
   .analysis-column {
@@ -392,26 +401,27 @@ const styles = `
   .risk-mark {
     display: inline;
     cursor: pointer;
-    padding: 2px 0;
-    padding-left: 7px;
-    line-height: 1.5;
+    padding: 2px 5px 2px 7px;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
-    border-radius: 3px;
+    border-radius: 2px;
     transition: background-color 0.2s ease-in-out;
   }
   .risk-mark.red-mark {
-    background-color: rgba(239,68,68,0.12);
-    color: #FCA5A5;
-    border-left: 3px solid rgba(239,68,68,0.65);
+    background-color: rgba(239,68,68,0.13);
+    border-left: 3px solid rgba(239,68,68,0.75);
   }
   .risk-mark.amber-mark {
-    background-color: rgba(245,158,11,0.12);
-    color: #FCD34D;
-    border-left: 3px solid rgba(245,158,11,0.65);
+    background-color: rgba(245,158,11,0.13);
+    border-left: 3px solid rgba(245,158,11,0.75);
   }
-  .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.22); }
-  .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.22); }
+  .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.24); }
+  .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.24); }
+  /* Light theme: stronger highlights on white background */
+  [data-theme="light"] .risk-mark.red-mark   { background-color: rgba(239,68,68,0.11); border-left-color: #EF4444; }
+  [data-theme="light"] .risk-mark.amber-mark { background-color: rgba(245,158,11,0.11); border-left-color: #D97706; }
+  [data-theme="light"] .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.2); }
+  [data-theme="light"] .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.2); }
 
   /* ── RISK CLAUSE LIST (overview when no clause selected) ────────── */
   .clause-list-item {
@@ -740,16 +750,16 @@ const styles = `
   .analysis-column textarea,
   .input-textarea {
     background: rgba(255,255,255,0.04) !important;
-    border: 1px solid var(--border-dark-subtle) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
     border-radius: 8px !important;
     padding: 10px 12px !important;
-    color: var(--text-dark-primary) !important;
+    color: #E5E7EB !important;
     font-family: var(--font-sans);
     font-size: 13.5px;
     outline: none;
     width: 100%;
     box-sizing: border-box;
-    transition: all 0.3s ease !important;
+    transition: border-color 0.2s !important;
   }
   .analysis-column select:focus,
   .analysis-column input[type="text"]:focus,
@@ -1940,20 +1950,37 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'scanner' ? 'active' : ''}`}
                     onClick={() => setLeftTab('scanner')}
                   >
-                    📝 Contract Text
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Contract Text
                   </button>
                   <button
                     className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'autodraft' ? 'active' : ''}`}
                     onClick={() => setLeftTab('autodraft')}
                   >
-                    🤖 Auto-Draft
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Auto-Draft
                   </button>
                 </div>
 
                 {leftTab === 'scanner' && (
-                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>
-                    Editable Workspace. Click highlights to inspect risks.
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {clauses.filter(c => c.risk === 'RED').length > 0 && (
+                      <span style={{ fontSize: '10.5px', padding: '2px 7px', borderRadius: '10px', background: 'rgba(239,68,68,0.12)', color: '#FCA5A5', fontWeight: 700, border: '1px solid rgba(239,68,68,0.2)', letterSpacing: '0.03em' }}>
+                        {clauses.filter(c => c.risk === 'RED').length} HIGH RISK
+                      </span>
+                    )}
+                    {clauses.filter(c => c.risk === 'AMBER').length > 0 && (
+                      <span style={{ fontSize: '10.5px', padding: '2px 7px', borderRadius: '10px', background: 'rgba(245,158,11,0.12)', color: '#FCD34D', fontWeight: 700, border: '1px solid rgba(245,158,11,0.2)', letterSpacing: '0.03em' }}>
+                        {clauses.filter(c => c.risk === 'AMBER').length} MED RISK
+                      </span>
+                    )}
+                    {clauses.length > 0 && clauses.filter(c => c.risk === 'RED').length === 0 && clauses.filter(c => c.risk === 'AMBER').length === 0 && (
+                      <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)' }}>Click highlights to inspect risks</span>
+                    )}
+                    {clauses.length === 0 && (
+                      <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Editable Workspace</span>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -2561,56 +2588,123 @@ export default function ContractAnalyzer({ setFocusMode }) {
 }
 
 // ── UTILITIES ────────────────────────────────────────────────────────
+
+// Normalize punctuation for fuzzy matching (1-to-1 char replacement — positions preserved)
+const normalizeForMatch = (s) => s
+  .replace(/[‘’ʼ′`]/g, "'")
+  .replace(/[“”„«»″]/g, '"')
+  .replace(/[–—‒―−]/g, '-')
+  .replace(/ /g, ' ')
+  .replace(/…/g, '...');
+
+const buildFlexRegex = (text, flags = 'gi') => {
+  try {
+    const esc = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const flex = esc.replace(/\s+/g, '[\\s]+');
+    return new RegExp(flex, flags);
+  } catch (_) { return null; }
+};
+
 const renderDocumentScanner = (rawText, clauses) => {
   if (!rawText) return '';
+
+  const normRaw = normalizeForMatch(rawText);
+
   const riskClauses = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER' || c.isRevised);
+  // Process longest clauses first so they win overlap conflicts
   const sortedClauses = [...riskClauses].sort((a, b) => b.text.length - a.text.length);
 
   const ranges = [];
-  sortedClauses.forEach(c => {
-    const trimmed = c.text.trim();
-    if (!trimmed) return;
 
-    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const flexible = escaped.replace(/\s+/g, '[\\s]+');
-    try {
-      const regex = new RegExp(flexible);
-      const match = regex.exec(rawText);
-      if (match) {
-        const start = match.index;
-        const end = match.index + match[0].length;
-        if (!ranges.some(r => start < r.end && end > r.start)) {
-          ranges.push({ start, end, clause: c });
+  const tryLocate = (clauseText) => {
+    const trimmed = clauseText.trim();
+    if (!trimmed || trimmed.length < 6) return null;
+
+    // Strategy 1: flexible regex with gi flags on original rawText
+    const r1 = buildFlexRegex(trimmed);
+    if (r1) {
+      const m = r1.exec(rawText);
+      if (m) return { start: m.index, end: m.index + m[0].length };
+    }
+
+    // Strategy 2: normalize quotes/dashes then match
+    // Since normalizeForMatch is 1-to-1, positions in normRaw === positions in rawText
+    const normClause = normalizeForMatch(trimmed);
+    const r2 = buildFlexRegex(normClause);
+    if (r2) {
+      const m = r2.exec(normRaw);
+      if (m) return { start: m.index, end: m.index + m[0].length };
+    }
+
+    // Strategy 3: anchor on first 70 chars and estimate end (handles AI truncation)
+    const fragment = trimmed.slice(0, 70).trim();
+    if (fragment.length > 20) {
+      const r3 = buildFlexRegex(fragment);
+      if (r3) {
+        const m = r3.exec(rawText);
+        if (m) {
+          const start = m.index;
+          const end = Math.min(start + trimmed.length + 15, rawText.length);
+          return { start, end };
         }
       }
-    } catch (e) {
-      // safe fallback
+      // Also try normalized fragment
+      const normFrag = normalizeForMatch(fragment);
+      const r3n = buildFlexRegex(normFrag);
+      if (r3n) {
+        const m = r3n.exec(normRaw);
+        if (m) {
+          const start = m.index;
+          const end = Math.min(start + trimmed.length + 15, rawText.length);
+          return { start, end };
+        }
+      }
+    }
+
+    return null;
+  };
+
+  sortedClauses.forEach(c => {
+    const loc = tryLocate(c.text);
+    if (loc) {
+      const { start, end } = loc;
+      if (!ranges.some(r => start < r.end && end > r.start)) {
+        ranges.push({ start, end, clause: c });
+      }
     }
   });
 
   ranges.sort((a, b) => a.start - b.start);
 
+  // Convert a plain text segment to HTML (paragraphs + line breaks only — no pre-wrap)
+  const textToHtml = (text) => {
+    if (!text) return '';
+    return escapeHtml(text)
+      .replace(/\n{2,}/g, '</p><p class="doc-para">')
+      .replace(/\n/g, '<br>');
+  };
+
   let html = '';
   let cursor = 0;
+
   ranges.forEach(r => {
     const c = r.clause;
-
-    html += escapeHtml(rawText.slice(cursor, r.start));
+    html += textToHtml(rawText.slice(cursor, r.start));
 
     if (c.isRevised) {
       const animationClass = c.isNewlyRevised ? 'newly-revised-ins' : 'revised-ins';
       html += `<del class="revised-del" data-id="${c.id}">${escapeHtml(rawText.slice(r.start, r.end))}</del><ins class="${animationClass}" data-id="${c.id}">${escapeHtml(c.revisedText)}</ins>`;
     } else {
       const markClass = c.risk === 'RED' ? 'red-mark' : 'amber-mark';
-      html += `<mark id="clause-left-${c.id}" data-id="${c.id}" class="risk-mark ${markClass}">${escapeHtml(rawText.slice(r.start, r.end))}</mark>`;
+      const titleAttr = c.clauseTitle ? ` title="${escapeHtml(c.clauseTitle)}"` : '';
+      html += `<mark id="clause-left-${c.id}" data-id="${c.id}"${titleAttr} class="risk-mark ${markClass}">${escapeHtml(rawText.slice(r.start, r.end))}</mark>`;
     }
 
     cursor = r.end;
   });
 
-  html += escapeHtml(rawText.slice(cursor));
-  html = html.replace(/\n\n/g, '</p><p style="margin-bottom: 15px;">').replace(/\n/g, '<br>');
-  return `<p style="margin-bottom: 15px;">${html}</p>`;
+  html += textToHtml(rawText.slice(cursor));
+  return `<p class="doc-para">${html}</p>`;
 };
 
 const escapeHtml = (str) => {
