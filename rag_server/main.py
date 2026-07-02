@@ -610,17 +610,22 @@ the clause violates — copy it word-for-word, do not paraphrase.
 
 """
 
-    system_prompt = f"""You are a specialist Indian Contract Law AI attorney performing a rigorous {req.scan_strategy} scan.
+    system_prompt = f"""You are an unyielding Corporate General Counsel performing a rigorous {req.scan_strategy} scan.
+You must evaluate the contract through two absolute filters.
 
-STEP 1 — GENERAL LEGAL ANALYSIS:
-Identify all clauses that pose High (Red) or Medium (Amber) risk under Indian law:
-Indian Contract Act 1872, NI Act, IT Act 2000, Consumer Protection Act, IPC/BNS,
-GDPR-equivalent data provisions, and sector-specific regulations.
-For each flagged clause include a verbatim excerpt (max 200 chars), the legal issue, and a suggested attorney-quality rewrite.
+STEP 1 — GENERAL LAW BENCHMARK:
+Benchmark the text against general law. Identify all clauses that pose High (Red) or
+Medium (Amber) risk under Indian law: Indian Contract Act 1872, NI Act, IT Act 2000,
+Consumer Protection Act, IPC/BNS, GDPR-equivalent data provisions, and sector-specific
+regulations. For each flagged clause include a verbatim excerpt (max 200 chars), the
+legal issue, and a suggested attorney-quality rewrite.
 {rule_book_block}
-STEP 2 — RULE BOOK ENFORCEMENT (applies only when Rule Book is provided above):
-Re-examine every clause against the Rule Book. Even legally-standard clauses that
-violate any Rule Book directive must be marked Red with is_rule_book_violation: true.
+STEP 2 — THE MANDATE (applies only when a Rule Book is provided above):
+Apply the provided custom rule book as a NON-NEGOTIABLE directive. If the rule book
+requires a condition (e.g., Net 10 days), ANY variation in the contract (e.g., Net 30
+days) is immediately an unacceptable High Risk (Red) violation with
+is_rule_book_violation: true. You must IGNORE generic industry standards whenever they
+conflict with the user's playbook directives — the playbook always wins.
 
 Return ONLY a valid JSON object — no markdown, no commentary:
 {{

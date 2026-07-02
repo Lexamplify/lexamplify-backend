@@ -76,11 +76,12 @@ const styles = `
     font-size: 12.5px;
     line-height: 1.55;
     flex-shrink: 0;
-    color: #94A3B8;
+    color: var(--text-dark-muted);
     display: flex;
     align-items: flex-start;
     gap: 10px;
     overflow: hidden;
+    transition: all 0.3s ease;
   }
   .summary-toggle-btn {
     flex-shrink: 0;
@@ -254,7 +255,7 @@ const styles = `
     transition: all 0.2s;
   }
   .analysis-tab-btn:hover { color: white; }
-  .analysis-tab-btn.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary); font-weight: 600; }
+  .analysis-tab-btn.active { color: #A78BFA; border-bottom-color: #8B5CF6; font-weight: 600; }
 
   .analysis-panel-body {
     flex: 1;
@@ -387,6 +388,31 @@ const styles = `
   }
   .input-textarea:focus { border-color: var(--accent-primary); }
 
+  /* ── RISK MARK HIGHLIGHTS (document left pane) ───────────────────── */
+  .risk-mark {
+    display: inline;
+    cursor: pointer;
+    padding: 2px 0;
+    padding-left: 7px;
+    line-height: 1.5;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    border-radius: 3px;
+    transition: background-color 0.2s ease-in-out;
+  }
+  .risk-mark.red-mark {
+    background-color: rgba(239,68,68,0.12);
+    color: #FCA5A5;
+    border-left: 3px solid rgba(239,68,68,0.65);
+  }
+  .risk-mark.amber-mark {
+    background-color: rgba(245,158,11,0.12);
+    color: #FCD34D;
+    border-left: 3px solid rgba(245,158,11,0.65);
+  }
+  .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.22); }
+  .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.22); }
+
   /* ── RISK CLAUSE LIST (overview when no clause selected) ────────── */
   .clause-list-item {
     display: flex;
@@ -396,14 +422,14 @@ const styles = `
     border-radius: 8px;
     border: 1px solid var(--border-dark-subtle);
     cursor: pointer;
-    transition: all 0.18s;
+    transition: all 0.3s ease;
     background: rgba(255,255,255,0.01);
   }
-  .clause-list-item:hover { background: rgba(255,255,255,0.04); border-color: rgba(59,130,246,0.3); }
-  .clause-list-item.red-item { border-left: 3px solid #EF4444; }
-  .clause-list-item.amber-item { border-left: 3px solid #F59E0B; }
+  .clause-list-item:hover { background: rgba(255,255,255,0.04); border-color: rgba(139,92,246,0.25); box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+  .clause-list-item.red-item   { border-left: 4px solid var(--accent-danger); }
+  .clause-list-item.amber-item { border-left: 4px solid var(--accent-warning); }
   .clause-number { font-size: 10px; font-weight: 700; color: var(--text-dark-muted); min-width: 18px; margin-top: 2px; }
-  .clause-text-preview { font-size: 12.5px; color: #D1D5DB; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .clause-text-preview { font-size: 12.5px; color: var(--text-dark-secondary); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .clause-risk-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; white-space: nowrap; margin-left: auto; flex-shrink: 0; }
   .clause-risk-badge.red   { background: rgba(239,68,68,0.15);  color: #FCA5A5; }
   .clause-risk-badge.amber { background: rgba(245,158,11,0.15); color: #FCD34D; }
@@ -414,6 +440,7 @@ const styles = `
     border: 1px solid var(--border-dark-subtle);
     border-radius: 10px;
     padding: 14px;
+    transition: all 0.3s ease;
   }
 
   .original-clause-box {
@@ -427,7 +454,8 @@ const styles = `
     margin-top: 8px;
     max-height: 120px;
     overflow-y: auto;
-    color: #D1D5DB;
+    color: var(--text-dark-secondary);
+    transition: all 0.3s ease;
   }
 
   /* ── AUTOCOMPLETE ────────────────────────────────────────────────── */
@@ -447,9 +475,9 @@ const styles = `
     padding: 10px 14px;
     cursor: pointer;
     font-size: 12.5px;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-    transition: background 0.15s;
-    color: #9CA3AF;
+    border-bottom: 1px solid var(--border-dark-subtle);
+    transition: all 0.15s ease;
+    color: var(--text-dark-muted);
   }
   .autocomplete-item:hover { background: rgba(59,130,246,0.1); color: white; }
 
@@ -478,31 +506,94 @@ const styles = `
   .chat-message-bubble.bot {
     background: rgba(255,255,255,0.04);
     border: 1px solid var(--border-dark-subtle);
-    color: #D1D5DB;
+    color: var(--text-dark-secondary);
     align-self: flex-start;
     border-top-left-radius: 3px;
+    transition: all 0.3s ease;
   }
 
   /* ── PRECEDENTS ──────────────────────────────────────────────────── */
   .precedent-card {
-    border: 1px solid var(--border-dark-subtle);
+    border: 1px solid rgba(255,255,255,0.06);
     background: rgba(255,255,255,0.02);
     border-radius: 10px;
     padding: 14px 16px;
-    transition: background 0.18s;
+    transition: all 0.2s ease-in-out;
+    transform: translateY(0);
   }
-  .precedent-card:hover { background: rgba(255,255,255,0.04); }
-  .precedent-link { color: var(--accent-primary); text-decoration: none; font-weight: 600; font-size: 13.5px; }
-  .precedent-link:hover { text-decoration: underline; }
+  .precedent-card:hover {
+    background: rgba(255,255,255,0.05);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    border-color: rgba(255,255,255,0.12);
+  }
+  .precedent-link { color: var(--link-blue); text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-flex; align-items: center; gap: 5px; transition: color 0.2s ease; }
+  .precedent-link:hover { color: var(--link-blue-hover); text-decoration: underline; }
 
   /* ── RECOMMENDATIONS ─────────────────────────────────────────────── */
   .rec-protection-card {
-    background: rgba(245,158,11,0.04);
-    border: 1px solid rgba(245,158,11,0.2);
-    border-left: 3px solid var(--accent-warning);
-    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 10px;
     padding: 14px;
+    backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
   }
+
+  /* Custom checkbox */
+  .custom-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 17px;
+    height: 17px;
+    min-width: 17px;
+    border: 1.5px solid rgba(255,255,255,0.18);
+    border-radius: 5px;
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.18s;
+  }
+  .custom-checkbox:checked {
+    background: #8B5CF6;
+    border-color: #8B5CF6;
+  }
+  .custom-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: 2px solid #fff;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+  }
+
+  /* Custom select wrapper */
+  .custom-select-wrapper {
+    position: relative;
+    width: 100%;
+  }
+  .custom-select-wrapper select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    padding-right: 36px !important;
+    cursor: pointer;
+  }
+  .custom-select-chevron {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--text-dark-muted);
+    display: flex;
+    align-items: center;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── SHIMMER LOADER ──────────────────────────────────────────────── */
   .shimmer-bar {
@@ -553,30 +644,95 @@ const styles = `
   /* ── MODALS ──────────────────────────────────────────────────────── */
   .modal-overlay {
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.75);
+    background: rgba(0,0,0,0.8);
     display: flex; align-items: center; justify-content: center;
     z-index: 1000; padding: 20px;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(8px);
   }
   .export-modal-card {
-    background: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 14px;
-    width: 100%; max-width: 480px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    background: rgba(var(--modal-bg-rgb), 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    width: 100%; max-width: 540px;
+    box-shadow: var(--shadow-xl);
+    overflow: hidden;
+    transition: all 0.3s ease;
   }
-  .format-selection-card {
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 10px;
-    padding: 14px;
-    display: flex; align-items: center; gap: 12px;
-    cursor: pointer; transition: all 0.2s;
+
+  /* Format tiles */
+  .format-tile {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+    cursor: pointer; transition: all 0.2s ease;
+    background: rgba(255,255,255,0.02);
+    position: relative;
   }
-  .format-selection-card.selected {
+  .format-tile:hover {
+    border-color: rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.04);
+    transform: translateY(-1px);
+  }
+  .format-tile.selected {
     border-color: var(--accent-primary);
-    background: rgba(59,130,246,0.07);
-    box-shadow: 0 0 0 1px rgba(59,130,246,0.3);
+    background: rgba(59,130,246,0.08);
+    box-shadow: 0 0 0 1px rgba(59,130,246,0.25), 0 4px 16px rgba(59,130,246,0.1);
   }
+  .format-tile-icon-wrap {
+    width: 38px; height: 38px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+  }
+  .format-tile.selected .format-tile-icon-wrap {
+    background: rgba(59,130,246,0.12);
+    border-color: rgba(59,130,246,0.3);
+  }
+  .format-tile-check {
+    position: absolute; top: 10px; right: 10px;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.18s ease;
+  }
+  .format-tile.selected .format-tile-check {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+  }
+
+  /* Module pills for cross-save */
+  .module-pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 14px; border-radius: 100px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.03);
+    cursor: pointer; font-size: 12px; font-weight: 500;
+    color: var(--text-dark-muted);
+    transition: all 0.2s ease;
+    white-space: nowrap; user-select: none;
+  }
+  .module-pill:hover {
+    border-color: rgba(167,139,250,0.35);
+    background: rgba(124,58,237,0.06);
+    color: var(--text-dark-primary);
+  }
+  .module-pill.active {
+    border-color: rgba(139,92,246,0.6);
+    background: rgba(139,92,246,0.14);
+    color: #C4B5FD;
+    box-shadow: 0 0 0 1px rgba(139,92,246,0.2);
+  }
+  .module-pill-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    transition: all 0.2s ease;
+  }
+  .module-pill.active .module-pill-dot { background: #A78BFA; box-shadow: 0 0 4px #A78BFA; }
 
   /* ── FORM INPUTS (analysis column) ──────────────────────────────── */
   .analysis-column select,
@@ -584,16 +740,16 @@ const styles = `
   .analysis-column textarea,
   .input-textarea {
     background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
+    border: 1px solid var(--border-dark-subtle) !important;
     border-radius: 8px !important;
     padding: 10px 12px !important;
-    color: #E5E7EB !important;
+    color: var(--text-dark-primary) !important;
     font-family: var(--font-sans);
     font-size: 13.5px;
     outline: none;
     width: 100%;
     box-sizing: border-box;
-    transition: border-color 0.2s !important;
+    transition: all 0.3s ease !important;
   }
   .analysis-column select:focus,
   .analysis-column input[type="text"]:focus,
@@ -760,6 +916,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [includeDraft, setIncludeDraft] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [crossSaveTargets, setCrossSaveTargets] = useState([]);
+  const [crossSaveStatus, setCrossSaveStatus] = useState('');
 
   // Rule Book states
   const [ruleBookText, setRuleBookText] = useState('');
@@ -1353,6 +1511,26 @@ export default function ContractAnalyzer({ setFocusMode }) {
         URL.revokeObjectURL(url);
       }
 
+      // Cross-save: dispatch to selected platform modules via shared store
+      if (crossSaveTargets.length > 0) {
+        const fileRecord = {
+          id: `export_${Date.now()}`,
+          filename: defaultFilename,
+          format: exportFormat,
+          content: documentText || draftText,
+          savedAt: new Date().toISOString(),
+          modules: crossSaveTargets,
+          source: 'Contract Analyzer',
+        };
+        try {
+          const existing = JSON.parse(localStorage.getItem('lex_shared_workspace') || '[]');
+          existing.unshift(fileRecord);
+          localStorage.setItem('lex_shared_workspace', JSON.stringify(existing.slice(0, 50)));
+          window.dispatchEvent(new CustomEvent('lex:sharedWorkspaceUpdate', { detail: fileRecord }));
+          setCrossSaveStatus(`Saved to: ${crossSaveTargets.join(', ')}`);
+        } catch (_) { /* storage quota — silently skip */ }
+      }
+
       setShowExportModal(false);
     } catch (err) {
       setExportError(err.message || 'Export request failed.');
@@ -1885,10 +2063,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
             <div className="analysis-column">
               <div className="analysis-tabs-bar">
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'risks' ? 'active' : ''}`} onClick={() => switchTab('risks')}>
-                  Risks {redCount + amberCount > 0 && <span style={{ marginLeft: '4px', background: redCount > 0 ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)', color: redCount > 0 ? '#FCA5A5' : '#FCD34D', borderRadius: '10px', padding: '1px 7px', fontSize: '10.5px', fontWeight: '700' }}>{redCount + amberCount}</span>}
+                  Risks {redCount + amberCount > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: redCount > 0 ? '#FCA5A5' : '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{redCount + amberCount}</span>}
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'recs' ? 'active' : ''}`} onClick={() => { switchTab('recs'); if (recommendations.length === 0) fetchMissingProtections(); }}>
-                  Missing {recommendations.length > 0 && <span style={{ marginLeft: '4px', background: 'rgba(245,158,11,0.2)', color: '#FCD34D', borderRadius: '10px', padding: '1px 7px', fontSize: '10.5px', fontWeight: '700' }}>{recommendations.length}</span>}
+                  Missing {recommendations.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{recommendations.length}</span>}
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'draft' ? 'active' : ''}`} onClick={() => switchTab('draft')}>
                   Auto-Draft
@@ -1897,7 +2075,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   RAG Chat
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'citations' ? 'active' : ''}`} onClick={() => switchTab('citations')}>
-                  Citations {matchedPrecedents.length > 0 && <span style={{ marginLeft: '4px', background: 'rgba(59,130,246,0.2)', color: '#93C5FD', borderRadius: '10px', padding: '1px 7px', fontSize: '10.5px', fontWeight: '700' }}>{matchedPrecedents.length}</span>}
+                  Citations {matchedPrecedents.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#93C5FD', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{matchedPrecedents.length}</span>}
                 </button>
               </div>
 
@@ -2054,12 +2232,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Missing Indian Protections</h3>
                       <button
-                        className="btn-accent transition-all duration-300 ease-in-out hover:bg-gray-700"
-                        style={{ fontSize: '11px', padding: '4px 10px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
+                        className="btn-accent transition-all duration-300 ease-in-out"
+                        style={{ fontSize: '11px', padding: '4px 10px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '5px', borderRadius: '7px' }}
                         onClick={fetchMissingProtections}
                         disabled={loadingRecs}
                       >
-                        🔄 Re-Scan
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        Re-Scan
                       </button>
                     </div>
 
@@ -2079,10 +2258,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           {recommendations.map((item, idx) => (
                             <div key={idx} className="rec-protection-card" style={{ marginBottom: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                <strong style={{ fontSize: '13.5px', color: 'white' }}>{item.title}</strong>
+                                <strong style={{ fontSize: '13px', color: '#F1F5F9', fontWeight: 600 }}>{item.title}</strong>
                                 <input
                                   type="checkbox"
-                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                  className="custom-checkbox"
                                   checked={item.selected}
                                   onChange={() => handleRecommendationCheck(idx)}
                                 />
@@ -2116,18 +2295,23 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                         <div className="input-group">
                           <label className="input-label">Reference Context File *</label>
-                          <select
-                            className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                            style={{ width: '100%' }}
-                            required
-                            value={selectedDocId}
-                            onChange={(e) => setSelectedDocId(e.target.value)}
-                          >
-                            <option value="">Select Reference File</option>
-                            {vaultDocs.map(doc => (
-                              <option key={doc.id} value={doc.id}>{doc.filename}</option>
-                            ))}
-                          </select>
+                          <div className="custom-select-wrapper">
+                            <select
+                              className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
+                              style={{ width: '100%' }}
+                              required
+                              value={selectedDocId}
+                              onChange={(e) => setSelectedDocId(e.target.value)}
+                            >
+                              <option value="">Select Reference File</option>
+                              {vaultDocs.map(doc => (
+                                <option key={doc.id} value={doc.id}>{doc.filename}</option>
+                              ))}
+                            </select>
+                            <span className="custom-select-chevron">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                            </span>
+                          </div>
                         </div>
 
                         <div className="input-group">
@@ -2144,7 +2328,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         </div>
 
                         <button type="submit" className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" style={{ alignSelf: 'flex-start', padding: '10px 20px' }} disabled={drafting}>
-                          {drafting ? 'Synthesizing...' : '🤖 Synthesize Clause'}
+                          {drafting ? 'Synthesizing...' : (
+                            <>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                              Synthesize Clause
+                            </>
+                          )}
                         </button>
                       </div>
                     </form>
@@ -2206,7 +2395,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               <span>⚖️</span>
                               <div>
                                 <a href={prec.url} target="_blank" rel="noopener noreferrer" className="precedent-link">
-                                  {prec.title} ↗
+                                  {prec.title}
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                                 </a>
                                 <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '4px', lineHeight: '1.4' }}>{prec.desc}</p>
                               </div>
@@ -2226,92 +2416,141 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
       </div>
 
-      {/* ── EXPORT SETTINGS MODAL ── */}
+      {/* ── EXPORT & DEPLOY MODAL ── */}
       {showExportModal && (
         <div className="modal-overlay" onClick={() => setShowExportModal(false)}>
           <div className="export-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 style={{ fontSize: '18px', color: 'white', fontFamily: 'var(--font-serif)' }}>Export Document Settings</h2>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 22px 0' }}>
+              <div>
+                <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-dark-primary)', margin: 0, letterSpacing: '-0.01em' }}>Export &amp; Deploy</h2>
+                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '3px 0 0' }}>Download your document or push it to platform modules</p>
+              </div>
               <button
                 onClick={() => setShowExportModal(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', fontSize: '20px', cursor: 'pointer' }}
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-dark-muted)', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', flexShrink: 0 }}
               >
-                ✕
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
 
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+              {/* Format tiles */}
               <div>
-                <label className="input-label" style={{ display: 'block', marginBottom: '8px' }}>Export Format</label>
+                <label className="input-label" style={{ marginBottom: '10px' }}>Export Format</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div
-                    className={`format-selection-card ${exportFormat === 'pdf' ? 'selected' : ''}`}
-                    onClick={() => setExportFormat('pdf')}
-                  >
-                    <span>📄</span>
+                  {/* PDF tile */}
+                  <div className={`format-tile ${exportFormat === 'pdf' ? 'selected' : ''}`} onClick={() => setExportFormat('pdf')}>
+                    <div className="format-tile-check">
+                      {exportFormat === 'pdf' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    </div>
+                    <div className="format-tile-icon-wrap">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'pdf' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    </div>
                     <div>
-                      <strong style={{ display: 'block', fontSize: '13px', color: 'white' }}>PDF Format</strong>
+                      <strong style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '2px' }}>PDF Format</strong>
                       <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Print-ready layout</span>
                     </div>
                   </div>
-                  <div
-                    className={`format-selection-card ${exportFormat === 'docx' ? 'selected' : ''}`}
-                    onClick={() => setExportFormat('docx')}
-                  >
-                    <span>📝</span>
+                  {/* Word tile */}
+                  <div className={`format-tile ${exportFormat === 'docx' ? 'selected' : ''}`} onClick={() => setExportFormat('docx')}>
+                    <div className="format-tile-check">
+                      {exportFormat === 'docx' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    </div>
+                    <div className="format-tile-icon-wrap">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'docx' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    </div>
                     <div>
-                      <strong style={{ display: 'block', fontSize: '13px', color: 'white' }}>Word Document</strong>
+                      <strong style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '2px' }}>Word Document</strong>
                       <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Editable DOCX file</span>
                     </div>
                   </div>
                 </div>
               </div>
 
+              {/* Content sections */}
               <div>
-                <label className="input-label" style={{ display: 'block', marginBottom: '8px' }}>Include Content Sections</label>
+                <label className="input-label" style={{ marginBottom: '10px' }}>Include Content Sections</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13.5px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={includeDoc}
-                      onChange={(e) => setIncludeDoc(e.target.checked)}
-                      style={{ cursor: 'pointer' }}
-                    />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '13px', color: 'var(--text-dark-primary)', cursor: 'pointer' }}>
+                    <input type="checkbox" className="custom-checkbox" checked={includeDoc} onChange={(e) => setIncludeDoc(e.target.checked)} />
                     <span>Contract Scanner Text</span>
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13.5px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={includeDraft}
-                      onChange={(e) => setIncludeDraft(e.target.checked)}
-                      style={{ cursor: 'pointer' }}
-                    />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '13px', color: 'var(--text-dark-primary)', cursor: 'pointer' }}>
+                    <input type="checkbox" className="custom-checkbox" checked={includeDraft} onChange={(e) => setIncludeDraft(e.target.checked)} />
                     <span>Auto-Draft Workspace Text</span>
                   </label>
                 </div>
               </div>
 
+              {/* Cross-Save Module Panel */}
+              <div>
+                <label className="input-label" style={{ marginBottom: '10px' }}>Cross-Save Target Workspace</label>
+                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '12px', lineHeight: '1.45' }}>Select modules to make this document natively available inside those workspaces.</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {[
+                    { id: 'case-vault',         label: 'Case Vault',         icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> },
+                    { id: 'conflict-engine',    label: 'Conflict Engine',    icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> },
+                    { id: 'virtual-courtroom',  label: 'Virtual Courtroom',  icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> },
+                    { id: 'firm-library',       label: 'Firm Library',       icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> },
+                    { id: 'contract-analyzer',  label: 'Contract Analyzer',  icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+                  ].map(({ id, label, icon }) => {
+                    const isActive = crossSaveTargets.includes(id);
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`module-pill ${isActive ? 'active' : ''}`}
+                        onClick={() => setCrossSaveTargets(prev => isActive ? prev.filter(t => t !== id) : [...prev, id])}
+                      >
+                        <span className="module-pill-dot" />
+                        {icon}
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {exportError && (
-                <div style={{ padding: '10px', background: 'rgba(239,68,68,0.1)', color: 'var(--accent-danger)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '6px', fontSize: '12.5px' }}>
+                <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.08)', color: 'var(--accent-danger)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', fontSize: '12.5px' }}>
                   {exportError}
+                </div>
+              )}
+              {crossSaveStatus && !exporting && (
+                <div style={{ padding: '10px 12px', background: 'rgba(16,185,129,0.08)', color: 'var(--accent-success)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', fontSize: '12px' }}>
+                  {crossSaveStatus}
                 </div>
               )}
             </div>
 
-            <div className="modal-footer">
+            {/* Footer */}
+            <div style={{ display: 'flex', gap: '10px', padding: '14px 22px 20px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               <button
-                className="btn-accent"
-                style={{ background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'white' }}
+                style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-dark-muted)', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, transition: 'all 0.15s' }}
                 onClick={() => setShowExportModal(false)}
               >
                 Cancel
               </button>
               <button
                 className="btn-accent"
+                style={{ flex: 2, padding: '10px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
                 onClick={executeExport}
                 disabled={exporting}
               >
-                {exporting ? 'Exporting...' : '⬇️ Export & Download'}
+                {exporting ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    {crossSaveTargets.length > 0 ? 'Export & Save to Platform' : 'Export & Download'}
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -2362,9 +2601,8 @@ const renderDocumentScanner = (rawText, clauses) => {
       const animationClass = c.isNewlyRevised ? 'newly-revised-ins' : 'revised-ins';
       html += `<del class="revised-del" data-id="${c.id}">${escapeHtml(rawText.slice(r.start, r.end))}</del><ins class="${animationClass}" data-id="${c.id}">${escapeHtml(c.revisedText)}</ins>`;
     } else {
-      const bgColor = c.risk === 'RED' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)';
-      const borderColor = c.risk === 'RED' ? 'var(--accent-danger)' : 'var(--accent-warning)';
-      html += `<mark id="clause-left-${c.id}" data-id="${c.id}" class="risk-mark" style="display: inline; background-color: ${bgColor}; border-left: 2px solid ${borderColor}; cursor: pointer; padding: 2px 0; border-radius: 4px; line-height: 1.5; color: inherit; box-decoration-break: clone; -webkit-box-decoration-break: clone;">${escapeHtml(rawText.slice(r.start, r.end))}</mark>`;
+      const markClass = c.risk === 'RED' ? 'red-mark' : 'amber-mark';
+      html += `<mark id="clause-left-${c.id}" data-id="${c.id}" class="risk-mark ${markClass}">${escapeHtml(rawText.slice(r.start, r.end))}</mark>`;
     }
 
     cursor = r.end;

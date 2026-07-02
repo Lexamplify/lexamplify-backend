@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { fetchDocuments, uploadDocument, deleteDocument } from '../services/api';
+import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
 
 const styles = `
   .upload-zone {
@@ -83,6 +84,12 @@ export default function CaseVault() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [notification, setNotification] = useState(null);
+
+  const [sharedFiles, setSharedFiles] = useState(() => getSharedFiles().filter(f => f.modules?.includes('case-vault')));
+
+  useEffect(() => {
+    return subscribeSharedFiles(all => setSharedFiles(all.filter(f => f.modules?.includes('case-vault'))));
+  }, []);
 
   const fileInputRef = useRef(null);
 
@@ -246,6 +253,24 @@ export default function CaseVault() {
             </div>
           )}
         </div>
+
+        {/* Shared Workspace Files */}
+        {sharedFiles.length > 0 && (
+          <div style={{ marginTop: '20px', background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Shared from Platform — {sharedFiles.length} file{sharedFiles.length !== 1 ? 's' : ''}</span>
+            </div>
+            {sharedFiles.map(f => (
+              <div key={f.id} style={{ padding: '12px 18px', borderBottom: '1px solid rgba(139,92,246,0.1)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontWeight: 500, flex: 1 }}>{f.filename}</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>{f.source}</span>
+                <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)' }}>{new Date(f.savedAt).toLocaleDateString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Documents Vault List */}
         <div style={{ marginTop: '30px', background: 'var(--bg-dark-panel)', borderRadius: '8px', border: '1px solid var(--border-dark-subtle)', overflow: 'hidden' }}>
