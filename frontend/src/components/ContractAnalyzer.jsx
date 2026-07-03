@@ -201,7 +201,7 @@ const styles = `
     border-right: 1px solid var(--border-dark-subtle);
     min-width: 0;
   }
-  .scan-meta-item:last-child { border-right: none; flex: 1; }
+  .scan-meta-item:last-child { border-right: none; }
   .scan-meta-label {
     font-size: 9px;
     font-weight: 700;
@@ -216,6 +216,15 @@ const styles = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .scan-meta-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 10px;
+    margin-left: auto;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border-dark-subtle);
   }
 
   /* ── RISK INSPECTOR TWO-COLUMN GRID ──────────────────────────────── */
@@ -1094,7 +1103,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   // Auto-Drafting states
   const [vaultDocs, setVaultDocs] = useState([]);
-  const [selectedDocId, setSelectedDocId] = useState('');
+  const [selectedDocId, setSelectedDocId] = useState('none');
+  const [sharedFiles, setSharedFiles] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('lex_shared_workspace') || '[]'); } catch { return []; }
+  });
   const [autoDraftPrompt, setAutoDraftPrompt] = useState('');
   const [autoDraftText, setAutoDraftText] = useState('');
   const [drafting, setDrafting] = useState(false);
@@ -1206,6 +1218,18 @@ export default function ContractAnalyzer({ setFocusMode }) {
       }
     };
     loadVaultDocs();
+  }, []);
+
+  // Sync shared workspace files in real-time
+  useEffect(() => {
+    const handler = (e) => {
+      setSharedFiles(prev => {
+        const filtered = prev.filter(f => f.id !== e.detail.id);
+        return [e.detail, ...filtered].slice(0, 50);
+      });
+    };
+    window.addEventListener('lex:sharedWorkspaceUpdate', handler);
+    return () => window.removeEventListener('lex:sharedWorkspaceUpdate', handler);
   }, []);
 
   // Update highlighted editor HTML when rawText or clauses change
@@ -1557,20 +1581,16 @@ export default function ContractAnalyzer({ setFocusMode }) {
       alert('Please provide instructions.');
       return;
     }
-    if (!selectedDocId) {
-      alert('Please select a reference context file.');
-      return;
-    }
-
     setDrafting(true);
     setDraftStatus('Synthesizing dynamic context node...');
     setAutoDraftText('');
 
     try {
+      const contextValue = selectedDocId === 'none' ? null : selectedDocId;
       const response = await fetch('/api/documents/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: autoDraftPrompt.trim(), context: selectedDocId })
+        body: JSON.stringify({ prompt: autoDraftPrompt.trim(), context: contextValue })
       });
       const data = await response.json();
 
@@ -2188,8 +2208,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 )}
               </div>
 
-              {/* Document Scan Meta-Bar — replaces generic toolbar */}
-              {leftTab === 'scanner' && (() => {
+              {/* Document Studio Meta-Bar — always on: scan status + editing toolbar */}
+              {(() => {
                 const flaggedCount = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length;
                 const redCount2 = clauses.filter(c => c.risk === 'RED').length;
                 const statusColor = redCount2 > 0 ? '#FCA5A5' : flaggedCount > 0 ? '#FCD34D' : '#6EE7B7';
@@ -2198,24 +2218,34 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   : 'No Flags Detected';
                 return (
                   <div className="scan-meta-bar">
-                    <div className="scan-meta-item">
-                      <span className="scan-meta-label">Mandate</span>
-                      <span className="scan-meta-value">{scanStrategy} Scan · Indian Law</span>
-                    </div>
-                    <div className="scan-meta-item">
-                      <span className="scan-meta-label">Status</span>
-                      <span className="scan-meta-value" style={{ color: statusColor }}>{statusLabel}</span>
-                    </div>
-                    <div className="scan-meta-item" style={{ flexDirection: 'row', alignItems: 'center', gap: '6px', paddingLeft: '12px', justifyContent: 'flex-end' }}>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('undo')} title="Undo" className="toolbar-btn" style={{ color: 'var(--text-dark-muted)' }}>
+                    {leftTab === 'scanner' ? (
+                      <>
+                        <div className="scan-meta-item">
+                          <span className="scan-meta-label">Mandate</span>
+                          <span className="scan-meta-value">{scanStrategy} Scan · Indian Law</span>
+                        </div>
+                        <div className="scan-meta-item">
+                          <span className="scan-meta-label">Status</span>
+                          <span className="scan-meta-value" style={{ color: statusColor }}>{statusLabel}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="scan-meta-item">
+                        <span className="scan-meta-label">Studio</span>
+                        <span className="scan-meta-value" style={{ color: 'var(--text-dark-muted)' }}>Auto-Draft Workspace</span>
+                      </div>
+                    )}
+                    <div className="scan-meta-toolbar">
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('undo')} title="Undo" className="toolbar-btn">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
                       </button>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('redo')} title="Redo" className="toolbar-btn" style={{ color: 'var(--text-dark-muted)' }}>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('redo')} title="Redo" className="toolbar-btn">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
                       </button>
                       <div className="toolbar-divider"></div>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '13px', color: 'var(--text-dark-muted)' }}>B</button>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '13px', color: 'var(--text-dark-muted)' }}>I</button>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '13px' }}>B</button>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '13px' }}>I</button>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('underline')} title="Underline" className="toolbar-btn" style={{ textDecoration: 'underline', fontSize: '13px' }}>U</button>
                     </div>
                   </div>
                 );
@@ -2575,19 +2605,29 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     <form onSubmit={handleAutoDraft}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <div className="input-group">
-                          <label className="input-label">Reference Context File *</label>
+                          <label className="input-label">Reference Context <span style={{ fontWeight: 400, opacity: 0.55, fontSize: '10px' }}>(Optional)</span></label>
                           <div className="custom-select-wrapper">
                             <select
                               className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
                               style={{ width: '100%' }}
-                              required
                               value={selectedDocId}
                               onChange={(e) => setSelectedDocId(e.target.value)}
                             >
-                              <option value="">Select Reference File</option>
-                              {vaultDocs.map(doc => (
-                                <option key={doc.id} value={doc.id}>{doc.filename}</option>
-                              ))}
+                              <option value="none">No Reference Context (Draft from Scratch)</option>
+                              {vaultDocs.length > 0 && (
+                                <optgroup label="Vault Documents">
+                                  {vaultDocs.map(doc => (
+                                    <option key={doc.id} value={doc.id}>{doc.filename}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {sharedFiles.length > 0 && (
+                                <optgroup label="Shared Workspace">
+                                  {sharedFiles.map(f => (
+                                    <option key={f.id} value={`shared:${f.id}`}>{f.name || f.filename || 'Untitled'}</option>
+                                  ))}
+                                </optgroup>
+                              )}
                             </select>
                             <span className="custom-select-chevron">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>

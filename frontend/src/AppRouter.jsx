@@ -259,7 +259,14 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         {/* Logo / brand header */}
         <div
           className={`sidebar-header ${isIconOnly ? 'collapsed' : ''}`}
-          style={{ padding: isIconOnly ? '14px 10px' : '18px 16px 16px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}
+          style={{
+            padding: isIconOnly ? '14px 10px' : '18px 16px 16px',
+            borderBottom: '1px solid var(--border-subtle)',
+            flexShrink: 0,
+            cursor: isCollapsed ? 'pointer' : 'default',
+          }}
+          onClick={isCollapsed ? () => setIsCollapsed(false) : undefined}
+          title={isCollapsed ? 'Expand sidebar' : undefined}
         >
           <div className="sidebar-brand" style={{ justifyContent: isIconOnly ? 'center' : 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
@@ -276,7 +283,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             {!focusMode && (
               <button
                 className={`sidebar-collapse-btn${isCollapsed ? ' merged' : ''}`}
-                onClick={() => setIsCollapsed(c => !c)}
+                onClick={(e) => { e.stopPropagation(); setIsCollapsed(c => !c); }}
                 title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >

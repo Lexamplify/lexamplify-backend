@@ -780,7 +780,7 @@ textarea:focus,
 .sidebar-nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   padding: 9px 16px;
   margin: 2px 8px;
   border-radius: 7px;
@@ -794,31 +794,37 @@ textarea:focus,
   cursor: pointer;
 }
 .sidebar-nav-item:hover {
-  background: rgba(255, 255, 255, 0.04) !important;
-  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #f1f5f9 !important;
+  transform: translateX(1px);
 }
 .sidebar-nav-item.active {
-  background: rgba(59, 130, 246, 0.1) !important;
-  color: var(--accent-primary) !important;
+  background: linear-gradient(90deg, rgba(99,102,241,0.15), rgba(59,130,246,0.08)) !important;
+  color: #a5b4fc !important;
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--accent-primary);
+  box-shadow: inset 3px 0 0 #818cf8;
 }
 .sidebar-nav-item .nav-icon {
   color: inherit;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  opacity: 0.75;
+  opacity: 0.65;
+  transition: opacity 0.15s ease;
+}
+.sidebar-nav-item:hover .nav-icon {
+  opacity: 0.9;
 }
 .sidebar-nav-item.active .nav-icon {
   opacity: 1;
-  color: var(--accent-primary);
+  color: #a5b4fc;
 }
 .sidebar-nav-item .nav-label {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 
 /* ── Sidebar collapsed (icon-only) mode ───────────────────────────────────── */
@@ -827,6 +833,13 @@ textarea:focus,
   padding: 10px;
   margin: 2px 6px;
   box-shadow: none !important;
+}
+.sidebar.sidebar-collapsed .sidebar-nav-item:hover {
+  transform: none;
+}
+.sidebar.sidebar-collapsed .sidebar-nav-item.active {
+  box-shadow: none !important;
+  background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(59,130,246,0.12)) !important;
 }
 .sidebar.sidebar-collapsed .nav-label {
   display: none;
@@ -885,33 +898,24 @@ textarea:focus,
   border-color: rgba(255,255,255,0.15);
 }
 
-/* ── Merge logic: collapsed button animates left, sits over the logo ───── */
+/* ── Collapsed: button sits at bottom of header, always visible ──────── */
 .sidebar-collapse-btn.merged {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border-color: transparent;
-  background: transparent;
-  color: transparent;         /* hidden chevron — logo shows through */
+  bottom: 6px;
+  right: 50%;
+  transform: translateX(50%);
+  width: 28px;
+  height: 18px;
+  border-radius: 5px;
+  border-color: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-dark-muted);
   z-index: 3;
 }
-.sidebar-collapse-btn.merged svg {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  transform: translateX(2px);
-}
-/* On hover the button opaquely covers the logo and reveals the expand chevron */
 .sidebar-collapse-btn.merged:hover {
-  background: var(--bg-dark-sidebar);
-  border-color: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.2);
   color: white;
-  box-shadow: 0 0 0 4px rgba(0,0,0,0.25);
-}
-.sidebar-collapse-btn.merged:hover svg {
-  transform: translateX(0) rotate(0deg);
 }
 @media (max-width: 768px) {
   .sidebar.sidebar-collapsed {
