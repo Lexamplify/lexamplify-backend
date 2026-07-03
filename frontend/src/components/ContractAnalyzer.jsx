@@ -182,6 +182,127 @@ const styles = `
 
   .toolbar-divider { width: 1px; height: 16px; background: var(--border-dark-subtle); margin: 0 4px; }
 
+  /* ── SCAN META-BAR (replaces toolbar in scanner mode) ─────────────── */
+  .scan-meta-bar {
+    background: var(--bg-dark-sidebar);
+    border-bottom: 1px solid var(--border-dark-subtle);
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .scan-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 16px;
+    border-right: 1px solid var(--border-dark-subtle);
+    min-width: 0;
+  }
+  .scan-meta-item:last-child { border-right: none; flex: 1; }
+  .scan-meta-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-dark-muted);
+  }
+  .scan-meta-value {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-dark-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── RISK INSPECTOR TWO-COLUMN GRID ──────────────────────────────── */
+  .risk-inspector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  .audit-col, .playbook-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .revision-glass-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.2s;
+  }
+  .revision-glass-card:focus-within { border-color: rgba(79,110,247,0.3); }
+
+  /* ── PROVISION MATRIX (Auto-Draft macro pills) ───────────────────── */
+  .provision-matrix-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .provision-pill {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: var(--text-dark-secondary);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s;
+    line-height: 1.35;
+    font-weight: 500;
+  }
+  .provision-pill:hover {
+    background: rgba(79,110,247,0.09);
+    border-color: rgba(79,110,247,0.28);
+    color: var(--text-dark-primary);
+  }
+  .provision-pill-act {
+    font-size: 9.5px;
+    color: var(--text-dark-muted);
+    margin-top: 3px;
+    display: block;
+    font-weight: 400;
+  }
+
+  /* ── RAG MACRO QUICK-FIRE BUTTONS ────────────────────────────────── */
+  .rag-macros-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-dark-subtle);
+    margin-bottom: 2px;
+  }
+  .rag-macro-btn {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 4px 11px;
+    font-size: 11px;
+    color: var(--text-dark-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    line-height: 1.6;
+  }
+  .rag-macro-btn:hover:not(:disabled) {
+    background: rgba(79,110,247,0.1);
+    border-color: rgba(79,110,247,0.3);
+    color: var(--text-dark-primary);
+  }
+  .rag-macro-btn:disabled { opacity: 0.35; cursor: default; }
+
   /* ── EDITOR SCROLL ───────────────────────────────────────────────── */
   .editor-scroll-area {
     flex: 1;
@@ -408,18 +529,20 @@ const styles = `
     transition: background-color 0.2s ease-in-out;
   }
   .risk-mark.red-mark {
-    background-color: rgba(239,68,68,0.13);
+    background-color: rgba(239,68,68,0.16);
     border-left: 3px solid rgba(239,68,68,0.75);
+    color: #FCA5A5 !important;
   }
   .risk-mark.amber-mark {
-    background-color: rgba(245,158,11,0.13);
+    background-color: rgba(245,158,11,0.16);
     border-left: 3px solid rgba(245,158,11,0.75);
+    color: #FCD34D !important;
   }
-  .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.24); }
-  .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.24); }
-  /* Light theme: stronger highlights on white background */
-  [data-theme="light"] .risk-mark.red-mark   { background-color: rgba(239,68,68,0.11); border-left-color: #EF4444; }
-  [data-theme="light"] .risk-mark.amber-mark { background-color: rgba(245,158,11,0.11); border-left-color: #D97706; }
+  .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.26); }
+  .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.26); }
+  /* Light theme: dark readable text on tinted background */
+  [data-theme="light"] .risk-mark.red-mark   { background-color: rgba(239,68,68,0.11); border-left-color: #EF4444; color: #991B1B !important; }
+  [data-theme="light"] .risk-mark.amber-mark { background-color: rgba(245,158,11,0.11); border-left-color: #D97706; color: #78350F !important; }
   [data-theme="light"] .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.2); }
   [data-theme="light"] .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.2); }
 
@@ -784,30 +907,97 @@ const styles = `
 
   /* ── REVISION DIFF ───────────────────────────────────────────────── */
   .revised-del {
-    color: #DC2626 !important; text-decoration: line-through !important;
-    background: #FEE2E2 !important; padding: 1px 4px !important;
-    border-radius: 3px !important; margin-right: 3px !important; display: inline !important;
+    position: relative;
+    display: inline !important;
+    text-decoration: none !important;
+    color: rgba(252, 165, 165, 0.85) !important;
+    background: transparent !important;
+    padding: 0 2px !important;
+  }
+  .revised-del::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 2px;
+    width: 100%;
+    background: #EF4444;
+    transform-origin: left;
+    animation: strikeThrough 0.5s ease-out forwards;
   }
   .revised-ins {
-    color: #16A34A !important; background: #D1FAE5 !important;
-    padding: 1px 4px !important; border-radius: 3px !important;
-    font-weight: 500 !important; display: inline !important;
+    display: block !important;
+    margin: 8px 0 !important;
+    padding: 10px 14px 10px 24px !important;
+    border-left: 2px solid rgba(16, 185, 129, 0.4) !important;
+    background: rgba(16, 185, 129, 0.06) !important;
+    border-radius: 0 6px 6px 0 !important;
+    color: #6EE7B7 !important;
+    font-style: normal !important;
+    font-weight: 500 !important;
+    font-size: inherit !important;
+    text-decoration: none !important;
   }
   .newly-revised-ins {
-    color: #16A34A !important; padding: 1px 4px !important;
-    border-radius: 3px !important; font-weight: 500 !important; display: inline !important;
-    animation: fadeHighlightIns 1.5s ease-in-out forwards;
+    display: block !important;
+    margin: 8px 0 !important;
+    padding: 10px 14px 10px 24px !important;
+    border-left: 2px solid rgba(16, 185, 129, 0.4) !important;
+    background: rgba(16, 185, 129, 0.06) !important;
+    border-radius: 0 6px 6px 0 !important;
+    color: #6EE7B7 !important;
+    font-style: normal !important;
+    font-weight: 500 !important;
+    font-size: inherit !important;
+    text-decoration: none !important;
+    animation: slideDownFade 0.35s ease-out forwards;
+  }
+  /* Light theme overrides for revised diff */
+  [data-theme="light"] .revised-del { color: #B91C1C !important; }
+  [data-theme="light"] .revised-del::after { background: #DC2626; }
+  [data-theme="light"] .revised-ins,
+  [data-theme="light"] .newly-revised-ins {
+    background: rgba(16, 185, 129, 0.08) !important;
+    color: #166534 !important;
+    border-left-color: rgba(16, 185, 129, 0.5) !important;
   }
 
+  /* ── STRUCK-THROUGH TOGGLE CLASS (JS-controlled) ─────────────────── */
+  .clause-struck-through {
+    position: relative;
+    color: rgba(252, 165, 165, 0.75) !important;
+  }
+  .clause-struck-through::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 2px;
+    width: 100%;
+    background: #EF4444;
+    transform-origin: left;
+    transform: scaleX(0);
+    transition: transform 0.5s ease-out;
+  }
+  .clause-struck-through.active::after { transform: scaleX(1); }
+
+  @keyframes strikeThrough {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+  @keyframes slideDownFade {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
   @keyframes fadeHighlightIns {
-    0%   { background: #FEF08A !important; opacity: 0; }
+    0%   { background: rgba(253,224,71,0.2) !important; opacity: 0; }
     10%  { opacity: 1; }
-    100% { background: #D1FAE5 !important; }
+    100% { background: rgba(16,185,129,0.06) !important; }
   }
   @keyframes fadeHighlightBlockquote {
-    0%   { background: #FEF08A !important; opacity: 0; }
+    0%   { background: rgba(253,224,71,0.2) !important; opacity: 0; }
     10%  { opacity: 1; }
-    100% { background: #F3F4F6 !important; }
+    100% { background: rgba(255,255,255,0.03) !important; }
   }
 
   /* ── EXTENSIONS ──────────────────────────────────────────────────── */
@@ -1402,6 +1592,20 @@ export default function ContractAnalyzer({ setFocusMode }) {
   };
 
   // ── 6. RAG CHAT HANDLER ──────────────────────────────────────────────
+  const submitRagQuery = async (query) => {
+    if (!query.trim() || sendingChat) return;
+    setChatHistory(prev => [...prev, { sender: 'user', text: query }]);
+    setSendingChat(true);
+    setTimeout(() => { if (chatStreamRef.current) chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight; }, 50);
+    let compiledText = rawText;
+    clauses.forEach(c => { if (c.isRevised && c.revisedText) compiledText = compiledText.replace(c.text, c.revisedText); });
+    appendedClauses.forEach(ac => { compiledText += `\n\nADDED MISSING CLAUSE: ${ac.title}\n${ac.clause}`; });
+    const res = await chatWithContract(compiledText, query);
+    setSendingChat(false);
+    setChatHistory(prev => [...prev, { sender: 'bot', text: (!res.error && res.response) ? res.response : (res.message || 'Error contacting chatbot.') }]);
+    setTimeout(() => { if (chatStreamRef.current) chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight; }, 50);
+  };
+
   const handleChatSubmit = async (e) => {
     e.preventDefault();
     if (!chatInput.trim() || sendingChat) return;
@@ -1822,7 +2026,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
                               <h3 style={{ fontSize: '13px', color: '#34D399', marginBottom: '4px' }}>{contractFile.name}</h3>
                               <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Ready to analyze — click to replace</p>
-                              <span style={{ fontSize: '11px', color: 'rgba(52,211,153,0.85)', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)', padding: '3px 10px', borderRadius: '10px' }}>Press “Start Contract Risk Scan” below</span>
+                              <span style={{ fontSize: '11px', color: 'rgba(52,211,153,0.85)', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)', padding: '3px 10px', borderRadius: '10px' }}>Press "Start Contract Risk Scan" below</span>
                             </>
                           ) : (
                             <>
@@ -1984,43 +2188,38 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 )}
               </div>
 
-              {/* Rich-Text Formatting Toolbar */}
-              {leftTab === 'scanner' && (
-                <div className="rich-text-toolbar">
-                  {/* Undo */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('undo')} title="Undo" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" /></svg>
-                  </button>
-                  {/* Redo */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('redo')} title="Redo" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" /></svg>
-                  </button>
-                  <div className="toolbar-divider"></div>
-                  {/* Bold */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '14px' }}>B</button>
-                  {/* Italic */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '14px' }}>I</button>
-                  {/* Underline */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('underline')} title="Underline" className="toolbar-btn" style={{ textDecoration: 'underline', fontSize: '14px' }}>U</button>
-                  <div className="toolbar-divider"></div>
-                  {/* Align Left */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyLeft')} title="Align Left" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="15" y2="12" /><line x1="3" y1="18" x2="18" y2="18" /></svg>
-                  </button>
-                  {/* Align Center */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyCenter')} title="Align Center" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="6" y1="12" x2="18" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></svg>
-                  </button>
-                  {/* Align Right */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyRight')} title="Align Right" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="6" y1="18" x2="21" y2="18" /></svg>
-                  </button>
-                  {/* Justify */}
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('justifyFull')} title="Justify" className="toolbar-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
-                  </button>
-                </div>
-              )}
+              {/* Document Scan Meta-Bar — replaces generic toolbar */}
+              {leftTab === 'scanner' && (() => {
+                const flaggedCount = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length;
+                const redCount2 = clauses.filter(c => c.risk === 'RED').length;
+                const statusColor = redCount2 > 0 ? '#FCA5A5' : flaggedCount > 0 ? '#FCD34D' : '#6EE7B7';
+                const statusLabel = flaggedCount > 0
+                  ? `${flaggedCount} Flagged Provision${flaggedCount > 1 ? 's' : ''}`
+                  : 'No Flags Detected';
+                return (
+                  <div className="scan-meta-bar">
+                    <div className="scan-meta-item">
+                      <span className="scan-meta-label">Mandate</span>
+                      <span className="scan-meta-value">{scanStrategy} Scan · Indian Law</span>
+                    </div>
+                    <div className="scan-meta-item">
+                      <span className="scan-meta-label">Status</span>
+                      <span className="scan-meta-value" style={{ color: statusColor }}>{statusLabel}</span>
+                    </div>
+                    <div className="scan-meta-item" style={{ flexDirection: 'row', alignItems: 'center', gap: '6px', paddingLeft: '12px', justifyContent: 'flex-end' }}>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('undo')} title="Undo" className="toolbar-btn" style={{ color: 'var(--text-dark-muted)' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+                      </button>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('redo')} title="Redo" className="toolbar-btn" style={{ color: 'var(--text-dark-muted)' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+                      </button>
+                      <div className="toolbar-divider"></div>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '13px', color: 'var(--text-dark-muted)' }}>B</button>
+                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '13px', color: 'var(--text-dark-muted)' }}>I</button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="editor-scroll-area">
                 {leftTab === 'scanner' ? (
@@ -2122,95 +2321,107 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
                           All clauses
                         </button>
-                        <div className="inspected-risk-card">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                            <span className={`risk-indicator-dot ${activeClause.risk === 'RED' ? 'red' : 'amber'}`}></span>
-                            <h3 style={{ fontSize: '14px', color: 'white', margin: 0, fontWeight: '600' }}>
-                              {activeClause.clauseTitle || (activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause')}
-                            </h3>
-                            {activeClause.isRuleBookViolation && (
-                              <span className="rulebook-badge">⚡ Rule Book Override</span>
-                            )}
-                          </div>
+                        {/* ── TWO-COLUMN RISK INSPECTOR ── */}
+                        <div className="risk-inspector-grid">
 
-                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>ORIGINAL TEXT:</span>
-                          <div className="original-clause-box">{activeClause.text}</div>
-                        </div>
-
-                        <div style={{ padding: '12px 14px', background: 'rgba(239, 68, 68, 0.05)', borderLeft: '3px solid var(--accent-danger)', fontSize: '13px', color: 'white', lineHeight: '1.4', borderRadius: '4px' }}>
-                          <strong>Indian Legal Issue:</strong> {activeClause.issue}
-                        </div>
-
-                        {/* Intent Input & Autocomplete */}
-                        <div style={{ position: 'relative' }}>
-                          <label className="input-label">Drafting Revision Intent</label>
-                          <input
-                            type="text"
-                            placeholder="E.g., Make this notice mutual, cap penalty..."
-                            className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                            style={{ width: '100%', boxSizing: 'border-box' }}
-                            value={intent}
-                            onChange={(e) => { setIntent(e.target.value); setShowSuggestions(true); }}
-                            onFocus={() => setShowSuggestions(true)}
-                          />
-
-                          {showSuggestions && dynamicIntents.length > 0 && (
-                            <div className="autocomplete-dropdown" ref={suggestionsRef}>
-                              {dynamicIntents.map((item, idx) => (
-                                <div
-                                  key={idx}
-                                  className="autocomplete-item"
-                                  onClick={() => { setIntent(item); setShowSuggestions(false); }}
-                                >
-                                  💡 {item}
-                                </div>
-                              ))}
+                          {/* Column A: Audit Profile */}
+                          <div className="audit-col">
+                            <div className="inspected-risk-card" style={{ padding: '11px 13px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '7px', flexWrap: 'wrap' }}>
+                                <span className={`risk-indicator-dot ${activeClause.risk === 'RED' ? 'red' : 'amber'}`}></span>
+                                <h3 style={{ fontSize: '13px', color: 'white', margin: 0, fontWeight: '700', flex: 1 }}>
+                                  {activeClause.clauseTitle || (activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause')}
+                                </h3>
+                                {activeClause.isRuleBookViolation && (
+                                  <span className="rulebook-badge" style={{ fontSize: '9.5px' }}>⚡ Rule Book Override</span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>Original Text</span>
+                              <div className="original-clause-box" style={{ fontSize: '12.5px', marginTop: '5px' }}>{activeClause.text}</div>
                             </div>
-                          )}
-                        </div>
 
-                        <button
-                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
-                          onClick={handleRewrite}
-                          disabled={rewriting}
-                          style={{ width: '100%', padding: '12px' }}
-                        >
-                          {rewriting ? 'Generating Revision...' : 'Rewrite Clause with AI'}
-                        </button>
-
-                        {/* Rule Book attribution — shows the exact rule that triggered the flag */}
-                        {activeClause.isRuleBookViolation && activeClause.ruleBookReference && (
-                          <div style={{ padding: '11px 14px', background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.3)', borderLeft: '3px solid #8B5CF6', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                            <span style={{ fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#A78BFA', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              ⚖️ Rule Enforced
-                            </span>
-                            <span style={{ fontSize: '12.5px', color: 'var(--text-dark-primary)', lineHeight: 1.5, fontStyle: 'italic' }}>
-                              “{activeClause.ruleBookReference}”
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Rewrite suggested container */}
-                        {rewrittenText && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
-                            <div>
-                              <label className="input-label">AI Suggested Revision</label>
-                              <textarea
-                                className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                                style={{ height: '100px', width: '100%', boxSizing: 'border-box', border: '1px solid var(--accent-success)', color: 'white', resize: 'none' }}
-                                value={rewrittenText}
-                                onChange={(e) => setRewrittenText(e.target.value)}
-                              />
+                            <div style={{ padding: '10px 12px', background: activeClause.risk === 'RED' ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)', borderLeft: `3px solid ${activeClause.risk === 'RED' ? 'var(--accent-danger)' : 'var(--accent-warning)'}`, fontSize: '12px', color: 'var(--text-dark-primary)', lineHeight: '1.5', borderRadius: '0 4px 4px 0' }}>
+                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.risk === 'RED' ? '#FCA5A5' : '#FCD34D', display: 'block', marginBottom: '4px' }}>Indian Legal Issue</span>
+                              {activeClause.issue}
                             </div>
-                            <button
-                              className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
-                              onClick={applyRevision}
-                              style={{ width: '100%', padding: '12px', background: 'var(--accent-success)' }}
-                            >
-                              Apply Rewrite to Document
-                            </button>
                           </div>
-                        )}
+
+                          {/* Column B: Playbook Guardrail + Revision Workshop */}
+                          <div className="playbook-col">
+                            {/* Rule Enforced */}
+                            <div style={{ padding: '10px 12px', background: activeClause.isRuleBookViolation ? 'rgba(139,92,246,0.07)' : 'rgba(255,255,255,0.02)', border: `1px solid ${activeClause.isRuleBookViolation ? 'rgba(139,92,246,0.28)' : 'rgba(255,255,255,0.05)'}`, borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '5px', minHeight: '60px' }}>
+                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.isRuleBookViolation ? '#A78BFA' : 'var(--text-dark-muted)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 0 0 6.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 0 0 6.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>
+                                Playbook Guardrail
+                              </span>
+                              {activeClause.isRuleBookViolation && activeClause.ruleBookReference ? (
+                                <span style={{ fontSize: '12px', color: 'var(--text-dark-primary)', lineHeight: 1.45, fontStyle: 'italic' }}>
+                                  "{activeClause.ruleBookReference}"
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', fontStyle: 'italic' }}>No rule book override active for this clause.</span>
+                              )}
+                            </div>
+
+                            {/* Revision Workshop — glass card */}
+                            <div className="revision-glass-card">
+                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>Revision Workshop</span>
+
+                              <div style={{ position: 'relative' }}>
+                                <input
+                                  type="text"
+                                  placeholder="E.g., Make notice mutual, cap penalty at 2×…"
+                                  className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
+                                  style={{ width: '100%', boxSizing: 'border-box', fontSize: '12px' }}
+                                  value={intent}
+                                  onChange={(e) => { setIntent(e.target.value); setShowSuggestions(true); }}
+                                  onFocus={() => setShowSuggestions(true)}
+                                />
+                                {showSuggestions && dynamicIntents.length > 0 && (
+                                  <div className="autocomplete-dropdown" ref={suggestionsRef}>
+                                    {dynamicIntents.map((item, idx) => (
+                                      <div key={idx} className="autocomplete-item" onClick={() => { setIntent(item); setShowSuggestions(false); }}>
+                                        💡 {item}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                                onClick={handleRewrite}
+                                disabled={rewriting}
+                                style={{ width: '100%', padding: '9px', fontSize: '12.5px' }}
+                              >
+                                {rewriting ? (
+                                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite', marginRight: 6, verticalAlign: 'middle' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Generating…</>
+                                ) : 'Rewrite Clause with AI'}
+                              </button>
+
+                              {rewrittenText && (
+                                <>
+                                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
+                                    <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-success)', display: 'block', marginBottom: '6px' }}>AI Suggested Revision</span>
+                                    <textarea
+                                      className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
+                                      style={{ height: '90px', width: '100%', boxSizing: 'border-box', border: '1px solid rgba(16,185,129,0.3)', fontSize: '12px', resize: 'none' }}
+                                      value={rewrittenText}
+                                      onChange={(e) => setRewrittenText(e.target.value)}
+                                    />
+                                  </div>
+                                  <button
+                                    className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                                    onClick={applyRevision}
+                                    style={{ width: '100%', padding: '9px', fontSize: '12.5px', background: 'var(--accent-success)' }}
+                                  >
+                                    Apply Rewrite to Document
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       /* ── CLAUSE LIST OVERVIEW ── */
@@ -2317,9 +2528,52 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Auto-Draft */}
                 {activeTab === 'draft' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+                    {/* ── PROVISION MATRIX ── */}
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-dark-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        Playbook Precedent Inserts
+                      </div>
+                      <div className="provision-matrix-grid">
+                        {[
+                          {
+                            label: 'Dispute Escalation',
+                            act: 'Arbitration & Conciliation Act, 1996',
+                            prompt: 'Draft a dispute resolution clause using a three-tier escalation mechanism: (1) senior management negotiation within 15 days, (2) mediation under the Indian Mediation Centre rules within 30 days, and (3) binding arbitration under the Arbitration and Conciliation Act, 1996 before a sole arbitrator seated in New Delhi. All proceedings shall be in English. The arbitral award shall be final and binding.'
+                          },
+                          {
+                            label: 'IP Assignment',
+                            act: 'Copyright Act, 1957 · Patents Act, 1970',
+                            prompt: 'Draft a comprehensive intellectual property assignment clause. All work product, inventions, developments, software, and derivative works created by the Vendor under this Agreement shall be "works made for hire" as defined under the Copyright Act, 1957, vesting exclusively in the Client. To the extent any rights do not vest automatically, the Vendor hereby assigns all rights in perpetuity worldwide to the Client. Vendor retains no residual license.'
+                          },
+                          {
+                            label: 'Severability Provision',
+                            act: 'Indian Contract Act, 1872 — s.24',
+                            prompt: 'Draft a severability clause: If any provision of this Agreement is held invalid, illegal, or unenforceable by a court of competent jurisdiction under the Indian Contract Act, 1872, such provision shall be modified to the minimum extent necessary to make it enforceable, or severed if modification is not possible, without affecting the validity and enforceability of the remaining provisions which shall continue in full force.'
+                          },
+                          {
+                            label: 'Mutual Notice Terms',
+                            act: 'General Clauses Act, 1897',
+                            prompt: 'Draft a mutual notice clause: All notices, demands, or communications under this Agreement shall be in writing and deemed duly served when delivered by: (a) hand delivery with signed acknowledgement, (b) registered post with acknowledgement due to the address on the cover page, or (c) email to the designated contact with read-receipt confirmation. Notices take effect on the date of receipt. Either party may update its notice details with 7 days written notice to the other party.'
+                          },
+                        ].map(({ label, act, prompt }) => (
+                          <button
+                            key={label}
+                            type="button"
+                            className="provision-pill"
+                            onClick={() => setAutoDraftPrompt(prompt)}
+                          >
+                            {label}
+                            <span className="provision-pill-act">{act}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <form onSubmit={handleAutoDraft}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <div className="input-group">
                           <label className="input-label">Reference Context File *</label>
                           <div className="custom-select-wrapper">
@@ -2387,6 +2641,25 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           Searching document...
                         </div>
                       )}
+                    </div>
+
+                    {/* ── RAG MACRO QUICK-FIRE ── */}
+                    <div className="rag-macros-row">
+                      {[
+                        { label: '🔍 Audit Liability Caps', query: 'What are the liability cap provisions in this contract? Identify any one-sided indemnification, unlimited liability exposure, or clauses that waive consequential damages to the detriment of the Vendor. Cite exact clause text.' },
+                        { label: '🛡️ Force Majeure Alignment', query: 'Does this contract contain a force majeure clause? If yes, analyze whether it covers epidemic/pandemic events, government orders, and cyberattacks as required by contemporary Indian commercial practice. If absent, flag the gap.' },
+                        { label: '📅 Verify Notice Periods', query: 'Extract and list all notice periods specified in this contract: termination notice, dispute notice, breach cure periods, and payment notice. Flag any notice period shorter than 15 days or absent entirely.' },
+                      ].map(({ label, query }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className="rag-macro-btn"
+                          disabled={sendingChat}
+                          onClick={() => submitRagQuery(query)}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
 
                     <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-dark-subtle)', paddingTop: '10px' }}>
@@ -2591,8 +2864,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
 // Normalize punctuation for fuzzy matching (1-to-1 char replacement — positions preserved)
 const normalizeForMatch = (s) => s
-  .replace(/[‘’ʼ′`]/g, "'")
-  .replace(/[“”„«»″]/g, '"')
+  .replace(/[''ʼ′`]/g, "'")
+  .replace(/[""„«»″]/g, '"')
   .replace(/[–—‒―−]/g, '-')
   .replace(/ /g, ' ')
   .replace(/…/g, '...');
