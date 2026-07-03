@@ -226,9 +226,13 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #FEEBAD; /* slightly darker amber on hover */
 }
 
-/* Focus Mode State Logic */
+/* Focus Mode State Logic — sidebar collapses to zero width but stays mounted
+   (DOM + navigation state preserved; pure CSS transition) */
 .focus-mode-active .sidebar {
-  width: 64px;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 0;
 }
 
 .focus-mode-active .topbar {
@@ -237,6 +241,71 @@ h1, h2, h3, h4, h5, h6 {
 }
 .focus-mode-active .topbar:hover {
   opacity: 1;
+}
+
+/* ── Focus Mode exit pill — centered glassmorphic float ─────────────────── */
+.focus-exit-pill {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s ease, border-color 0.2s ease;
+}
+.focus-exit-pill:hover {
+  transform: translateX(-50%) translateY(-3px);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.focus-exit-pill:active {
+  transform: translateX(-50%) translateY(-1px);
+}
+
+/* ── InzIQ global FAB — persistent assistant trigger (bottom-right) ──────
+   Sits at right:32px so it never collides with the centered focus pill. */
+.inziq-fab {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  z-index: 90;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #3b82f6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  box-shadow: 0 8px 28px rgba(59, 130, 246, 0.35), 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+}
+.inziq-fab:hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 14px 40px rgba(59, 130, 246, 0.5), 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+.inziq-fab:active {
+  transform: translateY(-1px) scale(1.0);
+}
+@media (max-width: 768px) {
+  .inziq-fab { bottom: 20px; right: 20px; width: 48px; height: 48px; }
 }
 
 /* Floating Command Palette (Ctrl + K) */

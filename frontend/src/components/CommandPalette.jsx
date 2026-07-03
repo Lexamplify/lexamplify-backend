@@ -2242,7 +2242,25 @@ function CommandPalette() {
   };
 
   // ── Render ────────────────────────────────────────────
-  if (!isOpen) return null;
+  // When closed, surface a persistent global FAB (hidden on public/login routes)
+  if (!isOpen) {
+    const authed = !!(localStorage.getItem('token') || localStorage.getItem('lexai_token'));
+    const isPublic = location.pathname === '/' || location.pathname === '/login';
+    if (!authed || isPublic) return null;
+    return (
+      <button
+        className="inziq-fab"
+        onClick={() => setIsOpen(true)}
+        title='Ask InzIQ (or say "Hey InzIQ")'
+        aria-label="Open InzIQ assistant"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          <path d="M12 7.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
+    );
+  }
   const isLocked = loading || !!navRoute;
 
   // Group sessions for sidebar

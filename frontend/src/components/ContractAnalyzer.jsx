@@ -1111,6 +1111,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [autoDraftText, setAutoDraftText] = useState('');
   const [drafting, setDrafting] = useState(false);
   const [draftStatus, setDraftStatus] = useState('');
+  const [draftError, setDraftError] = useState('');
 
   // Chat RAG states
   const [chatHistory, setChatHistory] = useState([
@@ -1578,10 +1579,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const handleAutoDraft = async (e) => {
     e.preventDefault();
     if (!autoDraftPrompt.trim()) {
-      alert('Please provide instructions.');
+      setDraftError('Please provide drafting instructions before synthesizing.');
       return;
     }
+    // Bridge the panes immediately — user watches the draft resolve on the left
+    setLeftTab('autodraft');
     setDrafting(true);
+    setDraftError('');
     setDraftStatus('Synthesizing dynamic context node...');
     setAutoDraftText('');
 
@@ -1600,14 +1604,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
       if (response.ok && data.draft) {
         const clean = data.draft.replace(/^"|"$/g, '').trim();
         setAutoDraftText(clean);
-        setLeftTab('autodraft');
       } else {
-        alert(data.error || 'Failed to synthesize auto-draft clause.');
+        setDraftError(data.error || 'Failed to synthesize auto-draft clause.');
       }
     } catch (err) {
       setDrafting(false);
       setDraftStatus('');
-      alert('Network timeout in AI reasoning engine.');
+      setDraftError('Network timeout in the AI reasoning engine. Please retry.');
     }
   };
 
@@ -2296,7 +2299,34 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   </>
                 ) : (
                   <div>
-                    {autoDraftText ? (
+                    {drafting ? (
+                      <div style={{ padding: '32px 8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-primary)', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '10px', height: '10px', border: '2px solid var(--accent-primary)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                          Synthesizing clause…
+                        </div>
+                        <div className="shimmer-bar" style={{ width: '42%', height: '17px', marginBottom: '20px' }} />
+                        <div className="shimmer-bar" style={{ width: '100%' }} />
+                        <div className="shimmer-bar" style={{ width: '96%' }} />
+                        <div className="shimmer-bar" style={{ width: '99%' }} />
+                        <div className="shimmer-bar" style={{ width: '70%', marginBottom: '22px' }} />
+                        <div className="shimmer-bar" style={{ width: '100%' }} />
+                        <div className="shimmer-bar" style={{ width: '88%' }} />
+                        <div className="shimmer-bar" style={{ width: '93%' }} />
+                        <div className="shimmer-bar" style={{ width: '55%' }} />
+                      </div>
+                    ) : draftError ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px', margin: '40px 4px', padding: '18px 20px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderLeft: '3px solid var(--accent-danger, #EF4444)', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#FCA5A5', letterSpacing: '0.02em' }}>Synthesis Failed</span>
+                        </div>
+                        <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.5 }}>{draftError}</span>
+                        <button onClick={() => setDraftError('')} style={{ marginTop: '2px', background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: 'var(--text-dark-muted)', fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+                          Dismiss
+                        </button>
+                      </div>
+                    ) : autoDraftText ? (
                       <div
                         style={{ fontFamily: 'var(--font-serif)', fontSize: '18px', lineHeight: '1.625', whiteSpace: 'pre-wrap', color: '#1F2937', minHeight: '70vh', padding: '40px', backgroundColor: '#ffffff', borderRadius: '4px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
                         contentEditable
@@ -2669,7 +2699,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Chat */}
                 {activeTab === 'chat' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
                     <div className="chat-bubble-stream" ref={chatStreamRef}>
                       {chatHistory.map((msg, i) => (
                         <div key={i} className={`chat-message-bubble ${msg.sender}`}>
