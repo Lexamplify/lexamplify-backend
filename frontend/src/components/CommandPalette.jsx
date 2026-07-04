@@ -224,6 +224,35 @@ const AGENT_CSS = `
   }
   .inziq-drawer.closing { animation: inziq-drawer-out .28s cubic-bezier(.4,0,.2,1) both; }
 
+  /* ── War Room: full-screen immersive mode (overrides the side drawer) ── */
+  @keyframes inziq-warroom-in  { from { opacity:0; transform:scale(.985); } to { opacity:1; transform:scale(1); } }
+  @keyframes inziq-warroom-out { from { opacity:1; transform:scale(1); }    to { opacity:0; transform:scale(.985); } }
+  .inziq-drawer.war-room {
+    inset: 0; width: 100vw !important; height: 100vh; z-index: 101;
+    border-left: 0; justify-content: center;
+    animation: inziq-warroom-in .3s cubic-bezier(.4,0,.2,1) both;
+  }
+  .inziq-drawer.war-room.closing { animation: inziq-warroom-out .28s cubic-bezier(.4,0,.2,1) both; }
+  /* Centered ultra-premium research column with subtle gutters */
+  .inziq-drawer.war-room .lex-chat-main {
+    flex: 0 1 1000px !important; max-width: 1000px;
+    border-left: 1px solid rgba(255,255,255,.05);
+    border-right: 1px solid rgba(255,255,255,.05);
+  }
+
+  /* ── Context-morphing action chips (above the input) ── */
+  .lex-ctx-chips { display:flex; gap:6px; flex-wrap:wrap; padding:0 2px 8px; }
+  .lex-ctx-chip {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:5px 11px; font-size:11.5px; font-weight:500; font-family:inherit;
+    color:#93A9C4; background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.08); border-radius:15px;
+    cursor:pointer; white-space:nowrap; transition:all .15s;
+  }
+  .lex-ctx-chip:hover:not(:disabled) { background:rgba(99,102,241,.12); border-color:rgba(99,102,241,.35); color:#C7D2FE; transform:translateY(-1px); }
+  .lex-ctx-chip:disabled { opacity:.4; cursor:default; }
+  .lex-ctx-chip svg { color:#6366F1; flex-shrink:0; }
+
   /* ── Ambient glow on chat canvas ── */
   .lex-chat-main { position:relative; }
   .lex-chat-main::before {
@@ -1447,6 +1476,55 @@ function ShareModal({ sessionTitle, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  CONTEXT-MORPHING ACTIONS — route-specific quick prompts.
+//  Decoupled config map (no switch). Keyed by exact pathname; the resolver
+//  falls back to longest-prefix match so dynamic routes (/case/:id) inherit.
+// ═══════════════════════════════════════════════════════
+const CONTEXT_ACTIONS = {
+  '/contract-analyzer': [
+    { label: 'Draft Clause',      prompt: 'Draft a new clause for the contract currently under review, compliant with Indian law.' },
+    { label: 'Run Liability Scan', prompt: 'Run a liability exposure scan on this contract and flag every clause that shifts disproportionate risk onto our client.' },
+    { label: 'Summarize Risks',   prompt: 'Summarize the top risks in this contract in order of severity, citing the relevant Indian statutes.' },
+  ],
+  '/conflict-engine': [
+    { label: 'Cross-Reference Parties', prompt: 'Cross-reference all parties across our case roster and surface any representation conflicts.' },
+    { label: 'Scan for Conflicts',      prompt: 'Run a full conflict-of-interest scan against the firm database and rank matches by confidence.' },
+  ],
+  '/calendar': [
+    { label: 'Calculate Limitation Expiry', prompt: 'Calculate the limitation expiry date for the active matter under the Limitation Act, 1963, and show the countdown.' },
+    { label: 'Upcoming Deadlines',          prompt: 'List all upcoming hearing dates, filing deadlines, and limitation cut-offs for the next 30 days.' },
+  ],
+  '/court-resources': [
+    { label: 'Find Citation',    prompt: 'Find binding Indian precedents relevant to the issue I am researching, with neutral citations.' },
+    { label: 'Cause List Lookup', prompt: 'Look up the cause list for the relevant court and identify the listing for our matter.' },
+  ],
+  '/vault': [
+    { label: 'Summarize Case File', prompt: 'Summarize the key facts, issues, and current status of this case file.' },
+    { label: 'Find Precedents',     prompt: 'Find Indian precedents that support our position in this matter.' },
+  ],
+  '/case': [
+    { label: 'Summarize Case File', prompt: 'Summarize the key facts, issues, and current status of this case file.' },
+    { label: 'Draft Next Filing',   prompt: 'Draft the next procedural filing required for this matter under the CPC.' },
+  ],
+  '/firm-library': [
+    { label: 'Search Templates', prompt: 'Search the firm library for the most relevant precedent template for my current task.' },
+  ],
+  '/dashboard': [
+    { label: 'What Needs Attention', prompt: 'What are the most urgent items across my cases, deadlines, and documents that need my attention today?' },
+  ],
+};
+
+// Exact match first, then longest-prefix fallback at a segment boundary
+// (so /case/123 inherits /case, but /casebook never matches /case).
+const resolveContextActions = (pathname) => {
+  if (CONTEXT_ACTIONS[pathname]) return CONTEXT_ACTIONS[pathname];
+  const prefix = Object.keys(CONTEXT_ACTIONS)
+    .filter(k => pathname.startsWith(k + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+  return prefix ? CONTEXT_ACTIONS[prefix] : [];
+};
+
+// ═══════════════════════════════════════════════════════
 //  COMPONENT
 // ═══════════════════════════════════════════════════════
 function CommandPalette() {
@@ -1475,6 +1553,7 @@ function CommandPalette() {
   const [wakeSupported, setWakeSupported] = useState(null); // null=unknown, true=ok, false=denied/unsupported
   const [sidebarOpen,     setSidebarOpen]     = useState(false); // drawer mode: session history collapsed by default
   const [isClosing,       setIsClosing]       = useState(false); // drives the slide-out exit animation
+  const [mode,            setMode]            = useState('drawer'); // 'drawer' | 'fullscreen' (War Room)
   const [drawerOpen,      setDrawerOpen]      = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState(null); // { content, title, doc_type }
   const [slashMenu,         setSlashMenu]         = useState(false);
@@ -1628,7 +1707,13 @@ function CommandPalette() {
 
   // ── Keyboard / toggle ────────────────────────────────
   useEffect(() => {
-    const onToggle = () => setIsOpen(v => !v);
+    // Payload-aware: a dispatched { detail: { mode } } opens in that mode;
+    // a bare event (legacy) simply toggles open/closed.
+    const onToggle = (e) => {
+      const m = e?.detail?.mode;
+      if (m) { setMode(m); setIsOpen(true); }
+      else   { setIsOpen(v => !v); }
+    };
     const onKey = (e) => {
       // Ctrl+K is owned by IntelligencePalette — chat opens via toggle-rag-palette event only
       if (e.key === 'Escape' && isOpen) setIsOpen(false);
@@ -2273,7 +2358,7 @@ function CommandPalette() {
     return (
       <button
         className="inziq-fab"
-        onClick={() => setIsOpen(true)}
+        onClick={() => window.dispatchEvent(new CustomEvent('toggle-rag-palette', { detail: { mode: 'drawer' } }))}
         title='Ask InzIQ (or say "Hey InzIQ")'
         aria-label="Open InzIQ assistant"
       >
@@ -2459,8 +2544,10 @@ function CommandPalette() {
       {/* Right-aligned Slide-Over Drawer — NO overlay, NON-blocking:
           the document pane stays fully interactive (text selectable) while open. */}
       <div
-        className={`inziq-drawer ${isClosing ? 'closing' : ''}`}
-        style={{ width: (drawerOpen && activeDocument && isDrawerExpanded) ? 'min(760px, 96vw)' : 'min(400px, 100vw)' }}
+        className={`inziq-drawer ${mode === 'fullscreen' ? 'war-room' : ''} ${isClosing ? 'closing' : ''}`}
+        style={mode === 'fullscreen'
+          ? undefined
+          : { width: (drawerOpen && activeDocument && isDrawerExpanded) ? 'min(760px, 96vw)' : 'min(400px, 100vw)' }}
       >
 
           {/* ══════════════════════════════════
@@ -2598,6 +2685,19 @@ function CommandPalette() {
                 </button>
               )}
 
+              {/* War Room → Drawer downshift — preserves conversation state */}
+              {mode === 'fullscreen' && (
+                <button
+                  className="lex-close-btn"
+                  onClick={() => setMode('drawer')}
+                  title="Collapse to side drawer"
+                  style={{ background: 'rgba(99,102,241,.12)', border: '1px solid rgba(99,102,241,.3)', color: '#A5B4FC', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all .15s', flexShrink: 0 }}
+                >
+                  <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l-5-5 5-5M5 12h9"/></svg>
+                  Collapse
+                </button>
+              )}
+
               <button
                 className="lex-close-btn"
                 onClick={handleClose}
@@ -2687,6 +2787,28 @@ function CommandPalette() {
                               ))}
                             </div>
                           ) : null;
+                        })()}
+                        {/* Context-morphing action chips — route-specific quick prompts (hero/welcome state) */}
+                        {(() => {
+                          const contextActions = resolveContextActions(location.pathname);
+                          if (contextActions.length === 0) return null;
+                          return (
+                            <div className="lex-ctx-chips" style={{ justifyContent: 'center' }}>
+                              {contextActions.map((a, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  className="lex-ctx-chip"
+                                  disabled={isLocked}
+                                  onClick={() => { setQuery(a.prompt); setTimeout(() => searchRef.current?.(null, a.prompt), 30); }}
+                                  title={a.prompt}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                  {a.label}
+                                </button>
+                              ))}
+                            </div>
+                          );
                         })()}
                         <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.08)'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
                           <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={(isAwake || isListening) ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command your AI Legal Associate… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
@@ -2963,6 +3085,28 @@ function CommandPalette() {
                     ))}
                   </div>
                 ) : null;
+              })()}
+              {/* Context-morphing action chips — route-specific quick prompts */}
+              {(() => {
+                const contextActions = resolveContextActions(location.pathname);
+                if (contextActions.length === 0) return null;
+                return (
+                  <div className="lex-ctx-chips">
+                    {contextActions.map((a, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="lex-ctx-chip"
+                        disabled={isLocked}
+                        onClick={() => { setQuery(a.prompt); setTimeout(() => searchRef.current?.(null, a.prompt), 30); }}
+                        title={a.prompt}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                );
               })()}
               <form
                 onSubmit={handleSearch}

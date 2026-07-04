@@ -226,43 +226,36 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #FEEBAD; /* slightly darker amber on hover */
 }
 
-/* Focus Mode — Stealth Navigation.
-   The sidebar leaves the flex flow (position:fixed) so the document reclaims
-   100% width with ZERO reflow. Only `transform` animates (compositor-only,
-   no repaint of the main workspace). It slides in on hover of the edge zone. */
+/* Focus Mode — Tactical Icon Rail.
+   The sidebar leaves the flex flow (position:fixed) so the document keeps 100%
+   width with ZERO reflow — the 64px rail floats OVER the workspace. Stealth: it
+   rests at 30% opacity and blends into the canvas; on hover it lifts to full
+   opacity AND expands to 230px to reveal labels. Only opacity/width animate
+   (compositor-friendly), never the document container. */
 .focus-mode-active .sidebar {
   position: fixed;
   top: 0;
   left: 0;
   height: 100vh;
-  width: 260px;
-  min-width: 260px;
-  transform: translateX(-100%);
-  transition: transform 0.3s ease 0.15s;   /* 150ms delay = graceful close, anti-jitter */
+  width: 64px;
+  opacity: 0.3;
+  border-right: 0;
+  box-shadow: none;
+  transition: opacity 0.3s ease, width 0.3s ease, box-shadow 0.3s ease;
   z-index: 80;
-  border-right: 1px solid var(--border-dark-subtle);
-  will-change: transform;
 }
-/* Invisible 20px hit-zone pinned to the viewport's left edge (desktop only) */
-.focus-hover-zone {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 20px;
-  height: 100vh;
-  z-index: 79;
-  pointer-events: auto;
-}
-/* Reveal on hover of the zone OR the sidebar itself — instant open, delayed close */
-.focus-mode-active .focus-hover-zone:hover + .sidebar,
+/* Hover: full opacity + expand to reveal labels (position:fixed → no layout shift) */
 .focus-mode-active .sidebar:hover {
-  transform: translateX(0);
-  transition-delay: 0s;
+  opacity: 1;
+  width: 230px;
   box-shadow: 8px 0 40px rgba(0, 0, 0, 0.5);
 }
-/* Touch/mobile: no hover — retire the dead hit-zone below the desktop breakpoint */
-@media (max-width: 768px) {
-  .focus-hover-zone { display: none; }
+/* When expanded on hover, un-hide the labels that icon-only mode collapsed */
+.focus-mode-active .sidebar:hover .nav-label,
+.focus-mode-active .sidebar:hover .sidebar-brand-text { display: block; }
+.focus-mode-active .sidebar:hover .sidebar-nav-item {
+  justify-content: flex-start;
+  padding: 9px 16px;
 }
 
 .focus-mode-active .topbar {
