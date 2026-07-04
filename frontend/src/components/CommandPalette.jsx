@@ -209,6 +209,21 @@ const AGENT_CSS = `
   .lex-dot-3        { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:.36s; }
   .lex-ai-breathing { animation: lex-breathe 2.2s ease-in-out infinite; border-radius:7px; }
 
+  /* ── InzIQ Co-Pilot Slide-Over Drawer (right-aligned, non-blocking) ── */
+  @keyframes inziq-drawer-in  { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  @keyframes inziq-drawer-out { from { transform: translateX(0); }    to { transform: translateX(100%); } }
+  .inziq-drawer {
+    position: fixed; top: 0; right: 0; height: 100vh; z-index: 95;
+    display: flex; overflow: hidden;
+    background: rgba(8,11,20,.92);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(255,255,255,.1);
+    box-shadow: -8px 0 40px rgba(0,0,0,.5);
+    animation: inziq-drawer-in .3s cubic-bezier(.4,0,.2,1) both;
+    transition: width .3s cubic-bezier(.4,0,.2,1);
+  }
+  .inziq-drawer.closing { animation: inziq-drawer-out .28s cubic-bezier(.4,0,.2,1) both; }
+
   /* ── Ambient glow on chat canvas ── */
   .lex-chat-main { position:relative; }
   .lex-chat-main::before {
@@ -1458,7 +1473,8 @@ function CommandPalette() {
   const [micError,    setMicError]    = useState(null);
   const [isAwake,       setIsAwake]       = useState(false);
   const [wakeSupported, setWakeSupported] = useState(null); // null=unknown, true=ok, false=denied/unsupported
-  const [sidebarOpen,     setSidebarOpen]     = useState(true);
+  const [sidebarOpen,     setSidebarOpen]     = useState(false); // drawer mode: session history collapsed by default
+  const [isClosing,       setIsClosing]       = useState(false); // drives the slide-out exit animation
   const [drawerOpen,      setDrawerOpen]      = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState(null); // { content, title, doc_type }
   const [slashMenu,         setSlashMenu]         = useState(false);
@@ -2232,13 +2248,20 @@ function CommandPalette() {
 
   // ── Close  (does NOT wipe messages) ─────────────────
   const handleClose = () => {
+    if (isClosing) return; // guard against double-fire during the exit animation
     if (isListening) try { recognitionRef.current?.stop(); } catch (_) {}
     // Immediately update isOpenRef so the wake tryRestart loop sees the panel is closed
     isOpenRef.current = false;
     if (isAwakeRef.current) { isAwakeRef.current = false; setIsAwake(false); }
-    setIsOpen(false);
-    setQuery('');
-    // Session state is fully preserved — conversation continues on reopen
+    // Play the slide-out exit animation, then unmount
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      setIsOpen(false);
+      setSidebarOpen(false); // reset history overlay for next open
+      setQuery('');
+      // Session state is fully preserved — conversation continues on reopen
+    }, 280);
   };
 
   // ── Render ────────────────────────────────────────────
@@ -2433,20 +2456,27 @@ function CommandPalette() {
     <>
       <style>{AGENT_CSS}</style>
 
-      {/* Full-screen overlay */}
+      {/* Right-aligned Slide-Over Drawer — NO overlay, NON-blocking:
+          the document pane stays fully interactive (text selectable) while open. */}
       <div
-        style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(3,6,14,.95)', display: 'flex' }}
-        onClick={handleClose}
+        className={`inziq-drawer ${isClosing ? 'closing' : ''}`}
+        style={{ width: (drawerOpen && activeDocument && isDrawerExpanded) ? 'min(760px, 96vw)' : 'min(400px, 100vw)' }}
       >
-        {/* Two-column container */}
-        <div
-          style={{ display: 'flex', width: '100%', height: '100%' }}
-          onClick={e => e.stopPropagation()}
-        >
+
           {/* ══════════════════════════════════
-               LEFT SIDEBAR
+               SESSION-HISTORY SIDEBAR — slides OVER the chat within the drawer
           ══════════════════════════════════ */}
-          <aside className="lex-sidebar" style={{ width: sidebarOpen ? '255px' : '0', flexShrink: 0, background: '#080B14', borderRight: '1px solid #141B28', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <aside
+            className="lex-sidebar"
+            style={{
+              position: 'absolute', top: 0, left: 0, height: '100%', width: '255px',
+              transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+              transition: 'transform .25s cubic-bezier(.4,0,.2,1)',
+              zIndex: 6, background: '#080B14', borderRight: '1px solid #141B28',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              boxShadow: sidebarOpen ? '6px 0 32px rgba(0,0,0,.55)' : 'none',
+            }}
+          >
 
             {/* Brand header */}
             <div style={{ padding: '18px 14px 12px', borderBottom: '1px solid #141B28' }}>
@@ -2515,24 +2545,33 @@ function CommandPalette() {
             </div>
           </aside>
 
+          {/* Dismiss-history scrim — only within the drawer, closes the history overlay on outside tap */}
+          {sidebarOpen && (
+            <div
+              onClick={() => setSidebarOpen(false)}
+              style={{ position: 'absolute', inset: 0, zIndex: 5, background: 'rgba(0,0,0,.35)' }}
+            />
+          )}
+
           {/* ══════════════════════════════════
                MAIN CHAT AREA
           ══════════════════════════════════ */}
-          <main className="lex-chat-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0C1018', overflow: 'hidden' }}>
+          <main className="lex-chat-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#0C1018', overflow: 'hidden' }}>
 
             {/* Top header bar */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                {/* Sidebar collapse toggle */}
+                {/* Session-history toggle — slides the history overlay over the chat */}
                 <button
                   className="lex-sidebar-toggle"
                   onClick={() => setSidebarOpen(v => !v)}
-                  title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+                  title={sidebarOpen ? 'Hide session history' : 'Session history'}
+                  style={sidebarOpen ? { background: 'rgba(99,102,241,.18)', borderColor: 'rgba(99,102,241,.4)', color: '#A5B4FC' } : undefined}
                 >
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     {sidebarOpen
-                      ? <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>
-                      : <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>
+                      ? <path d="M18 6L6 18M6 6l12 12"/>
+                      : <><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></>
                     }
                   </svg>
                 </button>
@@ -3012,15 +3051,17 @@ function CommandPalette() {
                RHS DRAFT DRAWER
           ══════════════════════════════════ */}
           <aside
-            className="lex-drawer"
+            className="lex-draft-panel"
             style={{
-              width: drawerOpen && activeDocument ? (isDrawerExpanded ? '60vw' : '440px') : '0',
-              flexShrink: 0,
+              position: 'absolute', top: 0, right: 0, height: '100%', width: '100%', zIndex: 7,
+              transform: (drawerOpen && activeDocument) ? 'translateX(0)' : 'translateX(100%)',
+              transition: 'transform .28s cubic-bezier(.4,0,.2,1)',
               background: '#090C14',
               borderLeft: '1px solid #141B28',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
+              pointerEvents: (drawerOpen && activeDocument) ? 'auto' : 'none',
             }}
           >
             {activeDocument && (
@@ -3127,7 +3168,6 @@ function CommandPalette() {
             )}
           </aside>
 
-        </div>
       </div>
 
       {/* ── Save-to-Vault Modal ──────────────────────── */}

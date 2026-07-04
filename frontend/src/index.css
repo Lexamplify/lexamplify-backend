@@ -226,13 +226,43 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #FEEBAD; /* slightly darker amber on hover */
 }
 
-/* Focus Mode State Logic — sidebar collapses to zero width but stays mounted
-   (DOM + navigation state preserved; pure CSS transition) */
+/* Focus Mode — Stealth Navigation.
+   The sidebar leaves the flex flow (position:fixed) so the document reclaims
+   100% width with ZERO reflow. Only `transform` animates (compositor-only,
+   no repaint of the main workspace). It slides in on hover of the edge zone. */
 .focus-mode-active .sidebar {
-  width: 0;
-  min-width: 0;
-  overflow: hidden;
-  border-right: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 260px;
+  min-width: 260px;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease 0.15s;   /* 150ms delay = graceful close, anti-jitter */
+  z-index: 80;
+  border-right: 1px solid var(--border-dark-subtle);
+  will-change: transform;
+}
+/* Invisible 20px hit-zone pinned to the viewport's left edge (desktop only) */
+.focus-hover-zone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 100vh;
+  z-index: 79;
+  pointer-events: auto;
+}
+/* Reveal on hover of the zone OR the sidebar itself — instant open, delayed close */
+.focus-mode-active .focus-hover-zone:hover + .sidebar,
+.focus-mode-active .sidebar:hover {
+  transform: translateX(0);
+  transition-delay: 0s;
+  box-shadow: 8px 0 40px rgba(0, 0, 0, 0.5);
+}
+/* Touch/mobile: no hover — retire the dead hit-zone below the desktop breakpoint */
+@media (max-width: 768px) {
+  .focus-hover-zone { display: none; }
 }
 
 .focus-mode-active .topbar {

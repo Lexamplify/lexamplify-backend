@@ -219,7 +219,9 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   const { theme, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const isIconOnly = isCollapsed || focusMode;
+  // Focus mode no longer forces icon-only — the sidebar renders full and slides
+  // off-canvas via CSS translate (stealth navigation). Only manual collapse = icon rail.
+  const isIconOnly = isCollapsed;
 
   // ── Sidebar case list — fetched live from the real API ──────────────────
   const [sidebarCases, setSidebarCases] = useState([]);
@@ -252,6 +254,10 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   return (
     <div className={`app-container ${focusMode ? 'focus-mode-active' : ''}`}>
       <div className={`sidebar-overlay ${isSidebarOpen ? 'visible' : ''}`} onClick={closeSidebar} />
+
+      {/* Focus Mode stealth hit-zone — invisible 20px left-edge strip that reveals
+          the sidebar on hover. Must be the immediate previous sibling of .sidebar. */}
+      {focusMode && <div className="focus-hover-zone" aria-hidden="true" />}
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
       <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed' : ''}`}>
