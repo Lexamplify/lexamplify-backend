@@ -25,9 +25,9 @@ ensureStylesInjected();
 
 // A real <a> to a synchronously-known URL — no window.open, no popup-blocker
 // risk, no async gap. The browser handles the new-tab open natively.
-export default function CitationLink({ raw, year }) {
+export default function CitationLink({ raw, year, caseTitle }) {
   const meta = TREATMENT_META[getTreatment(raw)];
-  const url = buildKanoonUrl(raw, year);
+  const url = buildKanoonUrl(raw, year, caseTitle);
 
   return (
     <a
@@ -45,8 +45,11 @@ export default function CitationLink({ raw, year }) {
 
 // Splits raw text into plain-text segments interleaved with <CitationLink>
 // nodes for every detected citation — drop-in replacement for rendering any
-// free-text block that may contain legal citations.
-export function renderWithCitations(text) {
+// free-text block that may contain legal citations. `caseTitle` is optional —
+// pass it whenever the surrounding text belongs to a single known case (an
+// entry description, a judgment headnote) so citations inside it can be
+// routed via the more precise appellant+citation search.
+export function renderWithCitations(text, caseTitle) {
   if (!text) return text;
   const citations = parseCitations(text);
   if (citations.length === 0) return text;
@@ -55,7 +58,7 @@ export function renderWithCitations(text) {
   let cursor = 0;
   citations.forEach((c, i) => {
     if (c.index > cursor) nodes.push(text.slice(cursor, c.index));
-    nodes.push(<CitationLink key={`cite-${i}-${c.index}`} raw={c.raw} year={c.components?.year} />);
+    nodes.push(<CitationLink key={`cite-${i}-${c.index}`} raw={c.raw} year={c.components?.year} caseTitle={caseTitle} />);
     cursor = c.index + c.length;
   });
   if (cursor < text.length) nodes.push(text.slice(cursor));

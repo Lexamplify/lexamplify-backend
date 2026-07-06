@@ -9,6 +9,15 @@ function courtRank(court) {
   return 2;
 }
 
+// Missing/unparseable years must never corrupt the comparator (NaN from
+// Number(undefined) is spec-undefined as a sort return value) — coerce to
+// -Infinity so bad data deterministically sorts last instead of producing
+// nondeterministic ordering.
+function safeYear(year) {
+  const n = Number(year);
+  return Number.isFinite(n) ? n : -Infinity;
+}
+
 // Display order is enforced here (presentation layer), not by the search
 // source — so it stays correct even if the mock is later swapped for a real
 // API that returns its own relevance ordering. Chronological descending
@@ -17,7 +26,7 @@ function courtRank(court) {
 // unrelated recent ones from a lower court.
 function sortResults(results) {
   return [...results].sort((a, b) => {
-    const yearDiff = Number(b.year) - Number(a.year);
+    const yearDiff = safeYear(b.year) - safeYear(a.year);
     if (yearDiff !== 0) return yearDiff;
     return courtRank(a.court) - courtRank(b.court);
   });
@@ -44,7 +53,7 @@ export default function ExternalResultsTable({ results, savedIds, onSaveToLibrar
             </a>
           </div>
 
-          <div className="fl-ext-result-headnote">{renderWithCitations(r.headnote)}</div>
+          <div className="fl-ext-result-headnote">{renderWithCitations(r.headnote, r.title)}</div>
 
           <div className="fl-ext-result-actions">
             <button

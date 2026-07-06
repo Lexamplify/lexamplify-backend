@@ -1487,7 +1487,7 @@ export default function FirmLibrary() {
                   <>
                     <div className="fl-ws-section">
                       <div className="fl-ws-section-label">Description</div>
-                      <div className="fl-ws-description">{renderWithCitations(e.description)}</div>
+                      <div className="fl-ws-description">{renderWithCitations(e.description, e.title)}</div>
                     </div>
 
                     {e.tags?.length > 0 && (
