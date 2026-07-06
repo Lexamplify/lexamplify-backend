@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
 import { renderWithCitations } from './CitationLink';
+import { searchExternalDatabase } from '../utils/externalLegalSearch';
+import ExternalResultsTable from './ExternalResultsTable';
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 export const SEED_ENTRIES = [
@@ -561,6 +563,28 @@ const flStyles = `
   :root[data-theme="light"] .fl-rag-synthesis { color: var(--text-primary, #0F172A); }
   :root[data-theme="light"] .fl-rag-citation { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
   :root[data-theme="light"] .fl-rag-ratio { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
+
+  /* ── Internal / External mode toggle ── */
+  .fl-mode-toggle { display: inline-flex; gap: 3px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 3px; margin-bottom: 16px; }
+  .fl-mode-btn { background: transparent; border: none; color: var(--text-muted); font-size: 12.5px; font-weight: 600; padding: 7px 16px; border-radius: 6px; cursor: pointer; transition: all .15s; }
+  .fl-mode-btn:hover { color: var(--text-primary); }
+  .fl-mode-btn.active { background: var(--accent-primary); color: #fff; }
+
+  /* ── External Acts & Judgments results ── */
+  .fl-ext-results { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+  .fl-ext-result-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px 18px; }
+  .fl-ext-result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+  .fl-ext-result-title { font-size: 14.5px; font-weight: 700; color: var(--text-primary); font-family: var(--font-serif); margin-bottom: 3px; }
+  .fl-ext-result-meta { font-size: 11.5px; color: var(--text-muted); }
+  .fl-ext-result-open { font-size: 12px; font-weight: 600; color: var(--accent-primary); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+  .fl-ext-result-open:hover { text-decoration: underline; }
+  .fl-ext-result-headnote { font-size: 13px; color: var(--text-primary); line-height: 1.7; margin-bottom: 12px; }
+  .fl-ext-result-actions { display: flex; gap: 8px; }
+  .fl-ext-action-btn { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); color: var(--accent-primary); font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 7px; cursor: pointer; transition: all .15s; }
+  .fl-ext-action-btn:hover:not(:disabled) { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.4); }
+  .fl-ext-action-btn:disabled { opacity: .55; cursor: default; color: var(--text-muted); border-color: var(--border-subtle); background: transparent; }
+  .fl-ext-action-btn.vault { background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.25); color: #A78BFA; }
+  .fl-ext-action-btn.vault:hover { background: rgba(139,92,246,0.16); border-color: rgba(139,92,246,0.4); }
 `;
 
 // ── LS helpers ────────────────────────────────────────────────────────────────
@@ -595,6 +619,13 @@ export default function FirmLibrary() {
   const [showModal, setShowModal]   = useState(false);
   const [toast, setToast]           = useState('');
   const [newEntry, setNewEntry]     = useState({ title: '', category: 'Template', author: '', description: '', tags: '' });
+
+  // ── Internal / External library mode ────────────────────────────────────────
+  const [libraryMode, setLibraryMode] = useState('internal'); // 'internal' | 'external'
+  const [extQuery, setExtQuery]       = useState('');
+  const [extResults, setExtResults]   = useState([]);
+  const [extLoading, setExtLoading]   = useState(false);
+  const [extSavedIds, setExtSavedIds] = useState(() => new Set());
 
   // ── Workspace state ─────────────────────────────────────────────────────────
   const [selectedEntry, setSelectedEntry] = useState(null);
@@ -658,6 +689,50 @@ export default function FirmLibrary() {
   useEffect(() => {
     return () => clearTimeout(drawerTimerRef.current);
   }, []);
+
+  // ── External Acts & Judgments debounced search ──────────────────────────────
+  useEffect(() => {
+    if (libraryMode !== 'external') return;
+    if (extQuery.trim().length < 3) { setExtResults([]); setExtLoading(false); return; }
+    setExtLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchExternalDatabase(extQuery.trim());
+        setExtResults(res);
+      } catch { setExtResults([]); } finally { setExtLoading(false); }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [extQuery, libraryMode]);
+
+  const handleSaveToLibrary = (result) => {
+    const newLibEntry = {
+      id: Date.now(),
+      title: result.title,
+      category: 'Precedent',
+      author: 'External — Indian Kanoon',
+      updated: new Date().toISOString().slice(0, 10),
+      tags: [String(result.year), result.court],
+      description: `${result.citation}. ${result.headnote}`,
+    };
+    const updated = [newLibEntry, ...entries];
+    setEntries(updated);
+    saveEntries(updated);
+    setExtSavedIds(prev => new Set(prev).add(result.id));
+    showToast('Saved to Firm Library');
+  };
+
+  const handleInjectExternalToVault = (result) => {
+    addSharedFile({
+      id: `ext-${result.id}-${Date.now()}`,
+      filename: result.title,
+      category: 'Precedent',
+      tags: [result.citation],
+      modules: ['case-vault'],
+      source: 'External — Indian Kanoon',
+      savedAt: new Date().toISOString(),
+    });
+    showToast('Injected into Case Vault workspace');
+  };
 
   // ── Dual-Brain RAG debounced search ─────────────────────────────────────────
   useEffect(() => {
@@ -933,6 +1008,24 @@ export default function FirmLibrary() {
           </button>
         </div>
 
+        {/* Internal / External mode toggle */}
+        <div className="fl-mode-toggle">
+          <button
+            className={`fl-mode-btn${libraryMode === 'internal' ? ' active' : ''}`}
+            onClick={() => setLibraryMode('internal')}
+          >
+            Internal Firm Files
+          </button>
+          <button
+            className={`fl-mode-btn${libraryMode === 'external' ? ' active' : ''}`}
+            onClick={() => setLibraryMode('external')}
+          >
+            External Database
+          </button>
+        </div>
+
+        {libraryMode === 'internal' && (
+        <>
         {/* Toolbar */}
         <div className="fl-toolbar">
           <div className="fl-search-wrap">
@@ -1214,6 +1307,57 @@ export default function FirmLibrary() {
             </tbody>
           </table>
         </div>
+        </>
+        )}
+
+        {libraryMode === 'external' && (
+          <>
+            <div className="fl-toolbar">
+              <div className="fl-search-wrap">
+                <span className="fl-search-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  className="fl-search-input"
+                  placeholder="Search Acts, Judgments, and case law by name, citation, or court…"
+                  value={extQuery}
+                  onChange={e => setExtQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {extLoading && (
+              <div className="fl-rag-loading">
+                <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                Querying external Acts &amp; Judgments database…
+              </div>
+            )}
+
+            {!extLoading && extQuery.trim().length >= 3 && extResults.length === 0 && (
+              <div className="fl-empty">
+                <div className="fl-empty-icon">📂</div>
+                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No matches found</div>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Try a different case name, citation, or court.</div>
+              </div>
+            )}
+
+            {!extLoading && extQuery.trim().length < 3 && extResults.length === 0 && (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0' }}>
+                Type at least 3 characters to search external Acts and Judgments.
+              </div>
+            )}
+
+            <ExternalResultsTable
+              results={extResults}
+              savedIds={extSavedIds}
+              onSaveToLibrary={handleSaveToLibrary}
+              onInjectToVault={handleInjectExternalToVault}
+            />
+          </>
+        )}
       </div>{/* end .fl-page */}
 
       {/* Action menu dropdown */}

@@ -1,13 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { parseCitations, resolveCitation, buildSearchUrls, TREATMENT_META } from '../utils/citationParser';
+import React, { useState, useRef, useEffect } from 'react';
+import { parseCitations, getTreatment, TREATMENT_META } from '../utils/citationParser';
+import { resolveCitation } from '../utils/citationResolver';
 
-const GUTTER = 8;
-const EST_WIDTH = 236;
-const EST_HEIGHT = 168;
-
-const STYLE_ID = 'lex-citation-link-styles';
+const STYLE_ID = 'lex-citation-link-styles-v2';
 const CITATION_CSS = `
+  .lex-citation-wrap { display: inline; position: relative; }
   .lex-citation-link {
     display: inline-flex; align-items: center; gap: 4px;
     background: none; border: none; padding: 0 1px; margin: 0;
@@ -15,31 +12,31 @@ const CITATION_CSS = `
     border-bottom: 1px dashed rgba(126,179,245,0.45);
     transition: color .15s, border-color .15s;
   }
-  .lex-citation-link:hover { color: #A5C9FF; border-bottom-color: rgba(165,201,255,0.7); }
+  .lex-citation-link:hover:not(:disabled) { color: #A5C9FF; border-bottom-color: rgba(165,201,255,0.7); }
+  .lex-citation-link:disabled { cursor: default; opacity: .75; }
   .lex-citation-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .lex-citation-spinner {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    border: 1.5px solid rgba(126,179,245,.35); border-top-color: #7EB3F5;
+    animation: lex-citation-spin .7s linear infinite;
+  }
+  @keyframes lex-citation-spin { to { transform: rotate(360deg); } }
 
-  .lex-citation-popover {
-    position: fixed; z-index: 100; width: 236px;
-    background: #0D1117; border: 1px solid rgba(255,255,255,.1);
-    border-radius: 10px; padding: 10px;
-    box-shadow: 0 16px 48px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.3);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    animation: lex-citation-pop-in .14s cubic-bezier(0.16,1,0.3,1);
-    display: flex; flex-direction: column; gap: 6px;
+  .lex-citation-fallback {
+    display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    margin-left: 6px; padding: 3px 8px 3px 9px; font-size: 11px;
+    color: #FBBF24; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.28);
+    border-radius: 12px; vertical-align: middle;
+    animation: lex-citation-fallback-in .16s ease-out;
   }
-  @keyframes lex-citation-pop-in { from { opacity:0; transform: translateY(-3px); } to { opacity:1; transform:translateY(0); } }
-  .lex-citation-pop-header { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
-  .lex-citation-pop-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-  .lex-citation-pop-raw { font-size:11.5px; color:#8CA0B8; background:rgba(255,255,255,.03); border-radius:5px; padding:5px 7px; word-break:break-word; margin-bottom:2px; }
-  .lex-citation-pop-action {
-    display:block; text-align:left; width:100%; box-sizing:border-box;
-    background: rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);
-    color:#C8D8E8; font-size:12px; font-weight:500; padding:7px 10px; border-radius:6px;
-    cursor:pointer; text-decoration:none; transition: all .15s;
+  @keyframes lex-citation-fallback-in { from { opacity:0; transform: translateY(-2px); } to { opacity:1; transform:none; } }
+  .lex-citation-fallback a { color: #FDE68A; font-weight: 600; text-decoration: underline; text-decoration-style: dotted; }
+  .lex-citation-fallback a:hover { color: #FEF3C7; }
+  .lex-citation-fallback-close {
+    background: none; border: none; color: #FBBF24; cursor: pointer; font-size: 13px; line-height: 1;
+    padding: 0 0 0 2px; opacity: .7;
   }
-  .lex-citation-pop-action:hover { background: rgba(59,130,246,.14); border-color: rgba(59,130,246,.4); color:#fff; }
-  .lex-citation-pop-action.primary { background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.4); color:#93C5FD; font-weight:600; }
-  .lex-citation-pop-action.primary:hover { background: rgba(59,130,246,.26); color:#fff; }
+  .lex-citation-fallback-close:hover { opacity: 1; }
 `;
 
 function ensureStylesInjected() {
@@ -50,127 +47,88 @@ function ensureStylesInjected() {
   document.head.appendChild(style);
 }
 
-// Compute a viewport-clamped position anchored to the trigger's rect —
-// flips horizontally/vertically before clamping so the popover can never
-// clip regardless of where the citation sits on screen.
-function computePosition(rect) {
-  let left = rect.left;
-  let top = rect.bottom + 6;
-
-  if (left + EST_WIDTH > window.innerWidth - GUTTER) {
-    left = rect.right - EST_WIDTH;
-  }
-  if (top + EST_HEIGHT > window.innerHeight - GUTTER) {
-    top = rect.top - EST_HEIGHT - 6;
-  }
-
-  left = Math.max(GUTTER, Math.min(left, window.innerWidth - EST_WIDTH - GUTTER));
-  top = Math.max(GUTTER, Math.min(top, window.innerHeight - EST_HEIGHT - GUTTER));
-  return { left, top };
-}
-
 export default function CitationLink({ raw }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState(null);
-  const [copiedFor, setCopiedFor] = useState('');
-  const triggerRef = useRef(null);
-  const popoverRef = useRef(null);
-
-  useEffect(() => { ensureStylesInjected(); }, []);
-
-  const resolved = resolveCitation(raw);
-  const meta = TREATMENT_META[resolved.treatment];
-  const urls = buildSearchUrls(raw);
-
-  const reposition = useCallback(() => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    // Auto-close if the anchor has scrolled out of the viewport entirely —
-    // avoids a floating popover detached from its citation.
-    if (rect.bottom < 0 || rect.top > window.innerHeight) { setOpen(false); return; }
-    setPos(computePosition(rect));
-  }, []);
+  const [status, setStatus] = useState('idle'); // idle | resolving | found | not_found
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    if (!open) return undefined;
-    reposition();
+    // Re-assert true on every setup — StrictMode double-invokes this effect
+    // (setup -> cleanup -> setup) on mount in development, and without this
+    // the cleanup's `false` would never be reset by the second setup,
+    // permanently poisoning the guard for a component that is very much
+    // still mounted and interactive.
+    mountedRef.current = true;
+    ensureStylesInjected();
+    return () => { mountedRef.current = false; };
+  }, []);
 
-    const onScroll = () => reposition();
-    const onResize = () => reposition();
-    const onMouseDown = (e) => {
-      if (
-        popoverRef.current && !popoverRef.current.contains(e.target) &&
-        triggerRef.current && !triggerRef.current.contains(e.target)
-      ) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+  const treatment = getTreatment(raw);
+  const meta = TREATMENT_META[treatment];
 
-    window.addEventListener('scroll', onScroll, true); // capture phase — catches nested scroll containers
-    window.addEventListener('resize', onResize);
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onResize);
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, reposition]);
+  const handleClick = async (e) => {
+    e.preventDefault();
+    if (status === 'resolving') return; // guard re-entrant clicks
 
-  const handleOpen = (e) => {
-    e.stopPropagation();
-    reposition();
-    setOpen(true);
+    // CRITICAL: window.open must happen synchronously, in the same call stack
+    // as the click event — any `await` before this and browsers treat it as
+    // an unrequested popup and silently block it.
+    const newTab = window.open('about:blank', '_blank');
+
+    setStatus('resolving');
+    const result = await resolveCitation(raw);
+
+    // The tab may have been closed by the user, or the component unmounted,
+    // while we were waiting — guard every access.
+    const tabIsUsable = newTab && !newTab.closed;
+
+    if (result.status === 'found') {
+      if (tabIsUsable) newTab.location.href = result.url;
+      if (mountedRef.current) setStatus('found');
+    } else {
+      if (tabIsUsable) newTab.close();
+      if (mountedRef.current) setStatus('not_found');
+    }
   };
 
-  const copyAndOpen = (url, tag) => {
-    navigator.clipboard.writeText(raw).catch(() => {});
-    window.open(url, '_blank', 'noopener,noreferrer');
-    setCopiedFor(tag);
-    setTimeout(() => setCopiedFor(''), 1600);
-  };
+  const dismissFallback = () => setStatus('idle');
 
   return (
-    <>
-      <button ref={triggerRef} type="button" className="lex-citation-link" onClick={handleOpen} title={raw}>
+    <span className="lex-citation-wrap">
+      <button
+        type="button"
+        className="lex-citation-link"
+        onClick={handleClick}
+        disabled={status === 'resolving'}
+        title={raw}
+      >
         <span className="lex-citation-dot" style={{ background: meta.color }} />
         {raw}
+        {status === 'resolving' && <span className="lex-citation-spinner" />}
       </button>
 
-      {open && pos && createPortal(
-        <div
-          ref={popoverRef}
-          className="lex-citation-popover"
-          style={{ left: pos.left, top: pos.top }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="lex-citation-pop-header">
-            <span className="lex-citation-pop-dot" style={{ background: meta.color }} />
-            <span style={{ color: meta.color }}>{meta.label}</span>
-          </div>
-          <div className="lex-citation-pop-raw">{raw}</div>
-
+      {status === 'not_found' && (
+        <span className="lex-citation-fallback">
+          Not available on Indian Kanoon — search via:
           <a
-            className="lex-citation-pop-action primary"
-            href={urls.indianKanoon}
+            href="https://www.scconline.com"
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => setOpen(false)}
+            onClick={() => navigator.clipboard.writeText(raw).catch(() => {})}
           >
-            Open in Indian Kanoon
+            SCC Online
           </a>
-          <button className="lex-citation-pop-action" onClick={() => copyAndOpen(urls.sccOnline, 'scc')}>
-            {copiedFor === 'scc' ? '✓ Copied — paste in SCC Online' : 'Search SCC Online'}
-          </button>
-          <button className="lex-citation-pop-action" onClick={() => copyAndOpen(urls.manupatra, 'manu')}>
-            {copiedFor === 'manu' ? '✓ Copied — paste in Manupatra' : 'Search Manupatra'}
-          </button>
-        </div>,
-        document.body
+          <a
+            href="https://www.manupatrafast.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => navigator.clipboard.writeText(raw).catch(() => {})}
+          >
+            Manupatra
+          </a>
+          <button type="button" className="lex-citation-fallback-close" onClick={dismissFallback} title="Dismiss">×</button>
+        </span>
       )}
-    </>
+    </span>
   );
 }
 

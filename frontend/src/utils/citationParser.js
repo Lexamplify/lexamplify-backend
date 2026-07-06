@@ -1,9 +1,7 @@
 // ── Indian Legal Citation Parser ─────────────────────────────────────────────
-// Detects citations in raw text (AIR, SCC, SCC OnLine, Cri LJ, Supreme Court
-// neutral citations, and the post-2023 High Court colon-scheme neutral
-// citations) and resolves them to search URLs + a mocked "good law" treatment
-// signal. Resolutions are cached in localStorage to avoid redundant work and
-// to seed a future firm-wide citation graph.
+// Pure detection + display-metadata concerns only. Network resolution and
+// tab-routing logic live in `citationResolver.js` — kept separate so parsing
+// stays synchronous, fast, and independently testable.
 
 const CITATION_PATTERNS = [
   // High Court neutral citation scheme (eCourts, 2023+): 2024:DHC:1234, 2024:BHC-AS:1234-DB
@@ -46,8 +44,7 @@ const CITATION_PATTERNS = [
 
 /**
  * Scan raw text and return every detected citation, sorted by position with
- * overlapping matches collapsed to the longest (most specific) match — the
- * same interval-collision approach used for risk-clause highlighting.
+ * overlapping matches collapsed to the longest (most specific) match.
  */
 export function parseCitations(text) {
   if (!text) return [];
@@ -77,77 +74,32 @@ export function parseCitations(text) {
   return deduped.sort((a, b) => a.index - b.index);
 }
 
-// ── "Good law" treatment — mocked pending a real citator backend ───────────
-// Deterministic per citation (same input always yields the same badge) and
-// weighted realistically: most precedents remain good law.
+// ── Shared deterministic hash ────────────────────────────────────────────────
+// Used both for the always-visible "Good Law" dot here and for the async
+// resolver's found/not-found split in citationResolver.js — a single source
+// of truth so the two never disagree on the same citation.
+export function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+export function normalizeCitationKey(raw) {
+  return raw.trim().replace(/\s+/g, ' ');
+}
+
+// ── "Good law" treatment — an instant, synchronous signal (no network needed)
+// mocked pending a real citator backend. Deterministic per citation.
 export const TREATMENT_META = {
   good:          { label: 'Good Law',                                  color: '#34D399' },
   distinguished: { label: 'Distinguished — verify context',            color: '#FBBF24' },
   overruled:     { label: 'Overruled — do not rely without checking',  color: '#F87171' },
 };
 
-function mockTreatment(key) {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-  const bucket = hash % 10;
+export function getTreatment(raw) {
+  const key = normalizeCitationKey(raw);
+  const bucket = hashString(key) % 10;
   if (bucket < 7) return 'good';
   if (bucket < 9) return 'distinguished';
   return 'overruled';
-}
-
-// ── Resolution cache (localStorage) ─────────────────────────────────────────
-const CACHE_KEY = 'lex_citation_cache';
-const CACHE_LIMIT = 200;
-
-function readCache() {
-  try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch { return {}; }
-}
-function writeCache(cache) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch { /* storage quota — skip */ }
-}
-function normalizeKey(raw) {
-  return raw.trim().replace(/\s+/g, ' ');
-}
-
-/**
- * Resolve a raw citation string to a search URL + treatment signal.
- * Cached in localStorage — repeat encounters of the same citation across
- * documents skip re-computation and lay the groundwork for a firm-wide
- * citation graph once a real backend replaces the mock treatment.
- */
-export function resolveCitation(raw) {
-  const key = normalizeKey(raw);
-  const cache = readCache();
-  if (cache[key]) return cache[key];
-
-  const entry = {
-    url: `https://indiankanoon.org/search/?formInput=${encodeURIComponent(key)}`,
-    treatment: mockTreatment(key),
-    resolvedAt: Date.now(),
-  };
-
-  const keys = Object.keys(cache);
-  if (keys.length >= CACHE_LIMIT) {
-    const oldest = keys.sort((a, b) => cache[a].resolvedAt - cache[b].resolvedAt)[0];
-    delete cache[oldest];
-  }
-  cache[key] = entry;
-  writeCache(cache);
-  return entry;
-}
-
-/**
- * Build the tri-database search URL matrix for a raw citation.
- * SCC Online / Manupatra are paywalled with unpublished internal search
- * schemas — we link to their public root rather than guessing a deep-link,
- * and rely on the clipboard-copy fallback so the user can paste the citation
- * directly once past the login wall.
- */
-export function buildSearchUrls(raw) {
-  const key = normalizeKey(raw);
-  return {
-    indianKanoon: `https://indiankanoon.org/search/?formInput=${encodeURIComponent(key)}`,
-    sccOnline: 'https://www.scconline.com',
-    manupatra: 'https://www.manupatrafast.com',
-  };
 }
