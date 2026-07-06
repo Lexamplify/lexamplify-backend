@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
+import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
+import { renderWithCitations } from './CitationLink';
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 export const SEED_ENTRIES = [
@@ -20,7 +21,7 @@ export const SEED_ENTRIES = [
     author: 'Kumar & Associates',
     updated: '2026-06-15',
     tags: ['NI Act', 'Criminal', 'Delhi HC'],
-    description: 'Complaint under Section 138 of the Negotiable Instruments Act, 1881. Delhi High Court approved format with standard prayers, demand notice, and legal notice compliance checklist.',
+    description: 'Complaint under Section 138 of the Negotiable Instruments Act, 1881. Delhi High Court approved format with standard prayers, demand notice, and legal notice compliance checklist. Cf. Dashrath Rupsingh Rathod v. State of Maharashtra, (2014) 9 SCC 129, on territorial jurisdiction for filing, and AIR 1999 SC 3762 on the presumption under Section 139.',
   },
   {
     id: 3,
@@ -846,6 +847,25 @@ export default function FirmLibrary() {
     navigate(`/conflict-engine?entity=${encodeURIComponent(title)}`);
   };
 
+  // Decoupled bridge to the Case Vault — reuses the existing shared-workspace
+  // pub/sub (localStorage + CustomEvent) that CaseVault already subscribes to,
+  // tagged for the 'case-vault' module. No new store, no prop drilling.
+  const injectToVault = (id) => {
+    const entry = entries.find(e => e.id === id);
+    setMenuRow(null);
+    if (!entry) return;
+    addSharedFile({
+      id: `fl-${entry.id}-${Date.now()}`,
+      filename: entry.title,
+      category: entry.category,
+      tags: entry.tags || [],
+      modules: ['case-vault'],
+      source: 'Firm Library',
+      savedAt: new Date().toISOString(),
+    });
+    showToast('Injected into Case Vault workspace');
+  };
+
   // ── Add new entry ─────────────────────────────────────────────────────────────
   const EMPTY_FORM = { title: '', category: 'Template', author: '', description: '', tags: '' };
   const handleAddEntry = (e) => {
@@ -965,7 +985,7 @@ export default function FirmLibrary() {
                   </div>
                 )}
               </div>
-              <div className="fl-rag-synthesis">{ragResult.synthesis}</div>
+              <div className="fl-rag-synthesis">{renderWithCitations(ragResult.synthesis)}</div>
               {ragResult.citations?.length > 0 && (
                 <div>
                   <div className="fl-rag-section-label">Citations</div>
@@ -1215,6 +1235,12 @@ export default function FirmLibrary() {
             </svg>
             Send to Conflict Engine
           </div>
+          <div className="fl-menu-item" onClick={() => injectToVault(menuRow)}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Inject into Vault
+          </div>
           <div className="fl-menu-divider" />
           <div className="fl-menu-item danger" onClick={() => deleteEntry(menuRow)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -1317,7 +1343,7 @@ export default function FirmLibrary() {
                   <>
                     <div className="fl-ws-section">
                       <div className="fl-ws-section-label">Description</div>
-                      <div className="fl-ws-description">{e.description}</div>
+                      <div className="fl-ws-description">{renderWithCitations(e.description)}</div>
                     </div>
 
                     {e.tags?.length > 0 && (
