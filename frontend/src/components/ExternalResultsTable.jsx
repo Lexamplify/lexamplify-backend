@@ -1,15 +1,38 @@
 import React from 'react';
 import { renderWithCitations } from './CitationLink';
 
+// Court-hierarchy rank for the tie-break — pattern-matched rather than a
+// hardcoded name list, so it scales to any court string.
+function courtRank(court) {
+  if (court === 'Supreme Court of India') return 0;
+  if (/high court/i.test(court || '')) return 1;
+  return 2;
+}
+
+// Display order is enforced here (presentation layer), not by the search
+// source — so it stays correct even if the mock is later swapped for a real
+// API that returns its own relevance ordering. Chronological descending
+// first, then Supreme Court > High Courts > Others within the same year —
+// this keeps the newest matters on top without burying landmark cases behind
+// unrelated recent ones from a lower court.
+function sortResults(results) {
+  return [...results].sort((a, b) => {
+    const yearDiff = Number(b.year) - Number(a.year);
+    if (yearDiff !== 0) return yearDiff;
+    return courtRank(a.court) - courtRank(b.court);
+  });
+}
+
 // Distinct component for external judgment results — deliberately NOT forced
 // into the internal Firm Library table, since the data shape is different
 // (court/citation/headnote/url vs. the internal template/precedent shape).
 export default function ExternalResultsTable({ results, savedIds, onSaveToLibrary, onInjectToVault }) {
   if (!results || results.length === 0) return null;
+  const sorted = sortResults(results);
 
   return (
     <div className="fl-ext-results">
-      {results.map((r) => (
+      {sorted.map((r) => (
         <div key={r.id} className="fl-ext-result-card">
           <div className="fl-ext-result-head">
             <div>
