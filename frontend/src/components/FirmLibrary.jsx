@@ -574,10 +574,10 @@ const flStyles = `
   .fl-ext-results { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
   .fl-ext-result-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px 18px; }
   .fl-ext-result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
-  .fl-ext-result-title { font-size: 14.5px; font-weight: 700; color: var(--text-primary); font-family: var(--font-serif); margin-bottom: 3px; }
+  .fl-ext-result-title { font-size: 14.5px; font-weight: 700; font-family: var(--font-serif); margin-bottom: 3px; }
+  .fl-ext-result-title-link { display: inline-block; color: #7EB3F5; text-decoration: none; }
+  .fl-ext-result-title-link:hover { color: #A5C9FF; text-decoration: underline; }
   .fl-ext-result-meta { font-size: 11.5px; color: var(--text-muted); }
-  .fl-ext-result-open { font-size: 12px; font-weight: 600; color: var(--accent-primary); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
-  .fl-ext-result-open:hover { text-decoration: underline; }
   .fl-ext-result-headnote { font-size: 13px; color: var(--text-primary); line-height: 1.7; margin-bottom: 12px; }
   .fl-ext-result-actions { display: flex; gap: 8px; }
   .fl-ext-action-btn { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); color: var(--accent-primary); font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 7px; cursor: pointer; transition: all .15s; }

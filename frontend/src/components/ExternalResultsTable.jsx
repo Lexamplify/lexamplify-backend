@@ -1,6 +1,5 @@
 import React from 'react';
 import { renderWithCitations } from './CitationLink';
-import { buildKanoonUrl } from '../utils/citationResolver';
 
 // Court-hierarchy rank for the tie-break — pattern-matched rather than a
 // hardcoded name list, so it scales to any court string.
@@ -35,7 +34,7 @@ function sortResults(results) {
 
 // Distinct component for external judgment results — deliberately NOT forced
 // into the internal Firm Library table, since the data shape is different
-// (court/citation/headnote/url vs. the internal template/precedent shape).
+// (court/citation/headnote/kanoonDocId vs. the internal template/precedent shape).
 export default function ExternalResultsTable({ results, savedIds, onSaveToLibrary, onInjectToVault }) {
   if (!results || results.length === 0) return null;
   const sorted = sortResults(results);
@@ -46,12 +45,16 @@ export default function ExternalResultsTable({ results, savedIds, onSaveToLibrar
         <div key={r.id} className="fl-ext-result-card">
           <div className="fl-ext-result-head">
             <div>
-              <div className="fl-ext-result-title">{r.title}</div>
+              <a
+                className="fl-ext-result-title fl-ext-result-title-link"
+                href={`https://indiankanoon.org/doc/${r.kanoonDocId}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {r.title}
+              </a>
               <div className="fl-ext-result-meta">{r.court} · {r.year} · {r.citation}</div>
             </div>
-            <a className="fl-ext-result-open" href={buildKanoonUrl(r.citation, r.year, r.title)} target="_blank" rel="noopener noreferrer">
-              Open ↗
-            </a>
           </div>
 
           <div className="fl-ext-result-headnote">{renderWithCitations(r.headnote)}</div>
