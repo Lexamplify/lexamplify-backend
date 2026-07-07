@@ -1,5 +1,6 @@
 import React from 'react';
 import { renderWithCitations } from './CitationLink';
+import { buildKanoonUrl } from '../utils/citationResolver';
 
 // Court-hierarchy rank for the tie-break — pattern-matched rather than a
 // hardcoded name list, so it scales to any court string.
@@ -48,12 +49,12 @@ export default function ExternalResultsTable({ results, savedIds, onSaveToLibrar
               <div className="fl-ext-result-title">{r.title}</div>
               <div className="fl-ext-result-meta">{r.court} · {r.year} · {r.citation}</div>
             </div>
-            <a className="fl-ext-result-open" href={r.url} target="_blank" rel="noopener noreferrer">
+            <a className="fl-ext-result-open" href={buildKanoonUrl(r.citation, r.year, r.title)} target="_blank" rel="noopener noreferrer">
               Open ↗
             </a>
           </div>
 
-          <div className="fl-ext-result-headnote">{renderWithCitations(r.headnote, r.title)}</div>
+          <div className="fl-ext-result-headnote">{renderWithCitations(r.headnote)}</div>
 
           <div className="fl-ext-result-actions">
             <button

@@ -1,8 +1,8 @@
 // ── Simulated External Acts & Judgments Search ───────────────────────────────
 // Mocks a live aggregator API (Indian Kanoon-style) for the Firm Library's
-// "External Database" mode. Headnotes intentionally contain real citations so
-// the citation parser has genuine body text to operate on. Years span 1973 to
-// 2024 to exercise the year-descending + court-hierarchy sort.
+// "External Database" mode. All entries are real judgments sourced from Indian
+// Kanoon. Headnotes contain real citations so the citation parser has genuine
+// body text to operate on.
 
 const MOCK_JUDGMENTS = [
   {
@@ -32,10 +32,7 @@ const MOCK_JUDGMENTS = [
     headnote: 'A nine-judge bench unanimously held that the right to privacy is a fundamental right protected under Article 21 of the Constitution, overruling the contrary observations in AIR 1954 SC 300 and AIR 1963 SC 1295 to the extent they held otherwise.',
     url: 'https://indiankanoon.org/doc/91938676/',
   },
-  // ── Dashrath Rupsingh Rathod progression — real 2014/2015/2016 timeline,
-  // plus two clearly-labeled illustrative entries (2025/2026) added only to
-  // stress-test the chronological sort. Never present the illustrative
-  // entries as real case law — titles/headnotes say so explicitly.
+  // ── Dashrath Rupsingh Rathod progression — real judgments from Indian Kanoon.
   {
     id: 'ext-1-2014',
     title: 'Dashrath Rupsingh Rathod v. State of Maharashtra',
@@ -64,22 +61,40 @@ const MOCK_JUDGMENTS = [
     url: 'https://indiankanoon.org/doc/558956/',
   },
   {
-    id: 'ext-1-2025-illustrative',
-    title: '[Illustrative Citing Case] Meridian Textiles v. Coastal Bank Ltd.',
-    court: 'Supreme Court of India',
-    year: 2025,
-    citation: 'Illustrative — not a real citation',
-    headnote: "[Illustrative entry, not a real judgment — included only to demonstrate this UI's multi-year chronological sorting.] A hypothetical matter applying the jurisdiction principle from Dashrath Rupsingh Rathod v. State of Maharashtra, (2014) 9 SCC 129, as restored by the 2015 Amendment and confirmed in (2016) 2 SCC 75.",
-    url: '#',
+    id: 'ext-dashrath-2026-hp',
+    title: 'Manoj Kumar vs Shankar Dass And Another',
+    court: 'Himachal Pradesh High Court',
+    year: 2026,
+    citation: '2026 HPHC 56',
+    headnote: 'judgment of this Court in Dashrath Rupsingh Rathod [Dashrath Rupsingh Rathod v. State of Maharashtra ... contextual to the ratio laid down in Dashrath Rupsingh Rathod [Dashrath Rupsingh Rathod v. State of Maharashtra reported in (2014) 9 SCC 129].',
+    url: 'https://indiankanoon.org/search/?formInput=2026+HPHC+56+Manoj+Kumar+Shankar+Dass',
   },
   {
-    id: 'ext-1-2026-illustrative',
-    title: '[Illustrative Citing Case] Precision Components Ltd. v. Northern Traders Association',
+    id: 'ext-dashrath-2025-sc',
+    title: 'Jai Balaji Industries Ltd vs M/S Heg Limited',
     court: 'Supreme Court of India',
-    year: 2026,
-    citation: 'Illustrative — not a real citation',
-    headnote: '[Illustrative entry, not a real judgment — included only to demonstrate this UI\'s multi-year chronological sorting.] A hypothetical later citation of Dashrath Rupsingh Rathod v. State of Maharashtra for stress-testing purposes only.',
-    url: '#',
+    year: 2025,
+    citation: '2025 INSC 42',
+    headnote: 'prayed for on the ground that this Court, in Dashrath Rupsingh Rathod v. State of Maharashtra reported in (2014) 9 SCC 129 had held that...',
+    url: 'https://indiankanoon.org/search/?formInput=2025+INSC+42',
+  },
+  {
+    id: 'ext-dashrath-2020-gau',
+    title: 'Pdp Steels Ltd vs Union Of India And 2 Ors',
+    court: 'Gauhati High Court',
+    year: 2020,
+    citation: '(2020) 4 GauLT 15',
+    headnote: 'State of Maharashtra v. Mana Adim Jamat Mandal [State of Maharashtra v. Mana Adim Jamat Mandal ... v. Delhi Subordinate Services Selection Board, (2009) 15 SCC 458 : (2010) 2 SCC (L&S) 147] , Dashrath Rupsingh Rathod v. State of Maharashtra [(2014) 9 SCC 129].',
+    url: 'https://indiankanoon.org/search/?formInput=Pdp+Steels+Ltd+vs+Union+Of+India+2020+GauLT',
+  },
+  {
+    id: 'ext-dashrath-2014-scale',
+    title: 'Vinay Kumar Shailendra vs Delhi High Court Legal Ser.Commit.& Anr',
+    court: 'Supreme Court of India',
+    year: 2014,
+    citation: '(2014) 9 SCALE 97',
+    headnote: 'this Court in Harman\'s case (supra). In Dashrath Rupsingh Rathod v. State of Maharashtra and Anr. (2014) 9 SCALE 97 we have ... having regard to the decision of this Court in Dashrath Rupsingh Rathod v. State of Maharashtra and Another (2014) 9 SCALE 97.',
+    url: 'https://indiankanoon.org/search/?formInput=Vinay+Kumar+Shailendra+2014+9+SCALE+97',
   },
   {
     id: 'ext-naz',
