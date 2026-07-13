@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
 import { renderWithCitations } from './CitationLink';
-import { searchExternalDatabase } from '../utils/externalLegalSearch';
-import ExternalResultsTable from './ExternalResultsTable';
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 export const SEED_ENTRIES = [
@@ -102,11 +100,11 @@ export const SEED_ENTRIES = [
 const CATEGORIES = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
 
 const CAT_COLORS = {
-  Template:         { bg: 'rgba(59,130,246,0.12)',  color: '#60A5FA', border: 'rgba(59,130,246,0.25)' },
-  Precedent:        { bg: 'rgba(245,158,11,0.12)',  color: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
-  'Research Memo':  { bg: 'rgba(139,92,246,0.12)',  color: '#A78BFA', border: 'rgba(139,92,246,0.25)' },
-  'Standard Form':  { bg: 'rgba(16,185,129,0.12)',  color: '#34D399', border: 'rgba(16,185,129,0.25)' },
-  'Practice Guide': { bg: 'rgba(20,184,166,0.12)',  color: '#2DD4BF', border: 'rgba(20,184,166,0.25)' },
+  Template: { bg: 'rgba(59,130,246,0.12)', color: '#60A5FA', border: 'rgba(59,130,246,0.25)' },
+  Precedent: { bg: 'rgba(245,158,11,0.12)', color: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
+  'Research Memo': { bg: 'rgba(139,92,246,0.12)', color: '#A78BFA', border: 'rgba(139,92,246,0.25)' },
+  'Standard Form': { bg: 'rgba(16,185,129,0.12)', color: '#34D399', border: 'rgba(16,185,129,0.25)' },
+  'Practice Guide': { bg: 'rgba(20,184,166,0.12)', color: '#2DD4BF', border: 'rgba(20,184,166,0.25)' },
 };
 
 const getCatStyle = (cat) =>
@@ -115,62 +113,62 @@ const getCatStyle = (cat) =>
 // ── Clause DNA data — per category ───────────────────────────────────────────
 const CLAUSE_DNA = {
   Template: [
-    { id: 'def',   name: 'Definitions',             risk: 'low',    summary: 'Standard defined terms — verify "Material Breach" threshold aligns with client tolerance' },
-    { id: 'pay',   name: 'Payment Terms',             risk: 'medium', summary: 'Net-30, 18% p.a. compound interest on overdue amounts; S.73 Contract Act exposure' },
-    { id: 'liab',  name: 'Limitation of Liability',  risk: 'high',   summary: 'Cap at 3× monthly fee — aggressive vendor carve; inadequate for high-value transactions' },
-    { id: 'indem', name: 'Indemnification',           risk: 'high',   summary: 'Mutual; excludes gross negligence — verify scope covers third-party IP infringement claims' },
-    { id: 'adr',   name: 'Dispute Resolution',        risk: 'low',    summary: 'DIAC arbitration, seat New Delhi, 3-member tribunal per DIAC Rules 2023' },
-    { id: 'fm',    name: 'Force Majeure',              risk: 'medium', summary: 'Excludes cyber-attacks and pandemic events — review for SaaS/cloud deployment contexts' },
-    { id: 'term',  name: 'Termination',                risk: 'medium', summary: '30-day convenience notice; immediate on material breach with 15-day cure right' },
+    { id: 'def', name: 'Definitions', risk: 'low', summary: 'Standard defined terms — verify "Material Breach" threshold aligns with client tolerance' },
+    { id: 'pay', name: 'Payment Terms', risk: 'medium', summary: 'Net-30, 18% p.a. compound interest on overdue amounts; S.73 Contract Act exposure' },
+    { id: 'liab', name: 'Limitation of Liability', risk: 'high', summary: 'Cap at 3× monthly fee — aggressive vendor carve; inadequate for high-value transactions' },
+    { id: 'indem', name: 'Indemnification', risk: 'high', summary: 'Mutual; excludes gross negligence — verify scope covers third-party IP infringement claims' },
+    { id: 'adr', name: 'Dispute Resolution', risk: 'low', summary: 'DIAC arbitration, seat New Delhi, 3-member tribunal per DIAC Rules 2023' },
+    { id: 'fm', name: 'Force Majeure', risk: 'medium', summary: 'Excludes cyber-attacks and pandemic events — review for SaaS/cloud deployment contexts' },
+    { id: 'term', name: 'Termination', risk: 'medium', summary: '30-day convenience notice; immediate on material breach with 15-day cure right' },
   ],
   Precedent: [
-    { id: 'court', name: 'Jurisdiction & Forum',    risk: 'low',    summary: 'Delhi HC, Original Side — verify pecuniary limits under Commercial Courts Act 2015' },
-    { id: 'facts', name: 'Statement of Facts',       risk: 'medium', summary: '14 paragraphs — confirm chronological accuracy; gaps in para 6–8 need corroborating evidence' },
-    { id: 'grnd',  name: 'Legal Grounds',            risk: 'low',    summary: '4 statutes cited; SC authority at each ground — strong primary authority chain' },
-    { id: 'intm',  name: 'Interim Relief Prayer',    risk: 'high',   summary: 'Ex-parte injunction — balance of convenience critical; urgency affidavit is mandatory' },
-    { id: 'costs', name: 'Prayer for Costs',         risk: 'low',    summary: 'Actual costs + 12% interest from filing date — within High Court established norms' },
+    { id: 'court', name: 'Jurisdiction & Forum', risk: 'low', summary: 'Delhi HC, Original Side — verify pecuniary limits under Commercial Courts Act 2015' },
+    { id: 'facts', name: 'Statement of Facts', risk: 'medium', summary: '14 paragraphs — confirm chronological accuracy; gaps in para 6–8 need corroborating evidence' },
+    { id: 'grnd', name: 'Legal Grounds', risk: 'low', summary: '4 statutes cited; SC authority at each ground — strong primary authority chain' },
+    { id: 'intm', name: 'Interim Relief Prayer', risk: 'high', summary: 'Ex-parte injunction — balance of convenience critical; urgency affidavit is mandatory' },
+    { id: 'costs', name: 'Prayer for Costs', risk: 'low', summary: 'Actual costs + 12% interest from filing date — within High Court established norms' },
   ],
   'Research Memo': [
-    { id: 'issue', name: 'Issue Presented',          risk: 'low',    summary: 'Precisely framed single dispositive question with clean scope limitation' },
-    { id: 'find',  name: 'Primary Findings',         risk: 'low',    summary: '6 propositions, each supported by HC/SC authority — citation density adequate' },
-    { id: 'div',   name: 'Diverging Precedents',     risk: 'high',   summary: '2 conflicting Division Bench rulings — refer to Full Bench; do not rely without resolution' },
-    { id: 'risk',  name: 'Risk Assessment',          risk: 'medium', summary: 'Moderate risk overall, 60–70% favourable outcome; caveated on witness availability' },
-    { id: 'rec',   name: 'Recommendations',          risk: 'low',    summary: '3 ranked action items with cost-benefit analysis and 45-day implementation window' },
+    { id: 'issue', name: 'Issue Presented', risk: 'low', summary: 'Precisely framed single dispositive question with clean scope limitation' },
+    { id: 'find', name: 'Primary Findings', risk: 'low', summary: '6 propositions, each supported by HC/SC authority — citation density adequate' },
+    { id: 'div', name: 'Diverging Precedents', risk: 'high', summary: '2 conflicting Division Bench rulings — refer to Full Bench; do not rely without resolution' },
+    { id: 'risk', name: 'Risk Assessment', risk: 'medium', summary: 'Moderate risk overall, 60–70% favourable outcome; caveated on witness availability' },
+    { id: 'rec', name: 'Recommendations', risk: 'low', summary: '3 ranked action items with cost-benefit analysis and 45-day implementation window' },
   ],
   'Standard Form': [
-    { id: 'scope', name: 'Scope of Work',            risk: 'medium', summary: 'Defined by Schedule A — ensure all attachments are physically annexed before execution' },
-    { id: 'ip',    name: 'IP Assignment',             risk: 'high',   summary: 'Broad "work made for hire" language — may conflict with existing employee IP rights' },
-    { id: 'conf',  name: 'Confidentiality',           risk: 'low',    summary: '3-year post-termination obligation; standard carve-outs for public domain and court orders' },
-    { id: 'comp',  name: 'Non-Compete',               risk: 'high',   summary: '2-year, all-India, all competing businesses — enforceability doubtful per S.27 CA 1872' },
-    { id: 'sev',   name: 'Severability',              risk: 'low',    summary: 'Blue-pencil doctrine incorporated — non-compete void on face; severs cleanly from agreement' },
+    { id: 'scope', name: 'Scope of Work', risk: 'medium', summary: 'Defined by Schedule A — ensure all attachments are physically annexed before execution' },
+    { id: 'ip', name: 'IP Assignment', risk: 'high', summary: 'Broad "work made for hire" language — may conflict with existing employee IP rights' },
+    { id: 'conf', name: 'Confidentiality', risk: 'low', summary: '3-year post-termination obligation; standard carve-outs for public domain and court orders' },
+    { id: 'comp', name: 'Non-Compete', risk: 'high', summary: '2-year, all-India, all competing businesses — enforceability doubtful per S.27 CA 1872' },
+    { id: 'sev', name: 'Severability', risk: 'low', summary: 'Blue-pencil doctrine incorporated — non-compete void on face; severs cleanly from agreement' },
   ],
   'Practice Guide': [
-    { id: 'pre',   name: 'Pre-Filing Checklist',     risk: 'low',    summary: '12 mandatory items — court rejects filings missing even one; validate before submission' },
-    { id: 'doc',   name: 'Document Requirements',    risk: 'medium', summary: 'Attestation rules changed Q1 2026 for e-filed documents — verify current HC circular' },
-    { id: 'lim',   name: 'Limitation Period',        risk: 'high',   summary: 'STRICT: missed limitation is fatal — calculate from cause of action, not date of discovery' },
-    { id: 'fee',   name: 'Court Fee Schedule',       risk: 'low',    summary: 'Updated April 2026 per Finance Act — use current schedule; old amounts will be rejected' },
-    { id: 'svc',   name: 'Service of Process',       risk: 'medium', summary: 'E-service accepted in Delhi, Bombay, Madras HC — verify Calcutta and other HCs separately' },
+    { id: 'pre', name: 'Pre-Filing Checklist', risk: 'low', summary: '12 mandatory items — court rejects filings missing even one; validate before submission' },
+    { id: 'doc', name: 'Document Requirements', risk: 'medium', summary: 'Attestation rules changed Q1 2026 for e-filed documents — verify current HC circular' },
+    { id: 'lim', name: 'Limitation Period', risk: 'high', summary: 'STRICT: missed limitation is fatal — calculate from cause of action, not date of discovery' },
+    { id: 'fee', name: 'Court Fee Schedule', risk: 'low', summary: 'Updated April 2026 per Finance Act — use current schedule; old amounts will be rejected' },
+    { id: 'svc', name: 'Service of Process', risk: 'medium', summary: 'E-service accepted in Delhi, Bombay, Madras HC — verify Calcutta and other HCs separately' },
   ],
 };
 
 // Simulated clause headings for the Document Preview scaffold
 const DOC_PREVIEW_CLAUSES = {
-  Template:         ['1. Definitions and Interpretation', '2. Term and Commencement', '3. Obligations of the Parties', '4. Consideration and Payment'],
-  Precedent:        ['IN THE HIGH COURT OF DELHI', 'Statement of Facts', 'Grounds for Relief', 'Prayer'],
-  'Research Memo':  ['I. Issue Presented', 'II. Brief Answer', 'III. Analysis', 'IV. Conclusion and Recommendations'],
-  'Standard Form':  ['Recitals', 'Article I — Definitions', 'Article II — Scope of Work', 'Article III — Consideration'],
+  Template: ['1. Definitions and Interpretation', '2. Term and Commencement', '3. Obligations of the Parties', '4. Consideration and Payment'],
+  Precedent: ['IN THE HIGH COURT OF DELHI', 'Statement of Facts', 'Grounds for Relief', 'Prayer'],
+  'Research Memo': ['I. Issue Presented', 'II. Brief Answer', 'III. Analysis', 'IV. Conclusion and Recommendations'],
+  'Standard Form': ['Recitals', 'Article I — Definitions', 'Article II — Scope of Work', 'Article III — Consideration'],
   'Practice Guide': ['A. Overview and Applicability', 'B. Step 1: Pre-Filing Checklist', 'C. Step 2: Document Preparation', 'D. Step 3: Filing and Service'],
 };
 
 const RISK_COLOR = {
-  low:    { bg: 'rgba(16,185,129,0.1)',  color: 'var(--accent-success)', border: 'rgba(16,185,129,0.28)' },
-  medium: { bg: 'rgba(245,158,11,0.1)',  color: '#FBBF24',               border: 'rgba(245,158,11,0.28)' },
-  high:   { bg: 'rgba(239,68,68,0.1)',   color: 'var(--accent-danger)',  border: 'rgba(239,68,68,0.28)' },
+  low: { bg: 'rgba(16,185,129,0.1)', color: 'var(--accent-success)', border: 'rgba(16,185,129,0.28)' },
+  medium: { bg: 'rgba(245,158,11,0.1)', color: '#FBBF24', border: 'rgba(245,158,11,0.28)' },
+  high: { bg: 'rgba(239,68,68,0.1)', color: 'var(--accent-danger)', border: 'rgba(239,68,68,0.28)' },
 };
 
 // ── localStorage keys ─────────────────────────────────────────────────────────
-const LS_KEY       = 'lexai_firm_library';
-const NOTES_KEY    = 'lexai_fl_notes';
+const LS_KEY = 'lexai_firm_library';
+const NOTES_KEY = 'lexai_fl_notes';
 const REVIEWED_KEY = 'lexai_fl_reviewed';
 
 // ── Sort icon ─────────────────────────────────────────────────────────────────
@@ -592,13 +590,13 @@ const loadEntries = () => {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch { }
   const seeded = SEED_ENTRIES.map(e => ({ ...e }));
-  try { localStorage.setItem(LS_KEY, JSON.stringify(seeded)); } catch {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify(seeded)); } catch { }
   return seeded;
 };
 const saveEntries = (entries) => {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(entries)); } catch {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify(entries)); } catch { }
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -606,44 +604,43 @@ export default function FirmLibrary() {
   const navigate = useNavigate();
 
   // ── Core state ──────────────────────────────────────────────────────────────
-  const [entries, setEntries]       = useState(loadEntries);
-  const [loading, setLoading]       = useState(true);
-  const [search, setSearch]         = useState('');
-  const [catFilter, setCatFilter]   = useState('All');
-  const [sortCol, setSortCol]       = useState('updated');
-  const [sortDir, setSortDir]       = useState('desc');
-  const [menuRow, setMenuRow]       = useState(null);
-  const [menuPos, setMenuPos]       = useState({ x: 0, y: 0 });
-  const [preview, setPreview]       = useState(null);
+  const [entries, setEntries] = useState(loadEntries);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('All');
+  const [sortCol, setSortCol] = useState('updated');
+  const [sortDir, setSortDir] = useState('desc');
+  const [menuRow, setMenuRow] = useState(null);
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [preview, setPreview] = useState(null);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
-  const [showModal, setShowModal]   = useState(false);
-  const [toast, setToast]           = useState('');
-  const [newEntry, setNewEntry]     = useState({ title: '', category: 'Template', author: '', description: '', tags: '' });
+  const [showModal, setShowModal] = useState(false);
+  const [toast, setToast] = useState('');
+  const [newEntry, setNewEntry] = useState({ title: '', category: 'Template', author: '', description: '', tags: '' });
 
   // ── Internal / External library mode ────────────────────────────────────────
   const [libraryMode, setLibraryMode] = useState('internal'); // 'internal' | 'external'
-  const [extQuery, setExtQuery]       = useState('');
-  const [extResults, setExtResults]   = useState([]);
-  const [extLoading, setExtLoading]   = useState(false);
-  const [extSavedIds, setExtSavedIds] = useState(() => new Set());
+  const [extQuery, setExtQuery] = useState('');
+  const [extRagResult, setExtRagResult] = useState(null); // { synthesis, sources } from live Pinecone/Groq search
+  const [extLoading, setExtLoading] = useState(false);
 
   // ── Workspace state ─────────────────────────────────────────────────────────
   const [selectedEntry, setSelectedEntry] = useState(null);
-  const [activeTab, setActiveTab]         = useState('overview');
-  const [dnaScanning, setDnaScanning]     = useState(false);
-  const [dnaReady, setDnaReady]           = useState(false);
-  const [entryKey, setEntryKey]           = useState(0);
-  const [entryNotes, setEntryNotes]       = useState(() => {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [dnaScanning, setDnaScanning] = useState(false);
+  const [dnaReady, setDnaReady] = useState(false);
+  const [entryKey, setEntryKey] = useState(0);
+  const [entryNotes, setEntryNotes] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch { return {}; }
   });
-  const [reviewedSet, setReviewedSet]     = useState(() => {
+  const [reviewedSet, setReviewedSet] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem(REVIEWED_KEY) || '[]')); } catch { return new Set(); }
   });
 
   // ── Dual-Brain RAG state ────────────────────────────────────────────────────
-  const [ragResult, setRagResult]   = useState(null);
+  const [ragResult, setRagResult] = useState(null);
   const [ragLoading, setRagLoading] = useState(false);
-  const [ragCopied, setRagCopied]         = useState(false);
+  const [ragCopied, setRagCopied] = useState(false);
   const [resolvingCitation, setResolvingCitation] = useState(null);
 
   // ── Shared workspace files ───────────────────────────────────────────────────
@@ -654,12 +651,12 @@ export default function FirmLibrary() {
   }, []);
 
   // ── Refs ────────────────────────────────────────────────────────────────────
-  const hoverTimerRef     = useRef(null);
+  const hoverTimerRef = useRef(null);
   const previewHoveredRef = useRef(false);
-  const mousePosRef       = useRef({ x: 0, y: 0 });
-  const selectedEntryRef  = useRef(null);  // mirrors selectedEntry for stable callbacks
-  const wsLastEntryRef    = useRef(null);  // holds last entry during slide-out animation
-  const drawerTimerRef    = useRef(null);  // DNA scan timer
+  const mousePosRef = useRef({ x: 0, y: 0 });
+  const selectedEntryRef = useRef(null);  // mirrors selectedEntry for stable callbacks
+  const wsLastEntryRef = useRef(null);  // holds last entry during slide-out animation
+  const drawerTimerRef = useRef(null);  // DNA scan timer
 
   // Keep wsLastEntryRef in sync — content stays rendered during drawer close animation
   if (selectedEntry) wsLastEntryRef.current = selectedEntry;
@@ -690,49 +687,26 @@ export default function FirmLibrary() {
     return () => clearTimeout(drawerTimerRef.current);
   }, []);
 
-  // ── External Acts & Judgments debounced search ──────────────────────────────
+  // ── External Database — live Pinecone/Groq RAG search (no mock data) ────────
   useEffect(() => {
     if (libraryMode !== 'external') return;
-    if (extQuery.trim().length < 3) { setExtResults([]); setExtLoading(false); return; }
+    if (extQuery.trim().length < 3) { setExtRagResult(null); setExtLoading(false); return; }
     setExtLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await searchExternalDatabase(extQuery.trim());
-        setExtResults(res);
-      } catch { setExtResults([]); } finally { setExtLoading(false); }
+        const res = await fetch('http://localhost:8080/api/legal-research', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: extQuery.trim() }),
+        });
+        if (!res.ok) throw new Error('Legal research endpoint unavailable');
+        const data = await res.json();
+        if (data.status !== 'success') throw new Error(data.message || 'Legal research endpoint unavailable');
+        setExtRagResult({ synthesis: data.answer, sources: data.sources || [] });
+      } catch { setExtRagResult(null); } finally { setExtLoading(false); }
     }, 400);
     return () => clearTimeout(timer);
   }, [extQuery, libraryMode]);
-
-  const handleSaveToLibrary = (result) => {
-    const newLibEntry = {
-      id: Date.now(),
-      title: result.title,
-      category: 'Precedent',
-      author: 'External — Indian Kanoon',
-      updated: new Date().toISOString().slice(0, 10),
-      tags: [String(result.year), result.court],
-      description: `${result.citation}. ${result.headnote}`,
-    };
-    const updated = [newLibEntry, ...entries];
-    setEntries(updated);
-    saveEntries(updated);
-    setExtSavedIds(prev => new Set(prev).add(result.id));
-    showToast('Saved to Firm Library');
-  };
-
-  const handleInjectExternalToVault = (result) => {
-    addSharedFile({
-      id: `ext-${result.id}-${Date.now()}`,
-      filename: result.title,
-      category: 'Precedent',
-      tags: [result.citation],
-      modules: ['case-vault'],
-      source: 'External — Indian Kanoon',
-      savedAt: new Date().toISOString(),
-    });
-    showToast('Injected into Case Vault workspace');
-  };
 
   // ── Dual-Brain RAG debounced search ─────────────────────────────────────────
   useEffect(() => {
@@ -740,14 +714,22 @@ export default function FirmLibrary() {
     setRagLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:8001/api/search', {
+        const res = await fetch('http://localhost:8080/api/legal-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: search.trim() }),
+          body: JSON.stringify({ question: search.trim() }),
         });
         if (!res.ok) throw new Error('RAG unavailable');
         const data = await res.json();
-        setRagResult(data);
+        if (data.status !== 'success') throw new Error(data.message || 'RAG unavailable');
+        // Map the Pinecone/Groq response shape onto the dossier UI's existing
+        // { brain, synthesis, citations } contract so the render below (built
+        // for the old dual-brain backend) needs no changes.
+        setRagResult({
+          brain: 'EXTERNAL',
+          synthesis: data.answer,
+          citations: (data.sources || []).map((s) => ({ case_name: s, year: '', relevance_note: '' })),
+        });
       } catch { setRagResult(null); } finally { setRagLoading(false); }
     }, 400);
     return () => clearTimeout(timer);
@@ -878,7 +860,7 @@ export default function FirmLibrary() {
   const saveNote = useCallback((id, text) => {
     setEntryNotes(prev => {
       const updated = { ...prev, [id]: text };
-      try { localStorage.setItem(NOTES_KEY, JSON.stringify(updated)); } catch {}
+      try { localStorage.setItem(NOTES_KEY, JSON.stringify(updated)); } catch { }
       return updated;
     });
   }, []);
@@ -887,7 +869,7 @@ export default function FirmLibrary() {
     setReviewedSet(prev => {
       const next = new Set(prev);
       if (next.has(id)) { next.delete(id); } else { next.add(id); }
-      try { localStorage.setItem(REVIEWED_KEY, JSON.stringify([...next])); } catch {}
+      try { localStorage.setItem(REVIEWED_KEY, JSON.stringify([...next])); } catch { }
       return next;
     });
   }, []);
@@ -912,7 +894,7 @@ export default function FirmLibrary() {
   };
 
   const copyTitle = (title) => {
-    navigator.clipboard.writeText(title).catch(() => {});
+    navigator.clipboard.writeText(title).catch(() => { });
     setMenuRow(null);
     showToast('Title copied to clipboard');
   };
@@ -1002,7 +984,7 @@ export default function FirmLibrary() {
             style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7 }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Add Entry
           </button>
@@ -1025,289 +1007,289 @@ export default function FirmLibrary() {
         </div>
 
         {libraryMode === 'internal' && (
-        <>
-        {/* Toolbar */}
-        <div className="fl-toolbar">
-          <div className="fl-search-wrap">
-            <span className="fl-search-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-              </svg>
-            </span>
-            <input
-              type="text"
-              className="fl-search-input"
-              placeholder="Search titles, authors, tags, descriptions…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="fl-cat-filter">
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                className={`fl-cat-btn${catFilter === cat ? ' active' : ''}`}
-                onClick={() => setCatFilter(cat)}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        </div>
+          <>
+            {/* Toolbar */}
+            <div className="fl-toolbar">
+              <div className="fl-search-wrap">
+                <span className="fl-search-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  className="fl-search-input"
+                  placeholder="Search titles, authors, tags, descriptions…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="fl-cat-filter">
+                {CATEGORIES.map(cat => (
+                  <button
+                    key={cat}
+                    className={`fl-cat-btn${catFilter === cat ? ' active' : ''}`}
+                    onClick={() => setCatFilter(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* ── RAG Intelligence Dossier ── */}
-        {ragLoading && (
-          <div className="fl-rag-loading">
-            <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-            Querying Dual-Brain intelligence layer…
-          </div>
-        )}
-        {!ragLoading && ragResult?.brain === 'EXTERNAL' && ragResult.synthesis && (() => {
-          const pct = ragResult.reliability_index != null ? Math.round(ragResult.reliability_index * 100) : null;
-          const reliColor = pct == null ? '#94A3B8' : pct >= 75 ? '#34D399' : pct >= 50 ? '#FBBF24' : '#F87171';
-          return (
-            <div className="fl-rag-dossier">
-              <div className="fl-rag-header">
-                <span className="fl-rag-brain-badge">⚡ External Intelligence</span>
-                {pct != null && (
-                  <div className="fl-rag-reliability">
-                    <div className="fl-rag-reliability-bar">
-                      <div className="fl-rag-reliability-fill" style={{ width: `${pct}%`, background: reliColor }} />
-                    </div>
-                    <span className="fl-rag-reliability-label" style={{ color: reliColor }}>{pct}% reliable</span>
+            {/* ── RAG Intelligence Dossier ── */}
+            {ragLoading && (
+              <div className="fl-rag-loading">
+                <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                Querying Dual-Brain intelligence layer…
+              </div>
+            )}
+            {!ragLoading && ragResult?.brain === 'EXTERNAL' && ragResult.synthesis && (() => {
+              const pct = ragResult.reliability_index != null ? Math.round(ragResult.reliability_index * 100) : null;
+              const reliColor = pct == null ? '#94A3B8' : pct >= 75 ? '#34D399' : pct >= 50 ? '#FBBF24' : '#F87171';
+              return (
+                <div className="fl-rag-dossier">
+                  <div className="fl-rag-header">
+                    <span className="fl-rag-brain-badge">⚡ External Intelligence</span>
+                    {pct != null && (
+                      <div className="fl-rag-reliability">
+                        <div className="fl-rag-reliability-bar">
+                          <div className="fl-rag-reliability-fill" style={{ width: `${pct}%`, background: reliColor }} />
+                        </div>
+                        <span className="fl-rag-reliability-label" style={{ color: reliColor }}>{pct}% reliable</span>
+                      </div>
+                    )}
                   </div>
+                  <div className="fl-rag-synthesis">{renderWithCitations(ragResult.synthesis)}</div>
+                  {ragResult.citations?.length > 0 && (
+                    <div>
+                      <div className="fl-rag-section-label">Citations</div>
+                      <div className="fl-rag-citations">
+                        {ragResult.citations.slice(0, 3).map((c, i) => {
+                          const citKey = `${c.case_name}-${c.year}`;
+                          const isResolving = resolvingCitation === citKey;
+                          return (
+                            <div key={i} className="fl-rag-citation">
+                              <button
+                                className="fl-rag-citation-link"
+                                disabled={isResolving}
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: isResolving ? 'default' : 'pointer', fontFamily: 'inherit' }}
+                                onClick={async () => {
+                                  const win = window.open('', '_blank');
+                                  setResolvingCitation(citKey);
+                                  try {
+                                    const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
+                                    const { exact_url } = await res.json();
+                                    win.location.href = exact_url;
+                                  } catch {
+                                    win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
+                                  } finally {
+                                    setResolvingCitation(null);
+                                  }
+                                }}
+                              >
+                                {isResolving ? '⟳ Resolving…' : `${c.case_name}${c.year ? ` (${c.year})` : ''}`}
+                              </button>
+                              {c.relevance_note}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {ragResult.facts_vs_ruling?.ruling_summary && (
+                    <div>
+                      <div className="fl-rag-section-label">Ratio Decidendi</div>
+                      <div className="fl-rag-ratio">{ragResult.facts_vs_ruling.ruling_summary}</div>
+                    </div>
+                  )}
+                  {ragResult.risk_warnings?.length > 0 && (
+                    <div>
+                      <div className="fl-rag-section-label">Risk Advisories</div>
+                      <div className="fl-rag-warnings">
+                        {ragResult.risk_warnings.slice(0, 2).map((w, i) => (
+                          <div key={i} className="fl-rag-warning">⚠ {w}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* ── Action buttons ── */}
+                  <div className="fl-rag-actions">
+                    <button
+                      className={`fl-rag-action-btn copy${ragCopied ? ' done' : ''}`}
+                      onClick={() => {
+                        const lines = (ragResult.citations || [])
+                          .map(c => `${c.case_name} (${c.year}) — ${c.relevance_note}`)
+                          .join('\n');
+                        navigator.clipboard.writeText(lines || ragResult.synthesis || '').then(() => {
+                          setRagCopied(true);
+                          showToast('Citation copied to clipboard');
+                          setTimeout(() => setRagCopied(false), 2200);
+                        });
+                      }}
+                    >
+                      {ragCopied ? '✓ Copied' : '⎘ Copy Citation'}
+                    </button>
+                    <button
+                      className="fl-rag-action-btn inject"
+                      onClick={() => {
+                        const memoContent = [
+                          `[DUAL-BRAIN INTELLIGENCE — External Case Law]`,
+                          `Query: ${search.trim()}`,
+                          ``,
+                          `SYNTHESIS:`,
+                          ragResult.synthesis || '',
+                          ``,
+                          `CITATIONS:`,
+                          ...(ragResult.citations || []).map(c => `• ${c.case_name} (${c.year}) — ${c.relevance_note}`),
+                          ``,
+                          `RATIO DECIDENDI:`,
+                          ragResult.facts_vs_ruling?.ruling_summary || 'N/A',
+                          ``,
+                          `RISK ADVISORIES:`,
+                          ...(ragResult.risk_warnings || []).map(w => `⚠ ${w}`),
+                        ].join('\n');
+                        const syntheticEntry = {
+                          id: Date.now(),
+                          title: `Research Brief: ${search.trim()}`,
+                          category: 'Research Memo',
+                          author: 'AI Intelligence Layer',
+                          updated: new Date().toISOString().slice(0, 10),
+                          tags: ['Research', 'AI-Generated', 'Case Law'],
+                          description: memoContent,
+                        };
+                        const updated = [syntheticEntry, ...entries];
+                        setEntries(updated);
+                        saveEntries(updated);
+                        showToast(`Brief injected into library`);
+                      }}
+                    >
+                      + Inject Brief as Memo
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Shared workspace files */}
+            {sharedFiles.length > 0 && (
+              <div style={{ marginBottom: '16px', background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Shared from Platform — {sharedFiles.length} file{sharedFiles.length !== 1 ? 's' : ''}</span>
+                </div>
+                {sharedFiles.map(f => (
+                  <div key={f.id} style={{ padding: '10px 16px', borderBottom: '1px solid rgba(139,92,246,0.08)', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontWeight: 500, flex: 1 }}>{f.filename}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', background: 'rgba(139,92,246,0.1)', padding: '2px 8px', borderRadius: '10px' }}>{f.format?.toUpperCase()}</span>
+                    <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)' }}>{new Date(f.savedAt).toLocaleDateString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Count */}
+            {!loading && (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
+                {search || catFilter !== 'All' ? ' matching filters' : ' in library'}
+                {selectedEntry && (
+                  <span style={{ marginLeft: 12, color: 'var(--accent-primary)', fontWeight: 600 }}>
+                    · Workspace open
+                  </span>
                 )}
               </div>
-              <div className="fl-rag-synthesis">{renderWithCitations(ragResult.synthesis)}</div>
-              {ragResult.citations?.length > 0 && (
-                <div>
-                  <div className="fl-rag-section-label">Citations</div>
-                  <div className="fl-rag-citations">
-                    {ragResult.citations.slice(0, 3).map((c, i) => {
-                      const citKey = `${c.case_name}-${c.year}`;
-                      const isResolving = resolvingCitation === citKey;
-                      return (
-                      <div key={i} className="fl-rag-citation">
-                        <button
-                          className="fl-rag-citation-link"
-                          disabled={isResolving}
-                          style={{ background: 'none', border: 'none', padding: 0, cursor: isResolving ? 'default' : 'pointer', fontFamily: 'inherit' }}
-                          onClick={async () => {
-                            const win = window.open('', '_blank');
-                            setResolvingCitation(citKey);
-                            try {
-                              const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
-                              const { exact_url } = await res.json();
-                              win.location.href = exact_url;
-                            } catch {
-                              win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
-                            } finally {
-                              setResolvingCitation(null);
-                            }
-                          }}
-                        >
-                          {isResolving ? '⟳ Resolving…' : `${c.case_name} (${c.year})`}
-                        </button>
-                        {c.relevance_note}
-                      </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {ragResult.facts_vs_ruling?.ruling_summary && (
-                <div>
-                  <div className="fl-rag-section-label">Ratio Decidendi</div>
-                  <div className="fl-rag-ratio">{ragResult.facts_vs_ruling.ruling_summary}</div>
-                </div>
-              )}
-              {ragResult.risk_warnings?.length > 0 && (
-                <div>
-                  <div className="fl-rag-section-label">Risk Advisories</div>
-                  <div className="fl-rag-warnings">
-                    {ragResult.risk_warnings.slice(0, 2).map((w, i) => (
-                      <div key={i} className="fl-rag-warning">⚠ {w}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* ── Action buttons ── */}
-              <div className="fl-rag-actions">
-                <button
-                  className={`fl-rag-action-btn copy${ragCopied ? ' done' : ''}`}
-                  onClick={() => {
-                    const lines = (ragResult.citations || [])
-                      .map(c => `${c.case_name} (${c.year}) — ${c.relevance_note}`)
-                      .join('\n');
-                    navigator.clipboard.writeText(lines || ragResult.synthesis || '').then(() => {
-                      setRagCopied(true);
-                      showToast('Citation copied to clipboard');
-                      setTimeout(() => setRagCopied(false), 2200);
-                    });
-                  }}
-                >
-                  {ragCopied ? '✓ Copied' : '⎘ Copy Citation'}
-                </button>
-                <button
-                  className="fl-rag-action-btn inject"
-                  onClick={() => {
-                    const memoContent = [
-                      `[DUAL-BRAIN INTELLIGENCE — External Case Law]`,
-                      `Query: ${search.trim()}`,
-                      ``,
-                      `SYNTHESIS:`,
-                      ragResult.synthesis || '',
-                      ``,
-                      `CITATIONS:`,
-                      ...(ragResult.citations || []).map(c => `• ${c.case_name} (${c.year}) — ${c.relevance_note}`),
-                      ``,
-                      `RATIO DECIDENDI:`,
-                      ragResult.facts_vs_ruling?.ruling_summary || 'N/A',
-                      ``,
-                      `RISK ADVISORIES:`,
-                      ...(ragResult.risk_warnings || []).map(w => `⚠ ${w}`),
-                    ].join('\n');
-                    const syntheticEntry = {
-                      id: Date.now(),
-                      title: `Research Brief: ${search.trim()}`,
-                      category: 'Research Memo',
-                      author: 'AI Intelligence Layer',
-                      updated: new Date().toISOString().slice(0, 10),
-                      tags: ['Research', 'AI-Generated', 'Case Law'],
-                      description: memoContent,
-                    };
-                    const updated = [syntheticEntry, ...entries];
-                    setEntries(updated);
-                    saveEntries(updated);
-                    showToast(`Brief injected into library`);
-                  }}
-                >
-                  + Inject Brief as Memo
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Shared workspace files */}
-        {sharedFiles.length > 0 && (
-          <div style={{ marginBottom: '16px', background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', gap: '7px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Shared from Platform — {sharedFiles.length} file{sharedFiles.length !== 1 ? 's' : ''}</span>
-            </div>
-            {sharedFiles.map(f => (
-              <div key={f.id} style={{ padding: '10px 16px', borderBottom: '1px solid rgba(139,92,246,0.08)', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontWeight: 500, flex: 1 }}>{f.filename}</span>
-                <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', background: 'rgba(139,92,246,0.1)', padding: '2px 8px', borderRadius: '10px' }}>{f.format?.toUpperCase()}</span>
-                <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)' }}>{new Date(f.savedAt).toLocaleDateString()}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Count */}
-        {!loading && (
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-            {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
-            {search || catFilter !== 'All' ? ' matching filters' : ' in library'}
-            {selectedEntry && (
-              <span style={{ marginLeft: 12, color: 'var(--accent-primary)', fontWeight: 600 }}>
-                · Workspace open
-              </span>
             )}
-          </div>
-        )}
 
-        {/* Data Grid */}
-        <div className="fl-table-wrap" onMouseMove={handleMouseMove}>
-          <table className="fl-table">
-            <thead>
-              <tr>
-                <ThHeader col="title"    label="Document Title"   style={{ width: '38%' }} />
-                <ThHeader col="category" label="Category"         style={{ width: '14%' }} />
-                <ThHeader col="updated"  label="Last Updated"     style={{ width: '13%' }} />
-                <ThHeader col="author"   label="Author / Source"  style={{ width: '18%' }} />
-                <th style={{ width: '48px' }} />
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="fl-skeleton-row">
-                    <td><div className="fl-skel-bar" style={{ width: `${55 + (i % 3) * 15}%` }} /></td>
-                    <td><div className="fl-skel-bar" style={{ width: '70%' }} /></td>
-                    <td><div className="fl-skel-bar" style={{ width: '80%' }} /></td>
-                    <td><div className="fl-skel-bar" style={{ width: '60%' }} /></td>
-                    <td />
+            {/* Data Grid */}
+            <div className="fl-table-wrap" onMouseMove={handleMouseMove}>
+              <table className="fl-table">
+                <thead>
+                  <tr>
+                    <ThHeader col="title" label="Document Title" style={{ width: '38%' }} />
+                    <ThHeader col="category" label="Category" style={{ width: '14%' }} />
+                    <ThHeader col="updated" label="Last Updated" style={{ width: '13%' }} />
+                    <ThHeader col="author" label="Author / Source" style={{ width: '18%' }} />
+                    <th style={{ width: '48px' }} />
                   </tr>
-                ))
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan="5">
-                    <div className="fl-empty">
-                      <div className="fl-empty-icon">📂</div>
-                      <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No entries found</div>
-                      <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                        {search ? `No results for "${search}"` : 'Add the first entry to get started'}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ) : filtered.map(entry => {
-                const catStyle = getCatStyle(entry.category);
-                const isSelected = selectedEntry?.id === entry.id;
-                return (
-                  <tr
-                    key={entry.id}
-                    className={isSelected ? 'fl-row-selected' : ''}
-                    onClick={e => openWorkspace(entry, e)}
-                    onMouseEnter={e => handleRowMouseEnter(entry, e)}
-                    onMouseLeave={handleRowMouseLeave}
-                  >
-                    <td>
-                      <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
-                        {entry.title}
-                      </div>
-                      {entry.tags?.length > 0 && (
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                          {entry.tags.slice(0, 3).map(t => (
-                            <span key={t} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '3px', background: 'rgba(59,130,246,0.07)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>{t}</span>
-                          ))}
-                          {entry.tags.length > 3 && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>+{entry.tags.length - 3}</span>}
+                </thead>
+                <tbody>
+                  {loading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i} className="fl-skeleton-row">
+                        <td><div className="fl-skel-bar" style={{ width: `${55 + (i % 3) * 15}%` }} /></td>
+                        <td><div className="fl-skel-bar" style={{ width: '70%' }} /></td>
+                        <td><div className="fl-skel-bar" style={{ width: '80%' }} /></td>
+                        <td><div className="fl-skel-bar" style={{ width: '60%' }} /></td>
+                        <td />
+                      </tr>
+                    ))
+                  ) : filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan="5">
+                        <div className="fl-empty">
+                          <div className="fl-empty-icon">📂</div>
+                          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No entries found</div>
+                          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                            {search ? `No results for "${search}"` : 'Add the first entry to get started'}
+                          </div>
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
-                        {entry.category}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                      {fmtDate(entry.updated)}
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
-                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                      <div className="fl-row-actions">
-                        <button
-                          className={`fl-dots-btn${menuRow === entry.id ? ' open' : ''}`}
-                          onClick={e => openMenu(entry.id, e)}
-                          title="Actions"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                            <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        </>
+                      </td>
+                    </tr>
+                  ) : filtered.map(entry => {
+                    const catStyle = getCatStyle(entry.category);
+                    const isSelected = selectedEntry?.id === entry.id;
+                    return (
+                      <tr
+                        key={entry.id}
+                        className={isSelected ? 'fl-row-selected' : ''}
+                        onClick={e => openWorkspace(entry, e)}
+                        onMouseEnter={e => handleRowMouseEnter(entry, e)}
+                        onMouseLeave={handleRowMouseLeave}
+                      >
+                        <td>
+                          <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
+                            {entry.title}
+                          </div>
+                          {entry.tags?.length > 0 && (
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {entry.tags.slice(0, 3).map(t => (
+                                <span key={t} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '3px', background: 'rgba(59,130,246,0.07)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>{t}</span>
+                              ))}
+                              {entry.tags.length > 3 && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>+{entry.tags.length - 3}</span>}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
+                            {entry.category}
+                          </span>
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                          {fmtDate(entry.updated)}
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
+                        <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                          <div className="fl-row-actions">
+                            <button
+                              className={`fl-dots-btn${menuRow === entry.id ? ' open' : ''}`}
+                              onClick={e => openMenu(entry.id, e)}
+                              title="Actions"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {libraryMode === 'external' && (
@@ -1316,7 +1298,7 @@ export default function FirmLibrary() {
               <div className="fl-search-wrap">
                 <span className="fl-search-icon">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                   </svg>
                 </span>
                 <input
@@ -1332,11 +1314,30 @@ export default function FirmLibrary() {
             {extLoading && (
               <div className="fl-rag-loading">
                 <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                Querying external Acts &amp; Judgments database…
+                Querying Pinecone vector index…
               </div>
             )}
 
-            {!extLoading && extQuery.trim().length >= 3 && extResults.length === 0 && (
+            {!extLoading && extRagResult?.synthesis && (
+              <div className="fl-rag-dossier">
+                <div className="fl-rag-header">
+                  <span className="fl-rag-brain-badge">⚡ External Intelligence</span>
+                </div>
+                <div className="fl-rag-synthesis">{renderWithCitations(extRagResult.synthesis)}</div>
+                {extRagResult.sources.length > 0 && (
+                  <div>
+                    <div className="fl-rag-section-label">Sources</div>
+                    <div className="fl-rag-citations">
+                      {extRagResult.sources.map((s, i) => (
+                        <div key={i} className="fl-rag-citation">{s}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!extLoading && extQuery.trim().length >= 3 && !extRagResult?.synthesis && (
               <div className="fl-empty">
                 <div className="fl-empty-icon">📂</div>
                 <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No matches found</div>
@@ -1344,18 +1345,11 @@ export default function FirmLibrary() {
               </div>
             )}
 
-            {!extLoading && extQuery.trim().length < 3 && extResults.length === 0 && (
+            {!extLoading && extQuery.trim().length < 3 && (
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0' }}>
                 Type at least 3 characters to search external Acts and Judgments.
               </div>
             )}
-
-            <ExternalResultsTable
-              results={extResults}
-              savedIds={extSavedIds}
-              onSaveToLibrary={handleSaveToLibrary}
-              onInjectToVault={handleInjectExternalToVault}
-            />
           </>
         )}
       </div>{/* end .fl-page */}
@@ -1369,26 +1363,26 @@ export default function FirmLibrary() {
         >
           <div className="fl-menu-item" onClick={() => copyTitle(entries.find(e => e.id === menuRow)?.title || '')}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
             Copy Title
           </div>
           <div className="fl-menu-item" onClick={() => sendToConflict(entries.find(e => e.id === menuRow)?.title || '')}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
             </svg>
             Send to Conflict Engine
           </div>
           <div className="fl-menu-item" onClick={() => injectToVault(menuRow)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
             </svg>
             Inject into Vault
           </div>
           <div className="fl-menu-divider" />
           <div className="fl-menu-item danger" onClick={() => deleteEntry(menuRow)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" />
             </svg>
             Remove from Library
           </div>
@@ -1431,12 +1425,12 @@ export default function FirmLibrary() {
       {/* ── Workspace Drawer ──────────────────────────────────────────────────── */}
       <div className={`fl-workspace-drawer${selectedEntry ? ' open' : ''}`}>
         {wsEntry && (() => {
-          const e        = wsEntry;
+          const e = wsEntry;
           const catStyle = getCatStyle(e.category);
-          const clauses  = CLAUSE_DNA[e.category] || CLAUSE_DNA['Template'];
+          const clauses = CLAUSE_DNA[e.category] || CLAUSE_DNA['Template'];
           const previewClauses = DOC_PREVIEW_CLAUSES[e.category] || DOC_PREVIEW_CLAUSES['Template'];
           const isReviewed = reviewedSet.has(e.id);
-          const noteText   = entryNotes[e.id] || '';
+          const noteText = entryNotes[e.id] || '';
 
           return (
             <>
@@ -1448,7 +1442,7 @@ export default function FirmLibrary() {
                   </span>
                   <button className="fl-ws-close-btn" onClick={closeWorkspace} title="Close (Esc)">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
                   </button>
                 </div>
@@ -1552,7 +1546,7 @@ export default function FirmLibrary() {
                         </span>
                         <button className="fl-dna-scan-btn" onClick={runDnaScan}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                           </svg>
                           Run Extraction
                         </button>
@@ -1625,7 +1619,7 @@ export default function FirmLibrary() {
                     <div style={{ marginBottom: 22 }}>
                       <button className="fl-ws-action-btn primary" onClick={() => sendToConflict(e.title)}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                         </svg>
                         Run Conflict Check
                       </button>
@@ -1635,7 +1629,7 @@ export default function FirmLibrary() {
                         onClick={() => toggleReviewed(e.id)}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                          <polyline points="20 6 9 17 4 12"/>
+                          <polyline points="20 6 9 17 4 12" />
                         </svg>
                         {isReviewed ? '✓ Marked as Reviewed' : 'Mark as Reviewed'}
                       </button>
@@ -1643,12 +1637,12 @@ export default function FirmLibrary() {
                       <button
                         className="fl-ws-action-btn"
                         onClick={() => {
-                          navigator.clipboard.writeText(e.description || e.title).catch(() => {});
+                          navigator.clipboard.writeText(e.description || e.title).catch(() => { });
                           showToast('Description copied to clipboard');
                         }}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                          <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
                         Copy Description
                       </button>
@@ -1658,8 +1652,8 @@ export default function FirmLibrary() {
                         onClick={() => showToast(`"${e.title.slice(0, 40)}…" added to active matter`)}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                          <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                          <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
                         </svg>
                         Export to Matter
                       </button>

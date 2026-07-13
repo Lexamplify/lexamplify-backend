@@ -9,6 +9,7 @@ import json
 import io
 from groq import Groq
 from tavily import TavilyClient
+from pinecone import Pinecone
 
 db = sqlite3.connect('lex_assistant.db', check_same_thread=False)
 
@@ -712,6 +713,87 @@ def create_app():
                 
             clean.append(sanitized_msg)
         return clean
+
+    @app.route('/api/legal-research', methods=['POST', 'OPTIONS'])
+    def api_legal_research():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            lawyer_question = data.get('question', '').strip()
+
+            if not lawyer_question:
+                return jsonify({"error": True, "message": "Question cannot be empty."}), 400
+
+            # 1. Initialize Pinecone & Groq using existing .env keys
+            pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+            index = pc.Index(host=os.getenv("PINECONE_HOST"))
+            groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+            # 2. Query Pinecone (Nvidia Integrated Inference)
+            results = index.search(
+                namespace="legal-cases",
+                query={
+                    "inputs": {"text": lawyer_question},
+                    "top_k": 2
+                }
+            )
+
+            hits = results.get("result", {}).get("hits", [])
+            context_chunks = []
+            sources = []
+
+            for hit in hits:
+                # Bulletproof extraction to handle Pinecone API quirks
+                fields = hit.get("fields", {}) if isinstance(hit, dict) else getattr(hit, 'fields', {})
+                text = fields.get("text", "") if isinstance(fields, dict) else ""
+                source = fields.get("source_case", "Unknown Case") if isinstance(fields, dict) else "Unknown Case"
+
+                if text:
+                    context_chunks.append(text)
+                    if source not in sources:
+                        sources.append(source)
+
+            context_text = "\n\n".join(context_chunks)
+
+            if not context_chunks:
+                return jsonify({
+                    "status": "success",
+                    "answer": "I couldn't find any relevant precedents in the Firm Library regarding this query.",
+                    "sources": []
+                }), 200
+
+            # 3. Generate Answer using Groq
+            system_prompt = (
+                "You are an expert senior legal counsel in India. Analyze the following legal fragments "
+                "and answer the user's question precisely based *only* on the context provided. If the "
+                "context doesn't contain the answer, state that clearly."
+            )
+
+            user_prompt = f"Context:\n{context_text}\n\nQuestion: {lawyer_question}"
+
+            chat_completion = groq_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model="llama-3.1-8b-instant",
+                temperature=0.2,
+            )
+
+            ai_answer = chat_completion.choices[0].message.content
+
+            return jsonify({
+                "status": "success",
+                "answer": ai_answer,
+                "sources": sources
+            }), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
 
     @app.route('/api/chat', methods=['POST', 'OPTIONS'])
     def api_chat():

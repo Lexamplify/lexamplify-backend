@@ -67,7 +67,7 @@ const MOCK_JUDGMENTS = [
     year: 2026,
     citation: '2026 HPHC 56',
     headnote: 'judgment of this Court in Dashrath Rupsingh Rathod [Dashrath Rupsingh Rathod v. State of Maharashtra ... contextual to the ratio laid down in Dashrath Rupsingh Rathod [Dashrath Rupsingh Rathod v. State of Maharashtra reported in (2014) 9 SCC 129].',
-    kanoonDocId: '198234567',
+    kanoonDocId: '101283837',
   },
   {
     id: 'ext-dashrath-2025-sc',
@@ -76,7 +76,7 @@ const MOCK_JUDGMENTS = [
     year: 2025,
     citation: '2025 INSC 42',
     headnote: 'prayed for on the ground that this Court, in Dashrath Rupsingh Rathod v. State of Maharashtra reported in (2014) 9 SCC 129 had held that...',
-    kanoonDocId: '195678912',
+    kanoonDocId: '40415516',
   },
   {
     id: 'ext-dashrath-2020-gau',
@@ -85,7 +85,7 @@ const MOCK_JUDGMENTS = [
     year: 2020,
     citation: '(2020) 4 GauLT 15',
     headnote: 'State of Maharashtra v. Mana Adim Jamat Mandal [State of Maharashtra v. Mana Adim Jamat Mandal ... v. Delhi Subordinate Services Selection Board, (2009) 15 SCC 458 : (2010) 2 SCC (L&S) 147] , Dashrath Rupsingh Rathod v. State of Maharashtra [(2014) 9 SCC 129].',
-    kanoonDocId: '176543210',
+    kanoonDocId: '143536250',
   },
   {
     id: 'ext-dashrath-2014-scale',
@@ -94,7 +94,7 @@ const MOCK_JUDGMENTS = [
     year: 2014,
     citation: '(2014) 9 SCALE 97',
     headnote: 'this Court in Harman\'s case (supra). In Dashrath Rupsingh Rathod v. State of Maharashtra and Anr. (2014) 9 SCALE 97 we have ... having regard to the decision of this Court in Dashrath Rupsingh Rathod v. State of Maharashtra and Another (2014) 9 SCALE 97.',
-    kanoonDocId: '142398765',
+    kanoonDocId: '141393130',
   },
   {
     id: 'ext-naz',
