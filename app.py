@@ -235,6 +235,17 @@ def generate_docx_blob(title, content):
 LOCAL_DEV_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1):\d+$")
 PROD_ORIGINS = {'https://lexamplify-4.web.app', 'https://test.lexamplify.com'}
 
+# Pinecone record ids from the ingestion pipeline follow "{case_id}_chunk_{n}"
+# for chunked records (mass_ingestion.py) but are the bare case_id for
+# single-record seeds (seed_library.py) — stripping the optional suffix
+# recovers the true case_vault lookup key in both cases.
+CHUNK_SUFFIX_RE = re.compile(r'_chunk_\d+$')
+
+# Strict allow-list for the document-retrieval route's case_id path segment —
+# alphanumeric plus underscore/hyphen only, anchored start-to-end, so a
+# value like "../../etc/passwd" can never reach the SQL query.
+CASE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
 
 def create_app():
     app = Flask(__name__)
@@ -754,17 +765,24 @@ def create_app():
             hits = results.get("result", {}).get("hits", [])
             context_chunks = []
             sources = []
+            seen_case_ids = set()
 
             for hit in hits:
-                # Bulletproof extraction to handle Pinecone API quirks
+                # Bulletproof extraction to handle Pinecone API quirks. Note:
+                # the Pinecone SDK's Hit object exposes the record id as the
+                # "id_" field internally (and via the ".id" property) — NOT
+                # "_id" — since "id" collides with the Python builtin.
                 fields = hit.get("fields", {}) if isinstance(hit, dict) else getattr(hit, 'fields', {})
                 text = fields.get("text", "") if isinstance(fields, dict) else ""
-                source = fields.get("source_case", "Unknown Case") if isinstance(fields, dict) else "Unknown Case"
+                name = fields.get("source_case", "Unknown Case") if isinstance(fields, dict) else "Unknown Case"
+                raw_id = (hit.get("id_", "") if isinstance(hit, dict) else getattr(hit, "id", "")) or ""
+                case_id = CHUNK_SUFFIX_RE.sub('', raw_id) if raw_id else ""
 
                 if text:
                     context_chunks.append(text)
-                    if source not in sources:
-                        sources.append(source)
+                if case_id and case_id not in seen_case_ids:
+                    seen_case_ids.add(case_id)
+                    sources.append({"id": case_id, "name": name})
 
             context_text = "\n\n".join(context_chunks)
 
@@ -800,6 +818,37 @@ def create_app():
                 "answer": ai_answer,
                 "sources": sources
             }), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/legal-research/document/<string:case_id>', methods=['GET', 'OPTIONS'])
+    def api_legal_research_document(case_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
+        # Strict allow-list validation — case_id arrives as a raw URL path
+        # segment, so this is the only thing standing between an attacker and
+        # a crafted "../" or SQL-metacharacter payload reaching the query.
+        if not CASE_ID_RE.match(case_id):
+            return jsonify({"error": True, "message": "Invalid case_id format."}), 400
+
+        try:
+            conn = db
+            c = conn.cursor()
+            c.execute(
+                "SELECT title, content FROM case_vault WHERE case_id = ? ORDER BY created_at DESC LIMIT 1",
+                (case_id,)
+            )
+            row = c.fetchone()
+
+            if not row:
+                return jsonify({"error": True, "message": f"Document with case_id '{case_id}' not found."}), 404
+
+            title, content = row
+            return jsonify({"title": title, "full_text": content}), 200
 
         except Exception as e:
             import traceback

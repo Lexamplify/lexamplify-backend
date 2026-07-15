@@ -562,6 +562,56 @@ const flStyles = `
   :root[data-theme="light"] .fl-rag-citation { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
   :root[data-theme="light"] .fl-rag-ratio { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
 
+  /* ── Clickable citation -> document viewer drawer ── */
+  .fl-rag-citation-clickable {
+    all: unset; box-sizing: border-box; display: block; width: 100%; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .fl-rag-citation-clickable:hover { background: rgba(99,102,241,0.1); border-color: rgba(99,102,241,0.35); }
+  .fl-rag-citation-clickable:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
+  /* ── Document Viewer Drawer ── */
+  .document-viewer-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 199; animation: fl-fade-in 0.2s ease;
+  }
+  @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes document-viewer-slide-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  .document-viewer-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 200;
+    width: min(560px, 92vw); display: flex; flex-direction: column;
+    background: var(--bg-card, #0F1420); border-left: 1px solid var(--border-subtle);
+    box-shadow: -16px 0 48px rgba(0,0,0,0.5);
+    animation: document-viewer-slide-in 0.28s cubic-bezier(0.16,1,0.3,1);
+  }
+  .document-viewer-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+    padding: 20px 22px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+  }
+  .document-viewer-title {
+    font-family: var(--font-serif); font-size: 17px; font-weight: 700; line-height: 1.4;
+    color: var(--text-primary);
+  }
+  .document-viewer-close {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    padding: 6px; border-radius: 7px; flex-shrink: 0; display: flex;
+    transition: background 0.15s, color 0.15s;
+  }
+  .document-viewer-close:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+  .document-viewer-body { flex: 1; overflow-y: auto; padding: 22px; }
+  .document-viewer-text {
+    font-family: var(--font-serif); font-size: 13.5px; line-height: 1.9;
+    color: var(--text-primary); white-space: pre-wrap;
+  }
+  .document-viewer-error {
+    color: #FCA5A5; font-size: 13px; background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.25); padding: 12px 14px; border-radius: 8px;
+  }
+  :root[data-theme="light"] .document-viewer-drawer { background: #fff; }
+
   /* ── Internal / External mode toggle ── */
   .fl-mode-toggle { display: inline-flex; gap: 3px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 3px; margin-bottom: 16px; }
   .fl-mode-btn { background: transparent; border: none; color: var(--text-muted); font-size: 12.5px; font-weight: 600; padding: 7px 16px; border-radius: 6px; cursor: pointer; transition: all .15s; }
@@ -621,8 +671,37 @@ export default function FirmLibrary() {
   // ── Internal / External library mode ────────────────────────────────────────
   const [libraryMode, setLibraryMode] = useState('internal'); // 'internal' | 'external'
   const [extQuery, setExtQuery] = useState('');
-  const [extRagResult, setExtRagResult] = useState(null); // { synthesis, sources } from live Pinecone/Groq search
+  const [extRagResult, setExtRagResult] = useState(null); // { synthesis, sources: [{id, name}] } from live Pinecone/Groq search
   const [extLoading, setExtLoading] = useState(false);
+
+  // ── Document viewer drawer ──────────────────────────────────────────────────
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerDoc, setViewerDoc] = useState(null); // { title, full_text }
+  const [viewerError, setViewerError] = useState(null);
+
+  const openDocumentViewer = async (source) => {
+    setViewerOpen(true);
+    setViewerLoading(true);
+    setViewerError(null);
+    setViewerDoc(null);
+    try {
+      const res = await fetch(`http://localhost:5000/api/legal-research/document/${encodeURIComponent(source.id)}`);
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
+      setViewerDoc({ title: data.title, full_text: data.full_text });
+    } catch (err) {
+      setViewerError(err.message);
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+
+  const closeDocumentViewer = () => {
+    setViewerOpen(false);
+    setViewerDoc(null);
+    setViewerError(null);
+  };
 
   // ── Workspace state ─────────────────────────────────────────────────────────
   const [selectedEntry, setSelectedEntry] = useState(null);
@@ -728,7 +807,9 @@ export default function FirmLibrary() {
         setRagResult({
           brain: 'EXTERNAL',
           synthesis: data.answer,
-          citations: (data.sources || []).map((s) => ({ case_name: s, year: '', relevance_note: '' })),
+          // sources is now [{id, name}] rather than a flat string list —
+          // pull .name so the existing case_name-based citation UI still works.
+          citations: (data.sources || []).map((s) => ({ case_name: s.name, year: '', relevance_note: '' })),
         });
       } catch { setRagResult(null); } finally { setRagLoading(false); }
     }, 400);
@@ -1329,7 +1410,16 @@ export default function FirmLibrary() {
                     <div className="fl-rag-section-label">Sources</div>
                     <div className="fl-rag-citations">
                       {extRagResult.sources.map((s, i) => (
-                        <div key={i} className="fl-rag-citation">{s}</div>
+                        <div key={s.id || i} className="fl-rag-citation" style={{ padding: 0 }}>
+                          <button
+                            type="button"
+                            className="fl-rag-citation-clickable"
+                            style={{ padding: '9px 12px' }}
+                            onClick={() => openDocumentViewer(s)}
+                          >
+                            {s.name}
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1353,6 +1443,40 @@ export default function FirmLibrary() {
           </>
         )}
       </div>{/* end .fl-page */}
+
+      {/* Document Viewer Drawer — fixed positioning keeps it out of normal
+          flow, so opening/closing it never shifts the underlying page. */}
+      {viewerOpen && (
+        <>
+          <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
+          <div className="document-viewer-drawer">
+            <div className="document-viewer-header">
+              <div className="document-viewer-title">
+                {viewerLoading ? 'Loading…' : (viewerDoc?.title || 'Document')}
+              </div>
+              <button type="button" className="document-viewer-close" onClick={closeDocumentViewer} aria-label="Close document viewer">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="document-viewer-body">
+              {viewerLoading && (
+                <div className="fl-rag-loading">
+                  <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                  Retrieving full text from Case Vault…
+                </div>
+              )}
+              {!viewerLoading && viewerError && (
+                <div className="document-viewer-error">{viewerError}</div>
+              )}
+              {!viewerLoading && !viewerError && viewerDoc && (
+                <div className="document-viewer-text">{viewerDoc.full_text}</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Action menu dropdown */}
       {menuRow && (
