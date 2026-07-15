@@ -694,7 +694,7 @@ export default function FirmLibrary() {
     setExtLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:8080/api/legal-research', {
+        const res = await fetch('http://localhost:5000/api/legal-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: extQuery.trim() }),
@@ -714,7 +714,7 @@ export default function FirmLibrary() {
     setRagLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:8080/api/legal-research', {
+        const res = await fetch('http://localhost:5000/api/legal-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: search.trim() }),

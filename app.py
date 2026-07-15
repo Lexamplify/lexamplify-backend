@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from database import db as sqlalchemy_db
 from datetime import timedelta
 import os
+import re
 import sqlite3
 import json
 import io
@@ -227,12 +228,22 @@ def generate_docx_blob(title, content):
     return buf.getvalue()
 
 
+# Matches any http(s) localhost/127.0.0.1 origin regardless of port, so a
+# Vite dev-server port bump (5173 -> 5174 -> ...) never silently breaks CORS.
+# Anchored start-to-end so it can't be satisfied by a lookalike host like
+# "http://localhost.evil.com:5173".
+LOCAL_DEV_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1):\d+$")
+PROD_ORIGINS = {'https://lexamplify-4.web.app', 'https://test.lexamplify.com'}
+
+
 def create_app():
     app = Flask(__name__)
     @app.after_request
     def add_cors_headers(response):
         origin = request.headers.get('Origin')
-        if origin in ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://lexamplify-4.web.app', 'https://test.lexamplify.com']:
+        if origin and (origin in PROD_ORIGINS or LOCAL_DEV_ORIGIN_RE.match(origin)):
+            # Echo back the validated origin rather than hardcoding one — never
+            # assign '*', since Allow-Credentials requires a specific origin.
             # Use direct assignment so we never produce duplicate CORS headers
             # (SSE responses pre-set these; .add() would append a second value)
             response.headers['Access-Control-Allow-Origin'] = origin
