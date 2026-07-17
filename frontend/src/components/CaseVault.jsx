@@ -74,6 +74,59 @@ const styles = `
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+
+  /* ── Dynamic Citation Manager ── */
+  .lx-citation-row td {
+    background: rgba(255,255,255,0.015);
+    padding: 0;
+    border-bottom: 1px solid var(--border-dark-subtle);
+  }
+  .lx-citation-manager { padding: 18px 20px; }
+  .lx-citation-manager-title {
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-dark-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 7px;
+  }
+  .lx-citation-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .lx-citation-badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.28);
+    color: var(--text-dark-primary); font-size: 12.5px; font-weight: 500;
+    padding: 6px 8px 6px 12px; border-radius: 20px;
+  }
+  .lx-citation-badge-remove {
+    background: rgba(255,255,255,0.08); border: none; color: var(--text-dark-muted);
+    width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
+    transition: background 0.15s, color 0.15s;
+  }
+  .lx-citation-badge-remove:hover { background: var(--accent-danger); color: white; }
+  .lx-citation-empty { font-size: 12.5px; color: var(--text-dark-muted); font-style: italic; margin-bottom: 12px; }
+  .lx-citation-search-wrap { position: relative; max-width: 360px; }
+  .lx-citation-search-input {
+    width: 100%; box-sizing: border-box; padding: 9px 12px;
+    background: var(--bg-dark-app); border: 1px solid var(--border-dark-subtle);
+    border-radius: 7px; color: var(--text-dark-primary); font-size: 13px;
+  }
+  .lx-citation-search-input:focus { outline: none; border-color: var(--accent-primary); }
+  .lx-citation-dropdown {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20;
+    background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle);
+    border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    max-height: 200px; overflow-y: auto;
+  }
+  .lx-citation-dropdown-item {
+    width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+    padding: 9px 12px; font-size: 13px; color: var(--text-dark-primary);
+    border-bottom: 1px solid var(--border-dark-subtle);
+  }
+  .lx-citation-dropdown-item:last-child { border-bottom: none; }
+  .lx-citation-dropdown-item:hover { background: rgba(59,130,246,0.1); }
+  .lx-citation-dropdown-empty { padding: 10px 12px; font-size: 12.5px; color: var(--text-dark-muted); font-style: italic; }
+  .lx-citation-toggle-btn {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text-dark-muted); padding: 6px; border-radius: 4px; transition: all 0.2s;
+  }
+  .lx-citation-toggle-btn:hover, .lx-citation-toggle-btn.active { color: var(--accent-primary); background: rgba(59,130,246,0.1); }
 `;
 
 export default function CaseVault() {
@@ -92,6 +145,60 @@ export default function CaseVault() {
   }, []);
 
   const fileInputRef = useRef(null);
+
+  // ── Dynamic Citation Manager (per-row expand) ───────────────────────────
+  const [expandedCitationDocId, setExpandedCitationDocId] = useState(null);
+  const [citationsByDoc, setCitationsByDoc] = useState({}); // docId -> [{id, title}]
+  const [citationSearchQuery, setCitationSearchQuery] = useState('');
+  const [citationSearchResults, setCitationSearchResults] = useState([]);
+  const [citationSearchLoading, setCitationSearchLoading] = useState(false);
+  const [citationDropdownOpen, setCitationDropdownOpen] = useState(false);
+
+  const toggleCitationRow = (docId) => {
+    setCitationSearchQuery('');
+    setCitationSearchResults([]);
+    setCitationDropdownOpen(false);
+    setExpandedCitationDocId(prev => (prev === docId ? null : docId));
+  };
+
+  useEffect(() => {
+    if (citationSearchQuery.trim().length < 2) { setCitationSearchResults([]); setCitationSearchLoading(false); return; }
+    setCitationSearchLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`http://localhost:5000/api/cases/autocomplete?q=${encodeURIComponent(citationSearchQuery.trim())}`);
+        const data = await res.json();
+        setCitationSearchResults(Array.isArray(data) ? data : []);
+      } catch { setCitationSearchResults([]); }
+      finally { setCitationSearchLoading(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [citationSearchQuery]);
+
+  const addCitation = async (docId, result) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/vault/documents/${docId}/citations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: String(result.id), title: result.title }),
+      });
+      const data = await res.json();
+      if (data.citations) setCitationsByDoc(prev => ({ ...prev, [docId]: data.citations }));
+    } catch { /* leave badges as-is on failure */ }
+    setCitationSearchQuery('');
+    setCitationSearchResults([]);
+    setCitationDropdownOpen(false);
+  };
+
+  const removeCitation = async (docId, citationId) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/vault/documents/${docId}/citations/${encodeURIComponent(citationId)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.citations) setCitationsByDoc(prev => ({ ...prev, [docId]: data.citations }));
+    } catch { /* leave badges as-is on failure */ }
+  };
 
   // ── 1. LOAD VAULT DOCUMENTS ───────────────────────────────────────────
   const loadVault = async () => {
@@ -301,7 +408,8 @@ export default function CaseVault() {
               </thead>
               <tbody>
                 {documents.map(doc => (
-                  <tr key={doc.id} className="doc-row">
+                <React.Fragment key={doc.id}>
+                  <tr className="doc-row">
                     <td>
                       <Link to={`/case/${caseId}/doc/${doc.id}`} className="doc-link">
                         📄 {doc.filename}
@@ -316,8 +424,15 @@ export default function CaseVault() {
                       {doc.summary || "Summary generation pending..."}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <button 
-                        className="trash-btn" 
+                      <button
+                        className={`lx-citation-toggle-btn${expandedCitationDocId === doc.id ? ' active' : ''}`}
+                        onClick={() => toggleCitationRow(doc.id)}
+                        title="Manage citations"
+                      >
+                        🔗
+                      </button>
+                      <button
+                        className="trash-btn"
                         onClick={() => handleDelete(doc.id, doc.filename)}
                         title="Delete document and erase matching vector space"
                       >
@@ -325,6 +440,68 @@ export default function CaseVault() {
                       </button>
                     </td>
                   </tr>
+                  {expandedCitationDocId === doc.id && (
+                    <tr className="lx-citation-row">
+                      <td colSpan={4}>
+                        <div className="lx-citation-manager">
+                          <div className="lx-citation-manager-title">🔗 Cited Cases — {doc.filename}</div>
+
+                          {(citationsByDoc[doc.id] || []).length > 0 ? (
+                            <div className="lx-citation-badges">
+                              {citationsByDoc[doc.id].map(c => (
+                                <span key={c.id} className="lx-citation-badge">
+                                  {c.title}
+                                  <button
+                                    type="button"
+                                    className="lx-citation-badge-remove"
+                                    onClick={() => removeCitation(doc.id, c.id)}
+                                    aria-label={`Remove citation ${c.title}`}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="lx-citation-empty">No cases cited yet.</div>
+                          )}
+
+                          <div className="lx-citation-search-wrap">
+                            <input
+                              type="text"
+                              className="lx-citation-search-input"
+                              placeholder="Search Firm Library cases to cite…"
+                              value={citationSearchQuery}
+                              onChange={e => { setCitationSearchQuery(e.target.value); setCitationDropdownOpen(true); }}
+                              onFocus={() => setCitationDropdownOpen(true)}
+                              onBlur={() => setTimeout(() => setCitationDropdownOpen(false), 150)}
+                            />
+                            {citationDropdownOpen && citationSearchQuery.trim().length >= 2 && (
+                              <div className="lx-citation-dropdown">
+                                {citationSearchLoading ? (
+                                  <div className="lx-citation-dropdown-empty">Searching…</div>
+                                ) : citationSearchResults.length > 0 ? (
+                                  citationSearchResults.map(r => (
+                                    <button
+                                      key={r.id}
+                                      type="button"
+                                      className="lx-citation-dropdown-item"
+                                      onMouseDown={() => addCitation(doc.id, r)}
+                                    >
+                                      {r.title}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="lx-citation-dropdown-empty">No matching cases found.</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 ))}
               </tbody>
             </table>

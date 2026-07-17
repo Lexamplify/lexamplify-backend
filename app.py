@@ -565,6 +565,115 @@ def create_app():
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
 
+    @app.route('/api/cases/autocomplete', methods=['GET', 'OPTIONS'])
+    def api_cases_autocomplete():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        q = request.args.get('q', '').strip()
+        if not q:
+            return jsonify([]), 200
+        try:
+            conn = db
+            c = conn.cursor()
+            # Parameterized placeholder — the LIKE wildcard is built into the
+            # bound value, never concatenated into the SQL string itself.
+            c.execute(
+                "SELECT id, title FROM case_vault WHERE title LIKE ? ORDER BY created_at DESC LIMIT 10",
+                (f'%{q}%',)
+            )
+            rows = c.fetchall()
+            return jsonify([{"id": r[0], "title": r[1]} for r in rows]), 200
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
+    # Citations are stored as a JSON array of {id, title} objects inside
+    # case_vault.tags. Both mutations below run as a single atomic SQL
+    # UPDATE (no Python-side read-modify-write), wrapped in BEGIN IMMEDIATE
+    # so SQLite grabs a RESERVED lock up front instead of deferring — this
+    # is what makes concurrent rapid-fire clicks land every citation instead
+    # of one write clobbering another. tags may already hold a legacy
+    # comma-joined string from /api/vault/save's older format; the
+    # json_valid() guard treats anything non-JSON as an empty array rather
+    # than erroring or corrupting existing data.
+    _CITATION_INSERT_SQL = """
+        UPDATE case_vault
+        SET tags = (
+            SELECT CASE WHEN EXISTS (SELECT 1 FROM json_each(base) WHERE json_extract(value, '$.id') = ?)
+                THEN base
+                ELSE json_insert(base, '$[#]', json(?))
+            END
+            FROM (SELECT CASE WHEN tags IS NULL OR tags = '' OR json_valid(tags) = 0 THEN '[]' ELSE tags END AS base
+                  FROM case_vault WHERE id = ?)
+        )
+        WHERE id = ?
+    """
+    _CITATION_DELETE_SQL = """
+        UPDATE case_vault
+        SET tags = (
+            SELECT json_group_array(json(value))
+            FROM json_each((SELECT CASE WHEN tags IS NULL OR tags = '' OR json_valid(tags) = 0 THEN '[]' ELSE tags END
+                            FROM case_vault WHERE id = ?))
+            WHERE json_extract(value, '$.id') != ?
+        )
+        WHERE id = ?
+    """
+
+    @app.route('/api/vault/documents/<int:doc_id>/citations', methods=['POST', 'OPTIONS'])
+    def add_vault_citation(doc_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            citation_id = str(data.get('id', '')).strip()
+            citation_title = str(data.get('title', '')).strip()
+            if not citation_id or not citation_title:
+                return jsonify({"error": True, "message": "Citation requires both id and title."}), 400
+
+            payload = json.dumps({"id": citation_id, "title": citation_title})
+
+            conn = db
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row:
+                conn.rollback()
+                return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
+            conn.execute(_CITATION_INSERT_SQL, (citation_id, payload, doc_id, doc_id))
+            conn.commit()
+
+            tags_row = conn.execute('SELECT tags FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            citations = json.loads(tags_row[0]) if tags_row and tags_row[0] else []
+            return jsonify({"status": "success", "citations": citations}), 200
+        except Exception as e:
+            db.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/vault/documents/<int:doc_id>/citations/<string:citation_id>', methods=['DELETE', 'OPTIONS'])
+    def remove_vault_citation(doc_id, citation_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            conn = db
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row:
+                conn.rollback()
+                return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
+            conn.execute(_CITATION_DELETE_SQL, (doc_id, citation_id, doc_id))
+            conn.commit()
+
+            tags_row = conn.execute('SELECT tags FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            citations = json.loads(tags_row[0]) if tags_row and tags_row[0] else []
+            return jsonify({"status": "success", "citations": citations}), 200
+        except Exception as e:
+            db.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
     @app.route('/api/vault/documents/<int:doc_id>/download', methods=['GET', 'OPTIONS'])
     def download_vault_document(doc_id):
         from flask import Response as FlaskResponse
@@ -850,6 +959,50 @@ def create_app():
             title, content = row
             return jsonify({"title": title, "full_text": content}), 200
 
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/ai/summarize-judgment', methods=['POST', 'OPTIONS'])
+    def api_summarize_judgment():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            text = str(data.get('text', '')).strip()
+            if not text:
+                return jsonify({"error": True, "message": "text cannot be empty."}), 400
+
+            # Legal preamble blindspot: the first ~6000 characters of a judgment
+            # are almost always procedural history and counsel appearances, not
+            # the court's actual reasoning. Sample the opening (for structural
+            # context) plus the closing (where the ratio decidendi and ultimate
+            # holding live) instead of naively truncating from the top. Guard
+            # against the two windows overlapping on short judgments, which
+            # would otherwise duplicate the opening into the context block.
+            if len(text) <= 8000:
+                context_block = text
+            else:
+                context_block = f"{text[:2000]}\n\n...[middle of judgment omitted]...\n\n{text[-6000:]}"
+
+            groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+            system_prompt = (
+                "You are an expert senior legal counsel in India. Summarize the following judgment "
+                "excerpt into exactly 3 concise bulleted legal takeaways. Focus on the court's ratio "
+                "decidendi and ultimate holding — ignore procedural history and counsel appearances "
+                "even if they dominate the excerpt."
+            )
+            chat_completion = groq_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": context_block},
+                ],
+                model="llama-3.1-8b-instant",
+                temperature=0.2,
+            )
+            summary = chat_completion.choices[0].message.content
+            return jsonify({"status": "success", "summary": summary}), 200
         except Exception as e:
             import traceback
             traceback.print_exc()

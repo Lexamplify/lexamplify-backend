@@ -587,10 +587,11 @@ const flStyles = `
     box-shadow: -16px 0 48px rgba(0,0,0,0.5);
     animation: document-viewer-slide-in 0.28s cubic-bezier(0.16,1,0.3,1);
   }
-  .document-viewer-header {
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  .dv-header {
+    display: flex; flex-direction: column; gap: 12px;
     padding: 20px 22px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
   }
+  .dv-header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
   .document-viewer-title {
     font-family: var(--font-serif); font-size: 17px; font-weight: 700; line-height: 1.4;
     color: var(--text-primary);
@@ -601,11 +602,44 @@ const flStyles = `
     transition: background 0.15s, color 0.15s;
   }
   .document-viewer-close:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
-  .document-viewer-body { flex: 1; overflow-y: auto; padding: 22px; }
-  .document-viewer-text {
-    font-family: var(--font-serif); font-size: 13.5px; line-height: 1.9;
-    color: var(--text-primary); white-space: pre-wrap;
+
+  /* ── Action Toolbar ── */
+  .dv-action-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dv-action-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle);
+    color: var(--text-secondary, #E2E8F0); font-size: 12px; font-weight: 600;
+    padding: 7px 12px; border-radius: 7px; cursor: pointer; font-family: var(--font-sans);
+    transition: all 0.15s;
   }
+  .dv-action-btn:hover { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.35); color: var(--text-primary); }
+  .dv-action-btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+  .dv-action-btn.done { color: #34D399; border-color: rgba(16,185,129,0.35); background: rgba(16,185,129,0.08); }
+
+  /* ── AI Summary Accordion ── */
+  .dv-ai-summary {
+    margin: 0 22px; margin-top: 16px;
+    background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.22);
+    border-radius: 10px; padding: 14px 16px; flex-shrink: 0;
+  }
+  .dv-ai-summary-title {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+    color: #A78BFA; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .dv-ai-summary-body { font-size: 13px; line-height: 1.7; color: var(--text-primary); white-space: pre-wrap; }
+  .dv-shimmer-line {
+    height: 12px; border-radius: 4px; margin-bottom: 8px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.14) 37%, rgba(255,255,255,0.06) 63%);
+    background-size: 400% 100%; animation: dv-shimmer 1.4s ease infinite;
+  }
+  @keyframes dv-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+  .dv-body { flex: 1; overflow-y: auto; padding: 22px; }
+  .document-viewer-text {
+    font-family: 'Georgia', serif; font-size: 13.5px; line-height: 1.8;
+    letter-spacing: 0.2px; color: var(--text-primary); white-space: pre-wrap;
+  }
+  .document-viewer-text::selection { background: rgba(var(--primary-rgb, 99,102,241), 0.2); }
   .document-viewer-error {
     color: #FCA5A5; font-size: 13px; background: rgba(239,68,68,0.1);
     border: 1px solid rgba(239,68,68,0.25); padding: 12px 14px; border-radius: 8px;
@@ -677,19 +711,31 @@ export default function FirmLibrary() {
   // ── Document viewer drawer ──────────────────────────────────────────────────
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerDoc, setViewerDoc] = useState(null); // { title, full_text }
+  const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, full_text }
   const [viewerError, setViewerError] = useState(null);
+
+  // ── Drawer action toolbar state ─────────────────────────────────────────────
+  const [copyDone, setCopyDone] = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinDone, setPinDone] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryText, setSummaryText] = useState(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   const openDocumentViewer = async (source) => {
     setViewerOpen(true);
     setViewerLoading(true);
     setViewerError(null);
     setViewerDoc(null);
+    setCopyDone(false);
+    setPinDone(false);
+    setSummaryText(null);
+    setSummaryOpen(false);
     try {
       const res = await fetch(`http://localhost:5000/api/legal-research/document/${encodeURIComponent(source.id)}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
-      setViewerDoc({ title: data.title, full_text: data.full_text });
+      setViewerDoc({ case_id: source.id, title: data.title, full_text: data.full_text });
     } catch (err) {
       setViewerError(err.message);
     } finally {
@@ -701,6 +747,66 @@ export default function FirmLibrary() {
     setViewerOpen(false);
     setViewerDoc(null);
     setViewerError(null);
+  };
+
+  // onMouseDown (not onClick) fires before the browser clears the text
+  // selection on focus change, so window.getSelection() still has the text.
+  const handleCopyExcerpt = () => {
+    const selected = window.getSelection().toString().trim();
+    if (!selected || !viewerDoc) return;
+    const tagged = `${selected} — Extracted from ${viewerDoc.title}, LexAmplify`;
+    navigator.clipboard.writeText(tagged).then(() => {
+      setCopyDone(true);
+      showToast('Excerpt copied with citation tag');
+      setTimeout(() => setCopyDone(false), 2200);
+    });
+  };
+
+  const handlePinToVault = async () => {
+    if (!viewerDoc || pinLoading) return;
+    setPinLoading(true);
+    try {
+      const res = await fetch('http://localhost:5000/api/vault/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: viewerDoc.case_id,
+          title: viewerDoc.title,
+          content: viewerDoc.full_text,
+          doc_type: 'Pinned Precedent',
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.message || 'Pin failed.');
+      setPinDone(true);
+      showToast('Pinned to Case Vault');
+      setTimeout(() => setPinDone(false), 2200);
+    } catch (err) {
+      showToast(err.message || 'Pin to Vault failed');
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
+  const handleSummarize = async () => {
+    if (!viewerDoc || summaryLoading) return;
+    setSummaryOpen(true);
+    setSummaryLoading(true);
+    setSummaryText(null);
+    try {
+      const res = await fetch('http://localhost:5000/api/ai/summarize-judgment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: viewerDoc.full_text }),
+      });
+      const data = await res.json();
+      if (data.error || data.status !== 'success') throw new Error(data.message || 'Summarization failed.');
+      setSummaryText(data.summary);
+    } catch (err) {
+      setSummaryText(`⚠ ${err.message || 'Summarization failed.'}`);
+    } finally {
+      setSummaryLoading(false);
+    }
   };
 
   // ── Workspace state ─────────────────────────────────────────────────────────
@@ -1450,17 +1556,49 @@ export default function FirmLibrary() {
         <>
           <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
           <div className="document-viewer-drawer">
-            <div className="document-viewer-header">
-              <div className="document-viewer-title">
-                {viewerLoading ? 'Loading…' : (viewerDoc?.title || 'Document')}
+            <div className="dv-header">
+              <div className="dv-header-top">
+                <div className="document-viewer-title">
+                  {viewerLoading ? 'Loading…' : (viewerDoc?.title || 'Document')}
+                </div>
+                <button type="button" className="document-viewer-close" onClick={closeDocumentViewer} aria-label="Close document viewer">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
               </div>
-              <button type="button" className="document-viewer-close" onClick={closeDocumentViewer} aria-label="Close document viewer">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+
+              {!viewerLoading && !viewerError && viewerDoc && (
+                <div className="dv-action-bar">
+                  <button type="button" className={`dv-action-btn${copyDone ? ' done' : ''}`} onMouseDown={handleCopyExcerpt}>
+                    {copyDone ? '✓ Copied' : '📋 Copy Excerpt'}
+                  </button>
+                  <button type="button" className={`dv-action-btn${pinDone ? ' done' : ''}`} onClick={handlePinToVault} disabled={pinLoading}>
+                    {pinLoading ? '⋯ Pinning' : pinDone ? '✓ Pinned' : '📌 Pin to Vault'}
+                  </button>
+                  <button type="button" className="dv-action-btn" onClick={handleSummarize} disabled={summaryLoading}>
+                    {summaryLoading ? '⋯ Summarizing' : '⚡ AI Summarize'}
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="document-viewer-body">
+
+            {summaryOpen && (
+              <div className="dv-ai-summary">
+                <div className="dv-ai-summary-title">⚡ AI Legal Takeaways</div>
+                {summaryLoading ? (
+                  <>
+                    <div className="dv-shimmer-line" style={{ width: '92%' }} />
+                    <div className="dv-shimmer-line" style={{ width: '78%' }} />
+                    <div className="dv-shimmer-line" style={{ width: '85%', marginBottom: 0 }} />
+                  </>
+                ) : (
+                  <div className="dv-ai-summary-body">{summaryText}</div>
+                )}
+              </div>
+            )}
+
+            <div className="dv-body">
               {viewerLoading && (
                 <div className="fl-rag-loading">
                   <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />

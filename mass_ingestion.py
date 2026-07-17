@@ -25,7 +25,7 @@ if not PINECONE_API_KEY:
 if not PINECONE_HOST:
     raise ValueError("Missing PINECONE_HOST in .env — aborting.")
 
-DATA_DIR = "data"
+DATA_DIR = "data/cases"
 DB_PATH = "lex_assistant.db"
 UPSERT_URL = f"{PINECONE_HOST}/records/namespaces/legal-cases/upsert"
 BATCH_SIZE = 50
@@ -97,7 +97,7 @@ def iter_cases_from_directory(data_dir):
                 continue
 
             case_id = _first_present(record, "id", "case_id", "text_id")
-            title = _first_present(record, "title", "case_title", "name")
+            title = _first_present(record, "title", "case_title", "name", "source_case")
             text = _first_present(record, "text", "content", "judgement_text", "judgment_text")
 
             if not case_id or not title or not text:
