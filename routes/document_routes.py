@@ -9,15 +9,16 @@ Blueprint: /api/documents
 import os
 import io
 import uuid
+import sqlite3
 from flask import Blueprint, jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
-from database import db
-from models.document import Document
 from utils.ai_helper import ask_groq
 from utils.rag_pipeline import ingest_document
 
 doc_bp = Blueprint("document", __name__)
+
+DB_PATH = "lex_assistant.db"
 
 # ── 1. ROBUST TEXT EXTRACTION UTILITY ───────────────────────────────────
 
@@ -167,9 +168,11 @@ def upload_document():
     if f.filename == '':
         return jsonify({"error": "No file selected."}), 400
         
-    case_id_raw = request.form.get("case_id")
-    case_id = int(case_id_raw) if (case_id_raw and case_id_raw.isdigit()) else None
-    tags = request.form.get("tags", "")
+    # case_vault.case_id is TEXT (mass-ingestion and auto-provisioned vault
+    # entries use non-numeric ids like "case_138_dashrath" or
+    # "conflict-<timestamp>"), so keep it as a plain string rather than
+    # forcing int() the way the old SQLAlchemy FK column required.
+    case_id = request.form.get("case_id") or None
 
     try:
         # Read file bytes in memory for extraction
@@ -202,38 +205,43 @@ def upload_document():
             print(f"[RAG Ingestion] AI Summary generation skipped: {se}")
             summary = f"Uploaded legal document '{f.filename}' containing {len(extracted_text)} characters."
 
-        # Save metadata record to DB
-        doc = Document(
-            user_id=user_id,
-            case_id=case_id,
-            filename=f.filename,
-            filetype=f.filename.lower().split('.')[-1],
-            summary=summary,
-            tags=tags
-        )
-        db.session.add(doc)
-        db.session.commit()
-        
-        # Ingest text chunks & generate embeddings
+        # Save metadata record into case_vault — the single source of truth
+        # shared with Firm Library / InzIQ, instead of the old SQLAlchemy
+        # Document table. doc_type defaults to "Vault Document" and tags to
+        # a valid empty JSON array so the citation json_insert/json_remove
+        # SQL functions never choke on a NULL or malformed value.
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO case_vault (case_id, title, doc_type, content, tags) VALUES (?, ?, ?, ?, ?)",
+                (case_id, f.filename, "Vault Document", extracted_text, "[]")
+            )
+            conn.commit()
+            new_doc_id = cursor.lastrowid
+        finally:
+            conn.close()
+
+        # Ingest text chunks & generate embeddings — keyed to the new
+        # case_vault id so RAG chunk lookups stay consistent with it.
         chunks_count = ingest_document(
-            document_id=doc.id,
+            document_id=new_doc_id,
             case_id=case_id,
             user_id=user_id,
             text=extracted_text
         )
-        
+
         return jsonify({
             "message": "Document uploaded and vectorized successfully.",
             "document": {
-                "id": doc.id,
-                "filename": doc.filename,
-                "summary": doc.summary,
+                "id": new_doc_id,
+                "filename": f.filename,
+                "summary": summary,
                 "chunks_indexed": chunks_count
             }
         }), 201
-        
+
     except Exception as e:
-        db.session.rollback()
         print(f"[Upload Route Error]: {e}")
         return jsonify({"error": f"Failed to ingest document: {str(e)}"}), 500
 
@@ -242,91 +250,105 @@ def upload_document():
 @doc_bp.route("", methods=["GET"])
 @jwt_required()
 def list_documents():
-    """Lists metadata for all uploaded documents, optionally filtered by case_id."""
-    user_id = int(get_jwt_identity())
+    """Lists metadata for case_vault documents, optionally filtered by
+    case_id. Queries case_vault directly — the single source of truth shared
+    with Firm Library / InzIQ — instead of the old SQLAlchemy Document table,
+    so ids returned here line up with the citation routes' doc_id space."""
     case_id_raw = request.args.get("case_id")
-    
-    query = Document.query.filter_by(user_id=user_id)
-    if case_id_raw and case_id_raw.isdigit():
-        query = query.filter_by(case_id=int(case_id_raw))
-        
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
-        docs = query.order_by(Document.created_at.desc()).all()
-        return jsonify([{
-            "id": d.id,
-            "case_id": d.case_id,
-            "filename": d.filename,
-            "filetype": d.filetype,
-            "summary": d.summary,
-            "tags": d.tags,
-            "created_at": d.created_at.isoformat()
-        } for d in docs]), 200
+        if case_id_raw:
+            rows = conn.execute(
+                "SELECT id AS doc_id, case_id, title, doc_type, tags, created_at "
+                "FROM case_vault WHERE case_id = ? ORDER BY created_at DESC",
+                (case_id_raw,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id AS doc_id, case_id, title, doc_type, tags, created_at "
+                "FROM case_vault ORDER BY created_at DESC"
+            ).fetchall()
     except Exception as e:
         print(f"[List Docs Error]: {e}")
         return jsonify({"error": "Failed to fetch documents."}), 500
+    finally:
+        conn.close()
+
+    # Mapped onto the exact shape CaseVault.jsx already renders (id/filename/
+    # filetype/summary) so the existing table UI needs no changes.
+    return jsonify([{
+        "id": r["doc_id"],
+        "case_id": r["case_id"],
+        "filename": r["title"],
+        "filetype": r["doc_type"],
+        "summary": None,
+        "tags": r["tags"],
+        "created_at": r["created_at"],
+    } for r in rows]), 200
 
 # ── 5. DOCUMENT DETAILS ROUTE (WITH CHUNKS RECONSTRUCTION) ──────────────
 
 @doc_bp.route("/<int:doc_id>", methods=["GET"])
 @jwt_required()
 def get_document_details(doc_id):
-    """Fetches document metadata and reconstructs full text from its RAG chunks."""
-    user_id = int(get_jwt_identity())
-    
-    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
-    if not doc:
-        return jsonify({"error": "Document not found or access unauthorized."}), 404
-        
+    """Fetches case_vault document metadata and reconstructs full text from
+    its RAG chunks, falling back to the row's own stored content if no
+    chunks exist."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
-        import sqlite3
-        conn = sqlite3.connect('lex_assistant.db')
-        c = conn.cursor()
-        c.execute("SELECT chunk_text FROM document_chunks WHERE document_id = ? ORDER BY chunk_index ASC", (doc_id,))
-        rows = c.fetchall()
-        conn.close()
-        
-        full_text = "\n\n".join(r[0] for r in rows)
-        
-        return jsonify({
-            "id": doc.id,
-            "case_id": doc.case_id,
-            "filename": doc.filename,
-            "filetype": doc.filetype,
-            "summary": doc.summary,
-            "tags": doc.tags,
-            "created_at": doc.created_at.isoformat(),
-            "text": full_text
-        }), 200
+        row = conn.execute(
+            "SELECT id AS doc_id, case_id, title, doc_type, tags, content, created_at "
+            "FROM case_vault WHERE id = ?",
+            (doc_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Document not found."}), 404
+
+        chunk_rows = conn.execute(
+            "SELECT chunk_text FROM document_chunks WHERE document_id = ? ORDER BY chunk_index ASC",
+            (doc_id,)
+        ).fetchall()
     except Exception as e:
         print(f"[Get Doc Details Error]: {e}")
         return jsonify({"error": f"Failed to retrieve document details: {str(e)}"}), 500
+    finally:
+        conn.close()
+
+    full_text = "\n\n".join(r[0] for r in chunk_rows) if chunk_rows else (row["content"] or "")
+
+    return jsonify({
+        "id": row["doc_id"],
+        "case_id": row["case_id"],
+        "filename": row["title"],
+        "filetype": row["doc_type"],
+        "summary": None,
+        "tags": row["tags"],
+        "created_at": row["created_at"],
+        "text": full_text
+    }), 200
 
 # ── 6. DOCUMENT DELETE ROUTE ───────────────────────────────────────────
 
 @doc_bp.route("/<int:doc_id>", methods=["DELETE"])
 @jwt_required()
 def delete_document(doc_id):
-    """Deletes the document and automatically cascade deletes all associated chunks."""
-    user_id = int(get_jwt_identity())
-    
-    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
-    if not doc:
-        return jsonify({"error": "Document not found or access unauthorized."}), 404
-        
+    """Deletes the case_vault document and cascade-deletes its RAG chunks."""
+    conn = sqlite3.connect(DB_PATH)
     try:
-        import sqlite3
-        # Cascade delete from lex_assistant.db SQLite Direct
-        conn = sqlite3.connect('lex_assistant.db')
-        c = conn.cursor()
-        c.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
-        conn.commit()
-        conn.close()
+        row = conn.execute("SELECT id FROM case_vault WHERE id = ?", (doc_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Document not found."}), 404
 
-        # Delete from SQLAlchemy database.db
-        db.session.delete(doc)
-        db.session.commit()
+        conn.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
+        conn.execute("DELETE FROM case_vault WHERE id = ?", (doc_id,))
+        conn.commit()
         return jsonify({"message": "Document and vectorized index successfully deleted."}), 200
     except Exception as e:
-        db.session.rollback()
+        conn.rollback()
         print(f"[Delete Doc Error]: {e}")
         return jsonify({"error": f"Failed to delete document: {str(e)}"}), 500
+    finally:
+        conn.close()

@@ -210,19 +210,15 @@ const AGENT_CSS = `
   .lex-ai-breathing { animation: lex-breathe 2.2s ease-in-out infinite; border-radius:7px; }
 
   /* ── InzIQ Co-Pilot Slide-Over Drawer (right-aligned, non-blocking) ── */
-  @keyframes inziq-drawer-in  { from { transform: translateX(100%); } to { transform: translateX(0); } }
-  @keyframes inziq-drawer-out { from { transform: translateX(0); }    to { transform: translateX(100%); } }
+  @keyframes inziq-drawer-in  { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes inziq-drawer-out { from { opacity: 1; } to { opacity: 0; } }
   .inziq-drawer {
-    position: fixed; top: 0; right: 0; height: 100vh; z-index: 95;
+    position: fixed; inset: 0; z-index: 9999;
     display: flex; overflow: hidden;
-    background: rgba(8,11,20,.92);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    border-left: 1px solid rgba(255,255,255,.1);
-    box-shadow: -8px 0 40px rgba(0,0,0,.5);
-    animation: inziq-drawer-in .3s cubic-bezier(.4,0,.2,1) both;
-    transition: width .3s cubic-bezier(.4,0,.2,1);
+    background: rgba(3,6,14,.95);
+    animation: inziq-drawer-in .2s ease both;
   }
-  .inziq-drawer.closing { animation: inziq-drawer-out .28s cubic-bezier(.4,0,.2,1) both; }
+  .inziq-drawer.closing { animation: inziq-drawer-out .18s ease both; }
 
   /* ── War Room: full-screen immersive mode (overrides the side drawer) ── */
   @keyframes inziq-warroom-in  { from { opacity:0; transform:scale(.985); } to { opacity:1; transform:scale(1); } }
@@ -1551,7 +1547,7 @@ function CommandPalette() {
   const [micError,    setMicError]    = useState(null);
   const [isAwake,       setIsAwake]       = useState(false);
   const [wakeSupported, setWakeSupported] = useState(null); // null=unknown, true=ok, false=denied/unsupported
-  const [sidebarOpen,     setSidebarOpen]     = useState(false); // drawer mode: session history collapsed by default
+  const [sidebarOpen,     setSidebarOpen]     = useState(true);
   const [isClosing,       setIsClosing]       = useState(false); // drives the slide-out exit animation
   const [mode,            setMode]            = useState('drawer'); // 'drawer' | 'fullscreen' (War Room)
   const [drawerOpen,      setDrawerOpen]      = useState(false);
@@ -2541,27 +2537,27 @@ function CommandPalette() {
     <>
       <style>{AGENT_CSS}</style>
 
-      {/* Right-aligned Slide-Over Drawer — NO overlay, NON-blocking:
-          the document pane stays fully interactive (text selectable) while open. */}
+      {/* Full-screen overlay */}
       <div
-        className={`inziq-drawer ${mode === 'fullscreen' ? 'war-room' : ''} ${isClosing ? 'closing' : ''}`}
-        style={mode === 'fullscreen'
-          ? undefined
-          : { width: (drawerOpen && activeDocument && isDrawerExpanded) ? 'min(760px, 96vw)' : 'min(400px, 100vw)' }}
+        className={`inziq-drawer ${isClosing ? 'closing' : ''}`}
+        onClick={handleClose}
       >
+        {/* Two-column container */}
+        <div
+          style={{ display: 'flex', width: '100%', height: '100%' }}
+          onClick={e => e.stopPropagation()}
+        >
 
           {/* ══════════════════════════════════
-               SESSION-HISTORY SIDEBAR — slides OVER the chat within the drawer
+               LEFT SIDEBAR
           ══════════════════════════════════ */}
           <aside
             className="lex-sidebar"
             style={{
-              position: 'absolute', top: 0, left: 0, height: '100%', width: '255px',
-              transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
-              transition: 'transform .25s cubic-bezier(.4,0,.2,1)',
-              zIndex: 6, background: '#080B14', borderRight: '1px solid #141B28',
+              flex: sidebarOpen ? '0 0 255px' : '0 0 0px', minWidth: 0,
+              transition: 'flex-basis .25s cubic-bezier(.4,0,.2,1)',
+              background: '#080B14', borderRight: '1px solid #141B28',
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
-              boxShadow: sidebarOpen ? '6px 0 32px rgba(0,0,0,.55)' : 'none',
             }}
           >
 
@@ -2632,14 +2628,6 @@ function CommandPalette() {
             </div>
           </aside>
 
-          {/* Dismiss-history scrim — only within the drawer, closes the history overlay on outside tap */}
-          {sidebarOpen && (
-            <div
-              onClick={() => setSidebarOpen(false)}
-              style={{ position: 'absolute', inset: 0, zIndex: 5, background: 'rgba(0,0,0,.35)' }}
-            />
-          )}
-
           {/* ══════════════════════════════════
                MAIN CHAT AREA
           ══════════════════════════════════ */}
@@ -2648,18 +2636,14 @@ function CommandPalette() {
             {/* Top header bar */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                {/* Session-history toggle — slides the history overlay over the chat */}
+                {/* Sidebar collapse toggle */}
                 <button
                   className="lex-sidebar-toggle"
                   onClick={() => setSidebarOpen(v => !v)}
-                  title={sidebarOpen ? 'Hide session history' : 'Session history'}
-                  style={sidebarOpen ? { background: 'rgba(99,102,241,.18)', borderColor: 'rgba(99,102,241,.4)', color: '#A5B4FC' } : undefined}
+                  title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
                 >
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    {sidebarOpen
-                      ? <path d="M18 6L6 18M6 6l12 12"/>
-                      : <><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></>
-                    }
+                    <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
                   </svg>
                 </button>
                 <span style={{ fontSize: '10px', color: '#475569', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>Context:</span>
@@ -3197,15 +3181,14 @@ function CommandPalette() {
           <aside
             className="lex-draft-panel"
             style={{
-              position: 'absolute', top: 0, right: 0, height: '100%', width: '100%', zIndex: 7,
-              transform: (drawerOpen && activeDocument) ? 'translateX(0)' : 'translateX(100%)',
-              transition: 'transform .28s cubic-bezier(.4,0,.2,1)',
+              flex: drawerOpen && activeDocument ? `0 0 ${isDrawerExpanded ? '60vw' : '440px'}` : '0 0 0px',
+              minWidth: 0,
+              transition: 'flex-basis .28s cubic-bezier(.4,0,.2,1)',
               background: '#090C14',
               borderLeft: '1px solid #141B28',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
-              pointerEvents: (drawerOpen && activeDocument) ? 'auto' : 'none',
             }}
           >
             {activeDocument && (
@@ -3312,6 +3295,7 @@ function CommandPalette() {
             )}
           </aside>
 
+        </div>
       </div>
 
       {/* ── Save-to-Vault Modal ──────────────────────── */}
