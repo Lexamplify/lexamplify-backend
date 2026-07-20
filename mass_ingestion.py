@@ -1,5 +1,7 @@
 import os
+import re
 import sys
+import html
 import json
 import glob
 import time
@@ -33,6 +35,13 @@ DB_PATH = "lex_assistant.db"
 UPSERT_URL = f"{PINECONE_HOST}/records/namespaces/legal-cases/upsert"
 BATCH_SIZE = 50
 FAILED_LOG_PATH = "failed_batches.log"
+FAILED_NORMALIZATION_LOG_PATH = "failed_normalization.log"
+
+# Which adapter profile this run's DATA_DIR should be normalized through.
+# Env-overridable so a future AWS S3 backfill job or IndianKanoon delta job
+# can point the same pipeline at a different source without code changes —
+# e.g. INGESTION_SOURCE_TYPE=aws_s3_ecourts python mass_ingestion.py.
+SOURCE_TYPE = os.environ.get("INGESTION_SOURCE_TYPE", "opennyai")
 
 # Parsing/chunking workers (CPU-bound, thread pool) and network concurrency
 # (I/O-bound, asyncio semaphore) are sized independently on purpose — file
@@ -78,6 +87,121 @@ def _first_present(d, *keys):
     return None
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+class LegalDataDocument:
+    """Uniform in-memory record every ingestion adapter normalizes into,
+    regardless of source schema (OpenNyAI export, AWS S3 eCourts
+    parquet/json backfill, IndianKanoon API delta). Everything downstream of
+    IngestionAdapterFactory.normalize() — chunking, batching, case_vault
+    persistence — consumes this shape exclusively, never a raw record dict."""
+    __slots__ = ("document_id", "title", "text_content", "doc_type", "metadata")
+
+    def __init__(self, document_id, title, text_content, doc_type="Judgment", metadata=None):
+        self.document_id = document_id
+        self.title = title
+        self.text_content = text_content
+        self.doc_type = doc_type
+        self.metadata = metadata or {}
+
+
+class IngestionAdapterFactory:
+    """Maps a raw external record into a LegalDataDocument via a per-source
+    mapping profile. normalize() never raises: a record it can't identify —
+    wrong source_type, missing text, or a profile that blows up on
+    unexpected shape — is logged to failed_normalization.log and skipped by
+    returning None, so a single bad record from a heterogeneous cloud
+    backfill can't take down the whole ingestion run."""
+
+    SUPPORTED_SOURCE_TYPES = ("opennyai", "aws_s3_ecourts", "indian_kanoon")
+
+    @classmethod
+    def normalize(cls, record, source_type):
+        if not isinstance(record, dict):
+            cls._log_failed(record, source_type, "record is not a JSON object")
+            return None
+
+        profile_fn = getattr(cls, f"_profile_{source_type}", None)
+        if profile_fn is None:
+            cls._log_failed(record, source_type, f"unknown source_type '{source_type}'")
+            return None
+
+        try:
+            document_id, title, text, doc_type, metadata = profile_fn(record)
+        except Exception as e:
+            cls._log_failed(record, source_type, f"profile mapping raised {type(e).__name__}: {e}")
+            return None
+
+        if not document_id or not title or not text:
+            cls._log_failed(record, source_type, "missing document_id, title, or text_content after mapping")
+            return None
+
+        return LegalDataDocument(
+            document_id=str(document_id).strip(),
+            title=str(title).strip(),
+            text_content=str(text).strip(),
+            doc_type=doc_type,
+            metadata=metadata,
+        )
+
+    # ── Profile A: OpenNyAI-style export ────────────────────────────────
+    @staticmethod
+    def _profile_opennyai(record):
+        document_id = _first_present(record, "id", "case_id", "text_id")
+        title = _first_present(record, "source_case", "title", "case_title", "name")
+        text = _first_present(record, "content", "text", "judgement_text", "judgment_text")
+        return document_id, title, text, "Judgment", {}
+
+    # ── Profile B: AWS S3 eCourts bulk backfill ─────────────────────────
+    # Field names below are best-effort common conventions for eCourts-style
+    # parquet/json exports (petitioner/respondent/case_num, raw text blob
+    # under a handful of likely keys) — extend the candidate lists here as
+    # the actual bucket schema is confirmed, without touching call sites.
+    @staticmethod
+    def _profile_aws_s3_ecourts(record):
+        document_id = _first_present(record, "doc_id", "document_id", "case_num", "id")
+
+        petitioner = record.get("petitioner")
+        respondent = record.get("respondent")
+        if petitioner and respondent:
+            title = f"{petitioner} v. {respondent}"
+        else:
+            title = _first_present(record, "title", "case_title") or record.get("case_num")
+
+        text = _first_present(record, "document_blob", "raw_text", "ocr_text", "text", "content")
+
+        metadata = {
+            k: record[k] for k in ("petitioner", "respondent", "case_num") if record.get(k)
+        }
+        return document_id, title, text, "Judgment", metadata
+
+    # ── Profile C: IndianKanoon API delta ───────────────────────────────
+    @staticmethod
+    def _profile_indian_kanoon(record):
+        document_id = _first_present(record, "tid", "doc_id", "id")
+        title = IngestionAdapterFactory._clean_html(_first_present(record, "title", "case_title"))
+        text = IngestionAdapterFactory._clean_html(_first_present(record, "doc", "text", "content"))
+        return document_id, title, text, "Judgment", {}
+
+    @staticmethod
+    def _clean_html(raw):
+        if not raw:
+            return raw
+        no_tags = _HTML_TAG_RE.sub(" ", raw)
+        unescaped = html.unescape(no_tags)
+        return re.sub(r"\s+", " ", unescaped).strip()
+
+    @staticmethod
+    def _log_failed(record, source_type, reason):
+        try:
+            with open(FAILED_NORMALIZATION_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"source_type": source_type, "reason": reason, "record": record}, default=str) + "\n")
+        except Exception:
+            pass  # logging must never itself crash the pipeline
+        print(f"⚠️ Normalization failed [{source_type}] — {reason}")
+
+
 def list_case_files(data_dir):
     """Glob every *.json file in data_dir. Raises with operator guidance if
     the directory or any matching files are missing."""
@@ -95,10 +219,13 @@ def list_case_files(data_dir):
     return files
 
 
-def iter_cases_from_file(filepath):
-    """Yield (case_id, title, text) tuples out of a single JSON file. Supports
-    a file holding either a single case object or a JSON list of case objects.
-    Malformed entries are skipped with a warning rather than raising."""
+def iter_cases_from_file(filepath, source_type):
+    """Yield LegalDataDocument objects out of a single JSON file, one record
+    at a time through IngestionAdapterFactory.normalize(). Supports a file
+    holding either a single record or a JSON list of records — of ANY of the
+    three supported source shapes, since normalization happens per-record,
+    not per-file. A record that fails to parse or normalize is logged and
+    skipped rather than raising, so one bad record never aborts the file."""
     with open(filepath, "r", encoding="utf-8") as f:
         try:
             payload = json.load(f)
@@ -108,22 +235,13 @@ def iter_cases_from_file(filepath):
 
     records = payload if isinstance(payload, list) else [payload]
     for record in records:
-        if not isinstance(record, dict):
-            print(f"⚠️ Skipping malformed entry in '{filepath}' — not an object.")
+        doc = IngestionAdapterFactory.normalize(record, source_type)
+        if doc is None:
             continue
-
-        case_id = _first_present(record, "id", "case_id", "text_id")
-        title = _first_present(record, "title", "case_title", "name", "source_case")
-        text = _first_present(record, "text", "content", "judgement_text", "judgment_text")
-
-        if not case_id or not title or not text:
-            print(f"⚠️ Skipping entry in '{filepath}' — missing id, title, or text.")
-            continue
-
-        yield str(case_id), str(title), str(text)
+        yield doc
 
 
-def save_case_to_vault(cursor, case_id, title, content):
+def save_case_to_vault(cursor, case_id, title, content, doc_type="Judgment"):
     """Persist the full, unchunked judgment into the case_vault table for
     relational full-text lookup. case_vault has no UNIQUE constraint on
     case_id, so re-running the pipeline on the same dataset would otherwise
@@ -135,22 +253,24 @@ def save_case_to_vault(cursor, case_id, title, content):
         return False
     cursor.execute(
         "INSERT INTO case_vault (case_id, title, doc_type, content) VALUES (?, ?, ?, ?)",
-        (case_id, title, "Judgment", content),
+        (case_id, title, doc_type, content),
     )
     return True
 
 
-def process_file(filepath, db_conn, db_lock):
-    """Runs in a worker thread: parse one file, persist each case to
-    case_vault, and chunk each case's text. Returns (chunks, cases_processed,
-    vault_inserts) for the whole file — the unit of streaming granularity is
-    one file, never the whole dataset, so memory stays bounded to
-    (files in flight) x (chunks per file), not the full corpus."""
+def process_file(filepath, db_conn, db_lock, source_type):
+    """Runs in a worker thread: parse one file, normalize each record into a
+    LegalDataDocument, persist it to case_vault, and chunk its text. Returns
+    (chunks, cases_processed, vault_inserts) for the whole file — the unit of
+    streaming granularity is one file, never the whole dataset, so memory
+    stays bounded to (files in flight) x (chunks per file), not the full
+    corpus. Everything past this point consumes LegalDataDocument fields
+    exclusively — no raw dict/tuple ever reaches chunking or persistence."""
     chunks_out = []
     cases_processed = 0
     vault_inserts = 0
 
-    for case_id, title, text in iter_cases_from_file(filepath):
+    for doc in iter_cases_from_file(filepath, source_type):
         cases_processed += 1
 
         # All case_vault writes are serialized through this lock — multiple
@@ -159,16 +279,16 @@ def process_file(filepath, db_conn, db_lock):
         # single connection.
         with db_lock:
             cursor = db_conn.cursor()
-            if save_case_to_vault(cursor, case_id, title, text):
+            if save_case_to_vault(cursor, doc.document_id, doc.title, doc.text_content, doc.doc_type):
                 db_conn.commit()
                 vault_inserts += 1
 
-        text_chunks = text_splitter.split_text(text)
+        text_chunks = text_splitter.split_text(doc.text_content)
         for i, chunk_text in enumerate(text_chunks):
             chunks_out.append({
-                "_id": f"{case_id}_chunk_{i}",
+                "_id": f"{doc.document_id}_chunk_{i}",
                 "text": chunk_text,
-                "source_case": title,
+                "source_case": doc.title,
             })
 
     return chunks_out, cases_processed, vault_inserts
@@ -200,7 +320,7 @@ async def upload_batch(batch, session, net_sema, stats, failed_log_lock):
             await log_failed_batch(batch, str(e), failed_log_lock)
 
 
-async def produce_file(filepath, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar):
+async def produce_file(filepath, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar, source_type):
     """Parse+chunk one file in the thread pool, then hand its chunks to the
     upload queue one at a time. The `await batch_queue.put(...)` call is the
     actual backpressure point: once the queue is full (network can't keep up),
@@ -210,7 +330,7 @@ async def produce_file(filepath, executor, batch_queue, db_conn, db_lock, file_s
     async with file_sema:
         loop = asyncio.get_running_loop()
         chunks, cases_processed, vault_inserts = await loop.run_in_executor(
-            executor, process_file, filepath, db_conn, db_lock
+            executor, process_file, filepath, db_conn, db_lock, source_type
         )
         stats["total_cases"] += cases_processed
         stats["vault_inserts"] += vault_inserts
@@ -220,9 +340,9 @@ async def produce_file(filepath, executor, batch_queue, db_conn, db_lock, file_s
         pbar.update(1)
 
 
-async def run_producers(files, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar):
+async def run_producers(files, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar, source_type):
     tasks = [
-        asyncio.create_task(produce_file(f, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar))
+        asyncio.create_task(produce_file(f, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar, source_type))
         for f in files
     ]
     await asyncio.gather(*tasks)
@@ -249,6 +369,12 @@ async def consume_batches(batch_queue, session, net_sema, stats, failed_log_lock
 
 
 async def main_async():
+    if SOURCE_TYPE not in IngestionAdapterFactory.SUPPORTED_SOURCE_TYPES:
+        raise ValueError(
+            f"Unknown INGESTION_SOURCE_TYPE '{SOURCE_TYPE}' — must be one of "
+            f"{IngestionAdapterFactory.SUPPORTED_SOURCE_TYPES}."
+        )
+
     files = list_case_files(DATA_DIR)
 
     db_conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -268,7 +394,7 @@ async def main_async():
     try:
         async with aiohttp.ClientSession() as session:
             await asyncio.gather(
-                run_producers(files, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar),
+                run_producers(files, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar, SOURCE_TYPE),
                 consume_batches(batch_queue, session, net_sema, stats, failed_log_lock),
             )
     finally:
