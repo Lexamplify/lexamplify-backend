@@ -15,8 +15,7 @@ const LegalResearch = () => {
         setResult(null);
 
         try {
-            // Pointing to your Flask server port 8080
-            const response = await fetch('http://localhost:8080/api/legal-research', {
+            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/legal-research`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -41,8 +41,7 @@ FAILED_NORMALIZATION_LOG_PATH = "failed_normalization.log"
 # Env-overridable so a future AWS S3 backfill job or IndianKanoon delta job
 # can point the same pipeline at a different source without code changes —
 # e.g. INGESTION_SOURCE_TYPE=aws_s3_ecourts python mass_ingestion.py.
-SOURCE_TYPE = os.environ.get("INGESTION_SOURCE_TYPE", "opennyai")
-
+SOURCE_TYPE = "aws_s3_ecourts"
 # Parsing/chunking workers (CPU-bound, thread pool) and network concurrency
 # (I/O-bound, asyncio semaphore) are sized independently on purpose — file
 # parsing is cheap and CPU-light, uploads are the actual rate-limited resource.
@@ -153,26 +152,17 @@ class IngestionAdapterFactory:
         text = _first_present(record, "content", "text", "judgement_text", "judgment_text")
         return document_id, title, text, "Judgment", {}
 
-    # ── Profile B: AWS S3 eCourts bulk backfill ─────────────────────────
-    # Field names below are best-effort common conventions for eCourts-style
-    # parquet/json exports (petitioner/respondent/case_num, raw text blob
-    # under a handful of likely keys) — extend the candidate lists here as
-    # the actual bucket schema is confirmed, without touching call sites.
+    # ── Profile B: AWS S3 eCourts bulk backfill (2025 dataset) ──────────
     @staticmethod
     def _profile_aws_s3_ecourts(record):
-        document_id = _first_present(record, "doc_id", "document_id", "case_num", "id")
-
-        petitioner = record.get("petitioner")
-        respondent = record.get("respondent")
-        if petitioner and respondent:
-            title = f"{petitioner} v. {respondent}"
-        else:
-            title = _first_present(record, "title", "case_title") or record.get("case_num")
-
-        text = _first_present(record, "document_blob", "raw_text", "ocr_text", "text", "content")
-
+        document_id = _first_present(record, "nc_display", "path", "doc_id", "id")
+        raw_html_content = _first_present(record, "raw_html", "document_blob", "raw_text", "text")
+        text = IngestionAdapterFactory._clean_html(raw_html_content) if raw_html_content else None
+        title = _first_present(record, "nc_display", "title", "case_title")
         metadata = {
-            k: record[k] for k in ("petitioner", "respondent", "case_num") if record.get(k)
+            "citation_year": record.get("citation_year"),
+            "nc_display": record.get("nc_display"),
+            "scraped_at": record.get("scraped_at")
         }
         return document_id, title, text, "Judgment", metadata
 
@@ -304,20 +294,28 @@ async def log_failed_batch(batch, error_msg, failed_log_lock):
 
 
 async def upload_batch(batch, session, net_sema, stats, failed_log_lock):
-    """Upload one batch, bounded to MAX_CONCURRENT_UPLOADS in flight at once.
-    Never raises — failures are logged and counted so the rest of the queue
-    keeps draining."""
+    """Upload one batch, bounding concurrency. Retries on 429 rate limits automatically."""
     async with net_sema:
-        try:
-            status, text = await batch_upsert_to_pinecone(session, batch)
-            stats["batches_sent"] += 1
-            if not (200 <= status < 300):
-                stats["failures"] += 1
-                await log_failed_batch(batch, f"HTTP {status}: {text}", failed_log_lock)
-        except Exception as e:
-            stats["batches_sent"] += 1
-            stats["failures"] += 1
-            await log_failed_batch(batch, str(e), failed_log_lock)
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                status, text = await batch_upsert_to_pinecone(session, batch)
+                if status == 429 and attempt < max_retries - 1:
+                    await asyncio.sleep(4 * (attempt + 1))
+                    continue
+
+                stats["batches_sent"] += 1
+                if not (200 <= status < 300):
+                    stats["failures"] += 1
+                    await log_failed_batch(batch, f"HTTP {status}: {text}", failed_log_lock)
+                return
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    stats["batches_sent"] += 1
+                    stats["failures"] += 1
+                    await log_failed_batch(batch, str(e), failed_log_lock)
+                else:
+                    await asyncio.sleep(2)
 
 
 async def produce_file(filepath, executor, batch_queue, db_conn, db_lock, file_sema, stats, pbar, source_type):
