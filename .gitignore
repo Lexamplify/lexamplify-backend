@@ -71,3 +71,15 @@ Thumbs.db
 # ── CLOUD DEPLOYMENT ARTIFACTS ───────────────────────────────────
 .claude/
 .gcloudignore
+
+# Raw datasets, archives, and PDFs
+data/cases/
+*.tar
+*.pdf
+
+# SQLite & Vector Database files
+*.db
+*.db-wal
+*.db-shm
+chroma_db/
+rag_server/chroma_db/

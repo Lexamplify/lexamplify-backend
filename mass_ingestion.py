@@ -14,6 +14,14 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+try:
+    import fitz  # PyMuPDF — optional: enables full judgment-text extraction
+    # from source PDFs. If it isn't installed, PDF extraction is simply
+    # skipped and every record falls back to its raw_html/JSON text instead
+    # of the whole pipeline crashing on import.
+except ImportError:
+    fitz = None
+
 # Windows consoles default to cp1252, which can't encode characters like the
 # status emoji below — force UTF-8 stdout so a long-running batch print never
 # crashes partway through a real ingestion run.
@@ -33,7 +41,7 @@ if not PINECONE_HOST:
 DATA_DIR = "data/cases"
 DB_PATH = "lex_assistant.db"
 UPSERT_URL = f"{PINECONE_HOST}/records/namespaces/legal-cases/upsert"
-BATCH_SIZE = 50
+BATCH_SIZE = 15  # ~4,500 tokens/batch under the 250K TPM ceiling
 FAILED_LOG_PATH = "failed_batches.log"
 FAILED_NORMALIZATION_LOG_PATH = "failed_normalization.log"
 
@@ -46,8 +54,8 @@ SOURCE_TYPE = "aws_s3_ecourts"
 # (I/O-bound, asyncio semaphore) are sized independently on purpose — file
 # parsing is cheap and CPU-light, uploads are the actual rate-limited resource.
 MAX_PARSE_WORKERS = min(8, os.cpu_count() or 4)
-MAX_CONCURRENT_UPLOADS = 10
-QUEUE_MAXSIZE = 100  # producer backpressure: pauses parsing once the network can't keep up
+MAX_CONCURRENT_UPLOADS = 1  # single-stream uploads — no overlapping request slots to spike TPM
+QUEUE_MAXSIZE = 20  # tighter producer backpressure so PDF parsing threads can't outrun the throttled uploader
 
 # 2. Chunking configuration
 text_splitter = RecursiveCharacterTextSplitter(
@@ -116,7 +124,7 @@ class IngestionAdapterFactory:
     SUPPORTED_SOURCE_TYPES = ("opennyai", "aws_s3_ecourts", "indian_kanoon")
 
     @classmethod
-    def normalize(cls, record, source_type):
+    def normalize(cls, record, source_type, filepath=None):
         if not isinstance(record, dict):
             cls._log_failed(record, source_type, "record is not a JSON object")
             return None
@@ -127,7 +135,7 @@ class IngestionAdapterFactory:
             return None
 
         try:
-            document_id, title, text, doc_type, metadata = profile_fn(record)
+            document_id, title, text, doc_type, metadata = profile_fn(record, filepath=filepath)
         except Exception as e:
             cls._log_failed(record, source_type, f"profile mapping raised {type(e).__name__}: {e}")
             return None
@@ -146,7 +154,7 @@ class IngestionAdapterFactory:
 
     # ── Profile A: OpenNyAI-style export ────────────────────────────────
     @staticmethod
-    def _profile_opennyai(record):
+    def _profile_opennyai(record, filepath=None):
         document_id = _first_present(record, "id", "case_id", "text_id")
         title = _first_present(record, "source_case", "title", "case_title", "name")
         text = _first_present(record, "content", "text", "judgement_text", "judgment_text")
@@ -154,11 +162,68 @@ class IngestionAdapterFactory:
 
     # ── Profile B: AWS S3 eCourts bulk backfill (2025 dataset) ──────────
     @staticmethod
-    def _profile_aws_s3_ecourts(record):
+    def _profile_aws_s3_ecourts(record, filepath=None):
         document_id = _first_present(record, "nc_display", "path", "doc_id", "id")
-        raw_html_content = _first_present(record, "raw_html", "document_blob", "raw_text", "text")
-        text = IngestionAdapterFactory._clean_html(raw_html_content) if raw_html_content else None
         title = _first_present(record, "nc_display", "title", "case_title")
+
+        # The 2025 dataset sometimes splits headnote/judgment content across
+        # multiple keys instead of one authoritative field — concatenate
+        # every text-bearing key present (fixed order, duplicates-tolerant)
+        # so the combined text is the longest/most complete version
+        # available, instead of trusting a single key and silently dropping
+        # whatever content lives in the others. Used as the fallback below
+        # whenever no usable PDF is found.
+        text_keys = ("judgment_text", "raw_html", "document_blob", "content", "raw_text")
+        raw_fragments = [record[k] for k in text_keys if record.get(k)]
+        raw_html_content = "\n\n".join(raw_fragments) if raw_fragments else None
+
+        # Bulletproof PDF path resolution — the real 20-50 page judgment
+        # lives in a companion PDF next to the source JSON, but the filename
+        # suffix isn't 100% consistent across the dataset. Strip a
+        # pre-existing "_EN" from the base first so appending "_EN.pdf"
+        # can't double up into "..._EN_EN.pdf", then try the "_EN.pdf"
+        # convention (confirmed for the 2025 batch) before falling back to
+        # a plain ".pdf" (older/differently-sourced batches).
+        text = None
+        if filepath and fitz:
+            try:
+                base_name = os.path.splitext(filepath)[0]
+                if base_name.endswith("_EN"):
+                    base_name = base_name[:-3]
+
+                pdf_path_en = base_name + "_EN.pdf"
+                pdf_path_std = base_name + ".pdf"
+
+                actual_pdf_path = None
+                if os.path.exists(pdf_path_en):
+                    actual_pdf_path = pdf_path_en
+                elif os.path.exists(pdf_path_std):
+                    actual_pdf_path = pdf_path_std
+
+                if actual_pdf_path:
+                    pdf_text_parts = []
+                    with fitz.open(actual_pdf_path) as doc:
+                        for page in doc:
+                            page_text = page.get_text("text")
+                            if page_text and page_text.strip():
+                                pdf_text_parts.append(page_text.strip())
+                    pdf_text = "\n\n".join(pdf_text_parts)
+                    if len(pdf_text) >= 1000:
+                        text = pdf_text
+                else:
+                    # tqdm.write (not print) — a bare print() here would
+                    # corrupt the multi-threaded progress bar's in-place
+                    # redraw; only fires when the PDF is genuinely missing,
+                    # not on every record, to avoid log flooding.
+                    tqdm.write(f"⚠️ DEBUG: PDF missing for base '{base_name}'")
+            except Exception as e:
+                tqdm.write(f"⚠️ DEBUG: PDF extraction failed for '{filepath}': {e}")
+
+        # Graceful fallback: PDF missing, too short, or errored out ->
+        # clean and use whatever raw_html/judgment_text was gathered above.
+        if text is None:
+            text = IngestionAdapterFactory._clean_html(raw_html_content) if raw_html_content else None
+
         metadata = {
             "citation_year": record.get("citation_year"),
             "nc_display": record.get("nc_display"),
@@ -168,7 +233,7 @@ class IngestionAdapterFactory:
 
     # ── Profile C: IndianKanoon API delta ───────────────────────────────
     @staticmethod
-    def _profile_indian_kanoon(record):
+    def _profile_indian_kanoon(record, filepath=None):
         document_id = _first_present(record, "tid", "doc_id", "id")
         title = IngestionAdapterFactory._clean_html(_first_present(record, "title", "case_title"))
         text = IngestionAdapterFactory._clean_html(_first_present(record, "doc", "text", "content"))
@@ -178,9 +243,24 @@ class IngestionAdapterFactory:
     def _clean_html(raw):
         if not raw:
             return raw
-        no_tags = _HTML_TAG_RE.sub(" ", raw)
+        # Convert structural line/paragraph boundaries into real newlines
+        # BEFORE stripping tags, so legal formatting (paragraph breaks
+        # between recitals, numbered clauses, etc.) survives instead of the
+        # whole judgment collapsing into one run-on line of prose.
+        with_breaks = re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n", raw)
+        no_tags = _HTML_TAG_RE.sub(" ", with_breaks)
         unescaped = html.unescape(no_tags)
-        return re.sub(r"\s+", " ", unescaped).strip()
+        # Collapse horizontal whitespace (spaces/tabs, plus \xa0 — the
+        # non-breaking space html.unescape() produces from &nbsp;, which
+        # \t and a literal " " don't match) without touching the newlines
+        # just inserted, then collapse runs of 3+ blank lines down to a
+        # single paragraph break. A plain \s+ collapse here would swallow
+        # every \n right back into a single space, undoing the step above
+        # entirely.
+        collapsed_spaces = re.sub(r"[ \t\xa0]+", " ", unescaped)
+        collapsed_blank_lines = re.sub(r"\n[ \t]*(?:\n[ \t]*)+", "\n\n", collapsed_spaces)
+        lines = [line.strip() for line in collapsed_blank_lines.split("\n")]
+        return "\n".join(lines).strip()
 
     @staticmethod
     def _log_failed(record, source_type, reason):
@@ -225,10 +305,13 @@ def iter_cases_from_file(filepath, source_type):
 
     records = payload if isinstance(payload, list) else [payload]
     for record in records:
-        doc = IngestionAdapterFactory.normalize(record, source_type)
+        doc = IngestionAdapterFactory.normalize(record, source_type, filepath=filepath)
         if doc is None:
             continue
         yield doc
+
+
+FORCE_UPDATE_MIN_CHAR_DELTA = 2000  # new content must be at least this much longer to trigger a force-update
 
 
 def save_case_to_vault(cursor, case_id, title, content, doc_type="Judgment"):
@@ -236,29 +319,55 @@ def save_case_to_vault(cursor, case_id, title, content, doc_type="Judgment"):
     relational full-text lookup. case_vault has no UNIQUE constraint on
     case_id, so re-running the pipeline on the same dataset would otherwise
     duplicate rows — guard with an existence check instead.
+
+    Returns one of three states, not a bool — callers MUST branch on this to
+    keep SQLite and Pinecone in sync:
+      "inserted" — brand new case_id, row created.
+      "updated"  — case_id already existed but the new content is
+                   significantly longer (> FORCE_UPDATE_MIN_CHAR_DELTA chars)
+                   than what's stored, e.g. a short headnote being replaced
+                   by the full judgment text — the stale row is overwritten.
+      "skipped"  — case_id already existed and the new content isn't
+                   meaningfully longer — left untouched. The caller MUST also
+                   skip re-chunking/re-upserting to Pinecone in this case, or
+                   the vector index would get redundant chunks that don't
+                   correspond to any real change in case_vault.
+
     Caller MUST hold db_lock — this function is not safe to call concurrently
     on the same connection without it."""
-    cursor.execute("SELECT 1 FROM case_vault WHERE case_id = ? LIMIT 1", (case_id,))
-    if cursor.fetchone() is not None:
-        return False
-    cursor.execute(
-        "INSERT INTO case_vault (case_id, title, doc_type, content) VALUES (?, ?, ?, ?)",
-        (case_id, title, doc_type, content),
-    )
-    return True
+    row = cursor.execute("SELECT content FROM case_vault WHERE case_id = ? LIMIT 1", (case_id,)).fetchone()
+
+    if row is None:
+        cursor.execute(
+            "INSERT INTO case_vault (case_id, title, doc_type, content) VALUES (?, ?, ?, ?)",
+            (case_id, title, doc_type, content),
+        )
+        return "inserted"
+
+    existing_content = row[0] or ""
+    if len(content) > len(existing_content) + FORCE_UPDATE_MIN_CHAR_DELTA:
+        cursor.execute(
+            "UPDATE case_vault SET content = ?, title = ? WHERE case_id = ?",
+            (content, title, case_id),
+        )
+        return "updated"
+
+    return "skipped"
 
 
 def process_file(filepath, db_conn, db_lock, source_type):
     """Runs in a worker thread: parse one file, normalize each record into a
     LegalDataDocument, persist it to case_vault, and chunk its text. Returns
-    (chunks, cases_processed, vault_inserts) for the whole file — the unit of
-    streaming granularity is one file, never the whole dataset, so memory
-    stays bounded to (files in flight) x (chunks per file), not the full
-    corpus. Everything past this point consumes LegalDataDocument fields
-    exclusively — no raw dict/tuple ever reaches chunking or persistence."""
+    (chunks, cases_processed, vault_inserts, vault_updates) for the whole
+    file — the unit of streaming granularity is one file, never the whole
+    dataset, so memory stays bounded to (files in flight) x (chunks per
+    file), not the full corpus. Everything past this point consumes
+    LegalDataDocument fields exclusively — no raw dict/tuple ever reaches
+    chunking or persistence."""
     chunks_out = []
     cases_processed = 0
     vault_inserts = 0
+    vault_updates = 0
 
     for doc in iter_cases_from_file(filepath, source_type):
         cases_processed += 1
@@ -269,19 +378,29 @@ def process_file(filepath, db_conn, db_lock, source_type):
         # single connection.
         with db_lock:
             cursor = db_conn.cursor()
-            if save_case_to_vault(cursor, doc.document_id, doc.title, doc.text_content, doc.doc_type):
+            write_result = save_case_to_vault(cursor, doc.document_id, doc.title, doc.text_content, doc.doc_type)
+            if write_result != "skipped":
                 db_conn.commit()
-                vault_inserts += 1
+                if write_result == "inserted":
+                    vault_inserts += 1
+                else:
+                    vault_updates += 1
 
-        text_chunks = text_splitter.split_text(doc.text_content)
-        for i, chunk_text in enumerate(text_chunks):
-            chunks_out.append({
-                "_id": f"{doc.document_id}_chunk_{i}",
-                "text": chunk_text,
-                "source_case": doc.title,
-            })
+        # CRITICAL: a "skipped" SQLite write must skip Pinecone too — chunking
+        # and pushing vectors for content that was never actually written
+        # would desynchronize the vector index from case_vault (stale-but-
+        # accepted short text sitting in SQLite while newer chunks silently
+        # replace it in Pinecone, or vice versa on a partial re-run).
+        if write_result != "skipped":
+            text_chunks = text_splitter.split_text(doc.text_content)
+            for i, chunk_text in enumerate(text_chunks):
+                chunks_out.append({
+                    "_id": f"{doc.document_id}_chunk_{i}",
+                    "text": chunk_text,
+                    "source_case": doc.title,
+                })
 
-    return chunks_out, cases_processed, vault_inserts
+    return chunks_out, cases_processed, vault_inserts, vault_updates
 
 
 async def log_failed_batch(batch, error_msg, failed_log_lock):
@@ -294,18 +413,34 @@ async def log_failed_batch(batch, error_msg, failed_log_lock):
 
 
 async def upload_batch(batch, session, net_sema, stats, failed_log_lock):
-    """Upload one batch, bounding concurrency. Retries on 429 rate limits automatically."""
+    """Upload one batch, bounding concurrency to MAX_CONCURRENT_UPLOADS
+    (single-stream). Retries 429s with reset-window backoff long enough for
+    Pinecone's 1-minute rolling TPM window to actually clear, and paces every
+    successful upload to hold sustained throughput to ~150-180K TPM (70% of
+    the 250K ceiling, a 30% buffer for denser-than-average text)."""
     async with net_sema:
         max_retries = 5
         for attempt in range(max_retries):
             try:
                 status, text = await batch_upsert_to_pinecone(session, batch)
                 if status == 429 and attempt < max_retries - 1:
-                    await asyncio.sleep(4 * (attempt + 1))
+                    # Reset-window backoff: 35s on the 1st retry clears over
+                    # half of the 1-minute rolling window before trying
+                    # again, rather than a short backoff that just re-hits
+                    # a still-exhausted quota. Retries here never touch
+                    # stats — only a final success or exhausted-retries
+                    # failure counts, so a batch that eventually succeeds
+                    # is never double-counted as a failure along the way.
+                    await asyncio.sleep(35 * (attempt + 1))
                     continue
 
                 stats["batches_sent"] += 1
-                if not (200 <= status < 300):
+                if 200 <= status < 300:
+                    # Inter-batch pacing on every successful upload — this is
+                    # the primary throttle keeping sustained throughput under
+                    # the TPM ceiling, not just the 429 backoff.
+                    await asyncio.sleep(1.5)
+                else:
                     stats["failures"] += 1
                     await log_failed_batch(batch, f"HTTP {status}: {text}", failed_log_lock)
                 return
@@ -327,11 +462,12 @@ async def produce_file(filepath, executor, batch_queue, db_conn, db_lock, file_s
     of ever materializing the full dataset's chunks at once."""
     async with file_sema:
         loop = asyncio.get_running_loop()
-        chunks, cases_processed, vault_inserts = await loop.run_in_executor(
+        chunks, cases_processed, vault_inserts, vault_updates = await loop.run_in_executor(
             executor, process_file, filepath, db_conn, db_lock, source_type
         )
         stats["total_cases"] += cases_processed
         stats["vault_inserts"] += vault_inserts
+        stats["vault_updates"] += vault_updates
         for chunk in chunks:
             await batch_queue.put(chunk)
             stats["total_chunks"] += 1
@@ -380,7 +516,7 @@ async def main_async():
     db_conn.execute("PRAGMA synchronous=NORMAL;")
     db_lock = threading.Lock()
 
-    stats = {"total_cases": 0, "total_chunks": 0, "vault_inserts": 0, "batches_sent": 0, "failures": 0}
+    stats = {"total_cases": 0, "total_chunks": 0, "vault_inserts": 0, "vault_updates": 0, "batches_sent": 0, "failures": 0}
     failed_log_lock = asyncio.Lock()
     batch_queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
     net_sema = asyncio.Semaphore(MAX_CONCURRENT_UPLOADS)
@@ -400,8 +536,10 @@ async def main_async():
         executor.shutdown(wait=True)
         db_conn.close()
 
+    skipped = stats["total_cases"] - stats["vault_inserts"] - stats["vault_updates"]
     print(f"Processed {stats['total_cases']} cases into {stats['total_chunks']} chunks across {stats['batches_sent']} batches.")
-    print(f"case_vault: {stats['vault_inserts']} new records inserted ({stats['total_cases'] - stats['vault_inserts']} already present, skipped).")
+    print(f"case_vault: {stats['vault_inserts']} new records inserted, {stats['vault_updates']} force-updated "
+          f"(replaced shorter stored content), {skipped} unchanged and skipped.")
 
     # Explicit non-empty assertion — a 0/0 run would otherwise "succeed" vacuously.
     assert stats["total_chunks"] > 0, f"No records were processed from '{DATA_DIR}' — check it contains valid case files."
