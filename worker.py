@@ -7,6 +7,8 @@ import logging
 import fitz  # PyMuPDF
 import boto3
 import time
+import threading
+import concurrent.futures
 from tenacity import retry, retry_if_exception, wait_exponential, stop_after_attempt
 from botocore import UNSIGNED
 from botocore.config import Config
@@ -49,7 +51,8 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index("lexamplify-micro")
 
 BUCKET_NAME = "indian-supreme-court-judgments"
-TAR_KEY = "data/tar/year=2024/english/english.tar"
+TARGET_YEAR = int(os.getenv("TARGET_YEAR", "2026"))
+TAR_KEY = f"data/tar/year={TARGET_YEAR}/english/english.tar"
 BATCH_SIZE = 100
 CHUNK_SIZE = 1000  # characters (~250 words)
 CHUNK_OVERLAP = 150
@@ -57,7 +60,19 @@ EMBED_MODEL = "llama-text-embed-v2"
 BATCH_PACING_DELAY = 0.5  # seconds — proactive throttle after each upsert cycle
 MAX_API_BATCH = 90  # Pinecone's embed endpoint caps inputs at 96 per call — stay under it
 EMBED_SUB_BATCH_PACING_DELAY = 0.2  # seconds — throttle between sub-batch calls, prevents RPS micro-bursting
+UPSERT_BATCH_SIZE = 100  # Pinecone's upsert endpoint caps request bodies at 2MB — cap vectors per call
+UPSERT_SUB_BATCH_PACING_DELAY = 0.1  # seconds — throttle between upsert sub-batch calls
 PROCESSED_LOG_PATH = "processed_documents.txt"
+PDF_EXTRACTION_WORKERS = 4  # threads for CPU-bound PyMuPDF parsing + chunking only
+PDF_EXTRACTION_BATCH_SIZE = 50  # cap in-flight raw PDF byte buffers held in memory at once
+
+# Guards processed_documents.txt writes and the in-memory checkpoint set.
+# Currently _append_processed_documents is only ever called from the main
+# thread (embedding/upsert stay fully serialized — see ingest_extracted_document
+# in stream_and_process), so this isn't protecting against a live race today;
+# it's a deliberate defensive boundary so that invariant can change later
+# without silently reintroducing a corrupt-checkpoint-file risk.
+file_lock = threading.Lock()
 
 # --- 2. ISOLATED RATE-LIMIT RETRIES ---
 # Retries fire SPECIFICALLY on HTTP 429 (rate limit) or a transient network
@@ -97,8 +112,22 @@ _RATE_LIMIT_RETRY = dict(
 
 
 @retry(**_RATE_LIMIT_RETRY)
+def _safe_upsert_single_call(sub_batch):
+    index.upsert(vectors=sub_batch, namespace=PINECONE_NAMESPACE)
+
+
 def safe_pinecone_upsert(vector_batch):
-    index.upsert(vectors=vector_batch, namespace=PINECONE_NAMESPACE)
+    """Sub-batching controller for upserts — a document-boundary-aligned
+    vector_batch can grow well past UPSERT_BATCH_SIZE (a single large
+    document's chunks are never split across flush calls), and Pinecone
+    rejects any single upsert request body over 2MB. Deliberately NOT
+    @retry-decorated itself — _safe_upsert_single_call already retries each
+    sub-batch independently, so wrapping this too would re-send already-
+    succeeded sub-batches on a later sub-batch's failure."""
+    for i in range(0, len(vector_batch), UPSERT_BATCH_SIZE):
+        sub_batch = vector_batch[i:i + UPSERT_BATCH_SIZE]
+        _safe_upsert_single_call(sub_batch)
+        time.sleep(UPSERT_SUB_BATCH_PACING_DELAY)
 
 
 @retry(**_RATE_LIMIT_RETRY)
@@ -174,13 +203,32 @@ def _append_processed_documents(case_ids, processed_set):
     succeeded on — never call this speculatively."""
     if not case_ids:
         return
-    with open(PROCESSED_LOG_PATH, "a", encoding="utf-8") as f:
-        for cid in case_ids:
-            f.write(cid + "\n")
-    processed_set.update(case_ids)
+    with file_lock:
+        with open(PROCESSED_LOG_PATH, "a", encoding="utf-8") as f:
+            for cid in case_ids:
+                f.write(cid + "\n")
+        processed_set.update(case_ids)
 
 
-# --- 5. SEQUENTIAL PIPELINE (tempfile-backed, no streaming/threading) ---
+# --- 5. PDF EXTRACTION WORKER (runs inside the ThreadPoolExecutor) ---
+def _extract_text_and_chunks(member_name, pdf_bytes):
+    """CPU-bound unit of work handed to the extraction thread pool: parses
+    PDF bytes with PyMuPDF and splits the result into chunks. Opens its own
+    local fitz.Document (never shares one across threads/tasks) and touches
+    no shared state — vector_batch, the checkpoint set, and the tarfile
+    handle are all owned exclusively by the main thread. Raises on failure;
+    the caller (drain_futures, on the main thread) is responsible for
+    catching and logging it per-document without killing the pool."""
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        full_text = "\n".join(
+            page.get_text("text").strip() for page in doc if page.get_text("text").strip()
+        )
+    if not full_text.strip():
+        return member_name, []
+    return member_name, chunk_text(full_text)
+
+
+# --- 6. PRODUCER-CONSUMER PIPELINE (sequential tar I/O + parallel CPU-bound extraction) ---
 def stream_and_process():
     processed_documents = _load_processed_documents()
     print(f"📋 Loaded {len(processed_documents)} previously processed document(s) from {PROCESSED_LOG_PATH}")
@@ -229,74 +277,107 @@ def stream_and_process():
                 vector_batch = []
                 pending_case_ids = []
 
-        with tarfile.open(temp_file.name, mode='r') as tar:
+        def ingest_extracted_document(member_name, text_chunks):
+            """Sequential tail of the pipeline for one already-extracted
+            document. Runs exclusively on the main thread — extraction is
+            the only stage that got parallelized. generate_embeddings_batch
+            and safe_pinecone_upsert are never called concurrently, so all
+            existing API safeguards (sub-batching, pacing, retry/backoff,
+            quota SystemExit) apply completely unchanged."""
+            nonlocal vector_batch, pending_case_ids
+            if not text_chunks:
+                return
+
+            try:
+                embeddings = generate_embeddings_batch(text_chunks)
+            except Exception as e:
+                logging.error(f"Embedding failed for {member_name}: {type(e).__name__}: {e}")
+                print(f"⚠️ Skipped embeddings for: {member_name}")
+                return
+
+            for idx, (chunk, embedding) in enumerate(zip(text_chunks, embeddings)):
+                clean_vector_id = sanitize_id(f"{member_name}_chunk_{idx}")
+
+                # Store the actual text chunk in metadata for RAG retrieval context.
+                metadata = {
+                    "case_id": member_name,
+                    "year": TARGET_YEAR,
+                    "chunk_index": idx,
+                    "text": chunk[:1000],  # safe size for Pinecone metadata
+                }
+
+                vector_batch.append({
+                    "id": clean_vector_id,
+                    "values": embedding,
+                    "metadata": metadata
+                })
+
+            pending_case_ids.append(member_name)
+
+            # Flush only at document boundaries — never mid-document.
+            # Splitting one document's chunks across two batches would
+            # mean a failure on the second batch either loses those
+            # chunks silently or, worse, the first batch's success could
+            # get this case_id checkpointed before the rest of it is
+            # actually safe in Pinecone.
+            if len(vector_batch) >= BATCH_SIZE:
+                flush_batch(member_name)
+                # Proactive throttle — keeps sustained throughput safely
+                # under the 250K TPM ceiling alongside (not instead of)
+                # the reactive 429 retry/backoff above.
+                time.sleep(BATCH_PACING_DELAY)
+
+        def drain_futures(futures_in_order):
+            """Resolve a bounded batch of extraction futures IN SUBMISSION
+            ORDER on the main thread. .result() is wrapped per-future so one
+            corrupted PDF is logged and skipped without killing the pool or
+            blocking the rest of the batch. Feeding results into
+            ingest_extracted_document here (not inside the pool) is what
+            keeps embedding/upsert fully serialized."""
+            for member_name, future in futures_in_order:
+                try:
+                    _, text_chunks = future.result()
+                except Exception as e:
+                    logging.error(f"PDF extraction failed for {member_name}: {type(e).__name__}: {e}")
+                    print(f"⚠️ Skipped corrupted document: {member_name}")
+                    continue
+                ingest_extracted_document(member_name, text_chunks)
+
+        with tarfile.open(temp_file.name, mode='r') as tar, \
+             concurrent.futures.ThreadPoolExecutor(max_workers=PDF_EXTRACTION_WORKERS) as executor:
+            pending_futures = []
             for member in tar:
                 if not member.name.endswith("_EN.pdf"):
                     continue
                 if member.name in processed_documents:
                     continue  # checkpointed on a prior run — skip, saves the extraction+embed+upsert cost entirely
 
+                # tarfile is not thread-safe — extraction (locating and
+                # reading the member's raw bytes from the archive) stays
+                # sequential in the main thread. Only the CPU-bound PyMuPDF
+                # parse + chunk step below is handed off to worker threads.
                 try:
                     file_obj = tar.extractfile(member)
                     if not file_obj:
                         continue
                     pdf_bytes = file_obj.read()
-                    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                        full_text = "\n".join(
-                            page.get_text("text").strip() for page in doc if page.get_text("text").strip()
-                        )
                 except Exception as e:
-                    # PDF extraction errors stay isolated here, distinct
-                    # from embedding/Pinecone errors below.
                     logging.error(f"PDF extraction failed for {member.name}: {str(e)}")
                     print(f"⚠️ Skipped corrupted document: {member.name}")
                     continue
 
-                if not full_text.strip():
-                    continue
+                future = executor.submit(_extract_text_and_chunks, member.name, pdf_bytes)
+                pending_futures.append((member.name, future))
 
-                text_chunks = chunk_text(full_text)
-                if not text_chunks:
-                    continue
+                # Bounded submission — caps how many raw PDF byte buffers
+                # and in-flight futures can pile up in memory at once. Each
+                # drain fully resolves the current batch before the next
+                # PDF_EXTRACTION_BATCH_SIZE are read off the tar.
+                if len(pending_futures) >= PDF_EXTRACTION_BATCH_SIZE:
+                    drain_futures(pending_futures)
+                    pending_futures = []
 
-                try:
-                    embeddings = generate_embeddings_batch(text_chunks)
-                except Exception as e:
-                    logging.error(f"Embedding failed for {member.name}: {type(e).__name__}: {e}")
-                    print(f"⚠️ Skipped embeddings for: {member.name}")
-                    continue
-
-                for idx, (chunk, embedding) in enumerate(zip(text_chunks, embeddings)):
-                    clean_vector_id = sanitize_id(f"{member.name}_chunk_{idx}")
-
-                    # Store the actual text chunk in metadata for RAG retrieval context.
-                    metadata = {
-                        "case_id": member.name,
-                        "year": 2024,
-                        "chunk_index": idx,
-                        "text": chunk[:1000],  # safe size for Pinecone metadata
-                    }
-
-                    vector_batch.append({
-                        "id": clean_vector_id,
-                        "values": embedding,
-                        "metadata": metadata
-                    })
-
-                pending_case_ids.append(member.name)
-
-                # Flush only at document boundaries — never mid-document.
-                # Splitting one document's chunks across two batches would
-                # mean a failure on the second batch either loses those
-                # chunks silently or, worse, the first batch's success could
-                # get this case_id checkpointed before the rest of it is
-                # actually safe in Pinecone.
-                if len(vector_batch) >= BATCH_SIZE:
-                    flush_batch(member.name)
-                    # Proactive throttle — keeps sustained throughput safely
-                    # under the 250K TPM ceiling alongside (not instead of)
-                    # the reactive 429 retry/backoff above.
-                    time.sleep(BATCH_PACING_DELAY)
+            drain_futures(pending_futures)
 
         flush_batch("final flush")
     finally:

@@ -10,6 +10,9 @@ import {
   exportContract,
   fetchDocuments
 } from '../services/api';
+import ContractTiptapEditor from './ContractTiptapEditor.jsx';
+import { findClauseRange } from '../tiptap/positionMapping.js';
+import { useCitationStore } from '../tiptap/citationStore.js';
 
 const styles = `
   /* ── ANALYZER CONTAINER ──────────────────────────────────────────── */
@@ -555,6 +558,47 @@ const styles = `
   [data-theme="light"] .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.2); }
   [data-theme="light"] .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.2); }
 
+  /* ── TIPTAP EDITOR INTEGRATION ───────────────────────────────────── */
+  /* .scanner-body is now the OUTER wrapper EditorContent renders — the
+     actual contenteditable lives one level deeper as .ProseMirror, so the
+     browser's default focus ring has to be suppressed there specifically. */
+  .scanner-body .ProseMirror { outline: none; }
+  .scanner-body .ProseMirror p {
+    margin: 0 0 1.1em;
+    text-align: justify;
+    color: inherit;
+  }
+  .scanner-body .ProseMirror p:last-child { margin-bottom: 0; }
+
+  /* Track Changes marks — real inline document content, not decorations */
+  .ai-insertion {
+    text-decoration: underline;
+    text-decoration-color: #10B981;
+    text-decoration-thickness: 2px;
+    color: #6EE7B7 !important;
+    background: rgba(16,185,129,0.08);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  .ai-deletion {
+    text-decoration: line-through;
+    text-decoration-color: #EF4444;
+    color: rgba(252,165,165,0.75) !important;
+    background: rgba(239,68,68,0.06);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  [data-theme="light"] .ai-insertion { color: #166534 !important; background: rgba(16,185,129,0.1); }
+  [data-theme="light"] .ai-deletion  { color: #991B1B !important; background: rgba(239,68,68,0.08); }
+
+  /* User comment spans */
+  .user-comment {
+    background: rgba(245,158,11,0.14);
+    border-bottom: 2px dotted rgba(245,158,11,0.6);
+    cursor: pointer;
+  }
+  [data-theme="light"] .user-comment { background: rgba(245,158,11,0.16); }
+
   /* ── RISK CLAUSE LIST (overview when no clause selected) ────────── */
   .clause-list-item {
     display: flex;
@@ -1085,8 +1129,19 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [tabOpacity, setTabOpacity] = useState('opacity-100');
 
   // Document editor states
-  const [editorHtml, setEditorHtml] = useState('');
   const [activeClauseId, setActiveClauseId] = useState(null);
+  // Bumped only when a genuinely NEW document is loaded (upload, piped-in
+  // doc, session restore, voice command) — NOT on every rawText tick from
+  // the editor's own live-typing echo, and NOT on a scanStrategy switch.
+  // ContractTiptapEditor only reloads its content when this changes, so a
+  // mode switch (which re-runs analysis and calls setRawText again) never
+  // tears down the live editor/cursor/undo history.
+  const [documentVersion, setDocumentVersion] = useState(0);
+  const editorApiRef = useRef(null);
+  const inspectedCardRef = useRef(null);
+  const analysisPanelBodyRef = useRef(null);
+  const [comments, setComments] = useState([]);
+  const [activeCommentDraft, setActiveCommentDraft] = useState(null);
 
   // Interactive Rewrite states
   const [intent, setIntent] = useState('');
@@ -1146,7 +1201,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   const fileInputRef = useRef(null);
   const ruleBookFileInputRef = useRef(null);
-  const editorRef = useRef(null);
   const suggestionsRef = useRef(null);
   const chatStreamRef = useRef(null);
 
@@ -1185,7 +1239,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
         }
       } catch (_) { /* corrupt session — ignore */ }
     }
-    hydratedRef.current = true;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist key state to sessionStorage on every change (post-hydration).
@@ -1197,6 +1250,22 @@ export default function ContractAnalyzer({ setFocusMode }) {
       }));
     } catch (_) { /* quota / serialization — ignore */ }
   }, [rawText, ruleBookText, clauses, summary, isAnalyzed]);
+
+  // Flips AFTER the rehydration effect above on the very first commit, and
+  // only takes effect (for the persistence effect's guard) on the NEXT
+  // commit — the one where rawText/clauses have actually caught up to the
+  // just-hydrated values. Setting this flag inside the rehydration effect
+  // itself was a real bug: that effect's setRawText/setClauses calls don't
+  // update those variables until a later render, but the flag flipped
+  // synchronously in the SAME commit — so the persistence effect above,
+  // also running on that first commit, saw hydratedRef already true but
+  // rawText/clauses still at their pre-hydration (empty) values, and
+  // immediately overwrote sessionStorage with blanks. Declaring this as
+  // its own later effect exploits React's guarantee that same-commit
+  // effects run in declaration order.
+  useEffect(() => {
+    hydratedRef.current = true;
+  }, []);
 
   // Auto-Collapse Sidebar on Mount (Focus Mode)
   useEffect(() => {
@@ -1233,13 +1302,16 @@ export default function ContractAnalyzer({ setFocusMode }) {
     return () => window.removeEventListener('lex:sharedWorkspaceUpdate', handler);
   }, []);
 
-  // Update highlighted editor HTML when rawText or clauses change
+  // Scroll the inspected risk card into view whenever a new one is opened
+  // (from a sidebar list click OR a document decoration click) — the panel
+  // may still be scrolled from a previous, longer clause's detail view.
   useEffect(() => {
-    if (isAnalyzed) {
-      const html = renderDocumentScanner(rawText, clauses);
-      setEditorHtml(html);
+    if (activeClauseId && inspectedCardRef.current) {
+      inspectedCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (analysisPanelBodyRef.current) {
+      analysisPanelBodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [rawText, clauses, isAnalyzed]);
+  }, [activeClauseId]);
 
   // Autocomplete Suggestions based on inspected clause
   const activeClause = clauses.find(c => c.id === activeClauseId);
@@ -1254,10 +1326,16 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }, 150);
   };
 
-  // formatting commands helper for ExecCommand
-  const handleFormat = (command) => {
-    document.execCommand(command, false, null);
-  };
+  // Sidebar comment-box listener — opens a draft input for whatever span
+  // the TipTap editor's setComment() command just marked.
+  useEffect(() => {
+    const onTiptapComment = (e) => {
+      setActiveCommentDraft({ commentId: e.detail.commentId, text: e.detail.text, draft: '' });
+      switchTab('comments');
+    };
+    window.addEventListener('lex:tiptap-comment', onTiptapComment);
+    return () => window.removeEventListener('lex:tiptap-comment', onTiptapComment);
+  }, []);
 
   // Preprocessing: extraction fuses section labels ("word.2.") to surrounding
   // words, which shifts character indices and breaks highlight alignment.
@@ -1383,6 +1461,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
   }, [rawText, ruleBookText, scanStrategy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadAnalysisResults = (data) => {
+    // Only a fresh (not-yet-analyzed) load should force the TipTap editor
+    // to remount with new content. A mode-switch re-analysis (isAnalyzed
+    // already true) reaches this same function but must NOT bump the
+    // version — the live editor/cursor/undo history has to survive it.
+    if (!isAnalyzed) setDocumentVersion((v) => v + 1);
+
     const rawClauses = data.flagged_clauses || data.clauses || [];
     const mapped = rawClauses.map((c, idx) => ({
       id: c.id != null ? String(c.id) : `auto-${idx}`,
@@ -1435,13 +1519,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setRewrittenText(clause?.suggestedRewrite || '');
   };
 
-  const handleEditorClick = (e) => {
-    const mark = e.target.closest('mark');
-    if (mark && mark.dataset.id) {
-      inspectRisk(mark.dataset.id);
-    }
-  };
-
   // ── 3. REWRITE HANDLER ──────────────────────────────────────────────
   const handleRewrite = async () => {
     if (!activeClause) return;
@@ -1462,37 +1539,91 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
   };
 
-  // Applies revision by updating clause state (which is then diffed dynamically with transient animation state)
+  // Applies the AI-suggested rewrite as a live Track Changes suggestion in
+  // the document — the original text gets an ai-deletion mark, the new
+  // text an ai-insertion mark right after it, both sharing the clause's id
+  // as the suggestionId. Nothing is finalized yet; the user still has to
+  // accept or reject it (see below) before it affects rawText/export.
   const applyRevision = () => {
     if (!activeClause || !rewrittenText.trim()) return;
+    const editor = editorApiRef.current;
+    if (!editor) return;
 
-    setClauses(prev => prev.map(c => {
-      if (c.id === activeClause.id) {
-        return {
-          ...c,
-          isRevised: true,
-          isNewlyRevised: true,
-          revisedText: rewrittenText.trim(),
-          risk: 'GREEN',
-          issue: 'Approved AI Revision.'
-        };
-      }
-      return c;
-    }));
+    const range = findClauseRange(editor.state.doc, activeClause.text);
+    if (!range) {
+      alert('Could not locate this clause in the live document — it may already have been edited. Re-select it from the list and try again.');
+      return;
+    }
+
+    const ok = editor.commands.insertSuggestion(range.from, range.to, rewrittenText.trim(), activeClause.id);
+    if (!ok) return;
+
+    setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: true } : c)));
+  };
+
+  // Accept: the ai-deletion-marked original text is removed, the
+  // ai-insertion-marked new text becomes permanent, unmarked content.
+  const acceptActiveSuggestion = () => {
+    if (!activeClause) return;
+    const editor = editorApiRef.current;
+    if (!editor || !editor.commands.acceptSuggestion(activeClause.id)) return;
+
+    const finalText = rewrittenText.trim();
+    setClauses(prev => prev.map(c => (c.id === activeClause.id ? {
+      ...c,
+      isRevised: true,
+      isNewlyRevised: true,
+      isPendingSuggestion: false,
+      revisedText: finalText,
+      text: finalText,
+      risk: 'GREEN',
+      issue: 'Approved AI Revision.',
+    } : c)));
 
     // Clear the visual fade animation class after 1.5s so it runs exactly once
     setTimeout(() => {
-      setClauses(prev => prev.map(c => {
-        if (c.id === activeClause.id) {
-          return { ...c, isNewlyRevised: false };
-        }
-        return c;
-      }));
+      setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isNewlyRevised: false } : c)));
     }, 1500);
 
     setActiveClauseId(null);
     setRewrittenText('');
     setIntent('');
+  };
+
+  // Reject: the ai-insertion-marked new text is discarded, the
+  // ai-deletion-marked original text is restored to plain, unmarked
+  // content — the clause stays open so the user can try another rewrite.
+  const rejectActiveSuggestion = () => {
+    if (!activeClause) return;
+    const editor = editorApiRef.current;
+    if (!editor || !editor.commands.rejectSuggestion(activeClause.id)) return;
+
+    setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: false } : c)));
+    setRewrittenText('');
+  };
+
+  // Registers the precedent's metadata in the citation Zustand store (read
+  // by CitationBadge via its own citationId-scoped selector, never through
+  // editor state) and inserts an atom inlineCitation node at the current
+  // cursor position.
+  const insertCitationIntoDocument = (prec) => {
+    const editor = editorApiRef.current;
+    if (!editor) {
+      alert('Open the document editor before inserting a citation.');
+      return;
+    }
+    // This line only ever runs inside an onClick handler (never during
+    // render); the linter can't statically prove that for a plain
+    // component-scoped function.
+    // eslint-disable-next-line react-hooks/purity
+    const citationId = `cite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    useCitationStore.getState().registerCitation(citationId, {
+      caseName: prec.title,
+      summary: prec.desc,
+      shortLabel: prec.title.length > 28 ? `${prec.title.slice(0, 28)}…` : prec.title,
+      url: prec.url,
+    });
+    editor.chain().focus().insertContent({ type: 'inlineCitation', attrs: { citationId } }).run();
   };
 
   // ── 4. EXTENSIONS (RECOMMENDATIONS) HANDLERS ─────────────────────────
@@ -1834,60 +1965,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const amberCount = clauses.filter(c => c.risk === 'AMBER').length;
   const greenCount = clauses.filter(c => c.risk === 'GREEN').length;
 
-  // contentEditable editor blur syncing
-  const handleEditorBlur = (e) => {
-    const editorEl = e.currentTarget;
-
-    // 1. Read updates from del, mark, and ins tags to keep clauses state in sync
-    const delElements = editorEl.querySelectorAll('del.revised-del');
-    const insElements = editorEl.querySelectorAll('ins.revised-ins, ins.newly-revised-ins');
-    const markElements = editorEl.querySelectorAll('mark.risk-mark');
-
-    const delUpdates = {};
-    delElements.forEach(del => {
-      const id = del.getAttribute('data-id');
-      if (id) {
-        delUpdates[id] = del.innerText || del.textContent || '';
-      }
-    });
-
-    const insUpdates = {};
-    insElements.forEach(ins => {
-      const id = ins.getAttribute('data-id');
-      if (id) {
-        insUpdates[id] = ins.innerText || ins.textContent || '';
-      }
-    });
-
-    const markUpdates = {};
-    markElements.forEach(mark => {
-      const id = mark.getAttribute('data-id');
-      if (id) {
-        markUpdates[id] = mark.innerText || mark.textContent || '';
-      }
-    });
-
-    if (Object.keys(delUpdates).length > 0 || Object.keys(insUpdates).length > 0 || Object.keys(markUpdates).length > 0) {
-      setClauses(prev => prev.map(c => {
-        const updatedClause = { ...c };
-        if (delUpdates[c.id] !== undefined) {
-          updatedClause.text = delUpdates[c.id];
-        }
-        if (markUpdates[c.id] !== undefined) {
-          updatedClause.text = markUpdates[c.id];
-        }
-        if (insUpdates[c.id] !== undefined) {
-          updatedClause.revisedText = insUpdates[c.id];
-        }
-        return updatedClause;
-      }));
-    }
-
-    // 2. Reconstruct rawText and save it
-    const rawTextValue = getRawTextFromNode(editorEl);
-    setRawText(rawTextValue);
-  };
-
   return (
     <>
       <style>{styles}</style>
@@ -1947,7 +2024,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   Export
                 </button>
                 <button
-                  onClick={() => { setIsAnalyzed(false); setRawText(''); setClauses([]); setSummary(''); setAppendedClauses([]); setActiveClauseId(null); setRewrittenText(''); setSummaryCollapsed(true); }}
+                  onClick={() => { setIsAnalyzed(false); setRawText(''); setClauses([]); setSummary(''); setAppendedClauses([]); setActiveClauseId(null); setRewrittenText(''); setSummaryCollapsed(true); setComments([]); setActiveCommentDraft(null); }}
                   style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = '#9CA3AF'; e.currentTarget.style.borderColor = 'var(--border-dark-subtle)'; }}
@@ -2238,18 +2315,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         <span className="scan-meta-value" style={{ color: 'var(--text-dark-muted)' }}>Auto-Draft Workspace</span>
                       </div>
                     )}
-                    <div className="scan-meta-toolbar">
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('undo')} title="Undo" className="toolbar-btn">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
-                      </button>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('redo')} title="Redo" className="toolbar-btn">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
-                      </button>
-                      <div className="toolbar-divider"></div>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('bold')} title="Bold" className="toolbar-btn" style={{ fontWeight: '800', fontSize: '13px' }}>B</button>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('italic')} title="Italic" className="toolbar-btn" style={{ fontStyle: 'italic', fontSize: '13px' }}>I</button>
-                      <button onMouseDown={e => e.preventDefault()} onClick={() => handleFormat('underline')} title="Underline" className="toolbar-btn" style={{ textDecoration: 'underline', fontSize: '13px' }}>U</button>
-                    </div>
                   </div>
                 );
               })()}
@@ -2257,14 +2322,14 @@ export default function ContractAnalyzer({ setFocusMode }) {
               <div className="editor-scroll-area">
                 {leftTab === 'scanner' ? (
                   <>
-                    <div
-                      ref={editorRef}
-                      className="scanner-body"
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={handleEditorBlur}
-                      onClick={handleEditorClick}
-                      dangerouslySetInnerHTML={{ __html: editorHtml }}
+                    <ContractTiptapEditor
+                      documentKey={documentVersion}
+                      initialRawText={rawText}
+                      clauses={clauses}
+                      scanStrategy={scanStrategy}
+                      onRiskClick={inspectRisk}
+                      onTextChange={setRawText}
+                      onEditorReady={(ed) => { editorApiRef.current = ed; }}
                     />
                     {appendedClauses.length > 0 && (
                       <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
@@ -2363,16 +2428,19 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'citations' ? 'active' : ''}`} onClick={() => switchTab('citations')}>
                   Citations {matchedPrecedents.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#93C5FD', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{matchedPrecedents.length}</span>}
                 </button>
+                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'comments' ? 'active' : ''}`} onClick={() => switchTab('comments')}>
+                  Comments {comments.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{comments.length}</span>}
+                </button>
               </div>
 
-              <div className={`analysis-panel-body transition-opacity duration-300 ${tabOpacity}`}>
+              <div ref={analysisPanelBodyRef} className={`analysis-panel-body transition-opacity duration-300 ${tabOpacity}`}>
 
                 {/* SUB TAB: Risks (Actions) */}
                 {activeTab === 'risks' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
 
                     {activeClause ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div ref={inspectedCardRef} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         {/* Back to list */}
                         <button
                           onClick={() => { setActiveClauseId(null); setRewrittenText(''); setIntent(''); }}
@@ -2427,56 +2495,82 @@ export default function ContractAnalyzer({ setFocusMode }) {
                             <div className="revision-glass-card">
                               <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>Revision Workshop</span>
 
-                              <div style={{ position: 'relative' }}>
-                                <input
-                                  type="text"
-                                  placeholder="E.g., Make notice mutual, cap penalty at 2×…"
-                                  className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                                  style={{ width: '100%', boxSizing: 'border-box', fontSize: '12px' }}
-                                  value={intent}
-                                  onChange={(e) => { setIntent(e.target.value); setShowSuggestions(true); }}
-                                  onFocus={() => setShowSuggestions(true)}
-                                />
-                                {showSuggestions && dynamicIntents.length > 0 && (
-                                  <div className="autocomplete-dropdown" ref={suggestionsRef}>
-                                    {dynamicIntents.map((item, idx) => (
-                                      <div key={idx} className="autocomplete-item" onClick={() => { setIntent(item); setShowSuggestions(false); }}>
-                                        💡 {item}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-
-                              <button
-                                className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
-                                onClick={handleRewrite}
-                                disabled={rewriting}
-                                style={{ width: '100%', padding: '9px', fontSize: '12.5px' }}
-                              >
-                                {rewriting ? (
-                                  <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite', marginRight: 6, verticalAlign: 'middle' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Generating…</>
-                                ) : 'Rewrite Clause with AI'}
-                              </button>
-
-                              {rewrittenText && (
+                              {activeClause.isPendingSuggestion ? (
                                 <>
-                                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
-                                    <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-success)', display: 'block', marginBottom: '6px' }}>AI Suggested Revision</span>
-                                    <textarea
-                                      className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                                      style={{ height: '90px', width: '100%', boxSizing: 'border-box', border: '1px solid rgba(16,185,129,0.3)', fontSize: '12px', resize: 'none' }}
-                                      value={rewrittenText}
-                                      onChange={(e) => setRewrittenText(e.target.value)}
-                                    />
+                                  <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', fontSize: '12px', color: 'var(--text-dark-muted)', lineHeight: 1.5 }}>
+                                    A tracked change is live in the document — the original text is struck through
+                                    in red, the suggestion is underlined in green. Review it there, then resolve it below.
                                   </div>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                      className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                                      onClick={acceptActiveSuggestion}
+                                      style={{ flex: 1, padding: '9px', fontSize: '12.5px', background: 'var(--accent-success)' }}
+                                    >
+                                      ✓ Accept into Document
+                                    </button>
+                                    <button
+                                      onClick={rejectActiveSuggestion}
+                                      style={{ flex: 1, padding: '9px', fontSize: '12.5px', background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: '#FCA5A5', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                                    >
+                                      ✗ Discard Suggestion
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div style={{ position: 'relative' }}>
+                                    <input
+                                      type="text"
+                                      placeholder="E.g., Make notice mutual, cap penalty at 2×…"
+                                      className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
+                                      style={{ width: '100%', boxSizing: 'border-box', fontSize: '12px' }}
+                                      value={intent}
+                                      onChange={(e) => { setIntent(e.target.value); setShowSuggestions(true); }}
+                                      onFocus={() => setShowSuggestions(true)}
+                                    />
+                                    {showSuggestions && dynamicIntents.length > 0 && (
+                                      <div className="autocomplete-dropdown" ref={suggestionsRef}>
+                                        {dynamicIntents.map((item, idx) => (
+                                          <div key={idx} className="autocomplete-item" onClick={() => { setIntent(item); setShowSuggestions(false); }}>
+                                            💡 {item}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
                                   <button
                                     className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
-                                    onClick={applyRevision}
-                                    style={{ width: '100%', padding: '9px', fontSize: '12.5px', background: 'var(--accent-success)' }}
+                                    onClick={handleRewrite}
+                                    disabled={rewriting}
+                                    style={{ width: '100%', padding: '9px', fontSize: '12.5px' }}
                                   >
-                                    Apply Rewrite to Document
+                                    {rewriting ? (
+                                      <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite', marginRight: 6, verticalAlign: 'middle' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Generating…</>
+                                    ) : 'Rewrite Clause with AI'}
                                   </button>
+
+                                  {rewrittenText && (
+                                    <>
+                                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
+                                        <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-success)', display: 'block', marginBottom: '6px' }}>AI Suggested Revision</span>
+                                        <textarea
+                                          className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
+                                          style={{ height: '90px', width: '100%', boxSizing: 'border-box', border: '1px solid rgba(16,185,129,0.3)', fontSize: '12px', resize: 'none' }}
+                                          value={rewrittenText}
+                                          onChange={(e) => setRewrittenText(e.target.value)}
+                                        />
+                                      </div>
+                                      <button
+                                        className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                                        onClick={applyRevision}
+                                        style={{ width: '100%', padding: '9px', fontSize: '12.5px', background: 'var(--accent-success)' }}
+                                      >
+                                        Apply Rewrite to Document
+                                      </button>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -2763,17 +2857,80 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           <div key={i} className="precedent-card" style={{ marginBottom: 0 }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <span>⚖️</span>
-                              <div>
+                              <div style={{ flex: 1 }}>
                                 <a href={prec.url} target="_blank" rel="noopener noreferrer" className="precedent-link">
                                   {prec.title}
                                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                                 </a>
                                 <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '4px', lineHeight: '1.4' }}>{prec.desc}</p>
+                                <button
+                                  onClick={() => insertCitationIntoDocument(prec)}
+                                  style={{ marginTop: '8px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: '#93C5FD', fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px', cursor: 'pointer' }}
+                                >
+                                  📖 Insert Citation into Document
+                                </button>
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SUB TAB: Comments */}
+                {activeTab === 'comments' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Comments</h3>
+
+                    {activeCommentDraft && (
+                      <div className="revision-glass-card">
+                        <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
+                          Commenting on
+                        </span>
+                        <div className="original-clause-box" style={{ fontSize: '12px' }}>{activeCommentDraft.text}</div>
+                        <textarea
+                          className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
+                          style={{ height: '70px', width: '100%', boxSizing: 'border-box', fontSize: '12.5px', resize: 'none' }}
+                          placeholder="Type your comment…"
+                          value={activeCommentDraft.draft}
+                          onChange={(e) => setActiveCommentDraft(prev => ({ ...prev, draft: e.target.value }))}
+                          autoFocus
+                        />
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                            style={{ flex: 1, padding: '8px', fontSize: '12px' }}
+                            disabled={!activeCommentDraft.draft.trim()}
+                            onClick={() => {
+                              setComments(prev => [...prev, { id: activeCommentDraft.commentId, text: activeCommentDraft.text, comment: activeCommentDraft.draft.trim() }]);
+                              setActiveCommentDraft(null);
+                            }}
+                          >
+                            Save Comment
+                          </button>
+                          <button
+                            onClick={() => setActiveCommentDraft(null)}
+                            style={{ flex: 1, padding: '8px', fontSize: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dark-muted)', borderRadius: '8px', cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {comments.length === 0 && !activeCommentDraft ? (
+                      <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
+                        No comments yet. Select text in the document and click the comment icon in the toolbar.
+                      </div>
+                    ) : (
+                      comments.map((c) => (
+                        <div key={c.id} className="revision-glass-card">
+                          <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>On</span>
+                          <div className="original-clause-box" style={{ fontSize: '12px' }}>{c.text}</div>
+                          <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', margin: 0 }}>{c.comment}</p>
+                        </div>
+                      ))
                     )}
                   </div>
                 )}
@@ -2931,166 +3088,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
 }
 
 // ── UTILITIES ────────────────────────────────────────────────────────
-
-// Normalize punctuation for fuzzy matching (1-to-1 char replacement — positions preserved)
-const normalizeForMatch = (s) => s
-  .replace(/[''ʼ′`]/g, "'")
-  .replace(/[""„«»″]/g, '"')
-  .replace(/[–—‒―−]/g, '-')
-  .replace(/ /g, ' ')
-  .replace(/…/g, '...');
-
-const buildFlexRegex = (text, flags = 'gi') => {
-  try {
-    const esc = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const flex = esc.replace(/\s+/g, '[\\s]+');
-    return new RegExp(flex, flags);
-  } catch (_) { return null; }
-};
-
-const renderDocumentScanner = (rawText, clauses) => {
-  if (!rawText) return '';
-
-  const normRaw = normalizeForMatch(rawText);
-
-  const riskClauses = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER' || c.isRevised);
-  // Process longest clauses first so they win overlap conflicts
-  const sortedClauses = [...riskClauses].sort((a, b) => b.text.length - a.text.length);
-
-  const ranges = [];
-
-  const tryLocate = (clauseText) => {
-    const trimmed = clauseText.trim();
-    if (!trimmed || trimmed.length < 6) return null;
-
-    // Strategy 1: flexible regex with gi flags on original rawText
-    const r1 = buildFlexRegex(trimmed);
-    if (r1) {
-      const m = r1.exec(rawText);
-      if (m) return { start: m.index, end: m.index + m[0].length };
-    }
-
-    // Strategy 2: normalize quotes/dashes then match
-    // Since normalizeForMatch is 1-to-1, positions in normRaw === positions in rawText
-    const normClause = normalizeForMatch(trimmed);
-    const r2 = buildFlexRegex(normClause);
-    if (r2) {
-      const m = r2.exec(normRaw);
-      if (m) return { start: m.index, end: m.index + m[0].length };
-    }
-
-    // Strategy 3: anchor on first 70 chars and estimate end (handles AI truncation)
-    const fragment = trimmed.slice(0, 70).trim();
-    if (fragment.length > 20) {
-      const r3 = buildFlexRegex(fragment);
-      if (r3) {
-        const m = r3.exec(rawText);
-        if (m) {
-          const start = m.index;
-          const end = Math.min(start + trimmed.length + 15, rawText.length);
-          return { start, end };
-        }
-      }
-      // Also try normalized fragment
-      const normFrag = normalizeForMatch(fragment);
-      const r3n = buildFlexRegex(normFrag);
-      if (r3n) {
-        const m = r3n.exec(normRaw);
-        if (m) {
-          const start = m.index;
-          const end = Math.min(start + trimmed.length + 15, rawText.length);
-          return { start, end };
-        }
-      }
-    }
-
-    return null;
-  };
-
-  sortedClauses.forEach(c => {
-    const loc = tryLocate(c.text);
-    if (loc) {
-      const { start, end } = loc;
-      if (!ranges.some(r => start < r.end && end > r.start)) {
-        ranges.push({ start, end, clause: c });
-      }
-    }
-  });
-
-  ranges.sort((a, b) => a.start - b.start);
-
-  // Convert a plain text segment to HTML (paragraphs + line breaks only — no pre-wrap)
-  const textToHtml = (text) => {
-    if (!text) return '';
-    return escapeHtml(text)
-      .replace(/\n{2,}/g, '</p><p class="doc-para">')
-      .replace(/\n/g, '<br>');
-  };
-
-  let html = '';
-  let cursor = 0;
-
-  ranges.forEach(r => {
-    const c = r.clause;
-    html += textToHtml(rawText.slice(cursor, r.start));
-
-    if (c.isRevised) {
-      const animationClass = c.isNewlyRevised ? 'newly-revised-ins' : 'revised-ins';
-      html += `<del class="revised-del" data-id="${c.id}">${escapeHtml(rawText.slice(r.start, r.end))}</del><ins class="${animationClass}" data-id="${c.id}">${escapeHtml(c.revisedText)}</ins>`;
-    } else {
-      const markClass = c.risk === 'RED' ? 'red-mark' : 'amber-mark';
-      const titleAttr = c.clauseTitle ? ` title="${escapeHtml(c.clauseTitle)}"` : '';
-      html += `<mark id="clause-left-${c.id}" data-id="${c.id}"${titleAttr} class="risk-mark ${markClass}">${escapeHtml(rawText.slice(r.start, r.end))}</mark>`;
-    }
-
-    cursor = r.end;
-  });
-
-  html += textToHtml(rawText.slice(cursor));
-  return `<p class="doc-para">${html}</p>`;
-};
-
-const escapeHtml = (str) => {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-};
-
-const getRawTextFromNode = (node) => {
-  if (!node) return '';
-  let text = '';
-  const traverse = (n) => {
-    if (n.nodeType === 3) { // TEXT_NODE
-      text += n.nodeValue;
-    } else if (n.nodeType === 1) { // ELEMENT_NODE
-      const tagName = n.tagName.toLowerCase();
-      if (tagName === 'ins') {
-        // Ignore inserted text in rawText
-        return;
-      }
-      if (tagName === 'br') {
-        text += '\n';
-        return;
-      }
-
-      const isBlock = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName);
-
-      n.childNodes.forEach(child => traverse(child));
-
-      if (tagName === 'p') {
-        text += '\n\n';
-      } else if (isBlock && tagName !== 'div') {
-        text += '\n';
-      }
-    }
-  };
-  node.childNodes.forEach(child => traverse(child));
-  return text.replace(/\n\n+$/g, '\n\n').trim();
-};
 
 const getDynamicIntents = (clauseText, riskLevel) => {
   const text = (clauseText || "").toLowerCase();
