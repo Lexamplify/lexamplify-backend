@@ -235,16 +235,55 @@ def generate_docx_blob(title, content):
 LOCAL_DEV_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1):\d+$")
 PROD_ORIGINS = {'https://lexamplify-4.web.app', 'https://test.lexamplify.com'}
 
-# Pinecone record ids from the ingestion pipeline follow "{case_id}_chunk_{n}"
-# for chunked records (mass_ingestion.py) but are the bare case_id for
-# single-record seeds (seed_library.py) — stripping the optional suffix
-# recovers the true case_vault lookup key in both cases.
-CHUNK_SUFFIX_RE = re.compile(r'_chunk_\d+$')
-
 # Strict allow-list for the document-retrieval route's case_id path segment —
 # alphanumeric plus underscore/hyphen only, anchored start-to-end, so a
 # value like "../../etc/passwd" can never reach the SQL query.
 CASE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+# worker.py's Pinecone vector IDs are hashlib.md5(...).hexdigest() of
+# "{case_id}_chunk_{n}" — opaque 32-char hashes that don't decode back to a
+# case_id. A URL path segment matching this shape means the caller only had
+# the raw vector id (e.g. a metadata-less search hit), not the real case_id.
+MD5_HASH_RE = re.compile(r'^[A-Za-z0-9]{32}$')
+
+# Same strict allow-list intent as CASE_ID_RE, but worker.py's real case_ids
+# are raw S3 filenames like "2022_13_342_356_EN.pdf" — CASE_ID_RE (built for
+# the case_vault route's slug-style ids) has no '.', which would reject
+# every single legitimately-ingested judgment. Still anchored start-to-end
+# and still excludes '/', quotes, and shell/SQL metacharacters.
+PINECONE_CASE_ID_RE = re.compile(r'^[A-Za-z0-9_.-]+$')
+
+# Must exactly match the ingestion pipeline's embedding model/index
+# dimension (worker.py EMBED_MODEL = "llama-text-embed-v2") — verified
+# empirically against the live index via describe_index_stats(): dimension
+# 1024, metric cosine. A true zero vector is undefined under cosine
+# similarity (division by zero); this dummy is only ever used for
+# filter-only "give me everything matching this case_id" queries where the
+# similarity score itself is discarded, so its direction is irrelevant —
+# it only needs to be non-zero.
+EMBED_DIMENSION = 1024
+EMBED_MODEL = "llama-text-embed-v2"
+DUMMY_QUERY_VECTOR = [1e-5] * EMBED_DIMENSION
+
+
+def format_case_title(filename):
+    """Builds a display title from a worker.py-style case_id, e.g.
+    "2022_13_342_356_EN.pdf" -> "Supreme Court Judgment (2022) - 2022_13_342_356".
+    Null-safe: the caller may pass metadata straight from Pinecone, which is
+    pipeline-controlled and not guaranteed to have every field.
+    """
+    if not filename:
+        return "Supreme Court Judgment (Unknown) - Untitled"
+
+    clean_name = filename
+    if clean_name.endswith('_EN.pdf'):
+        clean_name = clean_name[:-len('_EN.pdf')]
+    elif clean_name.endswith('.pdf'):
+        clean_name = clean_name[:-len('.pdf')]
+
+    parts = clean_name.split('_')
+    year = parts[0] if parts and parts[0] else "Unknown"
+    return f"Supreme Court Judgment ({year}) - {clean_name}"
 
 
 def create_app():
@@ -860,38 +899,57 @@ def create_app():
             # 1. Initialize Pinecone & Groq using existing .env keys
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
             index = pc.Index(host=os.getenv("PINECONE_HOST"))
+            namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
             groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-            # 2. Query Pinecone (Nvidia Integrated Inference)
-            results = index.search(
-                namespace="legal-cases",
-                query={
-                    "inputs": {"text": lawyer_question},
-                    "top_k": 2
-                }
+            # 2. Embed the question and query the raw vector index — worker.py
+            # ingests via index.upsert() with real metadata (case_id, year,
+            # chunk_index, text), not via Pinecone's integrated-inference
+            # records API, so matches carry .metadata directly instead of
+            # needing the id string parsed apart.
+            embed_response = pc.inference.embed(
+                model=EMBED_MODEL,
+                inputs=[lawyer_question],
+                parameters={"input_type": "query", "truncate": "END"},
+            )
+            query_vector = embed_response[0].values
+
+            # top_k=10 (not 2) deliberately over-fetches chunks so dedup below
+            # has multiple same-case chunks to actually collapse — a small
+            # top_k would rarely return more than one chunk per case anyway,
+            # making the dedup step a no-op.
+            pinecone_results = index.query(
+                vector=query_vector,
+                top_k=10,
+                include_metadata=True,
+                namespace=namespace,
             )
 
-            hits = results.get("result", {}).get("hits", [])
             context_chunks = []
             sources = []
-            seen_case_ids = set()
+            seen_cases = set()
 
-            for hit in hits:
-                # Bulletproof extraction to handle Pinecone API quirks. Note:
-                # the Pinecone SDK's Hit object exposes the record id as the
-                # "id_" field internally (and via the ".id" property) — NOT
-                # "_id" — since "id" collides with the Python builtin.
-                fields = hit.get("fields", {}) if isinstance(hit, dict) else getattr(hit, 'fields', {})
-                text = fields.get("text", "") if isinstance(fields, dict) else ""
-                name = fields.get("source_case", "Unknown Case") if isinstance(fields, dict) else "Unknown Case"
-                raw_id = (hit.get("id_", "") if isinstance(hit, dict) else getattr(hit, "id", "")) or ""
-                case_id = CHUNK_SUFFIX_RE.sub('', raw_id) if raw_id else ""
+            for match in (pinecone_results.matches or []):
+                metadata = match.metadata or {}
+                case_id = metadata.get('case_id') or match.id
 
+                text = metadata.get('text', '')
                 if text:
                     context_chunks.append(text)
-                if case_id and case_id not in seen_case_ids:
-                    seen_case_ids.add(case_id)
-                    sources.append({"id": case_id, "name": name})
+
+                # CRITICAL DEDUPLICATION — a case can have hundreds of chunks;
+                # without this, the same case would flood the UI as N
+                # identical-looking source cards.
+                if case_id in seen_cases:
+                    continue
+                seen_cases.add(case_id)
+
+                sources.append({
+                    "case_id": case_id,
+                    "title": format_case_title(case_id),
+                    "year": metadata.get('year', ''),
+                    "snippet": text[:200],
+                })
 
             context_text = "\n\n".join(context_chunks)
 
@@ -963,6 +1021,72 @@ def create_app():
             import traceback
             traceback.print_exc()
             return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/document/<string:case_id>', methods=['GET', 'OPTIONS'])
+    def api_document_reconstruct(case_id):
+        """Reconstructs a full worker.py-ingested judgment from its Pinecone
+        chunks. Distinct from /api/legal-research/document/<case_id> above,
+        which reads AI-drafted documents out of the local case_vault table —
+        S3-ingested judgments were never written there, only into Pinecone.
+        """
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
+        if not PINECONE_CASE_ID_RE.match(case_id):
+            return jsonify({"error": True, "message": "Invalid case_id format."}), 400
+
+        try:
+            pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+            index = pc.Index(host=os.getenv("PINECONE_HOST"))
+            namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
+
+            resolved_case_id = case_id
+            if MD5_HASH_RE.match(case_id):
+                # The caller only has a raw chunk vector id (e.g. a search
+                # result whose metadata lacked case_id) — resolve the real
+                # case_id from that one vector's metadata first.
+                fetch_result = index.fetch(ids=[case_id], namespace=namespace)
+                vector = fetch_result.vectors.get(case_id)
+                if vector and vector.metadata:
+                    resolved_case_id = vector.metadata.get('case_id', case_id)
+
+            # Dummy near-zero vector: this is a filter-only lookup, not a
+            # similarity search — the score is discarded, so the vector's
+            # direction doesn't matter, but a true [0.0]*N is undefined
+            # under this index's cosine metric (division by zero) and would
+            # error instead of just returning arbitrarily-ranked matches.
+            query_result = index.query(
+                vector=DUMMY_QUERY_VECTOR,
+                filter={"case_id": resolved_case_id},
+                top_k=3000,  # a large judgment can run to hundreds of chunks
+                include_metadata=True,
+                namespace=namespace,
+            )
+
+            matches = query_result.matches or []
+            if not matches:
+                return jsonify({"error": True, "message": f"Document with case_id '{resolved_case_id}' not found."}), 404
+
+            # int() cast is required: Pinecone metadata typing isn't
+            # guaranteed uniform across every historical ingestion run, and
+            # a string sort would order chunks as 1, 10, 11, 2, 3... instead
+            # of 1, 2, 3... 10, 11, silently scrambling the reassembled text.
+            sorted_matches = sorted(
+                matches,
+                key=lambda m: int((m.metadata or {}).get('chunk_index', 0))
+            )
+            content = "\n\n".join((m.metadata or {}).get('text', '') for m in sorted_matches)
+
+            return jsonify({
+                "case_id": resolved_case_id,
+                "title": format_case_title(resolved_case_id),
+                "content": content,
+            }), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": f"Failed to reconstruct document: {str(e)}"}), 500
 
     @app.route('/api/ai/summarize-judgment', methods=['POST', 'OPTIONS'])
     def api_summarize_judgment():

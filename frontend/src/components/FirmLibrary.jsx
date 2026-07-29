@@ -570,6 +570,21 @@ const flStyles = `
   .fl-rag-citation-clickable:hover { background: rgba(99,102,241,0.1); border-color: rgba(99,102,241,0.35); }
   .fl-rag-citation-clickable:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 
+  /* ── External Database source cards (year pill + truncated snippet) ── */
+  .fl-source-card { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: left; }
+  .fl-source-card-title-row { display: flex; align-items: center; gap: 7px; width: 100%; }
+  .fl-source-card-title { color: #7EB3F5; font-size: 12.5px; font-weight: 600; }
+  .fl-source-year-pill {
+    font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 10px;
+    background: rgba(99,102,241,0.16); color: #A5B4FC; border: 1px solid rgba(99,102,241,0.3);
+    flex-shrink: 0; white-space: nowrap;
+  }
+  .fl-source-snippet {
+    font-size: 11.5px; line-height: 1.5; color: var(--text-muted);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; text-overflow: ellipsis; max-height: 4.5em; width: 100%;
+  }
+
   /* ── Document Viewer Drawer ── */
   .document-viewer-backdrop {
     position: fixed; inset: 0; background: rgba(0,0,0,0.5);
@@ -635,9 +650,14 @@ const flStyles = `
   @keyframes dv-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
   .dv-body { flex: 1; overflow-y: auto; padding: 22px; }
+  /* Monospace + smaller size instead of the proportional serif previously
+     used here — a reconstructed judgment can run 300,000+ characters, and
+     variable-width text with kerning/ligatures costs measurably more to lay
+     out than a fixed-width font at that size. overflow-y:auto on .dv-body
+     above keeps the scroll container itself cheap regardless of length. */
   .document-viewer-text {
-    font-family: 'Georgia', serif; font-size: 13.5px; line-height: 1.8;
-    letter-spacing: 0.2px; color: var(--text-primary); white-space: pre-wrap;
+    font-family: 'SF Mono', 'Consolas', 'Monaco', ui-monospace, monospace; font-size: 13px; line-height: 1.7;
+    color: var(--text-primary); white-space: pre-wrap; word-break: break-word;
   }
   .document-viewer-text::selection { background: rgba(var(--primary-rgb, 99,102,241), 0.2); }
   .document-viewer-error {
@@ -711,7 +731,7 @@ export default function FirmLibrary() {
   // ── Document viewer drawer ──────────────────────────────────────────────────
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, full_text }
+  const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, content }
   const [viewerError, setViewerError] = useState(null);
 
   // ── Drawer action toolbar state ─────────────────────────────────────────────
@@ -722,7 +742,14 @@ export default function FirmLibrary() {
   const [summaryText, setSummaryText] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
+  // External Database sources come from the Pinecone-backed schema
+  // ({ case_id, title, year, snippet }); source.id/.name are a fallback for
+  // any caller still passing the pre-refactor shape. encodeURIComponent is
+  // required — real case_ids are raw S3 filenames like
+  // "2022_13_342_356_EN.pdf", and the "." would otherwise be indistinguishable
+  // from a path segment boundary once dots/special chars appear in the id.
   const openDocumentViewer = async (source) => {
+    const sourceCaseId = source.case_id || source.id;
     setViewerOpen(true);
     setViewerLoading(true);
     setViewerError(null);
@@ -732,10 +759,10 @@ export default function FirmLibrary() {
     setSummaryText(null);
     setSummaryOpen(false);
     try {
-      const res = await fetch(`http://localhost:5000/api/legal-research/document/${encodeURIComponent(source.id)}`);
+      const res = await fetch(`http://localhost:5000/api/document/${encodeURIComponent(sourceCaseId)}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
-      setViewerDoc({ case_id: source.id, title: data.title, full_text: data.full_text });
+      setViewerDoc({ case_id: data.case_id || sourceCaseId, title: data.title, content: data.content });
     } catch (err) {
       setViewerError(err.message);
     } finally {
@@ -772,7 +799,7 @@ export default function FirmLibrary() {
         body: JSON.stringify({
           case_id: viewerDoc.case_id,
           title: viewerDoc.title,
-          content: viewerDoc.full_text,
+          content: viewerDoc.content,
           doc_type: 'Pinned Precedent',
         }),
       });
@@ -797,7 +824,7 @@ export default function FirmLibrary() {
       const res = await fetch('http://localhost:5000/api/ai/summarize-judgment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: viewerDoc.full_text }),
+        body: JSON.stringify({ text: viewerDoc.content }),
       });
       const data = await res.json();
       if (data.error || data.status !== 'success') throw new Error(data.message || 'Summarization failed.');
@@ -913,9 +940,15 @@ export default function FirmLibrary() {
         setRagResult({
           brain: 'EXTERNAL',
           synthesis: data.answer,
-          // sources is now [{id, name}] rather than a flat string list —
-          // pull .name so the existing case_name-based citation UI still works.
-          citations: (data.sources || []).map((s) => ({ case_name: s.name, year: '', relevance_note: '' })),
+          // sources is now [{case_id, title, year, snippet}] from the
+          // Pinecone-backed schema — defensive fallback to the pre-refactor
+          // {id, name} shape so this keeps working if an older cached
+          // response or a different caller ever passes the old shape.
+          citations: (data.sources || []).map((s) => ({
+            case_name: s.title || s.name,
+            year: s.year || '',
+            relevance_note: s.snippet || '',
+          })),
         });
       } catch { setRagResult(null); } finally { setRagLoading(false); }
     }, 400);
@@ -1515,18 +1548,29 @@ export default function FirmLibrary() {
                   <div>
                     <div className="fl-rag-section-label">Sources</div>
                     <div className="fl-rag-citations">
-                      {extRagResult.sources.map((s, i) => (
-                        <div key={s.id || i} className="fl-rag-citation" style={{ padding: 0 }}>
-                          <button
-                            type="button"
-                            className="fl-rag-citation-clickable"
-                            style={{ padding: '9px 12px' }}
-                            onClick={() => openDocumentViewer(s)}
-                          >
-                            {s.name}
-                          </button>
-                        </div>
-                      ))}
+                      {extRagResult.sources.map((s, i) => {
+                        // Defensive accessors — case_id/title are the current
+                        // Pinecone-backed schema; id/name are the pre-refactor
+                        // fallback so a stale cached response never crashes this.
+                        const displayTitle = s.title || s.name || 'Untitled Case';
+                        const displayYear = (s.year !== undefined && s.year !== null && s.year !== '') ? s.year : null;
+                        return (
+                          <div key={s.case_id || s.id || i} className="fl-rag-citation" style={{ padding: 0 }}>
+                            <button
+                              type="button"
+                              className="fl-rag-citation-clickable fl-source-card"
+                              style={{ padding: '9px 12px' }}
+                              onClick={() => openDocumentViewer(s)}
+                            >
+                              <div className="fl-source-card-title-row">
+                                {displayYear && <span className="fl-source-year-pill">{displayYear}</span>}
+                                <span className="fl-source-card-title">{displayTitle}</span>
+                              </div>
+                              {s.snippet && <div className="fl-source-snippet">{s.snippet}</div>}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1609,7 +1653,7 @@ export default function FirmLibrary() {
                 <div className="document-viewer-error">{viewerError}</div>
               )}
               {!viewerLoading && !viewerError && viewerDoc && (
-                <div className="document-viewer-text">{viewerDoc.full_text}</div>
+                <div className="document-viewer-text">{viewerDoc.content}</div>
               )}
             </div>
           </div>
