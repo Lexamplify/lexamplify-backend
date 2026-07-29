@@ -24,18 +24,18 @@ def extract_clauses_from_text(text: str) -> list:
     return _split_into_clauses(text)
 
 def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
-    """For document summarizer — returns raw text (first 2500 chars)."""
+    """For document summarizer — returns raw text."""
     if filetype == "pdf":
         import PyPDF2
         reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-        text = " ".join(p.extract_text() or "" for p in reader.pages[:3])
+        text = " ".join(p.extract_text() or "" for p in reader.pages)
     elif filetype == "docx":
         import docx
         doc = docx.Document(io.BytesIO(file_bytes))
         text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
     else:
         text = file_bytes.decode("utf-8", errors="ignore")
-    return text[:2500]
+    return text
 
 def _split_into_clauses(text: str) -> list:
     """

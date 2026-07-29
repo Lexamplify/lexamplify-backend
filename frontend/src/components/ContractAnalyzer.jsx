@@ -1118,6 +1118,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [scanStrategy, setScanStrategy] = useState('Defensive');
   const [rawText, setRawText] = useState('');
+  const rawTextDebounceRef = useRef(null);
   const [clauses, setClauses] = useState([]);
   const [summary, setSummary] = useState('');
 
@@ -2147,10 +2148,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       </div>
 
                       <textarea
+                        key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
                         className="input-textarea"
                         placeholder="Paste the raw text of your contract here…"
-                        value={rawText}
-                        onChange={(e) => setRawText(e.target.value)}
+                        defaultValue={rawText}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (rawTextDebounceRef.current) clearTimeout(rawTextDebounceRef.current);
+                          rawTextDebounceRef.current = setTimeout(() => {
+                            setRawText(val);
+                          }, 800);
+                        }}
                         style={{ marginBottom: 0 }}
                       />
                     </div>

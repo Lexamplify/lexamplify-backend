@@ -3,99 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
 import { renderWithCitations } from './CitationLink';
 
-// ── Seed data ─────────────────────────────────────────────────────────────────
-export const SEED_ENTRIES = [
-  {
-    id: 1,
-    title: 'Standard NDA (Mutual) — Commercial Disputes',
-    category: 'Template',
-    author: 'Firm Library',
-    updated: '2026-06-20',
-    tags: ['Contract Act', 'Confidentiality', 'Commercial'],
-    description: 'Mutual Non-Disclosure Agreement compliant with Section 27 of the Indian Contract Act, 1872. Approved for use in High Court commercial disputes. Includes arbitration clause per DIAC Rules 2023.',
-  },
-  {
-    id: 2,
-    title: 'S. 138 NI Act — Cheque Dishonour Complaint',
-    category: 'Precedent',
-    author: 'Kumar & Associates',
-    updated: '2026-06-15',
-    tags: ['NI Act', 'Criminal', 'Delhi HC'],
-    description: 'Complaint under Section 138 of the Negotiable Instruments Act, 1881. Delhi High Court approved format with standard prayers, demand notice, and legal notice compliance checklist. Cf. Dashrath Rupsingh Rathod v. State of Maharashtra, (2014) 9 SCC 129, on territorial jurisdiction for filing, and AIR 1999 SC 3762 on the presumption under Section 139.',
-  },
-  {
-    id: 3,
-    title: 'Anticipatory Bail Application — BNS 2023',
-    category: 'Precedent',
-    author: 'Sharma & Co.',
-    updated: '2026-06-10',
-    tags: ['BNS', 'BNSS', 'Criminal', 'Sessions Court'],
-    description: 'Anticipatory bail application template updated for Bharatiya Nyaya Sanhita 2023 and BNSS. Cross-references equivalent CrPC sections for transitional matters. Validated by Sessions Court, Dwarka.',
-  },
-  {
-    id: 4,
-    title: 'Employment Agreement — IT Sector (NASSCOM Format)',
-    category: 'Template',
-    author: 'Firm Library',
-    updated: '2026-05-28',
-    tags: ['Employment', 'IT', 'ESOP', 'Non-Compete'],
-    description: 'Standard employment agreement for the Indian IT sector. Includes ESOP vesting schedule, IP assignment clauses under the Patents Act and Copyright Act, and non-compete provisions tested under Section 27 CA.',
-  },
-  {
-    id: 5,
-    title: 'Writ Petition (PIL) — Environmental Violation',
-    category: 'Precedent',
-    author: 'Green Legal Cell',
-    updated: '2026-05-15',
-    tags: ['PIL', 'Environment', 'NGT', 'HC'],
-    description: 'Public Interest Litigation template for filing before the National Green Tribunal and High Courts. Compliant with Section 16 NGT Act 2010. Includes prayer for interim injunction under Order 39 CPC.',
-  },
-  {
-    id: 6,
-    title: 'Due Diligence Checklist — M&A Transactions (India)',
-    category: 'Practice Guide',
-    author: 'M&A Desk',
-    updated: '2026-04-30',
-    tags: ['M&A', 'SEBI', 'Companies Act', 'Competition Act'],
-    description: '52-point legal due diligence checklist for mergers and acquisitions under the Companies Act 2013, SEBI SAST Regulations 2011, and Competition Act 2002. Covers FEMA implications for cross-border deals.',
-  },
-  {
-    id: 7,
-    title: 'Arbitration Clause — DIAC Rules 2023 (B2B)',
-    category: 'Standard Form',
-    author: 'Firm Library',
-    updated: '2026-04-12',
-    tags: ['Arbitration', 'DIAC', 'ADR', 'Commercial'],
-    description: 'Dispute resolution clause for commercial agreements adopting Delhi International Arbitration Centre Rules 2023. Seat: New Delhi. Provides for emergency arbitrator provisions and expedited procedure for claims under ₹1 Cr.',
-  },
-  {
-    id: 8,
-    title: 'Research Memo: BNS 2023 vs IPC 1860 — Key Divergences',
-    category: 'Research Memo',
-    author: 'Legal Research Team',
-    updated: '2026-03-22',
-    tags: ['BNS', 'IPC', 'Criminal Law', 'Transitional'],
-    description: 'Comparative analysis of 58 key sections changed between IPC 1860 and Bharatiya Nyaya Sanhita 2023. Covers sentencing changes, new offences (organised crime, terrorism financing), and removal of obsolete provisions.',
-  },
-  {
-    id: 9,
-    title: 'Consumer Forum Complaint — SCDRC Format',
-    category: 'Standard Form',
-    author: 'Consumer Cell',
-    updated: '2026-03-05',
-    tags: ['Consumer Protection', 'SCDRC', 'Deficiency'],
-    description: 'State Consumer Disputes Redressal Commission complaint format under Consumer Protection Act 2019. Includes limitation period checklist (2-year rule), deficiency in service heads, and reliefs available under Section 39.',
-  },
-  {
-    id: 10,
-    title: 'Section 9 Arbitration — Interim Relief Application',
-    category: 'Precedent',
-    author: 'Arbitration Desk',
-    updated: '2026-02-18',
-    tags: ['Arbitration Act', 'Interim Relief', 'HC'],
-    description: 'Application for interim measures under Section 9 of the Arbitration and Conciliation Act 1996 (as amended 2021). Drafted for High Court filing with prayer for appointment of receiver and status quo injunction.',
-  },
-];
+
 
 const CATEGORIES = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
 
@@ -689,26 +597,14 @@ const flStyles = `
   .fl-ext-action-btn.vault:hover { background: rgba(139,92,246,0.16); border-color: rgba(139,92,246,0.4); }
 `;
 
-// ── LS helpers ────────────────────────────────────────────────────────────────
-const loadEntries = () => {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch { }
-  const seeded = SEED_ENTRIES.map(e => ({ ...e }));
-  try { localStorage.setItem(LS_KEY, JSON.stringify(seeded)); } catch { }
-  return seeded;
-};
-const saveEntries = (entries) => {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(entries)); } catch { }
-};
+
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function FirmLibrary() {
   const navigate = useNavigate();
 
   // ── Core state ──────────────────────────────────────────────────────────────
-  const [entries, setEntries] = useState(loadEntries);
+  const [internalFiles, setInternalFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
@@ -727,6 +623,9 @@ export default function FirmLibrary() {
   const [extQuery, setExtQuery] = useState('');
   const [extRagResult, setExtRagResult] = useState(null); // { synthesis, sources: [{id, name}] } from live Pinecone/Groq search
   const [extLoading, setExtLoading] = useState(false);
+  const [sortMode, setSortMode] = useState('relevance');
+  const [expandedCitationId, setExpandedCitationId] = useState(null);
+  const [citationCache, setCitationCache] = useState({});
 
   // ── Document viewer drawer ──────────────────────────────────────────────────
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -741,6 +640,29 @@ export default function FirmLibrary() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryText, setSummaryText] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+
+  const handleExpandCitation = async (source) => {
+    const targetId = source.case_id || source.id;
+    if (expandedCitationId === targetId) {
+      setExpandedCitationId(null);
+      return;
+    }
+    
+    setExpandedCitationId(targetId);
+    if (citationCache[targetId]?.text) {
+      return;
+    }
+    
+    setCitationCache(prev => ({ ...prev, [targetId]: { loading: true, text: "", error: null } }));
+    try {
+      const res = await fetch(`http://localhost:5000/api/document/${encodeURIComponent(targetId)}`);
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
+      setCitationCache(prev => ({ ...prev, [targetId]: { loading: false, text: data.content, error: null } }));
+    } catch (err) {
+      setCitationCache(prev => ({ ...prev, [targetId]: { loading: false, text: "", error: err.message } }));
+    }
+  };
 
   // External Database sources come from the Pinecone-backed schema
   // ({ case_id, title, year, snippet }); source.id/.name are a fallback for
@@ -876,8 +798,17 @@ export default function FirmLibrary() {
 
   // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 480);
-    return () => clearTimeout(t);
+    setLoading(true);
+    fetch('http://localhost:5000/api/firm-library')
+      .then(r => r.json())
+      .then(data => {
+        setInternalFiles(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to fetch internal files:', err);
+        setLoading(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -972,16 +903,16 @@ export default function FirmLibrary() {
   };
 
   // ── Filter + Search + Sort pipeline ──────────────────────────────────────────
-  const filtered = entries
+  const filtered = internalFiles
     .filter(e => catFilter === 'All' || e.category === catFilter)
     .filter(e => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
       return (
-        e.title.toLowerCase().includes(q) ||
-        e.author.toLowerCase().includes(q) ||
-        e.description.toLowerCase().includes(q) ||
-        (e.tags || []).some(t => t.toLowerCase().includes(q))
+        (e.title && e.title.toLowerCase().includes(q)) ||
+        (e.author && e.author.toLowerCase().includes(q)) ||
+        (e.description && e.description.toLowerCase().includes(q)) ||
+        (e.tags && e.tags.some(t => t.toLowerCase().includes(q)))
       );
     })
     .sort((a, b) => {
@@ -1103,11 +1034,7 @@ export default function FirmLibrary() {
   };
 
   const deleteEntry = (id) => {
-    setEntries(prev => {
-      const updated = prev.filter(e => e.id !== id);
-      saveEntries(updated);
-      return updated;
-    });
+    setInternalFiles(prev => prev.filter(e => e.id !== id));
     if (selectedEntryRef.current?.id === id) closeWorkspace();
     setMenuRow(null);
     showToast('Entry removed from library');
@@ -1128,7 +1055,7 @@ export default function FirmLibrary() {
   // pub/sub (localStorage + CustomEvent) that CaseVault already subscribes to,
   // tagged for the 'case-vault' module. No new store, no prop drilling.
   const injectToVault = (id) => {
-    const entry = entries.find(e => e.id === id);
+    const entry = internalFiles.find(e => e.id === id);
     setMenuRow(null);
     if (!entry) return;
     addSharedFile({
@@ -1157,11 +1084,7 @@ export default function FirmLibrary() {
       tags: newEntry.tags.split(',').map(t => t.trim()).filter(Boolean),
       description: newEntry.description.trim(),
     };
-    setEntries(prev => {
-      const updated = [entry, ...prev];
-      saveEntries(updated);
-      return updated;
-    });
+    setInternalFiles(prev => [entry, ...prev]);
     setShowModal(false);
     setNewEntry(EMPTY_FORM);
     showToast('Entry added to Firm Library');
@@ -1378,9 +1301,7 @@ export default function FirmLibrary() {
                           tags: ['Research', 'AI-Generated', 'Case Law'],
                           description: memoContent,
                         };
-                        const updated = [syntheticEntry, ...entries];
-                        setEntries(updated);
-                        saveEntries(updated);
+                        setInternalFiles(prev => [syntheticEntry, ...prev]);
                         showToast(`Brief injected into library`);
                       }}
                     >
@@ -1546,9 +1467,17 @@ export default function FirmLibrary() {
                 <div className="fl-rag-synthesis">{renderWithCitations(extRagResult.synthesis)}</div>
                 {extRagResult.sources.length > 0 && (
                   <div>
-                    <div className="fl-rag-section-label">Sources</div>
+                    <div className="fl-rag-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Sources</span>
+                      <div style={{ fontSize: '11px', textTransform: 'none', letterSpacing: 'normal', fontWeight: 600 }}>
+                        <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Sort by:</span>
+                        <button onClick={() => setSortMode('relevance')} style={{ background: 'none', border: 'none', color: sortMode === 'relevance' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Relevance</button>
+                        <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>|</span>
+                        <button onClick={() => setSortMode('date')} style={{ background: 'none', border: 'none', color: sortMode === 'date' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Newest First</button>
+                      </div>
+                    </div>
                     <div className="fl-rag-citations">
-                      {extRagResult.sources.map((s, i) => {
+                      {(sortMode === 'date' ? [...extRagResult.sources].sort((a, b) => (parseInt(b.year) || 0) - (parseInt(a.year) || 0)) : extRagResult.sources).map((s, i) => {
                         // Defensive accessors — case_id/title are the current
                         // Pinecone-backed schema; id/name are the pre-refactor
                         // fallback so a stale cached response never crashes this.
@@ -1560,7 +1489,7 @@ export default function FirmLibrary() {
                               type="button"
                               className="fl-rag-citation-clickable fl-source-card"
                               style={{ padding: '9px 12px' }}
-                              onClick={() => openDocumentViewer(s)}
+                              onClick={() => handleExpandCitation(s)}
                             >
                               <div className="fl-source-card-title-row">
                                 {displayYear && <span className="fl-source-year-pill">{displayYear}</span>}
@@ -1568,6 +1497,22 @@ export default function FirmLibrary() {
                               </div>
                               {s.snippet && <div className="fl-source-snippet">{s.snippet}</div>}
                             </button>
+                            {expandedCitationId === (s.case_id || s.id) && (
+                              <div className="mt-4 p-6 bg-[#0a0c10] border-t border-gray-800 rounded-b-xl max-h-[60vh] overflow-y-auto">
+                                {citationCache[s.case_id || s.id]?.loading ? (
+                                  <div className="fl-rag-loading">
+                                    <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                                    Loading document...
+                                  </div>
+                                ) : citationCache[s.case_id || s.id]?.error ? (
+                                  <div className="document-viewer-error">{citationCache[s.case_id || s.id].error}</div>
+                                ) : (
+                                  <div className="whitespace-pre-wrap font-mono text-sm break-words" style={{ wordBreak: 'break-word' }}>
+                                    {citationCache[s.case_id || s.id]?.text}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1599,7 +1544,7 @@ export default function FirmLibrary() {
       {viewerOpen && (
         <>
           <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
-          <div className="document-viewer-drawer">
+          <div className="fixed inset-4 md:inset-10 z-50 bg-[#0f111a] border border-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">
             <div className="dv-header">
               <div className="dv-header-top">
                 <div className="document-viewer-title">
@@ -1642,7 +1587,7 @@ export default function FirmLibrary() {
               </div>
             )}
 
-            <div className="dv-body">
+            <div className="dv-body flex-1 min-h-0 overflow-y-auto w-full">
               {viewerLoading && (
                 <div className="fl-rag-loading">
                   <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
@@ -1653,7 +1598,9 @@ export default function FirmLibrary() {
                 <div className="document-viewer-error">{viewerError}</div>
               )}
               {!viewerLoading && !viewerError && viewerDoc && (
-                <div className="document-viewer-text">{viewerDoc.content}</div>
+                <div className="max-w-4xl mx-auto px-8">
+                  <div className="document-viewer-text">{viewerDoc.content}</div>
+                </div>
               )}
             </div>
           </div>
@@ -1667,13 +1614,13 @@ export default function FirmLibrary() {
           style={{ top: menuPos.y, left: Math.max(8, menuPos.x) }}
           onClick={e => e.stopPropagation()}
         >
-          <div className="fl-menu-item" onClick={() => copyTitle(entries.find(e => e.id === menuRow)?.title || '')}>
+          <div className="fl-menu-item" onClick={() => copyTitle(internalFiles.find(e => e.id === menuRow)?.title || '')}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
             Copy Title
           </div>
-          <div className="fl-menu-item" onClick={() => sendToConflict(entries.find(e => e.id === menuRow)?.title || '')}>
+          <div className="fl-menu-item" onClick={() => sendToConflict(internalFiles.find(e => e.id === menuRow)?.title || '')}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
             </svg>

@@ -837,6 +837,37 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    @app.route('/api/firm-library', methods=['GET', 'OPTIONS'])
+    def get_firm_library():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, case_id, title, created_at as timestamp FROM case_vault ORDER BY created_at DESC'
+                ).fetchall()
+                docs = []
+                for r in rows:
+                    docs.append({
+                        'id': r['id'],
+                        'case_id': r['case_id'],
+                        'title': r['title'],
+                        'timestamp': r['timestamp'],
+                        'last_updated': r['timestamp'],
+                        'updated': r['timestamp'] and str(r['timestamp']).split(' ')[0] or '',
+                        'type': 'Precedent',
+                        'category': 'Precedent',
+                        'author': 'Internal Vault'
+                    })
+            finally:
+                conn.row_factory = old_rf
+            return jsonify(docs), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     # Register blueprints
     from routes.auth_routes import auth_bp
     from routes.ai_routes import ai_bp

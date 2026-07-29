@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { uploadDocument, fetchTrackedCases, saveTrackedCase, fetchCauselist } from '../services/api';
-import { SEED_ENTRIES as FL_SEED } from './FirmLibrary';
+
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
@@ -747,7 +747,7 @@ function formatDate(str) {
 
 // ─── Matter Blueprint Taxonomy ───────────────────────────────────────────────
 // 5-folder court-ready litigation workspace with auto-injected Firm Library templates.
-// templateIds map to SEED_ENTRIES ids in FirmLibrary.jsx.
+// templateIds map to [] ids in FirmLibrary.jsx.
 const MATTER_BLUEPRINT_FOLDERS = [
   { name: '01 - Pleadings & Drafts',   icon: '📝', templateIds: [1, 3] },
   { name: '02 - Court Filings',         icon: '⚖️', templateIds: [2, 5] },
@@ -1147,8 +1147,8 @@ export default function VaultView({ targetFolderId = null }) {
       try {
         const raw = localStorage.getItem('lexai_firm_library');
         const parsed = raw ? JSON.parse(raw) : null;
-        return Array.isArray(parsed) && parsed.length > 0 ? parsed : FL_SEED;
-      } catch { return FL_SEED; }
+        return Array.isArray(parsed) && parsed.length > 0 ? parsed : [];
+      } catch { return []; }
     })();
 
     // Fire folder creation + 1200ms minimum delay in parallel
@@ -1296,9 +1296,9 @@ export default function VaultView({ targetFolderId = null }) {
     try {
       const raw = localStorage.getItem('lexai_firm_library');
       const parsed = raw ? JSON.parse(raw) : null;
-      setLibEntries(Array.isArray(parsed) && parsed.length > 0 ? parsed : FL_SEED);
+      setLibEntries(Array.isArray(parsed) && parsed.length > 0 ? parsed : []);
     } catch {
-      setLibEntries(FL_SEED);
+      setLibEntries([]);
     }
     setLibSearch('');
     setLibRagResult(null);
