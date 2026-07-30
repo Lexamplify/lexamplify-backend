@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
 import { renderWithCitations } from './CitationLink';
@@ -469,6 +470,15 @@ const flStyles = `
   :root[data-theme="light"] .fl-rag-synthesis { color: var(--text-primary, #0F172A); }
   :root[data-theme="light"] .fl-rag-citation { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
   :root[data-theme="light"] .fl-rag-ratio { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
+  /* .document-viewer-error/.fl-source-card-title/.dv-ai-summary-title use
+     fixed accent hex values tuned for readability on this file's dark
+     default — light pastel red/blue/purple that pass contrast on a near-
+     black background fail it on white. Darkening only under the light
+     theme, not touching the dark (default) values at all. */
+  :root[data-theme="light"] .document-viewer-error { color: #B91C1C; background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); }
+  :root[data-theme="light"] .fl-source-card-title { color: #1D4ED8; }
+  :root[data-theme="light"] .dv-ai-summary { background: rgba(99,102,241,0.06); border-color: rgba(99,102,241,0.25); }
+  :root[data-theme="light"] .dv-ai-summary-title { color: #6D28D9; }
 
   /* ── Clickable citation -> document viewer drawer ── */
   .fl-rag-citation-clickable {
@@ -493,22 +503,32 @@ const flStyles = `
     overflow: hidden; text-overflow: ellipsis; max-height: 4.5em; width: 100%;
   }
 
-  /* ── Document Viewer Drawer ── */
+  /* ── Document Viewer Modal ──
+     Centralized 90%-viewport modal (not a side drawer) for reading dense
+     legal text. NOTE: this project has no Tailwind build (no tailwind.config,
+     no postcss config, not in package.json) — utility-class strings like
+     "fixed inset-4 md:inset-10 z-50 bg-[#0f111a]..." compile to nothing and
+     render completely unstyled. Every rule below is the real CSS equivalent
+     of that intended Tailwind design, applied via an actual class name. */
   .document-viewer-backdrop {
     position: fixed; inset: 0; background: rgba(0,0,0,0.5);
     z-index: 199; animation: fl-fade-in 0.2s ease;
   }
   @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes document-viewer-slide-in {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+  .document-viewer-modal {
+    position: fixed; inset: 16px; /* Tailwind inset-4 = 1rem = 16px */
+    z-index: 200; /* above .document-viewer-backdrop's 199 — Tailwind's own z-50
+                     would sit BELOW it under this file's ad-hoc z-index scale */
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px; /* rounded-xl */
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); /* shadow-2xl */
+    display: flex; flex-direction: column; overflow: hidden;
+    animation: fl-fade-in 0.2s ease; /* a centered modal fading in reads better
+                                         than the old drawer's slide-from-right */
   }
-  .document-viewer-drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; z-index: 200;
-    width: min(560px, 92vw); display: flex; flex-direction: column;
-    background: var(--bg-card, #0F1420); border-left: 1px solid var(--border-subtle);
-    box-shadow: -16px 0 48px rgba(0,0,0,0.5);
-    animation: document-viewer-slide-in 0.28s cubic-bezier(0.16,1,0.3,1);
+  @media (min-width: 768px) {
+    .document-viewer-modal { inset: 40px; } /* Tailwind md:inset-10 = 2.5rem = 40px */
   }
   .dv-header {
     display: flex; flex-direction: column; gap: 12px;
@@ -557,7 +577,14 @@ const flStyles = `
   }
   @keyframes dv-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
-  .dv-body { flex: 1; overflow-y: auto; padding: 22px; }
+  /* min-height:0 is the actual load-bearing fix here (Tailwind's min-h-0) —
+     without it, a flex child defaults to min-height:auto, which means it
+     refuses to shrink below its CONTENT's height. A 300,000+ character
+     judgment would then force .dv-body (and the whole fixed-height modal)
+     to grow past its container instead of scrolling internally, which is
+     exactly the failure mode that pushes the header/close button off-screen. */
+  .dv-body { flex: 1 1 0%; min-height: 0; overflow-y: auto; padding: 22px; width: 100%; }
+  .dv-text-wrap { max-width: 896px; margin: 0 auto; padding-left: 32px; padding-right: 32px; } /* max-w-4xl mx-auto px-8 */
   /* Monospace + smaller size instead of the proportional serif previously
      used here — a reconstructed judgment can run 300,000+ characters, and
      variable-width text with kerning/ligatures costs measurably more to lay
@@ -572,7 +599,38 @@ const flStyles = `
     color: #FCA5A5; font-size: 13px; background: rgba(239,68,68,0.1);
     border: 1px solid rgba(239,68,68,0.25); padding: 12px 14px; border-radius: 8px;
   }
-  :root[data-theme="light"] .document-viewer-drawer { background: #fff; }
+
+  /* ── Citation expand-in-place panel (External Database source cards) ── */
+  .fl-citation-expand-panel {
+    margin-top: 16px; padding: 24px;
+    background: var(--bg-card); border-top: 1px solid var(--border-subtle);
+    border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+    max-height: 60vh; overflow-y: auto;
+  }
+  /* Deliberately a DIFFERENT class from .document-viewer-text (used by the
+     full-screen modal), not a shared/modified one — that class stays
+     monospace on purpose for 300,000+ character judgments (see its own
+     comment). This is only for the inline accordion's shorter preview,
+     where a justified, serif-flow "printed legal document" look reads
+     better than monospace. text-align:justify only applies at sm+ — on a
+     narrow accordion, justify tends to create ugly rivers of whitespace. */
+  .fl-citation-text {
+    text-align: left; line-height: 1.65; font-size: 15px;
+    max-width: 896px; margin: 0 auto; word-break: break-word; white-space: pre-wrap;
+    color: #D1D5DB; /* gray-300 — this file's default (dark) theme */
+  }
+  :root[data-theme="light"] .fl-citation-text { color: #1F2937; } /* gray-800 */
+  @media (min-width: 640px) {
+    .fl-citation-text { text-align: justify; padding: 24px; }
+  }
+
+  /* ── Indian Kanoon external link (citation card title) ── */
+  .fl-kanoon-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-muted); flex-shrink: 0; margin-left: auto;
+    padding: 2px; border-radius: 4px; transition: color 0.15s, background 0.15s;
+  }
+  .fl-kanoon-link:hover { color: #93C5FD; background: rgba(59,130,246,0.12); }
 
   /* ── Internal / External mode toggle ── */
   .fl-mode-toggle { display: inline-flex; gap: 3px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 3px; margin-bottom: 16px; }
@@ -606,8 +664,10 @@ export default function FirmLibrary() {
   // ── Core state ──────────────────────────────────────────────────────────────
   const [internalFiles, setInternalFiles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [catFilter, setCatFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
   const [sortCol, setSortCol] = useState('updated');
   const [sortDir, setSortDir] = useState('desc');
   const [menuRow, setMenuRow] = useState(null);
@@ -853,14 +913,14 @@ export default function FirmLibrary() {
 
   // ── Dual-Brain RAG debounced search ─────────────────────────────────────────
   useEffect(() => {
-    if (search.trim().length < 3) { setRagResult(null); setRagLoading(false); return; }
+    if (searchQuery.trim().length < 3) { setRagResult(null); setRagLoading(false); return; }
     setRagLoading(true);
     const timer = setTimeout(async () => {
       try {
         const res = await fetch('http://localhost:5000/api/legal-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: search.trim() }),
+          body: JSON.stringify({ question: searchQuery.trim() }),
         });
         if (!res.ok) throw new Error('RAG unavailable');
         const data = await res.json();
@@ -884,7 +944,7 @@ export default function FirmLibrary() {
       } catch { setRagResult(null); } finally { setRagLoading(false); }
     }, 400);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [searchQuery]);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
   const showToast = (msg) => {
@@ -903,13 +963,18 @@ export default function FirmLibrary() {
   };
 
   // ── Filter + Search + Sort pipeline ──────────────────────────────────────────
-  const filtered = internalFiles
+  // (file.title || "") / (file.case_id || "") — every field here is optional
+  // depending on where the row came from (manually "Added Entry" vs the
+  // backend-fetched case_vault rows), so a bare `.toLowerCase()` on a
+  // missing field would throw and blank the whole grid.
+  const filteredFiles = (internalFiles || [])
     .filter(e => catFilter === 'All' || e.category === catFilter)
     .filter(e => {
-      if (!search.trim()) return true;
-      const q = search.toLowerCase();
+      const q = searchQuery.toLowerCase();
+      if (!q) return true;
       return (
-        (e.title && e.title.toLowerCase().includes(q)) ||
+        (e.title || '').toLowerCase().includes(q) ||
+        (e.case_id || '').toLowerCase().includes(q) ||
         (e.author && e.author.toLowerCase().includes(q)) ||
         (e.description && e.description.toLowerCase().includes(q)) ||
         (e.tags && e.tags.some(t => t.toLowerCase().includes(q)))
@@ -924,6 +989,17 @@ export default function FirmLibrary() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(filteredFiles.length / itemsPerPage));
+  // Clamp defensively — e.g. the category filter can shrink the result set
+  // out from under whatever page the user was already sitting on, without
+  // going through the search input's own onChange reset below.
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const displayedFiles = filteredFiles.slice(
+    (safeCurrentPage - 1) * itemsPerPage,
+    safeCurrentPage * itemsPerPage
+  );
 
   // ── Quick Preview (hover) ─────────────────────────────────────────────────────
   const handleMouseMove = useCallback((e) => {
@@ -1163,8 +1239,8 @@ export default function FirmLibrary() {
                   type="text"
                   className="fl-search-input"
                   placeholder="Search titles, authors, tags, descriptions…"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  value={searchQuery}
+                  onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                 />
               </div>
               <div className="fl-cat-filter">
@@ -1172,7 +1248,7 @@ export default function FirmLibrary() {
                   <button
                     key={cat}
                     className={`fl-cat-btn${catFilter === cat ? ' active' : ''}`}
-                    onClick={() => setCatFilter(cat)}
+                    onClick={() => { setCatFilter(cat); setCurrentPage(1); }}
                   >
                     {cat}
                   </button>
@@ -1278,7 +1354,7 @@ export default function FirmLibrary() {
                       onClick={() => {
                         const memoContent = [
                           `[DUAL-BRAIN INTELLIGENCE — External Case Law]`,
-                          `Query: ${search.trim()}`,
+                          `Query: ${searchQuery.trim()}`,
                           ``,
                           `SYNTHESIS:`,
                           ragResult.synthesis || '',
@@ -1294,7 +1370,7 @@ export default function FirmLibrary() {
                         ].join('\n');
                         const syntheticEntry = {
                           id: Date.now(),
-                          title: `Research Brief: ${search.trim()}`,
+                          title: `Research Brief: ${searchQuery.trim()}`,
                           category: 'Research Memo',
                           author: 'AI Intelligence Layer',
                           updated: new Date().toISOString().slice(0, 10),
@@ -1333,8 +1409,8 @@ export default function FirmLibrary() {
             {/* Count */}
             {!loading && (
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
-                {search || catFilter !== 'All' ? ' matching filters' : ' in library'}
+                {filteredFiles.length} {filteredFiles.length === 1 ? 'entry' : 'entries'}
+                {searchQuery || catFilter !== 'All' ? ' matching filters' : ' in library'}
                 {selectedEntry && (
                   <span style={{ marginLeft: 12, color: 'var(--accent-primary)', fontWeight: 600 }}>
                     · Workspace open
@@ -1366,19 +1442,19 @@ export default function FirmLibrary() {
                         <td />
                       </tr>
                     ))
-                  ) : filtered.length === 0 ? (
+                  ) : filteredFiles.length === 0 ? (
                     <tr>
                       <td colSpan="5">
                         <div className="fl-empty">
                           <div className="fl-empty-icon">📂</div>
                           <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No entries found</div>
                           <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                            {search ? `No results for "${search}"` : 'Add the first entry to get started'}
+                            {searchQuery ? `No results for "${searchQuery}"` : 'Add the first entry to get started'}
                           </div>
                         </div>
                       </td>
                     </tr>
-                  ) : filtered.map(entry => {
+                  ) : displayedFiles.map(entry => {
                     const catStyle = getCatStyle(entry.category);
                     const isSelected = selectedEntry?.id === entry.id;
                     return (
@@ -1430,6 +1506,33 @@ export default function FirmLibrary() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination — reuses .dv-action-btn (already theme-aware via
+                var(--border-subtle) etc.) instead of introducing Tailwind
+                classes this project has no build step to compile. */}
+            {!loading && filteredFiles.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  className="dv-action-btn"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safeCurrentPage <= 1}
+                >
+                  ← Previous
+                </button>
+                <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                  Page {safeCurrentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="dv-action-btn"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safeCurrentPage >= totalPages}
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </>
         )}
 
@@ -1485,20 +1588,46 @@ export default function FirmLibrary() {
                         const displayYear = (s.year !== undefined && s.year !== null && s.year !== '') ? s.year : null;
                         return (
                           <div key={s.case_id || s.id || i} className="fl-rag-citation" style={{ padding: 0 }}>
-                            <button
-                              type="button"
+                            {/* A native <button> cannot legally contain another
+                                interactive element (the Indian Kanoon <a> below) —
+                                nesting <a> inside <button> is invalid HTML5 and
+                                browsers "fix" it unpredictably. Using a div with
+                                role="button" here instead, with the same keyboard
+                                semantics a real button would give for free. */}
+                            <div
+                              role="button"
+                              tabIndex={0}
                               className="fl-rag-citation-clickable fl-source-card"
                               style={{ padding: '9px 12px' }}
                               onClick={() => handleExpandCitation(s)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleExpandCitation(s);
+                                }
+                              }}
                             >
                               <div className="fl-source-card-title-row">
                                 {displayYear && <span className="fl-source-year-pill">{displayYear}</span>}
                                 <span className="fl-source-card-title">{displayTitle}</span>
+                                <a
+                                  href={`https://indiankanoon.org/search/?formInput=${encodeURIComponent(displayTitle)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="fl-kanoon-link"
+                                  title="Open in Indian Kanoon"
+                                  // Without this, the click bubbles up to the card's
+                                  // onClick above and toggles the accordion at the
+                                  // same time the link navigates in a new tab.
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                                </a>
                               </div>
                               {s.snippet && <div className="fl-source-snippet">{s.snippet}</div>}
-                            </button>
+                            </div>
                             {expandedCitationId === (s.case_id || s.id) && (
-                              <div className="mt-4 p-6 bg-[#0a0c10] border-t border-gray-800 rounded-b-xl max-h-[60vh] overflow-y-auto">
+                              <div className="fl-citation-expand-panel">
                                 {citationCache[s.case_id || s.id]?.loading ? (
                                   <div className="fl-rag-loading">
                                     <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
@@ -1507,9 +1636,22 @@ export default function FirmLibrary() {
                                 ) : citationCache[s.case_id || s.id]?.error ? (
                                   <div className="document-viewer-error">{citationCache[s.case_id || s.id].error}</div>
                                 ) : (
-                                  <div className="whitespace-pre-wrap font-mono text-sm break-words" style={{ wordBreak: 'break-word' }}>
-                                    {citationCache[s.case_id || s.id]?.text}
-                                  </div>
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="dv-action-btn"
+                                      style={{ marginBottom: 12 }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openDocumentViewer(s);
+                                      }}
+                                    >
+                                      ⤢ View Full Screen
+                                    </button>
+                                    <div className="fl-citation-text">
+                                      {citationCache[s.case_id || s.id]?.text}
+                                    </div>
+                                  </>
                                 )}
                               </div>
                             )}
@@ -1539,12 +1681,23 @@ export default function FirmLibrary() {
         )}
       </div>{/* end .fl-page */}
 
-      {/* Document Viewer Drawer — fixed positioning keeps it out of normal
-          flow, so opening/closing it never shifts the underlying page. */}
-      {viewerOpen && (
+      {/* Document Viewer Modal — rendered via a portal straight into
+          document.body, NOT inline in this component's tree. The app's
+          page-transition wrapper (.page-enter) applies a CSS transform to
+          every route's root, and a transformed ancestor becomes the
+          containing block for any position:fixed descendant — so without
+          the portal, "fixed" here resolves relative to that (in-flow,
+          page-sized) wrapper instead of the viewport, and the modal renders
+          at some arbitrary scroll offset instead of covering the screen.
+          Confirmed live: even the pre-existing .document-viewer-backdrop
+          (inset:0) was affected before this fix.
+          Opened via the "View Full Screen" button inside a citation's
+          expand-in-place panel (see handleExpandCitation/citationCache
+          above), which calls openDocumentViewer below. */}
+      {viewerOpen && createPortal(
         <>
           <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
-          <div className="fixed inset-4 md:inset-10 z-50 bg-[#0f111a] border border-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+          <div className="document-viewer-modal">
             <div className="dv-header">
               <div className="dv-header-top">
                 <div className="document-viewer-title">
@@ -1587,7 +1740,7 @@ export default function FirmLibrary() {
               </div>
             )}
 
-            <div className="dv-body flex-1 min-h-0 overflow-y-auto w-full">
+            <div className="dv-body">
               {viewerLoading && (
                 <div className="fl-rag-loading">
                   <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
@@ -1598,13 +1751,14 @@ export default function FirmLibrary() {
                 <div className="document-viewer-error">{viewerError}</div>
               )}
               {!viewerLoading && !viewerError && viewerDoc && (
-                <div className="max-w-4xl mx-auto px-8">
+                <div className="dv-text-wrap">
                   <div className="document-viewer-text">{viewerDoc.content}</div>
                 </div>
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* Action menu dropdown */}

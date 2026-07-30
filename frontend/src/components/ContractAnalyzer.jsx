@@ -1121,6 +1121,29 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const rawTextDebounceRef = useRef(null);
   const [clauses, setClauses] = useState([]);
   const [summary, setSummary] = useState('');
+  const [citations, setCitations] = useState([]);
+  const [loadingText, setLoadingText] = useState("Extracting clauses...");
+
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    
+    const steps = [
+      "Extracting clauses...",
+      "Running deep scan...",
+      "Cross-referencing Pinecone precedents...",
+      "Aggregating risk profile..."
+    ];
+    
+    let stepIndex = 0;
+    setLoadingText(steps[stepIndex]);
+    
+    const timer = setInterval(() => {
+      stepIndex = (stepIndex + 1) % steps.length;
+      setLoadingText(steps[stepIndex]);
+    }, 2500);
+    
+    return () => clearInterval(timer);
+  }, [isAnalyzing]);
 
   // Tab states
   const [activeTab, setActiveTab] = useState('risks');
@@ -1489,6 +1512,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setClauses(mapped);
     if (data.raw_text) setRawText(data.raw_text);
     setSummary(data.summary || 'Summary generated successfully.');
+    setCitations(data.citations || []);
     setIsAnalyzed(true);
     setActiveClauseId(null);
     setRewrittenText('');
@@ -2064,7 +2088,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 /* ── SCANNING STATE ── */
                 <div style={{ background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', borderRadius: '16px', padding: '48px 32px', textAlign: 'center' }}>
                   <div style={{ width: '56px', height: '56px', margin: '0 auto 24px', borderRadius: '50%', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: 'var(--accent-primary)', animation: 'spin 0.9s linear infinite' }}></div>
-                  <h3 style={{ fontSize: '16px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>Scanning contract under Indian Law…</h3>
+                  <h3 style={{ fontSize: '16px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>{loadingText}</h3>
                   <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '28px' }}>Compiling vector node · identifying liability clauses · matching precedents</p>
                   <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div className="shimmer-bar"></div>
@@ -2147,20 +2171,26 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
                       </div>
 
-                      <textarea
-                        key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
-                        className="input-textarea"
-                        placeholder="Paste the raw text of your contract here…"
-                        defaultValue={rawText}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (rawTextDebounceRef.current) clearTimeout(rawTextDebounceRef.current);
-                          rawTextDebounceRef.current = setTimeout(() => {
-                            setRawText(val);
-                          }, 800);
-                        }}
-                        style={{ marginBottom: 0 }}
-                      />
+                      <div className="relative flex-1 flex flex-col min-h-0">
+                        <textarea
+                          key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
+                          className="input-textarea"
+                          placeholder="Paste the raw text of your contract here…"
+                          defaultValue={rawText}
+                          readOnly={isAnalyzing}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (rawTextDebounceRef.current) clearTimeout(rawTextDebounceRef.current);
+                            rawTextDebounceRef.current = setTimeout(() => {
+                              setRawText(val);
+                            }, 800);
+                          }}
+                          style={{ marginBottom: 0 }}
+                        />
+                        {isAnalyzing && (
+                          <div className="absolute inset-0 bg-blue-900/10 animate-pulse pointer-events-none rounded-[16px]" />
+                        )}
+                      </div>
                     </div>
 
                     {/* RIGHT COLUMN — Rule Book Strategy */}
@@ -2434,7 +2464,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   RAG Chat
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'citations' ? 'active' : ''}`} onClick={() => switchTab('citations')}>
-                  Citations {matchedPrecedents.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#93C5FD', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{matchedPrecedents.length}</span>}
+                  Citations {citations.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#93C5FD', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{citations.length}</span>}
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'comments' ? 'active' : ''}`} onClick={() => switchTab('comments')}>
                   Comments {comments.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{comments.length}</span>}
@@ -2855,22 +2885,23 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                     <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Landmark Indian Contract Precedents</h3>
 
-                    {matchedPrecedents.length === 0 ? (
+                    {citations.length === 0 ? (
                       <div style={{ padding: '20px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '8px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px', textAlign: 'center' }}>
-                        No keyword matches. Write or paste clauses regarding liability limits, notice, or IP to trigger citations.
+                        No case law citations found for this document. Run a deep scan to generate semantic precedents.
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                        {matchedPrecedents.map((prec, i) => (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                        {citations.map((prec, i) => (
                           <div key={i} className="precedent-card" style={{ marginBottom: 0 }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <span>⚖️</span>
                               <div style={{ flex: 1 }}>
-                                <a href={prec.url} target="_blank" rel="noopener noreferrer" className="precedent-link">
-                                  {prec.title}
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                                </a>
-                                <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '4px', lineHeight: '1.4' }}>{prec.desc}</p>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>
+                                  {prec.title} {prec.year && <span style={{ color: 'var(--text-dark-muted)', fontWeight: 400 }}>({prec.year})</span>}
+                                </div>
+                                <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '6px', lineHeight: '1.5' }}>
+                                  "{prec.snippet}..."
+                                </p>
                                 <button
                                   onClick={() => insertCitationIntoDocument(prec)}
                                   style={{ marginTop: '8px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: '#93C5FD', fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px', cursor: 'pointer' }}

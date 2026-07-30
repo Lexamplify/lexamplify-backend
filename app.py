@@ -286,6 +286,35 @@ def format_case_title(filename):
     return f"Supreme Court Judgment ({year}) - {clean_name}"
 
 
+# Distinct from format_case_title above — that one parses worker.py's S3
+# filename-style ids ("2022_13_342_356_EN.pdf"). This is for case_vault
+# rows, which use a different id scheme entirely (bulk INSC neutral
+# citations like "2025INSC738", or hand-entered ids like "case_101").
+# Confirmed empirically against the live table: title is NEVER null/empty,
+# but 894 of 911 rows have title == case_id verbatim (a bulk-ingest job set
+# title to a bare copy of the docket id instead of a real case name) — so
+# "does a title exist" is the wrong check; "is the title actually different
+# information from the id" is the one that matches real data.
+INSC_CITATION_RE = re.compile(r'^(\d{4})INSC(\d+)$', re.IGNORECASE)
+
+
+def format_vault_title(raw_title, case_id):
+    candidate = (raw_title or '').strip()
+    fallback_id = (case_id or '').strip()
+    if candidate and candidate != fallback_id:
+        return candidate
+
+    source = candidate or fallback_id
+    if not source:
+        return 'Untitled Document'
+
+    m = INSC_CITATION_RE.match(source)
+    if m:
+        year, num = m.groups()
+        return f"{year} INSC {num}"
+    return source
+
+
 def create_app():
     app = Flask(__name__)
     @app.after_request
@@ -846,18 +875,33 @@ def create_app():
             old_rf = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
-                rows = conn.execute(
-                    'SELECT id, case_id, title, created_at as timestamp FROM case_vault ORDER BY created_at DESC'
-                ).fetchall()
+                # Schema inspection rather than a hardcoded column list — if
+                # case_vault is ever migrated to rename/drop a column, this
+                # route degrades to the case_id fallback below instead of
+                # 500ing on "no such column".
+                table_cols = {row[1] for row in conn.execute("PRAGMA table_info('case_vault')").fetchall()}
+                descriptive_col = next(
+                    (c for c in ('case_name', 'description', 'title', 'smart_title') if c in table_cols),
+                    None
+                )
+
+                select_cols = ['id', 'case_id', 'created_at']
+                if descriptive_col and descriptive_col not in select_cols:
+                    select_cols.append(descriptive_col)
+                query = f"SELECT {', '.join(select_cols)} FROM case_vault ORDER BY created_at DESC"
+                rows = conn.execute(query).fetchall()
+
                 docs = []
                 for r in rows:
+                    raw_title = r[descriptive_col] if descriptive_col else None
+                    timestamp = r['created_at']
                     docs.append({
                         'id': r['id'],
                         'case_id': r['case_id'],
-                        'title': r['title'],
-                        'timestamp': r['timestamp'],
-                        'last_updated': r['timestamp'],
-                        'updated': r['timestamp'] and str(r['timestamp']).split(' ')[0] or '',
+                        'title': format_vault_title(raw_title, r['case_id']),
+                        'timestamp': timestamp,
+                        'last_updated': timestamp,
+                        'updated': timestamp and str(timestamp).split(' ')[0] or '',
                         'type': 'Precedent',
                         'category': 'Precedent',
                         'author': 'Internal Vault'

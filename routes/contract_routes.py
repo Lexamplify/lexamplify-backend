@@ -260,34 +260,116 @@ def analyze():
     print(f"\n[analyze] scanStrategy={scan_strategy} | text_length={len(full_text)}")
 
     try:
-        result = analyze_contract_with_llm(full_text, scan_strategy)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import os
+        from pinecone import Pinecone
+        
+        # 1. Chunking
+        chunk_size = 4000
+        overlap = 400
+        chunks = []
+        for i in range(0, len(full_text), chunk_size - overlap):
+            chunks.append(full_text[i:i + chunk_size])
+        if not chunks:
+            chunks.append(full_text)
+            
+        all_clauses = []
+        all_summaries = []
+        
+        # 2. Map-Reduce with ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(analyze_contract_with_llm, chunk, scan_strategy): chunk for chunk in chunks}
+            for future in as_completed(futures):
+                try:
+                    res = future.result()
+                    if res and isinstance(res, dict):
+                        if "clauses" in res and isinstance(res["clauses"], list):
+                            all_clauses.extend(res["clauses"])
+                        if "summary" in res and isinstance(res["summary"], str):
+                            all_summaries.append(res["summary"])
+                except Exception as e:
+                    print(f"Skipping failed chunk: {e}")
+                    pass
+        
+        # Deduplicate clauses by original_text to avoid overlaps causing duplicates
+        seen_texts = set()
+        unique_clauses = []
+        for c in all_clauses:
+            txt = c.get("original_text", "").strip()
+            if txt and txt not in seen_texts:
+                seen_texts.add(txt)
+                unique_clauses.append(c)
+                
+        final_summary = all_summaries[0] if all_summaries else "Document analyzed successfully."
         
         # --- THE FRONTEND KEY TRANSLATOR ---
-        # The AI uses new keys, but JS expects old keys. We provide both so it never fails.
         formatted_clauses = []
-        for c in result.get("clauses", []):
+        for c in unique_clauses:
             risk_val = str(c.get("risk_level", "AMBER")).upper()
             
-            # Map LLM severity to frontend color codes
             if "HIGH" in risk_val: color = "RED"
             elif "LOW" in risk_val: color = "GREEN"
             else: color = "AMBER"
                 
             formatted_clauses.append({
-                # New format keys
                 "original_text": c.get("original_text", ""),
                 "risk_level": c.get("risk_level", "Medium").capitalize(),
                 "explanation": c.get("explanation", ""),
-                
-                # Old format keys (This is what makes your UI light up)
                 "text": c.get("original_text", ""), 
                 "risk": color, 
                 "issue": c.get("explanation", "") 
             })
+            
+        # 3. Dynamic RAG Citations
+        citations = []
+        top_issues = " ".join([c.get("explanation", "") for c in formatted_clauses[:5]])
+        if top_issues.strip():
+            try:
+                pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+                index = pc.Index(host=os.getenv("PINECONE_HOST"))
+                namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
+                
+                embed_response = pc.inference.embed(
+                    model="multilingual-e5-large",
+                    inputs=[top_issues],
+                    parameters={"input_type": "query", "truncate": "END"},
+                )
+                query_vector = embed_response[0].values
+                
+                pinecone_results = index.query(
+                    vector=query_vector,
+                    top_k=10,
+                    include_metadata=True,
+                    namespace=namespace,
+                )
+                
+                seen_cases = set()
+                for match in (pinecone_results.matches or []):
+                    metadata = match.metadata or {}
+                    case_id = metadata.get('case_id') or match.id
+                    if case_id in seen_cases:
+                        continue
+                    seen_cases.add(case_id)
+                    
+                    title = case_id
+                    if title.endswith('.pdf'):
+                        title = title[:-4].replace('_', ' ')
+                        
+                    citations.append({
+                        "case_id": case_id,
+                        "title": title,
+                        "year": metadata.get('year', ''),
+                        "snippet": metadata.get('text', '')[:200]
+                    })
+                    if len(citations) >= 3:
+                        break
+            except Exception as e:
+                print(f"Citation RAG failed: {e}")
 
         return jsonify({
-            "summary": result.get("summary", ""),
+            "summary": final_summary,
             "clauses": formatted_clauses,
+            "citations": citations,
             "raw_text": full_text,
             "pdf_url": pdf_url
         }), 200
