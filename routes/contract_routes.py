@@ -9,11 +9,18 @@ Hybrid approach:
 import re
 import os
 import json as json_mod
+import difflib
 from flask import Blueprint, request, jsonify
 from utils.ai_helper import ask_groq, ask_litellm
 from utils.pdf_helper import extract_text_for_summary
 
 contract_bp = Blueprint("contract", __name__)
+
+# Matches worker.py's ingestion model exactly. Querying Pinecone with any
+# other embedding model produces a vector in a different semantic space —
+# the query would still return 3 results with no error, but they'd be
+# arbitrary noise rather than real matches.
+EMBED_MODEL = "llama-text-embed-v2"
 
 # ── Keyword-based risk classification ──────────────────────────
 # These patterns are checked against the clause text (case-insensitive)
@@ -194,6 +201,49 @@ def _strip_json_fences(raw: str) -> str:
     return cleaned.strip()
 
 
+def chunk_text_by_boundary(text: str, chunk_size: int = 3000, overlap: int = 300) -> list:
+    """Split text into overlapping chunks, snapping each cut to the nearest
+    paragraph break (or single newline) within the tail of the window instead
+    of hard-slicing at exactly chunk_size — avoids cutting a clause in half
+    mid-sentence, which would confuse the LLM's per-chunk analysis."""
+    if not text:
+        return []
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks = []
+    start = 0
+    n = len(text)
+    min_chunk = chunk_size // 2  # never accept a boundary so close it produces a tiny chunk
+    while start < n:
+        end = min(start + chunk_size, n)
+        if end < n:
+            search_from = start + min_chunk
+            boundary = text.rfind('\n\n', search_from, end)
+            if boundary == -1:
+                boundary = text.rfind('\n', search_from, end)
+            if boundary != -1:
+                end = boundary
+        piece = text[start:end].strip()
+        if piece:
+            chunks.append(piece)
+        if end >= n:
+            break
+        start = max(end - overlap, start + min_chunk)  # guarantees forward progress
+    return chunks
+
+
+def is_near_duplicate_risk(candidate_text: str, accepted_texts: list, threshold: float = 0.85) -> bool:
+    """True if candidate_text is a fuzzy match (SequenceMatcher ratio > threshold)
+    against any already-accepted risk. Catches the same clause getting flagged
+    twice from two overlapping chunks with slightly different surrounding
+    whitespace/punctuation — exact-string dedup misses these."""
+    for accepted in accepted_texts:
+        if difflib.SequenceMatcher(None, candidate_text, accepted).ratio() > threshold:
+            return True
+    return False
+
+
 def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive") -> dict:
     """Send the full contract to the LLM with the master system prompt and return parsed JSON."""
     system_prompt = MASTER_SYSTEM_PROMPT.replace("{scanStrategy}", scan_strategy)
@@ -263,43 +313,53 @@ def analyze():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         import os
         from pinecone import Pinecone
-        
-        # 1. Chunking
-        chunk_size = 4000
-        overlap = 400
-        chunks = []
-        for i in range(0, len(full_text), chunk_size - overlap):
-            chunks.append(full_text[i:i + chunk_size])
+
+        # 1. Chunking — paragraph/newline-boundary-aware, not a hard char slice
+        chunks = chunk_text_by_boundary(full_text, chunk_size=3000, overlap=300)
         if not chunks:
             chunks.append(full_text)
-            
+
+        def process_chunk_safe(chunk):
+            # One hallucinated/malformed LLM response for a single chunk must
+            # never take down the whole document's analysis — isolate it here
+            # so a failure degrades to "no risks found in this chunk", not a
+            # crashed request.
+            try:
+                return analyze_contract_with_llm(chunk, scan_strategy)
+            except Exception as e:
+                print(f"[analyze] chunk failed, skipping: {e}")
+                return {"summary": "", "clauses": []}
+
         all_clauses = []
         all_summaries = []
-        
-        # 2. Map-Reduce with ThreadPoolExecutor
+
+        # 2. Map-Reduce with ThreadPoolExecutor — capped at 3 concurrent
+        # workers so we don't slam the LLM provider with N simultaneous
+        # requests and trip its rate limiter (HTTP 429) on large documents.
         with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = {executor.submit(analyze_contract_with_llm, chunk, scan_strategy): chunk for chunk in chunks}
+            futures = [executor.submit(process_chunk_safe, chunk) for chunk in chunks]
             for future in as_completed(futures):
-                try:
-                    res = future.result()
-                    if res and isinstance(res, dict):
-                        if "clauses" in res and isinstance(res["clauses"], list):
-                            all_clauses.extend(res["clauses"])
-                        if "summary" in res and isinstance(res["summary"], str):
-                            all_summaries.append(res["summary"])
-                except Exception as e:
-                    print(f"Skipping failed chunk: {e}")
-                    pass
-        
-        # Deduplicate clauses by original_text to avoid overlaps causing duplicates
-        seen_texts = set()
+                res = future.result()  # process_chunk_safe never raises
+                if res and isinstance(res, dict):
+                    if isinstance(res.get("clauses"), list):
+                        all_clauses.extend(res["clauses"])
+                    if isinstance(res.get("summary"), str) and res["summary"]:
+                        all_summaries.append(res["summary"])
+
+        # Fuzzy-deduplicate: overlapping chunks routinely re-flag the same
+        # clause with minor wording/whitespace differences, which exact-string
+        # matching would let through as two "different" risks.
+        accepted_texts = []
         unique_clauses = []
         for c in all_clauses:
-            txt = c.get("original_text", "").strip()
-            if txt and txt not in seen_texts:
-                seen_texts.add(txt)
-                unique_clauses.append(c)
-                
+            txt = (c.get("original_text") or "").strip()
+            if not txt:
+                continue
+            if is_near_duplicate_risk(txt, accepted_texts):
+                continue
+            accepted_texts.append(txt)
+            unique_clauses.append(c)
+
         final_summary = all_summaries[0] if all_summaries else "Document analyzed successfully."
         
         # --- THE FRONTEND KEY TRANSLATOR ---
@@ -320,18 +380,27 @@ def analyze():
                 "issue": c.get("explanation", "") 
             })
             
-        # 3. Dynamic RAG Citations
+        # 3. Context-Aware Dynamic Auto-RAG — skip the embedding call and the
+        # Pinecone query entirely when there are no risks to search for; no
+        # point paying for a vector DB round-trip with an empty query.
         citations = []
-        top_issues = " ".join([c.get("explanation", "") for c in formatted_clauses[:5]])
-        if top_issues.strip():
+        if formatted_clauses:
+            search_query = " ".join(c.get("explanation", "") for c in formatted_clauses[:5]).strip()
+        else:
+            search_query = ""
+
+        if search_query:
             try:
                 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
                 index = pc.Index(host=os.getenv("PINECONE_HOST"))
                 namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
-                
+
+                # Embed with the SAME model worker.py used to ingest the
+                # index — embedding with a different model here would query
+                # a different vector space and silently return noise.
                 embed_response = pc.inference.embed(
-                    model="multilingual-e5-large",
-                    inputs=[top_issues],
+                    model=EMBED_MODEL,
+                    inputs=[search_query],
                     parameters={"input_type": "query", "truncate": "END"},
                 )
                 query_vector = embed_response[0].values

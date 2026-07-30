@@ -317,6 +317,7 @@ const styles = `
 
   /* ── EDITOR SCROLL ───────────────────────────────────────────────── */
   .editor-scroll-area {
+    position: relative;
     flex: 1;
     overflow-y: auto;
     padding: 24px 28px;
@@ -529,6 +530,35 @@ const styles = `
     box-sizing: border-box;
   }
   .input-textarea:focus { border-color: var(--accent-primary); }
+
+  /* ── Scan-lock overlay (visually disables the doc/textarea while
+     isAnalyzing is true — used both on the upload-screen textarea and the
+     results-view TipTap editor during a re-scan). Tailwind isn't configured
+     in this project — utility-class strings like "absolute inset-0
+     bg-blue-900/10 animate-pulse" compile to nothing and render
+     invisible/unpositioned. Real classes here. */
+  .ca-textarea-wrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .ca-scan-overlay {
+    position: absolute; inset: 0;
+    background: rgba(30, 64, 175, 0.1);
+    pointer-events: none;
+    animation: ca-scan-pulse 1.6s ease-in-out infinite;
+  }
+  .ca-textarea-wrap .ca-scan-overlay { border-radius: 10px; }
+  @keyframes ca-scan-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+
+  /* ── Staggered fade-in for mapped risk/citation cards ───────────────── */
+  .animate-fade-in {
+    opacity: 0;
+    animation: ca-fade-in 0.35s ease forwards;
+  }
+  @keyframes ca-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 
   /* ── RISK MARK HIGHLIGHTS (document left pane) ───────────────────── */
   .risk-mark {
@@ -2171,7 +2201,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
                       </div>
 
-                      <div className="relative flex-1 flex flex-col min-h-0">
+                      <div className="ca-textarea-wrap">
                         <textarea
                           key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
                           className="input-textarea"
@@ -2187,9 +2217,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           }}
                           style={{ marginBottom: 0 }}
                         />
-                        {isAnalyzing && (
-                          <div className="absolute inset-0 bg-blue-900/10 animate-pulse pointer-events-none rounded-[16px]" />
-                        )}
+                        {isAnalyzing && <div className="ca-scan-overlay" />}
                       </div>
                     </div>
 
@@ -2358,6 +2386,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
               })()}
 
               <div className="editor-scroll-area">
+                {isAnalyzing && <div className="ca-scan-overlay" />}
                 {leftTab === 'scanner' ? (
                   <>
                     <ContractTiptapEditor
@@ -2368,6 +2397,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       onRiskClick={inspectRisk}
                       onTextChange={setRawText}
                       onEditorReady={(ed) => { editorApiRef.current = ed; }}
+                      editable={!isAnalyzing}
                     />
                     {appendedClauses.length > 0 && (
                       <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
@@ -2630,7 +2660,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                             {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').map((c, idx) => (
                               <div
                                 key={c.id}
-                                className={`clause-list-item ${c.risk === 'RED' ? 'red-item' : 'amber-item'}`}
+                                className={`clause-list-item animate-fade-in ${c.risk === 'RED' ? 'red-item' : 'amber-item'}`}
+                                style={{ animationDelay: `${idx * 150}ms` }}
                                 onClick={() => inspectRisk(c.id)}
                               >
                                 <span className="clause-number">#{idx + 1}</span>
@@ -2892,7 +2923,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                         {citations.map((prec, i) => (
-                          <div key={i} className="precedent-card" style={{ marginBottom: 0 }}>
+                          <div key={i} className="precedent-card animate-fade-in" style={{ marginBottom: 0, animationDelay: `${i * 150}ms` }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <span>⚖️</span>
                               <div style={{ flex: 1 }}>

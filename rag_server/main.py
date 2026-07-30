@@ -31,9 +31,11 @@ so the pipeline can be tested immediately without any manual ingestion.
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Literal, Optional
@@ -263,7 +265,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:5174", "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -571,7 +576,53 @@ async def search(req: SearchRequest) -> SearchResponse:
     )
 
 
-# ── Contract Analyzer ────────────────────────────────────────────────────────
+# ── Contract Analyzer — Map-Reduce chunking helpers ────────────────────────────
+# Duplicated locally (not imported from the Flask sidecar's routes/contract_routes.py)
+# per this file's own rule at the top: this service must never import from Flask
+# or share state with it — they're fully independent processes.
+
+def chunk_text_by_boundary(text: str, chunk_size: int = 3000, overlap: int = 300) -> list[str]:
+    """Split text into overlapping chunks, snapping each cut to the nearest
+    paragraph break (or single newline) within the tail of the window instead
+    of hard-slicing at exactly chunk_size — avoids cutting a clause in half
+    mid-sentence, which would confuse the LLM's per-chunk analysis."""
+    if not text:
+        return []
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks = []
+    start = 0
+    n = len(text)
+    min_chunk = chunk_size // 2  # never accept a boundary so close it produces a tiny chunk
+    while start < n:
+        end = min(start + chunk_size, n)
+        if end < n:
+            search_from = start + min_chunk
+            boundary = text.rfind('\n\n', search_from, end)
+            if boundary == -1:
+                boundary = text.rfind('\n', search_from, end)
+            if boundary != -1:
+                end = boundary
+        piece = text[start:end].strip()
+        if piece:
+            chunks.append(piece)
+        if end >= n:
+            break
+        start = max(end - overlap, start + min_chunk)  # guarantees forward progress
+    return chunks
+
+
+def is_near_duplicate_risk(candidate_text: str, accepted_texts: list[str], threshold: float = 0.85) -> bool:
+    """True if candidate_text is a fuzzy match (SequenceMatcher ratio > threshold)
+    against any already-accepted risk. Catches the same clause getting flagged
+    twice from two overlapping chunks with slightly different surrounding
+    whitespace/punctuation — exact-string dedup misses these."""
+    for accepted in accepted_texts:
+        if difflib.SequenceMatcher(None, candidate_text, accepted).ratio() > threshold:
+            return True
+    return False
+
 
 class ContractAnalysisRequest(BaseModel):
     contract_text: str = Field(..., min_length=10, max_length=60000)
@@ -582,12 +633,19 @@ class ContractAnalysisRequest(BaseModel):
 @app.post("/api/analyze-contract")
 async def analyze_contract(req: ContractAnalysisRequest):
     """
-    Two-step contract risk scanner powered by llama-3.3-70b-versatile.
+    Map-Reduce contract risk scanner powered by llama-3.3-70b-versatile.
 
     Step 1 — General Indian law analysis (Contract Act 1872, NI Act, IT Act, etc.)
     Step 2 — Rule Book enforcement: if rule_book is provided, its directives are
               ABSOLUTE OVERRIDES; violating clauses are flagged Red with
               is_rule_book_violation: true regardless of general legal compliance.
+
+    The contract is split into overlapping ~3000-char chunks (boundary-aware,
+    never mid-sentence) and analyzed concurrently (max 3 workers, to avoid
+    tripping the LLM provider's rate limiter) instead of hard-truncating
+    anything past 14000 chars as the single-call version used to. Results are
+    fuzzy-deduplicated across chunk overlaps, then used to drive a semantic
+    citation lookup against the existing ChromaDB case-law index.
     """
     if _groq is None:
         raise HTTPException(
@@ -651,23 +709,121 @@ Return ONLY a valid JSON object — no markdown, no commentary:
   ]
 }}"""
 
-    try:
-        response = _groq.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.15,
-            max_tokens=3000,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"CONTRACT TEXT:\n\n{req.contract_text[:14000]}"},
-            ],
-        )
-        result = json.loads(response.choices[0].message.content or "{}")
-        return result
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail=f"Groq returned invalid JSON: {exc}")
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+    def analyze_chunk(chunk_text: str) -> dict:
+        # One hallucinated/malformed JSON response for a single chunk must
+        # never take down the whole document's analysis — isolate it here so
+        # a failure degrades to "no findings in this chunk", not a crash.
+        try:
+            response = _groq.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                temperature=0.15,
+                max_tokens=3000,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"CONTRACT TEXT:\n\n{chunk_text}"},
+                ],
+            )
+            return json.loads(response.choices[0].message.content or "{}")
+        except Exception as exc:
+            print(f"[analyze-contract] chunk failed, skipping: {exc}")
+            return {"flagged_clauses": [], "missing_clauses": [], "overall_risk_score": None, "summary": ""}
+
+    chunks = chunk_text_by_boundary(req.contract_text, chunk_size=3000, overlap=300)
+    if not chunks:
+        chunks = [req.contract_text]
+
+    all_clauses: list[dict] = []
+    all_missing: list[dict] = []
+    scores: list[float] = []
+    summaries: list[str] = []
+
+    # Capped at 3 concurrent workers so a large document doesn't fire N
+    # simultaneous requests at the LLM provider and trip its rate limiter.
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(analyze_chunk, c) for c in chunks]
+        for future in as_completed(futures):
+            res = future.result()  # analyze_chunk never raises
+            if isinstance(res.get("flagged_clauses"), list):
+                all_clauses.extend(res["flagged_clauses"])
+            if isinstance(res.get("missing_clauses"), list):
+                all_missing.extend(res["missing_clauses"])
+            if isinstance(res.get("overall_risk_score"), (int, float)):
+                scores.append(res["overall_risk_score"])
+            if isinstance(res.get("summary"), str) and res["summary"]:
+                summaries.append(res["summary"])
+
+    if not summaries and not all_clauses:
+        # every chunk failed — surface a real error instead of a silent empty result
+        raise HTTPException(status_code=500, detail="Analysis failed for all document chunks.")
+
+    # Fuzzy-deduplicate flagged clauses: overlapping chunks routinely re-flag
+    # the same clause with minor wording/whitespace differences, which
+    # exact-string matching would let through as two "different" risks.
+    accepted_texts: list[str] = []
+    unique_clauses: list[dict] = []
+    for c in all_clauses:
+        txt = (c.get("original_text") or "").strip()
+        if not txt:
+            continue
+        if is_near_duplicate_risk(txt, accepted_texts):
+            continue
+        accepted_texts.append(txt)
+        unique_clauses.append(c)
+
+    # Missing-clause suggestions are short, structured titles rather than
+    # free-text excerpts, so exact-match dedup (by title) is sufficient here.
+    seen_titles = set()
+    unique_missing: list[dict] = []
+    for m in all_missing:
+        title = (m.get("title") or "").strip().lower()
+        if title and title not in seen_titles:
+            seen_titles.add(title)
+            unique_missing.append(m)
+
+    overall_score = round(sum(scores) / len(scores)) if scores else 0
+    final_summary = summaries[0] if summaries else "Document analyzed successfully."
+
+    # Context-Aware Dynamic Auto-RAG: skip the embedding + ChromaDB round-trip
+    # entirely when there are no risks to search precedents for.
+    citations: list[dict] = []
+    if unique_clauses:
+        search_query = " ".join(c.get("explanation", "") for c in unique_clauses[:5]).strip()
+        if search_query and _collection is not None:
+            try:
+                doc_count = _collection.count()
+                if doc_count > 0:
+                    # query_texts routes through ChromaDB's existing embedding
+                    # function (SentenceTransformer all-MiniLM-L6-v2) — the
+                    # same one the case-law index was seeded with — before
+                    # running the similarity search.
+                    results = _collection.query(
+                        query_texts=[search_query],
+                        n_results=min(3, doc_count),
+                        include=["documents", "metadatas"],
+                    )
+                    docs = results.get("documents", [[]])[0]
+                    metas = results.get("metadatas", [[]])[0]
+                    ids = (results.get("ids") or [[]])[0]
+                    for i, meta in enumerate(metas):
+                        meta = meta or {}
+                        doc_text = docs[i] if i < len(docs) else ""
+                        citations.append({
+                            "case_id": meta.get("citation_ref") or (ids[i] if i < len(ids) else f"case_{i}"),
+                            "title": meta.get("case_name", "Untitled Case"),
+                            "year": meta.get("year", ""),
+                            "snippet": doc_text[:200],
+                        })
+            except Exception as exc:
+                print(f"[analyze-contract] citation RAG failed: {exc}")
+
+    return {
+        "overall_risk_score": overall_score,
+        "summary": final_summary,
+        "flagged_clauses": unique_clauses,
+        "missing_clauses": unique_missing,
+        "citations": citations,
+    }
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
