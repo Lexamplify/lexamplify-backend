@@ -947,13 +947,18 @@ function FolderCard({ folder, docCount, subFolderCount, onClick, onRename, onDel
 export default function VaultView({ targetFolderId = null }) {
   const [activeTab, setActiveTab] = useState('vault');
 
-  // Document Vault
+  // Document Vault — pages of PAGE_SIZE docs at a time; never the whole vault
+  const PAGE_SIZE = 30;
   const [documents, setDocuments] = useState([]);
+  const [docsTotal, setDocsTotal] = useState(0);
+  const [docsOffset, setDocsOffset] = useState(0);
   const [loadingDocs, setLoadingDocs] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [docError, setDocError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const fileInputRef = useRef(null);
 
   // Document card context menu
@@ -962,6 +967,7 @@ export default function VaultView({ targetFolderId = null }) {
 
   // Folder navigation
   const [folders, setFolders] = useState([]);   // flat list from API
+  const [docCounts, setDocCounts] = useState({}); // folder_id (or 'root') -> count, from the backend
   const [currentFolderId, setCurrentFolderId] = useState(null);  // null = root
   const [folderPath, setFolderPath] = useState([]);    // [{id, name}]
 
@@ -1024,25 +1030,35 @@ export default function VaultView({ targetFolderId = null }) {
   const navigate = useNavigate();
 
   // ── Load documents ────────────────────────────────────────────────────────
-  const loadDocuments = async () => {
-    setLoadingDocs(true);
+  // Bounded page (PAGE_SIZE) fetched per folder or per search query — never
+  // the whole vault. `q` and `folderId` are mutually exclusive: a live search
+  // looks across every folder, browsing looks inside the current one.
+  const loadDocuments = async ({ folderId = null, q = '', offset = 0, append = false } = {}) => {
+    if (append) setLoadingMore(true); else setLoadingDocs(true);
     setDocError(null);
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-      const res = await fetch(`${API_BASE}/api/vault/documents`, {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+      if (q) params.set('q', q);
+      else params.set('folder_id', folderId === null ? 'root' : String(folderId));
+      const res = await fetch(`${API_BASE}/api/vault/documents?${params.toString()}`, {
         headers: { ...(token && { Authorization: `Bearer ${token}` }) },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setDocuments(data.documents || []);
+      const page = data.documents || [];
+      setDocuments(prev => (append ? [...prev, ...page] : page));
+      setDocsTotal(data.total || 0);
+      setDocsOffset(offset + page.length);
     } catch (err) {
       setDocError(err.message || 'Failed to fetch vault documents.');
     } finally {
       setLoadingDocs(false);
+      setLoadingMore(false);
     }
   };
 
-  // ── Load folders ──────────────────────────────────────────────────────────
+  // ── Load folders (+ cheap per-folder doc counts) ──────────────────────────
   const loadFolders = async () => {
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
@@ -1052,6 +1068,7 @@ export default function VaultView({ targetFolderId = null }) {
       if (!res.ok) return;
       const data = await res.json();
       setFolders(data.flat || []);
+      setDocCounts(data.doc_counts || {});
     } catch (_) { }
   };
 
@@ -1087,8 +1104,10 @@ export default function VaultView({ targetFolderId = null }) {
       };
       const gone = new Set([folderId, ...getAllDesc(folderId)]);
       setFolders(prev => prev.filter(f => !gone.has(f.id)));
-      if (gone.has(currentFolderId)) { setCurrentFolderId(null); setFolderPath([]); }
-      loadDocuments(); // some docs may have been deleted
+      const wasCurrent = gone.has(currentFolderId);
+      if (wasCurrent) { setCurrentFolderId(null); setFolderPath([]); }
+      loadFolders(); // refresh per-folder doc counts — the deleted folder's docs cascade-deleted too
+      loadDocuments({ folderId: wasCurrent ? null : currentFolderId });
     }
   };
 
@@ -1130,7 +1149,7 @@ export default function VaultView({ targetFolderId = null }) {
   };
 
   // ── Combined refresh (documents + folders) ────────────────────────────────
-  const loadCurrentView = () => Promise.all([loadDocuments(), loadFolders()]);
+  const loadCurrentView = () => Promise.all([loadDocuments({ folderId: currentFolderId }), loadFolders()]);
 
   // ── Matter Blueprint: create numbered litigation folders + auto-inject templates ──
   // Creates folders via API concurrently with a 1200ms minimum UX delay, then
@@ -1271,9 +1290,24 @@ export default function VaultView({ targetFolderId = null }) {
   };
 
   useEffect(() => {
-    if (activeTab === 'vault') { loadDocuments(); loadFolders(); }
+    if (activeTab === 'vault') loadFolders();
     if (activeTab === 'tracker') loadCases();
   }, [activeTab]);
+
+  // ── Debounce the Google-style search box (350ms) ──────────────────────────
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // ── Single source of truth for what page of documents is on screen:
+  // a live search (debounced) looks across the whole vault; otherwise it's a
+  // bounded page scoped to whatever folder is currently open. ─────────────
+  useEffect(() => {
+    if (activeTab !== 'vault') return;
+    if (debouncedSearchTerm) loadDocuments({ q: debouncedSearchTerm });
+    else loadDocuments({ folderId: currentFolderId });
+  }, [activeTab, currentFolderId, debouncedSearchTerm]);
 
   // ── Deep-link: navigate to a specific folder when targetFolderId is provided ──
   // Track by value so a new folderId triggers re-navigation, but the same one doesn't loop
@@ -1362,17 +1396,10 @@ export default function VaultView({ targetFolderId = null }) {
   };
 
   // ── Derived: current view ─────────────────────────────────────────────────
+  // `documents` IS the current page already — the backend scopes it by
+  // folder_id or by `q`, so there's no client-side filtering left to do here.
   const isSearching = searchTerm.trim().length > 0;
-
-  const filteredDocs = useMemo(() => {
-    if (!searchTerm.trim()) return documents;
-    const term = searchTerm.toLowerCase();
-    return documents.filter(d =>
-      (d.title || '').toLowerCase().includes(term) ||
-      (d.doc_type || '').toLowerCase().includes(term) ||
-      (d.content || '').toLowerCase().includes(term)
-    );
-  }, [documents, searchTerm]);
+  const currentDocs = documents;
 
   // Folders visible in current directory
   const currentSubFolders = useMemo(() => {
@@ -1382,25 +1409,9 @@ export default function VaultView({ targetFolderId = null }) {
     );
   }, [folders, currentFolderId, isSearching]);
 
-  // Documents visible in current directory (or all when searching)
-  const currentDocs = useMemo(() => {
-    if (isSearching) return filteredDocs;
-    return filteredDocs.filter(d =>
-      currentFolderId === null
-        ? !d.folder_id                    // root: docs without a folder
-        : d.folder_id === currentFolderId // inside folder: matching docs
-    );
-  }, [filteredDocs, currentFolderId, isSearching]);
-
-  // Per-folder doc & subfolder counts (for folder card display)
-  const docCountByFolderId = useMemo(() => {
-    const m = {};
-    documents.forEach(d => {
-      const key = d.folder_id ?? null;
-      m[key] = (m[key] || 0) + 1;
-    });
-    return m;
-  }, [documents]);
+  // Per-folder doc counts come straight from the backend (a page of
+  // `documents` only ever holds PAGE_SIZE rows, never the true total).
+  const docCountByFolderId = docCounts;
 
   const subFolderCountById = useMemo(() => {
     const m = {};
@@ -1777,8 +1788,9 @@ export default function VaultView({ targetFolderId = null }) {
             showBlueprintBtn={!isInitializing && (currentSubFolders.length > 0 || currentDocs.length > 0)}
           />
 
-          {/* Search bar */}
-          {!loadingDocs && documents.length > 0 && (
+          {/* Google-style search — always reachable so an empty folder never
+              blocks searching the rest of the vault by party name or keyword. */}
+          {!loadingDocs && (
             <div className="vault-search-bar">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -1786,13 +1798,18 @@ export default function VaultView({ targetFolderId = null }) {
               <input
                 className="vault-search-input"
                 type="text"
-                placeholder={isSearching ? 'Searching all folders…' : `Search in ${folderPath.length > 0 ? folderPath[folderPath.length - 1].name : 'Case Vault'}…`}
+                placeholder="Search all judgments and documents by party name, keyword, or case ID…"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
               {searchTerm && (
                 <button onClick={() => setSearchTerm('')} style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>✕</button>
               )}
+            </div>
+          )}
+          {isSearching && !loadingDocs && docsTotal > 0 && (
+            <div style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '-8px 2px 14px' }}>
+              Showing {documents.length} of {docsTotal} result{docsTotal !== 1 ? 's' : ''} for "{searchTerm}" across the whole vault
             </div>
           )}
 
@@ -2043,6 +2060,25 @@ export default function VaultView({ targetFolderId = null }) {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Load more — bounded pages only, never the whole vault at once */}
+              {!isInitializing && currentDocs.length > 0 && documents.length < docsTotal && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '18px' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loadingMore}
+                    onClick={() => loadDocuments({
+                      folderId: currentFolderId,
+                      q: debouncedSearchTerm,
+                      offset: docsOffset,
+                      append: true,
+                    })}
+                  >
+                    {loadingMore ? 'Loading…' : `Load more (${documents.length} of ${docsTotal})`}
+                  </button>
                 </div>
               )}
             </div>

@@ -1611,7 +1611,14 @@ export default function FirmLibrary() {
                                 {displayYear && <span className="fl-source-year-pill">{displayYear}</span>}
                                 <span className="fl-source-card-title">{displayTitle}</span>
                                 <a
-                                  href={`https://indiankanoon.org/search/?formInput=${encodeURIComponent(displayTitle)}`}
+                                  // Absolute backend origin, matching every other
+                                  // fetch in this file (openDocumentViewer,
+                                  // handlePinToVault, etc.) — a relative "/api/..."
+                                  // href would resolve against the Vite dev
+                                  // server's own origin instead (no proxy is
+                                  // configured for /api in vite.config.js), landing
+                                  // on the SPA's 404 instead of the Flask backend.
+                                  href={`http://localhost:5000/api/kanoon-redirect?query=${encodeURIComponent(displayTitle)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="fl-kanoon-link"

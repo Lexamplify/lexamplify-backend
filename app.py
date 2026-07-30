@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, redirect
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from database import db as sqlalchemy_db
@@ -8,6 +8,8 @@ import re
 import sqlite3
 import json
 import io
+import requests
+import urllib.parse
 from groq import Groq
 from tavily import TavilyClient
 from pinecone import Pinecone
@@ -315,6 +317,59 @@ def format_vault_title(raw_title, case_id):
     return source
 
 
+# Party-name extraction for case_vault rows whose title is uninformative
+# (title == case_id). Scans line-by-line rather than running the regex
+# against the whole document: judgments in this table can be hundreds of
+# KB, and a pattern like ".*v\..*" applied with DOTALL/re.search over the
+# full text risks catastrophic backtracking and would happily match across
+# paragraph boundaries, picking up garbage. Anchoring to one line at a time
+# keeps each match bounded to at most ~120 chars of work.
+PARTY_VS_LINE_RE = re.compile(r"([^\n]{3,60}\s+(?:v\.|vs\.|vs|VERSUS)\s+[^\n]{3,60})", re.IGNORECASE)
+STANDALONE_VS_RE = re.compile(r'^(?:v\.|vs\.|vs|versus)$', re.IGNORECASE)
+
+# Case captions live in the first few lines of a judgment; a "Case Law
+# Cited" section further down is full of other "Party v. Party" lines
+# (precedents, not the case's own parties) and must never win.
+CAPTION_SCAN_WINDOW = 60
+
+
+def extract_case_title_from_content(content):
+    if not content:
+        return None
+    lines = [l.strip() for l in content.split('\n')]
+    non_empty = [l for l in lines if l][:CAPTION_SCAN_WINDOW]
+    for i, line in enumerate(non_empty):
+        m = PARTY_VS_LINE_RE.search(line)
+        if m:
+            cleaned = re.sub(r'\s+', ' ', m.group(1)).strip(' .,-:;')
+            if cleaned:
+                return cleaned
+        # Official SCR-style captions often put the separator on its own
+        # line ("Party A\nv.\nParty B") — join it with its immediate
+        # neighbours rather than a document-wide greedy/DOTALL match.
+        if STANDALONE_VS_RE.match(line) and 0 < i < len(non_empty) - 1:
+            party_a, party_b = non_empty[i - 1], non_empty[i + 1]
+            if 3 <= len(party_a) <= 80 and 3 <= len(party_b) <= 80:
+                cleaned = re.sub(r'\s+', ' ', f'{party_a} {line} {party_b}').strip(' .,-:;')
+                if cleaned:
+                    return cleaned
+    return None
+
+
+def resolve_vault_title(raw_title, case_id, content):
+    """Best available title for a case_vault row: a genuinely descriptive
+    stored title, else a 'Party v. Party' line extracted from the document
+    body, else the INSC-citation-formatted case_id (format_vault_title)."""
+    candidate = (raw_title or '').strip()
+    fallback_id = (case_id or '').strip()
+    if candidate and candidate != fallback_id:
+        return candidate
+    extracted = extract_case_title_from_content(content)
+    if extracted:
+        return extracted
+    return format_vault_title(raw_title, case_id)
+
+
 def create_app():
     app = Flask(__name__)
     @app.after_request
@@ -377,6 +432,18 @@ def create_app():
                     'SELECT id, name, parent_id, created_at FROM vault_folders ORDER BY name ASC'
                 ).fetchall()
                 folders = [dict(r) for r in rows]
+
+                # Cheap GROUP BY for per-folder document counts — never touches
+                # `content`, so this stays fast regardless of table size and
+                # lets the frontend show folder counts without loading every
+                # document just to count them client-side.
+                count_rows = conn.execute(
+                    'SELECT folder_id, COUNT(*) AS cnt FROM case_vault GROUP BY folder_id'
+                ).fetchall()
+                doc_counts = {
+                    ('root' if r['folder_id'] is None else str(r['folder_id'])): r['cnt']
+                    for r in count_rows
+                }
             finally:
                 conn.row_factory = old_rf
 
@@ -390,7 +457,7 @@ def create_app():
                 else:
                     roots.append(f)
 
-            return jsonify({'folders': roots, 'flat': folders}), 200
+            return jsonify({'folders': roots, 'flat': folders, 'doc_counts': doc_counts}), 200
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
@@ -823,24 +890,71 @@ def create_app():
     @app.route('/api/vault/documents', methods=['GET'])
     def get_vault_documents():
         try:
+            q = (request.args.get('q') or '').strip()
+            folder_id_param = request.args.get('folder_id')
+            try:
+                limit = max(1, min(int(request.args.get('limit', 30)), 100))
+            except (TypeError, ValueError):
+                limit = 30
+            try:
+                offset = max(0, int(request.args.get('offset', 0)))
+            except (TypeError, ValueError):
+                offset = 0
+
+            where_clauses = []
+            params = []
+            if q:
+                like = f'%{q}%'
+                where_clauses.append('(cv.title LIKE ? OR cv.content LIKE ? OR cv.case_id LIKE ?)')
+                params.extend([like, like, like])
+            elif folder_id_param is not None:
+                if folder_id_param in ('root', 'null', ''):
+                    where_clauses.append('cv.folder_id IS NULL')
+                else:
+                    try:
+                        where_clauses.append('cv.folder_id = ?')
+                        params.append(int(folder_id_param))
+                    except ValueError:
+                        pass
+            where_sql = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+
             conn = db
             old_row_factory = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
                 c = conn.cursor()
-                c.execute("""
+                total = c.execute(
+                    f"SELECT COUNT(*) FROM case_vault cv {where_sql}", params
+                ).fetchone()[0]
+
+                # CRITICAL MEMORY SAFEGUARD: LIMIT/OFFSET is applied in SQL so
+                # only one bounded page of rows is ever pulled out of SQLite —
+                # `content` can be hundreds of KB per judgment, and this table
+                # has 900+ rows, so a plain fetchall() of everything (as the
+                # old query did) loads the entire vault's text into Python
+                # memory on every request regardless of what's on screen.
+                c.execute(
+                    f"""
                     SELECT cv.*,
                            vf.name       AS folder_name,
                            vf.parent_id  AS folder_parent_id
                     FROM   case_vault cv
                     LEFT JOIN vault_folders vf ON cv.folder_id = vf.id
+                    {where_sql}
                     ORDER BY cv.created_at DESC
-                """)
+                    LIMIT ? OFFSET ?
+                    """,
+                    params + [limit, offset]
+                )
                 rows = c.fetchall()
-                dict_rows = [dict(row) for row in rows]
+                dict_rows = []
+                for row in rows:
+                    d = dict(row)
+                    d['title'] = resolve_vault_title(d.get('title'), d.get('case_id'), d.get('content'))
+                    dict_rows.append(d)
             finally:
                 conn.row_factory = old_row_factory
-            return jsonify({"documents": dict_rows}), 200
+            return jsonify({"documents": dict_rows, "total": total, "limit": limit, "offset": offset}), 200
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
 
@@ -911,6 +1025,35 @@ def create_app():
             return jsonify(docs), 200
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
+
+    # "I'm Feeling Lucky" proxy for the Firm Library's "Open in Indian
+    # Kanoon" link — a plain <a href> click can't carry an Authorization
+    # header, so this is deliberately unauthenticated, same as the other
+    # Firm Library routes above. The redirect target is always a fixed
+    # indiankanoon.org path built from either a regex-extracted digit-only
+    # doc id or urllib.parse.quote(query) — query never controls the
+    # destination HOST, only the search term, so this isn't an open redirect.
+    @app.route('/api/kanoon-redirect', methods=['GET'])
+    def kanoon_redirect():
+        query = request.args.get('query', '') or ''
+        try:
+            resp = requests.get(
+                'https://indiankanoon.org/search/',
+                # requests encodes params itself — case titles routinely
+                # contain commas/parens/ampersands ("Kesavananda Bharati v.
+                # State of Kerala, (1973) 4 SCC 225"), and manually
+                # f-string-interpolating query into the URL would let an
+                # "&" in a title truncate/corrupt the formInput param.
+                params={'formInput': query},
+                timeout=4,
+                headers={'User-Agent': 'Mozilla/5.0 (compatible; LexAmplifyBot/1.0)'},
+            )
+            match = re.search(r'href=["\']/doc/(\d+)/["\']', resp.text)
+            if match:
+                return redirect(f"https://indiankanoon.org/doc/{match.group(1)}/")
+        except Exception:
+            pass
+        return redirect(f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}")
 
     # Register blueprints
     from routes.auth_routes import auth_bp
