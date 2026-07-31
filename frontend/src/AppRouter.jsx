@@ -15,6 +15,7 @@ import VaultView from './components/VaultView';
 import CaseWorkspace from './components/CaseWorkspace';
 import WarRoomView from './components/WarRoomView';
 import FirmLibrary from './components/FirmLibrary';
+import LegalForms from './components/LegalForms';
 import LexLogoMark from './components/LexLogoMark';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
@@ -66,6 +67,12 @@ const Icons = {
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  ),
+  forms: (w = 16) => (
+    <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" />
     </svg>
   ),
   gavel: (w = 16) => (
@@ -306,6 +313,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           <NavItem to="/vault" icon={Icons.lock()} label="Case Vault" isActive={p === '/vault'} onClick={closeSidebar} />
           <NavItem to="/war-room" icon={Icons.gavel()} label="Virtual Courtroom" isActive={p === '/war-room'} onClick={closeSidebar} />
           <NavItem to="/firm-library" icon={Icons.library()} label="Firm Library" isActive={p === '/firm-library'} onClick={closeSidebar} />
+          <NavItem to="/legal-forms" icon={Icons.forms()} label="Legal Forms" isActive={p === '/legal-forms'} onClick={closeSidebar} />
 
           {/* Live case listing from API */}
           {!isIconOnly && sidebarCases.length > 0 && (
@@ -868,6 +876,7 @@ function AppRouterContent() {
         <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
         <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
         <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />
+        <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms /></Layout>} />
         <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
       </Routes>

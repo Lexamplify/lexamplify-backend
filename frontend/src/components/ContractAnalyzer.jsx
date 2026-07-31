@@ -629,6 +629,19 @@ const styles = `
   mark[data-comment-id] { cursor: pointer; border-radius: 2px; padding: 0 1px; }
   mark[data-comment-id].ca-highlight-active { outline: 2px solid #F59E0B; outline-offset: 1px; }
 
+  /* High-contrast text on TipTap highlight marks — in dark mode the
+     editor's own light/near-white text color (inherited from
+     --text-dark-primary) is nearly invisible against a yellow highlight
+     background. Scoped to .ProseMirror specifically so this can never
+     bleed into some unrelated <mark>/[data-comment-id] element elsewhere
+     in the app that isn't inside this editor. */
+  .ProseMirror mark,
+  .ProseMirror [data-comment-id] {
+    color: #0f172a !important; /* Slate-900 */
+    font-weight: 600 !important;
+    text-shadow: none !important;
+  }
+
   /* ── BubbleMenu: Comment / Draft Revision ─────────────────────────── */
   .ca-bubble-menu {
     display: flex; gap: 4px; padding: 4px;
@@ -1320,11 +1333,33 @@ export default function ContractAnalyzer({ setFocusMode }) {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Legal Forms Library hand-off: navigate('/contract-analyzer', { state:
+  // { importedDocument: populatedHtml } }). Unlike the Case Vault path
+  // above, this only initializes the editor with the populated form text —
+  // it deliberately does NOT auto-trigger a risk scan, since a freshly
+  // drafted form isn't something the user necessarily wants AI-audited the
+  // instant they land here.
+  useEffect(() => {
+    const importedHtml = location.state?.importedDocument;
+    if (!importedHtml) return;
+    const container = document.createElement('div');
+    container.innerHTML = importedHtml;
+    // Convert block-level breaks to newlines BEFORE reading textContent —
+    // otherwise "<p>A</p><p>B</p>" collapses to "AB" with no separator.
+    container.querySelectorAll('p, div, li, br').forEach((el) => {
+      el.insertAdjacentText('afterend', '\n');
+    });
+    const plainText = cleanExtractedText(container.textContent.replace(/\n{3,}/g, '\n\n').trim());
+    setRawText(plainText);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── SESSION PERSISTENCE ─────────────────────────────────────────────
   // Rehydrate an in-progress session on mount so navigating away and back
-  // does not wipe the analysis. Skips when a document is being piped in.
+  // does not wipe the analysis. Skips when a document is being piped in
+  // (Case Vault/InzIQ or the Legal Forms Library) — otherwise the restored
+  // stale session would immediately overwrite the freshly-imported text.
   useEffect(() => {
-    if (!(location.state?.documentData?.file_content)) {
+    if (!(location.state?.documentData?.file_content) && !location.state?.importedDocument) {
       try {
         const saved = sessionStorage.getItem('lexapp_contract_session');
         if (saved) {
@@ -1482,11 +1517,26 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const handleAcceptRevision = () => {
     const editor = editorApiRef.current;
     if (!editor || !activeCommentDraft?.revision?.revisedText) return;
-    editor.commands.insertContentAt(
-      { from: activeCommentDraft.from, to: activeCommentDraft.to },
-      activeCommentDraft.revision.revisedText
-    );
+    const { from, to, commentId } = activeCommentDraft;
+
+    // CHAIN ORDER matters: unsetHighlight() must run BEFORE insertContent()
+    // in the same chain. Unsetting the mark first and then inserting into
+    // the still-current selection keeps from/to consistent throughout —
+    // doing these as two separate commands (or inserting first) risks the
+    // second step operating on stale range coordinates after the first
+    // step has already changed the document.
+    editor.chain()
+      .setTextSelection({ from, to })
+      .unsetHighlight()
+      .insertContent(activeCommentDraft.revision.revisedText)
+      .run();
+
     setActiveCommentDraft(null);
+    // Defensive: if this comment had already been saved to the sidebar list
+    // (re-opening a saved comment to draft a revision), drop it so the card
+    // unmounts instead of sitting there stale, pointing at text that no
+    // longer exists.
+    setComments(prev => prev.filter(c => c.id !== commentId));
   };
 
   const handleRejectRevision = () => {

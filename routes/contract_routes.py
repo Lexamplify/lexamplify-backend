@@ -632,6 +632,156 @@ Return ONLY the raw JSON array. No text before it. No text after it."""
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@contract_bp.route("/autofill-template", methods=["POST"])
+def autofill_template():
+    """Legal Forms Library auto-filler. Extracts values for a template's
+    schema fields from raw, unstructured client facts. Never invents a
+    value: any field not explicitly stated in the facts comes back null,
+    and the LLM's JSON is never trusted blindly — only keys that are
+    actually part of the submitted schema are ever returned."""
+    data = request.get_json(silent=True) or {}
+    facts = (data.get("facts") or "").strip()
+    schema = data.get("schema") or []
+
+    if not facts:
+        return jsonify({"error": True, "message": "No client facts provided."}), 400
+    if not isinstance(schema, list) or not schema:
+        return jsonify({"error": True, "message": "No template schema provided."}), 400
+
+    field_ids = [f.get("field_id") for f in schema if isinstance(f, dict) and f.get("field_id")]
+    if not field_ids:
+        return jsonify({"error": True, "message": "Template schema has no valid fields."}), 400
+
+    field_descriptions = "\n".join(
+        f'- "{f.get("field_id")}": {f.get("label") or f.get("field_id")} ({f.get("type", "text")})'
+        for f in schema if isinstance(f, dict) and f.get("field_id")
+    )
+
+    system_prompt = f"""You are a precise legal data-extraction engine. You will be given raw,
+unstructured facts about a client's situation and a list of form fields to populate.
+
+FIELDS TO POPULATE:
+{field_descriptions}
+
+STRICT RULES — NO HALLUCINATION:
+1. Return ONLY a valid JSON object with EXACTLY these keys: {json_mod.dumps(field_ids)}.
+2. If a field's value is not EXPLICITLY stated in the facts, you MUST return null for
+   that field. Do NOT guess, infer, estimate, or invent a plausible-sounding value —
+   not even a common default like "N/A", "TBD", or today's date.
+3. Do NOT paraphrase or summarize prose fields — extract text as close to verbatim
+   as sensible for the field's type.
+4. Return ONLY the JSON object. No markdown fences, no commentary, no explanation."""
+
+    try:
+        raw = ask_groq(system_prompt, f"CLIENT FACTS:\n{facts[:8000]}")
+        cleaned = _strip_json_fences(raw)
+        json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+        parsed = json_mod.loads(json_match.group(0) if json_match else "{}")
+        if not isinstance(parsed, dict):
+            parsed = {}
+    except Exception as e:
+        return jsonify({"error": True, "message": f"Auto-fill failed: {e}"}), 500
+
+    # Guardrail: only ever emit keys that belong to THIS schema, and coerce
+    # an empty/whitespace-only string to null too — a UI that colors a
+    # field green just because *some* string came back would defeat the
+    # "force human review" point of the null path.
+    fields = {}
+    for fid in field_ids:
+        val = parsed.get(fid)
+        if isinstance(val, str) and not val.strip():
+            val = None
+        fields[fid] = val
+
+    return jsonify({"fields": fields}), 200
+
+
+@contract_bp.route("/export-form-docx", methods=["POST"])
+def export_form_docx():
+    """Legal Forms Library DOCX export.
+
+    The task spec named the npm package `html-to-docx` for this. Verified
+    live in the browser that it does not work: even its "ESM" build does
+    `import fs/http/crypto/path from "..."` directly — it is a Node-only
+    library with no real browser path, and Vite bundling it throws
+    'Class extends value undefined is not a constructor' at runtime. This
+    endpoint achieves the same end result (margins, bold, lists preserved)
+    server-side with python-docx, which this codebase already uses
+    successfully for DOCX export elsewhere in this same file.
+    """
+    from docx import Document
+    from docx.shared import Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from flask import send_file
+    import io
+    from bs4 import BeautifulSoup, NavigableString, Tag
+
+    data = request.get_json(silent=True) or {}
+    html = data.get("html", "")
+    title = data.get("title", "Legal Document")
+
+    if not html.strip():
+        return jsonify({"error": True, "message": "No document content provided."}), 400
+
+    doc = Document()
+    section = doc.sections[0]
+    section.top_margin = Inches(1)
+    section.bottom_margin = Inches(1)
+    section.left_margin = Inches(1)
+    section.right_margin = Inches(1)
+
+    def add_runs(paragraph, node, bold=False):
+        """Recursively walk inline children, tracking bold state so a
+        <strong>/<b> nested inside other inline tags still renders as a
+        real bold run rather than being flattened to plain text."""
+        for child in node.children:
+            if isinstance(child, NavigableString):
+                text = str(child)
+                if text:
+                    run = paragraph.add_run(text)
+                    run.bold = bold
+            elif isinstance(child, Tag):
+                if child.name == 'br':
+                    paragraph.add_run().add_break()
+                else:
+                    add_runs(paragraph, child, bold or child.name in ('strong', 'b'))
+
+    soup = BeautifulSoup(html, 'html.parser')
+    top_level = [el for el in soup.find_all(['p', 'ul', 'ol'], recursive=False) if isinstance(el, Tag)]
+    if not top_level:
+        # html_template's top-level elements may not be direct children of
+        # the parse root depending on how the fragment was wrapped — fall
+        # back to scanning anywhere in the document.
+        top_level = [el for el in soup.find_all(['p', 'ul', 'ol']) if isinstance(el, Tag)]
+
+    for el in top_level:
+        style_attr = (el.get('style') or '').replace(' ', '')
+        if el.name == 'p':
+            para = doc.add_paragraph()
+            if 'text-align:center' in style_attr:
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif 'text-align:right' in style_attr:
+                para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            add_runs(para, el)
+        else:
+            list_style = 'List Bullet' if el.name == 'ul' else 'List Number'
+            for li in el.find_all('li', recursive=False):
+                para = doc.add_paragraph(style=list_style)
+                add_runs(para, li)
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    safe_name = re.sub(r'[^A-Za-z0-9]+', '_', title).strip('_') or 'Legal_Document'
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"{safe_name}.docx",
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+
+
 @contract_bp.route("/save", methods=["POST"])
 def save_case():
     data = request.get_json()

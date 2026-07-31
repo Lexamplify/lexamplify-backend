@@ -10,6 +10,7 @@ import json
 import io
 import requests
 import urllib.parse
+from bs4 import BeautifulSoup
 from groq import Groq
 from tavily import TavilyClient
 from pinecone import Pinecone
@@ -1033,9 +1034,57 @@ def create_app():
     # indiankanoon.org path built from either a regex-extracted digit-only
     # doc id or urllib.parse.quote(query) — query never controls the
     # destination HOST, only the search term, so this isn't an open redirect.
+    _KANOON_CASE_SPLIT_RE = re.compile(r'\s+(?:v\.|vs\.?|versus)\s+', re.IGNORECASE)
+    _KANOON_DOC_ID_RE = re.compile(r'/doc/(\d+)')
+    _KANOON_SECTION_RE = re.compile(r'\b(?:section|sec\.?|article|art\.?)\s*[:\-]?\s*(\d+[A-Za-z]*)\b', re.IGNORECASE)
+    # Act name either ENDS in "Act"/"Code" ("Negotiable Instruments Act",
+    # "Indian Penal Code") or, for the one title that doesn't, IS
+    # "Constitution of India" — special-cased since this app is scoped
+    # entirely to Indian law and every other phrasing of "Constitution"
+    # here means that one document.
+    _KANOON_ACT_NAME_RE = re.compile(
+        r'([A-Za-z][A-Za-z,\.\s]*?\b(?:Act|Code)\b|\bConstitution(?:\s+of\s+India)?\b)',
+        re.IGNORECASE,
+    )
+    # "State of", "Union of", "M/s", "The", "Commissioner", "Pvt", "Ltd",
+    # "Anr", "Ors" — generic legal boilerplate that appears in almost every
+    # party name and carries no distinguishing signal for matching against
+    # a Kanoon result title.
+    _KANOON_CASE_STOPWORDS_RE = re.compile(
+        r'\b(?:state of|union of|m/s|the|commissioner|pvt|ltd|anr|ors)\.?\b',
+        re.IGNORECASE,
+    )
+
+    def _sanitize_case_party(raw_party):
+        """Strip generic legal stopwords, keeping whatever distinctive text
+        remains. Falls back to the un-stripped party text if stopword
+        removal happens to consume the entire string — matching on an empty
+        string would trivially "match" every title on the page."""
+        cleaned = _KANOON_CASE_STOPWORDS_RE.sub('', raw_party)
+        cleaned = re.sub(r'[,&]+', ' ', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip(' .,-')
+        return cleaned or raw_party.strip()
+
+    def _sanitize_statute_query(query):
+        """Extract (act_name, section_or_article_number) from a non-case
+        query. Section/article is pulled out FIRST and removed from the
+        text before hunting for the Act name — otherwise "Section 138" ends
+        up swallowed into the Act-name match as a prefix."""
+        section_match = _KANOON_SECTION_RE.search(query)
+        section_num = section_match.group(1) if section_match else None
+        remainder = query
+        if section_match:
+            remainder = query[:section_match.start()] + query[section_match.end():]
+        act_match = _KANOON_ACT_NAME_RE.search(remainder)
+        act_name = act_match.group(1) if act_match else remainder
+        act_name = re.sub(r'^\s*(?:of\s+)?(?:the\s+)?', '', act_name, flags=re.IGNORECASE)
+        act_name = re.sub(r'\s+', ' ', act_name).strip(' ,.')
+        return act_name, section_num
+
     @app.route('/api/kanoon-redirect', methods=['GET'])
     def kanoon_redirect():
         query = request.args.get('query', '') or ''
+        fallback_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
         try:
             resp = requests.get(
                 'https://indiankanoon.org/search/',
@@ -1046,14 +1095,71 @@ def create_app():
                 # "&" in a title truncate/corrupt the formInput param.
                 params={'formInput': query},
                 timeout=4,
-                headers={'User-Agent': 'Mozilla/5.0 (compatible; LexAmplifyBot/1.0)'},
+                # A real browser UA — Kanoon can 403 (or serve degraded
+                # results) to a UA that self-identifies as a bot.
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                                        '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'},
             )
-            match = re.search(r'href=["\']/doc/(\d+)/["\']', resp.text)
-            if match:
-                return redirect(f"https://indiankanoon.org/doc/{match.group(1)}/")
+            # BeautifulSoup, not regex — the old code grabbed the FIRST
+            # /doc/ link on the page unconditionally, which is routinely a
+            # citing judgment or a bare statute/constitution page, not the
+            # case actually being searched for.
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            # Matched by class only, not class+tag — Kanoon's search page
+            # was redesigned since this was first written; the result title
+            # element is an <h4> today (it used to be a <div>), and tying
+            # the query to one specific tag would silently match zero
+            # results the next time the markup shifts again.
+            result_titles = soup.find_all(class_='result_title')
+
+            is_case = bool(_KANOON_CASE_SPLIT_RE.search(query))
+            act_name = section_num = None
+            party_lower = None
+            if is_case:
+                # Isolate and clean the first party's name ("The State of
+                # Maharashtra v. Ors" -> "Maharashtra") — matching on the
+                # whole citation string would never hit, since result
+                # titles don't contain the respondent's name, the SCC/AIR
+                # reference, or generic party boilerplate.
+                raw_party = _KANOON_CASE_SPLIT_RE.split(query, maxsplit=1)[0]
+                party_lower = _sanitize_case_party(raw_party).lower()
+            else:
+                act_name, section_num = _sanitize_statute_query(query)
+
+            for title_el in result_titles:
+                link = title_el.find('a', href=True)
+                if not link:
+                    continue
+                # separator=' ' is required: Kanoon bolds individual
+                # matched words ("Constitution of <b>India</b>"), and
+                # get_text()'s default empty separator glues adjacent
+                # fragments across tag boundaries into "ofIndia" —
+                # silently breaking every substring match that crosses a
+                # bold-tag boundary.
+                title_text = re.sub(r'\s+', ' ', title_el.get_text(separator=' ', strip=True))
+                title_lower = title_text.lower()
+
+                if is_case:
+                    is_match = bool(party_lower) and party_lower in title_lower
+                else:
+                    is_match = bool(act_name) and act_name.lower() in title_lower
+                    if is_match and section_num:
+                        # Bare substring risk: "138" would also match inside
+                        # "1381" or a page/paragraph number — word-boundary
+                        # it instead of a naive `in` check.
+                        is_match = bool(re.search(rf'\b{re.escape(section_num)}\b', title_text, re.IGNORECASE))
+
+                if is_match:
+                    doc_match = _KANOON_DOC_ID_RE.search(link['href'])
+                    if doc_match:
+                        return redirect(f"https://indiankanoon.org/doc/{doc_match.group(1)}/")
         except Exception:
             pass
-        return redirect(f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}")
+        # STRICT FALLBACK GUARDRAIL: no result title satisfied the match (or
+        # the request/parse failed) — never guess by falling back to some
+        # other link on the page. Send the user to the search results
+        # themselves so they can pick the right one.
+        return redirect(fallback_url)
 
     # Register blueprints
     from routes.auth_routes import auth_bp
