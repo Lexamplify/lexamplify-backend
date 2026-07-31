@@ -35,6 +35,7 @@ import difflib
 import json
 import os
 import re
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -57,6 +58,15 @@ load_dotenv(dotenv_path=_ENV_PATH)
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 CHROMA_DIR: Path = Path(__file__).resolve().parent / "chroma_db"
 COLLECTION_NAME: str = "case_law"
+
+# The Flask app's live case_vault database — same file, opened read-only from
+# this process. This is a filesystem-level read, not a Python import, so it
+# doesn't violate the "never import from Flask" rule above: SQLite already
+# supports concurrent readers regardless of which process created the
+# connection. NOT client_data.db (a separate, effectively-unused legacy file
+# referenced by app.py's SQLITE_DB_PATH config) — the real case_vault table
+# with live data lives in lex_assistant.db, in the project root.
+_CLIENT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "lex_assistant.db"
 
 # ── Module-level singletons (populated in lifespan) ───────────────────────────
 _groq: Optional[Groq] = None
@@ -624,6 +634,87 @@ def is_near_duplicate_risk(candidate_text: str, accepted_texts: list[str], thres
     return False
 
 
+# ── Dual-Brain Citation Router: is this precedent already in the firm's own
+# case_vault, or do we need to send the user out to Indian Kanoon? ────────────
+
+# Bulk-ingested judgments in case_vault often have their `title` column set to
+# a bare docket id ("2025INSC1109") rather than the real case name — the real
+# name only lives in the document body. Same extraction approach as app.py's
+# resolve_vault_title/extract_case_title_from_content (duplicated here, not
+# imported, per this file's own no-Flask-imports rule), scanning line-by-line
+# and bounded to the first 60 lines so it never behaves like a document-wide
+# greedy regex.
+_PARTY_VS_LINE_RE = re.compile(r"([^\n]{3,60}\s+(?:v\.|vs\.|vs|VERSUS)\s+[^\n]{3,60})", re.IGNORECASE)
+_STANDALONE_VS_RE = re.compile(r'^(?:v\.|vs\.|vs|versus)$', re.IGNORECASE)
+_CAPTION_SCAN_WINDOW = 60
+
+
+def _extract_case_title_from_content(content: str | None) -> str | None:
+    if not content:
+        return None
+    lines = [l.strip() for l in content.split('\n')]
+    non_empty = [l for l in lines if l][:_CAPTION_SCAN_WINDOW]
+    for i, line in enumerate(non_empty):
+        m = _PARTY_VS_LINE_RE.search(line)
+        if m:
+            cleaned = re.sub(r'\s+', ' ', m.group(1)).strip(' .,-:;')
+            if cleaned:
+                return cleaned
+        if _STANDALONE_VS_RE.match(line) and 0 < i < len(non_empty) - 1:
+            party_a, party_b = non_empty[i - 1], non_empty[i + 1]
+            if 3 <= len(party_a) <= 80 and 3 <= len(party_b) <= 80:
+                cleaned = re.sub(r'\s+', ' ', f'{party_a} {line} {party_b}').strip(' .,-:;')
+                if cleaned:
+                    return cleaned
+    return None
+
+
+def find_in_vault(citation_title: str, threshold: float = 0.8) -> tuple[bool, str | None]:
+    """Two-stage lookup, never loads case_vault into memory:
+    1. A SQL LIKE pre-filter on a single distinctive keyword narrows 900+ rows
+       down to at most 5 candidates entirely inside SQLite.
+    2. difflib.SequenceMatcher runs only against those <=5 candidates.
+    """
+    if not citation_title or not _CLIENT_DB_PATH.exists():
+        return False, None
+
+    # Case titles are almost always "Party A v. Party B" — the phrase before
+    # the separator is far more selective as a LIKE pattern than any single
+    # word from it. A common surname alone (e.g. "Jaiswal") can appear in
+    # dozens of unrelated judgments and starve the real match out of the
+    # top-5 LIMIT before difflib ever gets to see it.
+    parts = re.split(r'\s+(?:v\.|vs\.|vs|versus)\s+', citation_title, maxsplit=1, flags=re.IGNORECASE)
+    phrase = parts[0].strip() if parts and len(parts[0].strip()) >= 6 else citation_title.strip()
+    like = f"%{phrase}%"
+
+    try:
+        conn = sqlite3.connect(f"file:{_CLIENT_DB_PATH.as_posix()}?mode=ro", uri=True, timeout=2)
+        try:
+            rows = conn.execute(
+                "SELECT id, title, case_id, content FROM case_vault "
+                "WHERE title LIKE ? OR content LIKE ? LIMIT 5",
+                (like, like),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[analyze-contract] case_vault lookup failed: {exc}")
+        return False, None
+
+    best_ratio, best_id = 0.0, None
+    for row_id, title, case_id, content in rows:
+        # A title that's just a bare copy of the docket id carries no
+        # comparable signal — fall back to a name extracted from the body.
+        candidate = title if (title and title != case_id) else (_extract_case_title_from_content(content) or title or "")
+        ratio = difflib.SequenceMatcher(None, citation_title.lower(), candidate.lower()).ratio()
+        if ratio > best_ratio:
+            best_ratio, best_id = ratio, row_id
+
+    if best_ratio > threshold:
+        return True, str(best_id)
+    return False, None
+
+
 class ContractAnalysisRequest(BaseModel):
     contract_text: str = Field(..., min_length=10, max_length=60000)
     rule_book: Optional[str] = Field(None, max_length=8000)
@@ -804,15 +895,17 @@ Return ONLY a valid JSON object — no markdown, no commentary:
                     )
                     docs = results.get("documents", [[]])[0]
                     metas = results.get("metadatas", [[]])[0]
-                    ids = (results.get("ids") or [[]])[0]
                     for i, meta in enumerate(metas):
                         meta = meta or {}
                         doc_text = docs[i] if i < len(docs) else ""
+                        title = meta.get("case_name", "Untitled Case")
+                        in_vault, vault_id = find_in_vault(title)
                         citations.append({
-                            "case_id": meta.get("citation_ref") or (ids[i] if i < len(ids) else f"case_{i}"),
-                            "title": meta.get("case_name", "Untitled Case"),
-                            "year": meta.get("year", ""),
+                            "title": title,
                             "snippet": doc_text[:200],
+                            "in_vault": in_vault,
+                            "vault_id": vault_id,
+                            "kanoon_query": title,
                         })
             except Exception as exc:
                 print(f"[analyze-contract] citation RAG failed: {exc}")
@@ -824,6 +917,73 @@ Return ONLY a valid JSON object — no markdown, no commentary:
         "missing_clauses": unique_missing,
         "citations": citations,
     }
+
+
+# ── AI Auto-Resolution: draft a revised clause from a user comment ──────────
+
+class DraftRevisionRequest(BaseModel):
+    original_text: str = Field(..., min_length=1, max_length=5000)
+    surrounding_context: str = Field("", max_length=20000)
+    user_comment: str = Field("", max_length=2000)
+
+
+@app.post("/api/draft-revision")
+async def draft_revision(req: DraftRevisionRequest):
+    """Rewrites a single clause per the user's comment (or, absent one, per
+    general Indian-law risk reduction). surrounding_context is required in
+    the payload, not optional — an isolated clause with no context around it
+    routinely causes the LLM to invent facts or break a defined term that's
+    only established elsewhere in the document."""
+    if _groq is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Groq client not initialised — set GROQ_API_KEY in .env",
+        )
+
+    instruction = (
+        f"USER INSTRUCTION: {req.user_comment.strip()}"
+        if req.user_comment.strip()
+        else "No specific instruction was given — use your own judgment to reduce "
+             "legal risk and improve enforceability under Indian law."
+    )
+
+    system_prompt = f"""You are an expert Indian contract lawyer revising a single clause.
+
+SURROUNDING DOCUMENT CONTEXT (for reference only — do not rewrite anything
+outside the target clause, and do not break any defined term or
+cross-reference that appears in this context):
+{req.surrounding_context[:6000]}
+
+TARGET CLAUSE TO REVISE (verbatim):
+{req.original_text}
+
+{instruction}
+
+Return ONLY a valid JSON object — no markdown, no commentary:
+{{"revised_text": "<the rewritten clause, ready to drop in verbatim in place of the target clause>"}}"""
+
+    try:
+        response = _groq.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            temperature=0.2,
+            max_tokens=800,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Revise the target clause now."},
+            ],
+        )
+        result = json.loads(response.choices[0].message.content or "{}")
+        revised_text = (result.get("revised_text") or "").strip()
+        if not revised_text:
+            raise HTTPException(status_code=500, detail="Model returned an empty revision.")
+        return {"original_text": req.original_text, "revised_text": revised_text}
+    except HTTPException:
+        raise
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"Groq returned invalid JSON: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Draft revision failed: {exc}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

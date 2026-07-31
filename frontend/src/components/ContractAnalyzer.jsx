@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   extractContractText,
   analyzeContractWithGroq,
+  draftRevision,
   rewriteContractClause,
   fetchContractSummary,
   fetchContractRecommendations,
@@ -621,13 +622,35 @@ const styles = `
   [data-theme="light"] .ai-insertion { color: #166534 !important; background: rgba(16,185,129,0.1); }
   [data-theme="light"] .ai-deletion  { color: #991B1B !important; background: rgba(239,68,68,0.08); }
 
-  /* User comment spans */
-  .user-comment {
-    background: rgba(245,158,11,0.14);
-    border-bottom: 2px dotted rgba(245,158,11,0.6);
-    cursor: pointer;
+  /* Comment highlight spans — rendered by CommentHighlight (extends
+     TipTap's own Highlight mark); background color comes from the mark's
+     own inline style (setHighlight({color})), this just adds the
+     click affordance and a stable marker for the currently-open comment. */
+  mark[data-comment-id] { cursor: pointer; border-radius: 2px; padding: 0 1px; }
+  mark[data-comment-id].ca-highlight-active { outline: 2px solid #F59E0B; outline-offset: 1px; }
+
+  /* ── BubbleMenu: Comment / Draft Revision ─────────────────────────── */
+  .ca-bubble-menu {
+    display: flex; gap: 4px; padding: 4px;
+    background: #171c26; border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.45);
   }
-  [data-theme="light"] .user-comment { background: rgba(245,158,11,0.16); }
+  .ca-bubble-menu-btn {
+    background: transparent; border: none; color: #E2E8F0;
+    font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px;
+    cursor: pointer; white-space: nowrap; font-family: inherit; transition: background 0.15s;
+  }
+  .ca-bubble-menu-btn:hover { background: rgba(59,130,246,0.18); }
+
+  /* ── AI Auto-Resolution: Original vs. Revised diff block ────────────── */
+  .ca-diff-block { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .ca-diff-row {
+    padding: 8px 10px; border-radius: 7px; font-size: 12px; line-height: 1.5;
+    border: 1px solid transparent;
+  }
+  .ca-diff-original { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); color: #FCA5A5; text-decoration: line-through; text-decoration-color: rgba(252,165,165,0.5); }
+  .ca-diff-revised { background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.25); color: #6EE7B7; }
+  .ca-diff-label { display: block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; opacity: 0.85; }
 
   /* ── RISK CLAUSE LIST (overview when no clause selected) ────────── */
   .clause-list-item {
@@ -744,6 +767,28 @@ const styles = `
     border-color: rgba(255,255,255,0.12);
   }
   .precedent-link { color: var(--link-blue); text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-flex; align-items: center; gap: 5px; transition: color 0.2s ease; }
+
+  /* ── Dual-Brain citation card: split-action footer ─────────────────── */
+  .citation-action-footer { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .citation-btn-vault {
+    background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); color: #93C5FD;
+    font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s; font-family: inherit;
+  }
+  .citation-btn-vault:hover { background: rgba(59,130,246,0.25); border-color: rgba(59,130,246,0.6); }
+  .citation-btn-kanoon {
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border-dark-subtle); color: #CBD5E1;
+    font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s; font-family: inherit;
+  }
+  .citation-btn-kanoon:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); }
+  .citation-not-in-vault-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 10px;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    background: rgba(239,68,68,0.12); color: #F87171;
+    border: 1px solid rgba(239,68,68,0.35); flex-shrink: 0; white-space: nowrap;
+  }
   .precedent-link:hover { color: var(--link-blue-hover); text-decoration: underline; }
 
   /* ── RECOMMENDATIONS ─────────────────────────────────────────────── */
@@ -1259,6 +1304,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const chatStreamRef = useRef(null);
 
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Auto-ingest document piped from Case Vault (or InzIQ tool-routing)
   useEffect(() => {
@@ -1380,16 +1426,72 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }, 150);
   };
 
-  // Sidebar comment-box listener — opens a draft input for whatever span
-  // the TipTap editor's setComment() command just marked.
-  useEffect(() => {
-    const onTiptapComment = (e) => {
-      setActiveCommentDraft({ commentId: e.detail.commentId, text: e.detail.text, draft: '' });
-      switchTab('comments');
-    };
-    window.addEventListener('lex:tiptap-comment', onTiptapComment);
-    return () => window.removeEventListener('lex:tiptap-comment', onTiptapComment);
-  }, []);
+  // BubbleMenu → sidebar: opens a draft box for whatever span the editor's
+  // "Comment"/"Draft Revision" action just highlighted. from/to were
+  // captured by ContractTiptapEditor at click time (before any focus loss),
+  // so they're passed straight through here rather than re-derived.
+  const handleCommentRequest = ({ commentId, text, from, to, mode }) => {
+    setActiveCommentDraft({ commentId, text, from, to, draft: '', mode, revision: null });
+    switchTab('comments');
+    if (mode === 'draft-revision') {
+      requestDraftRevision(commentId, text, from, to, '');
+    }
+  };
+
+  // Bidirectional scroll, editor → card: clicking inside a highlighted span
+  // scrolls the matching sidebar comment card into view.
+  const handleHighlightClick = (commentId) => {
+    document.querySelector(`[data-comment-card-id="${commentId}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  // Bidirectional scroll, card → editor: clicking a sidebar card scrolls to
+  // (and briefly outlines) the matching highlighted span in the document.
+  const handleCommentCardClick = (commentId) => {
+    const el = document.querySelector(`.scanner-body [data-comment-id="${commentId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('ca-highlight-active');
+    setTimeout(() => el.classList.remove('ca-highlight-active'), 1500);
+  };
+
+  // Grabs the text immediately around a selection from the live editor doc —
+  // the payload the /api/draft-revision endpoint requires, since revising a
+  // clause with zero surrounding context routinely makes the LLM invent
+  // facts or break a defined term established elsewhere in the document.
+  const getSurroundingContext = (from, to) => {
+    const editor = editorApiRef.current;
+    if (!editor) return '';
+    const docSize = editor.state.doc.content.size;
+    const start = Math.max(0, from - 400);
+    const end = Math.min(docSize, to + 400);
+    return editor.state.doc.textBetween(start, end, ' ');
+  };
+
+  const requestDraftRevision = async (commentId, text, from, to, userComment) => {
+    setActiveCommentDraft(prev => (prev?.commentId === commentId ? { ...prev, revision: { status: 'loading' } } : prev));
+    const context = getSurroundingContext(from, to);
+    const res = await draftRevision(text, context, userComment);
+    setActiveCommentDraft(prev => {
+      if (!prev || prev.commentId !== commentId) return prev; // user moved on/closed the draft
+      if (res.error) return { ...prev, revision: { status: 'error', message: res.message } };
+      return { ...prev, revision: { status: 'done', revisedText: res.revised_text } };
+    });
+  };
+
+  const handleAcceptRevision = () => {
+    const editor = editorApiRef.current;
+    if (!editor || !activeCommentDraft?.revision?.revisedText) return;
+    editor.commands.insertContentAt(
+      { from: activeCommentDraft.from, to: activeCommentDraft.to },
+      activeCommentDraft.revision.revisedText
+    );
+    setActiveCommentDraft(null);
+  };
+
+  const handleRejectRevision = () => {
+    setActiveCommentDraft(prev => (prev ? { ...prev, revision: null } : prev));
+  };
 
   // Preprocessing: extraction fuses section labels ("word.2.") to surrounding
   // words, which shifts character indices and breaks highlight alignment.
@@ -1674,9 +1776,9 @@ export default function ContractAnalyzer({ setFocusMode }) {
     const citationId = `cite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     useCitationStore.getState().registerCitation(citationId, {
       caseName: prec.title,
-      summary: prec.desc,
+      summary: prec.snippet,
       shortLabel: prec.title.length > 28 ? `${prec.title.slice(0, 28)}…` : prec.title,
-      url: prec.url,
+      url: prec.in_vault ? null : `/api/kanoon-redirect?query=${encodeURIComponent(prec.kanoon_query)}`,
     });
     editor.chain().focus().insertContent({ type: 'inlineCitation', attrs: { citationId } }).run();
   };
@@ -2398,6 +2500,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       onTextChange={setRawText}
                       onEditorReady={(ed) => { editorApiRef.current = ed; }}
                       editable={!isAnalyzing}
+                      onCommentRequest={handleCommentRequest}
+                      onHighlightClick={handleHighlightClick}
                     />
                     {appendedClauses.length > 0 && (
                       <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
@@ -2926,19 +3030,43 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           <div key={i} className="precedent-card animate-fade-in" style={{ marginBottom: 0, animationDelay: `${i * 150}ms` }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <span>⚖️</span>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>
-                                  {prec.title} {prec.year && <span style={{ color: 'var(--text-dark-muted)', fontWeight: 400 }}>({prec.year})</span>}
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>
+                                    {prec.title}
+                                  </span>
+                                  {!prec.in_vault && (
+                                    <span className="citation-not-in-vault-badge">Not in Firm Vault</span>
+                                  )}
                                 </div>
                                 <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '6px', lineHeight: '1.5' }}>
                                   "{prec.snippet}..."
                                 </p>
-                                <button
-                                  onClick={() => insertCitationIntoDocument(prec)}
-                                  style={{ marginTop: '8px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: '#93C5FD', fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px', cursor: 'pointer' }}
-                                >
-                                  📖 Insert Citation into Document
-                                </button>
+                                <div className="citation-action-footer">
+                                  <button
+                                    onClick={() => insertCitationIntoDocument(prec)}
+                                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-dark-subtle)', color: '#CBD5E1', fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px', cursor: 'pointer' }}
+                                  >
+                                    📖 Insert Citation
+                                  </button>
+                                  {prec.in_vault ? (
+                                    <button
+                                      className="citation-btn-vault"
+                                      onClick={() => navigate(`/case/vault/doc/${prec.vault_id}`)}
+                                    >
+                                      📂 View in Vault
+                                    </button>
+                                  ) : (
+                                    <a
+                                      className="citation-btn-kanoon"
+                                      href={`http://localhost:5000/api/kanoon-redirect?query=${encodeURIComponent(prec.kanoon_query)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      🔍 Search Indian Kanoon
+                                    </a>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -2954,7 +3082,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Comments</h3>
 
                     {activeCommentDraft && (
-                      <div className="revision-glass-card">
+                      <div className="revision-glass-card" data-comment-card-id={activeCommentDraft.commentId}>
                         <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
                           Commenting on
                         </span>
@@ -2967,7 +3095,48 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           onChange={(e) => setActiveCommentDraft(prev => ({ ...prev, draft: e.target.value }))}
                           autoFocus
                         />
-                        <div style={{ display: 'flex', gap: '8px' }}>
+
+                        {/* AI Auto-Resolution: loading / diff / error states */}
+                        {activeCommentDraft.revision?.status === 'loading' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0', fontSize: '12px', color: '#A78BFA' }}>
+                            <div style={{ width: 13, height: 13, border: '2px solid rgba(167,139,250,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                            Drafting revision…
+                          </div>
+                        )}
+                        {activeCommentDraft.revision?.status === 'error' && (
+                          <div style={{ fontSize: '12px', color: '#FCA5A5', padding: '8px 0' }}>
+                            Draft revision failed: {activeCommentDraft.revision.message || 'unknown error'}
+                          </div>
+                        )}
+                        {activeCommentDraft.revision?.status === 'done' && (
+                          <div className="ca-diff-block">
+                            <div className="ca-diff-row ca-diff-original">
+                              <span className="ca-diff-label">− Original</span>
+                              <div>{activeCommentDraft.text}</div>
+                            </div>
+                            <div className="ca-diff-row ca-diff-revised">
+                              <span className="ca-diff-label">+ Revised</span>
+                              <div>{activeCommentDraft.revision.revisedText}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                              <button
+                                className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                                style={{ flex: 1, padding: '7px', fontSize: '12px' }}
+                                onClick={handleAcceptRevision}
+                              >
+                                ✓ Accept &amp; Replace
+                              </button>
+                              <button
+                                onClick={handleRejectRevision}
+                                style={{ flex: 1, padding: '7px', fontSize: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dark-muted)', borderRadius: '8px', cursor: 'pointer' }}
+                              >
+                                ✕ Reject
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                           <button
                             className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
                             style={{ flex: 1, padding: '8px', fontSize: '12px' }}
@@ -2979,6 +3148,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           >
                             Save Comment
                           </button>
+                          {activeCommentDraft.revision?.status !== 'loading' && (
+                            <button
+                              onClick={() => requestDraftRevision(
+                                activeCommentDraft.commentId, activeCommentDraft.text,
+                                activeCommentDraft.from, activeCommentDraft.to, activeCommentDraft.draft
+                              )}
+                              style={{ flex: 1, padding: '8px', fontSize: '12px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', color: '#C4B5FD', borderRadius: '8px', cursor: 'pointer' }}
+                            >
+                              🪄 Draft Revision
+                            </button>
+                          )}
                           <button
                             onClick={() => setActiveCommentDraft(null)}
                             style={{ flex: 1, padding: '8px', fontSize: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dark-muted)', borderRadius: '8px', cursor: 'pointer' }}
@@ -2991,11 +3171,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                     {comments.length === 0 && !activeCommentDraft ? (
                       <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                        No comments yet. Select text in the document and click the comment icon in the toolbar.
+                        No comments yet. Select text in the document and use the "💬 Comment" bubble menu.
                       </div>
                     ) : (
                       comments.map((c) => (
-                        <div key={c.id} className="revision-glass-card">
+                        <div
+                          key={c.id}
+                          className="revision-glass-card"
+                          data-comment-card-id={c.id}
+                          onClick={() => handleCommentCardClick(c.id)}
+                          style={{ cursor: 'pointer' }}
+                        >
                           <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>On</span>
                           <div className="original-clause-box" style={{ fontSize: '12px' }}>{c.text}</div>
                           <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', margin: 0 }}>{c.comment}</p>

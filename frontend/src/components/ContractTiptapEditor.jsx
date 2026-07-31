@@ -1,12 +1,18 @@
 import { useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
 import { RiskDecoration, updateRiskDecorations } from '../tiptap/riskDecorationExtension.js';
 import { AiInsertion, AiDeletion, TrackChangesCommands } from '../tiptap/trackChangesMarks.js';
 import { InlineCitation } from '../tiptap/InlineCitationNode.js';
-import { UserComment } from '../tiptap/userCommentMark.js';
+import { CommentHighlight } from '../tiptap/commentHighlightMark.js';
 import { rawTextToHtml } from '../tiptap/textToHtml.js';
+
+function generateCommentId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 // "Logical" text = as if every pending suggestion were already resolved:
 // ai-deletion-marked spans are dropped, everything else (including pending
@@ -71,22 +77,43 @@ function ContractEditorToolbar({ editor }) {
       <ToolbarButton title="Justify" active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
       </ToolbarButton>
-      <div className="toolbar-divider" />
-      <ToolbarButton
-        title="Comment on selection"
-        onClick={() => {
-          const ok = editor.commands.setComment();
-          if (!ok) alert('Select some text first to attach a comment.');
-        }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
-      </ToolbarButton>
     </div>
+  );
+}
+
+// Selecting text now surfaces this instead of a toolbar button — comment /
+// draft-revision only make sense in the context of a live selection, so a
+// tethered menu that appears exactly where the selection is beats a
+// permanently-visible toolbar icon the user has to go hunt for.
+function CommentBubbleMenu({ editor, onAction }) {
+  if (!editor) return null;
+  return (
+    <BubbleMenu editor={editor} shouldShow={({ state }) => !state.selection.empty}>
+      <div className="ca-bubble-menu">
+        <button
+          type="button"
+          className="ca-bubble-menu-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onAction('comment')}
+        >
+          💬 Comment
+        </button>
+        <button
+          type="button"
+          className="ca-bubble-menu-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onAction('draft-revision')}
+        >
+          🪄 Draft Revision
+        </button>
+      </div>
+    </BubbleMenu>
   );
 }
 
 function ContractTiptapEditor({
   documentKey, initialRawText, clauses, scanStrategy, onRiskClick, onTextChange, onEditorReady, editable = true,
+  onCommentRequest, onHighlightClick,
 }) {
   // Callback props are read through refs inside extension options so the
   // editor instance itself only gets rebuilt when `documentKey` changes —
@@ -98,7 +125,10 @@ function ContractTiptapEditor({
   useEffect(() => { onRiskClickRef.current = onRiskClick; }, [onRiskClick]);
   const onTextChangeRef = useRef(onTextChange);
   useEffect(() => { onTextChangeRef.current = onTextChange; }, [onTextChange]);
+  const onHighlightClickRef = useRef(onHighlightClick);
+  useEffect(() => { onHighlightClickRef.current = onHighlightClick; }, [onHighlightClick]);
   const debounceTimerRef = useRef(null);
+  const lastHighlightIdRef = useRef(null);
 
   const editor = useEditor(
     {
@@ -118,7 +148,7 @@ function ContractTiptapEditor({
         AiDeletion,
         TrackChangesCommands,
         InlineCitation,
-        UserComment,
+        CommentHighlight.configure({ multicolor: true }),
       ],
       content: rawTextToHtml(initialRawText),
       editable,
@@ -133,6 +163,18 @@ function ContractTiptapEditor({
           onTextChangeRef.current?.(getLogicalText(ed));
         }, 400);
       },
+      // Bidirectional scrolling (editor → card): whenever the cursor lands
+      // inside a comment highlight, look up its id via TipTap's own
+      // getAttributes() and let the parent scroll the matching card into
+      // view. Guarded by lastHighlightIdRef so clicking around inside the
+      // SAME highlighted span doesn't re-fire the scroll on every keystroke.
+      onSelectionUpdate: ({ editor: ed }) => {
+        const id = ed.getAttributes('highlight').id || null;
+        if (id !== lastHighlightIdRef.current) {
+          lastHighlightIdRef.current = id;
+          if (id) onHighlightClickRef.current?.(id);
+        }
+      },
     },
     [documentKey]
   );
@@ -140,6 +182,22 @@ function ContractTiptapEditor({
   useEffect(() => {
     onEditorReady?.(editor);
   }, [editor, onEditorReady]);
+
+  // BubbleMenu action: capture the selection's from/to and the selected text
+  // THE INSTANT the user clicks — not when they later hit Save on the
+  // comment card. By then a click on the sidebar/card has already blurred
+  // the editor, and ProseMirror's selection state does not survive that
+  // (it collapses/resets), so from/to captured at Save time would be wrong
+  // or missing entirely.
+  const handleBubbleAction = (mode) => {
+    if (!editor) return;
+    const { from, to, empty } = editor.state.selection;
+    if (empty) return;
+    const text = editor.state.doc.textBetween(from, to, ' ');
+    const id = generateCommentId();
+    editor.chain().setTextSelection({ from, to }).setHighlight({ id, color: '#fef08a' }).run();
+    onCommentRequest?.({ commentId: id, text, from, to, mode });
+  };
 
   // Reactive risk-decoration refresh — a meta-only transaction, never a
   // setContent call, so this never touches the cursor or undo history.
@@ -167,6 +225,7 @@ function ContractTiptapEditor({
   return (
     <div className="tiptap-editor-shell">
       <ContractEditorToolbar editor={editor} />
+      <CommentBubbleMenu editor={editor} onAction={handleBubbleAction} />
       <EditorContent editor={editor} className="scanner-body" />
     </div>
   );

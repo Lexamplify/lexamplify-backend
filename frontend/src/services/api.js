@@ -504,6 +504,36 @@ export const analyzeContractWithGroq = async (text = '', ruleBook = '', scanStra
 };
 
 /**
+ * AI Auto-Resolution: drafts a revised version of a flagged/commented clause.
+ * surroundingContext is REQUIRED — isolated clause text alone causes the LLM
+ * to hallucinate or break cross-referenced defined terms.
+ * @param {string} originalText
+ * @param {string} surroundingContext
+ * @param {string} userComment
+ */
+export const draftRevision = async (originalText, surroundingContext, userComment = '') => {
+  try {
+    const response = await fetch('http://localhost:8001/api/draft-revision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        original_text: originalText,
+        surrounding_context: surroundingContext,
+        user_comment: userComment,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return { error: true, message: err.detail || `RAG server error ${response.status}` };
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('[API Service] draftRevision error:', error);
+    return { error: true, message: error.message || 'Failed to reach RAG server.' };
+  }
+};
+
+/**
  * Rewrites a high-risk clause based on a specified user intent.
  * @param {string} originalClause
  * @param {string} issue
