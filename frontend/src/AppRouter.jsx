@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useParams, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { fetchTrackedCases, fetchDocuments } from './services/api';
 import CommandPalette from './components/CommandPalette';
@@ -17,6 +17,7 @@ import WarRoomView from './components/WarRoomView';
 import FirmLibrary from './components/FirmLibrary';
 import LegalForms from './components/LegalForms';
 import LexLogoMark from './components/LexLogoMark';
+import TEMPLATES from './data/templateData.js';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -469,14 +470,53 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 };
 
 // ── DASHBOARD VIEW — fully dynamic, zero hardcoded data ───────────────────────
+// Hand-picked, not derived from the full template list — these are the 5
+// forms a firm drafts most often, surfaced for one-click access. IDs are
+// still resolved against the real templateData.js entries below so the
+// label/category shown here can never drift out of sync with the actual
+// template.
+const QUICK_DRAFT_TEMPLATE_IDS = [
+  'mutual-nda',
+  'legal-notice-recovery-of-dues',
+  'eviction-petition',
+  'bail-application-439',
+  'employment-offer-letter',
+];
+
 const DashboardView = () => {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+  const navigate = useNavigate();
 
   const [cases, setCases] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [calendarEvents, setCalEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // ── Quick Draft (Cmd+K style template picker) ───────────────────────────────
+  const [quickDraftOpen, setQuickDraftOpen] = useState(false);
+  const [quickDraftQuery, setQuickDraftQuery] = useState('');
+
+  const quickDraftTemplates = QUICK_DRAFT_TEMPLATE_IDS
+    .map((id) => TEMPLATES.find((t) => t.id === id))
+    .filter(Boolean);
+
+  const filteredQuickDraftTemplates = quickDraftQuery.trim()
+    ? quickDraftTemplates.filter((t) => t.title.toLowerCase().includes(quickDraftQuery.trim().toLowerCase()))
+    : quickDraftTemplates;
+
+  useEffect(() => {
+    if (!quickDraftOpen) return;
+    const onKeyDown = (e) => { if (e.key === 'Escape') setQuickDraftOpen(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [quickDraftOpen]);
+
+  const handleQuickDraftSelect = (template) => {
+    setQuickDraftOpen(false);
+    setQuickDraftQuery('');
+    navigate('/firm-library/draft', { state: { templateId: template.id } });
+  };
 
   // CNR sync bar
   const [cnrNumber, setCnrNumber] = useState('');
@@ -834,6 +874,26 @@ const DashboardView = () => {
         </>
       )}
 
+      {/* ── QUICK DRAFT (high-visibility CTA, distinct from the neutral grid below) ── */}
+      <div
+        onClick={() => setQuickDraftOpen(true)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 22px', marginBottom: '20px',
+          borderRadius: '12px', cursor: 'pointer', border: '1px solid rgba(59,130,246,0.35)',
+          background: 'linear-gradient(135deg, rgba(59,130,246,0.16) 0%, rgba(29,78,216,0.08) 100%)',
+          transition: 'all 0.2s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(59,130,246,0.6)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(59,130,246,0.35)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+      >
+        <span style={{ fontSize: '22px' }}>⚡</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>Quick Draft</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Jump straight to a template — NDA, notice, petition — without leaving this page</div>
+        </div>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)', borderRadius: '5px', padding: '2px 7px' }}>⌘K</span>
+      </div>
+
       {/* ── QUICK ACTIONS ── */}
       <h2 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '14px' }}>Quick Actions</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: '10px' }}>
@@ -853,6 +913,59 @@ const DashboardView = () => {
           </Link>
         ))}
       </div>
+
+      {quickDraftOpen && (
+        <div
+          onClick={() => setQuickDraftOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(3,6,14,0.7)', backdropFilter: 'blur(3px)',
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: '540px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)',
+              borderRadius: '12px', boxShadow: '0 25px 60px rgba(0,0,0,0.5)', overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search templates… (Esc to close)"
+                value={quickDraftQuery}
+                onChange={(e) => setQuickDraftQuery(e.target.value)}
+                style={{
+                  width: '100%', boxSizing: 'border-box', background: 'transparent', border: 'none', outline: 'none',
+                  color: 'var(--text-primary)', fontSize: '15px', fontFamily: 'var(--font-sans)',
+                }}
+              />
+            </div>
+            <div style={{ maxHeight: '320px', overflowY: 'auto', padding: '8px' }}>
+              {filteredQuickDraftTemplates.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>No matching templates.</div>
+              ) : (
+                filteredQuickDraftTemplates.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => handleQuickDraftSelect(t)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                      padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <span style={{ fontSize: '13.5px', color: 'var(--text-primary)', fontWeight: 500 }}>📋 {t.title}</span>
+                    <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>{t.category}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -877,6 +990,7 @@ function AppRouterContent() {
         <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
         <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />
         <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms /></Layout>} />
+        <Route path="/firm-library/draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms showSaveBar /></Layout>} />
         <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
       </Routes>

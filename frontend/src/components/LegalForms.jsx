@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TEMPLATES, { CATEGORIES } from '../data/templateData.js';
@@ -25,6 +25,19 @@ function fillTemplate(htmlTemplate, values) {
 
 const styles = `
   .lf-shell { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+  .lf-shell-with-savebar { padding-top: 76px; }
+
+  /* Fixed top bar, /firm-library/draft only — a real page, not a modal, so
+     losing the draft to an accidental back-navigation isn't silent; this
+     bar is the one explicit, always-visible way out that actually saves. */
+  .lf-save-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1500;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px; background: var(--bg-dark-panel); border-bottom: 1px solid var(--border-dark-subtle);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .lf-save-bar-label { font-size: 13px; font-weight: 700; color: var(--text-dark-primary); }
+
   .lf-header { margin-bottom: 20px; }
   .lf-title { font-size: 22px; font-weight: 700; color: var(--text-dark-primary); margin: 0 0 4px; }
   .lf-subtitle { font-size: 13px; color: var(--text-dark-muted); margin: 0; }
@@ -174,9 +187,10 @@ function TemplatePreviewEditor({ html }) {
   return <EditorContent editor={editor} />;
 }
 
-export default function LegalForms() {
+export default function LegalForms({ restrictedCategory, showSaveBar } = {}) {
   const navigate = useNavigate();
-  const [activeCategory, setActiveCategory] = useState('All');
+  const location = useLocation();
+  const [activeCategory, setActiveCategory] = useState(restrictedCategory || 'All');
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [formValues, setFormValues] = useState({});
   const [fieldStatus, setFieldStatus] = useState({});
@@ -185,6 +199,7 @@ export default function LegalForms() {
   const [autofillFacts, setAutofillFacts] = useState('');
   const [autofillLoading, setAutofillLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const debounceRef = useRef(null);
 
   const selectedTemplate = useMemo(
@@ -192,10 +207,13 @@ export default function LegalForms() {
     [selectedTemplateId]
   );
 
-  const visibleTemplates = useMemo(
-    () => (activeCategory === 'All' ? TEMPLATES : TEMPLATES.filter((t) => t.category === activeCategory)),
-    [activeCategory]
-  );
+  // restrictedCategory is a hard guardrail, not just a default selection —
+  // it always wins over activeCategory so a stray state update can never
+  // leak templates from outside the restricted context back into view.
+  const visibleTemplates = useMemo(() => {
+    if (restrictedCategory) return TEMPLATES.filter((t) => t.category === restrictedCategory);
+    return activeCategory === 'All' ? TEMPLATES : TEMPLATES.filter((t) => t.category === activeCategory);
+  }, [activeCategory, restrictedCategory]);
 
   // Debounced live preview: re-run the string substitution 300ms after the
   // user stops typing, rather than on every keystroke. The preview editor
@@ -241,23 +259,28 @@ export default function LegalForms() {
     });
   };
 
-  const handleAutofillSubmit = async () => {
-    if (!selectedTemplate || !autofillFacts.trim()) return;
+  // Shared by the modal's manual submit AND the Case Vault "verified
+  // context" auto-trigger below — takes the template as a parameter rather
+  // than reading `selectedTemplate` state, since the auto-trigger path
+  // calls this in the same tick as openTemplate() sets that state, before
+  // the re-render that would actually update it.
+  const runAutofill = async (template, facts) => {
+    if (!template || !facts || !facts.trim()) return;
     setAutofillLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/contract/autofill-template`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ facts: autofillFacts, schema: selectedTemplate.schema }),
+        body: JSON.stringify({ facts, schema: template.schema }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) {
         alert(data.message || 'Auto-fill failed.');
         return;
       }
-      const nextValues = { ...formValues };
+      const nextValues = {};
       const nextStatus = {};
-      selectedTemplate.schema.forEach((f) => {
+      template.schema.forEach((f) => {
         const val = data.fields ? data.fields[f.field_id] : null;
         const hasValue = val !== null && val !== undefined && String(val).trim() !== '';
         if (hasValue) {
@@ -269,14 +292,57 @@ export default function LegalForms() {
           nextStatus[f.field_id] = 'error';
         }
       });
-      setFormValues(nextValues);
+      setFormValues((prev) => ({ ...prev, ...nextValues }));
       setFieldStatus(nextStatus);
-      setAutofillOpen(false);
-      setAutofillFacts('');
     } catch (err) {
       alert('Auto-fill failed: ' + err.message);
     } finally {
       setAutofillLoading(false);
+    }
+  };
+
+  const handleAutofillSubmit = async () => {
+    if (!selectedTemplate || !autofillFacts.trim()) return;
+    await runAutofill(selectedTemplate, autofillFacts);
+    setAutofillOpen(false);
+    setAutofillFacts('');
+  };
+
+  // Case Vault hand-off: navigate('/firm-library/draft', { state: {
+  // templateId, contextFacts } }). templateId auto-opens the template;
+  // contextFacts (already human-reviewed in Case Vault's verification step)
+  // skips the Auto-Fill modal entirely and fires the extraction directly.
+  useEffect(() => {
+    const { templateId, contextFacts } = location.state || {};
+    if (!templateId) return;
+    const template = TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return;
+    openTemplate(template);
+    if (contextFacts && contextFacts.trim()) {
+      runAutofill(template, contextFacts);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSaveAndExit = async () => {
+    if (!selectedTemplate) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/firm-library`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: selectedTemplate.title, html: debouncedHtml, category: selectedTemplate.category }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        alert(data.message || 'Save failed.');
+        return;
+      }
+      navigate('/firm-library');
+    } catch (err) {
+      alert('Save failed: ' + err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -327,7 +393,21 @@ export default function LegalForms() {
   return (
     <>
       <style>{styles}</style>
-      <div className="lf-shell">
+      {showSaveBar && (
+        <div className="lf-save-bar">
+          <span className="lf-save-bar-label">📝 Drafting Workspace</span>
+          <button
+            type="button"
+            className="lf-action-btn primary"
+            style={{ flex: 'none' }}
+            onClick={handleSaveAndExit}
+            disabled={saving || !selectedTemplate}
+          >
+            {saving ? 'Saving…' : '💾 Save to Library & Exit'}
+          </button>
+        </div>
+      )}
+      <div className={`lf-shell${showSaveBar ? ' lf-shell-with-savebar' : ''}`}>
         {!selectedTemplate ? (
           <>
             <div className="lf-header">
@@ -335,18 +415,25 @@ export default function LegalForms() {
               <p className="lf-subtitle">Pick a template, fill it in (or let AI draft a first pass from client facts), then export or hand it to the Contract Analyzer.</p>
             </div>
 
-            <div className="lf-category-tabs">
-              {['All', ...CATEGORIES].map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  className={`lf-category-tab${activeCategory === cat ? ' active' : ''}`}
-                  onClick={() => setActiveCategory(cat)}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+            {/* COMPONENT GUARDRAIL: restrictedCategory hides the pills
+                entirely rather than just pre-selecting one — Court
+                Resources embeds this component specifically to keep the
+                user inside "Court Petitions" context; exposing a way back
+                to "All"/"Contracts & NDAs" here would defeat that. */}
+            {!restrictedCategory && (
+              <div className="lf-category-tabs">
+                {['All', ...CATEGORIES].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    className={`lf-category-tab${activeCategory === cat ? ' active' : ''}`}
+                    onClick={() => setActiveCategory(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="lf-template-grid">
               {visibleTemplates.map((t) => (

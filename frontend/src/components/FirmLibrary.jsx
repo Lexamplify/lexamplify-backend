@@ -1197,16 +1197,29 @@ export default function FirmLibrary() {
               Central knowledge management — precedents, templates, and practice guides.
             </p>
           </div>
-          <button
-            className="btn-accent"
-            onClick={() => setShowModal(true)}
-            style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7 }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Add Entry
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className="btn-accent"
+              onClick={() => navigate('/firm-library/draft')}
+              style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7 }}
+              title="Full-page drafting workspace — not a modal, so an accidental close never loses your draft"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+              Draft from Template
+            </button>
+            <button
+              className="btn-accent"
+              onClick={() => setShowModal(true)}
+              style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7, background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Add Entry
+            </button>
+          </div>
         </div>
 
         {/* Internal / External mode toggle */}

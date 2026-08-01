@@ -8,6 +8,8 @@ import re
 import sqlite3
 import json
 import io
+import time
+import uuid
 import requests
 import urllib.parse
 from bs4 import BeautifulSoup
@@ -1024,6 +1026,52 @@ def create_app():
             finally:
                 conn.row_factory = old_rf
             return jsonify(docs), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/firm-library', methods=['POST'])
+    def create_firm_library_entry():
+        """Legal Forms Library -> Firm Library persistence ("Save to Library
+        & Exit"). Writes the drafted TipTap HTML into case_vault — the same
+        table GET /api/firm-library already reads from — so a saved draft
+        shows up in the Firm Library list on the very next fetch, no
+        separate storage concept required."""
+        try:
+            data = request.get_json(silent=True) or {}
+            title = (data.get('title') or '').strip()
+            html = data.get('html') or ''
+            category = (data.get('category') or 'Draft').strip()
+
+            if not title:
+                return jsonify({'error': True, 'message': 'Title is required.'}), 400
+            if not html.strip():
+                return jsonify({'error': True, 'message': 'No document content provided.'}), 400
+
+            case_id = f"draft_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+            conn = db
+            c = conn.cursor()
+            c.execute(
+                'INSERT INTO case_vault (case_id, title, doc_type, content) VALUES (?, ?, ?, ?)',
+                (case_id, title, f'Firm Library Draft — {category}', html),
+            )
+            conn.commit()
+            inserted_id = c.lastrowid
+
+            row = conn.execute(
+                'SELECT id, case_id, title, created_at FROM case_vault WHERE id = ?', (inserted_id,)
+            ).fetchone()
+            timestamp = row[3] if row else None
+            return jsonify({
+                'id': inserted_id,
+                'case_id': case_id,
+                'title': title,
+                'timestamp': timestamp,
+                'last_updated': timestamp,
+                'updated': timestamp and str(timestamp).split(' ')[0] or '',
+                'type': category,
+                'category': category,
+                'author': 'Internal Vault',
+            }), 201
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 

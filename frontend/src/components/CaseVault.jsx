@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchDocuments, uploadDocument, deleteDocument } from '../services/api';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
+import TEMPLATES from '../data/templateData.js';
 
 const styles = `
   .upload-zone {
@@ -131,12 +133,22 @@ const styles = `
 
 export default function CaseVault() {
   const { caseId } = useParams();
+  const navigate = useNavigate();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [notification, setNotification] = useState(null);
+
+  // ── Context-Aware Generation Flow: Generate Case Draft ─────────────────
+  // Multi-step by design — a template must be picked before any AI facts
+  // extraction happens, and the extracted context must be human-verified
+  // before it's ever sent anywhere: (a) pick template -> (b) review/edit
+  // the pre-filled case facts -> (c) hand off to the drafting workspace.
+  const [draftFlowStep, setDraftFlowStep] = useState(null); // null | 'select-template' | 'verify-context'
+  const [draftSelectedTemplate, setDraftSelectedTemplate] = useState(null);
+  const [draftContextText, setDraftContextText] = useState('');
 
   const [sharedFiles, setSharedFiles] = useState(() => getSharedFiles().filter(f => f.modules?.includes('case-vault')));
 
@@ -273,6 +285,42 @@ export default function CaseVault() {
     }
   };
 
+  // ── GENERATE CASE DRAFT — Context-Aware Generation Flow ─────────────────
+  const openDraftFlow = () => {
+    setDraftFlowStep('select-template');
+  };
+
+  const closeDraftFlow = () => {
+    setDraftFlowStep(null);
+    setDraftSelectedTemplate(null);
+    setDraftContextText('');
+  };
+
+  // Step (b) -> (c): picking a template pre-populates the verification
+  // textarea from whatever real per-document summaries this vault already
+  // has (caseData.summary has no equivalent here — CaseVault is scoped to
+  // per-document uploads, not a single case-level record — so the closest
+  // real, non-fabricated substitute is the concatenated summaries of the
+  // documents actually in this vault). The user still has to review/edit
+  // it before Confirm & Draft — this is a starting point, not a shortcut
+  // around that review.
+  const handleSelectDraftTemplate = (template) => {
+    const combinedSummary = documents
+      .map((d) => d.summary)
+      .filter((s) => s && s !== 'Summary generation pending...')
+      .join('\n\n');
+    setDraftSelectedTemplate(template);
+    setDraftContextText(combinedSummary);
+    setDraftFlowStep('verify-context');
+  };
+
+  const handleConfirmDraft = () => {
+    if (!draftSelectedTemplate) return;
+    navigate('/firm-library/draft', {
+      state: { templateId: draftSelectedTemplate.id, contextFacts: draftContextText },
+    });
+  };
+
   // ── 4. DELETE CONTROLLER ──────────────────────────────────────────────
   const handleDelete = async (docId, filename) => {
     if (!window.confirm(`Are you sure you want to permanently delete "${filename}"? All associated RAG vector chunks will be wiped.`)) {
@@ -383,9 +431,17 @@ export default function CaseVault() {
         <div style={{ marginTop: '30px', background: 'var(--bg-dark-panel)', borderRadius: '8px', border: '1px solid var(--border-dark-subtle)', overflow: 'hidden' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-dark-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: '16px', margin: 0 }}>Stored Vault Artifacts</h3>
-            <button onClick={loadVault} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '12px' }}>
-              🔄 Refresh List
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <button
+                onClick={openDraftFlow}
+                style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.35)', color: '#93C5FD', cursor: 'pointer', fontSize: '12px', fontWeight: 600, padding: '6px 12px', borderRadius: '7px' }}
+              >
+                + Generate Case Draft
+              </button>
+              <button onClick={loadVault} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '12px' }}>
+                🔄 Refresh List
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -508,6 +564,79 @@ export default function CaseVault() {
           )}
         </div>
       </div>
+
+      {/* Portaled to document.body — this app has a page-transition wrapper
+          with a persistent CSS transform higher up the tree, which hijacks
+          position:fixed for anything rendered inline within a route's
+          component tree (confirmed and fixed the same way elsewhere in
+          this app). */}
+      {draftFlowStep && createPortal(
+        <div
+          onClick={closeDraftFlow}
+          style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(3,6,14,0.72)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '560px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', borderRadius: '12px', boxShadow: '0 25px 60px rgba(0,0,0,0.5)', overflow: 'hidden' }}
+          >
+            {draftFlowStep === 'select-template' ? (
+              <>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-dark-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '15px', margin: 0 }}>Step 1 of 2 — Select a Template</h3>
+                  <button onClick={closeDraftFlow} style={{ background: 'none', border: 'none', color: 'var(--text-dark-muted)', fontSize: '18px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                </div>
+                <div style={{ padding: '10px', overflowY: 'auto' }}>
+                  {TEMPLATES.map((t) => (
+                    <div
+                      key={t.id}
+                      onClick={() => handleSelectDraftTemplate(t)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '11px 12px', borderRadius: '8px', cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <span style={{ fontSize: '13.5px', color: 'var(--text-dark-primary)', fontWeight: 500 }}>📋 {t.title}</span>
+                      <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)' }}>{t.category}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-dark-subtle)' }}>
+                  <h3 style={{ fontSize: '15px', margin: '0 0 3px' }}>Step 2 of 2 — Verify Case Context</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', margin: 0 }}>
+                    Drafting <strong style={{ color: 'var(--text-dark-primary)' }}>{draftSelectedTemplate?.title}</strong>. Review and correct the facts below before AI auto-fill runs — anything wrong or missing here carries straight into the draft.
+                  </p>
+                </div>
+                <div style={{ padding: '18px 20px', overflowY: 'auto', flex: 1 }}>
+                  <textarea
+                    value={draftContextText}
+                    onChange={(e) => setDraftContextText(e.target.value)}
+                    placeholder="No document summaries were found in this vault yet — type the case facts to draft from here."
+                    style={{ width: '100%', boxSizing: 'border-box', minHeight: '220px', resize: 'vertical', background: 'var(--bg-dark-app)', border: '1px solid var(--border-dark-subtle)', borderRadius: '8px', padding: '12px', color: 'var(--text-dark-primary)', fontSize: '13px', fontFamily: 'inherit', outline: 'none' }}
+                    autoFocus
+                  />
+                </div>
+                <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border-dark-subtle)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    onClick={() => setDraftFlowStep('select-template')}
+                    style={{ padding: '9px 16px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-muted)', borderRadius: '7px', fontSize: '12.5px', cursor: 'pointer' }}
+                  >
+                    ← Change Template
+                  </button>
+                  <button
+                    onClick={handleConfirmDraft}
+                    style={{ padding: '9px 18px', background: 'var(--accent-primary)', border: 'none', color: 'white', borderRadius: '7px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Confirm &amp; Draft →
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }

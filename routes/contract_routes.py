@@ -671,7 +671,13 @@ STRICT RULES — NO HALLUCINATION:
    not even a common default like "N/A", "TBD", or today's date.
 3. Do NOT paraphrase or summarize prose fields — extract text as close to verbatim
    as sensible for the field's type.
-4. Return ONLY the JSON object. No markdown fences, no commentary, no explanation."""
+4. ROLE ASSIGNMENT: Do not assign names to fields by order of mention. Each field
+   label encodes a DIRECTIONAL ROLE (e.g., "Sender" vs "Recipient", "Landlord" vs
+   "Tenant", "Applicant" vs "Respondent"). Reason from the narrative which named
+   person actually holds that role before assigning — e.g. if "my client lent
+   money to X", the client is the SENDER/creditor of a recovery notice, not the
+   recipient, regardless of which name appears first in the text.
+5. Return ONLY the JSON object. No markdown fences, no commentary, no explanation."""
 
     try:
         raw = ask_groq(system_prompt, f"CLIENT FACTS:\n{facts[:8000]}")
