@@ -15,7 +15,7 @@ const LegalResearch = () => {
         setResult(null);
 
         try {
-            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/legal-research`, {
+            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com'}/api/legal-research`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

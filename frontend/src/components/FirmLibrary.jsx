@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
 import { renderWithCitations } from './CitationLink';
 
-
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
 const CATEGORIES = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
 
@@ -715,7 +715,7 @@ export default function FirmLibrary() {
     
     setCitationCache(prev => ({ ...prev, [targetId]: { loading: true, text: "", error: null } }));
     try {
-      const res = await fetch(`http://localhost:5000/api/document/${encodeURIComponent(targetId)}`);
+      const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(targetId)}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
       setCitationCache(prev => ({ ...prev, [targetId]: { loading: false, text: data.content, error: null } }));
@@ -741,7 +741,7 @@ export default function FirmLibrary() {
     setSummaryText(null);
     setSummaryOpen(false);
     try {
-      const res = await fetch(`http://localhost:5000/api/document/${encodeURIComponent(sourceCaseId)}`);
+      const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(sourceCaseId)}`);
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
       setViewerDoc({ case_id: data.case_id || sourceCaseId, title: data.title, content: data.content });
@@ -775,7 +775,7 @@ export default function FirmLibrary() {
     if (!viewerDoc || pinLoading) return;
     setPinLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/vault/save', {
+      const res = await fetch(`${API_BASE}/api/vault/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -803,7 +803,7 @@ export default function FirmLibrary() {
     setSummaryLoading(true);
     setSummaryText(null);
     try {
-      const res = await fetch('http://localhost:5000/api/ai/summarize-judgment', {
+      const res = await fetch(`${API_BASE}/api/ai/summarize-judgment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: viewerDoc.content }),
@@ -859,7 +859,7 @@ export default function FirmLibrary() {
   // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
-    fetch('http://localhost:5000/api/firm-library')
+    fetch(`${API_BASE}/api/firm-library`)
       .then(r => r.json())
       .then(data => {
         setInternalFiles(data);
@@ -897,7 +897,7 @@ export default function FirmLibrary() {
     setExtLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/legal-research', {
+        const res = await fetch(`${API_BASE}/api/legal-research`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: extQuery.trim() }),
@@ -917,7 +917,7 @@ export default function FirmLibrary() {
     setRagLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/legal-research', {
+        const res = await fetch(`${API_BASE}/api/legal-research`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: searchQuery.trim() }),
@@ -1631,7 +1631,7 @@ export default function FirmLibrary() {
                                   // server's own origin instead (no proxy is
                                   // configured for /api in vite.config.js), landing
                                   // on the SPA's 404 instead of the Flask backend.
-                                  href={`http://localhost:5000/api/kanoon-redirect?query=${encodeURIComponent(displayTitle)}`}
+                                  href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(displayTitle)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="fl-kanoon-link"

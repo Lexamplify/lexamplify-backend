@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { runConflictCheck, analyzeConflicts, saveClearanceMemo } from '../services/api';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+
 // Severity weighting by matter type — drives the intake risk badge
 const MATTER_RISK = {
   Criminal:    { level: 'High Risk',    cls: 'high' },
@@ -745,7 +747,7 @@ export default function ConflictEngine() {
         if (firstFile && firstFile.type === 'text/plain') {
           content = await firstFile.text();
         }
-        const res = await fetch('http://localhost:5000/api/vault/save', {
+        const res = await fetch(`${API_BASE}/api/vault/save`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -768,7 +770,7 @@ export default function ConflictEngine() {
     setCitationSearchLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/cases/autocomplete?q=${encodeURIComponent(citationSearchQuery.trim())}`);
+        const res = await fetch(`${API_BASE}/api/cases/autocomplete?q=${encodeURIComponent(citationSearchQuery.trim())}`);
         const data = await res.json();
         setCitationSearchResults(Array.isArray(data) ? data : []);
       } catch { setCitationSearchResults([]); }
@@ -780,7 +782,7 @@ export default function ConflictEngine() {
   const addCitation = async (result) => {
     if (!citationDocId) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/vault/documents/${citationDocId}/citations`, {
+      const res = await fetch(`${API_BASE}/api/vault/documents/${citationDocId}/citations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: String(result.id), title: result.title }),
@@ -796,7 +798,7 @@ export default function ConflictEngine() {
   const removeCitation = async (citationId) => {
     if (!citationDocId) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/vault/documents/${citationDocId}/citations/${encodeURIComponent(citationId)}`, {
+      const res = await fetch(`${API_BASE}/api/vault/documents/${citationDocId}/citations/${encodeURIComponent(citationId)}`, {
         method: 'DELETE',
       });
       const data = await res.json();

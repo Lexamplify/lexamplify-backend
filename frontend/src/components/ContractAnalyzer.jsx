@@ -15,6 +15,8 @@ import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import { findClauseRange } from '../tiptap/positionMapping.js';
 import { useCitationStore } from '../tiptap/citationStore.js';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+
 const styles = `
   /* ── ANALYZER CONTAINER ──────────────────────────────────────────── */
   .analyzer-container {
@@ -3109,7 +3111,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                   ) : (
                                     <a
                                       className="citation-btn-kanoon"
-                                      href={`http://localhost:5000/api/kanoon-redirect?query=${encodeURIComponent(prec.kanoon_query)}`}
+                                      href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(prec.kanoon_query)}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >

@@ -5,6 +5,8 @@ import { fetchDocuments, uploadDocument, deleteDocument } from '../services/api'
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
 import TEMPLATES from '../data/templateData.js';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+
 const styles = `
   .upload-zone {
     border: 2px dashed var(--border-dark-subtle);
@@ -178,7 +180,7 @@ export default function CaseVault() {
     setCitationSearchLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/cases/autocomplete?q=${encodeURIComponent(citationSearchQuery.trim())}`);
+        const res = await fetch(`${API_BASE}/api/cases/autocomplete?q=${encodeURIComponent(citationSearchQuery.trim())}`);
         const data = await res.json();
         setCitationSearchResults(Array.isArray(data) ? data : []);
       } catch { setCitationSearchResults([]); }
@@ -189,7 +191,7 @@ export default function CaseVault() {
 
   const addCitation = async (docId, result) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/vault/documents/${docId}/citations`, {
+      const res = await fetch(`${API_BASE}/api/vault/documents/${docId}/citations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: String(result.id), title: result.title }),
@@ -204,7 +206,7 @@ export default function CaseVault() {
 
   const removeCitation = async (docId, citationId) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/vault/documents/${docId}/citations/${encodeURIComponent(citationId)}`, {
+      const res = await fetch(`${API_BASE}/api/vault/documents/${docId}/citations/${encodeURIComponent(citationId)}`, {
         method: 'DELETE',
       });
       const data = await res.json();
