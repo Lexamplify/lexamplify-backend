@@ -1269,15 +1269,16 @@ def create_app():
             clauses = [c for c in (_kanoon_title_clause(tokens_a), _kanoon_title_clause(tokens_b)) if c]
             # Degenerate case: stopword-filtering emptied BOTH parties (e.g.
             # "The State v. The Union") — title:() is invalid Lucene syntax,
-            # so fall back to the bracket-stripped raw query instead of
-            # sending Kanoon malformed input.
-            form_input = ' '.join(clauses) if clauses else (_kanoon_strip_brackets(query).strip() or query)
+            # so fall back to the raw query instead of sending Kanoon
+            # malformed input.
+            form_input = ' '.join(clauses) if clauses else query
         else:
-            cleaned = _kanoon_strip_brackets(query)
-            query_tokens = {t.lower() for t in _kanoon_tokenize(cleaned)}
-            form_input = cleaned.strip() or query
+            # Non-case query: no title:() scoping, no bracket-stripping —
+            # sent to Kanoon exactly as typed.
+            query_tokens = {t.lower() for t in _kanoon_tokenize(query)}
+            form_input = query
 
-        # Attempt 1: title-scoped search for cases, cleaned raw query otherwise.
+        # Attempt 1: title-scoped search for cases, raw query otherwise.
         result_titles = _kanoon_fetch_results(form_input)
         if result_titles is None:
             return redirect(fallback_url)
@@ -1285,8 +1286,11 @@ def create_app():
         # Attempt 2: title:() scoping can legitimately return zero hits for a
         # case whose title doesn't literally contain both party names as
         # formatted (abbreviations, "& Ors" variants, etc.) — one plain retry
-        # with the untouched original query before giving up.
-        if not result_titles:
+        # with the untouched original query before giving up. Skipped when
+        # form_input already IS the raw query (non-case path, or a case
+        # query degenerate enough that both parties fell back to it too) —
+        # retrying would just re-fetch the identical 0 results a second time.
+        if not result_titles and form_input != query:
             result_titles = _kanoon_fetch_results(query)
             if result_titles is None:
                 return redirect(fallback_url)
