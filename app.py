@@ -1163,39 +1163,75 @@ def create_app():
     # /docfragment/<id>/?formInput=... whenever the search term was matched
     # inside the document body rather than the title — both point at the
     # exact same underlying document id, so both forms must match here or
-    # every keyword-in-body hit silently falls through to tier 2/3.
+    # every keyword-in-body hit is silently dropped.
     _KANOON_DOC_ID_RE = re.compile(r'/doc(?:fragment)?/(\d+)')
-    _KANOON_TOKEN_RE = re.compile(r'[a-z0-9]+')
-    # Connectors and party-name boilerplate that carry no case-identifying
-    # signal ("state"/"union" appear in the vast majority of Indian case
-    # titles regardless of relevance, so counting them toward the overlap
-    # ratio would inflate every result's score roughly equally and defeat
-    # the point of the ratio).
-    _KANOON_TOKEN_STOPWORDS = {
-        'v', 'vs', 'versus', 'the', 'of', 'in', 'and', 'or', 'a', 'an', 'on', 'for', 'to',
-        'state', 'union', 'm', 's', 'commissioner', 'pvt', 'ltd', 'anr', 'ors', 'others',
+    _KANOON_CASE_SPLIT_RE = re.compile(r'\s+(?:v\.|vs\.?|versus)\s+', re.IGNORECASE)
+    _KANOON_WORD_RE = re.compile(r'[A-Za-z0-9]+')
+    _KANOON_BRACKETS_RE = re.compile(r'\([^)]*\)|\[[^\]]*\]')
+    _KANOON_YEAR_PAREN_RE = re.compile(r'\(\s*(\d{4})\s*\)')
+    _KANOON_REPORTER_RE = re.compile(r'\b(SCC|AIR|SCR|INSC)\b', re.IGNORECASE)
+    # The exact list the task specifies for party-token extraction, reused
+    # everywhere a stopword filter is needed (party tokens, cleaning a
+    # non-case query, tokenizing hit text for scoring) rather than
+    # inventing a second, undocumented list for those other uses.
+    _KANOON_STOPWORDS = {
+        'state', 'union', 'india', 'ltd', 'pvt', 'anr', 'ors', 'the', 'of', 'co', 'corp',
     }
+    # Matches the START of the citation apparatus that routinely trails a
+    # pasted party name — "State of Kerala (1973) 4 SCC 225" — so it can be
+    # truncated off before tokenizing. Without this, "SCC"/"225" get treated
+    # as party-name tokens and pollute the title:() clause with citation
+    # noise no judgment title ever actually contains, defeating the whole
+    # point of title-scoping.
+    _KANOON_CITATION_TAIL_RE = re.compile(r'\(\s*\d{4}\s*\)|\b\d{4}\b|\b(?:SCC|AIR|SCR|INSC)\b', re.IGNORECASE)
+
+    def _kanoon_strip_citation_tail(text):
+        match = _KANOON_CITATION_TAIL_RE.search(text or '')
+        return text[:match.start()] if match else (text or '')
+
+    def _kanoon_strip_brackets(text):
+        # Drops "(BALCO)"/"[Regn. No. 4]"-style asides entirely, including
+        # their contents — these are abbreviations/annotations, not part of
+        # the actual party name or search text.
+        return _KANOON_BRACKETS_RE.sub(' ', text or '')
 
     def _kanoon_tokenize(text):
-        return {
-            tok for tok in _KANOON_TOKEN_RE.findall((text or '').lower())
-            if tok not in _KANOON_TOKEN_STOPWORDS and len(tok) > 1
-        }
+        return [
+            tok for tok in _KANOON_WORD_RE.findall(text or '')
+            if tok.lower() not in _KANOON_STOPWORDS and len(tok) > 1
+        ]
 
-    @app.route('/api/kanoon-redirect', methods=['GET'])
-    def kanoon_redirect():
-        query = request.args.get('query', '') or ''
-        fallback_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
+    def _kanoon_extract_boosters(raw_query):
+        """Citation signals pulled from the ORIGINAL, unstripped query —
+        the year lives inside the parens _kanoon_strip_brackets would
+        otherwise delete, so this must run before any bracket cleanup.
+        Stored case-neutral/uppercase so a single upper-cased substring
+        check at scoring time covers both booster types."""
+        boosters = set()
+        for year in _KANOON_YEAR_PAREN_RE.findall(raw_query):
+            boosters.add(f"({year})")
+        for tag in _KANOON_REPORTER_RE.findall(raw_query):
+            boosters.add(tag.upper())
+        return boosters
 
+    def _kanoon_title_clause(tokens):
+        if not tokens:
+            return ''
+        return f"title:({' AND '.join(tokens)})"
+
+    def _kanoon_fetch_results(form_input):
+        """One Kanoon search request -> its parsed result_title elements,
+        or None on any network/HTTP failure. None must always be treated by
+        the caller as 'give up, redirect to fallback_url' — never retried
+        silently, per the network guardrail."""
         try:
             resp = requests.get(
                 'https://indiankanoon.org/search/',
                 # requests encodes params itself — case titles routinely
-                # contain commas/parens/ampersands ("Kesavananda Bharati v.
-                # State of Kerala, (1973) 4 SCC 225"), and manually
-                # f-string-interpolating query into the URL would let an
-                # "&" in a title truncate/corrupt the formInput param.
-                params={'formInput': query},
+                # contain commas/parens/ampersands, and manually
+                # f-string-interpolating form_input into the URL would let
+                # an "&" truncate/corrupt the formInput param.
+                params={'formInput': form_input},
                 timeout=4,
                 # A real browser UA — Kanoon can 403 (or serve degraded
                 # results) to a UA that self-identifies as a bot.
@@ -1205,32 +1241,60 @@ def create_app():
             # A 403/5xx response body is still valid HTML (an error/block
             # page) — requests won't raise on its own, so raise_for_status()
             # is what actually routes a block or outage into the
-            # RequestException branch below instead of silently parsing zero
-            # results out of a block page.
+            # RequestException branch below instead of silently parsing
+            # zero results out of a block page.
             resp.raise_for_status()
         except requests.exceptions.RequestException:
-            # Kanoon is unreachable, blocked us, or timed out — never guess,
-            # send the user straight to the search results page.
+            return None
+        # Matched by class only, not class+tag — Kanoon's search page was
+        # redesigned since this was first written; the result title element
+        # is an <h4> today (it used to be a <div>), and tying the query to
+        # one specific tag would silently match zero results the next time
+        # the markup shifts again.
+        return BeautifulSoup(resp.text, 'html.parser').find_all(class_='result_title')
+
+    @app.route('/api/kanoon-redirect', methods=['GET'])
+    def kanoon_redirect():
+        query = request.args.get('query', '') or ''
+        fallback_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
+
+        citation_boosters = _kanoon_extract_boosters(query)
+        is_case = bool(_KANOON_CASE_SPLIT_RE.search(query))
+
+        if is_case:
+            party_a_raw, party_b_raw = _KANOON_CASE_SPLIT_RE.split(query, maxsplit=1)
+            tokens_a = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_a_raw)))[:3]
+            tokens_b = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_b_raw)))[:3]
+            query_tokens = {t.lower() for t in tokens_a + tokens_b}
+            clauses = [c for c in (_kanoon_title_clause(tokens_a), _kanoon_title_clause(tokens_b)) if c]
+            # Degenerate case: stopword-filtering emptied BOTH parties (e.g.
+            # "The State v. The Union") — title:() is invalid Lucene syntax,
+            # so fall back to the bracket-stripped raw query instead of
+            # sending Kanoon malformed input.
+            form_input = ' '.join(clauses) if clauses else (_kanoon_strip_brackets(query).strip() or query)
+        else:
+            cleaned = _kanoon_strip_brackets(query)
+            query_tokens = {t.lower() for t in _kanoon_tokenize(cleaned)}
+            form_input = cleaned.strip() or query
+
+        # Attempt 1: title-scoped search for cases, cleaned raw query otherwise.
+        result_titles = _kanoon_fetch_results(form_input)
+        if result_titles is None:
             return redirect(fallback_url)
 
+        # Attempt 2: title:() scoping can legitimately return zero hits for a
+        # case whose title doesn't literally contain both party names as
+        # formatted (abbreviations, "& Ors" variants, etc.) — one plain retry
+        # with the untouched original query before giving up.
+        if not result_titles:
+            result_titles = _kanoon_fetch_results(query)
+            if result_titles is None:
+                return redirect(fallback_url)
+
+        best_doc_id = None
+        best_score = 0
+
         try:
-            # BeautifulSoup, not regex — the old code grabbed the FIRST
-            # /doc/ link on the page unconditionally, which is routinely a
-            # citing judgment or a bare statute/constitution page, not the
-            # case actually being searched for.
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            # Matched by class only, not class+tag — Kanoon's search page
-            # was redesigned since this was first written; the result title
-            # element is an <h4> today (it used to be a <div>), and tying
-            # the query to one specific tag would silently match zero
-            # results the next time the markup shifts again.
-            result_titles = soup.find_all(class_='result_title')
-            core_tokens = _kanoon_tokenize(query)
-
-            best_doc_id = None
-            best_ratio = 0.0
-            first_doc_id = None  # tier-2 fallback: Kanoon's own top-ranked hit
-
             for title_el in result_titles:
                 link = title_el.find('a', href=True)
                 if not link:
@@ -1239,11 +1303,6 @@ def create_app():
                 if not doc_match:
                     continue
                 doc_id = doc_match.group(1)
-                if first_doc_id is None:
-                    first_doc_id = doc_id
-
-                if not core_tokens:
-                    continue
 
                 # separator=' ' is required: Kanoon bolds individual matched
                 # words ("Constitution of <b>India</b>"), and get_text()'s
@@ -1252,8 +1311,8 @@ def create_app():
                 # token that crosses a bold-tag boundary.
                 title_text = title_el.get_text(separator=' ', strip=True)
 
-                # The result snippet lives in a sibling <div class="headline">
-                # next to the <h4 class="result_title">, both inside a shared
+                # The snippet lives in a sibling <div class="headline"> next
+                # to the <h4 class="result_title">, both inside a shared
                 # <article class="result"> wrapper — fall back to searching
                 # the whole result container in case a future markup shift
                 # reorders the siblings.
@@ -1262,27 +1321,32 @@ def create_app():
                     result_container = title_el.find_parent(class_='result')
                     snippet_el = result_container.find(class_='headline') if result_container else None
                 snippet_text = snippet_el.get_text(separator=' ', strip=True) if snippet_el else ''
+                combined_text = f"{title_text} {snippet_text}"
 
-                hit_tokens = _kanoon_tokenize(title_text) | _kanoon_tokenize(snippet_text)
-                ratio = len(core_tokens & hit_tokens) / len(core_tokens)
-                if ratio > best_ratio:
-                    best_ratio = ratio
+                hit_tokens = {t.lower() for t in _KANOON_WORD_RE.findall(combined_text)}
+                score = len(query_tokens & hit_tokens)
+                if score == 0:
+                    continue
+
+                # Citation multiplier: collapse whitespace immediately
+                # inside parens first — a bolded citation year renders as
+                # "(<b>1973</b>)", and get_text's separator=' ' would
+                # otherwise insert stray spaces ("( 1973 )") that break a
+                # literal "(1973)" substring check.
+                normalized = re.sub(r'\(\s+', '(', combined_text)
+                normalized = re.sub(r'\s+\)', ')', normalized).upper()
+                if any(booster in normalized for booster in citation_boosters):
+                    score *= 3
+
+                if score > best_score:
+                    best_score = score
                     best_doc_id = doc_id
-
-            # Tier 1: the best-scoring result carries a majority (or all) of
-            # the core query keywords — confident enough to jump straight in.
-            if best_doc_id and best_ratio >= 0.5:
-                return redirect(f"https://indiankanoon.org/doc/{best_doc_id}/")
-
-            # Tier 2: nothing cleared the majority bar — Kanoon's own
-            # top-ranked hit is still a better landing spot than a blank
-            # search page the user has to re-search from scratch.
-            if first_doc_id:
-                return redirect(f"https://indiankanoon.org/doc/{first_doc_id}/")
         except Exception:
-            pass
+            return redirect(fallback_url)
 
-        # Tier 3: the page had no parseable /doc/ links at all.
+        if best_doc_id and best_score > 0:
+            return redirect(f"https://indiankanoon.org/doc/{best_doc_id}/")
+
         return redirect(fallback_url)
 
     # Register blueprints
