@@ -38,8 +38,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 frontend/.env.local
-frontend/.env.production
 frontend/.env.development
+
+# .env.production holds only the public production API base URL (no secrets)
+# and must be committed so a git-based build/deploy pipeline can use it.
+!frontend/.env.production
 
 # ── FIREBASE DEPLOYMENT ARTIFACTS ────────────────────────────────
 .firebase/

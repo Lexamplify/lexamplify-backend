@@ -1,4 +1,5 @@
 from flask import Flask, render_template, jsonify, request, redirect
+from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from database import db as sqlalchemy_db
@@ -238,7 +239,12 @@ def generate_docx_blob(title, content):
 # Anchored start-to-end so it can't be satisfied by a lookalike host like
 # "http://localhost.evil.com:5173".
 LOCAL_DEV_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1):\d+$")
-PROD_ORIGINS = {'https://lexamplify-4.web.app', 'https://test.lexamplify.com'}
+PROD_ORIGINS = {
+    'https://lexamplify-4.web.app',
+    'https://lexamplify-4.firebaseapp.com',
+    'https://test.lexamplify.com',
+    'https://lexamplify.com',
+}
 
 # Strict allow-list for the document-retrieval route's case_id path segment —
 # alphanumeric plus underscore/hyphen only, anchored start-to-end, so a
@@ -384,7 +390,7 @@ def create_app():
             # Use direct assignment so we never produce duplicate CORS headers
             # (SSE responses pre-set these; .add() would append a second value)
             response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Accept'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Accept,X-Requested-With'
             response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
@@ -1075,6 +1081,77 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    @app.route('/api/firm-library/external-search', methods=['GET', 'OPTIONS'])
+    def firm_library_external_search():
+        """LLM-free semantic lookup over the Pinecone-backed case-law index,
+        for the Firm Library's 'External Database' toggle. Deliberately
+        never touches Groq — this is a fast browse/search grid, not the
+        AI-synthesized Dual-Brain research dossier (/api/legal-research)."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
+        query = (request.args.get('query') or '').strip()
+        if not query:
+            return jsonify({'error': True, 'message': 'Query cannot be empty.'}), 400
+
+        try:
+            pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+            index = pc.Index(host=os.getenv("PINECONE_HOST"))
+            namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
+
+            embed_response = pc.inference.embed(
+                model=EMBED_MODEL,
+                inputs=[query],
+                parameters={"input_type": "query", "truncate": "END"},
+            )
+            query_vector = embed_response[0].values
+
+            # top_k deliberately high (45, not ~10) — a single case can
+            # contribute dozens of chunks, so a small top_k would rarely
+            # survive dedup as more than one or two distinct cases.
+            pinecone_results = index.query(
+                vector=query_vector,
+                top_k=45,
+                include_metadata=True,
+                namespace=namespace,
+            )
+
+            results = []
+            seen_cases = set()
+            for match in (pinecone_results.matches or []):
+                metadata = match.metadata or {}
+                case_id = metadata.get('case_id') or match.id
+                # CRITICAL DEDUPLICATION — same as /api/legal-research: a
+                # case can have hundreds of chunks, so without this the
+                # first case in the ranking would flood the grid with N
+                # identical-looking rows.
+                if case_id in seen_cases:
+                    continue
+                seen_cases.add(case_id)
+
+                text = metadata.get('text', '')
+                year = metadata.get('year', '')
+                results.append({
+                    'id': case_id,
+                    'case_id': case_id,
+                    'title': format_case_title(case_id),
+                    # No real category/author exists for a raw Pinecone
+                    # chunk — fallback values so this maps onto the exact
+                    # same {id, title, category, updated, author} schema
+                    # the Firm Library table already renders for internal
+                    # entries, letting the frontend reuse that table as-is.
+                    'category': 'Case Law',
+                    'updated': f"{year}-01-01" if year else '',
+                    'author': 'External Case Law DB',
+                    'snippet': text[:200],
+                    'tags': [],
+                })
+            return jsonify({'status': 'success', 'results': results}), 200
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     # "I'm Feeling Lucky" proxy for the Firm Library's "Open in Indian
     # Kanoon" link — a plain <a href> click can't carry an Authorization
     # header, so this is deliberately unauthenticated, same as the other
@@ -1082,57 +1159,34 @@ def create_app():
     # indiankanoon.org path built from either a regex-extracted digit-only
     # doc id or urllib.parse.quote(query) — query never controls the
     # destination HOST, only the search term, so this isn't an open redirect.
-    _KANOON_CASE_SPLIT_RE = re.compile(r'\s+(?:v\.|vs\.?|versus)\s+', re.IGNORECASE)
-    _KANOON_DOC_ID_RE = re.compile(r'/doc/(\d+)')
-    _KANOON_SECTION_RE = re.compile(r'\b(?:section|sec\.?|article|art\.?)\s*[:\-]?\s*(\d+[A-Za-z]*)\b', re.IGNORECASE)
-    # Act name either ENDS in "Act"/"Code" ("Negotiable Instruments Act",
-    # "Indian Penal Code") or, for the one title that doesn't, IS
-    # "Constitution of India" — special-cased since this app is scoped
-    # entirely to Indian law and every other phrasing of "Constitution"
-    # here means that one document.
-    _KANOON_ACT_NAME_RE = re.compile(
-        r'([A-Za-z][A-Za-z,\.\s]*?\b(?:Act|Code)\b|\bConstitution(?:\s+of\s+India)?\b)',
-        re.IGNORECASE,
-    )
-    # "State of", "Union of", "M/s", "The", "Commissioner", "Pvt", "Ltd",
-    # "Anr", "Ors" — generic legal boilerplate that appears in almost every
-    # party name and carries no distinguishing signal for matching against
-    # a Kanoon result title.
-    _KANOON_CASE_STOPWORDS_RE = re.compile(
-        r'\b(?:state of|union of|m/s|the|commissioner|pvt|ltd|anr|ors)\.?\b',
-        re.IGNORECASE,
-    )
+    # Kanoon links a result to /doc/<id>/ normally, but to
+    # /docfragment/<id>/?formInput=... whenever the search term was matched
+    # inside the document body rather than the title — both point at the
+    # exact same underlying document id, so both forms must match here or
+    # every keyword-in-body hit silently falls through to tier 2/3.
+    _KANOON_DOC_ID_RE = re.compile(r'/doc(?:fragment)?/(\d+)')
+    _KANOON_TOKEN_RE = re.compile(r'[a-z0-9]+')
+    # Connectors and party-name boilerplate that carry no case-identifying
+    # signal ("state"/"union" appear in the vast majority of Indian case
+    # titles regardless of relevance, so counting them toward the overlap
+    # ratio would inflate every result's score roughly equally and defeat
+    # the point of the ratio).
+    _KANOON_TOKEN_STOPWORDS = {
+        'v', 'vs', 'versus', 'the', 'of', 'in', 'and', 'or', 'a', 'an', 'on', 'for', 'to',
+        'state', 'union', 'm', 's', 'commissioner', 'pvt', 'ltd', 'anr', 'ors', 'others',
+    }
 
-    def _sanitize_case_party(raw_party):
-        """Strip generic legal stopwords, keeping whatever distinctive text
-        remains. Falls back to the un-stripped party text if stopword
-        removal happens to consume the entire string — matching on an empty
-        string would trivially "match" every title on the page."""
-        cleaned = _KANOON_CASE_STOPWORDS_RE.sub('', raw_party)
-        cleaned = re.sub(r'[,&]+', ' ', cleaned)
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip(' .,-')
-        return cleaned or raw_party.strip()
-
-    def _sanitize_statute_query(query):
-        """Extract (act_name, section_or_article_number) from a non-case
-        query. Section/article is pulled out FIRST and removed from the
-        text before hunting for the Act name — otherwise "Section 138" ends
-        up swallowed into the Act-name match as a prefix."""
-        section_match = _KANOON_SECTION_RE.search(query)
-        section_num = section_match.group(1) if section_match else None
-        remainder = query
-        if section_match:
-            remainder = query[:section_match.start()] + query[section_match.end():]
-        act_match = _KANOON_ACT_NAME_RE.search(remainder)
-        act_name = act_match.group(1) if act_match else remainder
-        act_name = re.sub(r'^\s*(?:of\s+)?(?:the\s+)?', '', act_name, flags=re.IGNORECASE)
-        act_name = re.sub(r'\s+', ' ', act_name).strip(' ,.')
-        return act_name, section_num
+    def _kanoon_tokenize(text):
+        return {
+            tok for tok in _KANOON_TOKEN_RE.findall((text or '').lower())
+            if tok not in _KANOON_TOKEN_STOPWORDS and len(tok) > 1
+        }
 
     @app.route('/api/kanoon-redirect', methods=['GET'])
     def kanoon_redirect():
         query = request.args.get('query', '') or ''
         fallback_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
+
         try:
             resp = requests.get(
                 'https://indiankanoon.org/search/',
@@ -1148,6 +1202,18 @@ def create_app():
                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                                         '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'},
             )
+            # A 403/5xx response body is still valid HTML (an error/block
+            # page) — requests won't raise on its own, so raise_for_status()
+            # is what actually routes a block or outage into the
+            # RequestException branch below instead of silently parsing zero
+            # results out of a block page.
+            resp.raise_for_status()
+        except requests.exceptions.RequestException:
+            # Kanoon is unreachable, blocked us, or timed out — never guess,
+            # send the user straight to the search results page.
+            return redirect(fallback_url)
+
+        try:
             # BeautifulSoup, not regex — the old code grabbed the FIRST
             # /doc/ link on the page unconditionally, which is routinely a
             # citing judgment or a bare statute/constitution page, not the
@@ -1159,54 +1225,64 @@ def create_app():
             # the query to one specific tag would silently match zero
             # results the next time the markup shifts again.
             result_titles = soup.find_all(class_='result_title')
+            core_tokens = _kanoon_tokenize(query)
 
-            is_case = bool(_KANOON_CASE_SPLIT_RE.search(query))
-            act_name = section_num = None
-            party_lower = None
-            if is_case:
-                # Isolate and clean the first party's name ("The State of
-                # Maharashtra v. Ors" -> "Maharashtra") — matching on the
-                # whole citation string would never hit, since result
-                # titles don't contain the respondent's name, the SCC/AIR
-                # reference, or generic party boilerplate.
-                raw_party = _KANOON_CASE_SPLIT_RE.split(query, maxsplit=1)[0]
-                party_lower = _sanitize_case_party(raw_party).lower()
-            else:
-                act_name, section_num = _sanitize_statute_query(query)
+            best_doc_id = None
+            best_ratio = 0.0
+            first_doc_id = None  # tier-2 fallback: Kanoon's own top-ranked hit
 
             for title_el in result_titles:
                 link = title_el.find('a', href=True)
                 if not link:
                     continue
-                # separator=' ' is required: Kanoon bolds individual
-                # matched words ("Constitution of <b>India</b>"), and
-                # get_text()'s default empty separator glues adjacent
-                # fragments across tag boundaries into "ofIndia" —
-                # silently breaking every substring match that crosses a
-                # bold-tag boundary.
-                title_text = re.sub(r'\s+', ' ', title_el.get_text(separator=' ', strip=True))
-                title_lower = title_text.lower()
+                doc_match = _KANOON_DOC_ID_RE.search(link['href'])
+                if not doc_match:
+                    continue
+                doc_id = doc_match.group(1)
+                if first_doc_id is None:
+                    first_doc_id = doc_id
 
-                if is_case:
-                    is_match = bool(party_lower) and party_lower in title_lower
-                else:
-                    is_match = bool(act_name) and act_name.lower() in title_lower
-                    if is_match and section_num:
-                        # Bare substring risk: "138" would also match inside
-                        # "1381" or a page/paragraph number — word-boundary
-                        # it instead of a naive `in` check.
-                        is_match = bool(re.search(rf'\b{re.escape(section_num)}\b', title_text, re.IGNORECASE))
+                if not core_tokens:
+                    continue
 
-                if is_match:
-                    doc_match = _KANOON_DOC_ID_RE.search(link['href'])
-                    if doc_match:
-                        return redirect(f"https://indiankanoon.org/doc/{doc_match.group(1)}/")
+                # separator=' ' is required: Kanoon bolds individual matched
+                # words ("Constitution of <b>India</b>"), and get_text()'s
+                # default empty separator glues adjacent fragments across
+                # tag boundaries into "ofIndia" — silently breaking any
+                # token that crosses a bold-tag boundary.
+                title_text = title_el.get_text(separator=' ', strip=True)
+
+                # The result snippet lives in a sibling <div class="headline">
+                # next to the <h4 class="result_title">, both inside a shared
+                # <article class="result"> wrapper — fall back to searching
+                # the whole result container in case a future markup shift
+                # reorders the siblings.
+                snippet_el = title_el.find_next_sibling(class_='headline')
+                if snippet_el is None:
+                    result_container = title_el.find_parent(class_='result')
+                    snippet_el = result_container.find(class_='headline') if result_container else None
+                snippet_text = snippet_el.get_text(separator=' ', strip=True) if snippet_el else ''
+
+                hit_tokens = _kanoon_tokenize(title_text) | _kanoon_tokenize(snippet_text)
+                ratio = len(core_tokens & hit_tokens) / len(core_tokens)
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_doc_id = doc_id
+
+            # Tier 1: the best-scoring result carries a majority (or all) of
+            # the core query keywords — confident enough to jump straight in.
+            if best_doc_id and best_ratio >= 0.5:
+                return redirect(f"https://indiankanoon.org/doc/{best_doc_id}/")
+
+            # Tier 2: nothing cleared the majority bar — Kanoon's own
+            # top-ranked hit is still a better landing spot than a blank
+            # search page the user has to re-search from scratch.
+            if first_doc_id:
+                return redirect(f"https://indiankanoon.org/doc/{first_doc_id}/")
         except Exception:
             pass
-        # STRICT FALLBACK GUARDRAIL: no result title satisfied the match (or
-        # the request/parse failed) — never guess by falling back to some
-        # other link on the page. Send the user to the search results
-        # themselves so they can pick the right one.
+
+        # Tier 3: the page had no parseable /doc/ links at all.
         return redirect(fallback_url)
 
     # Register blueprints

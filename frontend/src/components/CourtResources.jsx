@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
-import LegalForms from './LegalForms.jsx';
 import {
   fetchCourtGlobals,
   fetchCourtData,
@@ -817,10 +816,6 @@ export default function CourtResources() {
 
   // Forms court-filter state
   const [activeCourtFilter, setActiveCourtFilter] = useState('All');
-  // Legal Forms tab: dual-view toggle — official scraped court PDFs vs. the
-  // Smart AI Templates workspace (restricted to Court Petitions here, so
-  // this stays a court-forms tool and doesn't drift into NDAs/notices).
-  const [formsView, setFormsView] = useState('official');
 
   // Toast State
   const [toastMessage, setToastMessage] = useState(null);
@@ -1544,27 +1539,6 @@ export default function CourtResources() {
               <p>Official court forms, vakalatnamas, bail bonds, and checklists — sourced directly from court websites. Click to open the official portal and download.</p>
             </div>
 
-            {/* Dual-view toggle: scraped official PDFs vs. the Smart AI
-                Templates workspace (locked to Court Petitions). */}
-            <div className="sub-tabs-wrapper" style={{ marginBottom: '18px' }}>
-              <button
-                className={`sub-tab-btn ${formsView === 'official' ? 'active' : ''}`}
-                onClick={() => setFormsView('official')}
-              >
-                📄 Official Court PDFs
-              </button>
-              <button
-                className={`sub-tab-btn ${formsView === 'ai' ? 'active' : ''}`}
-                onClick={() => setFormsView('ai')}
-              >
-                ✨ Smart AI Templates
-              </button>
-            </div>
-
-            {formsView === 'ai' ? (
-              <LegalForms restrictedCategory="Court Petitions" />
-            ) : (
-            <>
             {/* Court filter pills */}
             <div className="control-row" style={{ marginBottom: '14px' }}>
               <div className="sub-tabs-wrapper" style={{ borderBottom: 'none', marginBottom: 0, flexWrap: 'wrap', gap: '6px' }}>
@@ -1659,8 +1633,6 @@ export default function CourtResources() {
                 );
               })()}
             </div>
-            </>
-            )}
           </div>
         )}
 

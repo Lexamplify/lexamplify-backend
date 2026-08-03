@@ -470,38 +470,14 @@ const flStyles = `
   :root[data-theme="light"] .fl-rag-synthesis { color: var(--text-primary, #0F172A); }
   :root[data-theme="light"] .fl-rag-citation { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
   :root[data-theme="light"] .fl-rag-ratio { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
-  /* .document-viewer-error/.fl-source-card-title/.dv-ai-summary-title use
+  /* .document-viewer-error/.dv-ai-summary-title use
      fixed accent hex values tuned for readability on this file's dark
      default — light pastel red/blue/purple that pass contrast on a near-
      black background fail it on white. Darkening only under the light
      theme, not touching the dark (default) values at all. */
   :root[data-theme="light"] .document-viewer-error { color: #B91C1C; background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); }
-  :root[data-theme="light"] .fl-source-card-title { color: #1D4ED8; }
   :root[data-theme="light"] .dv-ai-summary { background: rgba(99,102,241,0.06); border-color: rgba(99,102,241,0.25); }
   :root[data-theme="light"] .dv-ai-summary-title { color: #6D28D9; }
-
-  /* ── Clickable citation -> document viewer drawer ── */
-  .fl-rag-citation-clickable {
-    all: unset; box-sizing: border-box; display: block; width: 100%; cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .fl-rag-citation-clickable:hover { background: rgba(99,102,241,0.1); border-color: rgba(99,102,241,0.35); }
-  .fl-rag-citation-clickable:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
-
-  /* ── External Database source cards (year pill + truncated snippet) ── */
-  .fl-source-card { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: left; }
-  .fl-source-card-title-row { display: flex; align-items: center; gap: 7px; width: 100%; }
-  .fl-source-card-title { color: #7EB3F5; font-size: 12.5px; font-weight: 600; }
-  .fl-source-year-pill {
-    font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 10px;
-    background: rgba(99,102,241,0.16); color: #A5B4FC; border: 1px solid rgba(99,102,241,0.3);
-    flex-shrink: 0; white-space: nowrap;
-  }
-  .fl-source-snippet {
-    font-size: 11.5px; line-height: 1.5; color: var(--text-muted);
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-    overflow: hidden; text-overflow: ellipsis; max-height: 4.5em; width: 100%;
-  }
 
   /* ── Document Viewer Modal ──
      Centralized 90%-viewport modal (not a side drawer) for reading dense
@@ -600,46 +576,11 @@ const flStyles = `
     border: 1px solid rgba(239,68,68,0.25); padding: 12px 14px; border-radius: 8px;
   }
 
-  /* ── Citation expand-in-place panel (External Database source cards) ── */
-  .fl-citation-expand-panel {
-    margin-top: 16px; padding: 24px;
-    background: var(--bg-card); border-top: 1px solid var(--border-subtle);
-    border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
-    max-height: 60vh; overflow-y: auto;
-  }
-  /* Deliberately a DIFFERENT class from .document-viewer-text (used by the
-     full-screen modal), not a shared/modified one — that class stays
-     monospace on purpose for 300,000+ character judgments (see its own
-     comment). This is only for the inline accordion's shorter preview,
-     where a justified, serif-flow "printed legal document" look reads
-     better than monospace. text-align:justify only applies at sm+ — on a
-     narrow accordion, justify tends to create ugly rivers of whitespace. */
-  .fl-citation-text {
-    text-align: left; line-height: 1.65; font-size: 15px;
-    max-width: 896px; margin: 0 auto; word-break: break-word; white-space: pre-wrap;
-    color: #D1D5DB; /* gray-300 — this file's default (dark) theme */
-  }
-  :root[data-theme="light"] .fl-citation-text { color: #1F2937; } /* gray-800 */
-  @media (min-width: 640px) {
-    .fl-citation-text { text-align: justify; padding: 24px; }
-  }
-
-  /* ── Indian Kanoon external link (citation card title) ── */
-  .fl-kanoon-link {
-    display: inline-flex; align-items: center; justify-content: center;
-    color: var(--text-muted); flex-shrink: 0; margin-left: auto;
-    padding: 2px; border-radius: 4px; transition: color 0.15s, background 0.15s;
-  }
-  .fl-kanoon-link:hover { color: #93C5FD; background: rgba(59,130,246,0.12); }
-
   /* ── Internal / External mode toggle ── */
   .fl-mode-toggle { display: inline-flex; gap: 3px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 3px; margin-bottom: 16px; }
   .fl-mode-btn { background: transparent; border: none; color: var(--text-muted); font-size: 12.5px; font-weight: 600; padding: 7px 16px; border-radius: 6px; cursor: pointer; transition: all .15s; }
   .fl-mode-btn:hover { color: var(--text-primary); }
   .fl-mode-btn.active { background: var(--accent-primary); color: #fff; }
-
-  /* ── External Acts & Judgments results ── */
-  .fl-ext-results { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
   .fl-ext-result-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px 18px; }
   .fl-ext-result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
   .fl-ext-result-title { font-size: 14.5px; font-weight: 700; font-family: var(--font-serif); margin-bottom: 3px; }
@@ -681,11 +622,14 @@ export default function FirmLibrary() {
   // ── Internal / External library mode ────────────────────────────────────────
   const [libraryMode, setLibraryMode] = useState('internal'); // 'internal' | 'external'
   const [extQuery, setExtQuery] = useState('');
-  const [extRagResult, setExtRagResult] = useState(null); // { synthesis, sources: [{id, name}] } from live Pinecone/Groq search
+  // LLM-free rows from /api/firm-library/external-search, pre-mapped to the
+  // exact {id, title, category, updated, author, snippet} schema the
+  // internal-mode table below already renders — the external grid reuses
+  // that same table markup instead of a bespoke layout.
+  const [externalResults, setExternalResults] = useState([]);
+  const [extError, setExtError] = useState(null);
   const [extLoading, setExtLoading] = useState(false);
   const [sortMode, setSortMode] = useState('relevance');
-  const [expandedCitationId, setExpandedCitationId] = useState(null);
-  const [citationCache, setCitationCache] = useState({});
 
   // ── Document viewer drawer ──────────────────────────────────────────────────
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -700,29 +644,6 @@ export default function FirmLibrary() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryText, setSummaryText] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
-
-  const handleExpandCitation = async (source) => {
-    const targetId = source.case_id || source.id;
-    if (expandedCitationId === targetId) {
-      setExpandedCitationId(null);
-      return;
-    }
-    
-    setExpandedCitationId(targetId);
-    if (citationCache[targetId]?.text) {
-      return;
-    }
-    
-    setCitationCache(prev => ({ ...prev, [targetId]: { loading: true, text: "", error: null } }));
-    try {
-      const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(targetId)}`);
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
-      setCitationCache(prev => ({ ...prev, [targetId]: { loading: false, text: data.content, error: null } }));
-    } catch (err) {
-      setCitationCache(prev => ({ ...prev, [targetId]: { loading: false, text: "", error: err.message } }));
-    }
-  };
 
   // External Database sources come from the Pinecone-backed schema
   // ({ case_id, title, year, snippet }); source.id/.name are a fallback for
@@ -890,23 +811,23 @@ export default function FirmLibrary() {
     return () => clearTimeout(drawerTimerRef.current);
   }, []);
 
-  // ── External Database — live Pinecone/Groq RAG search (no mock data) ────────
+  // ── External Database — LLM-free Pinecone semantic search (no Groq call,
+  // no synthesis — just ranked, deduplicated case rows for the grid) ──────────
   useEffect(() => {
     if (libraryMode !== 'external') return;
-    if (extQuery.trim().length < 3) { setExtRagResult(null); setExtLoading(false); return; }
+    if (extQuery.trim().length < 3) { setExternalResults([]); setExtError(null); setExtLoading(false); return; }
     setExtLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/legal-research`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: extQuery.trim() }),
-        });
-        if (!res.ok) throw new Error('Legal research endpoint unavailable');
+        const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(extQuery.trim())}`);
         const data = await res.json();
-        if (data.status !== 'success') throw new Error(data.message || 'Legal research endpoint unavailable');
-        setExtRagResult({ synthesis: data.answer, sources: data.sources || [] });
-      } catch { setExtRagResult(null); } finally { setExtLoading(false); }
+        if (!res.ok || data.error) throw new Error(data.message || 'External search unavailable');
+        setExternalResults(data.results || []);
+        setExtError(null);
+      } catch (err) {
+        setExternalResults([]);
+        setExtError(err.message || 'External search unavailable');
+      } finally { setExtLoading(false); }
     }, 400);
     return () => clearTimeout(timer);
   }, [extQuery, libraryMode]);
@@ -1176,7 +1097,16 @@ export default function FirmLibrary() {
   );
 
   // ── Workspace render helpers ──────────────────────────────────────────────────
-  const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  // Guards against the empty/placeholder 'updated' values external-search
+  // rows can carry (no real date exists for a raw Pinecone chunk when the
+  // ingestion metadata lacked a year) — new Date('') is "Invalid Date",
+  // which toLocaleDateString would otherwise render as the literal string.
+  const fmtDate = (d) => {
+    if (!d) return '—';
+    const parsed = new Date(d);
+    if (Number.isNaN(parsed.getTime())) return '—';
+    return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
 
   return (
     <>
@@ -1200,7 +1130,7 @@ export default function FirmLibrary() {
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               className="btn-accent"
-              onClick={() => navigate('/firm-library/draft')}
+              onClick={() => navigate('/legal-forms')}
               style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7 }}
               title="Full-page drafting workspace — not a modal, so an accidental close never loses your draft"
             >
@@ -1575,116 +1505,80 @@ export default function FirmLibrary() {
               </div>
             )}
 
-            {!extLoading && extRagResult?.synthesis && (
-              <div className="fl-rag-dossier">
-                <div className="fl-rag-header">
-                  <span className="fl-rag-brain-badge">⚡ External Intelligence</span>
-                </div>
-                <div className="fl-rag-synthesis">{renderWithCitations(extRagResult.synthesis)}</div>
-                {extRagResult.sources.length > 0 && (
-                  <div>
-                    <div className="fl-rag-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Sources</span>
-                      <div style={{ fontSize: '11px', textTransform: 'none', letterSpacing: 'normal', fontWeight: 600 }}>
-                        <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Sort by:</span>
-                        <button onClick={() => setSortMode('relevance')} style={{ background: 'none', border: 'none', color: sortMode === 'relevance' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Relevance</button>
-                        <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>|</span>
-                        <button onClick={() => setSortMode('date')} style={{ background: 'none', border: 'none', color: sortMode === 'date' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Newest First</button>
-                      </div>
-                    </div>
-                    <div className="fl-rag-citations">
-                      {(sortMode === 'date' ? [...extRagResult.sources].sort((a, b) => (parseInt(b.year) || 0) - (parseInt(a.year) || 0)) : extRagResult.sources).map((s, i) => {
-                        // Defensive accessors — case_id/title are the current
-                        // Pinecone-backed schema; id/name are the pre-refactor
-                        // fallback so a stale cached response never crashes this.
-                        const displayTitle = s.title || s.name || 'Untitled Case';
-                        const displayYear = (s.year !== undefined && s.year !== null && s.year !== '') ? s.year : null;
-                        return (
-                          <div key={s.case_id || s.id || i} className="fl-rag-citation" style={{ padding: 0 }}>
-                            {/* A native <button> cannot legally contain another
-                                interactive element (the Indian Kanoon <a> below) —
-                                nesting <a> inside <button> is invalid HTML5 and
-                                browsers "fix" it unpredictably. Using a div with
-                                role="button" here instead, with the same keyboard
-                                semantics a real button would give for free. */}
-                            <div
-                              role="button"
-                              tabIndex={0}
-                              className="fl-rag-citation-clickable fl-source-card"
-                              style={{ padding: '9px 12px' }}
-                              onClick={() => handleExpandCitation(s)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  handleExpandCitation(s);
-                                }
-                              }}
-                            >
-                              <div className="fl-source-card-title-row">
-                                {displayYear && <span className="fl-source-year-pill">{displayYear}</span>}
-                                <span className="fl-source-card-title">{displayTitle}</span>
-                                <a
-                                  // Absolute backend origin, matching every other
-                                  // fetch in this file (openDocumentViewer,
-                                  // handlePinToVault, etc.) — a relative "/api/..."
-                                  // href would resolve against the Vite dev
-                                  // server's own origin instead (no proxy is
-                                  // configured for /api in vite.config.js), landing
-                                  // on the SPA's 404 instead of the Flask backend.
-                                  href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(displayTitle)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="fl-kanoon-link"
-                                  title="Open in Indian Kanoon"
-                                  // Without this, the click bubbles up to the card's
-                                  // onClick above and toggles the accordion at the
-                                  // same time the link navigates in a new tab.
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-                                </a>
-                              </div>
-                              {s.snippet && <div className="fl-source-snippet">{s.snippet}</div>}
-                            </div>
-                            {expandedCitationId === (s.case_id || s.id) && (
-                              <div className="fl-citation-expand-panel">
-                                {citationCache[s.case_id || s.id]?.loading ? (
-                                  <div className="fl-rag-loading">
-                                    <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                                    Loading document...
-                                  </div>
-                                ) : citationCache[s.case_id || s.id]?.error ? (
-                                  <div className="document-viewer-error">{citationCache[s.case_id || s.id].error}</div>
-                                ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="dv-action-btn"
-                                      style={{ marginBottom: 12 }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openDocumentViewer(s);
-                                      }}
-                                    >
-                                      ⤢ View Full Screen
-                                    </button>
-                                    <div className="fl-citation-text">
-                                      {citationCache[s.case_id || s.id]?.text}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+            {!extLoading && extError && (
+              <div className="fl-empty">
+                <div className="fl-empty-icon">⚠</div>
+                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>External search unavailable</div>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{extError}</div>
               </div>
             )}
 
-            {!extLoading && extQuery.trim().length >= 3 && !extRagResult?.synthesis && (
+            {!extLoading && !extError && externalResults.length > 0 && (() => {
+              const sortedResults = sortMode === 'date'
+                ? [...externalResults].sort((a, b) => new Date(b.updated || 0) - new Date(a.updated || 0))
+                : externalResults;
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      {externalResults.length} {externalResults.length === 1 ? 'result' : 'results'} from the external case-law database
+                    </div>
+                    <div style={{ fontSize: '11px', fontWeight: 600 }}>
+                      <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Sort by:</span>
+                      <button onClick={() => setSortMode('relevance')} style={{ background: 'none', border: 'none', color: sortMode === 'relevance' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Relevance</button>
+                      <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>|</span>
+                      <button onClick={() => setSortMode('date')} style={{ background: 'none', border: 'none', color: sortMode === 'date' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Newest First</button>
+                    </div>
+                  </div>
+
+                  {/* Same {id, title, category, updated, author} schema and
+                      table markup as the Internal Firm Files grid above —
+                      external-search rows render through the identical
+                      fl-table/fl-cat-chip styling, just sourced from
+                      /api/firm-library/external-search instead of SQLite. */}
+                  <div className="fl-table-wrap">
+                    <table className="fl-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '40%' }}>Document Title</th>
+                          <th style={{ width: '14%' }}>Category</th>
+                          <th style={{ width: '14%' }}>Date</th>
+                          <th style={{ width: '32%' }}>Author / Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedResults.map((entry) => {
+                          const catStyle = getCatStyle(entry.category);
+                          return (
+                            <tr key={entry.id} onClick={() => openDocumentViewer(entry)} style={{ cursor: 'pointer' }}>
+                              <td>
+                                <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
+                                  {entry.title}
+                                </div>
+                                {entry.snippet && (
+                                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{entry.snippet}</div>
+                                )}
+                              </td>
+                              <td>
+                                <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
+                                  {entry.category}
+                                </span>
+                              </td>
+                              <td style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                                {fmtDate(entry.updated)}
+                              </td>
+                              <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+
+            {!extLoading && !extError && extQuery.trim().length >= 3 && externalResults.length === 0 && (
               <div className="fl-empty">
                 <div className="fl-empty-icon">📂</div>
                 <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No matches found</div>
@@ -1711,9 +1605,9 @@ export default function FirmLibrary() {
           at some arbitrary scroll offset instead of covering the screen.
           Confirmed live: even the pre-existing .document-viewer-backdrop
           (inset:0) was affected before this fix.
-          Opened via the "View Full Screen" button inside a citation's
-          expand-in-place panel (see handleExpandCitation/citationCache
-          above), which calls openDocumentViewer below. */}
+          Opened by clicking a row in either the Internal Firm Files table
+          or the External Database search grid, both of which call
+          openDocumentViewer below. */}
       {viewerOpen && createPortal(
         <>
           <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />

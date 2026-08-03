@@ -16,8 +16,9 @@ import CaseWorkspace from './components/CaseWorkspace';
 import WarRoomView from './components/WarRoomView';
 import FirmLibrary from './components/FirmLibrary';
 import LegalForms from './components/LegalForms';
+import FormTemplateLibrary from './components/FormTemplateLibrary';
 import LexLogoMark from './components/LexLogoMark';
-import TEMPLATES from './data/templateData.js';
+import TEMPLATES from './data/legalTemplates.js';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -472,7 +473,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 // ── DASHBOARD VIEW — fully dynamic, zero hardcoded data ───────────────────────
 // Hand-picked, not derived from the full template list — these are the 5
 // forms a firm drafts most often, surfaced for one-click access. IDs are
-// still resolved against the real templateData.js entries below so the
+// still resolved against the real legalTemplates.js entries below so the
 // label/category shown here can never drift out of sync with the actual
 // template.
 const QUICK_DRAFT_TEMPLATE_IDS = [
@@ -989,7 +990,7 @@ function AppRouterContent() {
         <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
         <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
         <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />
-        <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms /></Layout>} />
+        <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FormTemplateLibrary /></Layout>} />
         <Route path="/firm-library/draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms showSaveBar /></Layout>} />
         <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />

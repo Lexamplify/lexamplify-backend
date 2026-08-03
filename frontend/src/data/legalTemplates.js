@@ -1,4 +1,4 @@
-// frontend/src/data/templateData.js
+// frontend/src/data/legalTemplates.js
 // Static template library for the Legal Forms workspace. Each entry's
 // html_template uses {{field_id}} placeholders — plain string tokens, not a
 // templating engine — swapped in by LegalForms.jsx's debounced preview

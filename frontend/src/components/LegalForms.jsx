@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import TEMPLATES, { CATEGORIES } from '../data/templateData.js';
+import TEMPLATES from '../data/legalTemplates.js';
 import { escapeHtml } from '../tiptap/textToHtml.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
@@ -41,26 +41,6 @@ const styles = `
   .lf-header { margin-bottom: 20px; }
   .lf-title { font-size: 22px; font-weight: 700; color: var(--text-dark-primary); margin: 0 0 4px; }
   .lf-subtitle { font-size: 13px; color: var(--text-dark-muted); margin: 0; }
-
-  .lf-category-tabs { display: flex; gap: 8px; margin: 18px 0; flex-wrap: wrap; }
-  .lf-category-tab {
-    padding: 7px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 600;
-    background: rgba(255,255,255,0.04); border: 1px solid var(--border-dark-subtle);
-    color: var(--text-dark-muted); cursor: pointer; transition: all 0.15s; font-family: inherit;
-  }
-  .lf-category-tab:hover { background: rgba(59,130,246,0.08); color: var(--text-dark-primary); }
-  .lf-category-tab.active { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.45); color: #93C5FD; }
-
-  .lf-template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
-  .lf-template-card {
-    background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle);
-    border-radius: 12px; padding: 18px; cursor: pointer; transition: all 0.18s;
-    display: flex; flex-direction: column; gap: 8px;
-  }
-  .lf-template-card:hover { border-color: rgba(59,130,246,0.4); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.25); }
-  .lf-template-card-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #93C5FD; }
-  .lf-template-card-title { font-size: 15px; font-weight: 600; color: var(--text-dark-primary); }
-  .lf-template-card-meta { font-size: 11.5px; color: var(--text-dark-muted); }
 
   .lf-workspace { display: grid; grid-template-columns: 380px 1fr; gap: 20px; align-items: start; }
   @media (max-width: 900px) { .lf-workspace { grid-template-columns: 1fr; } }
@@ -187,10 +167,9 @@ function TemplatePreviewEditor({ html }) {
   return <EditorContent editor={editor} />;
 }
 
-export default function LegalForms({ restrictedCategory, showSaveBar } = {}) {
+export default function LegalForms({ showSaveBar } = {}) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeCategory, setActiveCategory] = useState(restrictedCategory || 'All');
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [formValues, setFormValues] = useState({});
   const [fieldStatus, setFieldStatus] = useState({});
@@ -206,14 +185,6 @@ export default function LegalForms({ restrictedCategory, showSaveBar } = {}) {
     () => TEMPLATES.find((t) => t.id === selectedTemplateId) || null,
     [selectedTemplateId]
   );
-
-  // restrictedCategory is a hard guardrail, not just a default selection —
-  // it always wins over activeCategory so a stray state update can never
-  // leak templates from outside the restricted context back into view.
-  const visibleTemplates = useMemo(() => {
-    if (restrictedCategory) return TEMPLATES.filter((t) => t.category === restrictedCategory);
-    return activeCategory === 'All' ? TEMPLATES : TEMPLATES.filter((t) => t.category === activeCategory);
-  }, [activeCategory, restrictedCategory]);
 
   // Debounced live preview: re-run the string substitution 300ms after the
   // user stops typing, rather than on every keystroke. The preview editor
@@ -239,11 +210,10 @@ export default function LegalForms({ restrictedCategory, showSaveBar } = {}) {
     setDebouncedHtml(fillTemplate(template.html_template, {}));
   };
 
-  const backToLibrary = () => {
-    setSelectedTemplateId(null);
-    setFormValues({});
-    setFieldStatus({});
-  };
+  // Navigates back to the one canonical picker (FormTemplateLibrary) rather
+  // than clearing local state — this component no longer renders its own
+  // copy of the grid.
+  const backToLibrary = () => navigate('/legal-forms');
 
   const handleFieldChange = (fieldId, value) => {
     setFormValues((prev) => ({ ...prev, [fieldId]: value }));
@@ -308,15 +278,22 @@ export default function LegalForms({ restrictedCategory, showSaveBar } = {}) {
     setAutofillFacts('');
   };
 
-  // Case Vault hand-off: navigate('/firm-library/draft', { state: {
-  // templateId, contextFacts } }). templateId auto-opens the template;
-  // contextFacts (already human-reviewed in Case Vault's verification step)
-  // skips the Auto-Fill modal entirely and fires the extraction directly.
+  // This route is only ever reached with a template already chosen —
+  // FormTemplateLibrary (the standalone /legal-forms picker), the Dashboard
+  // Quick Draft modal, and Case Vault's context-aware flow all navigate here
+  // via navigate('/firm-library/draft', { state: { templateId, contextFacts } }).
+  // If templateId is missing (direct nav, stale link, etc.), bounce back to
+  // the one canonical picker instead of rendering a second copy of the grid.
+  // contextFacts, when present, is already human-reviewed (Case Vault's
+  // verification step) and skips the Auto-Fill modal, firing the extraction
+  // directly.
   useEffect(() => {
     const { templateId, contextFacts } = location.state || {};
-    if (!templateId) return;
-    const template = TEMPLATES.find((t) => t.id === templateId);
-    if (!template) return;
+    const template = templateId && TEMPLATES.find((t) => t.id === templateId);
+    if (!template) {
+      navigate('/legal-forms', { replace: true });
+      return;
+    }
     openTemplate(template);
     if (contextFacts && contextFacts.trim()) {
       runAutofill(template, contextFacts);
@@ -390,6 +367,10 @@ export default function LegalForms({ restrictedCategory, showSaveBar } = {}) {
     navigate('/contract-analyzer', { state: { importedDocument: debouncedHtml } });
   };
 
+  // No template resolved yet — the mount effect above is navigating away to
+  // /legal-forms this same tick; render nothing rather than a second grid.
+  if (!selectedTemplate) return null;
+
   return (
     <>
       <style>{styles}</style>
@@ -408,93 +389,52 @@ export default function LegalForms({ restrictedCategory, showSaveBar } = {}) {
         </div>
       )}
       <div className={`lf-shell${showSaveBar ? ' lf-shell-with-savebar' : ''}`}>
-        {!selectedTemplate ? (
-          <>
-            <div className="lf-header">
-              <h1 className="lf-title">📋 Legal Forms Library</h1>
-              <p className="lf-subtitle">Pick a template, fill it in (or let AI draft a first pass from client facts), then export or hand it to the Contract Analyzer.</p>
+        <button type="button" className="lf-back-btn" onClick={backToLibrary}>← Back to Library</button>
+        <div className="lf-header">
+          <h1 className="lf-title">{selectedTemplate.title}</h1>
+          <p className="lf-subtitle">{selectedTemplate.category}</p>
+        </div>
+
+        <div className="lf-workspace">
+          {/* LEFT PANE — dynamic form driven by schema */}
+          <div className="lf-form-panel">
+            <div className="lf-panel-head">
+              Form Fields
+              <button type="button" className="lf-autofill-btn" onClick={() => setAutofillOpen(true)}>
+                🪄 Auto-Fill with AI
+              </button>
             </div>
-
-            {/* COMPONENT GUARDRAIL: restrictedCategory hides the pills
-                entirely rather than just pre-selecting one — Court
-                Resources embeds this component specifically to keep the
-                user inside "Court Petitions" context; exposing a way back
-                to "All"/"Contracts & NDAs" here would defeat that. */}
-            {!restrictedCategory && (
-              <div className="lf-category-tabs">
-                {['All', ...CATEGORIES].map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    className={`lf-category-tab${activeCategory === cat ? ' active' : ''}`}
-                    onClick={() => setActiveCategory(cat)}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="lf-template-grid">
-              {visibleTemplates.map((t) => (
-                <div key={t.id} className="lf-template-card" onClick={() => openTemplate(t)}>
-                  <span className="lf-template-card-cat">{t.category}</span>
-                  <span className="lf-template-card-title">{t.title}</span>
-                  <span className="lf-template-card-meta">{t.schema.length} fields</span>
-                </div>
+            <div className="lf-form-body">
+              {selectedTemplate.schema.map((field) => (
+                <FieldInput
+                  key={field.field_id}
+                  field={field}
+                  value={formValues[field.field_id]}
+                  status={fieldStatus[field.field_id]}
+                  onChange={handleFieldChange}
+                />
               ))}
             </div>
-          </>
-        ) : (
-          <>
-            <button type="button" className="lf-back-btn" onClick={backToLibrary}>← Back to Library</button>
-            <div className="lf-header">
-              <h1 className="lf-title">{selectedTemplate.title}</h1>
-              <p className="lf-subtitle">{selectedTemplate.category}</p>
-            </div>
+          </div>
 
-            <div className="lf-workspace">
-              {/* LEFT PANE — dynamic form driven by schema */}
-              <div className="lf-form-panel">
-                <div className="lf-panel-head">
-                  Form Fields
-                  <button type="button" className="lf-autofill-btn" onClick={() => setAutofillOpen(true)}>
-                    🪄 Auto-Fill with AI
-                  </button>
-                </div>
-                <div className="lf-form-body">
-                  {selectedTemplate.schema.map((field) => (
-                    <FieldInput
-                      key={field.field_id}
-                      field={field}
-                      value={formValues[field.field_id]}
-                      status={fieldStatus[field.field_id]}
-                      onChange={handleFieldChange}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* RIGHT PANE — read-only TipTap live preview */}
-              <div className="lf-preview-panel">
-                <div className="lf-panel-head">Live Preview</div>
-                <div className="lf-preview-scroll">
-                  <div className="lf-preview-doc">
-                    <TemplatePreviewEditor html={debouncedHtml} />
-                  </div>
-                </div>
-                <div className="lf-action-bar">
-                  <button type="button" className="lf-action-btn" onClick={handleDownloadDocx} disabled={downloading}>
-                    {downloading ? 'Preparing…' : '⬇ Download DOCX'}
-                  </button>
-                  <button type="button" className="lf-action-btn primary" onClick={handleOpenInAnalyzer}>
-                    📖 Open in Analyzer
-                  </button>
-                </div>
+          {/* RIGHT PANE — read-only TipTap live preview */}
+          <div className="lf-preview-panel">
+            <div className="lf-panel-head">Live Preview</div>
+            <div className="lf-preview-scroll">
+              <div className="lf-preview-doc">
+                <TemplatePreviewEditor html={debouncedHtml} />
               </div>
             </div>
-          </>
-        )}
+            <div className="lf-action-bar">
+              <button type="button" className="lf-action-btn" onClick={handleDownloadDocx} disabled={downloading}>
+                {downloading ? 'Preparing…' : '⬇ Download DOCX'}
+              </button>
+              <button type="button" className="lf-action-btn primary" onClick={handleOpenInAnalyzer}>
+                📖 Open in Analyzer
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {autofillOpen && (

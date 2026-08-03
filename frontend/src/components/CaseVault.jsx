@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchDocuments, uploadDocument, deleteDocument } from '../services/api';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
-import TEMPLATES from '../data/templateData.js';
+import TEMPLATES from '../data/legalTemplates.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
