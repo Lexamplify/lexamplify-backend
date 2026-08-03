@@ -1223,29 +1223,53 @@ def create_app():
         """One Kanoon search request -> its parsed result_title elements,
         or None on any network/HTTP failure. None must always be treated by
         the caller as 'give up, redirect to fallback_url' — never retried
-        silently, per the network guardrail."""
+        silently, per the network guardrail.
+
+        Routed through ZenRows (premium proxy, 'in' exit node) whenever
+        ZENROWS_API_KEY is configured — production runs from a
+        datacenter/cloud-host IP that Kanoon routinely blocks or degrades,
+        which no amount of header-spoofing from that host gets around.
+        Falls back to a direct request only when the key is absent, i.e.
+        local development from an ordinary residential IP.
+        """
+        zenrows_key = os.getenv("ZENROWS_API_KEY")
+        target_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(form_input)}"
+
         try:
-            resp = requests.get(
-                'https://indiankanoon.org/search/',
-                # requests encodes params itself — case titles routinely
-                # contain commas/parens/ampersands, and manually
-                # f-string-interpolating form_input into the URL would let
-                # an "&" truncate/corrupt the formInput param.
-                params={'formInput': form_input},
-                timeout=4,
-                # A real browser UA — Kanoon can 403 (or serve degraded
-                # results) to a UA that self-identifies as a bot.
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                                        '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'},
-            )
+            if zenrows_key:
+                resp = requests.get(
+                    "https://api.zenrows.com/v1/",
+                    # ZenRows' own param name is "apikey" (no underscore) —
+                    # confirmed live: sending "api_key" gets a 401 AUTH001
+                    # ("No apikey provided") on every single request, which
+                    # would silently degrade every production redirect to
+                    # the bare search page instead of a specific doc.
+                    params={
+                        'apikey': zenrows_key,
+                        'url': target_url,
+                        'premium_proxy': 'true',
+                        'proxy_country': 'in',
+                    },
+                    timeout=15,
+                )
+            else:
+                resp = requests.get(
+                    "https://indiankanoon.org/search/",
+                    params={'formInput': form_input},
+                    timeout=5,
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                                            'Chrome/122.0.0.0 Safari/537.36'},
+                )
             # A 403/5xx response body is still valid HTML (an error/block
             # page) — requests won't raise on its own, so raise_for_status()
             # is what actually routes a block or outage into the
             # RequestException branch below instead of silently parsing
             # zero results out of a block page.
             resp.raise_for_status()
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as err:
+            print(f"[KANOON ERROR] Proxy Mode ({'ZenRows' if zenrows_key else 'Direct'}): {err}")
             return None
+
         # Matched by class only, not class+tag — Kanoon's search page was
         # redesigned since this was first written; the result title element
         # is an <h4> today (it used to be a <div>), and tying the query to
