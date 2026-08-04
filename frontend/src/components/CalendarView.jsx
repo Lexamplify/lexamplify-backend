@@ -439,7 +439,7 @@ export default function CalendarView() {
       />
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <div className="calendar-header-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '6px' }}>Legal Calendar Dashboard</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>

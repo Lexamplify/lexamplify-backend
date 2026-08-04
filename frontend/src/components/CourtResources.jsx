@@ -175,14 +175,26 @@ const styles = `
     box-shadow: 0 0 8px currentColor;
   }
 
-  /* Tabs Navigation */
+  /* Bug #11: the auto-fill minmax(320px,1fr) grid can't shrink a card below
+     320px, so on viewports narrower than ~320px-plus-padding the card (and
+     its right-aligned "Read ↗" link) overflows past the edge. Force a
+     single column once there's no room for even one full 320px card. */
+  @media (max-width: 400px) {
+    .bare-acts-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  /* Tabs Navigation — wraps onto multiple lines on narrow viewports instead of
+     scrolling horizontally (Bug #3), matching the filter-pill pattern already
+     used in Legal Forms Library / Firm Library. */
   .tabs-wrapper {
     display: flex;
-    overflow-x: auto;
+    flex-wrap: wrap;
     border-bottom: 1px solid var(--border-dark-subtle);
     margin-bottom: 24px;
     gap: 8px;
-    padding-bottom: 4px;
+    padding-bottom: 8px;
   }
 
   .tab-btn {
@@ -235,6 +247,7 @@ const styles = `
 
   .sub-tabs-wrapper {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -546,7 +559,11 @@ const styles = `
   .events-source-pill {
     display: inline-flex; align-items: center; gap: 4px;
     font-size: 9.5px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .06em; color: #1E293B;
+    letter-spacing: .06em;
+    /* Bug #13: this was #1E293B (a color meant for light backgrounds) on a
+       near-transparent dark pill — effectively unreadable/"muted" against
+       the dark card. Use the theme's actual muted-on-dark text color. */
+    color: var(--text-dark-muted);
     background: rgba(255,255,255,.05);
     border: 1px solid rgba(255,255,255,.08);
     border-radius: 10px; padding: 2px 7px; flex-shrink: 0;
@@ -1167,7 +1184,7 @@ export default function CourtResources() {
                 {loadingGlobals ? (
                   <div style={{ padding: '30px', textAlign: 'center', fontStyle: 'italic', color: 'var(--text-dark-muted)' }}>Loading virtual court directory...</div>
                 ) : (
-                  <table className="premium-table">
+                  <table className="premium-table lex-responsive-table">
                     <thead>
                       <tr>
                         <th>Courtroom</th>
@@ -1179,19 +1196,19 @@ export default function CourtResources() {
                     <tbody>
                       {globals.sc_courts.map((court, i) => (
                         <tr key={i}>
-                          <td><strong>Court {court.room}</strong></td>
-                          <td>
-                            <a href={court.vc} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
+                          <td data-label="Courtroom"><strong>Court {court.room}</strong></td>
+                          <td data-label="VC Webex Meeting Link" style={{ minWidth: 0 }}>
+                            <a href={court.vc} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom' }}>
                               {court.vc.length > 40 ? `${court.vc.slice(0, 40)}...` : court.vc}
                             </a>
                             <button className="copy-btn-link" onClick={() => handleCopy(court.vc)}>Copy</button>
                           </td>
-                          <td>
+                          <td data-label="Status">
                             <button className="copy-btn-link" style={{ marginLeft: 0 }} onClick={() => openInAppBrowser('https://sci.gov.in/display-board')}>
                               📺 {court.meetId} ↗
                             </button>
                           </td>
-                          <td style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>{court.email}</td>
+                          <td data-label="Court Master Email" style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>{court.email}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1348,7 +1365,7 @@ export default function CourtResources() {
                       </div>
                     ) : (
                       <div className="responsive-table-container">
-                        <table className="premium-table">
+                        <table className="premium-table lex-responsive-table">
                           <thead>
                             <tr>
                               <th>Judge Name</th>
@@ -1359,18 +1376,18 @@ export default function CourtResources() {
                           </thead>
                           <tbody>
                             {hcData.judges
-                              .filter(j => 
-                                j.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                              .filter(j =>
+                                j.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                 j.room.toLowerCase().includes(searchQuery.toLowerCase())
                               )
                               .map((j, idx) => (
                                 <tr key={idx}>
-                                  <td><strong>{j.name}</strong></td>
-                                  <td><span className="card-badge" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-dark-primary)' }}>{j.room}</span></td>
-                                  <td>
+                                  <td data-label="Judge Name"><strong>{j.name}</strong></td>
+                                  <td data-label="Courtroom / Bench"><span className="card-badge" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-dark-primary)' }}>{j.room}</span></td>
+                                  <td data-label="Virtual Courtroom Link" style={{ minWidth: 0 }}>
                                     {j.vc.startsWith('http') ? (
                                       <>
-                                        <a href={j.vc} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>
+                                        <a href={j.vc} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom' }}>
                                           {j.vc.length > 35 ? `${j.vc.slice(0, 35)}...` : j.vc}
                                         </a>
                                         <button className="copy-btn-link" onClick={() => handleCopy(j.vc)}>Copy</button>
@@ -1380,7 +1397,7 @@ export default function CourtResources() {
                                       <span style={{ color: 'var(--text-dark-muted)', fontStyle: 'italic' }}>{j.vc}</span>
                                     )}
                                   </td>
-                                  <td style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>{j.email || '—'}</td>
+                                  <td data-label="Court Secretary Email" style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>{j.email || '—'}</td>
                                 </tr>
                               ))
                             }
@@ -1507,7 +1524,7 @@ export default function CourtResources() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+            <div className="bare-acts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
               {BARE_ACTS
                 .filter(act => act.name.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((act, index) => (
@@ -1518,8 +1535,8 @@ export default function CourtResources() {
                     rel="noopener noreferrer"
                     style={{ textDecoration: 'none' }}
                   >
-                    <div className="premium-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px' }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '8px' }}>
+                    <div className="premium-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', boxSizing: 'border-box' }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '8px', minWidth: 0 }}>
                         <span style={{ color: 'var(--text-dark-primary)', fontWeight: '500', fontSize: '13.5px' }}>📖 {act.name}</span>
                       </div>
                       <span style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600', flexShrink: 0 }}>Read ↗</span>
@@ -1590,7 +1607,7 @@ export default function CourtResources() {
                   return matchText && matchCourt;
                 });
                 return (
-                  <table className="premium-table">
+                  <table className="premium-table lex-responsive-table">
                     <thead>
                       <tr>
                         <th>Form / Template Name</th>
@@ -1608,16 +1625,16 @@ export default function CourtResources() {
                         </tr>
                       ) : filtered.map((form, idx) => (
                         <tr key={idx}>
-                          <td><strong>📋 {form.name}</strong></td>
-                          <td>
+                          <td data-label="Form / Template Name"><strong>📋 {form.name}</strong></td>
+                          <td data-label="Court">
                             <span className="card-badge" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-dark-muted)', fontSize: '11px' }}>
                               {form.court || 'General'}
                             </span>
                           </td>
-                          <td>
+                          <td data-label="Category">
                             <span className="card-badge" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-dark-primary)' }}>{form.cat}</span>
                           </td>
-                          <td style={{ textAlign: 'right' }}>
+                          <td data-label="Actions" style={{ textAlign: 'right' }}>
                             <button
                               className="btn-accent"
                               style={{ fontSize: '11px', padding: '4px 10px' }}

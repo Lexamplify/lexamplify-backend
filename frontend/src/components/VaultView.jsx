@@ -1678,7 +1678,7 @@ export default function VaultView({ targetFolderId = null }) {
           </p>
         </div>
         {activeTab === 'vault' && (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             {currentSubFolders.length > 0 && !isInitializing && (
               <button
                 className="btn-danger"

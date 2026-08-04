@@ -1369,7 +1369,7 @@ export default function FirmLibrary() {
 
             {/* Data Grid */}
             <div className="fl-table-wrap" onMouseMove={handleMouseMove}>
-              <table className="fl-table">
+              <table className="fl-table lex-responsive-table">
                 <thead>
                   <tr>
                     <ThHeader col="title" label="Document Title" style={{ width: '38%' }} />
@@ -1413,7 +1413,7 @@ export default function FirmLibrary() {
                         onMouseEnter={e => handleRowMouseEnter(entry, e)}
                         onMouseLeave={handleRowMouseLeave}
                       >
-                        <td>
+                        <td data-label="Document Title">
                           <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
                             {entry.title}
                           </div>
@@ -1426,15 +1426,15 @@ export default function FirmLibrary() {
                             </div>
                           )}
                         </td>
-                        <td>
+                        <td data-label="Category">
                           <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
                             {entry.category}
                           </span>
                         </td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                        <td data-label="Last Updated" style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
                           {fmtDate(entry.updated)}
                         </td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
+                        <td data-label="Author / Source" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
                         <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                           <div className="fl-row-actions">
                             <button
@@ -1542,7 +1542,7 @@ export default function FirmLibrary() {
                       fl-table/fl-cat-chip styling, just sourced from
                       /api/firm-library/external-search instead of SQLite. */}
                   <div className="fl-table-wrap">
-                    <table className="fl-table">
+                    <table className="fl-table lex-responsive-table">
                       <thead>
                         <tr>
                           <th style={{ width: '40%' }}>Document Title</th>
@@ -1556,7 +1556,7 @@ export default function FirmLibrary() {
                           const catStyle = getCatStyle(entry.category);
                           return (
                             <tr key={entry.id} onClick={() => openDocumentViewer(entry)} style={{ cursor: 'pointer' }}>
-                              <td>
+                              <td data-label="Document Title">
                                 <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
                                   {entry.title}
                                 </div>
@@ -1564,15 +1564,15 @@ export default function FirmLibrary() {
                                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{entry.snippet}</div>
                                 )}
                               </td>
-                              <td>
+                              <td data-label="Category">
                                 <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
                                   {entry.category}
                                 </span>
                               </td>
-                              <td style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                              <td data-label="Date" style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
                                 {fmtDate(entry.updated)}
                               </td>
-                              <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
+                              <td data-label="Author / Source" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
                             </tr>
                           );
                         })}
