@@ -1113,7 +1113,13 @@ def create_app():
         try:
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
             index = _get_pinecone_index(pc)
-            namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
+            # Hardcoded, not read from PINECONE_NAMESPACE — this route only
+            # ever targets one namespace, and reading it from an env var
+            # that could be unset-to-empty-string in some deployment would
+            # silently query Pinecone's separate default namespace instead
+            # (empty string is itself a valid, DIFFERENT namespace, not
+            # "unset") and return zero results with no error.
+            namespace = "legal-cases"
 
             embed_response = pc.inference.embed(
                 model=EMBED_MODEL,
@@ -1122,9 +1128,13 @@ def create_app():
             )
             query_vector = embed_response[0].values
 
-            # top_k deliberately high (45, not ~10) — a single case can
-            # contribute dozens of chunks, so a small top_k would rarely
-            # survive dedup as more than one or two distinct cases.
+            # top_k deliberately high (45, not the 10 we actually return) —
+            # a single case can contribute dozens of chunks, so a small
+            # top_k would rarely survive dedup as more than one or two
+            # distinct cases; over-fetching lets the loop below collect 10
+            # actually-DIFFERENT cases instead of 10 near-duplicate chunks
+            # of the same one or two. No score-threshold filtering — every
+            # match is a dedup/formatting candidate regardless of score.
             pinecone_results = index.query(
                 vector=query_vector,
                 top_k=45,
@@ -1135,8 +1145,8 @@ def create_app():
             results = []
             seen_cases = set()
             for match in (pinecone_results.matches or []):
-                metadata = match.metadata or {}
-                case_id = metadata.get('case_id') or match.id
+                meta = match.metadata or {}
+                case_id = meta.get('case_id') or match.id
                 # CRITICAL DEDUPLICATION — same as /api/legal-research: a
                 # case can have hundreds of chunks, so without this the
                 # first case in the ranking would flood the grid with N
@@ -1145,24 +1155,50 @@ def create_app():
                     continue
                 seen_cases.add(case_id)
 
-                text = metadata.get('text', '')
-                year = metadata.get('year', '')
+                # worker.py's actual ingested metadata is only ever
+                # {case_id, year, chunk_index, text} — title/case_name/
+                # citation/etc. below are NOT present today. The extra
+                # fallback keys are deliberate future-proofing (bulletproof
+                # against the metadata schema gaining fields later), not
+                # evidence they exist now; the real, working fallback is
+                # format_case_title(case_id), not a flat placeholder string
+                # that would otherwise render identically for every row.
+                resolved_title = (
+                    meta.get('title') or meta.get('case_name') or meta.get('doc_title')
+                    or format_case_title(case_id)
+                )
+                text = meta.get('snippet') or meta.get('text') or meta.get('chunk_text') or ''
+                year = meta.get('year') or meta.get('date') or ''
+
                 results.append({
+                    # case_id, not match.id (a raw per-CHUNK vector hash) —
+                    # this is what /api/document/<id> and Pin-to-Vault
+                    # expect, and what the dedup above is keyed on; using
+                    # the chunk id here would silently break both.
                     'id': case_id,
                     'case_id': case_id,
-                    'title': format_case_title(case_id),
-                    # No real category/author exists for a raw Pinecone
-                    # chunk — fallback values so this maps onto the exact
-                    # same {id, title, category, updated, author} schema
-                    # the Firm Library table already renders for internal
-                    # entries, letting the frontend reuse that table as-is.
+                    'title': resolved_title,
+                    'case_title': resolved_title,
+                    'case_name': resolved_title,
+                    'snippet': text[:200],
+                    'text': text[:200],
+                    'citation': meta.get('citation') or meta.get('reporter') or 'Supreme Court of India',
+                    'year': str(year) if year else 'N/A',
+                    'score': round(float(match.score), 4) if match.score is not None else None,
+                    # Fallback values so this ALSO still maps onto the
+                    # {id, title, category, updated, author} schema the
+                    # Firm Library table's shared rows already render for
+                    # internal entries — no real category/author exists
+                    # for a raw Pinecone chunk.
                     'category': 'Case Law',
                     'updated': f"{year}-01-01" if year else '',
                     'author': 'External Case Law DB',
-                    'snippet': text[:200],
                     'tags': [],
                 })
-            return jsonify({'status': 'success', 'results': results}), 200
+                if len(results) >= 10:
+                    break
+
+            return jsonify({'status': 'success', 'results': results, 'data': results}), 200
         except Exception as e:
             print(f"[PINECONE ERROR] {e}")
             return jsonify({"status": "error", "message": "Vector database unavailable.", "results": []}), 200
@@ -1321,27 +1357,48 @@ def create_app():
         cleaned_query = _KANOON_DASH_QUOTE_RE.sub(' ', query)
         cleaned_query = re.sub(r'\s+', ' ', cleaned_query).strip()
 
-        citation_boosters = _kanoon_extract_boosters(cleaned_query)
         is_case = bool(_KANOON_CASE_SPLIT_RE.search(cleaned_query))
 
-        if is_case:
-            party_a_raw, party_b_raw = _KANOON_CASE_SPLIT_RE.split(cleaned_query, maxsplit=1)
-            tokens_a = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_a_raw)))[:3]
-            tokens_b = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_b_raw)))[:3]
-            query_tokens = {t.lower() for t in tokens_a + tokens_b}
-            clauses = [c for c in (_kanoon_title_clause(tokens_a), _kanoon_title_clause(tokens_b)) if c]
-            # Degenerate case: stopword-filtering emptied BOTH parties (e.g.
-            # "The State v. The Union") — title:() is invalid Lucene syntax,
-            # so fall back to the cleaned query instead of sending Kanoon
-            # malformed input.
-            form_input = ' '.join(clauses) if clauses else cleaned_query
-        else:
-            # Non-case query: no title:() scoping, no bracket-stripping —
-            # the cleaned query is sent to Kanoon directly.
-            query_tokens = {t.lower() for t in _kanoon_tokenize(cleaned_query)}
-            form_input = cleaned_query
+        if not is_case:
+            # Statutory/doctrine queries ("Doctrine of Promissory Estoppel")
+            # almost never repeat their exact phrasing inside any single
+            # judgment's title+snippet, so the token-intersection scorer
+            # below routinely scores every real, relevant hit as 0 and
+            # punts to the bare search page even when Kanoon's own #1
+            # result is a perfectly good answer — confirmed empirically:
+            # a batch of realistic doctrine queries scored 0 across the
+            # board despite Kanoon returning 10 real results each. Skip
+            # scoring entirely here and trust Kanoon's own ranking instead.
+            result_titles = _kanoon_fetch_results(cleaned_query)
+            if result_titles:
+                a_tag = result_titles[0].find('a', href=True)
+                if a_tag:
+                    # /doc(?:fragment)?/ — not a bare /doc/ — matches both
+                    # of Kanoon's link forms: plain /doc/<id>/ when the
+                    # match was in the title, /docfragment/<id>/ when it
+                    # was in the body. A /doc/-only pattern silently drops
+                    # to the fallback for the /docfragment/ case — and that
+                    # case is the COMMON one here: sampled against several
+                    # realistic doctrine queries, 3 of 4 top results linked
+                    # via /docfragment/, not /doc/.
+                    doc_match = _KANOON_DOC_ID_RE.search(a_tag['href'])
+                    if doc_match:
+                        return redirect(f"https://indiankanoon.org/doc/{doc_match.group(1)}/")
+            return redirect(fallback_url)
 
-        # Attempt 1: title-scoped search for cases, cleaned query otherwise.
+        citation_boosters = _kanoon_extract_boosters(cleaned_query)
+        party_a_raw, party_b_raw = _KANOON_CASE_SPLIT_RE.split(cleaned_query, maxsplit=1)
+        tokens_a = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_a_raw)))[:3]
+        tokens_b = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_b_raw)))[:3]
+        query_tokens = {t.lower() for t in tokens_a + tokens_b}
+        clauses = [c for c in (_kanoon_title_clause(tokens_a), _kanoon_title_clause(tokens_b)) if c]
+        # Degenerate case: stopword-filtering emptied BOTH parties (e.g.
+        # "The State v. The Union") — title:() is invalid Lucene syntax,
+        # so fall back to the cleaned query instead of sending Kanoon
+        # malformed input.
+        form_input = ' '.join(clauses) if clauses else cleaned_query
+
+        # Attempt 1: title-scoped search.
         result_titles = _kanoon_fetch_results(form_input)
         if result_titles is None:
             return redirect(fallback_url)
@@ -1351,10 +1408,10 @@ def create_app():
         # formatted (abbreviations, "& Ors" variants, etc.) — one plain retry
         # with the cleaned (not raw) query before giving up; retrying with
         # the UNCLEANED original would just reproduce the same
-        # unicode-choking failure this cleanup step exists to fix. Skipped
-        # when form_input already IS the cleaned query (non-case path, or a
-        # case query degenerate enough that both parties fell back to it
-        # too) — retrying would just re-fetch the identical 0 results.
+        # unicode-choking failure the cleanup step exists to fix. Skipped
+        # when form_input already IS the cleaned query (a case query
+        # degenerate enough that both parties fell back to it) — retrying
+        # would just re-fetch the identical 0 results.
         if not result_titles and form_input != cleaned_query:
             result_titles = _kanoon_fetch_results(cleaned_query)
             if result_titles is None:

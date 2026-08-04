@@ -132,16 +132,17 @@ def auto_draft():
     # value (e.g. {"instructions": 12345}) reaching .strip() below and
     # crashing with an unhandled AttributeError instead of the intended
     # 400 — "bulletproof" parsing means surviving malformed types, not
-    # just missing keys.
-    instructions = str(data.get('instructions') or data.get('drafting_instructions') or data.get('prompt') or '')
-    precedent = str(data.get('precedent_insert') or '')
+    # just missing keys. .strip() applied at assignment so every use below
+    # reads the already-normalized value, not a mix of stripped/unstripped.
+    instructions = str(data.get('instructions') or data.get('drafting_instructions') or data.get('prompt') or '').strip()
+    precedent = str(data.get('precedent_insert') or data.get('precedent') or '').strip()
     # 'context' (no prefix) is the field name the existing
     # ContractAnalyzer.jsx caller already sends — kept as a fallback
     # alongside the new 'reference_context' name so that live integration
     # doesn't silently lose its context on this refactor.
-    context = str(data.get('reference_context') or data.get('context') or '')
+    context = str(data.get('reference_context') or data.get('context') or '').strip()
 
-    if not instructions.strip():
+    if not instructions:
         return jsonify({"error": True, "message": "Drafting instructions required."}), 400
 
     system_prompt = (
@@ -150,16 +151,26 @@ def auto_draft():
         "Output plain text only — no HTML tags, no markdown formatting, no "
         "preambles or commentary. Only the drafted clause itself."
     )
-    if context.strip():
-        system_prompt += f"\n\nREFERENCE CONTEXT:\n{context.strip()}"
-    if precedent.strip():
-        system_prompt += f"\n\nPRECEDENT TO INCORPORATE:\n{precedent.strip()}"
+    if context:
+        system_prompt += f"\n\nREFERENCE CONTEXT:\n{context}"
+    if precedent:
+        system_prompt += f"\n\nPRECEDENT TO INCORPORATE:\n{precedent}"
 
     try:
-        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions.strip()}")
+        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions}")
         if not generated_text or not generated_text.strip():
             raise ValueError("LLM returned an empty draft.")
-        return jsonify({"status": "success", "draft": generated_text.strip()}), 200
+        generated_text = generated_text.strip()
+        # draft/clause/content are the same string under three names —
+        # different callers (old and new UI panels) read different keys
+        # for the identical generated text, so all three ship together
+        # rather than requiring each caller to agree on one key first.
+        return jsonify({
+            "status": "success",
+            "draft": generated_text,
+            "clause": generated_text,
+            "content": generated_text,
+        }), 200
     except Exception as e:
         print(f"[Auto-Draft Error]: {e}")
         return jsonify({"error": True, "message": "AI reasoning engine timeout or failure. Please retry."}), 500
