@@ -232,6 +232,18 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   // stealth overlay). Manual collapse also uses the icon rail.
   const isIconOnly = isCollapsed || focusMode;
 
+  // Mobile viewport tracking. On mobile the sidebar is already forced to a full-width
+  // off-canvas drawer (see index.css), so the "Focus Mode" toggle — normally hidden
+  // in icon-only mode — needs to stay reachable there; it's the only non-keyboard,
+  // non-floating-pill way to turn focus mode back off (Bug #2).
+  const [navViewportWidth, setNavViewportWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const h = () => setNavViewportWidth(window.innerWidth);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  const isMobileNav = navViewportWidth <= 768;
+
   // ── Sidebar case list — fetched live from the real API ──────────────────
   const [sidebarCases, setSidebarCases] = useState([]);
   useEffect(() => {
@@ -388,8 +400,10 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             </button>
           </Link>
 
-          {/* Focus Mode toggle — hidden when icon-only (Ctrl+\ still works) */}
-          {!isIconOnly && (
+          {/* Focus Mode toggle — hidden when icon-only on desktop (Ctrl+\ still works there);
+              kept visible on mobile since it's the only tap-reachable way to exit focus mode
+              once the floating exit pill is hidden on small viewports (Bug #2). */}
+          {(!isIconOnly || isMobileNav) && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px', fontSize: '12px', color: 'var(--text-muted)' }}>
               <span>Focus Mode</span>
               <div
@@ -441,22 +455,30 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
           <Breadcrumbs />
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginLeft: 'auto' }}>
-            <button
-              onClick={toggleTheme}
-              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-              style={{
-                background: 'transparent', border: '1px solid var(--border-subtle)',
-                borderRadius: '7px', width: '32px', height: '32px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', color: 'var(--text-primary)', transition: 'all 0.15s',
-              }}
-            >
-              {theme === 'dark' ? Icons.sun() : Icons.moon()}
-            </button>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-              Operating strictly under <strong style={{ color: 'var(--text-primary)' }}>Indian Law</strong>
-            </div>
+          {/* Theme toggle — stays on the main row, next to the title, at every
+              width (Bug #6). Kept as its own flex item (not grouped with the
+              tagline below) so only the tagline needs to give way on mobile. */}
+          <button
+            className="topbar-theme-toggle"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+            style={{
+              background: 'transparent', border: '1px solid var(--border-subtle)',
+              borderRadius: '7px', width: '32px', height: '32px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', color: 'var(--text-primary)', transition: 'all 0.15s',
+              marginLeft: 'auto', flexShrink: 0,
+            }}
+          >
+            {theme === 'dark' ? Icons.sun() : Icons.moon()}
+          </button>
+
+          {/* "Operating strictly under Indian Law" tagline — lowest priority
+              header element. On narrow phones it drops to its own full-width
+              line below the hamburger/title/toggle row instead of fighting
+              them for space (Bug #6); see .topbar-tagline media query. */}
+          <div className="topbar-tagline" style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '14px', flexShrink: 0 }}>
+            Operating strictly under <strong style={{ color: 'var(--text-primary)' }}>Indian Law</strong>
           </div>
         </header>
 
@@ -738,7 +760,7 @@ const DashboardView = () => {
       {/* ── MORNING TRIAGE SPLIT-SCREEN ── */}
       <div style={{ marginBottom: '36px' }}>
         <h2 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '16px', color: 'var(--text-primary)' }}>Morning Triage</h2>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+        <div className="morning-triage-grid" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
 
           {/* Left col — Urgent Action Items (flex: 2) */}
           <div style={{ flex: 2, background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '12px', overflow: 'hidden', minWidth: 0 }}>

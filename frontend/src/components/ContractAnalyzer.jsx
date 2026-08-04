@@ -73,6 +73,28 @@ const styles = `
 
   .analyzer-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
 
+  /* Bug #8: the header is a single fixed-height, overflow:hidden row with
+     every child flex-shrink:0 — on a narrow viewport the Mode selector has
+     nowhere to go and gets clipped at the right edge. Let the row wrap and
+     drop the actions (Mode selector + buttons) onto their own full-width
+     line instead of hiding them. */
+  @media (max-width: 767px) {
+    .analyzer-header {
+      height: auto;
+      min-height: 52px;
+      flex-wrap: wrap;
+      overflow: visible;
+      padding: 10px 16px;
+      row-gap: 8px;
+    }
+    .analyzer-actions {
+      flex-basis: 100%;
+      margin-left: 0;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+  }
+
   /* ── SUMMARY BANNER (collapsible) ───────────────────────────────── */
   .summary-banner {
     background: linear-gradient(135deg, rgba(59,130,246,0.07), rgba(99,102,241,0.05));

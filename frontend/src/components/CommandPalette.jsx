@@ -334,6 +334,28 @@ const AGENT_CSS = `
   .lex-sidebar-toggle { background:none; border:none; color:#3D5168; cursor:pointer; padding:4px 6px; border-radius:4px; line-height:1; transition:all .15s; }
   .lex-sidebar-toggle:hover { color:#7EB3F5; background:rgba(59,130,246,.08); }
 
+  /* ── Mobile: sidebar becomes an off-canvas drawer that slides OVER the
+     chat panel instead of sharing flex space with it (Bug #1). The inline
+     flex-basis toggle above is ignored once position:fixed takes the
+     sidebar out of flow, so the chat panel always renders full-width. ── */
+  .lex-sidebar-backdrop { display:none; }
+  @media (max-width: 767px) {
+    .lex-sidebar {
+      position: fixed; top: 0; left: 0; height: 100%; z-index: 20;
+      width: 255px; max-width: 82vw;
+      box-shadow: 6px 0 28px rgba(0,0,0,.5);
+      transform: translateX(-100%);
+      transition: transform .25s cubic-bezier(.4,0,.2,1);
+    }
+    .lex-sidebar.mobile-open { transform: translateX(0); }
+    .lex-sidebar-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 19;
+      background: rgba(3,6,14,.6);
+      opacity: 0; pointer-events: none; transition: opacity .2s ease;
+    }
+    .lex-sidebar-backdrop.visible { opacity: 1; pointer-events: auto; }
+  }
+
   /* ── RHS Draft Drawer ── */
   .lex-drawer-body {
     flex:1; overflow-y:auto; outline:none; cursor:text;
@@ -1547,7 +1569,11 @@ function CommandPalette() {
   const [micError,    setMicError]    = useState(null);
   const [isAwake,       setIsAwake]       = useState(false);
   const [wakeSupported, setWakeSupported] = useState(null); // null=unknown, true=ok, false=denied/unsupported
-  const [sidebarOpen,     setSidebarOpen]     = useState(true);
+  // Sidebar defaults open on desktop (side-by-side layout) but closed on mobile,
+  // where it renders as an off-canvas overlay drawer instead (see .lex-sidebar
+  // mobile media query below).
+  const [isMobileView,    setIsMobileView]    = useState(() => window.innerWidth < 768);
+  const [sidebarOpen,     setSidebarOpen]     = useState(() => window.innerWidth >= 768);
   const [isClosing,       setIsClosing]       = useState(false); // drives the slide-out exit animation
   const [mode,            setMode]            = useState('drawer'); // 'drawer' | 'fullscreen' (War Room)
   const [drawerOpen,      setDrawerOpen]      = useState(false);
@@ -1638,6 +1664,7 @@ function CommandPalette() {
     localStorage.setItem(CURRENT_KEY, s.id);
     setQuery('');
     setNavRoute(null);
+    if (window.innerWidth < 768) setSidebarOpen(false); // close off-canvas drawer after picking
   }, [mutateSessions]);
 
   const selectSession = useCallback((id) => {
@@ -1645,6 +1672,7 @@ function CommandPalette() {
     localStorage.setItem(CURRENT_KEY, id);
     setQuery('');
     setNavRoute(null);
+    if (window.innerWidth < 768) setSidebarOpen(false); // close off-canvas drawer after picking
   }, []);
 
   const deleteSession = useCallback((id) => {
@@ -1685,6 +1713,22 @@ function CommandPalette() {
       startNew();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track viewport for the mobile off-canvas sidebar drawer (Bug #1).
+  useEffect(() => {
+    const handleResize = () => {
+      const nowMobile = window.innerWidth < 768;
+      setIsMobileView(prev => {
+        if (prev === nowMobile) return prev;
+        // Crossing the breakpoint: reset sidebar to each layout's natural default
+        // (open side-by-side on desktop, closed off-canvas on mobile).
+        setSidebarOpen(!nowMobile);
+        return nowMobile;
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Drawer body: set innerHTML ONLY when the source document changes, never on arbitrary re-renders.
   // This prevents React from wiping user's in-progress edits (the contentEditable + dangerouslySetInnerHTML
@@ -2548,11 +2592,17 @@ function CommandPalette() {
           onClick={e => e.stopPropagation()}
         >
 
+          {/* Tap-outside-to-close backdrop — mobile only (Bug #1) */}
+          <div
+            className={`lex-sidebar-backdrop ${sidebarOpen ? 'visible' : ''}`}
+            onClick={() => setSidebarOpen(false)}
+          />
+
           {/* ══════════════════════════════════
                LEFT SIDEBAR
           ══════════════════════════════════ */}
           <aside
-            className="lex-sidebar"
+            className={`lex-sidebar ${sidebarOpen ? 'mobile-open' : ''}`}
             style={{
               flex: sidebarOpen ? '0 0 255px' : '0 0 0px', minWidth: 0,
               transition: 'flex-basis .25s cubic-bezier(.4,0,.2,1)',
