@@ -1,7 +1,7 @@
 """
 routes/document_routes.py
 Blueprint: /api/documents
-  POST /api/documents/draft    — Auto-draft court pleadings (Original route preserved)
+  POST /api/documents/draft    — AI clause/document synthesis (instructions + optional precedent/context)
   POST /api/documents/upload   — Upload files (PDF/DOCX/TXT), extract text, save and vectorize (RAG)
   GET  /api/documents          — List uploaded documents (filtered by case_id)
   DELETE /api/documents/<id>   — Delete document and cascade delete RAG vectors
@@ -105,50 +105,64 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
             print(f"[Text Extractor] plain text decode failed: {e}")
             return ""
 
-# ── 2. PRESERVED ORIGINAL AUTO-DRAFT ROUTE ─────────────────────────────
+# ── 2. AUTO-DRAFT (AI CLAUSE SYNTHESIS) ROUTE ──────────────────────────
+# Replaces an earlier version of this same route that used a different
+# request contract (prompt/context, required both, returned a bare
+# {"draft": ...} with no "status" key) — that shape is preserved as a
+# fallback in the payload parsing below so ContractAnalyzer.jsx's existing
+# Auto-Draft panel (which still posts {prompt, context}) keeps working
+# unchanged.
 
-@doc_bp.route("/draft", methods=["POST"])
+@doc_bp.route("/draft", methods=["POST", "OPTIONS"])
 def auto_draft():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Invalid JSON payload structure."}), 400
-        
-    prompt = data.get("prompt", "").strip()
-    context = data.get("context", "").strip()
-    
-    if not prompt or not context:
-        return jsonify({"error": "Failed verification: Prompt and active Vault Context are required to synthesize drafts."}), 400
-        
-    system_prompt = f"""You are an Elite Indian Supreme Court Advocate drafting formal legal documents.
-You are synthesizing a document based on the user's instructions and the provided reference file context (e.g., an FIR).
+    if request.method == "OPTIONS":
+        # No manual CORS headers here — app.py's global @app.after_request
+        # hook already adds Access-Control-Allow-Origin as an
+        # origin-validated echo (never "*"; that hook's own comment
+        # explains why: Allow-Credentials requires a specific origin, not
+        # a wildcard). Setting "*" here would either get silently
+        # overwritten for validated origins or leak an open CORS response
+        # to anything that ISN'T validated — matching the plain
+        # `return jsonify({}), 200` every other OPTIONS handler in this
+        # codebase already uses.
+        return jsonify({}), 200
 
-CONTEXT FILE:
-{context}
+    data = request.get_json(force=True, silent=True) or {}
+    # str(...) around each fallback chain guards against a non-string JSON
+    # value (e.g. {"instructions": 12345}) reaching .strip() below and
+    # crashing with an unhandled AttributeError instead of the intended
+    # 400 — "bulletproof" parsing means surviving malformed types, not
+    # just missing keys.
+    instructions = str(data.get('instructions') or data.get('drafting_instructions') or data.get('prompt') or '')
+    precedent = str(data.get('precedent_insert') or '')
+    # 'context' (no prefix) is the field name the existing
+    # ContractAnalyzer.jsx caller already sends — kept as a fallback
+    # alongside the new 'reference_context' name so that live integration
+    # doesn't silently lose its context on this refactor.
+    context = str(data.get('reference_context') or data.get('context') or '')
 
-CRITICAL DRAFTING RULES:
-1. ABSOLUTELY NO HTML TAGS: You are strictly forbidden from using <p>, <h2>, <br>, or any other HTML tags. Use standard plain text, line breaks, and ALL CAPS for headings.
-2. STRICT COURT PLEADING FORMAT: If drafting an application (like Bail), it MUST begin with the formal Indian court heading:
-   IN THE COURT OF [Appropriate Magistrate/Judge]
-   AT [Location]
-   CRIMINAL MISC. BAIL APPLICATION NO. _____ OF 202X
-   [Name of Applicant] ... APPLICANT
-   VERSUS
-   STATE OF [State] ... RESPONDENT
-3. NUMBERED PARAGRAPHS: The body of the document must be written in formal, numbered paragraphs (1., 2., 3...) standard to Indian pleadings.
-4. LEGAL PRECISION: Incorporate the facts from the provided Context File accurately. Cite relevant Indian laws (e.g., Section 437/439 of the CrPC for Bail).
-5. PRAYER: Always conclude with a formal "PRAYER" section requesting the specific relief, followed by "AND FOR THIS ACT OF KINDNESS THE APPLICANT SHALL AS IN DUTY BOUND EVER PRAY."
-6. OUTPUT NOTHING BUT THE FINAL DRAFTED DOCUMENT. No preambles, no commentary, no "Here is the draft..." — only the document itself.
-"""
+    if not instructions.strip():
+        return jsonify({"error": True, "message": "Drafting instructions required."}), 400
+
+    system_prompt = (
+        "Act as an expert Indian legal draftsman. Synthesize the following "
+        "clause based strictly on Indian law.\n\n"
+        "Output plain text only — no HTML tags, no markdown formatting, no "
+        "preambles or commentary. Only the drafted clause itself."
+    )
+    if context.strip():
+        system_prompt += f"\n\nREFERENCE CONTEXT:\n{context.strip()}"
+    if precedent.strip():
+        system_prompt += f"\n\nPRECEDENT TO INCORPORATE:\n{precedent.strip()}"
 
     try:
-        draft_content = ask_groq(system_prompt, f"Draft Request: {prompt}")
-        
-        if not draft_content or draft_content.strip() == "None":
-            return jsonify({"error": "Inference Breakdown: Internal LLM node refused to output a draft."}), 500
-            
-        return jsonify({"draft": draft_content}), 200
+        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions.strip()}")
+        if not generated_text or not generated_text.strip():
+            raise ValueError("LLM returned an empty draft.")
+        return jsonify({"status": "success", "draft": generated_text.strip()}), 200
     except Exception as e:
-        return jsonify({"error": f"LLM Routing Array Exception: {str(e)}"}), 500
+        print(f"[Auto-Draft Error]: {e}")
+        return jsonify({"error": True, "message": "AI reasoning engine timeout or failure. Please retry."}), 500
 
 # ── 3. ENTERPRISE UPLOAD & RAG INGESTION ROUTE ─────────────────────────
 

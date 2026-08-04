@@ -297,6 +297,22 @@ def format_case_title(filename):
     return f"Supreme Court Judgment ({year}) - {clean_name}"
 
 
+def _get_pinecone_index(pc):
+    """Resolves the Pinecone index by host if PINECONE_HOST is configured
+    (adding the https:// scheme if the env var was saved without one),
+    else by name — shared by every route that queries the case-law index
+    so a malformed/missing env var can't crash it differently in two
+    places. Callers are expected to wrap this in their own try/except;
+    it deliberately does not swallow errors itself."""
+    raw_host = (os.getenv("PINECONE_HOST") or "").strip()
+    index_name = (os.getenv("PINECONE_INDEX_NAME") or "legal-cases").strip()
+    if raw_host:
+        if not raw_host.startswith("https://"):
+            raw_host = f"https://{raw_host}"
+        return pc.Index(host=raw_host)
+    return pc.Index(name=index_name)
+
+
 # Distinct from format_case_title above — that one parses worker.py's S3
 # filename-style ids ("2022_13_342_356_EN.pdf"). This is for case_vault
 # rows, which use a different id scheme entirely (bulk INSC neutral
@@ -1096,7 +1112,7 @@ def create_app():
 
         try:
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-            index = pc.Index(host=os.getenv("PINECONE_HOST"))
+            index = _get_pinecone_index(pc)
             namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
 
             embed_response = pc.inference.embed(
@@ -1148,9 +1164,8 @@ def create_app():
                 })
             return jsonify({'status': 'success', 'results': results}), 200
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({'error': True, 'message': str(e)}), 500
+            print(f"[PINECONE ERROR] {e}")
+            return jsonify({"status": "error", "message": "Vector database unavailable.", "results": []}), 200
 
     # "I'm Feeling Lucky" proxy for the Firm Library's "Open in Indian
     # Kanoon" link — a plain <a href> click can't carry an Authorization
@@ -1167,6 +1182,16 @@ def create_app():
     _KANOON_DOC_ID_RE = re.compile(r'/doc(?:fragment)?/(\d+)')
     _KANOON_CASE_SPLIT_RE = re.compile(r'\s+(?:v\.|vs\.?|versus)\s+', re.IGNORECASE)
     _KANOON_WORD_RE = re.compile(r'[A-Za-z0-9]+')
+    # Em dash, en dash, hyphen-minus, curly double/single quotes, straight
+    # quotes, and non-breaking space — Kanoon's search silently returns
+    # zero results for a formInput containing any of these (routine in a
+    # pasted heading/citation, e.g. "Indian Contract Act — Free Consent
+    # Doctrine"). Not a raw string — \xa0 needs Python to actually decode
+    # it into the real non-breaking-space character; a raw string would
+    # leave it as the four literal characters backslash-x-a-0 instead. The
+    # plain "-" is placed last in the class so it's never misread as a
+    # range operator against a neighbouring \uXXXX-style escape.
+    _KANOON_DASH_QUOTE_RE = re.compile('[—–“”‘’"\'\xa0-]')
     _KANOON_BRACKETS_RE = re.compile(r'\([^)]*\)|\[[^\]]*\]')
     _KANOON_YEAR_PAREN_RE = re.compile(r'\(\s*(\d{4})\s*\)')
     _KANOON_REPORTER_RE = re.compile(r'\b(SCC|AIR|SCR|INSC)\b', re.IGNORECASE)
@@ -1202,11 +1227,13 @@ def create_app():
         ]
 
     def _kanoon_extract_boosters(raw_query):
-        """Citation signals pulled from the ORIGINAL, unstripped query —
-        the year lives inside the parens _kanoon_strip_brackets would
-        otherwise delete, so this must run before any bracket cleanup.
-        Stored case-neutral/uppercase so a single upper-cased substring
-        check at scoring time covers both booster types."""
+        """Citation signals pulled from the query BEFORE any bracket
+        cleanup — the year lives inside the parens _kanoon_strip_brackets
+        would otherwise delete. Safe to call with the dash/quote-cleaned
+        query (parens are untouched by that cleanup), just not one that's
+        already had its brackets stripped. Stored case-neutral/uppercase so
+        a single upper-cased substring check at scoring time covers both
+        booster types."""
         boosters = set()
         for year in _KANOON_YEAR_PAREN_RE.findall(raw_query):
             boosters.add(f"({year})")
@@ -1280,29 +1307,41 @@ def create_app():
     @app.route('/api/kanoon-redirect', methods=['GET'])
     def kanoon_redirect():
         query = request.args.get('query', '') or ''
+        # fallback_url intentionally stays on the raw, unaltered query —
+        # it's the last-resort "go search it yourself" link, so it should
+        # reflect exactly what the user typed, not our cleaned-up version.
         fallback_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
 
-        citation_boosters = _kanoon_extract_boosters(query)
-        is_case = bool(_KANOON_CASE_SPLIT_RE.search(query))
+        # Kanoon's search silently returns zero results for a formInput
+        # containing unicode dashes/smart-quotes/NBSP — routine in a pasted
+        # heading or citation ("Indian Contract Act — Free Consent
+        # Doctrine"). Cleaned BEFORE is_case detection: an NBSP standing in
+        # for a normal space around "v."/"vs." could otherwise dodge the
+        # \s+ boundaries in the case-split regex.
+        cleaned_query = _KANOON_DASH_QUOTE_RE.sub(' ', query)
+        cleaned_query = re.sub(r'\s+', ' ', cleaned_query).strip()
+
+        citation_boosters = _kanoon_extract_boosters(cleaned_query)
+        is_case = bool(_KANOON_CASE_SPLIT_RE.search(cleaned_query))
 
         if is_case:
-            party_a_raw, party_b_raw = _KANOON_CASE_SPLIT_RE.split(query, maxsplit=1)
+            party_a_raw, party_b_raw = _KANOON_CASE_SPLIT_RE.split(cleaned_query, maxsplit=1)
             tokens_a = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_a_raw)))[:3]
             tokens_b = _kanoon_tokenize(_kanoon_strip_brackets(_kanoon_strip_citation_tail(party_b_raw)))[:3]
             query_tokens = {t.lower() for t in tokens_a + tokens_b}
             clauses = [c for c in (_kanoon_title_clause(tokens_a), _kanoon_title_clause(tokens_b)) if c]
             # Degenerate case: stopword-filtering emptied BOTH parties (e.g.
             # "The State v. The Union") — title:() is invalid Lucene syntax,
-            # so fall back to the raw query instead of sending Kanoon
+            # so fall back to the cleaned query instead of sending Kanoon
             # malformed input.
-            form_input = ' '.join(clauses) if clauses else query
+            form_input = ' '.join(clauses) if clauses else cleaned_query
         else:
             # Non-case query: no title:() scoping, no bracket-stripping —
-            # sent to Kanoon exactly as typed.
-            query_tokens = {t.lower() for t in _kanoon_tokenize(query)}
-            form_input = query
+            # the cleaned query is sent to Kanoon directly.
+            query_tokens = {t.lower() for t in _kanoon_tokenize(cleaned_query)}
+            form_input = cleaned_query
 
-        # Attempt 1: title-scoped search for cases, raw query otherwise.
+        # Attempt 1: title-scoped search for cases, cleaned query otherwise.
         result_titles = _kanoon_fetch_results(form_input)
         if result_titles is None:
             return redirect(fallback_url)
@@ -1310,12 +1349,14 @@ def create_app():
         # Attempt 2: title:() scoping can legitimately return zero hits for a
         # case whose title doesn't literally contain both party names as
         # formatted (abbreviations, "& Ors" variants, etc.) — one plain retry
-        # with the untouched original query before giving up. Skipped when
-        # form_input already IS the raw query (non-case path, or a case
-        # query degenerate enough that both parties fell back to it too) —
-        # retrying would just re-fetch the identical 0 results a second time.
-        if not result_titles and form_input != query:
-            result_titles = _kanoon_fetch_results(query)
+        # with the cleaned (not raw) query before giving up; retrying with
+        # the UNCLEANED original would just reproduce the same
+        # unicode-choking failure this cleanup step exists to fix. Skipped
+        # when form_input already IS the cleaned query (non-case path, or a
+        # case query degenerate enough that both parties fell back to it
+        # too) — retrying would just re-fetch the identical 0 results.
+        if not result_titles and form_input != cleaned_query:
+            result_titles = _kanoon_fetch_results(cleaned_query)
             if result_titles is None:
                 return redirect(fallback_url)
 
@@ -1429,16 +1470,16 @@ def create_app():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
 
+        data = request.get_json(force=True, silent=True) or {}
+        lawyer_question = data.get('question', '').strip()
+
+        if not lawyer_question:
+            return jsonify({"error": True, "message": "Question cannot be empty."}), 400
+
         try:
-            data = request.get_json(force=True, silent=True) or {}
-            lawyer_question = data.get('question', '').strip()
-
-            if not lawyer_question:
-                return jsonify({"error": True, "message": "Question cannot be empty."}), 400
-
             # 1. Initialize Pinecone & Groq using existing .env keys
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-            index = pc.Index(host=os.getenv("PINECONE_HOST"))
+            index = _get_pinecone_index(pc)
             namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
             groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -1527,9 +1568,11 @@ def create_app():
             }), 200
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": True, "message": str(e)}), 500
+            print(f"[PINECONE ERROR] {e}")
+            return jsonify({
+                "answer": "I am currently unable to access the legal database. Please try again later.",
+                "context": []
+            }), 200
 
     @app.route('/api/legal-research/document/<string:case_id>', methods=['GET', 'OPTIONS'])
     def api_legal_research_document(case_id):
