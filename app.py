@@ -18,6 +18,38 @@ from groq import Groq
 from tavily import TavilyClient
 from pinecone import Pinecone
 
+# Render's filesystem is ephemeral — anything written to the working
+# directory (including a bare-relative-path SQLite file like
+# lex_assistant.db) is wiped on every deploy/restart unless it lives on an
+# attached Persistent Disk. Every sqlite3.connect('lex_assistant.db') call
+# across this codebase (10+ files: app.py, document_routes.py,
+# auth_routes.py, ai_routes.py, conflict_routes.py, rag_pipeline.py, ...)
+# uses that same bare relative path, resolved against the process's CWD —
+# rather than threading an env-var-driven absolute path through every one
+# of those call sites, this symlinks the CWD-relative name to the
+# Persistent Disk's mount path ONCE, at import time, before anything
+# connects. Every existing sqlite3.connect('lex_assistant.db') call then
+# transparently resolves through the symlink with zero further changes.
+# PERSISTENT_DATA_DIR is only set on Render once a Disk is attached and
+# this env var points at its mount path — locally it's unset, so this
+# block is a no-op and lex_assistant.db resolves exactly as it always has.
+load_dotenv()
+_persistent_data_dir = os.getenv('PERSISTENT_DATA_DIR')
+if _persistent_data_dir and os.path.isdir(_persistent_data_dir):
+    _persistent_db_path = os.path.join(_persistent_data_dir, 'lex_assistant.db')
+    if not os.path.exists(_persistent_db_path):
+        # First boot after attaching a fresh disk — nothing to link to yet;
+        # sqlite3 will populate real tables into this empty file once
+        # init_db()/init_sqlite_db() run against it through the symlink.
+        open(_persistent_db_path, 'a').close()
+    if not os.path.islink('lex_assistant.db'):
+        if os.path.exists('lex_assistant.db'):
+            # A non-symlink file already exists here (e.g. this is the very
+            # first deploy after attaching the disk) — never silently
+            # discard it; back it up once instead of overwriting.
+            os.rename('lex_assistant.db', 'lex_assistant.db.pre-disk-backup')
+        os.symlink(_persistent_db_path, 'lex_assistant.db')
+
 db = sqlite3.connect('lex_assistant.db', check_same_thread=False)
 
 def init_db():

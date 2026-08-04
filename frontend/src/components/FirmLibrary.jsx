@@ -821,7 +821,12 @@ export default function FirmLibrary() {
       try {
         const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(extQuery.trim())}`);
         const data = await res.json();
-        if (!res.ok || data.error) throw new Error(data.message || 'External search unavailable');
+        // Backend's failure shape is {"status":"error","message":...} with
+        // HTTP 200 (a Pinecone outage is a normal, expected failure mode,
+        // not a server bug) — checking only res.ok/data.error let this
+        // silently fall through to "0 results", showing a misleading
+        // "No matches found" instead of the real error.
+        if (!res.ok || data.error || data.status === 'error') throw new Error(data.message || 'External search unavailable');
         setExternalResults(data.results || []);
         setExtError(null);
       } catch (err) {

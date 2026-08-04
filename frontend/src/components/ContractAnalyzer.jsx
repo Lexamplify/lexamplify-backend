@@ -157,14 +157,31 @@ const styles = `
   .editor-tab-btn.active { color: var(--accent-primary); background: rgba(59,130,246,0.08); font-weight: 600; border-bottom-color: var(--accent-primary); border-radius: 5px 5px 0 0; }
 
   /* ── RICH TEXT TOOLBAR ───────────────────────────────────────────── */
+  /* Rendered as the first child inside .editor-scroll-area (via
+     ContractTiptapEditor's own shell), which is the scrolling element —
+     without position:sticky the toolbar just scrolls away with the
+     document like any other in-flow content, hiding Bold/Italic/Underline
+     etc. the moment the user scrolls a few lines down. The negative
+     margins cancel .editor-scroll-area's own 24px/28px padding so the
+     stuck toolbar spans edge-to-edge instead of floating with visible
+     document gaps on either side; matching positive padding keeps its
+     content aligned exactly where it always was. */
   .rich-text-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 6;
     background: var(--bg-dark-sidebar);
     border-bottom: 1px solid var(--border-dark-subtle);
+    box-shadow: 0 6px 14px -4px rgba(0,0,0,0.28);
     display: flex;
     gap: 2px;
-    padding: 6px 12px;
+    padding: 8px 28px;
     align-items: center;
     flex-wrap: wrap;
+    margin: -24px -28px 20px;
+  }
+  [data-theme="light"] .rich-text-toolbar {
+    box-shadow: 0 6px 14px -4px rgba(0,0,0,0.1);
   }
 
   .toolbar-btn {
@@ -885,6 +902,29 @@ const styles = `
     100% { background-position: -200% 0; }
   }
 
+  /* ── AUTO-DRAFT LOADING STATE ────────────────────────────────────── */
+  @keyframes ca-pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(79,110,247,0); border-color: rgba(79,110,247,0.16); }
+    50% { box-shadow: 0 0 26px 3px rgba(79,110,247,0.16); border-color: rgba(79,110,247,0.4); }
+  }
+  .auto-draft-loading-card {
+    padding: 28px 26px;
+    border: 1px solid rgba(79,110,247,0.16);
+    border-radius: 10px;
+    background: rgba(79,110,247,0.02);
+    animation: ca-pulse-glow 2.6s ease-in-out infinite;
+  }
+  @keyframes ca-status-fade-in {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .ca-status-fade { animation: ca-status-fade-in 0.35s ease both; }
+  @keyframes ca-shimmer-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .shimmer-bar-in { animation: ca-shimmer-in 0.35s ease both, shimmer-animation 1.4s infinite; }
+
   /* ── DOCUMENT EXTRACTION SKELETON ────────────────────────────────── */
   .doc-skeleton {
     background: var(--bg-dark-panel);
@@ -1179,6 +1219,22 @@ const styles = `
   .hover\\:shadow-lg:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3),0 4px 6px -2px rgba(0,0,0,0.15) !important; }
   .leading-relaxed { line-height: 1.625 !important; }
   .text-lg { font-size: 1.125rem !important; }
+
+  /* Form-input utilities — used across every text input/select/textarea in
+     this file (Auto-Draft, RAG Chat, revision boxes) but never previously
+     defined, so every one of those controls has been rendering with zero
+     background/border/radius/focus styling this whole time, relying on
+     unstyled browser defaults against this app's dark theme. */
+  .bg-gray-800 { background-color: #1F2937 !important; }
+  .border-gray-600 { border: 1px solid #4B5563 !important; }
+  .text-white { color: #F9FAFB !important; }
+  .rounded-lg { border-radius: 10px !important; }
+  .p-3 { padding: 0.75rem !important; }
+  .focus\\:outline-none:focus { outline: none !important; }
+  .focus\\:ring-2:focus, .focus\\:ring-gray-400:focus {
+    border-color: #60A5FA !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.25) !important;
+  }
 
   /* ── RISK STAT BAR (legacy, kept for clause-list fallback) ───────── */
   .risk-stat-bar { display: flex; gap: 10px; margin-bottom: 14px; font-size: 12px; }
@@ -1931,7 +1987,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
     try {
       const contextValue = selectedDocId === 'none' ? null : selectedDocId;
-      const response = await fetch('/api/documents/draft', {
+      const response = await fetch(`${API_BASE}/api/documents/draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: autoDraftPrompt.trim(), context: contextValue })
@@ -1945,7 +2001,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
         const clean = data.draft.replace(/^"|"$/g, '').trim();
         setAutoDraftText(clean);
       } else {
-        setDraftError(data.error || 'Failed to synthesize auto-draft clause.');
+        // Backend's error shape is {"error": true, "message": "..."} —
+        // "error" is a boolean, not the message text. data.error was
+        // truthy-but-useless here, producing a blank error banner.
+        setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
       }
     } catch (err) {
       setDrafting(false);
@@ -1953,6 +2012,27 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setDraftError('Network timeout in the AI reasoning engine. Please retry.');
     }
   };
+
+  // Cycles draftStatus through a few plausible-sounding phases while the
+  // request is in flight — real progress isn't observable mid-generation,
+  // but a static "Synthesizing…" reads as stalled after a couple seconds,
+  // and this signals the request is actively moving through real work.
+  useEffect(() => {
+    if (!drafting) return;
+    const phases = [
+      'Interpreting drafting instructions…',
+      'Cross-referencing Indian statutes…',
+      'Synthesizing clause language…',
+      'Refining for enforceability…',
+    ];
+    let i = 0;
+    setDraftStatus(phases[0]);
+    const id = setInterval(() => {
+      i = (i + 1) % phases.length;
+      setDraftStatus(phases[i]);
+    }, 1700);
+    return () => clearInterval(id);
+  }, [drafting]);
 
   // ── 6. RAG CHAT HANDLER ──────────────────────────────────────────────
   const submitRagQuery = async (query) => {
@@ -2589,20 +2669,20 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 ) : (
                   <div>
                     {drafting ? (
-                      <div style={{ padding: '32px 8px' }}>
+                      <div className="auto-draft-loading-card">
                         <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-primary)', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ width: '10px', height: '10px', border: '2px solid var(--accent-primary)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                          Synthesizing clause…
+                          <span key={draftStatus} className="ca-status-fade">{draftStatus || 'Synthesizing clause…'}</span>
                         </div>
-                        <div className="shimmer-bar" style={{ width: '42%', height: '17px', marginBottom: '20px' }} />
-                        <div className="shimmer-bar" style={{ width: '100%' }} />
-                        <div className="shimmer-bar" style={{ width: '96%' }} />
-                        <div className="shimmer-bar" style={{ width: '99%' }} />
-                        <div className="shimmer-bar" style={{ width: '70%', marginBottom: '22px' }} />
-                        <div className="shimmer-bar" style={{ width: '100%' }} />
-                        <div className="shimmer-bar" style={{ width: '88%' }} />
-                        <div className="shimmer-bar" style={{ width: '93%' }} />
-                        <div className="shimmer-bar" style={{ width: '55%' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '42%', height: '17px', marginBottom: '20px', animationDelay: '0ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '60ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '96%', animationDelay: '120ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '99%', animationDelay: '180ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '70%', marginBottom: '22px', animationDelay: '240ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '300ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '88%', animationDelay: '360ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '93%', animationDelay: '420ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '55%', animationDelay: '480ms' }} />
                       </div>
                     ) : draftError ? (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px', margin: '40px 4px', padding: '18px 20px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderLeft: '3px solid var(--accent-danger, #EF4444)', borderRadius: '8px' }}>
