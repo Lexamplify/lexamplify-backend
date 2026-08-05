@@ -30,6 +30,31 @@ function ExternalLinkIcon() {
   );
 }
 
+// Some citation objects (both the primary RAG-pipeline results and the
+// nested "related citations" search) carry a raw internal DB id as their
+// "title" — e.g. "1234_5678" — instead of a resolved case name. That
+// happens when the source metadata never had a title to begin with.
+// Two problems follow: (1) showing "1234_5678" as a card header reads as
+// a broken UI, and (2) searching Kanoon for that literal id returns
+// generic boilerplate/hallucinated results, since Kanoon has no record
+// indexed under an internal id. This derives a presentable title and a
+// query that actually stands a chance of finding the real judgment.
+function resolveCitationDisplay(citation) {
+  const rawTitle = citation.title || citation.case_title || '';
+  const isRawId = /^[0-9_]+$/.test(rawTitle);
+  const displayTitle = isRawId ? `Judgment Record: ${rawTitle.replace(/_/g, '-')}` : rawTitle;
+  // Skips the first 50 chars of the snippet (usually generic case-caption
+  // boilerplate shared across many judgments, not a useful search anchor)
+  // and quotes the excerpt for an exact-phrase Kanoon search. Falls back
+  // to rawTitle whenever there's nothing better to search with — no
+  // snippet, or a snippet too short to leave anything in the 50-130
+  // window (substring() clamps out-of-range indices to '', which would
+  // otherwise become a literal empty '""' query — worse than the id itself).
+  const snippetExcerpt = citation.snippet ? citation.snippet.substring(50, 130).trim() : '';
+  const kanoonQuery = isRawId && snippetExcerpt ? `"${snippetExcerpt}"` : rawTitle;
+  return { rawTitle, isRawId, displayTitle, kanoonQuery };
+}
+
 const styles = `
   /* ── ANALYZER CONTAINER ──────────────────────────────────────────── */
   .analyzer-container {
@@ -259,62 +284,6 @@ const styles = `
   .toolbar-select-size { max-width: 68px; }
   .toolbar-select:hover { background: rgba(255,255,255,0.08); }
   .toolbar-select:focus { outline: none; border-color: var(--accent-primary); }
-
-  /* ── AUTO-DRAFT: responsive split-pane workspace ───────────────────
-     flex-col below 1024px (Tailwind's "lg" breakpoint) so the studio
-     never gets squeezed into an unusable sliver on tablet/mobile widths,
-     matching how .workspace-pane itself already collapses to a single
-     column below 900px. */
-  .autodraft-split {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    height: 100%;
-    min-height: 0;
-  }
-  @media (min-width: 1024px) {
-    .autodraft-split { flex-direction: row; align-items: flex-start; }
-  }
-  .autodraft-editor-pane { flex: 2; min-width: 0; width: 100%; }
-  .autodraft-studio-pane {
-    flex: 1;
-    min-width: 0;
-    width: 100%;
-    background: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 10px;
-    padding: 16px;
-  }
-  [data-theme="light"] .autodraft-studio-pane { background: #ffffff; }
-
-  /* ── AI TRACK CHANGES: freshly-synthesized text (Studio + Bubble Menu
-     rewrites) — visually distinct until the user reviews and accepts it,
-     the same "diff" language Word/Google Docs use for tracked changes.
-     Selector is scoped as .scanner-body .ai-generated-text (class+class,
-     specificity 0-0-2-0), not the bare .ai-generated-text class alone —
-     the existing catch-all ".scanner-body span" rule above is
-     class+element (0-0-1-1), which already beats a single class on
-     specificity regardless of source order, and was silently overriding
-     the emerald text color (confirmed live: computed color was the
-     theme's default gray, not the emerald tone, before this fix). */
-  .scanner-body .ai-generated-text {
-    background: rgba(2, 44, 34, 0.4);
-    border-bottom: 2px solid #10B981;
-    color: #A7F3D0;
-    border-radius: 2px;
-    transition: background-color 0.5s ease, color 0.5s ease, border-color 0.5s ease;
-  }
-  .scanner-body .ai-generated-text:hover { background: rgba(2, 44, 34, 0.6); }
-
-  /* ── AI Bubble Menu: rewrite actions / accept / error states ───────── */
-  .ca-bubble-menu-btn:disabled { opacity: 0.45; cursor: default; }
-  .ca-bubble-menu-btn:disabled:hover { background: transparent; }
-  .ca-bubble-menu-btn-accept { color: #6EE7B7; }
-  .ca-bubble-menu-btn-accept:hover { background: rgba(16,185,129,0.16); }
-  .ca-bubble-menu-error {
-    color: #FCA5A5; font-size: 11.5px; font-weight: 600;
-    padding: 6px 10px; max-width: 220px; white-space: normal; line-height: 1.4;
-  }
 
   /* ── SCAN META-BAR (replaces toolbar in scanner mode) ─────────────── */
   .scan-meta-bar {
@@ -1381,6 +1350,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [citations, setCitations] = useState([]);
   const [loadingText, setLoadingText] = useState("Extracting clauses...");
   const [scanProgress, setScanProgress] = useState(0);
+  // Decoupled from isAnalyzing so the loader card doesn't vanish the
+  // instant the real scan finishes — see the sync effect below, which
+  // holds it visible for one extra beat while the bar's own CSS
+  // transition finishes animating the snap to 100%.
+  const [showLoader, setShowLoader] = useState(false);
   // Keyed by array index, NOT citation.id — the backend's citation objects
   // (see rag_server/main.py's analyze-contract RAG pass) only ever carry
   // {title, snippet, in_vault, vault_id, kanoon_query}, no id field. Keying
@@ -1413,35 +1387,41 @@ export default function ContractAnalyzer({ setFocusMode }) {
     return () => clearInterval(timer);
   }, [isAnalyzing]);
 
-  // Simulated-target progress: each loadingText phase maps to a target
-  // percentage; a real Groq call's actual progress isn't observable
-  // mid-request, so this climbs toward a plausible target 1% every 50ms
-  // instead of jumping in discrete steps. Guarded to only count UP —
-  // loadingText's own cycle wraps back to "Extracting clauses..." (target
-  // 20) every 10s, and a scan can run past that (the card itself warns
-  // "up to 20 seconds"); without the guard the bar would visibly jump
-  // backward every time the phase text wraps. It freezes at the highest
-  // target reached instead, until the real completion snaps it to 100.
-  const SCAN_PHASE_TARGETS = {
-    "Extracting clauses...": 20,
-    "Running deep scan...": 45,
-    "Cross-referencing Pinecone precedents...": 75,
-    "Aggregating risk profile...": 95,
-  };
+  // Asymptotic progress: a real Groq call's actual progress isn't
+  // observable mid-request, so instead of guessing discrete phase targets,
+  // the bar closes 5% of whatever gap remains toward 95 on every tick —
+  // fast at first, then visibly slowing as it nears 95, and mathematically
+  // never able to reach (let alone stall dead-stopped at) 100 on its own.
+  // That's the point: 100 is reserved exclusively for the moment the real
+  // scan actually finishes (see the showLoader effect below), so the bar
+  // can never lie about being "done" while work is still in flight.
   useEffect(() => {
     if (!isAnalyzing) return;
-    const target = SCAN_PHASE_TARGETS[loadingText] ?? 95;
     const timer = setInterval(() => {
-      setScanProgress((p) => {
-        if (p >= target) {
-          clearInterval(timer);
-          return p;
-        }
-        return p + 1;
-      });
+      setScanProgress((prev) => (prev >= 95 ? 95 : prev + (95 - prev) * 0.05));
     }, 50);
     return () => clearInterval(timer);
-  }, [isAnalyzing, loadingText]);
+  }, [isAnalyzing]);
+
+  // Owns the full isAnalyzing -> loader-visibility lifecycle. Going true:
+  // show the loader immediately, nothing else to do. Going false: snap the
+  // bar to a real 100% (the asymptotic climb above only ever approaches
+  // 95), then hold the loader mounted for one more beat so that 100% is
+  // actually visible on screen before the card disappears — flipping
+  // showLoader off in the same tick as isAnalyzing would unmount the bar
+  // mid-transition, and the user would never see it complete. The timeout
+  // is cleared on any re-run/unmount so a fast re-scan (isAnalyzing true
+  // again before the 400ms elapses) can't fire a stale close against the
+  // new scan's loader.
+  useEffect(() => {
+    if (isAnalyzing) {
+      setShowLoader(true);
+      return;
+    }
+    setScanProgress(100);
+    const timer = setTimeout(() => setShowLoader(false), 400);
+    return () => clearTimeout(timer);
+  }, [isAnalyzing]);
 
   // Tab states
   const [activeTab, setActiveTab] = useState('risks');
@@ -1547,7 +1527,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setIsAnalyzing(true);
       const res = await analyzeContractWithGroq(content, '', scanStrategy);
       setIsAnalyzing(false);
-      setScanProgress(100);
       if (!res.error) loadAnalysisResults(res);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1859,7 +1838,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setIsAnalyzing(true);
     const res = await analyzeContractWithGroq(target, ruleBookText, scanStrategy);
     setIsAnalyzing(false);
-    setScanProgress(100);
 
     if (res.error) {
       alert(res.message || 'Analysis failed.');
@@ -1931,7 +1909,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setIsAnalyzing(true);
       const res = await analyzeContractWithGroq(rawText, ruleBookText, newStrategy);
       setIsAnalyzing(false);
-      setScanProgress(100);
       if (!res.error) {
         loadAnalysisResults(res);
       } else {
@@ -2047,11 +2024,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
     // component-scoped function.
     // eslint-disable-next-line react-hooks/purity
     const citationId = `cite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const { displayTitle, kanoonQuery } = resolveCitationDisplay(prec);
     useCitationStore.getState().registerCitation(citationId, {
-      caseName: prec.title,
+      caseName: displayTitle,
       summary: prec.snippet,
-      shortLabel: prec.title.length > 28 ? `${prec.title.slice(0, 28)}…` : prec.title,
-      url: prec.in_vault ? null : `/api/kanoon-redirect?query=${encodeURIComponent(prec.kanoon_query)}`,
+      shortLabel: displayTitle.length > 28 ? `${displayTitle.slice(0, 28)}…` : displayTitle,
+      url: prec.in_vault ? null : `/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`,
     });
     editor.chain().focus().insertContent({ type: 'inlineCitation', attrs: { citationId } }).run();
   };
@@ -2238,8 +2216,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // rather than its own component: it closes over this component's own
   // state/handlers directly (autoDraftPrompt, handleAutoDraft, etc.), so
   // splitting it out as a separate component would just mean threading
-  // every one of those through as props for no isolation benefit. Called
-  // once, inline, from the Auto-Draft split-pane's right side below.
+  // every one of those through as props for no isolation benefit. Lives in
+  // the right analysis-column's own "Auto-Draft" tab (not squeezed inside
+  // the editor column) — that column is the full width dedicated to
+  // secondary panels, so the Studio isn't fighting the editor for space.
   const renderAutoDraftStudio = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
@@ -2664,15 +2644,18 @@ export default function ContractAnalyzer({ setFocusMode }) {
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px' }}>
             <div className="upload-layout-container">
 
-              {isAnalyzing ? (
-                /* ── SCANNING STATE ── */
+              {showLoader ? (
+                /* ── SCANNING STATE — gated on showLoader, not isAnalyzing,
+                   so this card stays mounted for the 400ms tail after the
+                   real scan finishes (see the showLoader sync effect) and
+                   the 100% state is actually visible before it unmounts. */
                 <div style={{ background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', borderRadius: '16px', padding: '48px 32px', textAlign: 'center' }}>
                   <div style={{ width: '56px', height: '56px', margin: '0 auto 24px', borderRadius: '50%', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: 'var(--accent-primary)', animation: 'spin 0.9s linear infinite' }}></div>
 
                   {/* Simulated Target progress bar */}
                   <div style={{ maxWidth: '400px', margin: '0 auto 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Scan Progress</span>
-                    <span style={{ fontSize: '13px', color: '#3b82f6', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{scanProgress}%</span>
+                    <span style={{ fontSize: '13px', color: '#3b82f6', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{Math.round(scanProgress)}%</span>
                   </div>
                   <div style={{ maxWidth: '400px', margin: '0 auto 18px', height: '8px', backgroundColor: 'rgba(31, 41, 55, 0.5)', borderRadius: '8px', border: '1px solid #374151', overflow: 'hidden' }}>
                     <div style={{ width: `${scanProgress}%`, height: '100%', backgroundColor: '#3b82f6', borderRadius: '8px', transition: 'width 0.3s ease-out', boxShadow: '0 0 15px rgba(59,130,246,0.6)' }} />
@@ -2993,81 +2976,61 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     )}
                   </>
                 ) : (
-                  // Self-contained split-pane workspace: live document on
-                  // the left, the AI Synthesis Studio (playbook precedents,
-                  // reference context, drafting instructions, generation
-                  // progress) on the right — everything needed to draft and
-                  // review a clause without leaving this tab. Responsive:
-                  // stacks to a single column below 1024px (.autodraft-split
-                  // in the styles block above), same breakpoint convention
-                  // Tailwind's "lg:" prefix would use.
-                  <div className="autodraft-split">
-                    <div className="autodraft-editor-pane">
-                      {drafting ? (
-                        <div className="auto-draft-loading-card">
-                          <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-primary)', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ width: '10px', height: '10px', border: '2px solid var(--accent-primary)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                            <span key={draftStatus} className="ca-status-fade">{draftStatus || 'Synthesizing clause…'}</span>
-                          </div>
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '42%', height: '17px', marginBottom: '20px', animationDelay: '0ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '60ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '96%', animationDelay: '120ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '99%', animationDelay: '180ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '70%', marginBottom: '22px', animationDelay: '240ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '300ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '88%', animationDelay: '360ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '93%', animationDelay: '420ms' }} />
-                          <div className="shimmer-bar shimmer-bar-in" style={{ width: '55%', animationDelay: '480ms' }} />
+                  <div>
+                    {drafting ? (
+                      <div className="auto-draft-loading-card">
+                        <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-primary)', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '10px', height: '10px', border: '2px solid var(--accent-primary)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                          <span key={draftStatus} className="ca-status-fade">{draftStatus || 'Synthesizing clause…'}</span>
                         </div>
-                      ) : draftError ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px', margin: '40px 4px', padding: '18px 20px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderLeft: '3px solid var(--accent-danger, #EF4444)', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#FCA5A5', letterSpacing: '0.02em' }}>Synthesis Failed</span>
-                          </div>
-                          <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.5 }}>{draftError}</span>
-                          <button onClick={() => setDraftError('')} style={{ marginTop: '2px', background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: 'var(--text-dark-muted)', fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px', cursor: 'pointer' }}>
-                            Dismiss
-                          </button>
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '42%', height: '17px', marginBottom: '20px', animationDelay: '0ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '60ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '96%', animationDelay: '120ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '99%', animationDelay: '180ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '70%', marginBottom: '22px', animationDelay: '240ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '300ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '88%', animationDelay: '360ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '93%', animationDelay: '420ms' }} />
+                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '55%', animationDelay: '480ms' }} />
+                      </div>
+                    ) : draftError ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px', margin: '40px 4px', padding: '18px 20px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderLeft: '3px solid var(--accent-danger, #EF4444)', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#FCA5A5', letterSpacing: '0.02em' }}>Synthesis Failed</span>
                         </div>
-                      ) : autoDraftText ? (
-                        // Same rich editor the Contract Text tab uses (full MS
-                        // Word-style toolbar: font family/size, bold/italic/
-                        // underline, alignment) instead of a bare
-                        // contentEditable div — "unify the editor across the
-                        // app" per this feature's own goal. clauses/onRiskClick
-                        // /onCommentRequest/onHighlightClick are all omitted:
-                        // risk-decoration and comment/citation workflows are
-                        // scanner-specific and don't apply to a freshly
-                        // synthesized clause. onEditorReady is deliberately
-                        // NOT wired to editorApiRef — that ref is read by
-                        // scanner-only actions (insertCitationIntoDocument,
-                        // handleAcceptRevision, etc.) that must keep targeting
-                        // the Contract Text editor even while this tab is open,
-                        // not silently redirect to whichever editor mounted
-                        // most recently. aiActionsMenu swaps the Comment/Draft-
-                        // Revision bubble menu for the Defensive/Aggressive/
-                        // Expand/Simplify AI rewrite menu; aiGeneratedInitialContent
-                        // marks the freshly-synthesized text as AI-generated
-                        // (emerald "diff" styling) the moment it mounts.
-                        <ContractTiptapEditor
-                          documentKey={autoDraftVersion}
-                          initialRawText={autoDraftText}
-                          onTextChange={setAutoDraftText}
-                          clauses={[]}
-                          aiActionsMenu
-                          aiGeneratedInitialContent
-                        />
-                      ) : (
-                        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                          No auto-drafted clause generated yet. Use the Synthesis Studio on the right to compile a legal clause.
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="autodraft-studio-pane">
-                      {renderAutoDraftStudio()}
-                    </div>
+                        <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.5 }}>{draftError}</span>
+                        <button onClick={() => setDraftError('')} style={{ marginTop: '2px', background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: 'var(--text-dark-muted)', fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+                          Dismiss
+                        </button>
+                      </div>
+                    ) : autoDraftText ? (
+                      // Same rich editor the Contract Text tab uses (full MS
+                      // Word-style toolbar: font family/size, bold/italic/
+                      // underline, alignment) instead of a bare
+                      // contentEditable div — "unify the editor across the
+                      // app" per this feature's own goal. clauses/onRiskClick
+                      // /onCommentRequest/onHighlightClick are all omitted:
+                      // risk-decoration and comment/citation workflows are
+                      // scanner-specific and don't apply to a freshly
+                      // synthesized clause. onEditorReady is deliberately
+                      // NOT wired to editorApiRef — that ref is read by
+                      // scanner-only actions (insertCitationIntoDocument,
+                      // handleAcceptRevision, etc.) that must keep targeting
+                      // the Contract Text editor even while this tab is open,
+                      // not silently redirect to whichever editor mounted
+                      // most recently.
+                      <ContractTiptapEditor
+                        documentKey={autoDraftVersion}
+                        initialRawText={autoDraftText}
+                        onTextChange={setAutoDraftText}
+                        clauses={[]}
+                      />
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
+                        No auto-drafted clause generated yet. Execute instructions in the "Auto-Draft" tab on the right to compile legal clauses.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3081,6 +3044,9 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'recs' ? 'active' : ''}`} onClick={() => { switchTab('recs'); if (recommendations.length === 0) fetchMissingProtections(); }}>
                   Missing {recommendations.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{recommendations.length}</span>}
+                </button>
+                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'draft' ? 'active' : ''}`} onClick={() => switchTab('draft')}>
+                  Auto-Draft
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => switchTab('chat')}>
                   RAG Chat
@@ -3341,6 +3307,9 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   </div>
                 )}
 
+                {/* SUB TAB: Auto-Draft */}
+                {activeTab === 'draft' && renderAutoDraftStudio()}
+
                 {/* SUB TAB: Chat */}
                 {activeTab === 'chat' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
@@ -3403,14 +3372,16 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                        {citations.map((prec, i) => (
+                        {citations.map((prec, i) => {
+                          const { displayTitle, kanoonQuery } = resolveCitationDisplay(prec);
+                          return (
                           <div key={i} className="precedent-card animate-fade-in" style={{ marginBottom: 0, animationDelay: `${i * 150}ms` }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <span>⚖️</span>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>
-                                    {prec.title}
+                                    {displayTitle}
                                   </span>
                                   {!prec.in_vault && (
                                     <span className="citation-not-in-vault-badge">Not in Firm Vault</span>
@@ -3436,7 +3407,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                   ) : (
                                     <a
                                       className="citation-btn-kanoon"
-                                      href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(prec.kanoon_query)}`}
+                                      href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >
@@ -3473,7 +3444,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                       <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', fontStyle: 'italic', margin: 0 }}>No related citations found.</p>
                                     ) : (
                                       relatedCitations[i].map((related, j) => {
-                                        const relatedTitle = related.case_title || related.title || 'Untitled Case';
+                                        const { displayTitle: relatedTitle, kanoonQuery: relatedKanoonQuery } = resolveCitationDisplay(related);
                                         return (
                                           <div key={related.id || j}>
                                             <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '4px' }}>
@@ -3486,7 +3457,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                             )}
                                             <a
                                               className="citation-btn-kanoon"
-                                              href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedTitle)}`}
+                                              href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedKanoonQuery)}`}
                                               target="_blank"
                                               rel="noopener noreferrer"
                                               style={{ fontSize: '10.5px', padding: '4px 10px' }}
@@ -3502,7 +3473,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

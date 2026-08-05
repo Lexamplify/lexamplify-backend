@@ -13,48 +13,12 @@ import { TextStyle, FontSize } from '@tiptap/extension-text-style';
 import FontFamily from '@tiptap/extension-font-family';
 import { RiskDecoration, updateRiskDecorations } from '../tiptap/riskDecorationExtension.js';
 import { AiInsertion, AiDeletion, TrackChangesCommands } from '../tiptap/trackChangesMarks.js';
-import { AiGenerated, AiGeneratedCommands } from '../tiptap/aiGeneratedMark.js';
 import { InlineCitation } from '../tiptap/InlineCitationNode.js';
 import { CommentHighlight } from '../tiptap/commentHighlightMark.js';
 import { rawTextToHtml } from '../tiptap/textToHtml.js';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
-
 const FONT_FAMILIES = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Garamond', 'Trebuchet MS'];
 const FONT_SIZES = ['10pt', '11pt', '12pt', '14pt', '16pt', '18pt', '24pt', '36pt'];
-
-// Selection text -> instruction sent to the same /api/documents/draft
-// endpoint the Synthesis Studio uses — one shared backend contract for
-// both "generate a whole clause" and "rewrite this exact span" instead of
-// standing up a second AI route. Each instruction explicitly demands
-// clause-only output (no preamble) since the backend's system prompt
-// doesn't know this call is a rewrite-in-place, not a fresh draft.
-const AI_ACTIONS = [
-  {
-    key: 'defensive',
-    label: '🔒 Defensive',
-    instruction: (text) =>
-      `Rewrite the following contract clause to more strongly protect our client's interests and minimize their liability, while keeping it valid and enforceable under Indian law. Output only the rewritten clause text, with no preamble or commentary.\n\nCLAUSE:\n"${text}"`,
-  },
-  {
-    key: 'aggressive',
-    label: '⚡ Aggressive',
-    instruction: (text) =>
-      `Rewrite the following contract clause to be more assertive and commercially favorable to our client, while keeping it valid and enforceable under Indian law. Output only the rewritten clause text, with no preamble or commentary.\n\nCLAUSE:\n"${text}"`,
-  },
-  {
-    key: 'expand',
-    label: '📝 Expand',
-    instruction: (text) =>
-      `Expand the following contract clause with additional precision and standard protective detail, under Indian law. Output only the rewritten clause text, with no preamble or commentary.\n\nCLAUSE:\n"${text}"`,
-  },
-  {
-    key: 'simplify',
-    label: '⚖️ Simplify',
-    instruction: (text) =>
-      `Simplify and clarify the following contract clause into plain, unambiguous language while preserving its legal effect under Indian law. Output only the rewritten clause text, with no preamble or commentary.\n\nCLAUSE:\n"${text}"`,
-  },
-];
 
 function generateCommentId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -202,121 +166,9 @@ function CommentBubbleMenu({ editor, onAction }) {
   );
 }
 
-// Auto-Draft's contextual AI menu: rewrite actions on a live selection, or
-// a single "Accept" when the cursor sits inside a span the AI already
-// generated (the ai-generated-text mark — see aiGeneratedMark.js). Kept as
-// its own component rather than branching inside CommentBubbleMenu — the
-// two menus serve unrelated workflows (human commenting vs. AI rewriting)
-// with no shared state, so merging them would just be a bigger prop list
-// gating two independent render paths.
-function AiActionBubbleMenu({ editor }) {
-  const [loadingKey, setLoadingKey] = useState(null);
-  const [error, setError] = useState('');
-  // Guards the post-await setState calls below against a race where the
-  // user navigates away from Auto-Draft (unmounting this component) while
-  // a rewrite request is still in flight — without this, the resolved
-  // fetch would call setState on an already-unmounted component.
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
-
-  if (!editor) return null;
-
-  const isInsideAiMark = editor.isActive('aiGenerated');
-
-  const runAction = async (action) => {
-    // CRITICAL: from/to are captured NOW, synchronously, before the first
-    // await — editor.state.selection by the time the fetch resolves may
-    // point somewhere else entirely (the user is free to keep working
-    // while the request is in flight). Every position used below is this
-    // captured pair, never a re-read of "current" selection.
-    const { from, to, empty } = editor.state.selection;
-    if (empty || loadingKey) return;
-    const text = editor.state.doc.textBetween(from, to, ' ');
-    setError('');
-    setLoadingKey(action.key);
-    try {
-      const res = await fetch(`${API_BASE}/api/documents/draft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: action.instruction(text) }),
-      });
-      const data = await res.json().catch(() => ({}));
-      // Backend error shape is {"error": true, "message": "..."} on both
-      // 4xx/5xx AND occasionally 200 — checking response.ok alone isn't
-      // sufficient (matches the contract handleAutoDraft in
-      // ContractAnalyzer.jsx already relies on for this same endpoint).
-      if (!res.ok || data.error) throw new Error(data.message || 'AI rewrite failed.');
-      const clean = String(data.draft || data.content || '').replace(/^"|"$/g, '').trim();
-      if (!clean) throw new Error('AI returned an empty result.');
-
-      // The editor instance itself may have been torn down (documentKey
-      // changed, e.g. a second "Synthesize Clause" run) while this fetch
-      // was in flight — dispatching into a destroyed EditorView throws.
-      if (editor.isDestroyed) return;
-      // The user could have deleted text (not just moved the cursor)
-      // during the fetch, which would make the captured `to` point past
-      // the end of the current document — a stale-position deleteRange
-      // would throw a hard ProseMirror RangeError instead of failing
-      // gracefully.
-      if (to > editor.state.doc.content.size) {
-        throw new Error('Document changed during generation — please retry.');
-      }
-
-      editor
-        .chain()
-        .focus()
-        .deleteRange({ from, to })
-        .insertContent({ type: 'text', text: clean, marks: [{ type: 'aiGenerated' }] })
-        .run();
-    } catch (err) {
-      if (mountedRef.current) {
-        setError(err.message || 'AI rewrite failed.');
-        setTimeout(() => { if (mountedRef.current) setError(''); }, 3500);
-      }
-    } finally {
-      if (mountedRef.current) setLoadingKey(null);
-    }
-  };
-
-  return (
-    <BubbleMenu
-      editor={editor}
-      shouldShow={({ state, editor: ed }) => !state.selection.empty || ed.isActive('aiGenerated')}
-    >
-      <div className="ca-bubble-menu">
-        {error ? (
-          <span className="ca-bubble-menu-error">{error}</span>
-        ) : isInsideAiMark ? (
-          <button
-            type="button"
-            className="ca-bubble-menu-btn ca-bubble-menu-btn-accept"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editor.chain().focus().acceptAiGenerated().run()}
-          >
-            ✅ Accept AI Draft
-          </button>
-        ) : (
-          AI_ACTIONS.map((action) => (
-            <button
-              key={action.key}
-              type="button"
-              className="ca-bubble-menu-btn"
-              disabled={loadingKey !== null}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => runAction(action)}
-            >
-              {loadingKey === action.key ? '⏳ …' : action.label}
-            </button>
-          ))
-        )}
-      </div>
-    </BubbleMenu>
-  );
-}
-
 function ContractTiptapEditor({
   documentKey, initialRawText, clauses, scanStrategy, onRiskClick, onTextChange, onEditorReady, editable = true,
-  onCommentRequest, onHighlightClick, aiActionsMenu = false, aiGeneratedInitialContent = false,
+  onCommentRequest, onHighlightClick,
 }) {
   // Callback props are read through refs inside extension options so the
   // editor instance itself only gets rebuilt when `documentKey` changes —
@@ -366,12 +218,10 @@ function ContractTiptapEditor({
         AiInsertion,
         AiDeletion,
         TrackChangesCommands,
-        AiGenerated,
-        AiGeneratedCommands,
         InlineCitation,
         CommentHighlight.configure({ multicolor: true }),
       ],
-      content: rawTextToHtml(initialRawText, aiGeneratedInitialContent),
+      content: rawTextToHtml(initialRawText),
       editable,
       onUpdate: ({ editor: ed }) => {
         // Debounced — onUpdate fires per keystroke/transaction, and syncing
@@ -455,9 +305,11 @@ function ContractTiptapEditor({
   return (
     <div className="tiptap-editor-shell">
       <ContractEditorToolbar editor={editor} />
-      {aiActionsMenu ? (
-        <AiActionBubbleMenu editor={editor} />
-      ) : (
+      {/* Comment/Draft-Revision only make sense where there's somewhere to
+          send the result — Auto-Draft's editor doesn't pass onCommentRequest
+          (it has no comment sidebar of its own), so it gets no bubble menu
+          at all rather than buttons that would silently do nothing. */}
+      {onCommentRequest && (
         <CommentBubbleMenu editor={editor} onAction={handleBubbleAction} />
       )}
       <EditorContent editor={editor} className="scanner-body" />
