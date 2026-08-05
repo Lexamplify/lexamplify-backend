@@ -17,11 +17,23 @@ export function escapeHtml(str) {
 // line-ending style, and a stray \r left inside a paragraph's text would
 // silently break the risk-decoration text search later (positionMapping
 // searches against doc.textBetween, which would include that \r).
-export function rawTextToHtml(rawText) {
+//
+// wrapAiGenerated: when true, each line's text is additionally wrapped in
+// <span class="ai-generated-text">, tagging it with the aiGenerated mark
+// (tiptap/aiGeneratedMark.js) on parse — used for the Auto-Draft Studio's
+// freshly-synthesized content so it renders with the emerald "AI diff"
+// styling immediately, without a second pass over the document.
+export function rawTextToHtml(rawText, wrapAiGenerated = false) {
   const normalized = (rawText || '').replace(/\r\n/g, '\n');
   if (!normalized) return '<p></p>';
 
   const lines = normalized.split('\n');
-  const html = lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+  const html = lines
+    .map((line) => {
+      const escaped = escapeHtml(line);
+      const inner = wrapAiGenerated ? `<span class="ai-generated-text">${escaped}</span>` : escaped;
+      return `<p>${inner}</p>`;
+    })
+    .join('');
   return html || '<p></p>';
 }
