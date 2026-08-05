@@ -17,6 +17,19 @@ import { useCitationStore } from '../tiptap/citationStore.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
 
+// Shared "external link" glyph for every "Open Official Record" link
+// (parent citation + each nested related-citation) — one definition so the
+// icon can't drift between the two usages.
+function ExternalLinkIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
 const styles = `
   /* ── ANALYZER CONTAINER ──────────────────────────────────────────── */
   .analyzer-container {
@@ -1291,27 +1304,68 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [summary, setSummary] = useState('');
   const [citations, setCitations] = useState([]);
   const [loadingText, setLoadingText] = useState("Extracting clauses...");
+  const [scanProgress, setScanProgress] = useState(0);
+  // Keyed by array index, NOT citation.id — the backend's citation objects
+  // (see rag_server/main.py's analyze-contract RAG pass) only ever carry
+  // {title, snippet, in_vault, vault_id, kanoon_query}, no id field. Keying
+  // on a nonexistent citation.id would make every citation collide on the
+  // same `undefined` key, so opening one card's related-citations accordion
+  // would toggle EVERY card's accordion identically. The index is already
+  // used as the list's own React key below and is stable for one scan's
+  // static citations array, so it doubles safely as the per-card identity.
+  const [relatedCitations, setRelatedCitations] = useState({});
+  const [loadingRelated, setLoadingRelated] = useState(null);
 
   useEffect(() => {
     if (!isAnalyzing) return;
-    
+
     const steps = [
       "Extracting clauses...",
       "Running deep scan...",
       "Cross-referencing Pinecone precedents...",
       "Aggregating risk profile..."
     ];
-    
+
     let stepIndex = 0;
     setLoadingText(steps[stepIndex]);
-    
+
     const timer = setInterval(() => {
       stepIndex = (stepIndex + 1) % steps.length;
       setLoadingText(steps[stepIndex]);
     }, 2500);
-    
+
     return () => clearInterval(timer);
   }, [isAnalyzing]);
+
+  // Simulated-target progress: each loadingText phase maps to a target
+  // percentage; a real Groq call's actual progress isn't observable
+  // mid-request, so this climbs toward a plausible target 1% every 50ms
+  // instead of jumping in discrete steps. Guarded to only count UP —
+  // loadingText's own cycle wraps back to "Extracting clauses..." (target
+  // 20) every 10s, and a scan can run past that (the card itself warns
+  // "up to 20 seconds"); without the guard the bar would visibly jump
+  // backward every time the phase text wraps. It freezes at the highest
+  // target reached instead, until the real completion snaps it to 100.
+  const SCAN_PHASE_TARGETS = {
+    "Extracting clauses...": 20,
+    "Running deep scan...": 45,
+    "Cross-referencing Pinecone precedents...": 75,
+    "Aggregating risk profile...": 95,
+  };
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const target = SCAN_PHASE_TARGETS[loadingText] ?? 95;
+    const timer = setInterval(() => {
+      setScanProgress((p) => {
+        if (p >= target) {
+          clearInterval(timer);
+          return p;
+        }
+        return p + 1;
+      });
+    }, 50);
+    return () => clearInterval(timer);
+  }, [isAnalyzing, loadingText]);
 
   // Tab states
   const [activeTab, setActiveTab] = useState('risks');
@@ -1406,9 +1460,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
     const content = cleanExtractedText(incoming.file_content);
     setRawText(content);
     (async () => {
+      setScanProgress(0);
       setIsAnalyzing(true);
       const res = await analyzeContractWithGroq(content, '', scanStrategy);
       setIsAnalyzing(false);
+      setScanProgress(100);
       if (!res.error) loadAnalysisResults(res);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1716,9 +1772,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
       return;
     }
 
+    setScanProgress(0);
     setIsAnalyzing(true);
     const res = await analyzeContractWithGroq(target, ruleBookText, scanStrategy);
     setIsAnalyzing(false);
+    setScanProgress(100);
 
     if (res.error) {
       alert(res.message || 'Analysis failed.');
@@ -1786,9 +1844,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const handleStrategyChange = async (newStrategy) => {
     setScanStrategy(newStrategy);
     if (isAnalyzed && rawText) {
+      setScanProgress(0);
       setIsAnalyzing(true);
       const res = await analyzeContractWithGroq(rawText, ruleBookText, newStrategy);
       setIsAnalyzing(false);
+      setScanProgress(100);
       if (!res.error) {
         loadAnalysisResults(res);
       } else {
@@ -1911,6 +1971,39 @@ export default function ContractAnalyzer({ setFocusMode }) {
       url: prec.in_vault ? null : `/api/kanoon-redirect?query=${encodeURIComponent(prec.kanoon_query)}`,
     });
     editor.chain().focus().insertContent({ type: 'inlineCitation', attrs: { citationId } }).run();
+  };
+
+  // citationKey is the citation's array index (see relatedCitations'
+  // declaration for why — no real citation.id exists to key on).
+  const handleSearchRelated = async (citation, citationKey) => {
+    // Toggle: collapse an already-open accordion instead of re-fetching.
+    if (relatedCitations[citationKey]) {
+      setRelatedCitations(prev => {
+        const next = { ...prev };
+        delete next[citationKey];
+        return next;
+      });
+      return;
+    }
+
+    const query = (citation.title || citation.kanoon_query || '').trim();
+    if (!query) return;
+
+    setLoadingRelated(citationKey);
+    try {
+      const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      // Backend's failure shape is {"status":"error",...} with HTTP 200 (a
+      // Pinecone outage is an expected failure mode, not a server bug) — a
+      // bare !res.ok check would miss it and store an empty [] as if the
+      // search genuinely found nothing.
+      if (!res.ok || data.status === 'error') throw new Error(data.message || 'Related search failed');
+      setRelatedCitations(prev => ({ ...prev, [citationKey]: (data.results || []).slice(0, 3) }));
+    } catch (err) {
+      console.error('[Related Citations] search failed:', err);
+    } finally {
+      setLoadingRelated(null);
+    }
   };
 
   // ── 4. EXTENSIONS (RECOMMENDATIONS) HANDLERS ─────────────────────────
@@ -2374,6 +2467,16 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 /* ── SCANNING STATE ── */
                 <div style={{ background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', borderRadius: '16px', padding: '48px 32px', textAlign: 'center' }}>
                   <div style={{ width: '56px', height: '56px', margin: '0 auto 24px', borderRadius: '50%', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: 'var(--accent-primary)', animation: 'spin 0.9s linear infinite' }}></div>
+
+                  {/* Simulated Target progress bar */}
+                  <div style={{ maxWidth: '400px', margin: '0 auto 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Scan Progress</span>
+                    <span style={{ fontSize: '13px', color: '#3b82f6', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{scanProgress}%</span>
+                  </div>
+                  <div style={{ maxWidth: '400px', margin: '0 auto 18px', height: '8px', backgroundColor: 'rgba(31, 41, 55, 0.5)', borderRadius: '8px', border: '1px solid #374151', overflow: 'hidden' }}>
+                    <div style={{ width: `${scanProgress}%`, height: '100%', backgroundColor: '#3b82f6', borderRadius: '8px', transition: 'width 0.3s ease-out', boxShadow: '0 0 15px rgba(59,130,246,0.6)' }} />
+                  </div>
+
                   <h3 style={{ fontSize: '16px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>{loadingText}</h3>
                   <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginBottom: '28px' }}>Compiling vector node · identifying liability clauses · matching precedents</p>
                   <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -3171,7 +3274,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Citations */}
                 {activeTab === 'citations' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Landmark Indian Contract Precedents</h3>
 
                     {citations.length === 0 ? (
@@ -3217,10 +3320,65 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >
-                                      🔍 Search Indian Kanoon
+                                      <ExternalLinkIcon /> Open Official Record
                                     </a>
                                   )}
+                                  <button
+                                    onClick={() => handleSearchRelated(prec, i)}
+                                    disabled={loadingRelated === i}
+                                    style={{
+                                      background: 'transparent', border: '1px solid #3b82f6', color: '#60a5fa',
+                                      fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px',
+                                      cursor: loadingRelated === i ? 'default' : 'pointer',
+                                      display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                      opacity: loadingRelated === i ? 0.7 : 1, transition: 'all 0.15s',
+                                    }}
+                                  >
+                                    {loadingRelated === i ? (
+                                      <>
+                                        <span style={{ width: '10px', height: '10px', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: '#60a5fa', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                                        Searching…
+                                      </>
+                                    ) : relatedCitations[i] ? (
+                                      '🔗 Hide Related Citations'
+                                    ) : (
+                                      '🔗 Search Related Citations'
+                                    )}
+                                  </button>
                                 </div>
+
+                                {relatedCitations[i] && (
+                                  <div style={{ marginLeft: '1rem', borderLeft: '2px solid #374151', paddingLeft: '12px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {relatedCitations[i].length === 0 ? (
+                                      <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', fontStyle: 'italic', margin: 0 }}>No related citations found.</p>
+                                    ) : (
+                                      relatedCitations[i].map((related, j) => {
+                                        const relatedTitle = related.case_title || related.title || 'Untitled Case';
+                                        return (
+                                          <div key={related.id || j}>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '4px' }}>
+                                              {relatedTitle}
+                                            </div>
+                                            {related.snippet && (
+                                              <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 6px', lineHeight: 1.5 }}>
+                                                "{related.snippet.length > 140 ? `${related.snippet.slice(0, 140)}…` : related.snippet}"
+                                              </p>
+                                            )}
+                                            <a
+                                              className="citation-btn-kanoon"
+                                              href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedTitle)}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              style={{ fontSize: '10.5px', padding: '4px 10px' }}
+                                            >
+                                              <ExternalLinkIcon /> Open Official Record
+                                            </a>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
