@@ -959,6 +959,14 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   const [saveFormat,     setSaveFormat]    = useState('native');
   const newFolderInputRef = useRef(null);
 
+  // Guards async continuations (fetch/save callbacks) against setState calls
+  // after this modal instance has unmounted — it mounts/unmounts independently
+  // of the outer CommandPalette, so it needs its own ref, not a shared one.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   // Navigation animation state (mirrors VaultView navKey/navDir pattern)
   const [navKey, setNavKey] = useState(0);
   const [navDir, setNavDir] = useState('');
@@ -990,11 +998,12 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
         dRes.ok ? dRes.json() : null,
       ]))
       .then(([fData, dData]) => {
+        if (!isMountedRef.current) return;
         if (fData) setFlatFolders(fData.flat || []);
         if (dData) setFlatDocs(dData.documents || []);
       })
       .catch(() => {})
-      .finally(() => setLoadingFolders(false));
+      .finally(() => { if (isMountedRef.current) setLoadingFolders(false); });
   }, [apiBase]);
 
   // Derived: current view + children visible at this level.
@@ -1059,12 +1068,13 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
         body: JSON.stringify({ name, parent_id: currentView.id }),
       });
       const data = await res.json();
+      if (!isMountedRef.current) return;
       if (!res.ok || data.error) { setNewFolderError(data.message || 'Could not create folder.'); return; }
       setFlatFolders(prev => [...prev, { id: data.id, name: data.name, parent_id: data.parent_id ?? null }]);
       setNewFolderName('');
       setIsCreating(false);
-    } catch { setNewFolderError('Network error. Try again.'); }
-    finally { setCreatingFolderLoading(false); }
+    } catch { if (isMountedRef.current) setNewFolderError('Network error. Try again.'); }
+    finally { if (isMountedRef.current) setCreatingFolderLoading(false); }
   };
 
   // Last-used folder shortcut
@@ -1101,6 +1111,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
       try { localStorage.removeItem(LAST_FOLDER_KEY); } catch {}
     }
     await onConfirm({ fileName: finalName, folderId: destFolderId, folderPath: destPath, smartTitle: finalName, tags: selectedTags, format: saveFormat });
+    if (!isMountedRef.current) return;
     setSaving(false);
   };
 
@@ -1610,6 +1621,12 @@ function CommandPalette() {
   const msgRefs        = useRef({});
   const drawerBodyRef  = useRef(null);   // contentEditable doc editor
   const lastDocKeyRef  = useRef(null);   // guards against overwriting user edits on re-render
+  // Guards async continuations (SSE stream, file attach, schedule/save calls)
+  // against setState calls after this component instance has unmounted.
+  const isMountedRef   = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   // ── Derived ──────────────────────────────────────────
   const currentSession  = sessions.find(s => s.id === currentId) || null;
@@ -1949,10 +1966,11 @@ function CommandPalette() {
       setFileLoading(true);
       try {
         const text = await file.text();
+        if (!isMountedRef.current) return;
         setAttachedFile({ name: file.name, content: text.slice(0, 12000) });
       } catch (_) {
-        setAttachedFile({ name: file.name, content: '[Could not read file content]' });
-      } finally { setFileLoading(false); }
+        if (isMountedRef.current) setAttachedFile({ name: file.name, content: '[Could not read file content]' });
+      } finally { if (isMountedRef.current) setFileLoading(false); }
       return;
     }
 
@@ -1967,15 +1985,17 @@ function CommandPalette() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
+      if (!isMountedRef.current) return;
       if (res.ok) {
         const data = await res.json();
+        if (!isMountedRef.current) return;
         setAttachedFile({ name: file.name, content: data.text || '[Empty document]' });
       } else {
         setAttachedFile({ name: file.name, content: '[Failed to extract text from file — please paste the content manually]' });
       }
     } catch (_) {
-      setAttachedFile({ name: file.name, content: '[Failed to read file]' });
-    } finally { setFileLoading(false); }
+      if (isMountedRef.current) setAttachedFile({ name: file.name, content: '[Failed to read file]' });
+    } finally { if (isMountedRef.current) setFileLoading(false); }
   };
 
   // ── Main search / stream ─────────────────────────────
@@ -2055,6 +2075,7 @@ function CommandPalette() {
           }),
         }),
       });
+      if (!isMountedRef.current) return;
 
       // 401 = missing token; 422 = Flask-JWT-Extended rejecting a malformed/
       // expired token on this @jwt_required() route. Both mean "re-authenticate"
@@ -2083,6 +2104,7 @@ function CommandPalette() {
       if (contentType.includes('application/json')) {
         try {
           const actionPayload = await res.json();
+          if (!isMountedRef.current) return;
           if (actionPayload.is_action && actionPayload.intent === 'ROUTE') {
             // Force-inject the file content from the attached file state.
             // Never trust the LLM to echo file content back — use what we captured.
@@ -2151,6 +2173,9 @@ function CommandPalette() {
 
       outer: while (true) {
         const { value, done } = await reader.read();
+        // Abandoned stream: closing the drawer doesn't cancel the fetch, so
+        // once unmounted, stop reading entirely rather than skip an iteration.
+        if (!isMountedRef.current) break outer;
         if (done) break;
         buf += dec.decode(value, { stream: true });
         const lines = buf.split('\n'); buf = lines.pop();
@@ -2215,9 +2240,20 @@ function CommandPalette() {
             }
 
             if (p.action === 'review_document') {
+              if (!p.draft) {
+                // A malformed tool-call payload missing its own `draft`
+                // key must surface as a visible error, not silently drop
+                // the event (the user is left with no document AND no
+                // indication anything went wrong otherwise).
+                patchMessage(sid, msgId, m => ({
+                  ...m,
+                  text: (m.text || '') + '\n\n[Error: AI returned a draft action with no document content.]',
+                }));
+                continue;
+              }
               const sess = sessions.find(s => s.id === sid);
               const sessTitle = sess?.title || '';
-              const smart = generateSmartName(p.draft.doc_type, sessTitle);
+              const smart = generateSmartName(p.draft?.doc_type, sessTitle);
               const enrichedDraft = { ...p.draft, smartTitle: smart };
               updateSession(sid, s => ({ ...s, pendingDraft: enrichedDraft, activeDocument: enrichedDraft }));
               patchMessage(sid, msgId, m => ({
@@ -2225,8 +2261,8 @@ function CommandPalette() {
                 text: 'Document drafted. Review and edit it in the draft panel →',
                 docCard: {
                   title: smart,
-                  doc_type: p.draft.doc_type,
-                  snapshot: p.draft.content,
+                  doc_type: p.draft?.doc_type,
+                  snapshot: p.draft?.content,
                   ts: Date.now(),
                   isUpdate: false,
                 },
@@ -2244,9 +2280,11 @@ function CommandPalette() {
         }
       }
     } catch (_) {
-      pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text: 'Connection failed. Check your network and try again.' });
+      if (isMountedRef.current) {
+        pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text: 'Connection failed. Check your network and try again.' });
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }
 
@@ -2261,14 +2299,15 @@ function CommandPalette() {
         headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
         body: JSON.stringify({ events: pendingSchedule }),
       });
+      if (!isMountedRef.current) return;
       updateSession(currentId, s => ({ ...s, pendingSchedule: null }));
       pushMessage(currentId, {
         id: `sys_${Date.now()}`, role: r.ok ? 'assistant' : 'error',
         text: r.ok ? '✅ Schedule saved to your Legal Calendar.' : 'Failed to save schedule. Please try again.',
       });
     } catch (_) {
-      pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save schedule.' });
-    } finally { setLoading(false); }
+      if (isMountedRef.current) pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save schedule.' });
+    } finally { if (isMountedRef.current) setLoading(false); }
   }
 
   // ── Approve draft — opens SaveToVaultModal ───────────
@@ -2308,6 +2347,7 @@ function CommandPalette() {
         }),
       });
       const data = r.ok ? await r.json() : null;
+      if (!isMountedRef.current) return;
       const displayPath = data?.location || (folderPath ? `${folderPath} / ${fileName}` : fileName);
 
       if (r.ok) {
@@ -2344,9 +2384,11 @@ function CommandPalette() {
       setDrawerOpen(false);
       setShowSaveModal(false);
     } catch (_) {
-      pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save to Case Vault.' });
-      setShowSaveModal(false);
-    } finally { setLoading(false); }
+      if (isMountedRef.current) {
+        pushMessage(currentId, { id: `e_${Date.now()}`, role: 'error', text: 'Failed to save to Case Vault.' });
+        setShowSaveModal(false);
+      }
+    } finally { if (isMountedRef.current) setLoading(false); }
   }
 
   // ── Draft utility actions ─────────────────────────────

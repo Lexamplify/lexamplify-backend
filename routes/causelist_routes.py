@@ -248,24 +248,27 @@ def export_ics():
 
 @causelist_bp.route('/api/ip/add', methods=['POST'])
 def add_ip():
-    data = request.get_json()
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''INSERT INTO ip_assets
-        (ip_type, title, registration_number, filing_date, renewal_due, status, notes)
-        VALUES (?,?,?,?,?,?,?)''', (
-        data.get('ip_type', ''),
-        data.get('title', ''),
-        data.get('registration_number', ''),
-        data.get('filing_date', None),
-        data.get('renewal_due', None),
-        data.get('status', 'Active'),
-        data.get('notes', ''),
-    ))
-    conn.commit()
-    new_id = c.lastrowid
-    conn.close()
-    return jsonify({'status': 'success', 'id': new_id})
+    data = request.get_json(silent=True) or {}
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('''INSERT INTO ip_assets
+            (ip_type, title, registration_number, filing_date, renewal_due, status, notes)
+            VALUES (?,?,?,?,?,?,?)''', (
+            data.get('ip_type', ''),
+            data.get('title', ''),
+            data.get('registration_number', ''),
+            data.get('filing_date', None),
+            data.get('renewal_due', None),
+            data.get('status', 'Active'),
+            data.get('notes', ''),
+        ))
+        conn.commit()
+        new_id = c.lastrowid
+        conn.close()
+        return jsonify({'status': 'success', 'id': new_id})
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
 @causelist_bp.route('/api/ip/list', methods=['GET'])
@@ -279,23 +282,26 @@ def list_ip():
 
 @causelist_bp.route('/api/ip/update/<int:ip_id>', methods=['PUT'])
 def update_ip(ip_id):
-    data = request.get_json()
-    conn = get_db()
-    conn.execute('''UPDATE ip_assets SET
-        ip_type=?, title=?, registration_number=?, filing_date=?,
-        renewal_due=?, status=?, notes=? WHERE id=?''', (
-        data.get('ip_type', ''),
-        data.get('title', ''),
-        data.get('registration_number', ''),
-        data.get('filing_date', None),
-        data.get('renewal_due', None),
-        data.get('status', 'Active'),
-        data.get('notes', ''),
-        ip_id,
-    ))
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'success'})
+    data = request.get_json(silent=True) or {}
+    try:
+        conn = get_db()
+        conn.execute('''UPDATE ip_assets SET
+            ip_type=?, title=?, registration_number=?, filing_date=?,
+            renewal_due=?, status=?, notes=? WHERE id=?''', (
+            data.get('ip_type', ''),
+            data.get('title', ''),
+            data.get('registration_number', ''),
+            data.get('filing_date', None),
+            data.get('renewal_due', None),
+            data.get('status', 'Active'),
+            data.get('notes', ''),
+            ip_id,
+        ))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
 @causelist_bp.route('/api/ip/delete/<int:ip_id>', methods=['DELETE'])

@@ -23,8 +23,13 @@ function buildSearchUrl(query) {
  * page shape doesn't match what we expect.
  */
 export async function resolveKanoonDoc(query) {
+  // Guarded BEFORE building the fallback URL — otherwise a null/undefined
+  // query bakes the literal text "null"/"undefined" into the returned
+  // search URL instead of a clean generic one.
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    return buildSearchUrl(query || '');
+  }
   const searchUrl = buildSearchUrl(query);
-  if (!query || typeof query !== 'string' || !query.trim()) return searchUrl;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

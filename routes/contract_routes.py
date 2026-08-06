@@ -11,7 +11,7 @@ import os
 import json as json_mod
 import difflib
 from flask import Blueprint, request, jsonify
-from utils.ai_helper import ask_groq, ask_litellm
+from utils.ai_helper import ask_groq, ask_litellm, extract_json_from_llm_response
 from utils.pdf_helper import extract_text_for_summary
 
 contract_bp = Blueprint("contract", __name__)
@@ -259,8 +259,20 @@ def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive") 
     # Strip any other lingering invisible control characters (0x00–0x1F, 0x7F)
     cleaned_text = re.sub(r'[\x00-\x1F\x7F]+', '', cleaned_text)
 
-    # Parse safely with strict=False to tolerate minor JSON deviations
-    return json_mod.loads(cleaned_text, strict=False)
+    # Parse safely with strict=False to tolerate minor JSON deviations. This
+    # function is documented to return a dict — raise a clear, specific
+    # error on failure instead of letting a bare JSONDecodeError (or a
+    # successfully-parsed non-dict value, e.g. the LLM emitting a JSON
+    # array) reach a future caller that isn't wrapping this in try/except.
+    try:
+        parsed = json_mod.loads(cleaned_text, strict=False)
+    except json_mod.JSONDecodeError as e:
+        raise ValueError(f"AI returned an unparseable contract analysis chunk: {e}")
+
+    if not isinstance(parsed, dict):
+        raise ValueError("AI returned valid JSON but not the expected object shape.")
+
+    return parsed
 
 
 @contract_bp.route("/analyze", methods=["POST"])
@@ -272,25 +284,28 @@ def analyze():
     pdf_url = ""
 
     if request.files.get("file"):
-        f = request.files["file"]
-        fname = secure_filename(f.filename.lower())
-        timestamp = int(time.time())
+        try:
+            f = request.files["file"]
+            fname = secure_filename(f.filename.lower())
+            timestamp = int(time.time())
 
-        saved_path = os.path.join(os.getcwd(), "static", "uploads", f"{timestamp}_{fname}")
-        os.makedirs(os.path.dirname(saved_path), exist_ok=True)
-        f.save(saved_path)
+            saved_path = os.path.join(os.getcwd(), "static", "uploads", f"{timestamp}_{fname}")
+            os.makedirs(os.path.dirname(saved_path), exist_ok=True)
+            f.save(saved_path)
 
-        pdf_url = f"/static/uploads/{timestamp}_{fname}"
+            pdf_url = f"/static/uploads/{timestamp}_{fname}"
 
-        with open(saved_path, "rb") as fp:
-            data = fp.read()
+            with open(saved_path, "rb") as fp:
+                data = fp.read()
 
-        if fname.endswith(".pdf"):
-            full_text = extract_text_for_summary(data, "pdf")
-        elif fname.endswith(".docx"):
-            full_text = extract_text_for_summary(data, "docx")
-        else:
-            return jsonify({"error": "Unsupported file. Use PDF or DOCX."}), 400
+            if fname.endswith(".pdf"):
+                full_text = extract_text_for_summary(data, "pdf")
+            elif fname.endswith(".docx"):
+                full_text = extract_text_for_summary(data, "docx")
+            else:
+                return jsonify({"error": "Unsupported file. Use PDF or DOCX."}), 400
+        except Exception as e:
+            return jsonify({"error": f"Failed to process uploaded file: {e}", "code": "FILE_PROCESSING_ERROR"}), 500
 
     elif request.is_json and request.json.get("text"):
         full_text = request.json["text"]
@@ -475,21 +490,24 @@ def extract_text():
     if not request.files.get("file"):
         return jsonify({"error": "No file provided."}), 400
 
-    f = request.files["file"]
-    fname = secure_filename(f.filename.lower())
-    data = f.read()
+    try:
+        f = request.files["file"]
+        fname = secure_filename(f.filename.lower())
+        data = f.read()
 
-    if fname.endswith(".pdf"):
-        text = extract_text_for_summary(data, "pdf")
-    elif fname.endswith(".docx"):
-        text = extract_text_for_summary(data, "docx")
-    else:
-        return jsonify({"error": "Unsupported format. Use PDF or DOCX."}), 400
+        if fname.endswith(".pdf"):
+            text = extract_text_for_summary(data, "pdf")
+        elif fname.endswith(".docx"):
+            text = extract_text_for_summary(data, "docx")
+        else:
+            return jsonify({"error": "Unsupported format. Use PDF or DOCX."}), 400
 
-    if not text or not text.strip():
-        return jsonify({"error": "No content could be extracted from this file."}), 400
+        if not text or not text.strip():
+            return jsonify({"error": "No content could be extracted from this file."}), 400
 
-    return jsonify({"text": text}), 200
+        return jsonify({"text": text}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to extract text: {e}", "code": "FILE_PROCESSING_ERROR"}), 500
 
 @contract_bp.route("/rewrite", methods=["POST"])
 def rewrite():
@@ -608,29 +626,19 @@ EXACT OUTPUT FORMAT (return ONLY this JSON array, nothing else):
 
 Return ONLY the raw JSON array. No text before it. No text after it."""
     try:
-        import json as json_mod
         recs_raw = ask_groq(prompt, f"Contract Text:\n{raw_text[:8000]}")
-        
-        # Attempt structured JSON parse for the new format
-        try:
-            # Strip any markdown code fences the LLM might wrap around JSON
-            cleaned = recs_raw.strip()
-            if cleaned.startswith('```'):
-                cleaned = cleaned.split('\n', 1)[1] if '\n' in cleaned else cleaned[3:]
-            if cleaned.endswith('```'):
-                cleaned = cleaned.rsplit('```', 1)[0]
-            cleaned = cleaned.strip()
-            
-            parsed = json_mod.loads(cleaned)
-            if isinstance(parsed, list):
-                return jsonify({"recommendations": parsed, "format": "json"})
-        except (json_mod.JSONDecodeError, ValueError):
-            pass
-        
+
+        # Attempt structured JSON parse for the new format — fence-strip +
+        # regex-extract fallback (not just a bare parse of the whole
+        # response), so stray prose around the array doesn't sink it.
+        parsed = extract_json_from_llm_response(recs_raw)
+        if isinstance(parsed, list):
+            return jsonify({"recommendations": parsed, "format": "json"})
+
         # Fallback: return raw text for legacy numbered-list parsing on the frontend
         return jsonify({"recommendations": recs_raw, "format": "text"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
 @contract_bp.route("/autofill-template", methods=["POST"])
@@ -730,62 +738,65 @@ def export_form_docx():
     if not html.strip():
         return jsonify({"error": True, "message": "No document content provided."}), 400
 
-    doc = Document()
-    section = doc.sections[0]
-    section.top_margin = Inches(1)
-    section.bottom_margin = Inches(1)
-    section.left_margin = Inches(1)
-    section.right_margin = Inches(1)
+    try:
+        doc = Document()
+        section = doc.sections[0]
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1)
+        section.right_margin = Inches(1)
 
-    def add_runs(paragraph, node, bold=False):
-        """Recursively walk inline children, tracking bold state so a
-        <strong>/<b> nested inside other inline tags still renders as a
-        real bold run rather than being flattened to plain text."""
-        for child in node.children:
-            if isinstance(child, NavigableString):
-                text = str(child)
-                if text:
-                    run = paragraph.add_run(text)
-                    run.bold = bold
-            elif isinstance(child, Tag):
-                if child.name == 'br':
-                    paragraph.add_run().add_break()
-                else:
-                    add_runs(paragraph, child, bold or child.name in ('strong', 'b'))
+        def add_runs(paragraph, node, bold=False):
+            """Recursively walk inline children, tracking bold state so a
+            <strong>/<b> nested inside other inline tags still renders as a
+            real bold run rather than being flattened to plain text."""
+            for child in node.children:
+                if isinstance(child, NavigableString):
+                    text = str(child)
+                    if text:
+                        run = paragraph.add_run(text)
+                        run.bold = bold
+                elif isinstance(child, Tag):
+                    if child.name == 'br':
+                        paragraph.add_run().add_break()
+                    else:
+                        add_runs(paragraph, child, bold or child.name in ('strong', 'b'))
 
-    soup = BeautifulSoup(html, 'html.parser')
-    top_level = [el for el in soup.find_all(['p', 'ul', 'ol'], recursive=False) if isinstance(el, Tag)]
-    if not top_level:
-        # html_template's top-level elements may not be direct children of
-        # the parse root depending on how the fragment was wrapped — fall
-        # back to scanning anywhere in the document.
-        top_level = [el for el in soup.find_all(['p', 'ul', 'ol']) if isinstance(el, Tag)]
+        soup = BeautifulSoup(html, 'html.parser')
+        top_level = [el for el in soup.find_all(['p', 'ul', 'ol'], recursive=False) if isinstance(el, Tag)]
+        if not top_level:
+            # html_template's top-level elements may not be direct children of
+            # the parse root depending on how the fragment was wrapped — fall
+            # back to scanning anywhere in the document.
+            top_level = [el for el in soup.find_all(['p', 'ul', 'ol']) if isinstance(el, Tag)]
 
-    for el in top_level:
-        style_attr = (el.get('style') or '').replace(' ', '')
-        if el.name == 'p':
-            para = doc.add_paragraph()
-            if 'text-align:center' in style_attr:
-                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            elif 'text-align:right' in style_attr:
-                para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            add_runs(para, el)
-        else:
-            list_style = 'List Bullet' if el.name == 'ul' else 'List Number'
-            for li in el.find_all('li', recursive=False):
-                para = doc.add_paragraph(style=list_style)
-                add_runs(para, li)
+        for el in top_level:
+            style_attr = (el.get('style') or '').replace(' ', '')
+            if el.name == 'p':
+                para = doc.add_paragraph()
+                if 'text-align:center' in style_attr:
+                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                elif 'text-align:right' in style_attr:
+                    para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                add_runs(para, el)
+            else:
+                list_style = 'List Bullet' if el.name == 'ul' else 'List Number'
+                for li in el.find_all('li', recursive=False):
+                    para = doc.add_paragraph(style=list_style)
+                    add_runs(para, li)
 
-    buffer = io.BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    safe_name = re.sub(r'[^A-Za-z0-9]+', '_', title).strip('_') or 'Legal_Document'
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name=f"{safe_name}.docx",
-        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    )
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        safe_name = re.sub(r'[^A-Za-z0-9]+', '_', title).strip('_') or 'Legal_Document'
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f"{safe_name}.docx",
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
+    except Exception as e:
+        return jsonify({"error": True, "message": f"Failed to generate DOCX: {e}", "code": "DOCX_EXPORT_ERROR"}), 500
 
 
 @contract_bp.route("/save", methods=["POST"])
@@ -865,60 +876,66 @@ def export_contract():
     from flask import send_file
     
     data = request.get_json(silent=True) or {}
-    doc_text = data.get("document_text", "")
-    draft_text = data.get("draft_text", "")
+    doc_text = data.get("document_text", "") or ""
+    draft_text = data.get("draft_text", "") or ""
     export_format = data.get("format", "pdf")
 
-    # Clean text to prevent PDF/Word encoding errors
-    doc_text = doc_text.encode('utf-8', 'replace').decode('utf-8')
-    draft_text = draft_text.encode('utf-8', 'replace').decode('utf-8')
+    try:
+        # Clean text to prevent PDF/Word encoding errors. str(...) guards
+        # against a caller sending a non-string JSON value (a number, a
+        # list) for either field — .encode() would otherwise raise
+        # AttributeError before we ever reach the try's own except below.
+        doc_text = str(doc_text).encode('utf-8', 'replace').decode('utf-8')
+        draft_text = str(draft_text).encode('utf-8', 'replace').decode('utf-8')
 
-    if export_format == "docx":
-        # Generate DOCX
-        doc = Document()
-        doc.add_heading('LexAI Case Export', 0)
-        
-        if doc_text:
-            doc.add_heading('Original Document Scanner Text', level=1)
-            doc.add_paragraph(doc_text)
-            
-        if draft_text:
-            doc.add_heading('Auto-Draft Text', level=1)
-            doc.add_paragraph(draft_text)
+        if export_format == "docx":
+            # Generate DOCX
+            doc = Document()
+            doc.add_heading('LexAI Case Export', 0)
 
-        buffer = io.BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
-        return send_file(buffer, as_attachment=True, download_name="LexAI_Export.docx", mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            if doc_text:
+                doc.add_heading('Original Document Scanner Text', level=1)
+                doc.add_paragraph(doc_text)
 
-    else:
-        # Generate PDF
-        class PDF(FPDF):
-            def header(self):
-                self.set_font('Arial', 'B', 15)
-                self.cell(0, 10, 'LexAI Case Export', 0, 1, 'C')
+            if draft_text:
+                doc.add_heading('Auto-Draft Text', level=1)
+                doc.add_paragraph(draft_text)
 
-        pdf = PDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=11)
-        
-        def safe_text(txt):
-             return txt.encode('latin-1', 'replace').decode('latin-1')
+            buffer = io.BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
+            return send_file(buffer, as_attachment=True, download_name="LexAI_Export.docx", mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 
-        if doc_text:
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "Original Document Scanner Text:", ln=True)
+        else:
+            # Generate PDF
+            class PDF(FPDF):
+                def header(self):
+                    self.set_font('Arial', 'B', 15)
+                    self.cell(0, 10, 'LexAI Case Export', 0, 1, 'C')
+
+            pdf = PDF()
+            pdf.add_page()
             pdf.set_font("Arial", size=11)
-            pdf.multi_cell(0, 8, safe_text(doc_text))
-            pdf.ln(5)
 
-        if draft_text:
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "Auto-Draft Text:", ln=True)
-            pdf.set_font("Arial", size=11)
-            pdf.multi_cell(0, 8, safe_text(draft_text))
+            def safe_text(txt):
+                 return txt.encode('latin-1', 'replace').decode('latin-1')
 
-        buffer = io.BytesIO()
-        pdf.output(buffer)
-        buffer.seek(0)
-        return send_file(buffer, as_attachment=True, download_name="LexAI_Export.pdf", mimetype='application/pdf')
+            if doc_text:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Original Document Scanner Text:", ln=True)
+                pdf.set_font("Arial", size=11)
+                pdf.multi_cell(0, 8, safe_text(doc_text))
+                pdf.ln(5)
+
+            if draft_text:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "Auto-Draft Text:", ln=True)
+                pdf.set_font("Arial", size=11)
+                pdf.multi_cell(0, 8, safe_text(draft_text))
+
+            buffer = io.BytesIO()
+            pdf.output(buffer)
+            buffer.seek(0)
+            return send_file(buffer, as_attachment=True, download_name="LexAI_Export.pdf", mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({"error": True, "message": f"Failed to generate export: {e}", "code": "EXPORT_ERROR"}), 500

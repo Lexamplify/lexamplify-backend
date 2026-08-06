@@ -126,7 +126,8 @@ const MOCK_JUDGMENTS = [
 ];
 
 function normalize(s) {
-  return (s || '').toLowerCase();
+  if (typeof s !== 'string') return '';
+  return s.toLowerCase();
 }
 
 /**

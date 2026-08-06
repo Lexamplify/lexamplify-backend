@@ -11,7 +11,7 @@ import re
 import sqlite3
 from flask import Blueprint, request, jsonify, redirect
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from utils.ai_helper import ask_gemini
+from utils.ai_helper import ask_gemini, extract_json_from_llm_response
 from utils.pdf_helper import extract_text_for_summary
 from utils.kanoon_helper import find_citations_for_document
 
@@ -66,21 +66,28 @@ def summarize_document():
             return jsonify({"error": "Could not extract readable text from document"}), 400
 
         # Call Gemini for structural JSON breakdown
-        raw_response = ask_gemini(f"{SUMMARIZER_PROMPT}\n\nDocument Text:\n{text[:25000]}")
-        
-        # Clean potential markdown wrapping safely
-        cleaned = re.sub(r"```json\s*|\s*```", "", raw_response).strip()
-        analysis = json.loads(cleaned)
+        raw_response = ask_gemini(SUMMARIZER_PROMPT, f"Document Text:\n{text[:25000]}")
+
+        analysis = extract_json_from_llm_response(raw_response)
+        if not isinstance(analysis, dict):
+            # Distinct from a 500 (our own bug): the upstream LLM returned
+            # text we could not recover a JSON object from at all — a real
+            # failure the caller needs to see and retry, not an empty
+            # fake-success summary silently standing in for it.
+            return jsonify({
+                "error": "AI returned an unparseable document analysis.",
+                "code": "LLM_JSON_PARSE_ERROR",
+            }), 502
 
         # ── Find Indian Kanoon Citations Based on Key Sections ──
-        citations = find_citations_for_document(text)
+        citations = find_citations_for_document(text, ask_gemini)
         analysis["citations"] = citations
 
         return jsonify(analysis), 200
 
     except Exception as e:
         print(f"[Summarizer Error]: {e}")
-        return jsonify({"error": "Failed to analyze document structure."}), 500
+        return jsonify({"error": "Failed to analyze document structure.", "code": "INTERNAL_ERROR"}), 500
 
 
 # ── Legal Chatbot Endpoint ──────────────────────────────────────

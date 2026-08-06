@@ -636,6 +636,11 @@ export default function WarRoomView() {
   const stageTimers = useRef([]);
   const fileInputRef = useRef(null);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   // Manual upload state (Task 3)
   const [uploadState, setUploadState] = useState('idle'); // 'idle' | 'uploading' | 'error'
   const [uploadError, setUploadError] = useState('');
@@ -660,6 +665,7 @@ export default function WarRoomView() {
     // Reveal sections 1–5 at 480ms stagger
     [1, 2, 3, 4, 5].forEach((sec, i) => {
       const t = setTimeout(() => {
+        if (!isMountedRef.current) return;
         setRevealedSections(prev => new Set([...prev, sec]));
       }, i * 480 + 120);
       stageTimers.current.push(t);
@@ -697,6 +703,7 @@ export default function WarRoomView() {
         }),
       });
       const data = await res.json();
+      if (!isMountedRef.current) return;
       clearStageTimers();
 
       if (data.error) {
@@ -708,9 +715,11 @@ export default function WarRoomView() {
         progressiveReveal(data.simulationData);
       }
     } catch (err) {
+      if (!isMountedRef.current) return;
       clearStageTimers();
       setSimError(err.message || 'Simulation failed. Check backend status.');
     } finally {
+      if (!isMountedRef.current) return;
       setIsSimulating(false);
     }
   };
@@ -795,10 +804,12 @@ export default function WarRoomView() {
         }),
       });
       const data = await res.json();
+      if (!isMountedRef.current) return;
       const raw = data.response || '';
       const { mainText, rebuttals } = parseRobotResponse(raw);
       setChatMessages(prev => [...prev, { role: 'bot', text: mainText || 'No response.', rebuttals }]);
     } catch {
+      if (!isMountedRef.current) return;
       setChatMessages(prev => [...prev, { role: 'bot', text: 'Connection error. Please retry.', rebuttals: [] }]);
     }
     setChatLoading(false);
@@ -836,11 +847,13 @@ export default function WarRoomView() {
     try {
       // Upload → index chunks into the RAG pipeline (same flow as Case Vault)
       await uploadDocument(file, null, 'War Room Upload');
+      if (!isMountedRef.current) return;
       // Trigger simulation; backend Pass 2 vault lookup finds the chunks by filename
       const refName = file.name.replace(/\.[^.]+$/, '');
       setUploadState('idle');
       runSimulation('', 'Appellant', refName);
     } catch (err) {
+      if (!isMountedRef.current) return;
       setUploadState('error');
       setUploadError(err?.message || 'Upload failed. Check your connection and try again.');
     }
@@ -921,9 +934,13 @@ export default function WarRoomView() {
         }),
       });
     } catch { /* silent — UI feedback via setSavedSession */ }
+    if (!isMountedRef.current) return;
     setSavingSession(false);
     setSavedSession(true);
-    setTimeout(() => setSavedSession(false), 3500);
+    setTimeout(() => {
+      if (!isMountedRef.current) return;
+      setSavedSession(false);
+    }, 3500);
   };
 
   // ── Toggle threat card ────────────────────────────────────────────────────

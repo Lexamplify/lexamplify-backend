@@ -983,45 +983,48 @@ def get_event_detail(event_id: str):
 
 @court_bp.route('/api/calculate-fee', methods=['POST'])
 def calculate_fee():
-    data = request.get_json(force=True)
-    amount = float(data.get('amount', 0) or 0)
-    court_type = data.get('court_type', '')
-    fee = 0
-    note = ''
-    if 'Civil Suit' in court_type:
-        if amount <= 50000:
-            fee = 200
-        elif amount <= 200000:
-            fee = round(amount * 0.02)
-        elif amount <= 1000000:
-            fee = round(amount * 0.015)
-        else:
-            fee = round(amount * 0.01)
-        note = 'Based on Court Fees Act schedule. Actual fee may vary by state.'
-    elif 'First Appeal' in court_type:
-        fee = round(amount * 0.01) + 500
-        note = 'High Court first appeal fee (approx). Check court website.'
-    elif 'Writ' in court_type:
-        fee = 5000
-        note = 'Fixed fee for writ petitions in most High Courts.'
-    elif 'SLP' in court_type:
-        fee = 10000
-        note = 'Supreme Court SLP fixed fee.'
-    elif 'Consumer' in court_type:
-        if amount <= 500000:
-            fee = 200
-        elif amount <= 1000000:
-            fee = 400
-        else:
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        amount = float(data.get('amount', 0) or 0)
+        court_type = data.get('court_type', '')
+        fee = 0
+        note = ''
+        if 'Civil Suit' in court_type:
+            if amount <= 50000:
+                fee = 200
+            elif amount <= 200000:
+                fee = round(amount * 0.02)
+            elif amount <= 1000000:
+                fee = round(amount * 0.015)
+            else:
+                fee = round(amount * 0.01)
+            note = 'Based on Court Fees Act schedule. Actual fee may vary by state.'
+        elif 'First Appeal' in court_type:
+            fee = round(amount * 0.01) + 500
+            note = 'High Court first appeal fee (approx). Check court website.'
+        elif 'Writ' in court_type:
             fee = 5000
-        note = 'Consumer Forum fee as per Consumer Protection Rules.'
-    elif 'NCLT' in court_type:
-        fee = 1000
-        note = 'NCLT fee — varies by petition type.'
-    else:
-        fee = 500
-        note = 'Approximate fee — verify on court portal.'
-    return jsonify({'fee': fee, 'note': note})
+            note = 'Fixed fee for writ petitions in most High Courts.'
+        elif 'SLP' in court_type:
+            fee = 10000
+            note = 'Supreme Court SLP fixed fee.'
+        elif 'Consumer' in court_type:
+            if amount <= 500000:
+                fee = 200
+            elif amount <= 1000000:
+                fee = 400
+            else:
+                fee = 5000
+            note = 'Consumer Forum fee as per Consumer Protection Rules.'
+        elif 'NCLT' in court_type:
+            fee = 1000
+            note = 'NCLT fee — varies by petition type.'
+        else:
+            fee = 500
+            note = 'Approximate fee — verify on court portal.'
+        return jsonify({'fee': fee, 'note': note})
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INVALID_INPUT"}), 400
 
 
 # ══════════════════════════════════════════════════════════════════════════════

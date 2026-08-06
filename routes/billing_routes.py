@@ -24,22 +24,25 @@ def billing_page():
 
 @billing_bp.route('/api/billing/log-time', methods=['POST'])
 def log_time():
-    data = request.get_json()
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''INSERT INTO time_entries (client_id, case_id, date, hours, rate, description)
-                 VALUES (?,?,?,?,?,?)''', (
-        data.get('client_id'),
-        data.get('case_id'),
-        data.get('date', str(date.today())),
-        float(data.get('hours', 0)),
-        float(data.get('rate', 0)),
-        data.get('description', ''),
-    ))
-    conn.commit()
-    new_id = c.lastrowid
-    conn.close()
-    return jsonify({'status': 'success', 'id': new_id})
+    try:
+        data = request.get_json(silent=True) or {}
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('''INSERT INTO time_entries (client_id, case_id, date, hours, rate, description)
+                     VALUES (?,?,?,?,?,?)''', (
+            data.get('client_id'),
+            data.get('case_id'),
+            data.get('date', str(date.today())),
+            float(data.get('hours', 0)),
+            float(data.get('rate', 0)),
+            data.get('description', ''),
+        ))
+        conn.commit()
+        new_id = c.lastrowid
+        conn.close()
+        return jsonify({'status': 'success', 'id': new_id})
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
 @billing_bp.route('/api/billing/time-entries', methods=['GET'])
@@ -61,35 +64,38 @@ def list_time_entries():
 
 @billing_bp.route('/api/billing/generate-invoice', methods=['POST'])
 def generate_invoice():
-    data = request.get_json()
-    conn = get_db()
-    c = conn.cursor()
+    try:
+        data = request.get_json(silent=True) or {}
+        conn = get_db()
+        c = conn.cursor()
 
-    amount = float(data.get('amount', 0))
-    apply_gst = data.get('apply_gst', False)
-    gst = round(amount * 0.18, 2) if apply_gst else 0.0
-    total = round(amount + gst, 2)
+        amount = float(data.get('amount', 0))
+        apply_gst = data.get('apply_gst', False)
+        gst = round(amount * 0.18, 2) if apply_gst else 0.0
+        total = round(amount + gst, 2)
 
-    # Generate invoice number
-    count = conn.execute('SELECT COUNT(*) FROM invoices').fetchone()[0]
-    inv_num = f'LEX-{date.today().year}-{str(count + 1).zfill(4)}'
+        # Generate invoice number
+        count = conn.execute('SELECT COUNT(*) FROM invoices').fetchone()[0]
+        inv_num = f'LEX-{date.today().year}-{str(count + 1).zfill(4)}'
 
-    c.execute('''INSERT INTO invoices
-        (client_id, invoice_number, amount, gst, total, status, due_date, notes)
-        VALUES (?,?,?,?,?,?,?,?)''', (
-        data.get('client_id'),
-        inv_num,
-        amount,
-        gst,
-        total,
-        'Draft',
-        data.get('due_date', None),
-        data.get('notes', ''),
-    ))
-    conn.commit()
-    new_id = c.lastrowid
-    conn.close()
-    return jsonify({'status': 'success', 'id': new_id, 'invoice_number': inv_num})
+        c.execute('''INSERT INTO invoices
+            (client_id, invoice_number, amount, gst, total, status, due_date, notes)
+            VALUES (?,?,?,?,?,?,?,?)''', (
+            data.get('client_id'),
+            inv_num,
+            amount,
+            gst,
+            total,
+            'Draft',
+            data.get('due_date', None),
+            data.get('notes', ''),
+        ))
+        conn.commit()
+        new_id = c.lastrowid
+        conn.close()
+        return jsonify({'status': 'success', 'id': new_id, 'invoice_number': inv_num})
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
 @billing_bp.route('/api/billing/invoices', methods=['GET'])
@@ -108,15 +114,18 @@ def list_invoices():
 
 @billing_bp.route('/api/billing/mark-paid/<int:inv_id>', methods=['PUT'])
 def mark_paid(inv_id):
-    data = request.get_json()
-    conn = get_db()
-    conn.execute(
-        "UPDATE invoices SET status='Paid', paid_date=? WHERE id=?",
-        (data.get('paid_date', str(date.today())), inv_id)
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'success'})
+    try:
+        data = request.get_json(silent=True) or {}
+        conn = get_db()
+        conn.execute(
+            "UPDATE invoices SET status='Paid', paid_date=? WHERE id=?",
+            (data.get('paid_date', str(date.today())), inv_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
 # ── PDF GENERATION ────────────────────────────────────────────────────────────

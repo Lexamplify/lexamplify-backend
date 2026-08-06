@@ -1471,6 +1471,13 @@ const styles = `
 `;
 
 export default function ContractAnalyzer({ setFocusMode }) {
+  // Guards every async continuation's setState calls below against firing
+  // after unmount (e.g. the user navigates away mid file-upload/mid AI-scan).
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [scanStrategy, setScanStrategy] = useState('Defensive');
@@ -1686,6 +1693,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setScanProgress(0);
       setIsAnalyzing(true);
       const res = await analyzeContractWithGroq(content, '', scanStrategy);
+      if (!isMountedRef.current) return;
       setIsAnalyzing(false);
       if (!res.error) loadAnalysisResults(res);
     })();
@@ -1776,6 +1784,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   useEffect(() => {
     const loadVaultDocs = async () => {
       const res = await fetchDocuments();
+      if (!isMountedRef.current) return;
       if (!res.error) {
         setVaultDocs(res);
       }
@@ -1865,6 +1874,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setActiveCommentDraft(prev => (prev?.commentId === commentId ? { ...prev, revision: { status: 'loading' } } : prev));
     const context = getSurroundingContext(from, to);
     const res = await draftRevision(text, context, userComment);
+    if (!isMountedRef.current) return;
     setActiveCommentDraft(prev => {
       if (!prev || prev.commentId !== commentId) return prev; // user moved on/closed the draft
       if (res.error) return { ...prev, revision: { status: 'error', message: res.message } };
@@ -1925,6 +1935,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setContractFile(file);
     setContractUploadLoading(true);
     const extracted = await extractContractText(file);
+    if (!isMountedRef.current) return;
     setContractUploadLoading(false);
 
     if (extracted.error) {
@@ -1958,6 +1969,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setRuleBookUploadLoading(true);
     // Extract text from ALL files concurrently.
     const results = await Promise.all(fileArr.map(f => extractContractText(f)));
+    if (!isMountedRef.current) return;
     setRuleBookUploadLoading(false);
 
     const extractedTexts = results
@@ -1997,6 +2009,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setScanProgress(0);
     setIsAnalyzing(true);
     const res = await analyzeContractWithGroq(target, ruleBookText, scanStrategy);
+    if (!isMountedRef.current) return;
     setIsAnalyzing(false);
 
     if (res.error) {
@@ -2068,6 +2081,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setScanProgress(0);
       setIsAnalyzing(true);
       const res = await analyzeContractWithGroq(rawText, ruleBookText, newStrategy);
+      if (!isMountedRef.current) return;
       setIsAnalyzing(false);
       if (!res.error) {
         loadAnalysisResults(res);
@@ -2110,6 +2124,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
     setRewriting(true);
     const res = await rewriteContractClause(activeClause.text, activeClause.issue, intent.trim());
+    if (!isMountedRef.current) return;
     setRewriting(false);
 
     if (!res.error && res.rewritten) {
@@ -2228,6 +2243,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     try {
       const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(query)}`);
       const data = await res.json();
+      if (!isMountedRef.current) return;
       // Backend's failure shape is {"status":"error",...} with HTTP 200 (a
       // Pinecone outage is an expected failure mode, not a server bug) — a
       // bare !res.ok check would miss it and store an empty [] as if the
@@ -2237,6 +2253,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     } catch (err) {
       console.error('[Related Citations] search failed:', err);
     } finally {
+      if (!isMountedRef.current) return;
       setLoadingRelated(null);
     }
   };
@@ -2251,6 +2268,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       }
     });
     const res = await fetchContractRecommendations(compiledText);
+    if (!isMountedRef.current) return;
     setLoadingRecs(false);
 
     if (!res.error && res.recommendations) {
@@ -2344,6 +2362,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       });
       const data = await response.json();
 
+      if (!isMountedRef.current) return;
       setDrafting(false);
       setDraftStatus('');
 
@@ -2358,6 +2377,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
         setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
       }
     } catch (err) {
+      if (!isMountedRef.current) return;
       setDrafting(false);
       setDraftStatus('');
       setDraftError('Network timeout in the AI reasoning engine. Please retry.');
@@ -2514,6 +2534,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     clauses.forEach(c => { if (c.isRevised && c.revisedText) compiledText = compiledText.replace(c.text, c.revisedText); });
     appendedClauses.forEach(ac => { compiledText += `\n\nADDED MISSING CLAUSE: ${ac.title}\n${ac.clause}`; });
     const res = await chatWithContract(compiledText, query);
+    if (!isMountedRef.current) return;
     setSendingChat(false);
     setChatHistory(prev => [...prev, { sender: 'bot', text: (!res.error && res.response) ? res.response : (res.message || 'Error contacting chatbot.') }]);
     setTimeout(() => { if (chatStreamRef.current) chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight; }, 50);
@@ -2546,6 +2567,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
 
     const res = await chatWithContract(compiledText, query);
+    if (!isMountedRef.current) return;
     setSendingChat(false);
 
     if (!res.error && res.response) {
@@ -2615,6 +2637,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
           });
         } catch (err) {
           if (err.name === 'AbortError') {
+            if (!isMountedRef.current) return;
             setExporting(false);
             return;
           }
@@ -2638,6 +2661,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
         URL.revokeObjectURL(url);
       }
 
+      if (!isMountedRef.current) return;
+
       // Cross-save: dispatch to selected platform modules via shared store
       if (crossSaveTargets.length > 0) {
         const fileRecord = {
@@ -2660,8 +2685,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
       setShowExportModal(false);
     } catch (err) {
+      if (!isMountedRef.current) return;
       setExportError(err.message || 'Export request failed.');
     } finally {
+      if (!isMountedRef.current) return;
       setExporting(false);
     }
   };

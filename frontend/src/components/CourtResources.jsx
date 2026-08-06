@@ -937,8 +937,19 @@ export default function CourtResources() {
     const loadGlobals = async () => {
       setLoadingGlobals(true);
       const res = await fetchCourtGlobals();
-      if (!res.error) {
-        setGlobals(res);
+      // Guard against a malformed/incomplete response (e.g. an array, or an
+      // object missing one of these keys) overwriting the safe default
+      // shape wholesale — every field this page reads off `globals` below
+      // assumes these four keys exist and are the right type.
+      if (res && typeof res === 'object' && !Array.isArray(res) && !res.error) {
+        setGlobals({
+          sc_courts: Array.isArray(res.sc_courts) ? res.sc_courts : [],
+          bare_acts: Array.isArray(res.bare_acts) ? res.bare_acts : [],
+          events: Array.isArray(res.events) ? res.events : [],
+          cause_list_urls: (res.cause_list_urls && typeof res.cause_list_urls === 'object')
+            ? res.cause_list_urls
+            : {},
+        });
       }
       setLoadingGlobals(false);
     };
@@ -950,8 +961,16 @@ export default function CourtResources() {
     const loadHCData = async () => {
       setLoadingHC(true);
       const res = await fetchCourtData(hcState);
-      if (!res.error) {
-        setHcData(res);
+      // Same guard as loadGlobals above — a malformed/incomplete response
+      // (e.g. an array) must not overwrite the safe default shape, since
+      // hcData.judges.length and hcData.forms.filter(...) below assume
+      // these keys are always present and the right type.
+      if (res && typeof res === 'object' && !Array.isArray(res) && !res.error) {
+        setHcData({
+          hc: (res.hc && typeof res.hc === 'object') ? res.hc : null,
+          judges: Array.isArray(res.judges) ? res.judges : [],
+          forms: Array.isArray(res.forms) ? res.forms : [],
+        });
       }
       setLoadingHC(false);
     };

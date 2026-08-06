@@ -26,12 +26,18 @@ function extractAppellant(caseTitle) {
   if (!caseTitle || typeof caseTitle !== 'string') return null;
   const match = caseTitle.match(SEPARATOR_PATTERN);
   if (!match) return null;
-  const appellant = caseTitle.slice(0, match.index).trim();
+  // Strip embedded double-quotes — an unescaped `"` inside the appellant
+  // name would prematurely close the title:"..." phrase-boundary quoting
+  // below and corrupt the rest of the generated query.
+  const appellant = caseTitle.slice(0, match.index).trim().replace(/"/g, '');
   return appellant.length > 0 ? appellant : null;
 }
 
 function buildDateClause(year) {
-  return year ? ` fromdate:1-1-${Number(year) - 1} todate:31-12-${Number(year)}` : '';
+  const numericYear = Number(year);
+  return year && Number.isFinite(numericYear)
+    ? ` fromdate:1-1-${numericYear - 1} todate:31-12-${numericYear}`
+    : '';
 }
 
 /**
@@ -44,6 +50,11 @@ function buildDateClause(year) {
  * exact behavior that caused the reported 0-results failures.
  */
 export function buildKanoonUrl(rawCitation, year, caseTitle) {
+  // Guard rawCitation the same way caseTitle already is below — null/
+  // undefined/non-string input must not bake the literal text "null"/
+  // "undefined" into the generated search query.
+  rawCitation = (rawCitation && typeof rawCitation === 'string') ? rawCitation.trim() : '';
+
   const dateClause = buildDateClause(year);
   const appellant = extractAppellant(caseTitle);
 

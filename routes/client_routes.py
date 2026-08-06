@@ -77,21 +77,24 @@ def get_client(client_id):
 
 @client_bp.route('/api/clients/update/<int:client_id>', methods=['PUT'])
 def update_client(client_id):
-    data = request.get_json()
-    conn = get_db()
-    conn.execute('''UPDATE clients SET name=?, phone=?, email=?, address=?, client_type=?, notes=?
-                    WHERE id=?''', (
-        data.get('name', ''),
-        data.get('phone', ''),
-        data.get('email', ''),
-        data.get('address', ''),
-        data.get('client_type', 'Individual'),
-        data.get('notes', ''),
-        client_id,
-    ))
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'success'})
+    data = request.get_json(silent=True) or {}
+    try:
+        conn = get_db()
+        conn.execute('''UPDATE clients SET name=?, phone=?, email=?, address=?, client_type=?, notes=?
+                        WHERE id=?''', (
+            data.get('name', ''),
+            data.get('phone', ''),
+            data.get('email', ''),
+            data.get('address', ''),
+            data.get('client_type', 'Individual'),
+            data.get('notes', ''),
+            client_id,
+        ))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
 @client_bp.route('/api/clients/delete/<int:client_id>', methods=['DELETE'])

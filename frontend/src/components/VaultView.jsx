@@ -947,6 +947,12 @@ function FolderCard({ folder, docCount, subFolderCount, onClick, onRename, onDel
 export default function VaultView({ targetFolderId = null }) {
   const [activeTab, setActiveTab] = useState('vault');
 
+  // Mounted guard — prevents "setState after unmount" from async continuations
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   // Document Vault — pages of PAGE_SIZE docs at a time; never the whole vault
   const PAGE_SIZE = 30;
   const [documents, setDocuments] = useState([]);
@@ -1046,13 +1052,16 @@ export default function VaultView({ targetFolderId = null }) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (!isMountedRef.current) return;
       const page = data.documents || [];
       setDocuments(prev => (append ? [...prev, ...page] : page));
       setDocsTotal(data.total || 0);
       setDocsOffset(offset + page.length);
     } catch (err) {
+      if (!isMountedRef.current) return;
       setDocError(err.message || 'Failed to fetch vault documents.');
     } finally {
+      if (!isMountedRef.current) return;
       setLoadingDocs(false);
       setLoadingMore(false);
     }
@@ -1067,6 +1076,7 @@ export default function VaultView({ targetFolderId = null }) {
       });
       if (!res.ok) return;
       const data = await res.json();
+      if (!isMountedRef.current) return;
       setFolders(data.flat || []);
       setDocCounts(data.doc_counts || {});
     } catch (_) { }
@@ -1085,6 +1095,7 @@ export default function VaultView({ targetFolderId = null }) {
       headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
       body: JSON.stringify({ name: trimmed }),
     });
+    if (!isMountedRef.current) return;
     if (res.ok) {
       setFolders(prev => prev.map(f => f.id === folderId ? { ...f, name: trimmed } : f));
     }
@@ -1097,6 +1108,7 @@ export default function VaultView({ targetFolderId = null }) {
       method: 'DELETE',
       headers: { ...(token && { Authorization: `Bearer ${token}` }) },
     });
+    if (!isMountedRef.current) return;
     if (res.ok) {
       const getAllDesc = (id) => {
         const kids = folders.filter(f => f.parent_id === id).map(f => f.id);
@@ -1120,6 +1132,7 @@ export default function VaultView({ targetFolderId = null }) {
       headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
       body: JSON.stringify({ parent_id: newParentId }),
     });
+    if (!isMountedRef.current) return;
     if (res.ok) {
       setFolders(prev => prev.map(f => f.id === folderId ? { ...f, parent_id: newParentId } : f));
     }
@@ -1137,6 +1150,7 @@ export default function VaultView({ targetFolderId = null }) {
         body: JSON.stringify({ name: trimmed, parent_id: currentFolderId }),
       });
       const data = await res.json();
+      if (!isMountedRef.current) return;
       if (!res.ok || data.error) throw new Error(data.message || 'Failed to create folder.');
       setFolders(prev => [...prev, { id: data.id, name: data.name, parent_id: data.parent_id ?? null }]);
       setNewFolderName('');
@@ -1144,6 +1158,7 @@ export default function VaultView({ targetFolderId = null }) {
     } catch (err) {
       alert(err.message || 'Failed to create folder.');
     } finally {
+      if (!isMountedRef.current) return;
       setCreatingFolder(false);
     }
   };
@@ -1187,6 +1202,8 @@ export default function VaultView({ targetFolderId = null }) {
       ),
       new Promise(resolve => setTimeout(resolve, 1200)),
     ]);
+
+    if (!isMountedRef.current) return;
 
     const succeeded = results
       .map((r, i) => r.status === 'fulfilled'
@@ -1242,7 +1259,10 @@ export default function VaultView({ targetFolderId = null }) {
     }
 
     setIsInitializing(false);
-    setTimeout(() => setBlueprintToast(null), 7000);
+    setTimeout(() => {
+      if (!isMountedRef.current) return;
+      setBlueprintToast(null);
+    }, 7000);
   };
 
   // ── Clear Workspace: bulk-delete all folders in current directory ─────────
@@ -1269,6 +1289,7 @@ export default function VaultView({ targetFolderId = null }) {
         })
       )
     );
+    if (!isMountedRef.current) return;
     const deletedIds = new Set(
       results.map((r, i) => r.status === 'fulfilled' ? currentSubFolders[i].id : null).filter(Boolean)
     );
@@ -1279,12 +1300,14 @@ export default function VaultView({ targetFolderId = null }) {
     const allGone = new Set([...deletedIds, ...[...deletedIds].flatMap(id => getAllDesc(id))]);
     setFolders(prev => prev.filter(f => !allGone.has(f.id)));
     await loadCurrentView();
+    if (!isMountedRef.current) return;
     setIsInitializing(false);
   };
 
   const loadCases = async () => {
     setLoadingCases(true);
     const res = await fetchTrackedCases();
+    if (!isMountedRef.current) return;
     if (!res.error) setCases(res);
     setLoadingCases(false);
   };
@@ -1356,10 +1379,13 @@ export default function VaultView({ targetFolderId = null }) {
         });
         if (!res.ok) throw new Error('RAG unavailable');
         const data = await res.json();
+        if (!isMountedRef.current) return;
         setLibRagResult(data);
       } catch {
+        if (!isMountedRef.current) return;
         setLibRagResult(null);
       } finally {
+        if (!isMountedRef.current) return;
         setLibRagLoading(false);
       }
     }, 400);
@@ -1467,6 +1493,7 @@ export default function VaultView({ targetFolderId = null }) {
     if (!['pdf', 'docx', 'txt'].includes(ext)) { alert('Invalid format. Upload PDF, DOCX, or TXT.'); return; }
     setUploading(true);
     const res = await uploadDocument(file, null, 'DMS Upload');
+    if (!isMountedRef.current) return;
     setUploading(false);
     if (res.error) alert(res.message || 'Upload failed.');
     else loadDocuments();
@@ -1527,6 +1554,7 @@ export default function VaultView({ targetFolderId = null }) {
       method: 'DELETE',
       headers: { ...(token && { Authorization: `Bearer ${token}` }) },
     });
+    if (!isMountedRef.current) return;
     if (res.ok) setDocuments(prev => prev.filter(d => d.id !== doc.id));
   };
 
@@ -1548,6 +1576,7 @@ export default function VaultView({ targetFolderId = null }) {
     setFetchingStatus(true);
     setFallbackUrl('');
     const res = await fetchCauselist(fetchCnr.trim());
+    if (!isMountedRef.current) return;
     setFetchingStatus(false);
     if (res.error) { alert(res.message || 'Failed.'); }
     else if (res.source === 'fallback') { setFallbackUrl(res.fallback_url); }
@@ -1574,6 +1603,7 @@ export default function VaultView({ targetFolderId = null }) {
     if (!formData.case_name.trim()) { alert('Case Name is required.'); return; }
     setSavingCase(true);
     const res = await saveTrackedCase(formData);
+    if (!isMountedRef.current) return;
     setSavingCase(false);
     if (res.error) { alert(res.message || 'Failed to save.'); }
     else {
@@ -1605,10 +1635,14 @@ export default function VaultView({ targetFolderId = null }) {
     setExtractionState('populating');
     fieldMap.forEach(([key, value], idx) => {
       setTimeout(() => {
+        if (!isMountedRef.current) return;
         setFormData(prev => ({ ...prev, [key]: value }));
         setAiFilledFields(prev => new Set([...prev, key]));
         if (idx === fieldMap.length - 1) {
-          setTimeout(() => setExtractionState('done'), 250);
+          setTimeout(() => {
+            if (!isMountedRef.current) return;
+            setExtractionState('done');
+          }, 250);
         }
       }, 200 + idx * 155);
     });
@@ -1626,6 +1660,7 @@ export default function VaultView({ targetFolderId = null }) {
     try {
       // Upload file to backend to extract text
       const uploadRes = await uploadDocument(file, null, 'Case Intake');
+      if (!isMountedRef.current) return;
       const docId = uploadRes?.document?.id;
       let docContent = uploadRes?.document?.content || '';
 
@@ -1637,6 +1672,7 @@ export default function VaultView({ targetFolderId = null }) {
         });
         if (fetchRes.ok) {
           const data = await fetchRes.json();
+          if (!isMountedRef.current) return;
           const doc = (data.documents || []).find(d => d.id === docId);
           docContent = doc?.content || '';
         }
@@ -1654,12 +1690,14 @@ export default function VaultView({ targetFolderId = null }) {
         }),
       });
       const aiData = await aiRes.json();
+      if (!isMountedRef.current) return;
       const raw = (aiData.response || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const jsonStart = raw.indexOf('{');
       const jsonEnd = raw.lastIndexOf('}');
       const extracted = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
       animateFill(extracted);
     } catch {
+      if (!isMountedRef.current) return;
       setExtractionState('idle');
     }
   };
@@ -2182,6 +2220,7 @@ export default function VaultView({ targetFolderId = null }) {
                               } catch {
                                 win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
                               } finally {
+                                if (!isMountedRef.current) return;
                                 setResolvingCitation(null);
                               }
                             }}

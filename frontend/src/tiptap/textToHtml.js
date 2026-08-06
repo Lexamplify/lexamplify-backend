@@ -2,9 +2,16 @@
 // Deliberately NOT an LLM call — this is pure string splitting so the
 // editor's initial content is deterministic and instant.
 
+// Paragraph count cap — bounds the ProseMirror doc/DOM node count that
+// rawTextToHtml can produce. A well-formed contract never needs anywhere
+// near this many paragraphs; adversarial input like "\n".repeat(200000)
+// otherwise generates 200,000 <p> elements with no truncation.
+const MAX_PARAGRAPHS = 10000;
+
 export function escapeHtml(str) {
-  if (!str) return '';
-  return str
+  if (str === null || str === undefined || str === '') return '';
+  const safe = typeof str === 'string' ? str : String(str);
+  return safe
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -18,10 +25,20 @@ export function escapeHtml(str) {
 // silently break the risk-decoration text search later (positionMapping
 // searches against doc.textBetween, which would include that \r).
 export function rawTextToHtml(rawText) {
+  if (rawText !== null && rawText !== undefined && typeof rawText !== 'string') {
+    rawText = String(rawText);
+  }
   const normalized = (rawText || '').replace(/\r\n/g, '\n');
   if (!normalized) return '<p></p>';
 
-  const lines = normalized.split('\n');
-  const html = lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+  let lines = normalized.split('\n');
+  let truncated = false;
+  if (lines.length > MAX_PARAGRAPHS) {
+    lines = lines.slice(0, MAX_PARAGRAPHS);
+    truncated = true;
+  }
+
+  const html = lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('')
+    + (truncated ? '<p>[Content truncated — document exceeds the maximum supported length.]</p>' : '');
   return html || '<p></p>';
 }

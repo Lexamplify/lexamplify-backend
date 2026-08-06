@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from groq import Groq
 from tavily import TavilyClient
 from pinecone import Pinecone
+from utils.ai_helper import extract_json_from_llm_response
 
 # Render's filesystem is ephemeral — anything written to the working
 # directory (including a bare-relative-path SQLite file like
@@ -1401,21 +1402,28 @@ def create_app():
             # a batch of realistic doctrine queries scored 0 across the
             # board despite Kanoon returning 10 real results each. Skip
             # scoring entirely here and trust Kanoon's own ranking instead.
-            result_titles = _kanoon_fetch_results(cleaned_query)
-            if result_titles:
-                a_tag = result_titles[0].find('a', href=True)
-                if a_tag:
-                    # /doc(?:fragment)?/ — not a bare /doc/ — matches both
-                    # of Kanoon's link forms: plain /doc/<id>/ when the
-                    # match was in the title, /docfragment/<id>/ when it
-                    # was in the body. A /doc/-only pattern silently drops
-                    # to the fallback for the /docfragment/ case — and that
-                    # case is the COMMON one here: sampled against several
-                    # realistic doctrine queries, 3 of 4 top results linked
-                    # via /docfragment/, not /doc/.
-                    doc_match = _KANOON_DOC_ID_RE.search(a_tag['href'])
-                    if doc_match:
-                        return redirect(f"https://indiankanoon.org/doc/{doc_match.group(1)}/")
+            try:
+                result_titles = _kanoon_fetch_results(cleaned_query)
+                if result_titles:
+                    a_tag = result_titles[0].find('a', href=True)
+                    if a_tag:
+                        # /doc(?:fragment)?/ — not a bare /doc/ — matches both
+                        # of Kanoon's link forms: plain /doc/<id>/ when the
+                        # match was in the title, /docfragment/<id>/ when it
+                        # was in the body. A /doc/-only pattern silently drops
+                        # to the fallback for the /docfragment/ case — and that
+                        # case is the COMMON one here: sampled against several
+                        # realistic doctrine queries, 3 of 4 top results linked
+                        # via /docfragment/, not /doc/.
+                        doc_match = _KANOON_DOC_ID_RE.search(a_tag['href'])
+                        if doc_match:
+                            return redirect(f"https://indiankanoon.org/doc/{doc_match.group(1)}/")
+            except Exception as e:
+                # A Kanoon markup change or unexpected parse error here must
+                # still land the user on a working search page, not Flask's
+                # default HTML 500 — this route backs a plain <a href> link
+                # click, which can't render a JSON error to the user anyway.
+                print(f"[KANOON REDIRECT ERROR] non-case branch: {e}")
             return redirect(fallback_url)
 
         citation_boosters = _kanoon_extract_boosters(cleaned_query)
@@ -2124,10 +2132,13 @@ def create_app():
                         response_format={"type": "json_object"}
                     )
                     
-                    try:
-                        stage1_data = json.loads(res_stage1.choices[0].message.content)
-                    except Exception as e:
-                        return jsonify({"error": True, "message": f"Stage 1 parsing failed: {str(e)}"}), 500
+                    stage1_data = extract_json_from_llm_response(res_stage1.choices[0].message.content)
+                    if not isinstance(stage1_data, dict):
+                        return jsonify({
+                            "error": True,
+                            "message": "Stage 1 parsing failed: AI returned an unparseable response.",
+                            "code": "LLM_JSON_PARSE_ERROR",
+                        }), 502
                         
                     stage1_text = stage1_data.get("extracted_issues", "")
                     search_query = stage1_data.get("search_query", "")
@@ -2182,15 +2193,20 @@ def create_app():
                         response_format={"type": "json_object"}
                     )
                     
-                    try:
-                        stage4_json = json.loads(res_stage4.choices[0].message.content)
-                    except Exception as e:
+                    stage4_json = extract_json_from_llm_response(res_stage4.choices[0].message.content)
+                    if not isinstance(stage4_json, dict):
+                        # Stages 1-3 already succeeded and are real, usable
+                        # data — only the red-team sub-section failed to
+                        # parse, so the overall response still degrades
+                        # gracefully (with the failure visibly marked in the
+                        # fallback question itself) rather than discarding
+                        # everything the pipeline already produced.
                         stage4_json = {"opposing_counter_questions": [{"question": "Failed to parse opponent arguments.", "suggested_rebuttal": res_stage4.choices[0].message.content}]}
-                        
+
                     return jsonify({
                         "action": "simulate_courtroom",
                         "simulationData": {
-                            "client_side": args['client_side'],
+                            "client_side": client_side,
                             "extracted_issues": stage1_text,
                             "live_citations": tavily_results,
                             "opening_argument": stage3_text,

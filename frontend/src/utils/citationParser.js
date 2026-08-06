@@ -23,9 +23,13 @@ const CITATION_PATTERNS = [
     parse: (m) => ({ year: m[1], court: m[2], page: m[3] }),
   },
   // Print SCC, with optional subject-matter suffix: (2018) 10 SCC 1, (2016) 7 SCC (Cri) 1
+  // Note: no leading `\s*` before the optional `)` — `\s+` right after already
+  // absorbs any whitespace there, so the two quantifiers never compete over
+  // the same run of spaces (avoids polynomial backtracking on whitespace-
+  // heavy input that never reaches a trailing "SCC" token).
   {
     type: 'SCC',
-    regex: /\(?\s*(\d{4})\s*\)?\s+(\d{1,2})\s*SCC\s*(?:\(([A-Za-z&]+)\))?\s+(\d+)/g,
+    regex: /\(?(\d{4})\)?\s+(\d{1,2})\s*SCC\s*(?:\(([A-Za-z&]+)\))?\s+(\d+)/g,
     parse: (m) => ({ year: m[1], volume: m[2], subject: m[3] || null, page: m[4] }),
   },
   // AIR: AIR 1973 SC 1461, AIR 2020 Del 45, AIR 1954 P&H 12
@@ -42,18 +46,24 @@ const CITATION_PATTERNS = [
   },
 ];
 
+// Citations are short, structured tokens — nothing legitimate needs more
+// than this many characters scanned to find every one in a document. Caps
+// the cost of running 6 global regexes over adversarially huge input.
+const MAX_SCAN_LENGTH = 200000;
+
 /**
  * Scan raw text and return every detected citation, sorted by position with
  * overlapping matches collapsed to the longest (most specific) match.
  */
 export function parseCitations(text) {
-  if (!text) return [];
+  if (!text || typeof text !== 'string') return [];
+  const scanText = text.length > MAX_SCAN_LENGTH ? text.slice(0, MAX_SCAN_LENGTH) : text;
   const found = [];
 
   for (const { type, regex, parse } of CITATION_PATTERNS) {
     regex.lastIndex = 0; // reset stateful global regex before each scan
     let m;
-    while ((m = regex.exec(text)) !== null) {
+    while ((m = regex.exec(scanText)) !== null) {
       found.push({
         type,
         raw: m[0],
@@ -79,13 +89,17 @@ export function parseCitations(text) {
 // resolver's found/not-found split in citationResolver.js — a single source
 // of truth so the two never disagree on the same citation.
 export function hashString(str) {
+  if (typeof str !== 'string' || !str) return 0;
+  const capped = str.length > MAX_SCAN_LENGTH ? str.slice(0, MAX_SCAN_LENGTH) : str;
   let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < capped.length; i++) hash = (hash * 31 + capped.charCodeAt(i)) >>> 0;
   return hash;
 }
 
 export function normalizeCitationKey(raw) {
-  return raw.trim().replace(/\s+/g, ' ');
+  if (typeof raw !== 'string' || !raw) return '';
+  const capped = raw.length > MAX_SCAN_LENGTH ? raw.slice(0, MAX_SCAN_LENGTH) : raw;
+  return capped.trim().replace(/\s+/g, ' ');
 }
 
 // ── "Good law" treatment — an instant, synchronous signal (no network needed)

@@ -9,6 +9,7 @@ import re
 from flask import Blueprint, request, jsonify
 from litellm import completion
 from tavily import TavilyClient
+from utils.ai_helper import extract_json_from_llm_response
 
 # Blueprint definition
 argument_bp = Blueprint("argument", __name__)
@@ -204,16 +205,13 @@ Live Web Search Cases Retrieved:
         if not opening_argument or not red_team_output or opening_argument.strip() == "None" or red_team_output.strip() == "None":
             return jsonify({"error": f"The legal complexity is high. Analysis failed after 3 attempts. Log Trace: {last_llm_error}"}), 500
             
-        # Parse the JSON from Stage 4
-        opposing_questions = []
-        try:
-            # Strip markdown codeblocks sometimes added by LLMs
-            cleaned_json = re.sub(r'```json\n|```', '', red_team_output).strip()
-            # Failsafe parsing
-            parsed_red_team = json.loads(cleaned_json)
+        # Parse the JSON from Stage 4 — fence-strip + regex-extract fallback,
+        # not just a bare parse of the whole response.
+        parsed_red_team = extract_json_from_llm_response(red_team_output)
+        if isinstance(parsed_red_team, dict):
             opposing_questions = parsed_red_team.get("opposing_counter_questions", [])
-        except Exception as e:
-            print(f"JSON Parsing Error in Stage 4: {e}")
+        else:
+            print("JSON Parsing Error in Stage 4: no valid JSON object recovered")
             opposing_questions = [{"question": "Failed to parse opponent argument constraints.", "suggested_rebuttal": red_team_output}]
 
         # =========================================================
@@ -235,8 +233,8 @@ Live Web Search Cases Retrieved:
 
 @argument_bp.route("/api/virtual-courtroom/chat", methods=["POST"])
 def vc_chat():
-    data = request.get_json()
-    history      = data.get("history", [])
+    data = request.get_json(silent=True) or {}
+    history      = data.get("history", []) or []
     case_facts   = data.get("case_facts", "")
     strategy_tone = data.get("strategy_tone", "Aggressive")
 
@@ -279,7 +277,9 @@ Based on the chat history below (the user is the defending lawyer), deliver your
 Do not break character. Do not use markdown blocks. Reply purely with your courtroom dialogue.
 """
     for msg in history[-5:]:
-        prompt += f"\n{msg['role'].upper()}: {msg['content']}"
+        if not isinstance(msg, dict):
+            continue
+        prompt += f"\n{str(msg.get('role', 'user')).upper()}: {msg.get('content', '')}"
 
     prompt += "\nOPPOSING COUNSEL:"
 
@@ -292,7 +292,7 @@ Do not break character. Do not use markdown blocks. Reply purely with your court
 
 @argument_bp.route("/api/vault/save", methods=["POST"])
 def save_vault():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     case_facts = data.get("case_facts", "")
     history = data.get("history", [])
     title = data.get("title", "VC Session")

@@ -1,0 +1,135 @@
+﻿"Test_ID","Module_Name","Screenshot_Reference","Test_Scenario","Execution_Steps","Expected_Result","Status"
+"TC01","Advocate Dashboard","DASH_TC01.png","Verify advocate can sync case matter data via eCourts CNR Number lookup from the Advocate Terminal.","1. Log in and land on the Advocate Terminal (/dashboard).
+2. Locate the 'Enter eCourts CNR Number to Sync Matter' input field.
+3. Enter a valid 16-digit CNR number.
+4. Click the Sync button.
+5. Observe the sync progress indicator and resulting toast notification.","The system calls the eCourts sync endpoint (with a simulated 2.5s fallback if the live endpoint is unreachable), displays a success toast, and the synced matter/hearing data appears in Tracked Cases and Legal Calendar.","PASS"
+"TC02","Advocate Dashboard","DASH_TC02.png","Verify the Legal Triage Metrics tiles, Morning Triage panels, and Quick Actions grid render live data and navigate correctly.","1. Navigate to the Advocate Terminal (/dashboard).
+2. Verify the 4 Legal Triage Metrics tiles display: Limitation Expiries (next 7 days), Pending Judgments, Drafts Pending Review, Tracked Cases.
+3. Verify the 'Urgent — Next 48 Hours' panel lists upcoming calendar events and 'Recent Workspaces' lists recently created vault documents.
+4. Click each tile in the Quick Actions grid (Upload Document, Contract Analyzer, Court Resources, Legal Calendar, Conflict Engine, Virtual Courtroom).","All 4 metric tiles show live, non-placeholder counts pulled from backend data; Morning Triage panels populate correctly; each Quick Action tile navigates to its corresponding module.","PASS"
+"TC03","Contract Analyzer","CA_TC03.png","Verify uploading a contract triggers the AI risk scan with the asymptotic progress bar animation.","1. Navigate to Contract Analyzer (Contract Risk Analyzer, /contract-analyzer).
+2. Upload a sample contract document (PDF/DOCX).
+3. Observe the scan progress bar as analysis runs.
+4. Wait for the scan to complete.","Progress bar advances using an eased/asymptotic curve (fast initial progress that decelerates and holds near 95% until the real completion signal snaps it to 100%); the full risk analysis report renders once the scan finishes.","PASS"
+"TC04","Contract Analyzer","CA_TC04.png","Verify clause-level risk classification displays correctly as High/Medium/Low pills.","1. Complete a contract scan in Contract Analyzer.
+2. Review the clause-by-clause risk breakdown.
+3. Identify clauses tagged RED, AMBER, GREEN internally by the risk engine.","Each clause displays a corresponding High (RED), Medium (AMBER), or Low (GREEN) risk pill, matching the backend risk classification returned by the analysis engine.","PASS"
+"TC05","Contract Analyzer","CA_TC05.png","Verify selecting clause text in the split-pane editor surfaces the contextual bubble menu with a Comment action.","1. Open the Auto-Draft split-pane workspace tab for an analyzed contract.
+2. Select (highlight) a span of clause text in the editor.
+3. Observe the contextual bubble menu appear above the selection.
+4. Click Comment and enter a remark.","Bubble menu appears with Comment and Draft Revision options; clicking Comment attaches an inline comment/annotation to the selected text.","PASS"
+"TC06","Contract Analyzer","CA_TC06.png","Verify the Draft Revision bubble menu action generates an AI-suggested rewrite as a live Track Changes suggestion.","1. In the Auto-Draft split-pane workspace, select a risky clause.
+2. Click Draft Revision from the contextual bubble menu.
+3. Wait for the AI-suggested rewrite to generate.
+4. Review the inline Track Changes markup (insertions/deletions) and accept or reject the suggestion.","The AI-suggested rewrite is applied as a live Track Changes suggestion (strikethrough/insert marks) in the editor, and the advocate can accept or reject the change.","PASS"
+"TC07","Contract Analyzer","CA_TC07.png","Verify the chat-with-contract panel answers questions grounded in the uploaded document.","1. With a contract loaded in Contract Analyzer, open the chat panel.
+2. Ask a question about a specific clause or obligation in the contract.
+3. Review the AI response.","The chat panel returns an answer derived from the uploaded contract's content, referencing the relevant clauses.","PASS"
+"TC08","Contract Analyzer","CA_TC08.png","Verify the recommendations panel and autofill-from-template functionality.","1. Complete a contract analysis.
+2. Open the Recommendations panel and review the suggested improvements.
+3. Trigger Autofill Template to populate a standard clause/template from extracted contract data.","Recommendations panel lists actionable, contract-specific suggestions; autofill correctly populates template fields from the extracted contract data.","PASS"
+"TC09","Contract Analyzer","CA_TC09.png","Verify the Export & Deploy modal correctly exports the analyzed/edited contract as PDF and DOCX.","1. After analyzing/editing a contract, click Export & Deploy.
+2. Select PDF format and export.
+3. Repeat and select DOCX format and export.
+4. Open both downloaded files.","PDF is generated via the fpdf2-based export pipeline and DOCX via the DOCX export pipeline; both files open correctly and reflect the edited contract content including any accepted Track Changes.","PASS"
+"TC10","Contract Analyzer","CA_TC10.png","Verify an analyzed contract can be saved directly to the Case Vault from Contract Analyzer.","1. Complete a contract analysis.
+2. Click Save to Vault.
+3. Choose a destination folder in Case Vault.
+4. Confirm save.
+5. Navigate to Case Vault and locate the saved document.","The contract (with analysis results) is saved into the selected Case Vault folder and is retrievable from the Vault document grid.","PASS"
+"TC11","Court Directory & Resources","CDR_TC11.png","Verify the Supreme Court tab displays virtual hearing details, courtroom video links, and display boards.","1. Navigate to Court Directory & Resources (/court-resources).
+2. Select the Supreme Court tab.
+3. Review virtual hearing details, courtroom video links, and display board information.","Supreme Court tab loads current virtual hearing links, courtroom video links, and display board data without errors.","PASS"
+"TC12","Court Directory & Resources","CDR_TC12.png","Verify the High Courts tab provides state-wise cause list URLs and e-Filing links.","1. On Court Directory & Resources, select the High Courts tab.
+2. Select a state from the list.
+3. Click the generated cause list URL and e-Filing link for that state's High Court.","Cause list and e-Filing links are correctly generated per selected state and open the corresponding High Court resource.","PASS"
+"TC13","Court Directory & Resources","CDR_TC13.png","Verify the District Courts tab's judge roster lookup returns judge name, designation, and court hall.","1. Select the District Courts tab.
+2. Search/select a district court.
+3. Review the judge roster listing.","Judge roster displays judge name, designation, and court hall sourced from the district judges database.","PASS"
+"TC14","Court Directory & Resources","CDR_TC14.png","Verify the Bare Acts tab allows statute lookup across IPC/BNS/CrPC/PoSH/FEMA.","1. Select the Bare Acts tab.
+2. Search for a specific section (e.g., an IPC or BNS section number).
+3. Review the returned statute text.","The correct statute section text is returned for the selected act and section number.","PASS"
+"TC15","Court Directory & Resources","CDR_TC15.png","Verify the Legal Forms tab within Court Resources fetches and downloads a court form.","1. Select the Legal Forms tab.
+2. Search/select a court form.
+3. Click download/fetch.","Selected form is fetched and downloaded successfully.","PASS"
+"TC16","Court Directory & Resources","CDR_TC16.png","Verify the Legal Events tab lists upcoming legal events via the events API.","1. Select the Legal Events tab.
+2. Review the list of events returned from /api/legal-events.","Legal events load and display with correct date/description information.","PASS"
+"TC17","Court Directory & Resources","CDR_TC17.png","Verify the Fee Calculator tab computes court fees correctly.","1. Select the Fee Calculator tab.
+2. Enter case type/claim value inputs required for calculation.
+3. Submit to calculate.","POST /api/calculate-fee returns the correct computed fee for the given inputs.","PASS"
+"TC18","Court Directory & Resources","CDR_TC18.png","Verify the e-Notary tab lists digital notarisation gateway options (NeSL, Leegality, SignDesk, Digio).","1. Select the e-Notary tab (Digital Document Notarisation).
+2. Review the listed gateway provider cards.
+3. Click through to a provider (e.g., Leegality or Digio) badged Stamping & e-Sign / KYC Gateway.","All four gateway provider cards (NeSL, Leegality, SignDesk, Digio) display with correct badges, and clicking a provider navigates to/opens the correct external gateway link.","PASS"
+"TC19","Court Directory & Resources","CDR_TC19.png","Verify the IP Tracker tab supports full CRUD operations for IP assets.","1. Select the IP Tracker tab.
+2. Add a new IP asset entry with filing date and details.
+3. Edit the entry.
+4. Delete the entry.","IP asset entries can be created, read, updated, and deleted successfully, with filing dates and details persisted correctly.","PASS"
+"TC20","Conflict Engine","CE_TC20.png","Verify the Malpractice Shield's Triage Search detects conflicts and generates a Clearance Memo.","1. Navigate to Conflict Engine (Malpractice Shield, /conflict-engine).
+2. Select the Triage Search tab.
+3. Enter a client/opposing-party entity name to check.
+4. Review returned matches (Primary Client Match, Adverse Party Match, Case Title Match, Ingested Clause Match) and severity.
+5. Click Generate Clearance Memo.","Conflict matches are correctly classified and severity-escalated for high-risk matter types (criminal, matrimonial, writ); Clearance Memo is generated and saved to the conflict clearance memo records.","PASS"
+"TC21","Conflict Engine","CE_TC21.png","Verify the Cross-Document Uploader detects contradictions between two uploaded documents and allows copying a harmonized clause.","1. On Conflict Engine, select the Cross-Document Uploader tab.
+2. Upload two related documents containing conflicting clauses.
+3. Run the AI cross-document analysis.
+4. Review conflict cards showing severity (Critical/Major/Minor), excerpts from both documents, and Legal Explanation.
+5. Click Copy Harmonized Clause on a conflict card.","Contradictions are correctly identified and severity-classified; Copy Harmonized Clause copies the AI-suggested resolved clause to clipboard with a confirmation toast (Harmonized clause copied).","PASS"
+"TC22","Legal Calendar","CAL_TC22.png","Verify adding a calendar event (Drop Dead Deadline, Hearing, or Task) triggers a conflict warning when clashing with an existing high-priority event.","1. Navigate to Legal Calendar (/calendar), the Tickler Engine.
+2. Click a date that already has a high-priority event (drop_dead or appearance type).
+3. Add a new event of type Hearing/Task/Drop Dead Deadline with an Opposing Counsel field.
+4. Attempt to save.","A conflict warning is shown when scheduling on a day with an existing high-priority event; the event still saves with the Opposing Counsel field recorded correctly.","PASS"
+"TC23","Legal Calendar","CAL_TC23.png","Verify the AI-generated hover tooltip synopsis displays and calendar data feeds the Advocate Dashboard.","1. On the Legal Calendar month grid, hover over an existing event.
+2. Review the portal-rendered tooltip with AI-generated synopsis.
+3. Navigate to the Advocate Dashboard and check the Limitation Expiries tile and Urgent — Next 48 Hours panel.","Tooltip displays a correct AI-generated synopsis of the event; Dashboard widgets accurately reflect the same calendar data.","PASS"
+"TC24","Case Vault","CV_TC24.png","Verify recursive folder tree operations (create, rename, move, delete) in Case Vault with circular-parentage protection.","1. Navigate to Case Vault (/vault).
+2. Create a new folder, then create a nested sub-folder inside it.
+3. Rename the sub-folder.
+4. Attempt to move the parent folder into its own child folder.
+5. Delete the sub-folder.","Folders can be created, renamed, moved, and deleted; the circular-parentage guard blocks moving a folder into its own descendant with an appropriate error.","PASS"
+"TC25","Case Vault","CV_TC25.png","Verify documents can be uploaded to a Case Vault folder via drag-and-drop.","1. Open a folder in Case Vault.
+2. Drag a document file from the local file system onto the upload zone.
+3. Drop the file.","The file uploads successfully and appears in the document grid within the target folder.","PASS"
+"TC26","Case Vault","CV_TC26.png","Verify the Vault search bar returns matching documents by name/content.","1. In Case Vault, enter a keyword into the search bar.
+2. Review the filtered results.","Only documents matching the search keyword are displayed in the results grid.","PASS"
+"TC27","Case Vault","CV_TC27.png","Verify the document 3-dots context menu actions (Analyze, Summarize, Extract Facts, Download, Delete) work correctly.","1. In Case Vault, click the 3-dots menu on a document card.
+2. Select Analyze and verify it routes to/triggers Contract Analyzer.
+3. Select Summarize and review the generated summary.
+4. Select Extract Facts and review extracted facts.
+5. Select Download and verify the file downloads.
+6. Select Delete and confirm removal.","Each context menu action performs its expected function (route to analysis, generate summary, extract facts, download file, delete with confirmation).","PASS"
+"TC28","Case Vault","CV_TC28.png","Verify the per-case Case Vault Directory view and the audit trail record document activity.","1. Navigate to a specific case workspace (/case/:caseId).
+2. Review the Case Vault Directory document table and upload zone.
+3. Upload a document via this view.
+4. Check the Vault audit trail for the corresponding entry.","Case Vault Directory displays the correct per-case document table; uploaded documents are listed; audit trail records the upload action with correct timestamp/user.","PASS"
+"TC29","Virtual Courtroom / War Room","WR_TC29.png","Verify the Litigation War Room executes its 5-stage animated pipeline end-to-end.","1. Navigate to Virtual Courtroom (War Room, /war-room).
+2. Provide case facts/issue and start the simulation.
+3. Observe the pipeline stages progress in order: (1) Extracting legal issues & case facts, (2) Searching Indian Kanoon for live precedents, (3) Drafting strategic opening argument, (4) Red-teaming with opposing counsel AI, (5) Compiling full simulation package.","All 5 stages execute sequentially with correct status indicators, culminating in a complete simulation package.","PASS"
+"TC30","Virtual Courtroom / War Room","WR_TC30.png","Verify the War Room results page correctly displays extracted issues, live citations, drafted argument, and the Opposing Counsel Red Team rebuttal.","1. After a simulation completes, review Section I: Extracted Legal Issues & Core Facts.
+2. Review Section II: Live Supreme Court Citations & Precedents.
+3. Review Section III: Drafted Opening Argument.
+4. Review Section IV: Opposing Counsel Simulation — Red Team.","Each section renders complete, relevant content; the Red Team section provides a substantive opposing-counsel rebuttal to the drafted argument, generated using only the approved precedent library (no fabricated citations).","PASS"
+"TC31","Virtual Courtroom / War Room","WR_TC31.png","Verify the Continuous Simulation Chat allows further back-and-forth with the opposing counsel AI after initial results.","1. From the War Room results page, open the Continuous Simulation Chat.
+2. Send a follow-up rebuttal or question.
+3. Review the AI opposing counsel's response.","Chat maintains simulation context and returns a coherent, on-topic opposing-counsel response.","PASS"
+"TC32","Virtual Courtroom / War Room","WR_TC32.png","Verify a completed War Room session can be saved in full to Case Vault.","1. After a simulation session (including chat) completes, click Save Full Session to Case Vault.
+2. Select a destination folder.
+3. Confirm save.
+4. Navigate to Case Vault to verify.","The full session (issues, citations, argument, red-team rebuttal, chat transcript) is saved as a document in the selected Case Vault folder.","PASS"
+"TC33","Firm Library","FL_TC33.png","Verify Firm Library entries can be added across the 5 categories and the Clause DNA tab flags diverging precedents.","1. Navigate to Firm Library (/firm-library).
+2. Click Add Entry and create an entry, selecting a category (Template, Precedent, Research Memo, Standard Form, Practice Guide).
+3. Save and verify the entry appears in the library list.
+4. Open the Clause DNA tab and review the Clause DNA Extractor output, including any Diverging Precedents risk flags.","New entries save correctly under the selected category; the Clause DNA tab correctly surfaces diverging-precedent risk items for analyzed clauses.","PASS"
+"TC34","Firm Library","FL_TC34.png","Verify the Firm Library's Dual-Brain RAG search returns results with a reliability percentage bar and clickable citations.","1. In Firm Library, enter a legal research query into the search bar.
+2. Review the returned answer along with the reliability percentage bar (green/amber/red).
+3. Review the Ratio Decidendi section and any risk-warning chips.
+4. Click a citation link.","The RAG backend (semantic router, ChromaDB, Groq synthesis) returns an answer with an accurate reliability percentage and color coding; citation links resolve correctly (e.g., to Indian Kanoon); risk-warning chips display when applicable.","PASS"
+"TC35","Legal Forms Library","LFL_TC35.png","Verify selecting a legal form template routes to the drafting workspace, supports AI-assisted drafting, and exports to DOCX.","1. Navigate to Legal Forms Library (/legal-forms).
+2. Select a template from one of the 3 categories (Legal Notices, Contracts & NDAs, Court Petitions) — e.g., Bail Application (S.439).
+3. On redirect to the draft workspace, fill in fields manually or let AI draft a first pass from client facts.
+4. Export the completed form as DOCX.","Template list shows all 6 templates across 3 categories; drafting workspace opens with the correct template; AI-assisted draft populates fields from provided facts; DOCX export succeeds and produces a correctly formatted document.","PASS"
+"TC36","InzIQ AI Legal Associate","INZ_TC36.png","Verify the InzIQ AI Legal Associate overlay handles a streamed chat query, the Find Citation quick command, and saving the response to Case Vault.","1. Click the InzIQ button (sidebar or Dashboard) to open the AI Legal Associate overlay.
+2. Enter a legal question and submit.
+3. Observe the streamed response render progressively.
+4. Use the Find Citation quick command to look up a specific case citation.
+5. Click Save to Vault and choose a format (Native/PDF/DOCX).","Overlay opens correctly via the button trigger; chat response streams progressively; the disclaimer footer (AI Legal Associate can make mistakes. Always verify critical legal information independently.) is visible; Find Citation returns the correct case reference; Save to Vault stores the response in the selected format in Case Vault.","PASS"

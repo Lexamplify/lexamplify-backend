@@ -256,7 +256,10 @@ export default function CalendarView() {
   const [events, setEvents]           = useState([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState(null);
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 5, 1));
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [gridKey, setGridKey]         = useState(0);
 
   // Modal state

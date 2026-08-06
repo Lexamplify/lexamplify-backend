@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, current_app
 from litellm import completion
+from utils.ai_helper import extract_json_from_llm_response
 
 conflict_bp = Blueprint('conflict', __name__)
 
@@ -46,6 +47,7 @@ def conflict_engine():
 
 @conflict_bp.route('/api/conflict/analyze', methods=['POST'])
 def analyze_conflicts():
+  try:
     docs = []
     # Support unlimited documents — frontend sends doc1, doc2, doc3, ... docN
     slot = 1
@@ -100,38 +102,30 @@ If no conflicts are found, return an empty conflicts array with a summary explai
 
     raw = ask_llm(prompt)
     if not raw:
-        return jsonify({'error': 'AI analysis failed. Try again.'}), 500
+        return jsonify({'error': 'AI analysis failed. Try again.', 'code': 'LLM_EMPTY_RESPONSE'}), 502
 
-    # Strip markdown fences
-    cleaned = re.sub(r'```json\s*|\s*```', '', raw).strip()
-    try:
-        result = json.loads(cleaned)
-    except Exception:
-        # Try to extract JSON object from the response
-        match = re.search(r'\{[\s\S]+\}', cleaned)
-        if match:
-            try:
-                result = json.loads(match.group())
-            except Exception:
-                result = {
-                    'conflicts': [],
-                    'summary': 'Could not parse AI response. Raw output returned.',
-                    'raw': cleaned[:2000],
-                }
-        else:
-            result = {
-                'conflicts': [],
-                'summary': 'AI returned an unstructured response.',
-                'raw': cleaned[:2000],
-            }
+    result = extract_json_from_llm_response(raw)
+    if not isinstance(result, dict):
+        # A total parse failure is a real upstream-AI failure, not "zero
+        # conflicts found" — returning that as a fake 200 would silently
+        # tell the advocate their documents are clear when we simply
+        # couldn't read the AI's answer. Surface it as a 502 instead.
+        return jsonify({
+            'error': 'AI returned an unparseable conflict analysis.',
+            'code': 'LLM_JSON_PARSE_ERROR',
+            'raw': raw[:2000],
+        }), 502
 
     return jsonify(result)
+  except Exception as e:
+    return jsonify({'error': str(e), 'code': 'INTERNAL_ERROR'}), 500
 
 
 @conflict_bp.route('/api/conflict/check', methods=['POST'])
 def check_conflict_entity():
-    data = request.get_json() or {}
-    entity_name = data.get('entity_name', '').strip()
+  try:
+    data = request.get_json(silent=True) or {}
+    entity_name = (data.get('entity_name') or '').strip()
     opposing_party = (data.get('opposing_party') or '').strip()
     matter_type = (data.get('matter_type') or 'Civil').strip()
 
@@ -283,18 +277,20 @@ def check_conflict_entity():
             + f" [{matter_type}]. Status: {overall_status}. {len(results)} risk nodes identified."
         ),
     })
+  except Exception as e:
+    return jsonify({'error': str(e), 'code': 'INTERNAL_ERROR'}), 500
 
 
 @conflict_bp.route('/api/conflict/clearance-memo', methods=['POST'])
 def save_clearance_memo():
     """Store a clearance memo audit record in lex_assistant.db."""
     data = request.get_json(force=True, silent=True) or {}
-    ref_id = data.get('ref_id', '').strip()
-    target_entity = data.get('target_entity', '').strip()
+    ref_id = (data.get('ref_id') or '').strip()
+    target_entity = (data.get('target_entity') or '').strip()
     opposing_party = (data.get('opposing_party') or '').strip()
     matter_type = (data.get('matter_type') or 'Civil').strip()
     timestamp = data.get('timestamp') or datetime.utcnow().isoformat()
-    memo_text = data.get('memo_text', '')
+    memo_text = data.get('memo_text') or ''
 
     if not target_entity:
         return jsonify({'error': 'target_entity required'}), 400

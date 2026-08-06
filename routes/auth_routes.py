@@ -43,19 +43,19 @@ def signup():
 
 @auth_bp.route('/register', methods=['POST'])
 def register_user():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-
-    if not email or not password:
-        return jsonify({"error": "Email and password required"}), 400
-
-    hashed_password = generate_password_hash(password)
-    
-    import sqlite3
-    conn = sqlite3.connect('lex_assistant.db')
-    c = conn.cursor()
     try:
+        data = request.get_json(silent=True) or {}
+        email = data.get('email')
+        password = data.get('password')
+
+        if not email or not password:
+            return jsonify({"error": "Email and password required"}), 400
+
+        hashed_password = generate_password_hash(password)
+
+        import sqlite3
+        conn = sqlite3.connect('lex_assistant.db')
+        c = conn.cursor()
         # 🚨 THE FIX: Force Render to create the table if it's missing
         c.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -81,23 +81,23 @@ def register_user():
 
 @auth_bp.route('/login', methods=['POST'])
 def login_user():
-    data = request.get_json()
-    email = data.get('email') or data.get('username')
-    password = data.get('password')
-
-    if not email or not password:
-        return jsonify({"error": "Missing credentials"}), 400
-
-    conn = sqlite3.connect('lex_assistant.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
     try:
+        data = request.get_json(silent=True) or {}
+        email = data.get('email') or data.get('username')
+        password = data.get('password')
+
+        if not email or not password:
+            return jsonify({"error": "Missing credentials"}), 400
+
+        conn = sqlite3.connect('lex_assistant.db')
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
         # 1. Force table creation so it NEVER crashes
         c.execute('''CREATE TABLE IF NOT EXISTS users (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         email TEXT UNIQUE NOT NULL,
                         password TEXT NOT NULL)''')
-        
+
         # 2. Look for the user
         c.execute("SELECT id, password FROM users WHERE email = ?", (email,))
         user = c.fetchone()

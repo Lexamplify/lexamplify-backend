@@ -219,7 +219,7 @@ def search_chunks(query: str, user_id: int, case_id: int = None, document_id: in
 # ── 5. JSON PARSE SHIELD ────────────────────────────────────────────────
 
 def clean_and_parse_json(raw_text: str) -> dict:
-    if not raw_text:
+    if not raw_text or not isinstance(raw_text, str):
         return None
     cleaned = raw_text.strip()
     if cleaned.startswith("```"):
@@ -325,11 +325,7 @@ def _generate_suggested_actions(client, query: str, response_snippet: str, draft
             max_tokens=280,
         )
         raw = resp.choices[0].message.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        actions = json.loads(raw.strip())
+        actions = clean_and_parse_json(raw)
         if isinstance(actions, list) and len(actions) >= 1:
             return actions[:3]
     except Exception as e:
