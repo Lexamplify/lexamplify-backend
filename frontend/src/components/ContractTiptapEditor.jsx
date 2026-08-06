@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
@@ -168,7 +169,7 @@ function CommentBubbleMenu({ editor, onAction }) {
 
 function ContractTiptapEditor({
   documentKey, initialRawText, clauses, scanStrategy, onRiskClick, onTextChange, onEditorReady, editable = true,
-  onCommentRequest, onHighlightClick,
+  onCommentRequest, onHighlightClick, toolbarPortalTarget,
 }) {
   // Callback props are read through refs inside extension options so the
   // editor instance itself only gets rebuilt when `documentKey` changes —
@@ -302,9 +303,18 @@ function ContractTiptapEditor({
 
   if (!editor) return null;
 
+  // toolbarPortalTarget lets the parent host this toolbar somewhere else in
+  // the DOM (ContractAnalyzer.jsx renders it into a dedicated header row
+  // instead of letting it scroll with the document) while it's still owned
+  // and re-rendered by THIS component — a portal changes where the toolbar
+  // paints, not who renders it, so the existing editor-transaction
+  // reactivity (forceToolbarSync/onSelectionUpdate above) keeps working
+  // exactly as it does for the non-portaled (Auto-Draft) case.
+  const toolbar = <ContractEditorToolbar editor={editor} />;
+
   return (
     <div className="tiptap-editor-shell">
-      <ContractEditorToolbar editor={editor} />
+      {toolbarPortalTarget ? createPortal(toolbar, toolbarPortalTarget) : toolbar}
       {/* Comment/Draft-Revision only make sense where there's somewhere to
           send the result — Auto-Draft's editor doesn't pass onCommentRequest
           (it has no comment sidebar of its own), so it gets no bubble menu

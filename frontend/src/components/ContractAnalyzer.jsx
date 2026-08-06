@@ -39,19 +39,72 @@ function ExternalLinkIcon() {
 // generic boilerplate/hallucinated results, since Kanoon has no record
 // indexed under an internal id. This derives a presentable title and a
 // query that actually stands a chance of finding the real judgment.
+// Matches a common-law case name: "Party A v. Party B" (also "vs"/"vs."/
+// "versus"). Each side is one or more capitalized tokens, allowing a
+// handful of lowercase connectors ("of", "the", "and", "&") so names like
+// "Union of India" or "Chemicals & Pharma" match whole. Used to pull a
+// real case name out of a related-citation's SNIPPET when its title
+// field is useless — see resolveCitationDisplay below.
+const NAME_SIDE = "[A-Z][\\w.&'-]*(?:\\s+(?:[A-Z][\\w.&'-]*|of|the|and|&))*";
+const CASE_NAME_PATTERN = new RegExp(`\\b${NAME_SIDE}\\s+(?:[vV]\\.?[sS]?\\.?|[Vv]ersus)\\s+${NAME_SIDE}\\b`, 'g');
+const HAS_CASE_NAME_MARKER = /\bv\.?s?\.?\b|\bversus\b/i;
+
+// Pulls the longest "X v. Y" match out of free text — longest, not first,
+// because a judgment's own body frequently cites OTHER cases as precedent
+// before naming itself (see the multi-citation snippets in
+// firm-library/external-search results), and a short/truncated match
+// earlier in the string is usually a fragment, not the real party names.
+function extractCaseName(text) {
+  if (!text) return null;
+  const matches = [...text.matchAll(CASE_NAME_PATTERN)];
+  if (matches.length === 0) return null;
+  const longest = matches.reduce((a, b) => (b[0].length > a[0].length ? b : a));
+  return longest[0].replace(/\s+/g, ' ').trim();
+}
+
 function resolveCitationDisplay(citation) {
   const rawTitle = citation.title || citation.case_title || '';
   const isRawId = /^[0-9_]+$/.test(rawTitle);
-  const displayTitle = isRawId ? `Judgment Record: ${rawTitle.replace(/_/g, '-')}` : rawTitle;
-  // Skips the first 50 chars of the snippet (usually generic case-caption
-  // boilerplate shared across many judgments, not a useful search anchor)
-  // and quotes the excerpt for an exact-phrase Kanoon search. Falls back
-  // to rawTitle whenever there's nothing better to search with — no
-  // snippet, or a snippet too short to leave anything in the 50-130
-  // window (substring() clamps out-of-range indices to '', which would
+  // The related-citations search (firm-library/external-search) sometimes
+  // can't resolve a real name either and falls back to a synthetic
+  // placeholder like "Supreme Court Judgment (2015) - 2015_12_276_284" —
+  // structurally the same problem as a bare raw id (no real name, Kanoon
+  // has no record literally titled that), just with cosmetic padding.
+  // Detected as: no case-name marker anywhere in the title, AND the tail
+  // after the last " - " is a bare alphanumeric/underscore id-shaped
+  // token (a real subtitle like "Part 2" wouldn't contain a digit/underscore).
+  const idTail = rawTitle.split(/\s+-\s+/).pop() || '';
+  const isSyntheticPlaceholder =
+    !isRawId && !HAS_CASE_NAME_MARKER.test(rawTitle) &&
+    /^[a-zA-Z0-9_]+$/.test(idTail) && /[0-9_]/.test(idTail);
+
+  if (!isRawId && !isSyntheticPlaceholder) {
+    // Already a real, presentable name (the common case for primary
+    // citations) — leave it exactly as-is.
+    return { rawTitle, isRawId, displayTitle: rawTitle, kanoonQuery: rawTitle };
+  }
+
+  // Real name analysis: the id/placeholder itself is useless, but the
+  // snippet is actual judgment text and often names the case in plain
+  // language — extract it so the lawyer sees (and searches for) the same
+  // kind of name the primary citations already show, not a raw record id.
+  const extractedName = extractCaseName(citation.snippet);
+  if (extractedName) {
+    return { rawTitle, isRawId, displayTitle: extractedName, kanoonQuery: extractedName };
+  }
+
+  // No extractable name — fall back to a labeled id (raw ids only; a
+  // synthetic placeholder is already human-readable text, just not a
+  // useful search string) and a quoted mid-snippet excerpt for Kanoon.
+  // Skips the first 50 chars (usually generic case-caption boilerplate
+  // shared across many judgments, not a useful search anchor). Falls back
+  // to rawTitle whenever there's nothing better — no snippet, or a
+  // snippet too short to leave anything in the 50-130 window
+  // (substring() clamps out-of-range indices to '', which would
   // otherwise become a literal empty '""' query — worse than the id itself).
+  const displayTitle = isRawId ? `Judgment Record: ${rawTitle.replace(/_/g, '-')}` : rawTitle;
   const snippetExcerpt = citation.snippet ? citation.snippet.substring(50, 130).trim() : '';
-  const kanoonQuery = isRawId && snippetExcerpt ? `"${snippetExcerpt}"` : rawTitle;
+  const kanoonQuery = snippetExcerpt ? `"${snippetExcerpt}"` : rawTitle;
   return { rawTitle, isRawId, displayTitle, kanoonQuery };
 }
 
@@ -217,15 +270,20 @@ const styles = `
   .editor-tab-btn.active { color: var(--accent-primary); background: rgba(59,130,246,0.08); font-weight: 600; border-bottom-color: var(--accent-primary); border-radius: 5px 5px 0 0; }
 
   /* ── RICH TEXT TOOLBAR ───────────────────────────────────────────── */
-  /* Rendered as the first child inside .editor-scroll-area (via
-     ContractTiptapEditor's own shell), which is the scrolling element —
-     without position:sticky the toolbar just scrolls away with the
-     document like any other in-flow content, hiding Bold/Italic/Underline
-     etc. the moment the user scrolls a few lines down. The negative
-     margins cancel .editor-scroll-area's own 24px/28px padding so the
-     stuck toolbar spans edge-to-edge instead of floating with visible
-     document gaps on either side; matching positive padding keeps its
-     content aligned exactly where it always was. */
+  /* Two different homes for the same toolbar:
+     - Auto-Draft's editor renders it inline, as the first child inside its
+       own .editor-scroll-area (the scrolling element) — without
+       position:sticky it would just scroll away with the document like any
+       other in-flow content. The negative margins cancel
+       .editor-scroll-area's own 24px/28px padding so the stuck toolbar
+       spans edge-to-edge; matching positive padding keeps its content
+       aligned exactly where it always was.
+     - The scanner editor's toolbar is portaled OUT of its scroll area
+       entirely, into the always-visible .scan-meta-bar header row (see
+       toolbarSlotEl/toolbarPortalTarget) — the override block right below
+       neutralizes the sticky/negative-margin rules for that case, since a
+       toolbar that's never inside a scrolling container has nothing to
+       stick to and no padding to cancel. */
   .rich-text-toolbar {
     position: sticky;
     top: 0;
@@ -242,6 +300,13 @@ const styles = `
   }
   [data-theme="light"] .rich-text-toolbar {
     box-shadow: 0 6px 14px -4px rgba(0,0,0,0.1);
+  }
+  .scan-meta-bar .rich-text-toolbar {
+    position: static;
+    margin: 0;
+    padding: 6px 12px;
+    box-shadow: none;
+    border-bottom: none;
   }
 
   .toolbar-btn {
@@ -285,7 +350,8 @@ const styles = `
   .toolbar-select:hover { background: rgba(255,255,255,0.08); }
   .toolbar-select:focus { outline: none; border-color: var(--accent-primary); }
 
-  /* ── SCAN META-BAR (replaces toolbar in scanner mode) ─────────────── */
+  /* ── SCAN META-BAR — scanner mode: toolbar portal target. Auto-Draft
+     mode: its own plain "Auto-Draft Workspace" label row. ───────────── */
   .scan-meta-bar {
     background: var(--bg-dark-sidebar);
     border-bottom: 1px solid var(--border-dark-subtle);
@@ -295,6 +361,10 @@ const styles = `
     padding: 0;
     flex-shrink: 0;
     overflow: hidden;
+    /* Matches the toolbar's own height (26px buttons + 8px top/bottom
+       padding) so this row doesn't visibly grow the instant the toolbar
+       portals in on mount — it reserves the space up front instead. */
+    min-height: 43px;
   }
   .scan-meta-item {
     display: flex;
@@ -319,15 +389,6 @@ const styles = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .scan-meta-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    padding: 4px 10px;
-    margin-left: auto;
-    flex-shrink: 0;
-    border-left: 1px solid var(--border-dark-subtle);
   }
 
   /* ── RISK INSPECTOR TWO-COLUMN GRID ──────────────────────────────── */
@@ -968,6 +1029,76 @@ const styles = `
 
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── SCAN PROGRESS BAR — futuristic scan-in-progress visual ─────────
+     Three layered effects standing in for "this is genuinely active work,
+     not a frozen number": a dual-tone spinner, a moving shimmer gradient
+     inside the filled portion (energy flowing through it), a pulsing
+     glow "head" at the fill's leading edge, and a faint light sweep
+     crossing the empty track — the same visual grammar sci-fi scanning
+     UIs use, kept subtle enough not to read as gimmicky in a legal tool. */
+  .scan-progress-spinner {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 24px;
+    border-radius: 50%;
+    border: 3px solid rgba(59,130,246,0.15);
+    border-top-color: var(--accent-primary);
+    border-right-color: rgba(96,165,250,0.6);
+    animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+  }
+  .scan-progress-track {
+    position: relative;
+    height: 8px;
+    background-color: rgba(31, 41, 55, 0.5);
+    border-radius: 8px;
+    border: 1px solid #374151;
+    overflow: hidden;
+  }
+  .scan-progress-track::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 40%, rgba(96,165,250,0.22) 50%, transparent 60%);
+    background-size: 250% 100%;
+    animation: scan-track-sweep 2.4s linear infinite;
+    pointer-events: none;
+  }
+  .scan-progress-fill {
+    position: relative;
+    height: 100%;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #2563EB, #3B82F6, #60A5FA, #3B82F6, #2563EB);
+    background-size: 200% 100%;
+    animation: scan-bar-shimmer 1.8s linear infinite;
+    box-shadow: 0 0 15px rgba(59,130,246,0.6), 0 0 4px rgba(96,165,250,0.8);
+    transition: width 0.25s ease-out;
+  }
+  .scan-progress-fill::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #93C5FD;
+    box-shadow: 0 0 10px 3px rgba(147,197,253,0.9);
+    animation: scan-bar-pulse 1s ease-in-out infinite;
+  }
+  @keyframes scan-track-sweep {
+    0% { background-position: 130% 0; }
+    100% { background-position: -30% 0; }
+  }
+  @keyframes scan-bar-shimmer {
+    0% { background-position: 0% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes scan-bar-pulse {
+    0%, 100% { opacity: 0.6; transform: translateY(-50%) scale(0.85); }
+    50% { opacity: 1; transform: translateY(-50%) scale(1.15); }
+  }
+
   /* ── SHIMMER LOADER ──────────────────────────────────────────────── */
   .shimmer-bar {
     background: linear-gradient(90deg, var(--bg-dark-card) 25%, var(--bg-dark-panel) 50%, var(--bg-dark-card) 75%);
@@ -1387,20 +1518,42 @@ export default function ContractAnalyzer({ setFocusMode }) {
     return () => clearInterval(timer);
   }, [isAnalyzing]);
 
-  // Asymptotic progress: a real Groq call's actual progress isn't
-  // observable mid-request, so instead of guessing discrete phase targets,
-  // the bar closes 5% of whatever gap remains toward 95 on every tick —
-  // fast at first, then visibly slowing as it nears 95, and mathematically
-  // never able to reach (let alone stall dead-stopped at) 100 on its own.
-  // That's the point: 100 is reserved exclusively for the moment the real
-  // scan actually finishes (see the showLoader effect below), so the bar
-  // can never lie about being "done" while work is still in flight.
+  // Document-calibrated progress: a real Groq call's token-by-token
+  // progress isn't observable over a plain (non-streaming) fetch, so this
+  // was previously a FIXED asymptotic decay toward 95 regardless of
+  // document size — which is exactly what made it feel fake: a 13-page
+  // contract would slam to ~95% in under two seconds and then visibly
+  // stall for the next 15+ seconds of real work, while a two-line snippet
+  // would ALSO slam to 95% instantly, both for the same wrong reason (the
+  // curve didn't know how much text it was actually waiting on).
+  //
+  // Fix: pace the climb off something genuinely real about THIS scan — the
+  // character count of the document actually being sent — instead of a
+  // one-size-fits-all timer. estimatedMs is a calibrated linear estimate
+  // (2s floor for a trivial snippet, scaling up to a 20s ceiling matching
+  // this card's own "dense PDFs can take up to 20 seconds" copy), and
+  // progress is eased-out over elapsed/estimated so a short scan animates
+  // smoothly instead of flashing, and a long scan climbs at a pace that
+  // actually tracks how long it's expected to take rather than freezing.
+  // It still can never reach 100 on its own (eased(1) caps at 95) — that's
+  // still reserved exclusively for the real completion signal below, so
+  // the bar can never claim "done" while work is genuinely still in flight.
   useEffect(() => {
     if (!isAnalyzing) return;
+    const startedAt = Date.now();
+    const estimatedMs = Math.min(20000, Math.max(2000, 2000 + rawText.length * 0.6));
     const timer = setInterval(() => {
-      setScanProgress((prev) => (prev >= 95 ? 95 : prev + (95 - prev) * 0.05));
+      const t = Math.min((Date.now() - startedAt) / estimatedMs, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      setScanProgress(eased * 95);
     }, 50);
     return () => clearInterval(timer);
+    // rawText is intentionally read once via closure at scan start (both
+    // editable surfaces are readOnly/non-editable while isAnalyzing is
+    // true, so it can't change mid-scan) — including it in deps would let
+    // an unrelated rawText change tear down and restart the timer,
+    // resetting startedAt and visibly kicking the bar backward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAnalyzing]);
 
   // Owns the full isAnalyzing -> loader-visibility lifecycle. Going true:
@@ -1440,6 +1593,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // tears down the live editor/cursor/undo history.
   const [documentVersion, setDocumentVersion] = useState(0);
   const editorApiRef = useRef(null);
+  // Portal target for the scanner editor's toolbar (see ContractTiptapEditor's
+  // toolbarPortalTarget prop below) — a callback ref via useState, not a
+  // plain useRef, because the slot <div> doesn't exist in the DOM on the
+  // first render; this state update fires once React actually mounts it,
+  // triggering the one extra re-render needed for the portal to have a
+  // real target to render into.
+  const [toolbarSlotEl, setToolbarSlotEl] = useState(null);
   const inspectedCardRef = useRef(null);
   const analysisPanelBodyRef = useRef(null);
   const [comments, setComments] = useState([]);
@@ -1924,6 +2084,20 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setIntent('');
     const clause = clauses.find(c => c.id === id);
     setRewrittenText(clause?.suggestedRewrite || '');
+
+    // Point the cursor at the clause's exact text in the live editor —
+    // clicking a risk card in the sidebar shouldn't leave a lawyer hunting
+    // for the matching text by hand-scrolling the whole document. Reuses
+    // findClauseRange, the same live-position lookup applyRevision already
+    // relies on, so this stays correct even after edits have shifted the
+    // clause's position from wherever it was at scan time.
+    const editor = editorApiRef.current;
+    if (editor && clause?.text) {
+      const range = findClauseRange(editor.state.doc, clause.text);
+      if (range) {
+        editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).scrollIntoView().run();
+      }
+    }
   };
 
   // ── 3. REWRITE HANDLER ──────────────────────────────────────────────
@@ -2650,15 +2824,15 @@ export default function ContractAnalyzer({ setFocusMode }) {
                    real scan finishes (see the showLoader sync effect) and
                    the 100% state is actually visible before it unmounts. */
                 <div style={{ background: 'var(--bg-dark-panel)', border: '1px solid var(--border-dark-subtle)', borderRadius: '16px', padding: '48px 32px', textAlign: 'center' }}>
-                  <div style={{ width: '56px', height: '56px', margin: '0 auto 24px', borderRadius: '50%', border: '3px solid rgba(59,130,246,0.2)', borderTopColor: 'var(--accent-primary)', animation: 'spin 0.9s linear infinite' }}></div>
+                  <div className="scan-progress-spinner"></div>
 
-                  {/* Simulated Target progress bar */}
+                  {/* Document-calibrated progress bar */}
                   <div style={{ maxWidth: '400px', margin: '0 auto 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Scan Progress</span>
                     <span style={{ fontSize: '13px', color: '#3b82f6', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{Math.round(scanProgress)}%</span>
                   </div>
-                  <div style={{ maxWidth: '400px', margin: '0 auto 18px', height: '8px', backgroundColor: 'rgba(31, 41, 55, 0.5)', borderRadius: '8px', border: '1px solid #374151', overflow: 'hidden' }}>
-                    <div style={{ width: `${scanProgress}%`, height: '100%', backgroundColor: '#3b82f6', borderRadius: '8px', transition: 'width 0.3s ease-out', boxShadow: '0 0 15px rgba(59,130,246,0.6)' }} />
+                  <div className="scan-progress-track" style={{ maxWidth: '400px', margin: '0 auto 18px' }}>
+                    <div className="scan-progress-fill" style={{ width: `${scanProgress}%` }} />
                   </div>
 
                   <h3 style={{ fontSize: '16px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>{loadingText}</h3>
@@ -2875,58 +3049,49 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   </button>
                 </div>
 
-                {leftTab === 'scanner' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {clauses.filter(c => c.risk === 'RED').length > 0 && (
-                      <span style={{ fontSize: '10.5px', padding: '2px 7px', borderRadius: '10px', background: 'rgba(239,68,68,0.12)', color: '#FCA5A5', fontWeight: 700, border: '1px solid rgba(239,68,68,0.2)', letterSpacing: '0.03em' }}>
-                        {clauses.filter(c => c.risk === 'RED').length} HIGH RISK
-                      </span>
-                    )}
-                    {clauses.filter(c => c.risk === 'AMBER').length > 0 && (
-                      <span style={{ fontSize: '10.5px', padding: '2px 7px', borderRadius: '10px', background: 'rgba(245,158,11,0.12)', color: '#FCD34D', fontWeight: 700, border: '1px solid rgba(245,158,11,0.2)', letterSpacing: '0.03em' }}>
-                        {clauses.filter(c => c.risk === 'AMBER').length} MED RISK
-                      </span>
-                    )}
-                    {clauses.length > 0 && clauses.filter(c => c.risk === 'RED').length === 0 && clauses.filter(c => c.risk === 'AMBER').length === 0 && (
-                      <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)' }}>Click highlights to inspect risks</span>
-                    )}
-                    {clauses.length === 0 && (
-                      <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Editable Workspace</span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Document Studio Meta-Bar — always on: scan status + editing toolbar */}
-              {(() => {
-                const flaggedCount = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length;
-                const redCount2 = clauses.filter(c => c.risk === 'RED').length;
-                const statusColor = redCount2 > 0 ? '#FCA5A5' : flaggedCount > 0 ? '#FCD34D' : '#6EE7B7';
-                const statusLabel = flaggedCount > 0
-                  ? `${flaggedCount} Flagged Provision${flaggedCount > 1 ? 's' : ''}`
-                  : 'No Flags Detected';
-                return (
-                  <div className="scan-meta-bar">
-                    {leftTab === 'scanner' ? (
-                      <>
-                        <div className="scan-meta-item">
+                {/* The risk-count badges that used to live here duplicated the
+                    exact same "N High / N Med" counters already shown at the
+                    top of the page — replaced with the Mandate/Status pair
+                    that used to occupy its own separate row below (see the
+                    now-freed .scan-meta-bar row underneath, which hosts the
+                    toolbar's portal target instead). One less redundant row,
+                    one less duplicated stat. */}
+                {leftTab === 'scanner' ? (
+                  (() => {
+                    const flaggedCount = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length;
+                    const redCount2 = clauses.filter(c => c.risk === 'RED').length;
+                    const statusColor = redCount2 > 0 ? '#FCA5A5' : flaggedCount > 0 ? '#FCD34D' : '#6EE7B7';
+                    const statusLabel = flaggedCount > 0
+                      ? `${flaggedCount} Flagged Provision${flaggedCount > 1 ? 's' : ''}`
+                      : 'No Flags Detected';
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+                        <div className="scan-meta-item" style={{ padding: 0, border: 'none' }}>
                           <span className="scan-meta-label">Mandate</span>
                           <span className="scan-meta-value">{scanStrategy} Scan · Indian Law</span>
                         </div>
-                        <div className="scan-meta-item">
+                        <div className="scan-meta-item" style={{ padding: 0, border: 'none' }}>
                           <span className="scan-meta-label">Status</span>
                           <span className="scan-meta-value" style={{ color: statusColor }}>{statusLabel}</span>
                         </div>
-                      </>
-                    ) : (
-                      <div className="scan-meta-item">
-                        <span className="scan-meta-label">Studio</span>
-                        <span className="scan-meta-value" style={{ color: 'var(--text-dark-muted)' }}>Auto-Draft Workspace</span>
                       </div>
-                    )}
-                  </div>
-                );
-              })()}
+                    );
+                  })()
+                ) : (
+                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Auto-Draft Workspace</span>
+                )}
+              </div>
+
+              {/* Toolbar row — the scanner editor's own MS-Word-style toolbar
+                  portals into this slot (see toolbarSlotEl/toolbarPortalTarget)
+                  so it lives in normal document flow right below the header,
+                  never inside the scrolling document area it used to fake-pin
+                  itself into via sticky positioning + negative margins. Only
+                  rendered in scanner mode — Auto-Draft's editor keeps its own
+                  inline sticky toolbar, unaffected. */}
+              {leftTab === 'scanner' && (
+                <div className="scan-meta-bar" ref={setToolbarSlotEl} />
+              )}
 
               <div className="editor-scroll-area">
                 {isAnalyzing && <div className="ca-scan-overlay" />}
@@ -2943,6 +3108,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       editable={!isAnalyzing}
                       onCommentRequest={handleCommentRequest}
                       onHighlightClick={handleHighlightClick}
+                      toolbarPortalTarget={toolbarSlotEl}
                     />
                     {appendedClauses.length > 0 && (
                       <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
@@ -3215,7 +3381,14 @@ export default function ContractAnalyzer({ setFocusMode }) {
                             <div style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
                               {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length} flagged clauses — click to inspect & rewrite
                             </div>
-                            {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').map((c, idx) => (
+                            {clauses
+                              .filter(c => c.risk === 'RED' || c.risk === 'AMBER')
+                              // High risk first, then medium — Array.sort is
+                              // stable (guaranteed since ES2019), so clauses
+                              // within the same risk tier keep their original
+                              // relative order instead of being reshuffled.
+                              .sort((a, b) => (a.risk === b.risk ? 0 : a.risk === 'RED' ? -1 : 1))
+                              .map((c, idx) => (
                               <div
                                 key={c.id}
                                 className={`clause-list-item animate-fade-in ${c.risk === 'RED' ? 'red-item' : 'amber-item'}`}
