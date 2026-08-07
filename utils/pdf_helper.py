@@ -24,11 +24,19 @@ def extract_clauses_from_text(text: str) -> list:
     return _split_into_clauses(text)
 
 def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
-    """For document summarizer — returns raw text."""
+    """For document summarizer / Contract Analyzer pre-scan extraction —
+    returns raw text. PDF path uses PyMuPDF (fitz), not PyPDF2 — PyPDF2 has
+    no internal bound on certain malformed/complex PDFs and can run for a
+    very long time; fitz is both faster in the common case and, paired with
+    the caller's own hard timeout (routes/contract_routes.py's
+    extract_text route), actually boundable."""
     if filetype == "pdf":
-        import PyPDF2
-        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-        text = " ".join(p.extract_text() or "" for p in reader.pages)
+        import fitz
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        try:
+            text = "\n".join(page.get_text() for page in doc)
+        finally:
+            doc.close()
     elif filetype == "docx":
         import docx
         doc = docx.Document(io.BytesIO(file_bytes))

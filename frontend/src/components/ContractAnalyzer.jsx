@@ -1654,6 +1654,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // Contract upload (decoupled from analysis — see handleFileUpload)
   const [contractFile, setContractFile] = useState(null);
   const [contractUploadLoading, setContractUploadLoading] = useState(false);
+  const [uploadToast, setUploadToast] = useState(null); // { message } | null
+
+  useEffect(() => {
+    if (!uploadToast) return;
+    const t = setTimeout(() => setUploadToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [uploadToast]);
 
   // Guards sessionStorage persistence until after initial rehydration
   const hydratedRef = useRef(false);
@@ -1947,19 +1954,71 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
     // Extract text ONLY. Analysis is no longer triggered on upload — the user
     // must explicitly click "Start Contract Risk Scan" to fire the API.
+    //
+    // try/catch/finally is load-bearing here, not decorative: extractContractText
+    // itself never throws (its own try/catch inside services/api.js always
+    // resolves to {error, message}), but a backend that hangs past its own
+    // 10s extraction timeout — or any other network failure — must still
+    // guarantee contractUploadLoading gets reset. Without the finally, an
+    // unexpected throw here would leave the "Reading document..." spinner
+    // stuck forever with no way for the user to recover except a reload.
     setContractFile(file);
     setContractUploadLoading(true);
-    const extracted = await extractContractText(file);
-    if (!isMountedRef.current) return;
-    setContractUploadLoading(false);
+    try {
+      // Backend contract (routes/contract_routes.py's extract_text): 200 ->
+      // {"text": "..."} ; 4xx/5xx -> {"error": true, "message": "...", "code": "..."}.
+      // services/api.js's extractContractText() already normalizes both
+      // into the same {error, message} | {text} shape, so `extracted.text`
+      // is the correct key here — this was never actually mismatched.
+      const extracted = await extractContractText(file);
+      if (!isMountedRef.current) return;
 
-    if (extracted.error) {
-      alert(extracted.message || 'Failed to extract document text.');
+      if (extracted.error) {
+        // Force re-upload on any failure (timeout, OCR-required blank scan,
+        // corrupt file, etc.) — a stale contractFile referencing text that
+        // was never actually populated is worse than making the user
+        // re-select, since "Start Contract Risk Scan" would otherwise run
+        // against empty/missing rawText.
+        setUploadToast({ message: extracted.message || 'Failed to extract document text.' });
+        setContractFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      // Defense-in-depth: the backend already 422s on a blank extraction
+      // (BLANK_DOCUMENT), but a 200 with an empty/whitespace-only `text`
+      // is not actually impossible (e.g. a future caller path that skips
+      // that guard) — never let an empty payload reach setRawText.
+      const extractedText = (extracted.text || '');
+      if (!extractedText.trim()) {
+        setUploadToast({ message: 'No readable text found in document.' });
+        setContractFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      // This was the actual cause of the "stuck on Reading document..."
+      // report: the loading skeleton only renders inside the !isAnalyzed
+      // branch (see the INITIAL UPLOAD / INPUT SCREEN condition below). A
+      // 200 OK here was landing correctly, but if isAnalyzed/jobId/clauses
+      // were still set from a PRIOR document, the UI stayed on the old
+      // analysis workspace with no visible change — indistinguishable
+      // from a hang even though extraction had already succeeded. A fresh
+      // upload must clear all of that stale state, not just set rawText.
+      setJobId(null);
+      setIsAnalyzed(false);
+      setClauses([]);
+      setSummary('');
+      setCitations([]);
+      setRawText(cleanExtractedText(extractedText));
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setUploadToast({ message: err?.message || 'Failed to extract document text.' });
       setContractFile(null);
-      return;
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } finally {
+      if (isMountedRef.current) setContractUploadLoading(false);
     }
-    // Populate the contract text and surface the "Ready to Analyze" state.
-    setRawText(cleanExtractedText(extracted.text));
   };
 
   const RULE_BOOK_SEPARATOR = '\n\n--- [Next Document] ---\n\n';
@@ -4043,6 +4102,33 @@ export default function ContractAnalyzer({ setFocusMode }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Upload/extraction failure toast — surfaces the specific backend
+          message (timeout, OCR-required blank scan, corrupt file, etc.)
+          instead of the old blocking alert(). */}
+      {uploadToast && (
+        <div
+          style={{
+            position: 'fixed', bottom: '28px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 3000, display: 'flex', alignItems: 'center', gap: '10px',
+            padding: '13px 20px', borderRadius: '11px', fontSize: '13.5px', fontWeight: 500,
+            background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#FCA5A5',
+            boxShadow: '0 16px 48px rgba(0,0,0,0.4)', maxWidth: '460px',
+          }}
+        >
+          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>{uploadToast.message}</span>
+          <button
+            onClick={() => setUploadToast(null)}
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', marginLeft: 'auto', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
         </div>
       )}
     </>

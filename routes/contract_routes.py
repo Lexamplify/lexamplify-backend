@@ -403,17 +403,34 @@ def stream_job(job_id):
     )
 
 
+EXTRACTION_TIMEOUT_SECONDS = 10
+
+
 @contract_bp.route("/extract-text", methods=["POST"])
 def extract_text():
     """
     Extract raw text from a PDF or DOCX upload without running analysis.
     Used by the frontend to populate the contract textarea and the Rule Book textarea.
     Reuses the same extract_text_for_summary utility as /analyze.
+
+    Bounded to EXTRACTION_TIMEOUT_SECONDS via a worker thread — a malformed/
+    pathological PDF that would otherwise hang the parser indefinitely
+    (the "Reading document..." spinner that never resolves) now returns a
+    422 within 10s instead. The calling thread stops waiting on timeout;
+    Python cannot forcibly kill the still-running worker thread, but the
+    HTTP response — and the frontend's stuck spinner — is unblocked either way.
     """
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
     from werkzeug.utils import secure_filename
 
+    # {"error": True, "message": "..."} — NOT the old bare-string-in-"error"
+    # shape this route used to return. services/api.js's handleResponse()
+    # reads errorData.message on a non-200 response; the old shape had no
+    # "message" key at all, so every specific error text here was silently
+    # discarded in favor of a generic "Request failed with status NNN"
+    # before ever reaching the UI.
     if not request.files.get("file"):
-        return jsonify({"error": "No file provided."}), 400
+        return jsonify({"error": True, "message": "No file provided."}), 400
 
     try:
         f = request.files["file"]
@@ -421,18 +438,36 @@ def extract_text():
         data = f.read()
 
         if fname.endswith(".pdf"):
-            text = extract_text_for_summary(data, "pdf")
+            filetype = "pdf"
         elif fname.endswith(".docx"):
-            text = extract_text_for_summary(data, "docx")
+            filetype = "docx"
         else:
-            return jsonify({"error": "Unsupported format. Use PDF or DOCX."}), 400
+            return jsonify({"error": True, "message": "Unsupported format. Use PDF or DOCX."}), 400
 
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(extract_text_for_summary, data, filetype)
+            try:
+                text = future.result(timeout=EXTRACTION_TIMEOUT_SECONDS)
+            except FutureTimeoutError:
+                return jsonify({
+                    "error": True,
+                    "message": f"Document extraction timed out after {EXTRACTION_TIMEOUT_SECONDS} seconds. The file may be corrupted or too complex.",
+                    "code": "EXTRACTION_TIMEOUT",
+                }), 422
+
+        # Blank-document guard — a scanned PDF with no embedded text layer
+        # extracts to "" (or whitespace) with no error of its own; that
+        # empty payload must never flow forward into rawText/analysis.
         if not text or not text.strip():
-            return jsonify({"error": "No content could be extracted from this file."}), 400
+            return jsonify({
+                "error": True,
+                "message": "No readable text found - OCR required.",
+                "code": "BLANK_DOCUMENT",
+            }), 422
 
         return jsonify({"text": text}), 200
     except Exception as e:
-        return jsonify({"error": f"Failed to extract text: {e}", "code": "FILE_PROCESSING_ERROR"}), 500
+        return jsonify({"error": True, "message": f"Failed to extract text: {e}", "code": "FILE_PROCESSING_ERROR"}), 500
 
 @contract_bp.route("/rewrite", methods=["POST"])
 def rewrite():
