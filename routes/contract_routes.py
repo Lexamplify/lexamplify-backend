@@ -277,6 +277,10 @@ def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive") 
 
 @contract_bp.route("/analyze", methods=["POST"])
 def analyze():
+    """Dispatches the contract scan to Celery and returns immediately with
+    a job_id — this used to run the full map-reduce LLM scan synchronously
+    on the request thread (up to ~5 minutes for dense documents). Poll
+    progress via GET /api/contract/stream/<job_id> (SSE)."""
     import time
     from werkzeug.utils import secure_filename
 
@@ -315,6 +319,11 @@ def analyze():
     if not full_text or not full_text.strip():
         return jsonify({"error": "No content could be extracted."}), 400
 
+    rule_book_text = ""
+    if request.is_json:
+        rule_book_text = request.json.get("ruleBook") or request.json.get("rule_book") or ""
+    rule_book_text = rule_book_text or request.form.get("ruleBook") or ""
+
     # Resolve scanStrategy from JSON body or form field
     scan_strategy = "Defensive"
     if request.is_json and request.json.get("scanStrategy"):
@@ -325,157 +334,73 @@ def analyze():
     print(f"\n[analyze] scanStrategy={scan_strategy} | text_length={len(full_text)}")
 
     try:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import os
-        from pinecone import Pinecone
-
-        # 1. Chunking — paragraph/newline-boundary-aware, not a hard char slice
-        chunks = chunk_text_by_boundary(full_text, chunk_size=3000, overlap=300)
-        if not chunks:
-            chunks.append(full_text)
-
-        def process_chunk_safe(chunk):
-            # One hallucinated/malformed LLM response for a single chunk must
-            # never take down the whole document's analysis — isolate it here
-            # so a failure degrades to "no risks found in this chunk", not a
-            # crashed request.
-            try:
-                return analyze_contract_with_llm(chunk, scan_strategy)
-            except Exception as e:
-                print(f"[analyze] chunk failed, skipping: {e}")
-                return {"summary": "", "clauses": []}
-
-        all_clauses = []
-        all_summaries = []
-
-        # 2. Map-Reduce with ThreadPoolExecutor — capped at 3 concurrent
-        # workers so we don't slam the LLM provider with N simultaneous
-        # requests and trip its rate limiter (HTTP 429) on large documents.
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(process_chunk_safe, chunk) for chunk in chunks]
-            for future in as_completed(futures):
-                res = future.result()  # process_chunk_safe never raises
-                if res and isinstance(res, dict):
-                    if isinstance(res.get("clauses"), list):
-                        all_clauses.extend(res["clauses"])
-                    if isinstance(res.get("summary"), str) and res["summary"]:
-                        all_summaries.append(res["summary"])
-
-        # Fuzzy-deduplicate: overlapping chunks routinely re-flag the same
-        # clause with minor wording/whitespace differences, which exact-string
-        # matching would let through as two "different" risks.
-        accepted_texts = []
-        unique_clauses = []
-        for c in all_clauses:
-            txt = (c.get("original_text") or "").strip()
-            if not txt:
-                continue
-            if is_near_duplicate_risk(txt, accepted_texts):
-                continue
-            accepted_texts.append(txt)
-            unique_clauses.append(c)
-
-        final_summary = all_summaries[0] if all_summaries else "Document analyzed successfully."
-        
-        # --- THE FRONTEND KEY TRANSLATOR ---
-        formatted_clauses = []
-        for c in unique_clauses:
-            risk_val = str(c.get("risk_level", "AMBER")).upper()
-            
-            if "HIGH" in risk_val: color = "RED"
-            elif "LOW" in risk_val: color = "GREEN"
-            else: color = "AMBER"
-                
-            formatted_clauses.append({
-                "original_text": c.get("original_text", ""),
-                "risk_level": c.get("risk_level", "Medium").capitalize(),
-                "explanation": c.get("explanation", ""),
-                "text": c.get("original_text", ""), 
-                "risk": color, 
-                "issue": c.get("explanation", "") 
-            })
-            
-        # 3. Context-Aware Dynamic Auto-RAG — skip the embedding call and the
-        # Pinecone query entirely when there are no risks to search for; no
-        # point paying for a vector DB round-trip with an empty query.
-        citations = []
-        if formatted_clauses:
-            search_query = " ".join(c.get("explanation", "") for c in formatted_clauses[:5]).strip()
-        else:
-            search_query = ""
-
-        if search_query:
-            try:
-                pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-                index = pc.Index(host=os.getenv("PINECONE_HOST"))
-                namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
-
-                # Embed with the SAME model worker.py used to ingest the
-                # index — embedding with a different model here would query
-                # a different vector space and silently return noise.
-                embed_response = pc.inference.embed(
-                    model=EMBED_MODEL,
-                    inputs=[search_query],
-                    parameters={"input_type": "query", "truncate": "END"},
-                )
-                query_vector = embed_response[0].values
-                
-                pinecone_results = index.query(
-                    vector=query_vector,
-                    top_k=10,
-                    include_metadata=True,
-                    namespace=namespace,
-                )
-                
-                seen_cases = set()
-                for match in (pinecone_results.matches or []):
-                    metadata = match.metadata or {}
-                    case_id = metadata.get('case_id') or match.id
-                    if case_id in seen_cases:
-                        continue
-                    seen_cases.add(case_id)
-                    
-                    title = case_id
-                    if title.endswith('.pdf'):
-                        title = title[:-4].replace('_', ' ')
-                        
-                    citations.append({
-                        "case_id": case_id,
-                        "title": title,
-                        "year": metadata.get('year', ''),
-                        "snippet": metadata.get('text', '')[:200]
-                    })
-                    if len(citations) >= 3:
-                        break
-            except Exception as e:
-                print(f"Citation RAG failed: {e}")
-
-        return jsonify({
-            "summary": final_summary,
-            "clauses": formatted_clauses,
-            "citations": citations,
-            "raw_text": full_text,
-            "pdf_url": pdf_url
-        }), 200
-
+        from tasks.contract_tasks import analyze_contract_task
+        task = analyze_contract_task.delay(full_text, rule_book_text, scan_strategy)
+        return jsonify({"job_id": task.id, "status_url": f"/api/contract/stream/{task.id}"}), 202
     except Exception as e:
-        print(f"CRITICAL BACKEND ERROR CAUGHT: {str(e)}")
-        # Failsafe with BOTH key formats
+        print(f"[analyze] Failed to dispatch Celery task: {e}")
         return jsonify({
-            "summary": "The AI successfully processed the document under the selected risk strategy and identified critical liabilities.",
-            "clauses": [
-                {
-                    "original_text": "IN NO EVENT SHALL LIABILITY EXCEED $100.",
-                    "text": "IN NO EVENT SHALL LIABILITY EXCEED $100.",
-                    "risk_level": "High",
-                    "risk": "RED",
-                    "explanation": "Severe limitation of liability.",
-                    "issue": "Severe limitation of liability."
-                }
-            ],
-            "raw_text": full_text if full_text else "Document text processed.",
-            "pdf_url": pdf_url if pdf_url else ""
-        }), 200
+            "error": "Failed to start analysis job. Is the Celery worker running?",
+            "code": "JOB_DISPATCH_ERROR",
+        }), 503
+
+
+@contract_bp.route("/stream/<job_id>", methods=["GET"])
+def stream_job(job_id):
+    """SSE endpoint — relays the Celery task's live state (PROGRESS meta,
+    then SUCCESS/FAILURE) as the browser's EventSource expects: one
+    `data: <json>\\n\\n` frame per update, connection held open until the
+    task reaches a terminal state."""
+    import json
+    import time
+    from flask import Response, stream_with_context, current_app
+    from celery.result import AsyncResult
+
+    celery_app = current_app.extensions.get("celery")
+    app_ctx = current_app._get_current_object()
+
+    def event_stream():
+        with app_ctx.app_context():
+            result = AsyncResult(job_id, app=celery_app)
+            last_payload = None
+            # Long-poll the result backend at a fixed short interval —
+            # cheap (Redis GET) — until the task lands in a terminal state.
+            # A true pub/sub push is possible via Celery events but is far
+            # more machinery than a single job's status bar needs here.
+            while True:
+                if result.state == 'PROGRESS':
+                    meta = result.info if isinstance(result.info, dict) else {}
+                    payload = {
+                        "state": "PROGRESS",
+                        "status": meta.get("status", "Working..."),
+                        "progress": meta.get("progress", 0),
+                    }
+                elif result.state == 'PENDING':
+                    payload = {"state": "PENDING", "status": "Queued...", "progress": 0}
+                elif result.state == 'SUCCESS':
+                    payload = {"state": "SUCCESS", "status": "Complete", "progress": 100, "result": result.result}
+                elif result.state == 'FAILURE':
+                    payload = {"state": "FAILURE", "status": "Analysis failed.", "error": str(result.info)}
+                else:
+                    payload = {"state": result.state, "status": result.state, "progress": 0}
+
+                if payload != last_payload:
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    last_payload = payload
+
+                if result.ready():
+                    break
+                time.sleep(0.6)
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx response buffering, if fronted by one
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @contract_bp.route("/extract-text", methods=["POST"])

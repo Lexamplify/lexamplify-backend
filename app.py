@@ -6,6 +6,7 @@ from database import db as sqlalchemy_db
 from datetime import timedelta
 import os
 import re
+import secrets
 import sqlite3
 import json
 import io
@@ -439,21 +440,86 @@ def create_app():
             # Use direct assignment so we never produce duplicate CORS headers
             # (SSE responses pre-set these; .add() would append a second value)
             response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Accept,X-Requested-With'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Accept,X-Requested-With,X-CSRF-TOKEN'
             response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
 
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'secret')
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
+
+    # ── JWT secret: no static fallback, ever ─────────────────────────────
+    # A hardcoded 'secret' default meant every unconfigured deployment
+    # shared the same signing key. In production, an unset key is a hard
+    # failure — fail fast at boot, not silently sign tokens with a guessable
+    # key. In dev, generate a real 32-byte key per process so
+    # InsecureKeyLengthWarning can't fire even when .env is untouched;
+    # restarting invalidates existing sessions, which is acceptable for a
+    # local dev loop and not something production should ever do.
+    _jwt_secret = os.getenv('JWT_SECRET_KEY')
+    if not _jwt_secret:
+        if os.getenv('FLASK_ENV') == 'production':
+            raise RuntimeError('JWT_SECRET_KEY must be set in production — no fallback is generated.')
+        _jwt_secret = secrets.token_hex(32)
+        print('[app] JWT_SECRET_KEY not set — generated an ephemeral dev key (sessions will not survive a restart).')
+    app.config['JWT_SECRET_KEY'] = _jwt_secret
+
     app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'static/uploads')
     app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 104857600))  # 100 MB
     app.config['SQLITE_DB_PATH'] = DB_PATH
 
+    # ── JWT: HttpOnly cookie transport, never localStorage ──────────────
+    # Short-lived access token + long-lived refresh token is what makes
+    # this "persistent" without keeping a broadly-scoped token alive for
+    # 30 days — /api/auth/refresh silently rotates a new access cookie
+    # from the refresh cookie, so the session survives reloads without the
+    # frontend ever holding the JWT itself in JS-reachable storage.
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
+    app.config['JWT_TOKEN_LOCATION'] = ['cookies', 'headers']  # 'headers' kept only for any not-yet-migrated caller; cookies are primary
+    app.config['JWT_COOKIE_HTTPONLY'] = True
+    app.config['JWT_COOKIE_SECURE'] = os.getenv('JWT_COOKIE_SECURE', 'False').lower() == 'true'
+    # Strict now works end-to-end in dev because frontend/vite.config.js
+    # proxies /api to Flask — the browser only ever talks to the Vite
+    # origin, so the cookie is first-party from its point of view. A
+    # production deploy needs the equivalent same-origin proxy/rewrite
+    # (e.g. a reverse proxy or platform rewrite rule) in front of the API
+    # for this to keep working; without one, Strict drops the cookie on
+    # every request the way it did before the proxy existed.
+    app.config['JWT_COOKIE_SAMESITE'] = 'Strict'
+    app.config['JWT_COOKIE_CSRF_PROTECT'] = True
+    app.config['JWT_CSRF_IN_COOKIES'] = True  # readable (non-HttpOnly) CSRF cookie for the double-submit header
+
+    # Flask's OWN session cookie (distinct from the JWT cookies above) —
+    # used only by Authlib to hold OAuth `state` across the redirect to
+    # Microsoft/Google and back. Must be Lax, not Strict: the IdP's
+    # callback redirect is itself a cross-site top-level navigation, and a
+    # Strict session cookie would not be sent on it, breaking SSO outright.
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_SECURE'] = app.config['JWT_COOKIE_SECURE']
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+
+    # ── Celery (Redis broker/backend) ────────────────────────────────────
+    # Docker provisions ONLY Redis (docker-compose.yml) — the Celery worker
+    # runs locally via `celery -A celery_worker.celery worker`, sharing this
+    # same venv/dependencies. Registering the extension here (not calling
+    # celery_init_app itself, to avoid a celery_app<->app.py import cycle at
+    # module load time) is what lets routes reach current_app.extensions
+    # 'celery' without re-importing app.py from inside a task module.
+    app.config['CELERY_BROKER_URL'] = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+    app.config['CELERY_RESULT_BACKEND'] = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+    from celery_app import celery_init_app
+    celery_init_app(app)
+
     sqlalchemy_db.init_app(app)
     jwt.init_app(app)
+
+    from utils.limiter import limiter
+    limiter.init_app(app)
+
+    from routes.sso_routes import init_sso
+    init_sso(app)
+
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     init_sqlite_db()
 
@@ -1060,6 +1126,9 @@ def create_app():
                 select_cols = ['id', 'case_id', 'created_at']
                 if descriptive_col and descriptive_col not in select_cols:
                     select_cols.append(descriptive_col)
+                for optional_col in ('validity_status', 'ratio_headnote', 'content'):
+                    if optional_col in table_cols:
+                        select_cols.append(optional_col)
                 query = f"SELECT {', '.join(select_cols)} FROM case_vault ORDER BY created_at DESC"
                 rows = conn.execute(query).fetchall()
 
@@ -1067,6 +1136,7 @@ def create_app():
                 for r in rows:
                     raw_title = r[descriptive_col] if descriptive_col else None
                     timestamp = r['created_at']
+                    row_keys = r.keys()
                     docs.append({
                         'id': r['id'],
                         'case_id': r['case_id'],
@@ -1076,7 +1146,15 @@ def create_app():
                         'updated': timestamp and str(timestamp).split(' ')[0] or '',
                         'type': 'Precedent',
                         'category': 'Precedent',
-                        'author': 'Internal Vault'
+                        'author': 'Internal Vault',
+                        'validity_status': (r['validity_status'] if 'validity_status' in row_keys else None) or 'Green',
+                        'ratio_headnote': (r['ratio_headnote'] if 'ratio_headnote' in row_keys else None) or '',
+                        # Truncated — this is a list endpoint returning every
+                        # entry at once; the accordion reader only needs a
+                        # preview, not the full document (a large judgment's
+                        # full text here would bloat every single list
+                        # fetch, not just the one row someone expands).
+                        'content': ((r['content'] if 'content' in row_keys else None) or '')[:4000],
                     })
             finally:
                 conn.row_factory = old_rf
@@ -1112,6 +1190,16 @@ def create_app():
             conn.commit()
             inserted_id = c.lastrowid
 
+            # Best-effort local index write — never blocks/fails the save
+            # itself (index_document already swallows its own errors), so
+            # a slow-to-load embedding model can't turn a document save
+            # into a 500.
+            try:
+                from utils.local_search import index_document
+                index_document(inserted_id, title, html)
+            except Exception as e:
+                print(f"[create_firm_library_entry] indexing skipped: {e}")
+
             row = conn.execute(
                 'SELECT id, case_id, title, created_at FROM case_vault WHERE id = ?', (inserted_id,)
             ).fetchone()
@@ -1126,6 +1214,8 @@ def create_app():
                 'type': category,
                 'category': category,
                 'author': 'Internal Vault',
+                'validity_status': 'Green',
+                'ratio_headnote': '',
             }), 201
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
@@ -1517,6 +1607,8 @@ def create_app():
 
     # Register blueprints
     from routes.auth_routes import auth_bp
+    from routes.sso_routes import sso_bp
+    from routes.library_routes import library_bp
     from routes.ai_routes import ai_bp
     from routes.document_routes import doc_bp
     from routes.contract_routes import contract_bp
@@ -1536,6 +1628,8 @@ def create_app():
     app.register_blueprint(conflict_bp)
     app.register_blueprint(team_bp)
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
+    app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
     app.register_blueprint(doc_bp, url_prefix='/api/documents')
     app.register_blueprint(contract_bp, url_prefix='/api/contract')
@@ -2512,7 +2606,17 @@ def create_app():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'), ('file_blob', 'BLOB'), ('file_format', 'TEXT')):
+        for _col, _type in (
+            ('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'),
+            ('file_blob', 'BLOB'), ('file_format', 'TEXT'),
+            # Firm Library dense-table columns — SQLite ADD COLUMN can't take
+            # a non-constant default via ALTER for existing rows in older
+            # sqlite builds, but a literal string default IS allowed and
+            # backfills every existing row to 'Green' (matches
+            # verify_citation_status()'s baseline assumption: unverified
+            # case law is presumed good law until a scrape says otherwise).
+            ('validity_status', "TEXT DEFAULT 'Green'"), ('ratio_headnote', 'TEXT'),
+        ):
             try:
                 conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
             except Exception:

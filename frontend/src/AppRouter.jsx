@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { AuthProvider } from './context/AuthContext';
 import { fetchTrackedCases, fetchDocuments } from './services/api';
 import CommandPalette from './components/CommandPalette';
 import CaseVault from './components/CaseVault';
@@ -507,7 +508,7 @@ const QUICK_DRAFT_TEMPLATE_IDS = [
 ];
 
 const DashboardView = () => {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
   const navigate = useNavigate();
 
   const [cases, setCases] = useState([]);
@@ -1024,7 +1025,9 @@ function AppRouterContent() {
 export default function AppRouter() {
   return (
     <ThemeProvider>
-      <AppRouterContent />
+      <AuthProvider>
+        <AppRouterContent />
+      </AuthProvider>
     </ThemeProvider>
   );
 }

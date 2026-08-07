@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { uploadDocument, fetchTrackedCases, saveTrackedCase, fetchCauselist } from '../services/api';
 
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 // Reconstruct full breadcrumb path from any folderId using the flat folder list
 const buildPathFromId = (folderId, flat) => {
@@ -1043,13 +1043,10 @@ export default function VaultView({ targetFolderId = null }) {
     if (append) setLoadingMore(true); else setLoadingDocs(true);
     setDocError(null);
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
       if (q) params.set('q', q);
       else params.set('folder_id', folderId === null ? 'root' : String(folderId));
-      const res = await fetch(`${API_BASE}/api/vault/documents?${params.toString()}`, {
-        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
-      });
+      const res = await fetch(`${API_BASE}/api/vault/documents?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (!isMountedRef.current) return;
@@ -1070,10 +1067,7 @@ export default function VaultView({ targetFolderId = null }) {
   // ── Load folders (+ cheap per-folder doc counts) ──────────────────────────
   const loadFolders = async () => {
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-      const res = await fetch(`${API_BASE}/api/vault/folders`, {
-        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
-      });
+      const res = await fetch(`${API_BASE}/api/vault/folders`);
       if (!res.ok) return;
       const data = await res.json();
       if (!isMountedRef.current) return;
@@ -1083,16 +1077,14 @@ export default function VaultView({ targetFolderId = null }) {
   };
 
   // ── Folder management API calls ───────────────────────────────────────────
-  const apiToken = () => localStorage.getItem('token') || localStorage.getItem('lexai_token');
 
   const handleRenameFolder = async (folderId, newName) => {
     const trimmed = (newName || '').trim();
     setRenamingFolderId(null);
     if (!trimmed) return;
-    const token = apiToken();
     const res = await fetch(`${API_BASE}/api/vault/folders/${folderId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: trimmed }),
     });
     if (!isMountedRef.current) return;
@@ -1103,10 +1095,8 @@ export default function VaultView({ targetFolderId = null }) {
 
   const handleDeleteFolder = async (folderId) => {
     setDeletingFolderId(null);
-    const token = apiToken();
     const res = await fetch(`${API_BASE}/api/vault/folders/${folderId}`, {
       method: 'DELETE',
-      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
     });
     if (!isMountedRef.current) return;
     if (res.ok) {
@@ -1126,10 +1116,9 @@ export default function VaultView({ targetFolderId = null }) {
   const handleMoveFolder = async (folderId, newParentId) => {
     setMovingFolder(null);
     if (newParentId === folderId) return; // sanity
-    const token = apiToken();
     const res = await fetch(`${API_BASE}/api/vault/folders/${folderId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parent_id: newParentId }),
     });
     if (!isMountedRef.current) return;
@@ -1143,10 +1132,9 @@ export default function VaultView({ targetFolderId = null }) {
     if (!trimmed || creatingFolder) return;
     setCreatingFolder(true);
     try {
-      const token = apiToken();
       const res = await fetch(`${API_BASE}/api/vault/folders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: trimmed, parent_id: currentFolderId }),
       });
       const data = await res.json();
@@ -1174,7 +1162,6 @@ export default function VaultView({ targetFolderId = null }) {
     if (isInitializing) return;
     setIsInitializing(true);
     setBlueprintToast(null);
-    const token = apiToken();
 
     // Load firm library entries (localStorage or seed fallback)
     const allLibEntries = (() => {
@@ -1191,7 +1178,7 @@ export default function VaultView({ targetFolderId = null }) {
         MATTER_BLUEPRINT_FOLDERS.map(folder =>
           fetch(`${API_BASE}/api/vault/folders`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: folder.name, parent_id: currentFolderId }),
           }).then(async res => {
             const data = await res.json();
@@ -1280,12 +1267,10 @@ export default function VaultView({ targetFolderId = null }) {
       `All subfolders and documents inside them will be permanently removed.\n\nThis cannot be undone.`
     )) return;
     setIsInitializing(true);
-    const token = apiToken();
     const results = await Promise.allSettled(
       currentSubFolders.map(f =>
         fetch(`${API_BASE}/api/vault/folders/${f.id}`, {
           method: 'DELETE',
-          headers: { ...(token && { Authorization: `Bearer ${token}` }) },
         })
       )
     );
@@ -1549,10 +1534,8 @@ export default function VaultView({ targetFolderId = null }) {
   const handleDeleteDocument = async (doc) => {
     setOpenMenuDocId(null);
     if (!window.confirm(`Permanently delete "${doc.smart_title || doc.title}"? This cannot be undone.`)) return;
-    const token = apiToken();
     const res = await fetch(`${API_BASE}/api/vault/documents/${doc.id}`, {
       method: 'DELETE',
-      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
     });
     if (!isMountedRef.current) return;
     if (res.ok) setDocuments(prev => prev.filter(d => d.id !== doc.id));
@@ -1666,10 +1649,7 @@ export default function VaultView({ targetFolderId = null }) {
 
       // If content not in upload response, fetch the document
       if (!docContent && docId) {
-        const token = apiToken();
-        const fetchRes = await fetch(`${API_BASE}/api/vault/documents`, {
-          headers: { ...(token && { Authorization: `Bearer ${token}` }) },
-        });
+        const fetchRes = await fetch(`${API_BASE}/api/vault/documents`);
         if (fetchRes.ok) {
           const data = await fetchRes.json();
           if (!isMountedRef.current) return;
@@ -1681,10 +1661,9 @@ export default function VaultView({ targetFolderId = null }) {
       if (!docContent) throw new Error('Could not extract document text.');
 
       // Ask AI to extract case metadata as JSON
-      const token = apiToken();
       const aiRes = await fetch(`${API_BASE}/api/ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: `You are a legal data extraction AI. Extract case metadata from the legal document below. Return ONLY a valid JSON object with exactly these keys (empty string if not found, no extra text, no markdown):\n{"case_name":"","case_number":"","court_name":"","judge_name":"","case_type":"","petitioner_name":"","respondent_name":"","petitioner_counsel":"","respondent_counsel":"","filing_date":"","next_hearing":"","summary":""}\n\nDocument text:\n${docContent.slice(0, 14000)}`,
         }),

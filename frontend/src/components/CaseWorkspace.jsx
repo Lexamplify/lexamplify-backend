@@ -4,7 +4,7 @@ import VaultView from './VaultView';
 import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 // ── Utility: strip ```json ... ``` fences before JSON.parse ─────────────────
 const stripCodeFences = (raw) =>
@@ -349,11 +349,10 @@ function DashboardTab({ documents, loadingDocs, apiBase }) {
     setSynopsis('');
     const combined = documents.map(d => d.content || '').join('\n\n');
     const truncated = combined.slice(0, 15000);
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     try {
       const res = await fetch(`${apiBase}/api/ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: `[Document Analysis Mode]\n\nDocuments:\n${truncated}\n\nSummarize the core facts and current status of this case in 3 bullet points. Be concise and professional.`,
         }),
@@ -555,11 +554,10 @@ function ChatsTab({ apiBase, folderId }) {
   const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     const url = folderId
       ? `${apiBase}/api/vault/audit-trail?folder_id=${folderId}`
       : `${apiBase}/api/vault/audit-trail`;
-    fetch(url, { headers: { ...(token && { Authorization: `Bearer ${token}` }) } })
+    fetch(url)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(data => { setThreads(data.threads || []); setLoading(false); })
       .catch(() => { setError('Could not load audit trail.'); setLoading(false); });
@@ -663,11 +661,10 @@ function EventsTab({ documents, loadingDocs, apiBase }) {
     setTimeline([]);
     const combined = documents.map(d => d.content || '').join('\n\n');
     const truncated = combined.slice(0, 15000);
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     try {
       const res = await fetch(`${apiBase}/api/ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: `Extract all dates, deadlines, and chronological events from this text. Return ONLY a valid JSON array of objects with 'date' and 'description' keys. No explanation, no markdown fences.\n\nText:\n${truncated}`,
         }),
@@ -774,10 +771,7 @@ export default function CaseWorkspace() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-    fetch(`${API_BASE}/api/vault/documents`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    })
+    fetch(`${API_BASE}/api/vault/documents`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         const docs = data?.documents || [];

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 // ── Event type → visual accent ───────────────────────────────────────────────
 function getEventAccent(type) {
@@ -300,11 +300,10 @@ export default function CalendarView() {
 
   const handleGenerateSynopsis = async (caseId) => {
     setSynopsisLoading(caseId);
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     try {
       const res = await fetch(`${API_BASE}/api/ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: `Provide a concise 2-sentence legal matter synopsis for case ID: ${caseId}. Focus on likely nature of proceedings and current status.`,
         }),

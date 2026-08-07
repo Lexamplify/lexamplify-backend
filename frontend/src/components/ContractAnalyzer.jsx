@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   extractContractText,
-  analyzeContractWithGroq,
+  startContractAnalysisJob,
   draftRevision,
   rewriteContractClause,
   fetchContractSummary,
@@ -14,8 +14,9 @@ import {
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import { findClauseRange } from '../tiptap/positionMapping.js';
 import { useCitationStore } from '../tiptap/citationStore.js';
+import useContractJobStream from '../hooks/useContractJobStream.js';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 // Shared "external link" glyph for every "Open Official Record" link
 // (parent citation + each nested related-citation) — one definition so the
@@ -1480,6 +1481,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // Fast-track path — bypasses the AI risk scan entirely and opens the
+  // split-pane editor directly on a blank/empty document. Reachable from
+  // the upload screen's "Quick Draft Studio" button and from the Cmd/Ctrl+K
+  // command palette (navigate('/contract-analyzer', { state: { openTab:
+  // 'quickdraft' } })).
+  const [quickDraftMode, setQuickDraftMode] = useState(false);
   const [scanStrategy, setScanStrategy] = useState('Defensive');
   const [rawText, setRawText] = useState('');
   const rawTextDebounceRef = useRef(null);
@@ -1504,64 +1511,40 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [relatedCitations, setRelatedCitations] = useState({});
   const [loadingRelated, setLoadingRelated] = useState(null);
 
+  // Real Celery job progress over SSE — replaces the old asymptotic-decay
+  // simulation (which faked a curve toward 95% with no idea how much work
+  // was actually left) with the task's genuine self.update_state() status
+  // text and progress percentage, e.g. "Scanning Liability... (3/7
+  // sections)". jobId is null whenever no scan is in flight, which the
+  // hook treats as IDLE — no stream opened, nothing to clean up.
+  const [jobId, setJobId] = useState(null);
+  const jobStream = useContractJobStream(jobId);
+
   useEffect(() => {
     if (!isAnalyzing) return;
+    if (jobStream.status) setLoadingText(jobStream.status);
+    if (typeof jobStream.progress === 'number') setScanProgress(jobStream.progress);
+  }, [isAnalyzing, jobStream.status, jobStream.progress]);
 
-    const steps = [
-      "Extracting clauses...",
-      "Running deep scan...",
-      "Cross-referencing Pinecone precedents...",
-      "Aggregating risk profile..."
-    ];
-
-    let stepIndex = 0;
-    setLoadingText(steps[stepIndex]);
-
-    const timer = setInterval(() => {
-      stepIndex = (stepIndex + 1) % steps.length;
-      setLoadingText(steps[stepIndex]);
-    }, 2500);
-
-    return () => clearInterval(timer);
-  }, [isAnalyzing]);
-
-  // Document-calibrated progress: a real Groq call's token-by-token
-  // progress isn't observable over a plain (non-streaming) fetch, so this
-  // was previously a FIXED asymptotic decay toward 95 regardless of
-  // document size — which is exactly what made it feel fake: a 13-page
-  // contract would slam to ~95% in under two seconds and then visibly
-  // stall for the next 15+ seconds of real work, while a two-line snippet
-  // would ALSO slam to 95% instantly, both for the same wrong reason (the
-  // curve didn't know how much text it was actually waiting on).
-  //
-  // Fix: pace the climb off something genuinely real about THIS scan — the
-  // character count of the document actually being sent — instead of a
-  // one-size-fits-all timer. estimatedMs is a calibrated linear estimate
-  // (2s floor for a trivial snippet, scaling up to a 20s ceiling matching
-  // this card's own "dense PDFs can take up to 20 seconds" copy), and
-  // progress is eased-out over elapsed/estimated so a short scan animates
-  // smoothly instead of flashing, and a long scan climbs at a pace that
-  // actually tracks how long it's expected to take rather than freezing.
-  // It still can never reach 100 on its own (eased(1) caps at 95) — that's
-  // still reserved exclusively for the real completion signal below, so
-  // the bar can never claim "done" while work is genuinely still in flight.
   useEffect(() => {
-    if (!isAnalyzing) return;
-    const startedAt = Date.now();
-    const estimatedMs = Math.min(20000, Math.max(2000, 2000 + rawText.length * 0.6));
-    const timer = setInterval(() => {
-      const t = Math.min((Date.now() - startedAt) / estimatedMs, 1);
-      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      setScanProgress(eased * 95);
-    }, 50);
-    return () => clearInterval(timer);
-    // rawText is intentionally read once via closure at scan start (both
-    // editable surfaces are readOnly/non-editable while isAnalyzing is
-    // true, so it can't change mid-scan) — including it in deps would let
-    // an unrelated rawText change tear down and restart the timer,
-    // resetting startedAt and visibly kicking the bar backward.
+    if (!jobId) return;
+    if (jobStream.state === 'SUCCESS') {
+      setJobId(null);
+      if (!isMountedRef.current) return;
+      setIsAnalyzing(false);
+      loadAnalysisResults(jobStream.result || {});
+    } else if (jobStream.state === 'FAILURE') {
+      setJobId(null);
+      if (!isMountedRef.current) return;
+      setIsAnalyzing(false);
+      alert(jobStream.error || 'Analysis failed.');
+    }
+    // loadAnalysisResults is a stable function declared in this same
+    // component body, not a changing dependency the job-completion effect
+    // needs to re-run for — including it would refire this on every
+    // unrelated re-render that happens to redefine it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnalyzing]);
+  }, [jobId, jobStream.state, jobStream.result, jobStream.error]);
 
   // Owns the full isAnalyzing -> loader-visibility lifecycle. Going true:
   // show the loader immediately, nothing else to do. Going false: snap the
@@ -1683,19 +1666,37 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Auto-ingest document piped from Case Vault (or InzIQ tool-routing)
+  // Auto-ingest document piped from Case Vault (or InzIQ tool-routing).
+  // pipedDocDispatchedRef guards against React 18 StrictMode's dev-only
+  // double-invoke of effects on mount — without it, two identical Celery
+  // jobs would fire for the same piped document (wasted LLM calls, and
+  // jobId would end up pointing at whichever response lands second).
+  const pipedDocDispatchedRef = useRef(false);
   useEffect(() => {
     const incoming = location.state?.documentData;
     if (!incoming?.file_content) return;
+    if (pipedDocDispatchedRef.current) return;
+    pipedDocDispatchedRef.current = true;
+
     const content = cleanExtractedText(incoming.file_content);
     setRawText(content);
     (async () => {
+      setClauses([]);
+      setSummary('');
+      setCitations([]);
       setScanProgress(0);
+      setLoadingText('Queuing scan...');
       setIsAnalyzing(true);
-      const res = await analyzeContractWithGroq(content, '', scanStrategy);
+
+      const res = await startContractAnalysisJob(content, '', scanStrategy);
       if (!isMountedRef.current) return;
-      setIsAnalyzing(false);
-      if (!res.error) loadAnalysisResults(res);
+
+      if (res.error || !res.job_id) {
+        setIsAnalyzing(false);
+        alert('Failed to start analysis: ' + (res.message || 'Unknown error'));
+        return;
+      }
+      setJobId(res.job_id);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1719,13 +1720,27 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setRawText(plainText);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Quick Draft Studio fast-track: land straight in the split-pane editor
+  // with no scan, no upload screen. ContractTiptapEditor already handles
+  // clauses=[] / empty initialRawText gracefully (same as the Auto-Draft
+  // tab below), so no null-state guard is needed here beyond passing those
+  // safe empty defaults.
+  useEffect(() => {
+    if (location.state?.openTab === 'quickdraft') setQuickDraftMode(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── SESSION PERSISTENCE ─────────────────────────────────────────────
   // Rehydrate an in-progress session on mount so navigating away and back
   // does not wipe the analysis. Skips when a document is being piped in
-  // (Case Vault/InzIQ or the Legal Forms Library) — otherwise the restored
-  // stale session would immediately overwrite the freshly-imported text.
+  // (Case Vault/InzIQ, the Legal Forms Library, or a Quick Draft Studio
+  // launch) — otherwise the restored stale session would immediately
+  // overwrite the freshly-imported/blank state.
   useEffect(() => {
-    if (!(location.state?.documentData?.file_content) && !location.state?.importedDocument) {
+    if (
+      !(location.state?.documentData?.file_content) &&
+      !location.state?.importedDocument &&
+      location.state?.openTab !== 'quickdraft'
+    ) {
       try {
         const saved = sessionStorage.getItem('lexapp_contract_session');
         if (saved) {
@@ -1999,6 +2014,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
   };
 
+  // "Deep Scan" — dispatches the Celery job and returns almost instantly
+  // with a job_id; useContractJobStream (wired above) then tracks it live
+  // over SSE and calls loadAnalysisResults once the job reaches SUCCESS.
+  // This function itself no longer waits ~5 minutes for the scan to finish.
   const handleTextAnalyze = async (overrideText = null) => {
     const target = (typeof overrideText === 'string' ? overrideText : rawText).trim();
     if (!target) {
@@ -2007,16 +2026,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
 
     setScanProgress(0);
+    setLoadingText('Queuing scan...');
     setIsAnalyzing(true);
-    const res = await analyzeContractWithGroq(target, ruleBookText, scanStrategy);
+    const res = await startContractAnalysisJob(target, ruleBookText, scanStrategy);
     if (!isMountedRef.current) return;
-    setIsAnalyzing(false);
 
-    if (res.error) {
-      alert(res.message || 'Analysis failed.');
-    } else {
-      loadAnalysisResults(res);
+    if (res.error || !res.job_id) {
+      setIsAnalyzing(false);
+      alert(res.message || 'Failed to start analysis job.');
+      return;
     }
+    setJobId(res.job_id);
   };
 
   // Contextual voice hook: when InzIQ resolves an "analyze this contract" command
@@ -2074,20 +2094,34 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setAppendedClauses([]);
   };
 
-  // Re-run analysis on strategy switch
+  // Re-run analysis on strategy switch — dispatches the SAME Celery job
+  // pipeline as the Deep Scan button. Does NOT call useContractJobStream
+  // here (that would violate the Rules of Hooks); it only sets jobId, and
+  // the single top-level useContractJobStream(jobId) call above picks up
+  // the new job automatically, exactly like the Deep Scan path does.
   const handleStrategyChange = async (newStrategy) => {
     setScanStrategy(newStrategy);
     if (isAnalyzed && rawText) {
+      // Clear stale results immediately — otherwise the risk panel keeps
+      // showing the PREVIOUS strategy's flagged clauses while the new scan
+      // is still in flight, which reads as "already re-scanned" when it
+      // hasn't even started (UI ghosting).
+      setClauses([]);
+      setSummary('');
+      setCitations([]);
       setScanProgress(0);
+      setLoadingText('Queuing re-scan...');
       setIsAnalyzing(true);
-      const res = await analyzeContractWithGroq(rawText, ruleBookText, newStrategy);
+
+      const res = await startContractAnalysisJob(rawText, ruleBookText, newStrategy);
       if (!isMountedRef.current) return;
-      setIsAnalyzing(false);
-      if (!res.error) {
-        loadAnalysisResults(res);
-      } else {
-        alert('Failed to re-analyze contract: ' + res.message);
+
+      if (res.error || !res.job_id) {
+        setIsAnalyzing(false);
+        alert('Failed to start re-analysis: ' + (res.message || 'Unknown error'));
+        return;
       }
+      setJobId(res.job_id);
     }
   };
 
@@ -2841,7 +2875,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
         )}
 
         {/* ────────── INITIAL UPLOAD / INPUT SCREEN ────────── */}
-        {!isAnalyzed ? (
+        {/* Quick Draft Studio reuses the SAME split-pane workspace below —
+            clauses/summary/citations are already [] / '' / [] until a scan
+            actually runs, and every isAnalyzed-gated risk-UI block inside
+            that workspace already hides itself on falsy isAnalyzed, so a
+            quickDraftMode launch renders a clean editor-only view with no
+            separate "empty analysis" branch to maintain. */}
+        {!isAnalyzed && !quickDraftMode ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px' }}>
             <div className="upload-layout-container">
 
@@ -3030,16 +3070,34 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     </div>
                   </div>
 
-                  {/* ── ANALYZE BAR ── */}
+                  {/* ── FAST-TRACK BAR — two distinct visual paths ── */}
                   <div className="upload-analyze-bar">
-                    <button
-                      className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
-                      onClick={handleTextAnalyze}
-                      style={{ width: '100%', padding: '13px', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                    >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-                      Start Contract Risk Scan
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
+                        onClick={handleTextAnalyze}
+                        title="Full AI risk scan — runs as a background job, streams live progress"
+                        style={{ flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                        Deep Scan
+                      </button>
+                      <button
+                        onClick={() => setQuickDraftMode(true)}
+                        title="Skip the AI scan — open a blank drafting workspace instantly"
+                        style={{
+                          flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                          background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)',
+                          borderRadius: '8px', color: '#C4B5FD', cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.18)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; }}
+                      >
+                        ⚡ Quick Draft Studio
+                      </button>
+                    </div>
                     {ruleBookText.trim() && (
                       <p style={{ margin: '10px 0 0', textAlign: 'center', fontSize: '11.5px', color: 'rgba(167,139,250,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                         <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block' }} />
@@ -3075,6 +3133,22 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     Auto-Draft
                   </button>
                 </div>
+
+                {quickDraftMode && !isAnalyzed && (
+                  <button
+                    onClick={() => { setQuickDraftMode(false); setRawText(''); }}
+                    title="Exit Quick Draft Studio and return to upload"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      background: 'transparent', border: '1px solid var(--border-dark-subtle)',
+                      borderRadius: '7px', padding: '6px 12px', fontSize: '11.5px', fontWeight: 600,
+                      color: 'var(--text-dark-muted)', cursor: 'pointer',
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/></svg>
+                    Exit Quick Draft
+                  </button>
+                )}
 
                 {/* The risk-count badges that used to live here duplicated the
                     exact same "N High / N Med" counters already shown at the
@@ -3120,8 +3194,25 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 <div className="scan-meta-bar" ref={setToolbarSlotEl} />
               )}
 
-              <div className="editor-scroll-area">
+              <div className="editor-scroll-area" style={{ position: 'relative' }}>
                 {isAnalyzing && <div className="ca-scan-overlay" />}
+                {isAnalyzing && (
+                  // Real SSE status/progress — visible for all 3 dispatch
+                  // paths (Deep Scan, Strategy Toggle, Piped Document),
+                  // since all three funnel through the same jobId state +
+                  // top-level useContractJobStream hook.
+                  <div style={{
+                    position: 'sticky', top: '10px', zIndex: 5,
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    background: 'rgba(15,20,32,0.92)', border: '1px solid rgba(59,130,246,0.35)',
+                    borderRadius: '10px', padding: '10px 14px', margin: '0 0 12px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)', width: 'fit-content', maxWidth: '100%',
+                  }}>
+                    <span style={{ width: '10px', height: '10px', border: '2px solid #3B82F6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+                    <span style={{ fontSize: '12.5px', color: 'var(--text-dark-primary)', fontWeight: 600 }}>{loadingText || 'Scanning...'}</span>
+                    <span style={{ fontSize: '11.5px', color: '#93C5FD', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{Math.round(scanProgress)}%</span>
+                  </div>
+                )}
                 {leftTab === 'scanner' ? (
                   <>
                     <ContractTiptapEditor
@@ -3399,7 +3490,18 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     ) : (
                       /* ── CLAUSE LIST OVERVIEW ── */
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length === 0 ? (
+                        {isAnalyzing ? (
+                          // A scan is in flight (Deep Scan / Strategy Toggle /
+                          // Piped Document all land here identically) — an
+                          // empty clauses array right now means "no results
+                          // YET", not "scan complete, zero risks". Showing
+                          // "No flagged clauses found" here would misreport
+                          // an in-progress scan as an already-clean contract.
+                          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dark-muted)', fontSize: '13px' }}>
+                            <span style={{ width: '16px', height: '16px', border: '2px solid var(--accent-primary)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite', marginBottom: '10px' }} />
+                            <div style={{ marginTop: '10px' }}>{loadingText || 'Scanning...'}</div>
+                          </div>
+                        ) : clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length === 0 ? (
                           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
                             No flagged clauses found.
                           </div>

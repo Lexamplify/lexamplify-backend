@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import LexLogoMark from './LexLogoMark';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 const loginStyles = `
   /* ── Root layout ── */
@@ -182,10 +184,22 @@ const loginStyles = `
     color: #0F172A;
   }
 
-  /* card */
+  /* card — glassmorphism panel */
   .lx-card {
     width: 100%; max-width: 400px;
     display: flex; flex-direction: column; gap: 0;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 32px;
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  [data-theme="light"] .lx-card {
+    background: rgba(255,255,255,0.55);
+    border-color: rgba(15,23,42,0.08);
+    box-shadow: 0 8px 40px rgba(15,23,42,0.08), inset 0 1px 0 rgba(255,255,255,0.6);
   }
 
   /* header */
@@ -246,7 +260,7 @@ const loginStyles = `
   .lx-input-icon {
     position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
     color: rgba(255,255,255,0.2); pointer-events: none;
-    transition: color 0.2s;
+    transition: color 0.2s; z-index: 1;
   }
   [data-theme="light"] .lx-input-icon { color: rgba(15,23,42,0.22); }
   .lx-input-wrap:focus-within .lx-input-icon { color: #3B82F6; }
@@ -266,14 +280,34 @@ const loginStyles = `
   }
   .lx-input::placeholder { color: rgba(255,255,255,0.2); }
   [data-theme="light"] .lx-input::placeholder { color: rgba(15,23,42,0.25); }
+  /* glowing focus border — glassmorphism accent */
   .lx-input:focus {
-    border-color: rgba(59,130,246,0.5);
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+    border-color: rgba(59,130,246,0.7);
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.15), 0 0 18px rgba(59,130,246,0.35);
     background: rgba(255,255,255,0.06);
   }
   [data-theme="light"] .lx-input:focus {
     background: #FFFFFF;
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.14), 0 0 18px rgba(59,130,246,0.25);
+  }
+
+  /* floating label — overlays the input, floats up on focus/filled */
+  .lx-float-wrap { position: relative; }
+  .lx-float-input {
+    padding-top: 19px; padding-bottom: 7px;
+  }
+  .lx-float-label {
+    position: absolute; left: 40px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px; color: rgba(255,255,255,0.3);
+    pointer-events: none; transition: all 0.18s cubic-bezier(0.4,0,0.2,1);
+    z-index: 1;
+  }
+  [data-theme="light"] .lx-float-label { color: rgba(15,23,42,0.35); }
+  .lx-float-wrap.active .lx-float-label {
+    top: 9px; left: 40px; transform: translateY(0) scale(0.78);
+    transform-origin: left top;
+    color: #60A5FA;
   }
 
   /* eye toggle on password */
@@ -379,6 +413,28 @@ const loginStyles = `
   }
   [data-theme="light"] .lx-divider::before,
   [data-theme="light"] .lx-divider::after { background: rgba(0,0,0,0.07); }
+
+  /* SSO row */
+  .lx-sso-row { display: flex; flex-direction: column; gap: 10px; }
+  .lx-sso-btn {
+    width: 100%; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 11px; border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #FFFFFF; text-decoration: none;
+    font-size: 13.5px; font-weight: 600;
+    transition: all 0.2s;
+  }
+  .lx-sso-btn:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.16);
+    transform: translateY(-1px);
+  }
+  [data-theme="light"] .lx-sso-btn {
+    background: #FFFFFF; color: #0F172A; border-color: rgba(0,0,0,0.1);
+  }
+  [data-theme="light"] .lx-sso-btn:hover { background: rgba(0,0,0,0.03); }
 
   /* footer link */
   .lx-footer-link {
@@ -495,18 +551,26 @@ const PILLARS = [
 export default function LoginPage() {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const resetToken = searchParams.get('resetToken');
 
   const [tab, setTab] = useState('signin'); // 'signin' | 'register'
-  const [email, setEmail] = useState('advocate@lexamplify.in');
-  const [password, setPassword] = useState('demo1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [pwdFocused, setPwdFocused] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [showResetModal, setShowResetModal] = useState(false);
+  // Forgot-password modal has two modes: 'request' (enter email) and
+  // 'confirm' (set a new password) — 'confirm' opens automatically when
+  // the page loads with ?resetToken=... from the emailed link.
+  const [showResetModal, setShowResetModal] = useState(Boolean(resetToken));
+  const [resetMode, setResetMode] = useState(resetToken ? 'confirm' : 'request');
   const [resetEmail, setResetEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
-  const [showVerifyBanner, setShowVerifyBanner] = useState(false);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -520,8 +584,17 @@ export default function LoginPage() {
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const openResetModal = () => { setResetEmail(email || ''); setShowResetModal(true); };
+  const openResetModal = () => { setResetMode('request'); setResetEmail(email || ''); setShowResetModal(true); };
+  const closeResetModal = () => {
+    setShowResetModal(false);
+    if (resetToken) {
+      searchParams.delete('resetToken');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
 
+  // Step 1: request a reset link — generic response either way (backend
+  // never reveals whether the email has an account).
   const handlePasswordReset = async (e) => {
     e.preventDefault();
     if (!EMAIL_RE.test(resetEmail.trim())) {
@@ -529,27 +602,69 @@ export default function LoginPage() {
       return;
     }
     setResetLoading(true);
-    await new Promise((r) => setTimeout(r, 650));
-    setResetLoading(false);
-    setShowResetModal(false);
-    setToast({ type: 'success', message: `Reset requested for ${resetEmail.trim()}. Link dispatches once email service is configured.` });
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail.trim(), frontend_origin: window.location.origin }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setShowResetModal(false);
+      setToast({ type: 'success', message: data.message || 'If an account exists for that email, a reset link has been sent.' });
+    } catch {
+      // Same generic message on a network error too — never let failure
+      // modes leak information the success path doesn't.
+      setShowResetModal(false);
+      setToast({ type: 'success', message: 'If an account exists for that email, a reset link has been sent.' });
+    } finally {
+      setResetLoading(false);
+    }
   };
 
+  // Step 2: consume the token from the emailed link and set a new password.
+  const handleResetConfirm = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      setToast({ type: 'error', message: 'Password must be at least 8 characters.' });
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, password: newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'This reset link is invalid or has expired.');
+      closeResetModal();
+      setNewPassword('');
+      setTab('signin');
+      setToast({ type: 'success', message: 'Password updated. Sign in with your new password.' });
+    } catch (err) {
+      setToast({ type: 'error', message: err.message });
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  // Cookies are set by the browser directly from the Set-Cookie response
+  // header (via the global credentials:'include' fetch patch) — there is
+  // no token in `data` to store. Register logs straight in, same as login,
+  // for a zero-friction single step (no separate email-verification hop).
   const handleRegister = async (e) => {
     e.preventDefault();
     if (!email || !password) return setError('Email and password are required.');
+    if (password.length < 8) return setError('Password must be at least 8 characters.');
     setLoading(true); setError('');
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
       const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, username: email, password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Registration failed.');
-      setShowVerifyBanner(true);
-      setToast({ type: 'success', message: 'Account created. You can now sign in.' });
-      setTab('signin');
+      navigate('/dashboard');
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
@@ -561,17 +676,13 @@ export default function LoginPage() {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 6000);
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
       const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify({ email, username: email, password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.message || 'Invalid credentials.');
-      if (!data.access_token) throw new Error('No JWT token received.');
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('lexai_token', data.access_token);
       navigate('/dashboard');
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -689,21 +800,6 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* Verify banner */}
-          {showVerifyBanner && isSignIn && (
-            <div className="lx-verify">
-              <svg width="18" height="18" fill="none" stroke="#10B981" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0, marginTop: 1 }}>
-                <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
-                <polyline points="22,6 12,13 2,6"/>
-              </svg>
-              <div>
-                <div className="lx-verify-title">Verify your email before signing in</div>
-                <div className="lx-verify-body">Check your inbox and confirm your address to activate console access.</div>
-                <span className="lx-verify-badge">⏳ Delivery pending email-service setup</span>
-              </div>
-            </div>
-          )}
-
           <form onSubmit={(e) => e.preventDefault()}>
             {/* Error */}
             {error && (
@@ -715,22 +811,23 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Email */}
+            {/* Email — floating label */}
             <div className="lx-field">
-              <label className="lx-label">Email address</label>
-              <div className="lx-input-wrap">
+              <div className={`lx-input-wrap lx-float-wrap ${emailFocused || email ? 'active' : ''}`}>
                 <span className="lx-input-icon">
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
                     <polyline points="22,6 12,13 2,6"/>
                   </svg>
                 </span>
+                <label className="lx-float-label">Email address</label>
                 <input
                   type="email"
-                  className="lx-input"
+                  className="lx-input lx-float-input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="advocate@lexamplify.in"
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
                   disabled={loading}
                   autoComplete="email"
                   required
@@ -738,29 +835,30 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Password */}
+            {/* Password — floating label */}
             <div className="lx-field" style={{ marginBottom: isSignIn ? '8px' : '20px' }}>
-              <div className="lx-field-row">
-                <label className="lx-label">Password</label>
-                {isSignIn && (
+              {isSignIn && (
+                <div className="lx-field-row" style={{ justifyContent: 'flex-end', marginBottom: '2px' }}>
                   <button type="button" className="lx-forgot" onClick={openResetModal} tabIndex={0}>
                     Forgot password?
                   </button>
-                )}
-              </div>
-              <div className="lx-input-wrap">
+                </div>
+              )}
+              <div className={`lx-input-wrap lx-float-wrap ${pwdFocused || password ? 'active' : ''}`}>
                 <span className="lx-input-icon">
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                   </svg>
                 </span>
+                <label className="lx-float-label">Password</label>
                 <input
                   type={showPwd ? 'text' : 'password'}
-                  className="lx-input"
+                  className="lx-input lx-float-input"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  onFocus={() => setPwdFocused(true)}
+                  onBlur={() => setPwdFocused(false)}
                   disabled={loading}
                   autoComplete={isSignIn ? 'current-password' : 'new-password'}
                   style={{ paddingRight: '42px' }}
@@ -821,6 +919,24 @@ export default function LoginPage() {
             )}
           </form>
 
+          {/* Enterprise SSO */}
+          <div className="lx-divider">Or continue with</div>
+          <div className="lx-sso-row">
+            <a className="lx-sso-btn" href={`${API_BASE_URL}/api/auth/sso/microsoft/login`}>
+              <svg width="16" height="16" viewBox="0 0 23 23"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M12 1h10v10H12z"/><path fill="#00A4EF" d="M1 12h10v10H1z"/><path fill="#FFB900" d="M12 12h10v10H12z"/></svg>
+              Continue with Microsoft 365
+            </a>
+            <a className="lx-sso-btn" href={`${API_BASE_URL}/api/auth/sso/google/login`}>
+              <svg width="16" height="16" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.89c2.28-2.1 3.56-5.19 3.56-8.82z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.91l-3.89-3c-1.08.73-2.46 1.16-4.04 1.16-3.1 0-5.73-2.1-6.67-4.92H1.3v3.09A12 12 0 0 0 12 24z"/>
+                <path fill="#FBBC05" d="M5.33 14.33A7.2 7.2 0 0 1 4.95 12c0-.81.14-1.6.38-2.33V6.58H1.3A12 12 0 0 0 0 12c0 1.94.46 3.77 1.3 5.42z"/>
+                <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.3 6.58l4.03 3.09C6.27 6.86 8.9 4.77 12 4.77z"/>
+              </svg>
+              Continue with Google Workspace
+            </a>
+          </div>
+
           {/* Footer */}
           <div className="lx-footer-link">
             <Link to="/">
@@ -833,11 +949,11 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ═══════════════════ FORGOT PASSWORD MODAL ═══════════════════ */}
-      {showResetModal && (
-        <div className="lx-modal-overlay" onClick={() => setShowResetModal(false)}>
+      {/* ═══════════════════ FORGOT / RESET PASSWORD MODAL ═══════════════════ */}
+      {showResetModal && resetMode === 'request' && (
+        <div className="lx-modal-overlay" onClick={closeResetModal}>
           <div className="lx-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="lx-modal-close" onClick={() => setShowResetModal(false)} aria-label="Close">×</button>
+            <button className="lx-modal-close" onClick={closeResetModal} aria-label="Close">×</button>
             <div className="lx-modal-title">Reset your password</div>
             <div className="lx-modal-sub">
               Enter the email tied to your advocate console and we'll send a secure reset link.
@@ -873,8 +989,48 @@ export default function LoginPage() {
               </button>
             </form>
             <div className="lx-modal-note">
-              ⏳ Email delivery is not yet configured on this environment — the link will dispatch once an email provider is connected.
+              For your security, we'll show the same message whether or not an account exists for that email.
             </div>
+          </div>
+        </div>
+      )}
+
+      {showResetModal && resetMode === 'confirm' && (
+        <div className="lx-modal-overlay" onClick={closeResetModal}>
+          <div className="lx-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="lx-modal-close" onClick={closeResetModal} aria-label="Close">×</button>
+            <div className="lx-modal-title">Set a new password</div>
+            <div className="lx-modal-sub">Choose a new password for your advocate console.</div>
+            <form onSubmit={handleResetConfirm}>
+              <div className="lx-field">
+                <label className="lx-label">New password</label>
+                <div className="lx-input-wrap">
+                  <span className="lx-input-icon">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                  </span>
+                  <input
+                    type="password"
+                    className="lx-input"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="At least 8 characters"
+                    autoFocus
+                    disabled={resetLoading}
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="lx-btn lx-btn-signin"
+                style={{ marginTop: '8px' }}
+                disabled={resetLoading}
+              >
+                {resetLoading ? <><span className="lx-spinner" /> Updating…</> : 'Update password'}
+              </button>
+            </form>
           </div>
         </div>
       )}

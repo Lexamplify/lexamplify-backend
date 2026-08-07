@@ -3,7 +3,7 @@ import { useParams, useLocation, Link, useNavigate } from 'react-router-dom';
 import { fetchDocumentDetails } from '../services/api';
 import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 const DV_STYLES = `
   /* ── Spinners / utility ──────────────────────────────── */
@@ -375,14 +375,12 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
     if (!doc?.id || isSaving) return;
     setIsSaving(true);
     setSaveError(null);
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     const newContent = docBodyRef.current?.innerText || '';
     try {
       const res = await fetch(`${API_BASE}/api/vault/documents/${doc.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
         },
         body: JSON.stringify({ content: newContent }),
       });
@@ -440,14 +438,12 @@ export default function DocumentViewer({ focusMode, setFocusMode }) {
 
     const currentDoc = docRef.current;
     const docContext = (currentDoc?.text || '').substring(0, 3000);
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
 
     try {
       const res = await fetch(`${API_BASE}/api/ai/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           message: `[Document Analysis Mode]\n\nDocument Title: ${currentDoc?.filename || 'Legal Document'}\n\nDocument Excerpt:\n${docContext}\n\nQuestion: ${query}`,

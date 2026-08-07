@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
 import { renderWithCitations } from './CitationLink';
+import useLibraryHeadnoteStream from '../hooks/useLibraryHeadnoteStream.js';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 const CATEGORIES = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
 
@@ -637,6 +638,20 @@ export default function FirmLibrary() {
   const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, content }
   const [viewerError, setViewerError] = useState(null);
 
+  // ── Local hybrid search (/api/library/search) — 100% on-device vector +
+  // BM25, no LLM call. Debounced the same way the external Pinecone search
+  // above is; null librarySearchIds means "not active, use the plain
+  // substring filter" so short/empty queries stay instant with zero
+  // network round-trip. ─────────────────────────────────────────────────
+  const [librarySearchIds, setLibrarySearchIds] = useState(null);
+  const [librarySearchLoading, setLibrarySearchLoading] = useState(false);
+
+  // ── Accordion row (inline reader + Generate Headnote) ───────────────────────
+  const [expandedRowId, setExpandedRowId] = useState(null);
+  const [headnoteTargetId, setHeadnoteTargetId] = useState(null);
+  const [headnoteJobId, setHeadnoteJobId] = useState(null);
+  const headnoteStream = useLibraryHeadnoteStream(headnoteJobId);
+
   // ── Drawer action toolbar state ─────────────────────────────────────────────
   const [copyDone, setCopyDone] = useState(false);
   const [pinLoading, setPinLoading] = useState(false);
@@ -799,6 +814,72 @@ export default function FirmLibrary() {
     return () => document.removeEventListener('click', handler);
   }, [menuRow]);
 
+  // ── Local hybrid search debounce ─────────────────────────────────────────
+  useEffect(() => {
+    if (libraryMode !== 'internal' || searchQuery.trim().length < 3) {
+      setLibrarySearchIds(null);
+      setLibrarySearchLoading(false);
+      return;
+    }
+    setLibrarySearchLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/library/search?query=${encodeURIComponent(searchQuery.trim())}`);
+        const data = await res.json();
+        // Backend degrades to {status:'error', results:[]} rather than a
+        // non-200 on a local-search failure — treat that the same as "no
+        // ranking available" and fall back to the substring filter, not
+        // "zero results" (which would otherwise blank the whole table).
+        if (data.status === 'success' && Array.isArray(data.results)) {
+          setLibrarySearchIds(data.results.map(r => String(r.id)));
+        } else {
+          setLibrarySearchIds(null);
+        }
+      } catch {
+        setLibrarySearchIds(null);
+      } finally {
+        setLibrarySearchLoading(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery, libraryMode]);
+
+  // ── Generate Headnote — dispatch + apply the SSE result once it lands ──────
+  const handleGenerateHeadnote = async (entry) => {
+    setHeadnoteTargetId(entry.id);
+    setHeadnoteJobId(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/library/${entry.id}/generate-headnote`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.job_id) {
+        setToast(data.error || 'Failed to start headnote generation.');
+        setHeadnoteTargetId(null);
+        return;
+      }
+      setHeadnoteJobId(data.job_id);
+    } catch (err) {
+      setToast('Failed to start headnote generation.');
+      setHeadnoteTargetId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!headnoteJobId) return;
+    if (headnoteStream.state === 'SUCCESS') {
+      const headnote = headnoteStream.result?.ratio_headnote || '';
+      setInternalFiles(prev => prev.map(e =>
+        e.id === headnoteTargetId ? { ...e, ratio_headnote: headnote } : e
+      ));
+      setToast('Headnote generated.');
+      setHeadnoteJobId(null);
+      setHeadnoteTargetId(null);
+    } else if (headnoteStream.state === 'FAILURE') {
+      setToast(headnoteStream.error || 'Headnote generation failed.');
+      setHeadnoteJobId(null);
+      setHeadnoteTargetId(null);
+    }
+  }, [headnoteStream.state, headnoteStream.result, headnoteStream.error, headnoteTargetId, headnoteJobId]);
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape' && selectedEntryRef.current) closeWorkspace();
@@ -893,28 +974,39 @@ export default function FirmLibrary() {
   // depending on where the row came from (manually "Added Entry" vs the
   // backend-fetched case_vault rows), so a bare `.toLowerCase()` on a
   // missing field would throw and blank the whole grid.
-  const filteredFiles = (internalFiles || [])
-    .filter(e => catFilter === 'All' || e.category === catFilter)
-    .filter(e => {
-      const q = searchQuery.toLowerCase();
-      if (!q) return true;
-      return (
-        (e.title || '').toLowerCase().includes(q) ||
-        (e.case_id || '').toLowerCase().includes(q) ||
-        (e.author && e.author.toLowerCase().includes(q)) ||
-        (e.description && e.description.toLowerCase().includes(q)) ||
-        (e.tags && e.tags.some(t => t.toLowerCase().includes(q)))
-      );
-    })
-    .sort((a, b) => {
-      let va = a[sortCol] || '';
-      let vb = b[sortCol] || '';
-      if (sortCol === 'updated') { va = new Date(va); vb = new Date(vb); }
-      else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
-      if (va < vb) return sortDir === 'asc' ? -1 : 1;
-      if (va > vb) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
+  // librarySearchIds (from the local hybrid-search endpoint) takes over
+  // ranking + filtering entirely when present — it's already relevance-
+  // ordered server-side, so re-sorting it by sortCol below would just
+  // throw that ranking away. Falls back to the plain substring filter
+  // whenever the query is too short to search, the call is still in
+  // flight, or it failed — never a blank table while search is pending.
+  const filteredFiles = librarySearchIds
+    ? librarySearchIds
+        .map(id => (internalFiles || []).find(e => String(e.id) === id))
+        .filter(Boolean)
+        .filter(e => catFilter === 'All' || e.category === catFilter)
+    : (internalFiles || [])
+        .filter(e => catFilter === 'All' || e.category === catFilter)
+        .filter(e => {
+          const q = searchQuery.toLowerCase();
+          if (!q) return true;
+          return (
+            (e.title || '').toLowerCase().includes(q) ||
+            (e.case_id || '').toLowerCase().includes(q) ||
+            (e.author && e.author.toLowerCase().includes(q)) ||
+            (e.description && e.description.toLowerCase().includes(q)) ||
+            (e.tags && e.tags.some(t => t.toLowerCase().includes(q)))
+          );
+        })
+        .sort((a, b) => {
+          let va = a[sortCol] || '';
+          let vb = b[sortCol] || '';
+          if (sortCol === 'updated') { va = new Date(va); vb = new Date(vb); }
+          else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+          if (va < vb) return sortDir === 'asc' ? -1 : 1;
+          if (va > vb) return sortDir === 'asc' ? 1 : -1;
+          return 0;
+        });
 
   // ── Pagination ────────────────────────────────────────────────────────────
   const totalPages = Math.max(1, Math.ceil(filteredFiles.length / itemsPerPage));
@@ -1111,6 +1203,29 @@ export default function FirmLibrary() {
     const parsed = new Date(d);
     if (Number.isNaN(parsed.getTime())) return '—';
     return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  // Deterministic (utils/citation_verifier.py, no LLM) — Green=Good Law,
+  // Red=Overruled, Yellow=Distinguished. Defaults to Green for any row
+  // that predates the validity_status column/migration.
+  const VALIDITY_STYLE = {
+    Green:  { bg: 'rgba(16,185,129,0.12)', color: '#34D399', border: 'rgba(16,185,129,0.3)', label: 'Good Law' },
+    Red:    { bg: 'rgba(239,68,68,0.12)',  color: '#F87171', border: 'rgba(239,68,68,0.3)',  label: 'Overruled' },
+    Yellow: { bg: 'rgba(245,158,11,0.12)', color: '#FBBF24', border: 'rgba(245,158,11,0.3)', label: 'Distinguished' },
+  };
+  const ValidityBadge = ({ status }) => {
+    const s = VALIDITY_STYLE[status] || VALIDITY_STYLE.Green;
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: '5px',
+        fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.03em',
+        padding: '3px 9px', borderRadius: '20px',
+        background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+      }}>
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+        {s.label}
+      </span>
+    );
   };
 
   return (
@@ -1372,10 +1487,12 @@ export default function FirmLibrary() {
               <table className="fl-table lex-responsive-table">
                 <thead>
                   <tr>
-                    <ThHeader col="title" label="Document Title" style={{ width: '38%' }} />
-                    <ThHeader col="category" label="Category" style={{ width: '14%' }} />
-                    <ThHeader col="updated" label="Last Updated" style={{ width: '13%' }} />
-                    <ThHeader col="author" label="Author / Source" style={{ width: '18%' }} />
+                    <th style={{ width: '32px' }} />
+                    <ThHeader col="title" label="Document Title" style={{ width: '34%' }} />
+                    <ThHeader col="category" label="Category" style={{ width: '12%' }} />
+                    <ThHeader col="updated" label="Last Updated" style={{ width: '12%' }} />
+                    <ThHeader col="author" label="Author / Source" style={{ width: '16%' }} />
+                    <th style={{ width: '14%' }}>Validity</th>
                     <th style={{ width: '48px' }} />
                   </tr>
                 </thead>
@@ -1383,16 +1500,18 @@ export default function FirmLibrary() {
                   {loading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i} className="fl-skeleton-row">
+                        <td />
                         <td><div className="fl-skel-bar" style={{ width: `${55 + (i % 3) * 15}%` }} /></td>
                         <td><div className="fl-skel-bar" style={{ width: '70%' }} /></td>
                         <td><div className="fl-skel-bar" style={{ width: '80%' }} /></td>
                         <td><div className="fl-skel-bar" style={{ width: '60%' }} /></td>
+                        <td><div className="fl-skel-bar" style={{ width: '50%' }} /></td>
                         <td />
                       </tr>
                     ))
                   ) : filteredFiles.length === 0 ? (
                     <tr>
-                      <td colSpan="5">
+                      <td colSpan="7">
                         <div className="fl-empty">
                           <div className="fl-empty-icon">📂</div>
                           <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No entries found</div>
@@ -1405,50 +1524,118 @@ export default function FirmLibrary() {
                   ) : displayedFiles.map(entry => {
                     const catStyle = getCatStyle(entry.category);
                     const isSelected = selectedEntry?.id === entry.id;
+                    const isExpanded = expandedRowId === entry.id;
+                    const isGeneratingHeadnote = headnoteTargetId === entry.id && headnoteJobId;
                     return (
-                      <tr
-                        key={entry.id}
-                        className={isSelected ? 'fl-row-selected' : ''}
-                        onClick={e => openWorkspace(entry, e)}
-                        onMouseEnter={e => handleRowMouseEnter(entry, e)}
-                        onMouseLeave={handleRowMouseLeave}
-                      >
-                        <td data-label="Document Title">
-                          <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
-                            {entry.title}
-                          </div>
-                          {entry.tags?.length > 0 && (
-                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                              {entry.tags.slice(0, 3).map(t => (
-                                <span key={t} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '3px', background: 'rgba(59,130,246,0.07)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>{t}</span>
-                              ))}
-                              {entry.tags.length > 3 && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>+{entry.tags.length - 3}</span>}
-                            </div>
-                          )}
-                        </td>
-                        <td data-label="Category">
-                          <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
-                            {entry.category}
-                          </span>
-                        </td>
-                        <td data-label="Last Updated" style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                          {fmtDate(entry.updated)}
-                        </td>
-                        <td data-label="Author / Source" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
-                        <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                          <div className="fl-row-actions">
+                      <React.Fragment key={entry.id}>
+                        <tr
+                          className={isSelected ? 'fl-row-selected' : ''}
+                          onClick={e => openWorkspace(entry, e)}
+                          onMouseEnter={e => handleRowMouseEnter(entry, e)}
+                          onMouseLeave={handleRowMouseLeave}
+                        >
+                          <td style={{ textAlign: 'center' }} onClick={e => { e.stopPropagation(); setExpandedRowId(isExpanded ? null : entry.id); }}>
                             <button
-                              className={`fl-dots-btn${menuRow === entry.id ? ' open' : ''}`}
-                              onClick={e => openMenu(entry.id, e)}
-                              title="Actions"
+                              className="fl-expand-btn"
+                              title={isExpanded ? 'Collapse' : 'Expand — read document, generate headnote'}
+                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: '4px' }}
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+                                <polyline points="9 18 15 12 9 6" />
                               </svg>
                             </button>
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                          <td data-label="Document Title">
+                            <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
+                              {entry.title}
+                            </div>
+                            {entry.tags?.length > 0 && (
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                {entry.tags.slice(0, 3).map(t => (
+                                  <span key={t} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '3px', background: 'rgba(59,130,246,0.07)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>{t}</span>
+                                ))}
+                                {entry.tags.length > 3 && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>+{entry.tags.length - 3}</span>}
+                              </div>
+                            )}
+                          </td>
+                          <td data-label="Category">
+                            <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
+                              {entry.category}
+                            </span>
+                          </td>
+                          <td data-label="Last Updated" style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                            {fmtDate(entry.updated)}
+                          </td>
+                          <td data-label="Author / Source" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
+                          <td data-label="Validity">
+                            <ValidityBadge status={entry.validity_status} />
+                          </td>
+                          <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                            <div className="fl-row-actions">
+                              <button
+                                className={`fl-dots-btn${menuRow === entry.id ? ' open' : ''}`}
+                                onClick={e => openMenu(entry.id, e)}
+                                title="Actions"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                  <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="fl-accordion-row" onClick={e => e.stopPropagation()}>
+                            <td colSpan="7" style={{ padding: 0 }}>
+                              <div style={{ padding: '16px 20px 20px 44px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
+                                  <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+                                    Ratio Decidendi Headnote
+                                  </div>
+                                  <button
+                                    className="btn-accent"
+                                    style={{ fontSize: '11.5px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
+                                    onClick={() => handleGenerateHeadnote(entry)}
+                                    disabled={!!isGeneratingHeadnote}
+                                  >
+                                    {isGeneratingHeadnote ? (
+                                      <>
+                                        <span style={{ width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                                        {headnoteStream.status || 'Generating...'} {headnoteStream.progress ? `(${Math.round(headnoteStream.progress)}%)` : ''}
+                                      </>
+                                    ) : (
+                                      <>⚡ Generate Headnote</>
+                                    )}
+                                  </button>
+                                </div>
+
+                                {entry.ratio_headnote ? (
+                                  <p style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--text-primary)', margin: '0 0 16px', fontStyle: 'italic' }}>
+                                    "{entry.ratio_headnote}"
+                                  </p>
+                                ) : !isGeneratingHeadnote && (
+                                  <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '0 0 16px' }}>
+                                    No headnote generated yet — click "Generate Headnote" to synthesize the ratio decidendi from the document text.
+                                  </p>
+                                )}
+
+                                <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                                  Document Text
+                                </div>
+                                <div style={{
+                                  maxHeight: '260px', overflowY: 'auto', fontSize: '12.5px', lineHeight: 1.6,
+                                  color: 'var(--text-secondary, var(--text-muted))', whiteSpace: 'pre-wrap',
+                                  background: 'var(--bg-dark-panel, rgba(0,0,0,0.15))', border: '1px solid var(--border-subtle)',
+                                  borderRadius: '8px', padding: '12px 14px',
+                                }}>
+                                  {entry.content ? entry.content.slice(0, 4000) : 'No inline content available for this entry — open the full workspace to view it.'}
+                                  {entry.content?.length > 4000 && '…'}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>

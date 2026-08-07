@@ -5,22 +5,19 @@
  */
 
 // Dynamically use environment variables for GCP serverless URLs, falling back to localhost
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 /**
- * Generates authorization and content type headers.
+ * Generates content-type headers. Auth is no longer carried here — the JWT
+ * lives in an HttpOnly cookie and is attached automatically by the browser;
+ * `credentials:'include'` and the CSRF header are injected globally by
+ * utils/authFetch.js's fetch patch, not per-call.
  * If isFormData is true, browser sets the multi-part boundary, so content-type is omitted.
  */
 const getHeaders = (isFormData = false) => {
   const headers = {};
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
-  }
-
-  // Support both standard 'token' and prefixed 'lexai_token' names
-  const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
 };
@@ -500,6 +497,33 @@ export const analyzeContractWithGroq = async (text = '', ruleBook = '', scanStra
   } catch (error) {
     console.error('[API Service] analyzeContractWithGroq error:', error);
     return { error: true, message: error.message || 'Failed to reach RAG server.' };
+  }
+};
+
+/**
+ * Dispatches the (formerly ~5-minute synchronous) contract risk scan as a
+ * Celery job and returns immediately with { job_id }. Pair with
+ * hooks/useContractJobStream(job_id) to track live progress over SSE —
+ * this function does NOT wait for the analysis itself to finish.
+ * @param {string} text
+ * @param {string} ruleBook
+ * @param {string} scanStrategy
+ */
+export const startContractAnalysisJob = async (text = '', ruleBook = '', scanStrategy = 'Defensive') => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, ruleBook, scanStrategy }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { error: true, message: data.error || `Job dispatch failed (${response.status})`, code: data.code };
+    }
+    return data; // { job_id, status_url }
+  } catch (error) {
+    console.error('[API Service] startContractAnalysisJob error:', error);
+    return { error: true, message: error.message || 'Failed to reach analysis service.' };
   }
 };
 

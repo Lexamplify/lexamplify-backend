@@ -15,3 +15,14 @@ pinecone
 flask-cors
 fpdf2
 python-docx
+Authlib
+Flask-Limiter
+itsdangerous
+celery
+redis
+chromadb
+sentence-transformers
+rank-bm25
+chromadb
+sentence-transformers
+rank-bm25

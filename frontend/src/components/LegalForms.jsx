@@ -5,7 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import TEMPLATES from '../data/legalTemplates.js';
 import { escapeHtml } from '../tiptap/textToHtml.js';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 const FIELD_TOKEN_RE = /\{\{(\w+)\}\}/g;
 
 // Pure string substitution — {{field_id}} is a plain token, not a templating

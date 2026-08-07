@@ -603,7 +603,7 @@ function ThreatCard({ threat, index, expanded, onToggle, onUseRebuttal }) {
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function WarRoomView() {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -688,13 +688,11 @@ export default function WarRoomView() {
       stageTimers.current.push(t);
     });
 
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     try {
       const res = await fetch(`${API_BASE}/api/ai/simulate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           document_content: docContent,
@@ -790,14 +788,12 @@ export default function WarRoomView() {
       : 'Act as defensive opposing counsel. Probe procedural gaps and technical deficiencies calmly.';
 
     const context = simulationData?.extracted_issues || '';
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
 
     try {
       const res = await fetch(`${API_BASE}/api/ai/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           message: `[Virtual Courtroom — ${strategyTone === 'aggressive' ? 'Aggressive Counter-Attack' : 'Defensive Shield'} Mode]\n\nCase context:\n${context.substring(0, 1200)}\n\n${toneInstruction}\n\nAdvocate says: ${query}`,
@@ -918,13 +914,11 @@ export default function WarRoomView() {
     const sessionText = lines.join('\n');
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const smartTitle = `${docSource || 'Document'} — Simulation (${timeString})`;
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     try {
       await fetch(`${API_BASE}/api/vault/save`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           case_id: 'WAR_ROOM',

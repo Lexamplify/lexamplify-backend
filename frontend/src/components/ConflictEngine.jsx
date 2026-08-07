@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { runConflictCheck, analyzeConflicts, saveClearanceMemo } from '../services/api';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
 // Severity weighting by matter type — drives the intake risk badge
 const MATTER_RISK = {

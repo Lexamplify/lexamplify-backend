@@ -26,6 +26,7 @@ import WarRoomView from '../components/WarRoomView';
 import FirmLibrary from '../components/FirmLibrary';
 import FormTemplateLibrary from '../components/FormTemplateLibrary';
 import CommandPalette from '../components/CommandPalette';
+import { AuthProvider } from '../context/AuthContext';
 
 // ── Shared fetch mock ───────────────────────────────────────────────────
 // Any call not explicitly matched below falls back to an empty, successful
@@ -329,7 +330,9 @@ describe('InzIQ AI Legal Associate', () => {
     window.history.pushState({}, '', '/dashboard');
     render(
       <MemoryRouter>
-        <CommandPalette />
+        <AuthProvider>
+          <CommandPalette />
+        </AuthProvider>
       </MemoryRouter>
     );
 
@@ -340,7 +343,9 @@ describe('InzIQ AI Legal Associate', () => {
     window.history.pushState({}, '', '/dashboard');
     render(
       <MemoryRouter>
-        <CommandPalette />
+        <AuthProvider>
+          <CommandPalette />
+        </AuthProvider>
       </MemoryRouter>
     );
 

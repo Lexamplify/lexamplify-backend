@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 // ═══════════════════════════════════════════════════════
 //  SESSION STORE  (localStorage-persisted)
@@ -47,6 +48,7 @@ const NAV_MAP = [
   { kw: ['calendar', 'hearing schedule', 'deadlines', 'schedule'], route: '/calendar',        tab: null        },
   { kw: ['vault', 'case vault', 'document vault'],                  route: '/vault',           tab: null        },
   { kw: ['contract analy', 'risk scan', 'analyzer'],               route: '/analyzer',        tab: null        },
+  { kw: ['quick draft', 'quickdraft', 'draft studio', 'fast track'], route: '/contract-analyzer', tab: 'quickdraft' },
   { kw: ['conflict engine', 'cross document', 'conflict check'],   route: '/conflict-engine', tab: null        },
   { kw: ['war room', 'courtroom simulation', 'virtual court'],      route: '/war-room',        tab: null        },
   { kw: ['dashboard', 'home', 'overview'],                         route: '/dashboard',       tab: null        },
@@ -90,6 +92,7 @@ const QUICK_CMDS = [
   { icon: '🔒', text: 'Prepare a mutual NDA agreement',                     category: 'Draft'     },
   { icon: '📅', text: 'Show my hearings scheduled for this week',           category: 'Calendar'  },
   { icon: '⚡', text: 'Analyze the uploaded contract for high-risk clauses', category: 'Analysis' },
+  { icon: '⚡', text: 'Open Quick Draft Studio',                             category: 'Draft'    },
   { icon: '⚖️', text: 'Find similar Supreme Court judgments',               category: 'Research'  },
   { icon: '🔍', text: 'Research IPC sections related to this matter',       category: 'Research'  },
   { icon: '📋', text: 'Prepare a bail application based on case facts',     category: 'Draft'     },
@@ -987,11 +990,9 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
 
   // Load folders + document metadata in parallel (no content field)
   useEffect(() => {
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-    const hdrs  = token ? { Authorization: `Bearer ${token}` } : {};
     Promise.all([
-      fetch(`${apiBase}/api/vault/folders`, { headers: hdrs }),
-      fetch(`${apiBase}/api/vault/meta`,    { headers: hdrs }),
+      fetch(`${apiBase}/api/vault/folders`),
+      fetch(`${apiBase}/api/vault/meta`),
     ])
       .then(([fRes, dRes]) => Promise.all([
         fRes.ok ? fRes.json() : null,
@@ -1060,11 +1061,10 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
     if (!name || creatingFolderLoading) return;
     setNewFolderError('');
     setCreatingFolderLoading(true);
-    const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
     try {
       const res = await fetch(`${apiBase}/api/vault/folders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, parent_id: currentView.id }),
       });
       const data = await res.json();
@@ -1557,11 +1557,12 @@ const resolveContextActions = (pathname) => {
 //  COMPONENT
 // ═══════════════════════════════════════════════════════
 function CommandPalette() {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
   const location      = useLocation();
   const paramsFromHook = useParams();
   const navigate      = useNavigate();
+  const { isAuthenticated, isInitializing } = useAuth();
 
   // ── Sessions ────────────────────────────────────────
   const [sessions, setSessions] = useState(() => loadSessions());
@@ -1772,8 +1773,18 @@ function CommandPalette() {
       else   { setIsOpen(v => !v); }
     };
     const onKey = (e) => {
-      // Ctrl+K is owned by IntelligencePalette — chat opens via toggle-rag-palette event only
       if (e.key === 'Escape' && isOpen) setIsOpen(false);
+      // Cmd/Ctrl+K opens InzIQ directly — added to this SAME listener
+      // (not a second window.addEventListener elsewhere) so there is
+      // exactly one global keydown handler for the palette, never two
+      // competing for the same shortcut. IntelligencePalette (the
+      // component that used to reserve this combo) is unreachable dead
+      // code — LexCommandSuite only ever renders <CommandPalette/> — so
+      // this is now the sole owner of Cmd/Ctrl+K.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsOpen((v) => !v);
+      }
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('toggle-rag-palette', onToggle);
@@ -1937,16 +1948,15 @@ function CommandPalette() {
   // Boots silently on mount; pauses only for our own single-SR-instance rule.
   useEffect(() => {
     if (!wakeRecRef.current || wakeSupported === false) return;
-    const authed = !!(localStorage.getItem('token') || localStorage.getItem('lexai_token'));
     const isPublic = location.pathname === '/' || location.pathname === '/login';
-    const shouldRun = authed && !isPublic && !isListening && !isAwake;
+    const shouldRun = isAuthenticated && !isInitializing && !isPublic && !isListening && !isAwake;
     if (shouldRun && !wakeActiveRef.current) {
       try { wakeRecRef.current.start(); wakeActiveRef.current = true; } catch (_) {}
     } else if (!shouldRun && wakeActiveRef.current) {
       try { wakeRecRef.current.stop(); } catch (_) {}
       wakeActiveRef.current = false;
     }
-  }, [location.pathname, isListening, isAwake, wakeSupported]);
+  }, [location.pathname, isListening, isAwake, wakeSupported, isAuthenticated, isInitializing]);
 
   // ── File attachment handler ───────────────────────────
   const handleFileAttach = async (e) => {
@@ -1979,10 +1989,8 @@ function CommandPalette() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
       const res = await fetch(`${API_BASE}/api/ai/extract-file`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
       if (!isMountedRef.current) return;
@@ -2055,12 +2063,10 @@ function CommandPalette() {
 
     // ── Backend stream ───────────────────────────────
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
       const res = await fetch(`${API_BASE}/api/ai/rag-chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
         },
         body: JSON.stringify({
           query: fullQuery,
@@ -2293,10 +2299,9 @@ function CommandPalette() {
     if (!pendingSchedule || !currentId) return;
     setLoading(true);
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
       const r = await fetch(`${API_BASE}/api/calendar/save`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ events: pendingSchedule }),
       });
       if (!isMountedRef.current) return;
@@ -2321,8 +2326,6 @@ function CommandPalette() {
     if (!activeDocument || !currentId) return;
     setLoading(true);
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('lexai_token');
-
       // Build compact audit snapshot from current session (user+assistant turns only)
       const currentSess = sessions.find(s => s.id === currentId);
       const sessionTitleForAudit = currentSess?.title || 'Untitled Conversation';
@@ -2332,7 +2335,7 @@ function CommandPalette() {
 
       const r = await fetch(`${API_BASE}/api/vault/save`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           case_id:        activeDocument.case_id || 'GENERAL',
           title:          fileName,
@@ -2434,9 +2437,8 @@ function CommandPalette() {
   // ── Render ────────────────────────────────────────────
   // When closed, surface a persistent global FAB (hidden on public/login routes)
   if (!isOpen) {
-    const authed = !!(localStorage.getItem('token') || localStorage.getItem('lexai_token'));
     const isPublic = location.pathname === '/' || location.pathname === '/login';
-    if (!authed || isPublic) return null;
+    if (isInitializing || !isAuthenticated || isPublic) return null;
     return (
       <button
         className="inziq-fab"
