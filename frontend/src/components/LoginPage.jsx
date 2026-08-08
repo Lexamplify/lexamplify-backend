@@ -36,6 +36,11 @@ const loginStyles = `
       linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
     background-size: 44px 44px;
   }
+  [data-theme="light"] .lx-left-grid {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+  }
   /* animated orbs */
   .lx-orb {
     position: absolute; border-radius: 50%;
@@ -247,6 +252,15 @@ const loginStyles = `
     box-shadow: 0 1px 6px rgba(0,0,0,0.08);
   }
 
+  /* tab content cross-fade */
+  .lx-tab-fade {
+    animation: lx-tab-fade-in 0.5s ease-in-out;
+  }
+  @keyframes lx-tab-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
   /* field */
   .lx-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
   .lx-field-row { display: flex; justify-content: space-between; align-items: center; }
@@ -280,6 +294,28 @@ const loginStyles = `
   }
   .lx-input::placeholder { color: rgba(255,255,255,0.2); }
   [data-theme="light"] .lx-input::placeholder { color: rgba(15,23,42,0.25); }
+
+  /* Chrome/Edge autofill: browser forces its own white-bg/black-text UA
+     style, invisible against this dark glassmorphism card — override both
+     the fill and the text color, per theme. The 5000s transition delay is
+     the standard trick to stop it snapping back before our override paints. */
+  .lx-input:-webkit-autofill,
+  .lx-input:-webkit-autofill:hover,
+  .lx-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #FFFFFF;
+    -webkit-box-shadow: 0 0 0 1000px #131a2b inset;
+    box-shadow: 0 0 0 1000px #131a2b inset;
+    caret-color: #FFFFFF;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+  [data-theme="light"] .lx-input:-webkit-autofill,
+  [data-theme="light"] .lx-input:-webkit-autofill:hover,
+  [data-theme="light"] .lx-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #0F172A;
+    -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset;
+    box-shadow: 0 0 0 1000px #FFFFFF inset;
+    caret-color: #0F172A;
+  }
   /* glowing focus border — glassmorphism accent */
   .lx-input:focus {
     border-color: rgba(59,130,246,0.7);
@@ -289,25 +325,6 @@ const loginStyles = `
   [data-theme="light"] .lx-input:focus {
     background: #FFFFFF;
     box-shadow: 0 0 0 4px rgba(59,130,246,0.14), 0 0 18px rgba(59,130,246,0.25);
-  }
-
-  /* floating label — overlays the input, floats up on focus/filled */
-  .lx-float-wrap { position: relative; }
-  .lx-float-input {
-    padding-top: 19px; padding-bottom: 7px;
-  }
-  .lx-float-label {
-    position: absolute; left: 40px; top: 50%;
-    transform: translateY(-50%);
-    font-size: 14px; color: rgba(255,255,255,0.3);
-    pointer-events: none; transition: all 0.18s cubic-bezier(0.4,0,0.2,1);
-    z-index: 1;
-  }
-  [data-theme="light"] .lx-float-label { color: rgba(15,23,42,0.35); }
-  .lx-float-wrap.active .lx-float-label {
-    top: 9px; left: 40px; transform: translateY(0) scale(0.78);
-    transform-origin: left top;
-    color: #60A5FA;
   }
 
   /* eye toggle on password */
@@ -558,8 +575,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
-  const [emailFocused, setEmailFocused] = useState(false);
-  const [pwdFocused, setPwdFocused] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -800,7 +815,7 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <form onSubmit={(e) => e.preventDefault()}>
+          <form key={tab} className="lx-tab-fade" onSubmit={(e) => e.preventDefault()}>
             {/* Error */}
             {error && (
               <div className="lx-error">
@@ -811,23 +826,28 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Email — floating label */}
+            {/* Email — standard stacked label above input. No floating-label
+                pseudo-class trickery: label and input are two plain,
+                independent DOM siblings, permanently in their final
+                position, wired together with htmlFor/id like any other
+                form field. Nothing here can "desync" because nothing here
+                derives its state from anything except its own value prop. */}
             <div className="lx-field">
-              <div className={`lx-input-wrap lx-float-wrap ${emailFocused || email ? 'active' : ''}`}>
+              <label htmlFor="login-email" className="lx-label">Email address</label>
+              <div className="lx-input-wrap">
                 <span className="lx-input-icon">
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
                     <polyline points="22,6 12,13 2,6"/>
                   </svg>
                 </span>
-                <label className="lx-float-label">Email address</label>
                 <input
+                  id="login-email"
                   type="email"
-                  className="lx-input lx-float-input"
+                  className="lx-input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  onFocus={() => setEmailFocused(true)}
-                  onBlur={() => setEmailFocused(false)}
+                  placeholder="Enter your email"
                   disabled={loading}
                   autoComplete="email"
                   required
@@ -835,30 +855,30 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Password — floating label */}
+            {/* Password — same stacked layout */}
             <div className="lx-field" style={{ marginBottom: isSignIn ? '8px' : '20px' }}>
-              {isSignIn && (
-                <div className="lx-field-row" style={{ justifyContent: 'flex-end', marginBottom: '2px' }}>
+              <div className="lx-field-row">
+                <label htmlFor="login-password" className="lx-label">Password</label>
+                {isSignIn && (
                   <button type="button" className="lx-forgot" onClick={openResetModal} tabIndex={0}>
                     Forgot password?
                   </button>
-                </div>
-              )}
-              <div className={`lx-input-wrap lx-float-wrap ${pwdFocused || password ? 'active' : ''}`}>
+                )}
+              </div>
+              <div className="lx-input-wrap">
                 <span className="lx-input-icon">
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                   </svg>
                 </span>
-                <label className="lx-float-label">Password</label>
                 <input
+                  id="login-password"
                   type={showPwd ? 'text' : 'password'}
-                  className="lx-input lx-float-input"
+                  className="lx-input"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => setPwdFocused(true)}
-                  onBlur={() => setPwdFocused(false)}
+                  placeholder="Enter your password"
                   disabled={loading}
                   autoComplete={isSignIn ? 'current-password' : 'new-password'}
                   style={{ paddingRight: '42px' }}
@@ -919,13 +939,9 @@ export default function LoginPage() {
             )}
           </form>
 
-          {/* Enterprise SSO */}
+          {/* SSO */}
           <div className="lx-divider">Or continue with</div>
           <div className="lx-sso-row">
-            <a className="lx-sso-btn" href={`${API_BASE_URL}/api/auth/sso/microsoft/login`}>
-              <svg width="16" height="16" viewBox="0 0 23 23"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M12 1h10v10H12z"/><path fill="#00A4EF" d="M1 12h10v10H1z"/><path fill="#FFB900" d="M12 12h10v10H12z"/></svg>
-              Continue with Microsoft 365
-            </a>
             <a className="lx-sso-btn" href={`${API_BASE_URL}/api/auth/sso/google/login`}>
               <svg width="16" height="16" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.89c2.28-2.1 3.56-5.19 3.56-8.82z"/>
@@ -933,7 +949,7 @@ export default function LoginPage() {
                 <path fill="#FBBC05" d="M5.33 14.33A7.2 7.2 0 0 1 4.95 12c0-.81.14-1.6.38-2.33V6.58H1.3A12 12 0 0 0 0 12c0 1.94.46 3.77 1.3 5.42z"/>
                 <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0A12 12 0 0 0 1.3 6.58l4.03 3.09C6.27 6.86 8.9 4.77 12 4.77z"/>
               </svg>
-              Continue with Google Workspace
+              Continue with Google
             </a>
           </div>
 
