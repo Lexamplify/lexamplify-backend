@@ -1458,7 +1458,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [scanStrategy, setScanStrategy] = useState('Defensive');
   const [rawText, setRawText] = useState('');
   const rawTextDebounceRef = useRef(null);
-  const [clauses, setClauses] = useState([]);
+  const [flaggedClauses, setFlaggedClauses] = useState([]);
+  const clauses = flaggedClauses;
+  const setClauses = setFlaggedClauses;
+
   const [summary, setSummary] = useState('');
   const [citations, setCitations] = useState([]);
   const [loadingText, setLoadingText] = useState("Extracting clauses...");
@@ -1491,22 +1494,29 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   useEffect(() => {
     if (!jobId) return;
+
+    const onSuccess = (result) => {
+      setSummary(result.summary || "");
+      setFlaggedClauses(result.clauses || result.risks || []);
+      setMissingClauses(result.missing_clauses || result.missing || []);
+      setCitations(result.citations || []);
+      setIsAnalyzed(true);
+      setIsAnalyzing(false);
+      if (result.raw_text) setRawText(result.raw_text);
+    };
+
+    const onError = (err) => {
+      alert(err || 'Analysis failed.');
+      setIsAnalyzing(false);
+    };
+
     if (jobStream.state === 'SUCCESS') {
+      onSuccess(jobStream.result || {});
       setJobId(null);
-      if (!isMountedRef.current) return;
-      setIsAnalyzing(false);
-      loadAnalysisResults(jobStream.result || {});
     } else if (jobStream.state === 'FAILURE') {
+      onError(jobStream.error);
       setJobId(null);
-      if (!isMountedRef.current) return;
-      setIsAnalyzing(false);
-      alert(jobStream.error || 'Analysis failed.');
     }
-    // loadAnalysisResults is a stable function declared in this same
-    // component body, not a changing dependency the job-completion effect
-    // needs to re-run for — including it would refire this on every
-    // unrelated re-render that happens to redefine it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId, jobStream.state, jobStream.result, jobStream.error]);
 
   // Snaps the bar to a real 100% the instant the real scan finishes — the
@@ -1553,7 +1563,9 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [rewriting, setRewriting] = useState(false);
 
   // Recommendations states
-  const [recommendations, setRecommendations] = useState([]);
+  const [missingClauses, setMissingClauses] = useState([]);
+  const recommendations = missingClauses;
+  const setRecommendations = setMissingClauses;
   const [loadingRecs, setLoadingRecs] = useState(false);
 
   // Appended clause extensions
@@ -3105,15 +3117,9 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
                               className="input-textarea"
                               placeholder="Paste the raw text of your contract here…"
-                              defaultValue={rawText}
+                              value={rawText}
                               readOnly={isAnalyzing}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (rawTextDebounceRef.current) clearTimeout(rawTextDebounceRef.current);
-                                rawTextDebounceRef.current = setTimeout(() => {
-                                  setRawText(val);
-                                }, 800);
-                              }}
+                              onChange={(e) => setRawText(e.target.value)}
                               style={{ marginBottom: 0 }}
                             />
                           </div>
@@ -3518,12 +3524,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                             <div style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
                               {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length} flagged clauses — click to inspect & rewrite
                             </div>
-                            {clauses
-                              .filter(c => c.risk === 'RED' || c.risk === 'AMBER')
-                              // High risk first, then medium — Array.sort is
-                              // stable (guaranteed since ES2019), so clauses
-                              // within the same risk tier keep their original
-                              // relative order instead of being reshuffled.
+                            {flaggedClauses
+                              ?.filter(c => c.risk === 'RED' || c.risk === 'AMBER')
                               .sort((a, b) => (a.risk === b.risk ? 0 : a.risk === 'RED' ? -1 : 1))
                               .map((c, idx) => (
                               <div
@@ -3584,7 +3586,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
-                          {recommendations.map((item, idx) => (
+                          {missingClauses?.map((item, idx) => (
                             <div key={idx} className="rec-protection-card" style={{ marginBottom: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                                 <strong style={{ fontSize: '13px', color: '#F1F5F9', fontWeight: 600 }}>{item.title}</strong>
@@ -3682,7 +3684,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                        {citations.map((prec, i) => {
+                        {citations?.map((prec, i) => {
                           const { displayTitle, kanoonQuery } = resolveCitationDisplay(prec);
                           return (
                           <div key={i} className="precedent-card animate-fade-in" style={{ marginBottom: 0, animationDelay: `${i * 150}ms` }}>

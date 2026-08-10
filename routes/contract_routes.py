@@ -444,16 +444,16 @@ def extract_text():
         else:
             return jsonify({"error": True, "message": "Unsupported format. Use PDF or DOCX."}), 400
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(extract_text_for_summary, data, filetype)
-            try:
-                text = future.result(timeout=EXTRACTION_TIMEOUT_SECONDS)
-            except FutureTimeoutError:
-                return jsonify({
-                    "error": True,
-                    "message": f"Document extraction timed out after {EXTRACTION_TIMEOUT_SECONDS} seconds. The file may be corrupted or too complex.",
-                    "code": "EXTRACTION_TIMEOUT",
-                }), 422
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(extract_text_for_summary, data, filetype)
+        try:
+            text = future.result(timeout=EXTRACTION_TIMEOUT_SECONDS)
+        except FutureTimeoutError:
+            return jsonify({
+                "error": True,
+                "message": f"Document extraction timed out after {EXTRACTION_TIMEOUT_SECONDS} seconds. The file may be corrupted or too complex.",
+                "code": "EXTRACTION_TIMEOUT",
+            }), 422
 
         # Blank-document guard — a scanned PDF with no embedded text layer
         # extracts to "" (or whitespace) with no error of its own; that

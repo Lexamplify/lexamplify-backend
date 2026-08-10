@@ -460,19 +460,21 @@ export const analyzeContract = async (file = null, text = '', scanStrategy = 'De
  * @param {File} file
  */
 export const extractContractText = async (file) => {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {
-      method: 'POST',
-      headers: getHeaders(true),
-      body: formData,
-    });
-    return await handleResponse(response);
-  } catch (error) {
-    console.error('[API Service] extractContractText error:', error);
-    return { error: true, message: error.message || 'Failed to extract text from file.' };
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {
+    method: 'POST',
+    headers: getHeaders(true),
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err || `HTTP ${response.status}`);
   }
+
+  return await response.json();
 };
 
 /**

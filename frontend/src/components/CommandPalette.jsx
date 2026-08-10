@@ -2062,9 +2062,22 @@ function CommandPalette() {
     }
 
     // ── Backend stream ───────────────────────────────
+    // idleTimer aborts the fetch/stream if no chunk (not even the initial
+    // response) arrives within IDLE_TIMEOUT_MS, and is reset on every chunk
+    // received — this bounds a genuinely-stuck backend without killing a
+    // slow-but-still-streaming LLM generation.
+    const IDLE_TIMEOUT_MS = 45000;
+    const controller = new AbortController();
+    let idleTimer;
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
+    };
+    resetIdleTimer();
     try {
       const res = await fetch(`${API_BASE}/api/ai/rag-chat`, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -2179,6 +2192,7 @@ function CommandPalette() {
 
       outer: while (true) {
         const { value, done } = await reader.read();
+        resetIdleTimer();
         // Abandoned stream: closing the drawer doesn't cancel the fetch, so
         // once unmounted, stop reading entirely rather than skip an iteration.
         if (!isMountedRef.current) break outer;
@@ -2285,12 +2299,16 @@ function CommandPalette() {
           } catch (_) { /* skip malformed chunk */ }
         }
       }
-    } catch (_) {
+    } catch (err) {
       if (isMountedRef.current) {
-        pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text: 'Connection failed. Check your network and try again.' });
+        const text = err?.name === 'AbortError'
+          ? 'The AI Legal Associate took too long to respond. Please try again.'
+          : 'Connection failed. Check your network and try again.';
+        pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text });
       }
     } finally {
-      if (isMountedRef.current) setLoading(false);
+      clearTimeout(idleTimer);
+      setLoading(false);
     }
   }
 

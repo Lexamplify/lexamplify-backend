@@ -284,7 +284,7 @@ const loginStyles = `
     border: 1px solid rgba(255,255,255,0.07);
     color: #FFFFFF;
     border-radius: 10px;
-    padding: 12px 14px 12px 40px;
+    padding: 12px 14px 12px 40px !important;
     font-size: 14px; outline: none;
     transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
     font-family: var(--font-sans);

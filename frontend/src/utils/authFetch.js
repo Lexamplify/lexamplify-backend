@@ -9,7 +9,12 @@
 
 const API_ORIGIN = (() => {
   try {
-    return new URL(import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com').origin;
+    const base = import.meta.env.VITE_API_BASE_URL;
+    // If a specific base URL is set (e.g. production), parse its origin.
+    // Otherwise, we are using relative paths via Vite proxy, meaning the
+    // "backend" origin is simply our own frontend origin.
+    if (base) return new URL(base, window.location.origin).origin;
+    return window.location.origin;
   } catch {
     return null;
   }

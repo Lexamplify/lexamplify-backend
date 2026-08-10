@@ -134,6 +134,7 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy):
     return {
         "summary": final_summary,
         "clauses": formatted_clauses,
+        "missing_clauses": [],
         "citations": citations,
         "raw_text": full_text,
         "pdf_url": "",
