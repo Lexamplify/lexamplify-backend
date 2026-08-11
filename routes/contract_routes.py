@@ -9,8 +9,14 @@ Hybrid approach:
 import re
 import os
 import json as json_mod
+import json
 import difflib
+import uuid
+import threading
+import time
 from flask import Blueprint, request, jsonify
+
+LOCAL_JOBS = {}
 from utils.ai_helper import ask_groq, ask_litellm, extract_json_from_llm_response
 from utils.pdf_helper import extract_text_for_summary
 
@@ -334,15 +340,59 @@ def analyze():
     print(f"\n[analyze] scanStrategy={scan_strategy} | text_length={len(full_text)}")
 
     try:
+        import socket
+        from flask import current_app
+        broker_url = current_app.config.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+        host = 'localhost'
+        port = 6379
+        if 'redis://' in broker_url:
+            parts = broker_url.split('redis://')[1].split('/')[0].split(':')
+            if len(parts) >= 1:
+                host = parts[0]
+            if len(parts) >= 2:
+                port = int(parts[1])
+        
+        # Fast fail connection check
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.1)
+        s.connect((host, port))
+        s.close()
+
         from tasks.contract_tasks import analyze_contract_task
-        task = analyze_contract_task.delay(full_text, rule_book_text, scan_strategy)
+        task = analyze_contract_task.apply_async(args=(full_text, rule_book_text, scan_strategy), retry=False)
         return jsonify({"job_id": task.id, "status_url": f"/api/contract/stream/{task.id}"}), 202
     except Exception as e:
-        print(f"[analyze] Failed to dispatch Celery task: {e}")
-        return jsonify({
-            "error": "Failed to start analysis job. Is the Celery worker running?",
-            "code": "JOB_DISPATCH_ERROR",
-        }), 503
+        print(f"[analyze] Celery offline, falling back to local thread immediately: {e}")
+        from tasks.contract_tasks import analyze_contract_task
+        job_id = f"local_{uuid.uuid4()}"
+        LOCAL_JOBS[job_id] = {
+            "state": "PROGRESS",
+            "progress": 15,
+            "status": "Analyzing contract (Local Engine)...",
+            "result": None,
+            "error": None
+        }
+
+        def _run_local_job():
+            try:
+                res = analyze_contract_task(full_text, rule_book_text, scan_strategy, job_id=job_id)
+                LOCAL_JOBS[job_id] = {
+                    "state": "SUCCESS",
+                    "progress": 100,
+                    "status": "Analysis Complete",
+                    "result": res
+                }
+            except Exception as err:
+                LOCAL_JOBS[job_id] = {
+                    "state": "FAILURE",
+                    "progress": 0,
+                    "status": str(err),
+                    "result": None,
+                    "error": str(err)
+                }
+
+        threading.Thread(target=_run_local_job, daemon=True).start()
+        return jsonify({"job_id": job_id, "status": "QUEUED"}), 200
 
 
 @contract_bp.route("/stream/<job_id>", methods=["GET"])
@@ -355,6 +405,31 @@ def stream_job(job_id):
     import time
     from flask import Response, stream_with_context, current_app
     from celery.result import AsyncResult
+
+    if job_id in LOCAL_JOBS:
+        def generate_local_stream():
+            while True:
+                job = LOCAL_JOBS.get(job_id, {})
+                payload = {
+                    "state": job.get("state", "PENDING"),
+                    "progress": job.get("progress", 0),
+                    "status": job.get("status", "Processing..."),
+                    "result": job.get("result"),
+                    "error": job.get("error")
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                if job.get("state") in ["SUCCESS", "FAILURE"]:
+                    break
+                time.sleep(0.5)
+        return Response(
+            stream_with_context(generate_local_stream()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive"
+            }
+        )
 
     celery_app = current_app.extensions.get("celery")
     app_ctx = current_app._get_current_object()
@@ -454,6 +529,12 @@ def extract_text():
                 "message": f"Document extraction timed out after {EXTRACTION_TIMEOUT_SECONDS} seconds. The file may be corrupted or too complex.",
                 "code": "EXTRACTION_TIMEOUT",
             }), 422
+        except Exception as e:
+            return jsonify({
+                "error": True,
+                "message": f"Failed to extract text: {str(e)}",
+                "code": "EXTRACTION_ERROR"
+            }), 500
 
         # Blank-document guard — a scanned PDF with no embedded text layer
         # extracts to "" (or whitespace) with no error of its own; that

@@ -11,13 +11,109 @@ deferred import too, so neither module needs the other to be fully loaded
 first; this avoids a load-order circular import between them.
 """
 import os
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from celery import shared_task
 
 
+import re
+
+def python_extract_case_name(text):
+    if not text:
+        return None
+    pattern = r'\b([A-Z][\w\.\&\'-]*(?:\s+(?:[A-Z][\w\.\&\'-]*|of|the|and|\&))*\s+(?:v\.|vs\.?|versus)\s+[A-Z][\w\.\&\'-]*(?:\s+(?:[A-Z][\w\.\&\'-]*|of|the|and|\&))*)\b'
+    matches = re.findall(pattern, text)
+    if matches:
+        return max(matches, key=len).strip()
+    return None
+import urllib.parse
+import requests
+from bs4 import BeautifulSoup
+
+def check_case_in_vault(title, case_id):
+    db_path = os.path.join(os.getcwd(), "lex_assistant.db")
+    if not os.path.exists(db_path):
+        return False, None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        # 1. Try exact match on case_id
+        if case_id:
+            clean_cid = case_id
+            if clean_cid.endswith('.pdf'):
+                clean_cid = clean_cid[:-4]
+            clean_cid_no_en = clean_cid
+            if clean_cid_no_en.endswith('_EN'):
+                clean_cid_no_en = clean_cid_no_en[:-3]
+            cursor.execute("SELECT id FROM case_vault WHERE case_id = ? OR case_id = ? OR case_id = ?", (case_id, clean_cid, clean_cid_no_en))
+            row = cursor.fetchone()
+            if row:
+                conn.close()
+                return True, str(row[0])
+            
+        # 2. Try match on title
+        if title:
+            cursor.execute("SELECT id FROM case_vault WHERE title = ? OR title LIKE ?", (title, f"%{title}%"))
+            row = cursor.fetchone()
+            if row:
+                conn.close()
+                return True, str(row[0])
+        conn.close()
+    except Exception as e:
+        print(f"[check_case_in_vault] Error: {e}")
+    return False, None
+
+def fetch_kanoon_case_title(snippet):
+    if not snippet or len(snippet) < 60:
+        return None
+    excerpt = snippet[50:130].strip()
+    if not excerpt:
+        return None
+    
+    # Clean up quote
+    excerpt = excerpt.replace('"', '').replace("'", "").strip()
+    query = f'"{excerpt}"'
+    
+    zenrows_key = os.getenv("ZENROWS_API_KEY")
+    target_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
+    
+    try:
+        if zenrows_key:
+            resp = requests.get(
+                "https://api.zenrows.com/v1/",
+                params={
+                    'apikey': zenrows_key,
+                    'url': target_url,
+                    'premium_proxy': 'true',
+                    'proxy_country': 'in',
+                },
+                timeout=10,
+            )
+        else:
+            resp = requests.get(
+                "https://indiankanoon.org/search/",
+                params={'formInput': query},
+                timeout=5,
+                headers={'User-Agent': 'Mozilla/5.0'},
+            )
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        result_titles = soup.find_all(class_='result_title')
+        if result_titles:
+            a_tag = result_titles[0].find('a')
+            if a_tag:
+                raw_text = a_tag.get_text(strip=True)
+                # Clean up typical Kanoon title format like "Kesavananda ... vs State Of Kerala And Anr on 24 April, 1973"
+                cleaned_title = re.sub(r'\s+on\s+\d+\s+\w+,\s+\d{4}', '', raw_text, flags=re.IGNORECASE)
+                return cleaned_title
+    except Exception as e:
+        print(f"[fetch_kanoon_case_title] Error fetching title from Kanoon: {e}")
+    return None
+
+
 @shared_task(bind=True)
-def analyze_contract_task(self, full_text, rule_book_text, scan_strategy):
+def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id=None):
     from routes.contract_routes import (
         chunk_text_by_boundary,
         analyze_contract_with_llm,
@@ -26,7 +122,21 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy):
     )
 
     def report(status, progress):
-        self.update_state(state='PROGRESS', meta={'status': status, 'progress': progress})
+        if self.request and self.request.id:
+            try:
+                self.update_state(state='PROGRESS', meta={'status': status, 'progress': progress})
+            except Exception as e:
+                print(f"[analyze_contract_task] Celery update_state failed: {e}")
+        if job_id:
+            try:
+                from routes.contract_routes import LOCAL_JOBS
+                if job_id in LOCAL_JOBS:
+                    LOCAL_JOBS[job_id].update({
+                        "progress": progress,
+                        "status": status
+                    })
+            except Exception as e:
+                print(f"[analyze_contract_task] Local job state update failed: {e}")
 
     report('Chunking document...', 5)
     chunks = chunk_text_by_boundary(full_text, chunk_size=3000, overlap=300)
@@ -116,14 +226,29 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy):
                 if case_id in seen_cases:
                     continue
                 seen_cases.add(case_id)
-                title = case_id
-                if title.endswith('.pdf'):
-                    title = title[:-4].replace('_', ' ')
+                title = metadata.get('title') or metadata.get('case_name') or metadata.get('doc_title') or case_id
+                if title == case_id:
+                    snippet = metadata.get('text', '') or ''
+                    extracted = python_extract_case_name(snippet)
+                    if extracted:
+                        title = extracted
+                    else:
+                        resolved = fetch_kanoon_case_title(snippet)
+                        if resolved:
+                            title = resolved
+                        elif title.endswith('.pdf'):
+                            title = title[:-4].replace('_', ' ')
+                
+                # Check database for in_vault
+                in_vault, vault_id = check_case_in_vault(title, case_id)
+                
                 citations.append({
                     "case_id": case_id,
                     "title": title,
                     "year": metadata.get('year', ''),
                     "snippet": (metadata.get('text', '') or '')[:200],
+                    "in_vault": in_vault,
+                    "vault_id": vault_id,
                 })
                 if len(citations) >= 3:
                     break

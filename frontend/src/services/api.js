@@ -463,18 +463,35 @@ export const extractContractText = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
   
-  const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {
-    method: 'POST',
-    headers: getHeaders(true),
-    body: formData,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err || `HTTP ${response.status}`);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: formData,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Extraction request timed out');
+    }
+    if (error instanceof TypeError && (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network'))) {
+      throw new Error('Backend unreachable - verify Python Flask server is running');
+    }
+    throw error;
   }
-
-  return await response.json();
 };
 
 /**

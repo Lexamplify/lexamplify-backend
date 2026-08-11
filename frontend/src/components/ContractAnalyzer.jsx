@@ -63,9 +63,16 @@ function extractCaseName(text) {
   return longest[0].replace(/\s+/g, ' ').trim();
 }
 
+// Backend fallback (tasks/contract_tasks.py): when Pinecone metadata has no
+// real case_name, title becomes case_id.pdf with ".pdf" stripped and "_"
+// swapped for " " — e.g. "2008_10_496_540_EN.pdf" -> "2008 10 496 540 EN".
+// Every whitespace-split token is numeric except an optional short (<=3
+// char) trailing language/court code, so that shape is what this detects.
+const RAW_ID_TOKENS_PATTERN = /^\d+(?:\s+\d+)*(?:\s+[A-Za-z]{1,3})?$/;
+
 function resolveCitationDisplay(citation) {
   const rawTitle = citation.title || citation.case_title || '';
-  const isRawId = /^[0-9_]+$/.test(rawTitle);
+  const isRawId = /^[0-9_]+$/.test(rawTitle) || RAW_ID_TOKENS_PATTERN.test(rawTitle.trim());
   // The related-citations search (firm-library/external-search) sometimes
   // can't resolve a real name either and falls back to a synthetic
   // placeholder like "Supreme Court Judgment (2015) - 2015_12_276_284" —
@@ -510,9 +517,11 @@ const styles = `
     margin: 0 auto;
   }
   /* Paragraph blocks inside the document scanner */
+  .scanner-body p,
   .scanner-body .doc-para {
-    margin: 0 0 1.1em;
-    text-align: justify;
+    margin: 0 0 1.1em !important;
+    text-align: justify !important;
+    text-justify: inter-word !important;
     color: inherit;
   }
   /* Defeat global p/span { color } rule for scanner content */
@@ -701,15 +710,39 @@ const styles = `
      invisible/unpositioned. Real classes here. */
   .ca-textarea-wrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .ca-scan-overlay {
-    position: absolute; inset: 0;
-    background: rgba(30, 64, 175, 0.1);
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      rgba(99, 102, 241, 0.03) 0%,
+      rgba(99, 102, 241, 0.08) 50%,
+      rgba(99, 102, 241, 0.03) 100%
+    );
     pointer-events: none;
-    animation: ca-scan-pulse 1.6s ease-in-out infinite;
+    overflow: hidden;
+    z-index: 10;
+    border-radius: inherit;
+    animation: ca-scan-pulse 2s ease-in-out infinite;
+  }
+  .ca-scan-overlay::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.6), transparent);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.8);
+    animation: leftScanLaser 3s infinite ease-in-out;
   }
   .ca-textarea-wrap .ca-scan-overlay { border-radius: 10px; }
   @keyframes ca-scan-pulse {
-    0%, 100% { opacity: 0.55; }
-    50% { opacity: 1; }
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.95; }
+  }
+  @keyframes leftScanLaser {
+    0% { top: 0%; opacity: 0.3; }
+    50% { top: 100%; opacity: 1; }
+    100% { top: 0%; opacity: 0.3; }
   }
 
   /* ── Staggered fade-in for mapped risk/citation cards ───────────────── */
@@ -962,6 +995,48 @@ const styles = `
     font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
     background: rgba(239,68,68,0.12); color: #F87171;
     border: 1px solid rgba(239,68,68,0.35); flex-shrink: 0; white-space: nowrap;
+  }
+  .citation-btn-insert {
+    background: rgba(139,92,246,0.15) !important;
+    border: 1px solid rgba(139,92,246,0.4) !important;
+    color: #C4B5FD !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 5px 12px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    transition: all 0.15s !important;
+    font-family: inherit !important;
+  }
+  .citation-btn-insert:hover {
+    background: rgba(139,92,246,0.25) !important;
+    border-color: rgba(139,92,246,0.6) !important;
+  }
+  .citation-btn-search-related {
+    background: transparent !important;
+    border: 1px solid rgba(59,130,246,0.4) !important;
+    color: #60A5FA !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 5px 12px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    transition: all 0.15s !important;
+    font-family: inherit !important;
+  }
+  .citation-btn-search-related:hover:not(:disabled) {
+    background: rgba(59,130,246,0.1) !important;
+    border-color: rgba(59,130,246,0.6) !important;
+  }
+  .citation-btn-search-related:disabled {
+    opacity: 0.55 !important;
+    cursor: not-allowed !important;
   }
   .precedent-link:hover { color: var(--link-blue-hover); text-decoration: underline; }
 
@@ -1437,18 +1512,291 @@ const styles = `
     background: rgba(139,92,246,0.15); color: #A78BFA;
     border: 1px solid rgba(139,92,246,0.35); flex-shrink: 0; white-space: nowrap;
   }
+
+  /* ── REVISION WORKSHOP EXTRA PREMIUM STYLING ─────────────────────── */
+  .revision-workshop-input {
+    width: 100%;
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 8px !important;
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+    color: #F8FAFC !important;
+    outline: none !important;
+    box-sizing: border-box !important;
+    transition: all 0.2s ease !important;
+  }
+  .revision-workshop-input:focus {
+    border-color: #6366F1 !important;
+    background: rgba(15, 23, 42, 0.95) !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important;
+  }
+  
+  .revision-workshop-textarea {
+    width: 100%;
+    height: 90px !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: 1px solid rgba(16, 185, 129, 0.3) !important;
+    border-radius: 8px !important;
+    padding: 10px 12px !important;
+    font-size: 12.5px !important;
+    color: #F8FAFC !important;
+    outline: none !important;
+    box-sizing: border-box !important;
+    resize: none !important;
+    line-height: 1.5 !important;
+    transition: all 0.2s ease !important;
+  }
+  .revision-workshop-textarea:focus {
+    border-color: #10B981 !important;
+    background: rgba(15, 23, 42, 0.95) !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2) !important;
+  }
+  
+  .revision-btn-primary {
+    width: 100%;
+    background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
+    color: white !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    padding: 11px 16px !important;
+    border-radius: 8px !important;
+    border: none !important;
+    cursor: pointer !important;
+    box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3) !important;
+    transition: all 0.25s ease !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+  }
+  .revision-btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4338ca, #4f46e5) !important;
+    box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45) !important;
+    transform: translateY(-1px) !important;
+  }
+  .revision-btn-primary:active:not(:disabled) {
+    transform: translateY(0) !important;
+  }
+  .revision-btn-primary:disabled {
+    opacity: 0.55 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+  }
+
+  .revision-btn-success:hover {
+    background: #059669 !important;
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3) !important;
+    transform: translateY(-1px);
+  }
+  .revision-btn-danger:hover {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border-color: #EF4444 !important;
+    transform: translateY(-1px);
+  }
+
+  /* ── FUTURISTIC SCANNER ──────────────────────────────────────────── */
+  .futuristic-scanning-container {
+    background: rgba(15, 23, 42, 0.45) !important;
+    border: 1px solid rgba(59, 130, 246, 0.15) !important;
+    border-radius: 16px !important;
+    padding: 30px 24px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    position: relative !important;
+    overflow: hidden !important;
+    margin-top: 10px !important;
+    box-shadow: inset 0 0 20px rgba(59, 130, 246, 0.05) !important;
+  }
+  
+  .scanner-glowing-ring {
+    position: relative !important;
+    width: 64px !important;
+    height: 64px !important;
+    margin-bottom: 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  .scanner-ring-pulse {
+    position: absolute !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 50% !important;
+    background: rgba(99, 102, 241, 0.15) !important;
+    border: 2px solid rgba(99, 102, 241, 0.3) !important;
+    animation: pulseGlow 2s infinite ease-in-out !important;
+  }
+  .scanner-ring-core {
+    position: relative !important;
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 50% !important;
+    background: rgba(15, 23, 42, 0.9) !important;
+    border: 1px solid rgba(99, 102, 241, 0.4) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.3) !important;
+  }
+  
+  .scanning-laser-line {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 2px !important;
+    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.8), transparent) !important;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.8) !important;
+    animation: scanLaser 4s infinite linear !important;
+    z-index: 2 !important;
+  }
+  
+  .scanner-status-title {
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    color: #F1F5F9 !important;
+    margin-bottom: 12px !important;
+    text-shadow: 0 0 10px rgba(99, 102, 241, 0.3) !important;
+    text-align: center !important;
+  }
+  
+  .scanner-progress-wrapper {
+    position: relative !important;
+    width: 100% !important;
+    height: 6px !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 3px !important;
+    overflow: hidden !important;
+    margin-bottom: 6px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+  .scanner-progress-bar {
+    height: 100% !important;
+    background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
+    border-radius: 3px !important;
+    transition: width 0.3s ease !important;
+  }
+  .scanner-progress-text {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #818CF8 !important;
+    margin-bottom: 20px !important;
+    letter-spacing: 0.05em !important;
+  }
+  
+  .scanner-console-box {
+    width: 100% !important;
+    background: #090d16 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  }
+  .scanner-console-header {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    padding: 6px 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+  .console-dot-red, .console-dot-yellow, .console-dot-green {
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+  }
+  .console-dot-red { background: #EF4444 !important; }
+  .console-dot-yellow { background: #F59E0B !important; }
+  .console-dot-green { background: #10B981 !important; }
+  .console-title {
+    font-size: 9px !important;
+    font-weight: 800 !important;
+    color: #64748B !important;
+    letter-spacing: 0.1em !important;
+    margin-left: 6px !important;
+  }
+  .scanner-console-logs {
+    padding: 10px 14px !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 10.5px !important;
+    line-height: 1.5 !important;
+    color: #10B981 !important;
+    max-height: 110px !important;
+    overflow-y: auto !important;
+    text-align: left !important;
+  }
+  .scanner-log-line {
+    margin-bottom: 4px !important;
+    word-break: break-all !important;
+    opacity: 0.85 !important;
+  }
+  .scanner-log-line.active-line {
+    color: #60A5FA !important;
+    opacity: 1 !important;
+  }
+  .log-timestamp {
+    color: #475569 !important;
+    margin-right: 6px !important;
+  }
+  
+  @keyframes pulseGlow {
+    0% { transform: scale(0.95); opacity: 0.5; box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+    70% { transform: scale(1.05); opacity: 1; box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
+    100% { transform: scale(0.95); opacity: 0.5; box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+  }
+  
+  @keyframes scanLaser {
+    0% { top: 0%; }
+    50% { top: 100%; }
+    100% { top: 0%; }
+  }
 `;
+
+const FUTURISTIC_LOGS = [
+  "Initializing LexAmplify Hybrid Parser...",
+  "Extracting document text layout and tokens...",
+  "Applying keyword-based risk heuristics...",
+  "Spinning up Groq AI LLM node...",
+  "Analyzing liabilities under Section 73 & 74 of the Indian Contract Act...",
+  "Evaluating non-compete clauses under Section 27...",
+  "Scanning dispute resolution paths and jurisdiction...",
+  "Querying Pinecone VDB for landmark SC precedents...",
+  "Validating findings against custom Company Rule Book...",
+  "Finalizing legal risks report and auto-draft suggestions..."
+];
+
+const getFakeConsoleLogs = (progress) => {
+  const logSteps = [
+    { limit: 10, index: 1 },
+    { limit: 25, index: 2 },
+    { limit: 40, index: 3 },
+    { limit: 55, index: 4 },
+    { limit: 70, index: 5 },
+    { limit: 80, index: 6 },
+    { limit: 90, index: 7 },
+    { limit: 95, index: 8 },
+    { limit: 100, index: 9 }
+  ];
+  
+  const activeCount = logSteps.filter(s => progress >= s.limit).length;
+  return FUTURISTIC_LOGS.slice(0, activeCount + 1);
+};
 
 export default function ContractAnalyzer({ setFocusMode }) {
   // Guards every async continuation's setState calls below against firing
   // after unmount (e.g. the user navigates away mid file-upload/mid AI-scan).
   const isMountedRef = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
 
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   // Fast-track path — bypasses the AI risk scan entirely and opens the
   // split-pane editor directly on a blank/empty document. Reachable from
   // the upload screen's "Quick Draft Studio" button and from the Cmd/Ctrl+K
@@ -1922,58 +2270,40 @@ export default function ContractAnalyzer({ setFocusMode }) {
       return;
     }
 
-    // Extract text ONLY. Analysis is no longer triggered on upload — the user
-    // must explicitly click "Start Contract Risk Scan" to fire the API.
+    // Backend contract (routes/contract_routes.py's extract_text, verified
+    // directly against the route source): 200 -> {"text": "..."} ; 4xx/5xx ->
+    // {"error": true, "message": "...", "code": "..."}. extractContractText()
+    // in services/api.js throws on a non-200 response and otherwise resolves
+    // the parsed JSON body as-is — so `res.text` is the only valid success key.
     //
-    // try/catch/finally is load-bearing here, not decorative: extractContractText
-    // itself never throws (its own try/catch inside services/api.js always
-    // resolves to {error, message}), but a backend that hangs past its own
-    // 10s extraction timeout — or any other network failure — must still
-    // guarantee contractUploadLoading gets reset. Without the finally, an
-    // unexpected throw here would leave the extraction indicator spinning
-    // forever with no way for the user to recover except a reload.
-    setContractFile(file);
-    setContractUploadLoading(true);
+    // try/catch/finally is load-bearing here, not decorative: a backend that
+    // hangs past its own 10s extraction timeout — or any other network
+    // failure — must still guarantee contractUploadLoading gets reset.
     try {
-      // Backend contract (routes/contract_routes.py's extract_text): 200 ->
-      // {"text": "..."} ; 4xx/5xx -> {"error": true, "message": "...", "code": "..."}.
-      // services/api.js's extractContractText() already normalizes both
-      // into the same {error, message} | {text} shape, so `extracted.text`
-      // is the correct key here — this was never actually mismatched.
-      const extracted = await extractContractText(file);
-      if (!isMountedRef.current) return;
+      setContractFile(file);
+      setContractUploadLoading(true);
+      const res = await extractContractText(file);
 
-      // Force re-upload on any failure (timeout, OCR-required blank scan,
-      // corrupt file, backend 4xx/5xx, or a 200 with an empty/whitespace-only
-      // payload) — a stale contractFile referencing text that was never
-      // actually populated is worse than making the user re-select, since
-      // "Start Contract Risk Scan" would otherwise run against empty/missing
-      // rawText. Routing every invalid case through one throw keeps the
-      // recovery logic (toast + clear file + reset input) in a single place.
-      if (extracted.error) {
-        throw new Error(extracted.message || 'Failed to extract document text.');
+      if (res?.error) {
+        throw new Error(res.message || 'Failed to extract document text.');
       }
-      const extractedText = extracted.text;
-      if (typeof extractedText !== 'string' || !extractedText.trim()) {
+      
+      const extracted = typeof res === 'string'
+        ? res
+        : (res?.text || res?.data?.text || res?.extracted_text || res?.data || '');
+
+      console.log("[ContractAnalyzer] Extracted string length:", extracted.length);
+      if (typeof extracted !== 'string' || !extracted.trim()) {
         throw new Error('Invalid or empty text payload');
       }
 
-      // This was the actual cause of the earlier "stuck on extraction"
-      // report: the loading indicator only renders inside the !isAnalyzed
-      // branch (see the INITIAL UPLOAD / INPUT SCREEN condition below). A
-      // 200 OK here was landing correctly, but if isAnalyzed/jobId/clauses
-      // were still set from a PRIOR document, the UI stayed on the old
-      // analysis workspace with no visible change — indistinguishable
-      // from a hang even though extraction had already succeeded. A fresh
-      // upload must clear all of that stale state, not just set rawText.
       setJobId(null);
       setIsAnalyzed(false);
       setClauses([]);
       setSummary('');
       setCitations([]);
-      setRawText(cleanExtractedText(extractedText));
+      setRawText(cleanExtractedText(extracted));
     } catch (err) {
-      if (!isMountedRef.current) return;
       const message = err?.message === 'Invalid or empty text payload'
         ? 'No readable text found in document.'
         : (err?.message || 'Failed to extract document text.');
@@ -1981,7 +2311,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setContractFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } finally {
-      if (isMountedRef.current) setContractUploadLoading(false);
+      setContractUploadLoading(false);
     }
   };
 
@@ -2004,36 +2334,39 @@ export default function ContractAnalyzer({ setFocusMode }) {
       }
     }
 
-    setRuleBookUploadLoading(true);
-    // Extract text from ALL files concurrently.
-    const results = await Promise.all(fileArr.map(f => extractContractText(f)));
-    if (!isMountedRef.current) return;
-    setRuleBookUploadLoading(false);
+    try {
+      setRuleBookUploadLoading(true);
+      // Extract text from ALL files concurrently.
+      const results = await Promise.all(fileArr.map(f => extractContractText(f)));
 
-    const extractedTexts = results
-      .filter(r => !r.error && r.text)
-      .map(r => r.text.trim())
-      .filter(Boolean);
-    const failedCount = results.length - extractedTexts.length;
+      const extractedTexts = results
+        .filter(r => !r.error && r.text)
+        .map(r => r.text.trim())
+        .filter(Boolean);
+      const failedCount = results.length - extractedTexts.length;
 
-    if (extractedTexts.length === 0) {
-      alert('Failed to extract text from the selected Rule Book file(s).');
-      return;
-    }
+      if (extractedTexts.length === 0) {
+        throw new Error('Failed to extract text from the selected Rule Book file(s).');
+      }
 
-    const combined = extractedTexts.join(RULE_BOOK_SEPARATOR);
-    // Append to any existing rule book text (typed or from a previous upload).
-    setRuleBookText(prev =>
-      prev.trim() ? prev + RULE_BOOK_SEPARATOR + combined : combined
-    );
+      const combined = extractedTexts.join(RULE_BOOK_SEPARATOR);
+      // Append to any existing rule book text (typed or from a previous upload).
+      setRuleBookText(prev =>
+        prev.trim() ? prev + RULE_BOOK_SEPARATOR + combined : combined
+      );
 
-    const label = fileArr.length === 1
-      ? fileArr[0].name
-      : `${extractedTexts.length} documents loaded`;
-    setRuleBookFile({ name: label });
+      const label = fileArr.length === 1
+        ? fileArr[0].name
+        : `${extractedTexts.length} documents loaded`;
+      setRuleBookFile({ name: label });
 
-    if (failedCount > 0) {
-      alert(`${failedCount} file(s) could not be extracted and were skipped.`);
+      if (failedCount > 0) {
+        alert(`${failedCount} file(s) could not be extracted and were skipped.`);
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to extract text from Rule Book.');
+    } finally {
+      setRuleBookUploadLoading(false);
     }
   };
 
@@ -2042,24 +2375,27 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // over SSE and calls loadAnalysisResults once the job reaches SUCCESS.
   // This function itself no longer waits ~5 minutes for the scan to finish.
   const handleTextAnalyze = async (overrideText = null) => {
+    if (typeof overrideText !== 'string') {
+      if (!rawText || !rawText.trim()) { alert("Please paste contract text or select a file to analyze."); return; }
+    }
     const target = (typeof overrideText === 'string' ? overrideText : rawText).trim();
-    if (!target) {
-      alert('Please paste contract text or select a file to analyze.');
-      return;
-    }
 
-    setScanProgress(0);
-    setLoadingText('Queuing scan...');
-    setIsAnalyzing(true);
-    const res = await startContractAnalysisJob(target, ruleBookText, scanStrategy);
-    if (!isMountedRef.current) return;
+    try {
+      setScanProgress(0);
+      setLoadingText('Queuing scan...');
+      setIsAnalyzing(true);
+      const res = await startContractAnalysisJob(target, ruleBookText, scanStrategy);
 
-    if (res.error || !res.job_id) {
+      if (res.error || !res.job_id) {
+        setIsAnalyzing(false);
+        alert(res.message || 'Failed to start analysis job.');
+        return;
+      }
+      setJobId(res.job_id);
+    } catch (err) {
       setIsAnalyzing(false);
-      alert(res.message || 'Failed to start analysis job.');
-      return;
+      alert(err.message || 'Failed to start analysis job.');
     }
-    setJobId(res.job_id);
   };
 
   // Contextual voice hook: when InzIQ resolves an "analyze this contract" command
@@ -2170,6 +2506,15 @@ export default function ContractAnalyzer({ setFocusMode }) {
       }
     }
   };
+
+  useEffect(() => {
+    window.inspectRiskFromHtml = (id) => {
+      inspectRisk(id);
+    };
+    return () => {
+      delete window.inspectRiskFromHtml;
+    };
+  }, [flaggedClauses]);
 
   // ── 3. REWRITE HANDLER ──────────────────────────────────────────────
   const handleRewrite = async () => {
@@ -3392,8 +3737,18 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               <div className="original-clause-box" style={{ fontSize: '12.5px', marginTop: '5px' }}>{activeClause.text}</div>
                             </div>
 
-                            <div style={{ padding: '10px 12px', background: activeClause.risk === 'RED' ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)', borderLeft: `3px solid ${activeClause.risk === 'RED' ? 'var(--accent-danger)' : 'var(--accent-warning)'}`, fontSize: '12px', color: 'var(--text-dark-primary)', lineHeight: '1.5', borderRadius: '0 4px 4px 0' }}>
-                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.risk === 'RED' ? '#FCA5A5' : '#FCD34D', display: 'block', marginBottom: '4px' }}>Indian Legal Issue</span>
+                            <div className="inspected-risk-issue-box" style={{
+                              padding: '12px 14px',
+                              background: activeClause.risk === 'RED' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                              borderLeft: `4px solid ${activeClause.risk === 'RED' ? '#EF4444' : '#F59E0B'}`,
+                              fontSize: '12.5px',
+                              color: '#E2E8F0',
+                              lineHeight: '1.6',
+                              borderRadius: '0 8px 8px 0',
+                              border: `1px solid ${activeClause.risk === 'RED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'}`,
+                              borderLeftWidth: '4px'
+                            }}>
+                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.risk === 'RED' ? '#FCA5A5' : '#FCD34D', display: 'block', marginBottom: '6px' }}>Indian Legal Issue</span>
                               {activeClause.issue}
                             </div>
                           </div>
@@ -3401,95 +3756,116 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           {/* Column B: Playbook Guardrail + Revision Workshop */}
                           <div className="playbook-col">
                             {/* Rule Enforced */}
-                            <div style={{ padding: '10px 12px', background: activeClause.isRuleBookViolation ? 'rgba(139,92,246,0.07)' : 'rgba(255,255,255,0.02)', border: `1px solid ${activeClause.isRuleBookViolation ? 'rgba(139,92,246,0.28)' : 'rgba(255,255,255,0.05)'}`, borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '5px', minHeight: '60px' }}>
-                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.isRuleBookViolation ? '#A78BFA' : 'var(--text-dark-muted)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 0 0 6.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 0 0 6.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>
-                                Playbook Guardrail
-                              </span>
-                              {activeClause.isRuleBookViolation && activeClause.ruleBookReference ? (
-                                <span style={{ fontSize: '12px', color: 'var(--text-dark-primary)', lineHeight: 1.45, fontStyle: 'italic' }}>
-                                  "{activeClause.ruleBookReference}"
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', fontStyle: 'italic' }}>No rule book override active for this clause.</span>
-                              )}
-                            </div>
+                            <div className="playbook-guardrail-card" style={{
+                              padding: '12px 14px',
+                              background: activeClause.isRuleBookViolation ? 'rgba(139, 92, 246, 0.08)' : 'rgba(30, 41, 59, 0.3)',
+                              border: `1px solid ${activeClause.isRuleBookViolation ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
+                              borderRadius: '12px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                              minHeight: '60px'
+                            }}>
+                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.isRuleBookViolation ? '#A78BFA' : '#94A3B8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 0 0 6.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 0 0 6.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>
+                                 Playbook Guardrail
+                               </span>
+                               {activeClause.isRuleBookViolation && activeClause.ruleBookReference ? (
+                                <span style={{ fontSize: '12.5px', color: '#F1F5F9', lineHeight: 1.5, fontStyle: 'italic' }}>
+                                   "{activeClause.ruleBookReference}"
+                                 </span>
+                               ) : (
+                                <span style={{ fontSize: '12px', color: '#64748B', fontStyle: 'italic' }}>No rule book override active for this clause.</span>
+                               )}
+                             </div>
 
                             {/* Revision Workshop — glass card */}
                             <div className="revision-glass-card">
-                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>Revision Workshop</span>
+                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94A3B8' }}>Revision Workshop</span>
 
                               {activeClause.isPendingSuggestion ? (
                                 <>
-                                  <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', fontSize: '12px', color: 'var(--text-dark-muted)', lineHeight: 1.5 }}>
+                                  <div style={{ padding: '12px 14px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.15)', borderRadius: '8px', fontSize: '12.5px', color: '#94A3B8', lineHeight: 1.55 }}>
                                     A tracked change is live in the document — the original text is struck through
                                     in red, the suggestion is underlined in green. Review it there, then resolve it below.
                                   </div>
-                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                  <div style={{ display: 'flex', gap: '10px' }}>
                                     <button
-                                      className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                                      className="revision-btn-success"
                                       onClick={acceptActiveSuggestion}
-                                      style={{ flex: 1, padding: '9px', fontSize: '12.5px', background: 'var(--accent-success)' }}
+                                      style={{ flex: 1, padding: '11px', fontSize: '13px', background: '#10B981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)', transition: 'all 0.2s ease' }}
                                     >
-                                      ✓ Accept into Document
+                                      ✓ Accept Suggestion
                                     </button>
                                     <button
+                                      className="revision-btn-danger"
                                       onClick={rejectActiveSuggestion}
-                                      style={{ flex: 1, padding: '9px', fontSize: '12.5px', background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: '#FCA5A5', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                                      style={{ flex: 1, padding: '11px', fontSize: '13px', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#FCA5A5', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease' }}
                                     >
-                                      ✗ Discard Suggestion
+                                      ✗ Discard
                                     </button>
                                   </div>
                                 </>
                               ) : (
                                 <>
-                                  <div style={{ position: 'relative' }}>
-                                    <input
-                                      type="text"
-                                      placeholder="E.g., Make notice mutual, cap penalty at 2×…"
-                                      className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                                      style={{ width: '100%', boxSizing: 'border-box', fontSize: '12px' }}
-                                      value={intent}
-                                      onChange={(e) => { setIntent(e.target.value); setShowSuggestions(true); }}
-                                      onFocus={() => setShowSuggestions(true)}
-                                    />
-                                    {showSuggestions && dynamicIntents.length > 0 && (
-                                      <div className="autocomplete-dropdown" ref={suggestionsRef}>
-                                        {dynamicIntents.map((item, idx) => (
-                                          <div key={idx} className="autocomplete-item" onClick={() => { setIntent(item); setShowSuggestions(false); }}>
-                                            💡 {item}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
+                                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '14px', marginTop: '4px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94A3B8', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ color: '#6366F1' }}>✨</span> Revision Workshop
+                                    </div>
+                                    <div style={{ position: 'relative' }}>
+                                      <input
+                                        type="text"
+                                        placeholder="E.g., Make notice mutual, cap penalty to 1x..."
+                                        className="revision-workshop-input"
+                                        value={intent}
+                                        onChange={(e) => { setIntent(e.target.value); setShowSuggestions(true); }}
+                                        onFocus={() => setShowSuggestions(true)}
+                                        style={{ marginBottom: '8px' }}
+                                      />
+                                      {showSuggestions && dynamicIntents.length > 0 && (
+                                        <div className="autocomplete-dropdown" ref={suggestionsRef}>
+                                          {dynamicIntents.map((item, idx) => (
+                                            <div key={idx} className="autocomplete-item" onClick={() => { setIntent(item); setShowSuggestions(false); }}>
+                                              💡 {item}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
 
-                                  <button
-                                    className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
-                                    onClick={handleRewrite}
-                                    disabled={rewriting}
-                                    style={{ width: '100%', padding: '9px', fontSize: '12.5px' }}
-                                  >
-                                    {rewriting ? (
-                                      <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite', marginRight: 6, verticalAlign: 'middle' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Generating…</>
-                                    ) : 'Rewrite Clause with AI'}
-                                  </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleRewrite}
+                                      disabled={rewriting}
+                                      className="revision-btn-primary"
+                                    >
+                                      {rewriting ? (
+                                        <>
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                                          <span>Generating…</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span>Rewrite Clause with AI</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
 
                                   {rewrittenText && (
                                     <>
-                                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
-                                        <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-success)', display: 'block', marginBottom: '6px' }}>AI Suggested Revision</span>
+                                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '12px', marginTop: '10px' }}>
+                                        <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#10B981', display: 'block', marginBottom: '6px' }}>AI Suggested Revision</span>
                                         <textarea
-                                          className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                                          style={{ height: '90px', width: '100%', boxSizing: 'border-box', border: '1px solid rgba(16,185,129,0.3)', fontSize: '12px', resize: 'none' }}
+                                          className="revision-workshop-textarea"
                                           value={rewrittenText}
                                           onChange={(e) => setRewrittenText(e.target.value)}
                                         />
                                       </div>
                                       <button
-                                        className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
+                                        className="revision-btn-success"
                                         onClick={applyRevision}
-                                        style={{ width: '100%', padding: '9px', fontSize: '12.5px', background: 'var(--accent-success)' }}
+                                        style={{ width: '100%', padding: '11px', fontSize: '13px', background: '#10B981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)', transition: 'all 0.2s ease', marginTop: '8px' }}
                                       >
                                         Apply Rewrite to Document
                                       </button>
@@ -3505,15 +3881,50 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       /* ── CLAUSE LIST OVERVIEW ── */
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {isAnalyzing ? (
-                          // A scan is in flight (Deep Scan / Strategy Toggle /
-                          // Piped Document all land here identically) — an
-                          // empty clauses array right now means "no results
-                          // YET", not "scan complete, zero risks". Showing
-                          // "No flagged clauses found" here would misreport
-                          // an in-progress scan as an already-clean contract.
-                          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dark-muted)', fontSize: '13px' }}>
-                            <span style={{ width: '16px', height: '16px', border: '2px solid var(--accent-primary)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite', marginBottom: '10px' }} />
-                            <div style={{ marginTop: '10px' }}>{loadingText || 'Scanning...'}</div>
+                          /* Futuristic Scanning Console Overlay */
+                          <div className="futuristic-scanning-container">
+                            {/* Scanning Radar/Pulse Ring */}
+                            <div className="scanner-glowing-ring">
+                              <div className="scanner-ring-pulse"></div>
+                              <div className="scanner-ring-core">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 3s linear infinite' }}>
+                                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                                </svg>
+                              </div>
+                            </div>
+
+                            {/* Scan Line Laser Effect */}
+                            <div className="scanning-laser-line"></div>
+
+                            {/* Status and Progress */}
+                            <div className="scanner-status-title">
+                              {loadingText || 'Scanning Contract...'}
+                            </div>
+                            
+                            <div className="scanner-progress-wrapper">
+                              <div className="scanner-progress-bar" style={{ width: `${scanProgress}%` }}></div>
+                            </div>
+                            <div className="scanner-progress-text">{Math.round(scanProgress)}% Completed</div>
+
+                            {/* Rolling High-Tech Scanning Logs */}
+                            <div className="scanner-console-box">
+                              <div className="scanner-console-header">
+                                <span className="console-dot-red"></span>
+                                <span className="console-dot-yellow"></span>
+                                <span className="console-dot-green"></span>
+                                <span className="console-title">HYBRID ENGINE CONSOLE</span>
+                              </div>
+                              <div className="scanner-console-logs" ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>
+                                {getFakeConsoleLogs(scanProgress).map((log, idx) => (
+                                  <div key={idx} className="scanner-log-line">
+                                    <span className="log-timestamp">[{new Date().toLocaleTimeString()}]</span> {log}
+                                  </div>
+                                ))}
+                                <div className="scanner-log-line active-line">
+                                  <span className="log-timestamp">[{new Date().toLocaleTimeString()}]</span> Analyzing nodes... <span className="console-cursor">_</span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         ) : clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length === 0 ? (
                           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
@@ -3559,7 +3970,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {/* SUB TAB: Recommendations (Extensions) */}
                 {activeTab === 'recs' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Missing Indian Protections</h3>
                       <button
@@ -3584,8 +3995,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         No missing clauses identified yet.
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} style={{ display: 'flex', flexDirection: 'column', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
                           {missingClauses?.map((item, idx) => (
                             <div key={idx} className="rec-protection-card" style={{ marginBottom: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
@@ -3702,53 +4113,50 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                 <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '6px', lineHeight: '1.5' }}>
                                   "{prec.snippet}..."
                                 </p>
-                                <div className="citation-action-footer">
-                                  <button
-                                    onClick={() => insertCitationIntoDocument(prec)}
-                                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-dark-subtle)', color: '#CBD5E1', fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px', cursor: 'pointer' }}
-                                  >
-                                    📖 Insert Citation
-                                  </button>
-                                  {prec.in_vault ? (
-                                    <button
-                                      className="citation-btn-vault"
-                                      onClick={() => navigate(`/case/vault/doc/${prec.vault_id}`)}
-                                    >
-                                      📂 View in Vault
-                                    </button>
-                                  ) : (
-                                    <a
-                                      className="citation-btn-kanoon"
-                                      href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      <ExternalLinkIcon /> Open Official Record
-                                    </a>
-                                  )}
-                                  <button
-                                    onClick={() => handleSearchRelated(prec, i)}
-                                    disabled={loadingRelated === i}
-                                    style={{
-                                      background: 'transparent', border: '1px solid #3b82f6', color: '#60a5fa',
-                                      fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px',
-                                      cursor: loadingRelated === i ? 'default' : 'pointer',
-                                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                                      opacity: loadingRelated === i ? 0.7 : 1, transition: 'all 0.15s',
-                                    }}
-                                  >
-                                    {loadingRelated === i ? (
-                                      <>
-                                        <span style={{ width: '10px', height: '10px', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: '#60a5fa', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                                        Searching…
-                                      </>
-                                    ) : relatedCitations[i] ? (
-                                      '🔗 Hide Related Citations'
-                                    ) : (
-                                      '🔗 Search Related Citations'
-                                    )}
-                                  </button>
-                                </div>
+                                 <div className="citation-action-footer">
+                                   <button
+                                     type="button"
+                                     onClick={() => insertCitationIntoDocument(prec)}
+                                     className="citation-btn-insert"
+                                   >
+                                     📖 Insert Citation
+                                   </button>
+                                   {prec.in_vault ? (
+                                     <button
+                                       type="button"
+                                       onClick={() => navigate(`/case/vault/doc/${prec.vault_id}`)}
+                                       className="citation-btn-vault"
+                                     >
+                                       📂 View in Vault
+                                     </button>
+                                   ) : (
+                                     <a
+                                       href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       className="citation-btn-kanoon"
+                                     >
+                                       <ExternalLinkIcon /> Open Official Record
+                                     </a>
+                                   )}
+                                   <button
+                                     type="button"
+                                     onClick={() => handleSearchRelated(prec, i)}
+                                     disabled={loadingRelated === i}
+                                     className="citation-btn-search-related"
+                                   >
+                                     {loadingRelated === i ? (
+                                       <>
+                                         <span style={{ width: '10px', height: '10px', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: '#60a5fa', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                                         Searching…
+                                       </>
+                                     ) : relatedCitations[i] ? (
+                                       '🔗 Hide Related Citations'
+                                     ) : (
+                                       '🔗 Search Related Citations'
+                                     )}
+                                   </button>
+                                 </div>
 
                                 {relatedCitations[i] && (
                                   <div style={{ marginLeft: '1rem', borderLeft: '2px solid #374151', paddingLeft: '12px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
