@@ -73,8 +73,16 @@ def fetch_kanoon_case_title(snippet):
     
     # Clean up quote
     excerpt = excerpt.replace('"', '').replace("'", "").strip()
-    query = f'"{excerpt}"'
-    
+    # NOT wrapped in quotes: an exact-phrase search almost never matches —
+    # this is a verbatim body excerpt from OUR document, not judgment
+    # title text, so Kanoon's title-indexed search returns zero results
+    # for the quoted form nearly every time (silently — result_titles
+    # comes back empty below, so this whole resolver just returns None).
+    # Unquoted, Kanoon's own relevance ranking has a real shot at surfacing
+    # the right case — the same fix already validated in this codebase's
+    # /api/kanoon-redirect route (see its is_case=False branch).
+    query = excerpt
+
     zenrows_key = os.getenv("ZENROWS_API_KEY")
     target_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
     

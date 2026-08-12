@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
@@ -568,8 +568,8 @@ const flStyles = `
      out than a fixed-width font at that size. overflow-y:auto on .dv-body
      above keeps the scroll container itself cheap regardless of length. */
   .document-viewer-text {
-    font-family: 'SF Mono', 'Consolas', 'Monaco', ui-monospace, monospace; font-size: 13px; line-height: 1.7;
-    color: var(--text-primary); white-space: pre-wrap; word-break: break-word;
+    color: var(--text-primary);
+    word-break: break-word;
   }
   .document-viewer-text::selection { background: rgba(var(--primary-rgb, 99,102,241), 0.2); }
   .document-viewer-error {
@@ -595,9 +595,395 @@ const flStyles = `
   .fl-ext-action-btn:disabled { opacity: .55; cursor: default; color: var(--text-muted); border-color: var(--border-subtle); background: transparent; }
   .fl-ext-action-btn.vault { background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.25); color: #A78BFA; }
   .fl-ext-action-btn.vault:hover { background: rgba(139,92,246,0.16); border-color: rgba(139,92,246,0.4); }
+
+  /* ── TWO-COLUMN DOCUMENT LAYOUT ── */
+  .dv-content-layout {
+    display: flex;
+    gap: 20px;
+    height: 100%;
+    width: 100%;
+  }
+  
+  .dv-sidebar-outline {
+    width: 220px;
+    background: rgba(15, 23, 42, 0.4) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+    padding-right: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+  
+  .dv-main-viewer {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+  }
+
+  /* Outline item styles */
+  .dv-outline-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748B;
+    margin-bottom: 8px;
+  }
+  .dv-outline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .dv-outline-item {
+    font-size: 11.5px;
+    color: #94A3B8;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border: 1px solid transparent;
+  }
+  .dv-outline-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: #F1F5F9;
+  }
+  .dv-outline-item.header {
+    font-weight: 600;
+    color: #818CF8;
+  }
+  .dv-outline-item.meta {
+    font-size: 11px;
+    color: #64748B;
+  }
+  
+  /* Persistent Search Bar styles */
+  .dv-search-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 16px;
+  }
+  .dv-search-input {
+    flex: 1;
+    background: transparent !important;
+    border: none !important;
+    color: #F8FAFC !important;
+    font-size: 13px !important;
+    outline: none !important;
+  }
+  .dv-search-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dv-search-btn {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    color: #CBD5E1 !important;
+    padding: 4px 8px !important;
+    border-radius: 4px !important;
+    font-size: 11px !important;
+    cursor: pointer !important;
+    transition: all 0.15s !important;
+  }
+  .dv-search-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #F8FAFC !important;
+  }
+  .dv-search-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .dv-search-count {
+    font-size: 11px;
+    color: #64748B;
+    margin-right: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Readability Control Panel */
+  .dv-controls-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .dv-control-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .dv-control-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748B;
+  }
+  .dv-control-options {
+    display: flex;
+    gap: 4px;
+  }
+  .dv-control-opt-btn {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    color: #94A3B8 !important;
+    padding: 5px 0 !important;
+    border-radius: 4px !important;
+    font-size: 10.5px !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    text-align: center;
+    transition: all 0.15s ease !important;
+  }
+  .dv-control-opt-btn:hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: #F1F5F9 !important;
+  }
+  .dv-control-opt-btn.active {
+    background: rgba(99, 102, 241, 0.15) !important;
+    border-color: rgba(99, 102, 241, 0.4) !important;
+    color: #C4B5FD !important;
+  }
+
+  /* ── Indian Kanoon Layout Reconstruction styling ── */
+  .judg-header-center {
+    text-align: center !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    margin: 25px 0 12px !important;
+    color: #E2E8F0 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .judg-party-role {
+    text-align: center !important;
+    font-style: italic !important;
+    margin: 8px 0 !important;
+    color: #94A3B8 !important;
+    font-size: 13.5px !important;
+  }
+  .judg-bench-box {
+    text-align: center !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    padding: 10px 14px !important;
+    border-radius: 8px !important;
+    margin: 18px 0 !important;
+    font-size: 13px !important;
+    color: #CBD5E1 !important;
+  }
+  .judg-blockquote {
+    border-left: 3px solid #8B5CF6 !important;
+    margin: 18px 24px !important;
+    padding: 10px 18px !important;
+    background: rgba(139, 92, 246, 0.04) !important;
+    color: #94A3B8 !important;
+    font-style: italic !important;
+    border-radius: 0 6px 6px 0;
+  }
+  .judg-para {
+    margin: 0 0 1.25em !important;
+    text-align: justify !important;
+    color: inherit !important;
+  }
+  .judg-para-num {
+    font-weight: bold !important;
+    margin-right: 6px !important;
+    color: #818CF8 !important;
+  }
+  .judg-inline-link {
+    color: #60A5FA !important;
+    text-decoration: none !important;
+    border-bottom: 1px dashed rgba(96, 165, 250, 0.4) !important;
+    transition: all 0.2s !important;
+    cursor: pointer !important;
+    font-weight: 500 !important;
+  }
+  .judg-inline-link:hover {
+    color: #93C5FD !important;
+    border-bottom-style: solid !important;
+  }
+  .judg-search-match {
+    background: rgba(245, 158, 11, 0.35) !important;
+    border-bottom: 2px solid #F59E0B !important;
+    color: inherit !important;
+    border-radius: 2px;
+  }
+  .judg-search-match.active-match {
+    background: rgba(239, 68, 68, 0.45) !important;
+    border-bottom: 2px solid #EF4444 !important;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6) !important;
+    border-radius: 2px;
+  }
 `;
 
 
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function linkifyCitationsAndStatutes(text) {
+  if (!text) return "";
+  let escaped = escapeHtml(text);
+
+  // Regex patterns:
+  // 1. Citations: e.g. "AIR 2014 SC 1356", "(2012) 9 SCC 552", "[2012] 12 SCR 327", "(2009) 7 SCC 363"
+  const citationPattern = /\b(?:AIR|SCR|SCC|JT|SCALE|SCR|CRLJ)\s+\d{4}\s+(?:SC|HC)?\s*\d+|\(\d{4}\)\s+\d+\s+(?:SCC|JT|SCALE|SCR)\s+\d+|\[\d{4}\]\s+\d+\s+(?:SCR|SCC)\s+\d+/gi;
+  
+  // 2. Statute Sections: e.g. "Section 14 of the Indian Contract Act", "Section 138 of the Negotiable Instruments Act", "Order 21 Rule 58 CPC"
+  const statutePattern = /\b(?:Section|Sec\.)\s+\d+\b(?:\s+(?:of|in)\s+[^,.;()]*Act)?|\bOrder\s+\d+\s+Rule\s+\d+\b(?:\s+of\s+[^,.;()]*Code)?|\bOrder\s+\d+\s+Rule\s+\d+\s+CPC\b/gi;
+
+  escaped = escaped.replace(citationPattern, (match) => {
+    const query = encodeURIComponent(`cite: ${match}`);
+    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">⚖️ ${match}</a>`;
+  });
+
+  escaped = escaped.replace(statutePattern, (match) => {
+    const query = encodeURIComponent(match);
+    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">📜 ${match}</a>`;
+  });
+
+  return escaped;
+}
+
+function parseAndFormatJudgment(rawText) {
+  if (!rawText) return { html: "", outline: [] };
+
+  let text = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rawLines = text.split('\n');
+  const processedLines = [];
+  
+  for (let i = 0; i < rawLines.length; i++) {
+    const current = rawLines[i].trim();
+    if (!current) {
+      processedLines.push("");
+      continue;
+    }
+    
+    const isListMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\b[IVXDivxd]+\.|\(\d{1,2}\)|\([a-zA-Z]\))$/.test(current);
+    if (isListMarker && i + 1 < rawLines.length) {
+      let nextLine = rawLines[i + 1].trim();
+      while (!nextLine && i + 2 < rawLines.length) {
+        i++;
+        nextLine = rawLines[i + 1].trim();
+      }
+      if (nextLine) {
+        processedLines.push(current + " " + nextLine);
+        i++;
+        continue;
+      }
+    }
+    processedLines.push(current);
+  }
+
+  const paragraphs = [];
+  let currentPara = "";
+
+  for (let i = 0; i < processedLines.length; i++) {
+    const line = processedLines[i];
+    
+    if (line === "") {
+      if (currentPara) {
+        paragraphs.push(currentPara);
+        currentPara = "";
+      }
+      continue;
+    }
+
+    if (!currentPara) {
+      currentPara = line;
+      continue;
+    }
+
+    const startsWithMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\(\d{1,2}\)|\([a-zA-Z]\))\s+/.test(line);
+    const isHeader = /^(?:IN THE SUPREME COURT|CIVIL APPELLATE|CIVIL APPEAL|WRIT PETITION|CRIMINAL APPEAL|SLP|JUDGMENT|ORDER|Bench:|Author:)/i.test(line);
+    const prevIsShort = currentPara.length < 55;
+    const prevEndsWithPunct = /[.?!:]$/.test(currentPara);
+    const startsWithCapital = /^[A-Z]/.test(line);
+
+    if (startsWithMarker || isHeader || prevIsShort || (prevEndsWithPunct && startsWithCapital)) {
+      paragraphs.push(currentPara);
+      currentPara = line;
+    } else {
+      currentPara += " " + line;
+    }
+  }
+  
+  if (currentPara) {
+    paragraphs.push(currentPara);
+  }
+
+  const outline = [];
+  let paraCount = 0;
+
+  const htmlParagraphs = paragraphs.map((para, index) => {
+    let cleanPara = para.replace(/\s+/g, ' ').trim();
+    if (!cleanPara) return "";
+
+    const id = `judg-para-block-${index}`;
+
+    if (/^(?:IN THE SUPREME COURT OF INDIA|CIVIL APPELLATE JURISDICTION|JUDGMENT|ORDER)$/i.test(cleanPara)) {
+      outline.push({ id, label: cleanPara, type: 'header' });
+      return `<h2 id="${id}" class="judg-header-center">${cleanPara}</h2>`;
+    }
+    
+    if (/^(?:Versus|Appellant|Respondent|Appellants|Respondents|\.\.\.\s*Appellant|\.\.\.\s*Respondent)$/i.test(cleanPara) || cleanPara === ".. Appellant" || cleanPara === ".. Respondent") {
+      return `<div class="judg-party-role">${cleanPara}</div>`;
+    }
+
+    if (cleanPara.startsWith('[') && cleanPara.endsWith(']')) {
+      outline.push({ id, label: cleanPara.slice(0, 35) + '...', type: 'meta' });
+      return `<div id="${id}" class="judg-bench-box">${cleanPara}</div>`;
+    }
+
+    const isQuoted = (cleanPara.startsWith('"') && cleanPara.endsWith('"')) || (cleanPara.startsWith('“') && cleanPara.endsWith('”'));
+    let formattedText = linkifyCitationsAndStatutes(cleanPara);
+
+    if (isQuoted && cleanPara.length > 80) {
+      return `<blockquote id="${id}" class="judg-blockquote">${formattedText}</blockquote>`;
+    }
+
+    const paraNumMatch = cleanPara.match(/^(\d{1,3})\.\s+(.*)/);
+    if (paraNumMatch) {
+      paraCount++;
+      const pNum = paraNumMatch[1];
+      if (paraCount <= 15 || paraCount % 5 === 0) {
+        outline.push({ id, label: `Paragraph ${pNum}`, type: 'para' });
+      }
+      return `<p id="${id}" class="judg-para"><span class="judg-para-num">${pNum}.</span> ${linkifyCitationsAndStatutes(paraNumMatch[2])}</p>`;
+    }
+
+    return `<p id="${id}" class="judg-para">${formattedText}</p>`;
+  });
+
+  return {
+    html: htmlParagraphs.filter(p => p).join('\n'),
+    outline
+  };
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function FirmLibrary() {
@@ -638,6 +1024,122 @@ export default function FirmLibrary() {
   const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, content }
   const [viewerError, setViewerError] = useState(null);
 
+  // ── Upgraded Document Viewer controls & search states ──
+  const [fontSize, setFontSize] = useState('md'); // sm, md, lg
+  const [fontFamily, setFontFamily] = useState('serif'); // serif, sans, mono
+  const [lineSpacing, setLineSpacing] = useState('normal'); // normal, loose
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [matchCount, setMatchCount] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const parsedResult = useMemo(() => {
+    if (!viewerDoc || !viewerDoc.content) return { html: "", outline: [] };
+    return parseAndFormatJudgment(viewerDoc.content);
+  }, [viewerDoc]);
+
+  const highlightedHtml = useMemo(() => {
+    if (!parsedResult.html) return "";
+    if (!searchTerm || searchTerm.length < 3) {
+      return parsedResult.html;
+    }
+    try {
+      const escapedTerm = searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regex = new RegExp(`(${escapedTerm})`, 'gi');
+      
+      let index = 0;
+      const tagOrWordPattern = /(<[^>]+>)|([^<]+)/g;
+      
+      const output = parsedResult.html.replace(tagOrWordPattern, (match, tag, text) => {
+        if (tag) return tag;
+        return text.replace(regex, (m) => {
+          const id = `search-match-${index}`;
+          index++;
+          return `<mark id="${id}" class="judg-search-match">${m}</mark>`;
+        });
+      });
+      
+      setTimeout(() => {
+        setMatchCount(index);
+      }, 0);
+      return output;
+    } catch (e) {
+      console.error("[Search Highlight] error:", e);
+      return parsedResult.html;
+    }
+  }, [parsedResult.html, searchTerm]);
+
+  useEffect(() => {
+    if (matchCount > 0 && searchTerm) {
+      const matches = document.querySelectorAll('.judg-search-match');
+      matches.forEach((el, idx) => {
+        if (idx === activeMatchIndex) {
+          el.classList.add('active-match');
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          el.classList.remove('active-match');
+        }
+      });
+    }
+  }, [activeMatchIndex, matchCount, searchTerm]);
+
+  useEffect(() => {
+    setActiveMatchIndex(0);
+  }, [searchTerm]);
+
+  const getTextContainerStyles = () => {
+    let styles = {};
+    if (fontFamily === 'serif') {
+      styles.fontFamily = 'Georgia, "Times New Roman", Times, serif';
+    } else if (fontFamily === 'sans') {
+      styles.fontFamily = 'var(--font-sans), Inter, system-ui, sans-serif';
+    } else {
+      styles.fontFamily = '"SF Mono", Consolas, Monaco, monospace';
+    }
+
+    if (fontSize === 'sm') {
+      styles.fontSize = '13.5px';
+    } else if (fontSize === 'md') {
+      styles.fontSize = '15.5px';
+    } else {
+      styles.fontSize = '18.5px';
+    }
+
+    styles.lineHeight = lineSpacing === 'loose' ? '2.0' : '1.65';
+    styles.textAlign = 'justify';
+    styles.textJustify = 'inter-word';
+    return styles;
+  };
+
+  const handlePrint = () => {
+    if (!viewerDoc) return;
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${viewerDoc.title || 'Legal Document'}</title>
+          <style>
+            body { font-family: Georgia, serif; line-height: 1.8; color: #111; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+            h2 { text-align: center; margin-top: 30px; font-size: 18px; }
+            p { text-align: justify; text-justify: inter-word; margin-bottom: 1.2em; }
+            blockquote { border-left: 3px solid #555; margin: 15px 25px; padding-left: 15px; font-style: italic; color: #444; }
+            .judg-bench-box { border: 1px solid #ddd; padding: 10px; border-radius: 6px; text-align: center; margin: 20px 0; background: #f9f9f9; }
+            .judg-para-num { font-weight: bold; margin-right: 6px; }
+            .judg-party-role { text-align: center; font-style: italic; margin: 10px 0; }
+          </style>
+        </head>
+        <body>
+          <h2>${viewerDoc.title || 'Legal Document'}</h2>
+          <div>${parsedResult.html}</div>
+          <script>
+            window.onload = function() { window.print(); window.close(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   // ── Local hybrid search (/api/library/search) — 100% on-device vector +
   // BM25, no LLM call. Debounced the same way the external Pinecone search
   // above is; null librarySearchIds means "not active, use the plain
@@ -676,6 +1178,9 @@ export default function FirmLibrary() {
     setPinDone(false);
     setSummaryText(null);
     setSummaryOpen(false);
+    setSearchTerm('');
+    setActiveMatchIndex(0);
+    setMatchCount(0);
     try {
       const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(sourceCaseId)}`);
       const data = await res.json();
@@ -1827,6 +2332,9 @@ export default function FirmLibrary() {
                   <button type="button" className="dv-action-btn" onClick={handleSummarize} disabled={summaryLoading}>
                     {summaryLoading ? '⋯ Summarizing' : '⚡ AI Summarize'}
                   </button>
+                  <button type="button" className="dv-action-btn" onClick={handlePrint}>
+                    🖨️ Print / Export PDF
+                  </button>
                 </div>
               )}
             </div>
@@ -1857,8 +2365,185 @@ export default function FirmLibrary() {
                 <div className="document-viewer-error">{viewerError}</div>
               )}
               {!viewerLoading && !viewerError && viewerDoc && (
-                <div className="dv-text-wrap">
-                  <div className="document-viewer-text">{viewerDoc.content}</div>
+                <div className="dv-content-layout">
+                  {/* Left Column: Outline & Readability Controls */}
+                  {sidebarOpen && (
+                    <div className="dv-sidebar-outline">
+                      {/* Search & Outline Panel */}
+                      <div className="dv-outline-title">Document Outline</div>
+                      <div className="dv-outline-list">
+                        {parsedResult.outline.length === 0 ? (
+                          <div style={{ fontSize: '11px', color: '#64748B', fontStyle: 'italic' }}>No sections found.</div>
+                        ) : (
+                          parsedResult.outline.map((item, idx) => (
+                            <div
+                              key={idx}
+                              className={`dv-outline-item ${item.type}`}
+                              onClick={() => {
+                                document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                // Add a temporary glow effect
+                                const el = document.getElementById(item.id);
+                                if (el) {
+                                  el.style.transition = 'text-shadow 0.3s, background 0.3s';
+                                  el.style.textShadow = '0 0 10px rgba(129,140,248,0.6)';
+                                  setTimeout(() => {
+                                    el.style.textShadow = 'none';
+                                  }, 800);
+                                }
+                              }}
+                            >
+                              {item.label}
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Font Controls Panel */}
+                      <div className="dv-controls-panel" style={{ marginTop: 'auto' }}>
+                        <div className="dv-control-row">
+                          <div className="dv-control-label">Font Family</div>
+                          <div className="dv-control-options">
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${fontFamily === 'serif' ? ' active' : ''}`}
+                              onClick={() => setFontFamily('serif')}
+                            >
+                              Serif
+                            </button>
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${fontFamily === 'sans' ? ' active' : ''}`}
+                              onClick={() => setFontFamily('sans')}
+                            >
+                              Sans
+                            </button>
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${fontFamily === 'mono' ? ' active' : ''}`}
+                              onClick={() => setFontFamily('mono')}
+                            >
+                              Mono
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="dv-control-row">
+                          <div className="dv-control-label">Font Size</div>
+                          <div className="dv-control-options">
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${fontSize === 'sm' ? ' active' : ''}`}
+                              onClick={() => setFontSize('sm')}
+                            >
+                              A-
+                            </button>
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${fontSize === 'md' ? ' active' : ''}`}
+                              onClick={() => setFontSize('md')}
+                            >
+                              A
+                            </button>
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${fontSize === 'lg' ? ' active' : ''}`}
+                              onClick={() => setFontSize('lg')}
+                            >
+                              A+
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="dv-control-row">
+                          <div className="dv-control-label">Spacing</div>
+                          <div className="dv-control-options">
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${lineSpacing === 'normal' ? ' active' : ''}`}
+                              onClick={() => setLineSpacing('normal')}
+                            >
+                              Compact
+                            </button>
+                            <button
+                              type="button"
+                              className={`dv-control-opt-btn${lineSpacing === 'loose' ? ' active' : ''}`}
+                              onClick={() => setLineSpacing('loose')}
+                            >
+                              Loose
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Right Column: Main Viewer & Search Bar */}
+                  <div className="dv-main-viewer">
+                    {/* Search inside Document Bar */}
+                    <div className="dv-search-container">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Search in document text (min 3 chars)..."
+                        className="dv-search-input"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                      />
+                      {searchTerm.length >= 3 && (
+                        <div className="dv-search-actions">
+                          <span className="dv-search-count">
+                            {matchCount > 0 ? `${activeMatchIndex + 1} of ${matchCount}` : 'No results'}
+                          </span>
+                          <button
+                            type="button"
+                            className="dv-search-btn"
+                            disabled={matchCount === 0}
+                            onClick={() => setActiveMatchIndex(prev => (prev - 1 + matchCount) % matchCount)}
+                          >
+                            Prev
+                          </button>
+                          <button
+                            type="button"
+                            className="dv-search-btn"
+                            disabled={matchCount === 0}
+                            onClick={() => setActiveMatchIndex(prev => (prev + 1) % matchCount)}
+                          >
+                            Next
+                          </button>
+                          <button
+                            type="button"
+                            className="dv-search-btn"
+                            onClick={() => setSearchTerm('')}
+                            style={{ color: '#EF4444' }}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      )}
+                      
+                      <div style={{ width: '1px', height: '18px', background: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
+                      
+                      {/* Outline Toggle Button */}
+                      <button
+                        type="button"
+                        className="dv-search-btn"
+                        onClick={() => setSidebarOpen(prev => !prev)}
+                        title="Toggle document outline panel"
+                      >
+                        {sidebarOpen ? '📖 Hide Outline' : '📖 Show Outline'}
+                      </button>
+                    </div>
+
+                    <div className="dv-text-wrap" style={{ flex: 1, overflowY: 'auto' }}>
+                      <div
+                        className="document-viewer-text"
+                        style={getTextContainerStyles()}
+                        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

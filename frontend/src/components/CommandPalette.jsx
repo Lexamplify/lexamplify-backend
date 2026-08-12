@@ -965,8 +965,18 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   // Guards async continuations (fetch/save callbacks) against setState calls
   // after this modal instance has unmounted — it mounts/unmounts independently
   // of the outer CommandPalette, so it needs its own ref, not a shared one.
+  //
+  // The explicit `isMountedRef.current = true` on mount is load-bearing, not
+  // redundant with useRef(true) above: React 18/19 StrictMode double-invokes
+  // every effect in dev (mount -> cleanup -> mount again) to surface exactly
+  // this class of bug. Without resetting it here, that first StrictMode
+  // cleanup flips this to false permanently — nothing ever sets it back to
+  // true — so every `if (!isMountedRef.current) return;` guard in this
+  // component silently discards every async result for the rest of the
+  // session, in development only (StrictMode no-ops in production builds).
   const isMountedRef = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
 
@@ -1624,8 +1634,19 @@ function CommandPalette() {
   const lastDocKeyRef  = useRef(null);   // guards against overwriting user edits on re-render
   // Guards async continuations (SSE stream, file attach, schedule/save calls)
   // against setState calls after this component instance has unmounted.
+  //
+  // The explicit `isMountedRef.current = true` on mount is load-bearing:
+  // React 18/19 StrictMode double-invokes every effect in dev (mount ->
+  // cleanup -> mount again). Without resetting it here, that first
+  // StrictMode cleanup flips this to false permanently and it never
+  // recovers — every `if (!isMountedRef.current) return;` guard below then
+  // silently discards every chat response (SSE tokens, review_document
+  // drafts, all of it) for the rest of the session. Production is
+  // unaffected since StrictMode's double-invoke is dev-only — this bug
+  // only ever manifests while running the app locally.
   const isMountedRef   = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
 

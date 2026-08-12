@@ -103,16 +103,24 @@ function resolveCitationDisplay(citation) {
 
   // No extractable name — fall back to a labeled id (raw ids only; a
   // synthetic placeholder is already human-readable text, just not a
-  // useful search string) and a quoted mid-snippet excerpt for Kanoon.
-  // Skips the first 50 chars (usually generic case-caption boilerplate
-  // shared across many judgments, not a useful search anchor). Falls back
-  // to rawTitle whenever there's nothing better — no snippet, or a
-  // snippet too short to leave anything in the 50-130 window
-  // (substring() clamps out-of-range indices to '', which would
-  // otherwise become a literal empty '""' query — worse than the id itself).
+  // useful search string) and a mid-snippet excerpt for Kanoon. Skips the
+  // first 50 chars (usually generic case-caption boilerplate shared
+  // across many judgments, not a useful search anchor). Falls back to
+  // rawTitle whenever there's nothing better — no snippet, or a snippet
+  // too short to leave anything in the 50-130 window (substring() clamps
+  // out-of-range indices to '', which would otherwise become a literal
+  // empty query — worse than the id itself).
+  //
+  // Deliberately NOT quoted: an exact-phrase match almost never hits —
+  // this is a verbatim excerpt from OUR document's body text, not
+  // judgment title text, so Kanoon's title-indexed search returns
+  // zero/arbitrary results for the quoted form. Unquoted, /api/kanoon-
+  // redirect's own is_case=false branch already does exactly this and
+  // documents why: "trust Kanoon's own ranking instead" of forcing an
+  // exact match that real judgments essentially never satisfy.
   const displayTitle = isRawId ? `Judgment Record: ${rawTitle.replace(/_/g, '-')}` : rawTitle;
   const snippetExcerpt = citation.snippet ? citation.snippet.substring(50, 130).trim() : '';
-  const kanoonQuery = snippetExcerpt ? `"${snippetExcerpt}"` : rawTitle;
+  const kanoonQuery = snippetExcerpt || rawTitle;
   return { rawTitle, isRawId, displayTitle, kanoonQuery };
 }
 
