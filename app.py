@@ -479,14 +479,21 @@ def create_app():
     app.config['JWT_TOKEN_LOCATION'] = ['cookies', 'headers']  # 'headers' kept only for any not-yet-migrated caller; cookies are primary
     app.config['JWT_COOKIE_HTTPONLY'] = True
     app.config['JWT_COOKIE_SECURE'] = os.getenv('JWT_COOKIE_SECURE', 'False').lower() == 'true'
-    # Strict now works end-to-end in dev because frontend/vite.config.js
-    # proxies /api to Flask — the browser only ever talks to the Vite
-    # origin, so the cookie is first-party from its point of view. A
-    # production deploy needs the equivalent same-origin proxy/rewrite
-    # (e.g. a reverse proxy or platform rewrite rule) in front of the API
-    # for this to keep working; without one, Strict drops the cookie on
-    # every request the way it did before the proxy existed.
-    app.config['JWT_COOKIE_SAMESITE'] = 'Strict'
+    # Strict works end-to-end in dev because frontend/vite.config.js proxies
+    # /api to Flask — the browser only ever talks to the Vite origin, so the
+    # cookie is first-party from its point of view. No such proxy exists in
+    # front of the deployed backend — the frontend (test.lexamplify.com /
+    # lexamplify-4.web.app) and the API (a separate Render domain) are
+    # genuinely cross-origin there, so a Strict cookie is silently dropped
+    # on every request: the browser never even sends it, which is exactly
+    # the "401 Session expired" symptom despite a valid, already-logged-in
+    # session. None+Secure is the correct cross-site setting for that case
+    # (Secure is mandatory for None — already satisfied via JWT_COOKIE_SECURE
+    # above, which must be true wherever this runs as SAMESITE_NONE). CSRF
+    # protection stays ON regardless — SameSite doesn't require disabling it,
+    # and the double-submit X-CSRF-TOKEN header (JWT_CSRF_IN_COOKIES below)
+    # already works over cross-site requests unchanged.
+    app.config['JWT_COOKIE_SAMESITE'] = 'None' if os.getenv('FLASK_ENV') == 'production' else 'Strict'
     app.config['JWT_COOKIE_CSRF_PROTECT'] = True
     app.config['JWT_CSRF_IN_COOKIES'] = True  # readable (non-HttpOnly) CSRF cookie for the double-submit header
 
