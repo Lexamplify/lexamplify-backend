@@ -4,6 +4,8 @@ from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from database import db as sqlalchemy_db
 from datetime import timedelta
+from werkzeug.exceptions import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 import os
 import re
 import secrets
@@ -2671,6 +2673,34 @@ def create_app():
     except Exception as e:
         print(f"Database setup error: {e}")
     # --- END DATABASE BUILDER ---
+
+    # ── Global JSON error handlers ───────────────────────────────────────
+    # Every API route here returns JSON; an unhandled exception previously
+    # fell through to Flask's default HTML error page, which the frontend
+    # then tried to JSON.parse() — the literal "unexpected character at
+    # line 1 column 1" crash. These guarantee every response this app
+    # sends back, error or not, is JSON.
+    @app.errorhandler(HTTPException)
+    def handle_http_exception(e):
+        return jsonify({"error": e.description or str(e)}), e.code
+
+    @app.errorhandler(SQLAlchemyError)
+    def handle_db_error(e):
+        app.logger.error(f"Database Error: {e}")
+        return jsonify({"error": "Database service unavailable. Please try again shortly."}), 500
+
+    @app.errorhandler(Exception)
+    def handle_generic_exception(e):
+        # Full detail server-side only. str(e) can carry query fragments,
+        # file paths, or other internals — echoing it back to the client
+        # in production is an information-disclosure leak, not a debugging
+        # convenience. Dev keeps the detail inline since there's no
+        # untrusted audience there and it saves a log round-trip.
+        app.logger.error(f"Unhandled Exception: {e}", exc_info=True)
+        if os.getenv('FLASK_ENV') == 'production':
+            return jsonify({"error": "An unexpected server error occurred."}), 500
+        return jsonify({"error": f"Server error: {e}"}), 500
+
     return app
 
 if __name__ == '__main__':
