@@ -478,7 +478,6 @@ def create_app():
     app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
     app.config['JWT_TOKEN_LOCATION'] = ['cookies', 'headers']  # 'headers' kept only for any not-yet-migrated caller; cookies are primary
     app.config['JWT_COOKIE_HTTPONLY'] = True
-    app.config['JWT_COOKIE_SECURE'] = os.getenv('JWT_COOKIE_SECURE', 'False').lower() == 'true'
     # Strict works end-to-end in dev because frontend/vite.config.js proxies
     # /api to Flask — the browser only ever talks to the Vite origin, so the
     # cookie is first-party from its point of view. No such proxy exists in
@@ -487,13 +486,26 @@ def create_app():
     # genuinely cross-origin there, so a Strict cookie is silently dropped
     # on every request: the browser never even sends it, which is exactly
     # the "401 Session expired" symptom despite a valid, already-logged-in
-    # session. None+Secure is the correct cross-site setting for that case
-    # (Secure is mandatory for None — already satisfied via JWT_COOKIE_SECURE
-    # above, which must be true wherever this runs as SAMESITE_NONE). CSRF
-    # protection stays ON regardless — SameSite doesn't require disabling it,
-    # and the double-submit X-CSRF-TOKEN header (JWT_CSRF_IN_COOKIES below)
-    # already works over cross-site requests unchanged.
+    # session. None is the correct cross-site setting for that case.
     app.config['JWT_COOKIE_SAMESITE'] = 'None' if os.getenv('FLASK_ENV') == 'production' else 'Strict'
+    # Secure is mandatory whenever SameSite=None — a browser silently drops
+    # the cookie outright otherwise, per spec. Deriving this FROM samesite
+    # (rather than trusting a separate JWT_COOKIE_SECURE env var to always
+    # be set correctly alongside FLASK_ENV) makes the pairing atomic: no
+    # deploy config can produce SameSite=None with Secure=False. The env
+    # var still applies for anyone who explicitly wants Secure on a non-None
+    # cookie too (e.g. local HTTPS testing) — it just can't turn Secure OFF
+    # when SameSite=None requires it on.
+    app.config['JWT_COOKIE_SECURE'] = (
+        app.config['JWT_COOKIE_SAMESITE'] == 'None'
+        or os.getenv('JWT_COOKIE_SECURE', 'False').lower() == 'true'
+    )
+    # CSRF protection stays ON regardless of SameSite — SameSite=None does
+    # not require disabling it, and the double-submit X-CSRF-TOKEN header
+    # (JWT_CSRF_IN_COOKIES below) already works over cross-site requests
+    # unchanged. Turning this off would remove CSRF protection on the
+    # cookie-based flow for zero benefit — Bearer/header-based requests are
+    # already CSRF-exempt by Flask-JWT-Extended automatically.
     app.config['JWT_COOKIE_CSRF_PROTECT'] = True
     app.config['JWT_CSRF_IN_COOKIES'] = True  # readable (non-HttpOnly) CSRF cookie for the double-submit header
 
