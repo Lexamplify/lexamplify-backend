@@ -677,8 +677,14 @@ export default function LoginPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Registration failed.');
+      // Same HTML-error-page guard as handleLogin above.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+          (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Registration failed.')
+        );
+      }
       navigate('/dashboard');
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
@@ -696,8 +702,18 @@ export default function LoginPage() {
         signal: controller.signal,
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || 'Invalid credentials.');
+      // A 500/502 error page is HTML, not JSON — res.json() would throw
+      // "JSON.parse: unexpected character…" straight into the UI as the
+      // error message. .catch(() => ({})) makes that a clean {} instead,
+      // same defensive pattern already used by handlePasswordReset/
+      // handleResetConfirm below.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error || data.message ||
+          (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Invalid credentials.')
+        );
+      }
       navigate('/dashboard');
     } catch (err) {
       if (err.name === 'AbortError') {
