@@ -25,6 +25,14 @@ oauth = OAuth()
 
 DB_PATH = "lex_assistant.db"
 FRONTEND_REDIRECT = os.getenv("SSO_FRONTEND_REDIRECT", "http://localhost:5173/dashboard")
+if os.getenv("FLASK_ENV") == "production" and not os.getenv("SSO_FRONTEND_REDIRECT"):
+    # This is the exact failure mode of bouncing a real OAuth login back to
+    # localhost: SSO_FRONTEND_REDIRECT silently unset, falling through to
+    # the local-dev default. Loud and visible at boot instead of a quiet
+    # per-request surprise the first time someone actually clicks "Continue
+    # with Google" in production.
+    print("[sso] WARNING: FLASK_ENV=production but SSO_FRONTEND_REDIRECT is unset — "
+          "SSO success/error redirects will target http://localhost:5173, breaking OAuth in production.")
 # Same origin as FRONTEND_REDIRECT, path swapped to /login — where an
 # unavailable/failed provider sends the browser back to instead of a bare
 # JSON body (see _sso_unavailable_response/_sso_error_response below).
