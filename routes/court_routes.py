@@ -1301,6 +1301,16 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
     """
     p            = urlparse(final_url)
     base_origin  = f'{p.scheme}://{p.netloc}'
+    # Every /api/proxy link generated below MUST be a fully absolute URL,
+    # never a root-relative one. A root-relative path like "/api/proxy?..."
+    # still resolves against <base href>'s ORIGIN per the URL spec (a
+    # leading "/" takes scheme+host from base, only the path is replaced) —
+    # confirmed empirically: urljoin('https://delhihighcourt.nic.in/x/',
+    # '/api/proxy?target_url=y') == 'https://delhihighcourt.nic.in/api/proxy...'.
+    # Every previous rewrite here (form action, CAPTCHA img src) used a
+    # root-relative path and was silently resolving to a 404 on the
+    # government's own server, never reaching this backend at all.
+    proxy_origin = request.host_url.rstrip('/')
 
     soup = BeautifulSoup(raw_bytes, 'html.parser')
 
@@ -1322,7 +1332,11 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
     script_tag = soup.new_tag('script')
     script_tag.string = """
 (function() {
-    var proxyBase = '/api/proxy?target_url=';
+    // window.location.origin is NOT subject to the <base href> root-
+    // relative-path resolution quirk (only HTML-declared resource/action
+    // attributes are) — safe to use directly here, unlike the Python-side
+    // rewrites below which need request.host_url instead.
+    var proxyBase = window.location.origin + '/api/proxy?target_url=';
 
     var origOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function(method, url) {
@@ -1383,7 +1397,7 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
         abs_src = urljoin(final_url, src)
         allowed, _ = _proxy_validate_url(abs_src)
         if allowed:
-            img['src'] = f'/api/proxy?target_url={quote(abs_src, safe="")}'
+            img['src'] = f'{proxy_origin}/api/proxy?target_url={quote(abs_src, safe="")}'
         # else: leave untouched — <base href> resolution is still a safe
         # fallback (image just won't share the proxied session).
 
@@ -1394,7 +1408,7 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
         if not action:
             # No action attribute → form submits to the current URL.
             # Rewrite to proxy that URL explicitly so the POST goes through us.
-            proxy_action = f'/api/proxy?target_url={quote(final_url, safe="")}'
+            proxy_action = f'{proxy_origin}/api/proxy?target_url={quote(final_url, safe="")}'
             form['action'] = proxy_action
             continue
 
@@ -1404,7 +1418,7 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
         abs_action = urljoin(final_url, action)
         allowed, _ = _proxy_validate_url(abs_action)
         if allowed:
-            form['action'] = f'/api/proxy?target_url={quote(abs_action, safe="")}'
+            form['action'] = f'{proxy_origin}/api/proxy?target_url={quote(abs_action, safe="")}'
         # else: leave action untouched — form will fail on submit (correct behavior)
 
     return str(soup).encode('utf-8')
