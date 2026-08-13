@@ -279,7 +279,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       <div className={`sidebar-overlay ${isSidebarOpen ? 'visible' : ''}`} onClick={closeSidebar} />
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed' : ''}`}>
+      <aside className={`sidebar bg-[#0B0F17] opacity-100 sticky top-0 z-50 h-screen ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed' : ''}`}>
 
         {/* Logo / brand header */}
         <div
@@ -444,7 +444,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       )}
 
       {/* ── WORKSPACE ────────────────────────────────────────────────────── */}
-      <div className="workspace-container">
+      <div className="workspace-container relative z-0 min-w-0 flex-1 overflow-x-hidden">
         <header className="topbar">
           <button className="hamburger-btn" onClick={() => setIsSidebarOpen(v => !v)} aria-label="Toggle navigation">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

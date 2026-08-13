@@ -11,7 +11,7 @@
   --accent-warning: #F59E0B;
 
   --bg-app: #0A0E17;
-  --bg-sidebar: rgba(10, 14, 23, 0.75);
+  --bg-sidebar: #0B0F17;
   --bg-panel: #111827;
   --bg-card: #1F2937;
   --text-primary: #F3F4F6;
@@ -19,7 +19,7 @@
   --border-subtle: rgba(255, 255, 255, 0.05);
 
   --bg-dark-app: var(--bg-app);
-  --bg-dark-sidebar: var(--bg-sidebar);
+  --bg-dark-sidebar: #0B0F17;
   --bg-dark-panel: var(--bg-panel);
   --bg-dark-card: var(--bg-card);
   --text-dark-primary: var(--text-primary);
@@ -133,13 +133,16 @@ h1, h2, h3, h4, h5, h6 {
 /* Sidebar styling */
 .sidebar {
   width: 260px;
-  background-color: var(--bg-dark-sidebar);
+  background-color: #0B0F17 !important;
+  opacity: 1 !important;
   border-right: 1px solid var(--border-dark-subtle);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  z-index: 50;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 100;
 }
 
 .sidebar.sidebar-collapsed {
@@ -153,7 +156,10 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  overflow-x: hidden;
   position: relative;
+  z-index: 0;
+  min-width: 0;
 }
 
 .topbar {
@@ -238,15 +244,17 @@ h1, h2, h3, h4, h5, h6 {
   left: 0;
   height: 100vh;
   width: 64px;
-  opacity: 0.3;
+  opacity: 1 !important;
+  background-color: #0B0F17 !important;
   border-right: 0;
   box-shadow: none;
-  transition: opacity 0.3s ease, width 0.3s ease, box-shadow 0.3s ease;
-  z-index: 80;
+  transition: width 0.3s ease, box-shadow 0.3s ease;
+  z-index: 50;
 }
 /* Hover: full opacity + expand to reveal labels (position:fixed → no layout shift) */
 .focus-mode-active .sidebar:hover {
-  opacity: 1;
+  opacity: 1 !important;
+  background-color: #0B0F17 !important;
   width: 230px;
   box-shadow: 8px 0 40px rgba(0, 0, 0, 0.5);
 }

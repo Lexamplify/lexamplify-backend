@@ -134,6 +134,8 @@ const styles = `
     flex-direction: column;
     overflow: hidden;
     background: var(--bg-dark-app);
+    position: relative;
+    z-index: 0;
   }
 
   /* ── HEADER BAR (single compact row) ────────────────────────────── */
@@ -3164,7 +3166,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   return (
     <>
       <style>{styles}</style>
-      <div className="analyzer-container">
+      <div className="analyzer-container relative z-0 overflow-hidden">
 
         {/* ── COMPACT HEADER BAR (single row) ── */}
         <div className="analyzer-header">
