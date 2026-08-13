@@ -1304,16 +1304,74 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
 
     soup = BeautifulSoup(raw_bytes, 'html.parser')
 
+    # ── Patch 6: XHR/fetch interceptor ──────────────────────────────────────
+    # window.location.origin for ANY page served through this proxy is
+    # always api.lexamplify.com — <base href> only affects HTML-declared
+    # resource resolution (img/link/script src, form action), never
+    # window.location itself. That means every XHR/fetch the government
+    # page's own JS issues is "cross-origin" from the browser's point of
+    # view, even a call back to the government's OWN domain, and gets
+    # blocked by the browser's own CORS enforcement (the government server
+    # isn't sending CORS headers permitting api.lexamplify.com). This patches
+    # XMLHttpRequest.open and window.fetch so any cross-origin call gets
+    # rewritten through /api/proxy before the browser ever issues it —
+    # same session-continuity fix as Patch 5, for AJAX instead of <img>.
+    # Server-side ALLOWED_DOMAINS validation on /api/proxy is unaffected and
+    # still authoritative; this only changes where the browser sends the
+    # request, never what the server accepts.
+    script_tag = soup.new_tag('script')
+    script_tag.string = """
+(function() {
+    var proxyBase = '/api/proxy?target_url=';
+
+    var origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+        try {
+            var target = new URL(url, window.location.href);
+            if (target.origin !== window.location.origin) {
+                arguments[1] = proxyBase + encodeURIComponent(target.href);
+            }
+        } catch (e) {}
+        return origOpen.apply(this, arguments);
+    };
+
+    var origFetch = window.fetch;
+    window.fetch = function() {
+        try {
+            var req = arguments[0];
+            if (typeof req === 'string' || req instanceof URL) {
+                var target = new URL(req, window.location.href);
+                if (target.origin !== window.location.origin) {
+                    arguments[0] = proxyBase + encodeURIComponent(target.href);
+                }
+            } else if (req instanceof Request) {
+                var target = new URL(req.url, window.location.href);
+                if (target.origin !== window.location.origin) {
+                    arguments[0] = new Request(proxyBase + encodeURIComponent(target.href), req);
+                }
+            }
+        } catch (e) {}
+        return origFetch.apply(this, arguments);
+    };
+})();
+"""
+
     # ── Patch 4: inject <base href> ────────────────────────────────────────
     head = soup.find('head')
     if head:
         base_tag = soup.new_tag('base', href=f'{base_origin}/')
         head.insert(0, base_tag)
+        # Interceptor first — before ANY original page content, including
+        # <base> — so it's installed before any later <script src> (which
+        # relies on <base> for its own src resolution) can execute and
+        # issue its first XHR/fetch call.
+        head.insert(0, script_tag)
     else:
         # Malformed HTML with no <head>: wrap in a minimal shell.
         body = soup.find('body')
         if body:
             new_head = soup.new_tag('head')
+            new_head.append(script_tag)
             new_head.append(soup.new_tag('base', href=f'{base_origin}/'))
             body.insert_before(new_head)
 
