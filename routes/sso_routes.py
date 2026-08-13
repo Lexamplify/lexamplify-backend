@@ -14,6 +14,7 @@ Requires env vars (unset -> route responds 503, does not crash the app):
 import os
 import sqlite3
 import secrets
+from urllib.parse import urlsplit, urlunsplit, urlencode
 
 from flask import Blueprint, redirect, url_for, session
 from authlib.integrations.flask_client import OAuth
@@ -24,6 +25,11 @@ oauth = OAuth()
 
 DB_PATH = "lex_assistant.db"
 FRONTEND_REDIRECT = os.getenv("SSO_FRONTEND_REDIRECT", "http://localhost:5173/dashboard")
+# Same origin as FRONTEND_REDIRECT, path swapped to /login — where an
+# unavailable/failed provider sends the browser back to instead of a bare
+# JSON body (see _sso_unavailable_response/_sso_error_response below).
+_frontend_parts = urlsplit(FRONTEND_REDIRECT)
+FRONTEND_LOGIN_URL = urlunsplit((_frontend_parts.scheme, _frontend_parts.netloc, "/login", "", ""))
 
 
 def init_sso(app):
@@ -100,22 +106,31 @@ def _is_dev():
     return os.getenv('FLASK_ENV') != 'production'
 
 
+def _sso_redirect_with_error(provider, code, dev_detail):
+    # Every route in this file is reached by a real top-level browser
+    # navigation (the login link, then Google/Microsoft's own redirect back
+    # to our callback) — never by fetch/XHR. Returning a bare JSON body used
+    # to land the user on a blank page showing raw {"error": ...} instead of
+    # back on the styled login screen. Redirecting with the error in the
+    # query string lets LoginPage.jsx show it as a normal toast instead.
+    params = {"sso_error": code, "provider": provider}
+    if _is_dev():
+        params["detail"] = dev_detail
+    return redirect(f"{FRONTEND_LOGIN_URL}?{urlencode(params)}")
+
+
 def _sso_unavailable_response(provider):
     # Always log the real reason server-side. The client only sees the
     # setup-detail ("not configured") when FLASK_ENV == development —
     # production gets a generic, non-diagnostic message so an outsider
     # probing these routes can't fingerprint which providers are wired up.
     print(f"[sso] {provider} login attempted but is not configured (missing client id/secret).")
-    if _is_dev():
-        return {"error": f"{provider} SSO is not configured on this environment.", "code": "SSO_NOT_CONFIGURED"}, 503
-    return {"error": "This sign-in method is currently unavailable.", "code": "SSO_UNAVAILABLE"}, 503
+    return _sso_redirect_with_error(provider, "unavailable", f"{provider} SSO is not configured on this environment.")
 
 
 def _sso_error_response(provider, exc):
     print(f"[sso] {provider} SSO failed: {exc}")
-    if _is_dev():
-        return {"error": f"{provider} SSO failed: {exc}", "code": "SSO_ERROR"}, 502
-    return {"error": "Sign-in failed. Please try again.", "code": "SSO_ERROR"}, 502
+    return _sso_redirect_with_error(provider, "failed", f"{provider} SSO failed: {exc}")
 
 
 @sso_bp.route("/microsoft/login")
@@ -136,7 +151,7 @@ def microsoft_callback():
         email = (claims.get("email") or claims.get("preferred_username") or "").strip().lower()
         name = claims.get("name") or ""
         if not email:
-            return {"error": "Microsoft did not return an email claim.", "code": "SSO_NO_EMAIL"}, 400
+            return _sso_redirect_with_error("Microsoft", "no_email", "Microsoft did not return an email claim.")
         user_id = _find_or_create_sso_user(email, name)
         return _issue_cookie_redirect(user_id)
     except Exception as e:
@@ -161,7 +176,7 @@ def google_callback():
         email = (claims.get("email") or "").strip().lower()
         name = claims.get("name") or ""
         if not email:
-            return {"error": "Google did not return an email claim.", "code": "SSO_NO_EMAIL"}, 400
+            return _sso_redirect_with_error("Google", "no_email", "Google did not return an email claim.")
         user_id = _find_or_create_sso_user(email, name)
         return _issue_cookie_redirect(user_id)
     except Exception as e:
