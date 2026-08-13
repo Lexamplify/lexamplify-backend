@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from database import db as sqlalchemy_db
 from datetime import timedelta
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy.exc import SQLAlchemyError
 import os
 import re
@@ -433,6 +434,23 @@ def resolve_vault_title(raw_title, case_id, content):
 
 def create_app():
     app = Flask(__name__)
+    # Render terminates TLS at its edge and proxies to this app over plain
+    # HTTP internally — without this, request.scheme (and therefore every
+    # url_for(..., _external=True) call, including Authlib's own
+    # redirect_uri = url_for("sso.google_callback", _external=True) in
+    # sso_routes.py) sees "http", not "https". Google/Microsoft OAuth
+    # reject or silently mismatch a callback URL whose scheme doesn't match
+    # what's registered in their console. x_for/x_proto/x_host/x_prefix=1
+    # each trust exactly one hop of the corresponding X-Forwarded-* header —
+    # correct here because Render's edge is the only thing that can sit
+    # between the client and this process, never more than one hop.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    # Only affects URL generation OUTSIDE an active request context (this
+    # app has none in its OAuth flow — ProxyFix above already fixes the
+    # request-scoped case). Harmless to set unconditionally: it never
+    # overrides the scheme ProxyFix derives from a real request.
+    app.config['PREFERRED_URL_SCHEME'] = 'https'
+
     @app.after_request
     def add_cors_headers(response):
         origin = request.headers.get('Origin')
