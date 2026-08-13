@@ -239,19 +239,19 @@ h1, h2, h3, h4, h5, h6 {
    opacity AND expands to 230px to reveal labels. Only opacity/width animate
    (compositor-friendly), never the document container. */
 .focus-mode-active .sidebar {
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
   height: 100vh;
   width: 64px;
+  flex-shrink: 0;
   opacity: 1 !important;
   background-color: #0B0F17 !important;
-  border-right: 0;
+  border-right: 1px solid var(--border-dark-subtle);
   box-shadow: none;
   transition: width 0.3s ease, box-shadow 0.3s ease;
   z-index: 50;
 }
-/* Hover: full opacity + expand to reveal labels (position:fixed → no layout shift) */
+/* Hover: full opacity + expand to reveal labels (position:sticky in flex flow → no layout shift) */
 .focus-mode-active .sidebar:hover {
   opacity: 1 !important;
   background-color: #0B0F17 !important;

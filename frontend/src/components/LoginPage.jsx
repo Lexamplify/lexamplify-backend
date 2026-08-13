@@ -594,6 +594,30 @@ export default function LoginPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // SSO redirects back here with ?sso_error=... (see routes/sso_routes.py's
+  // _sso_redirect_with_error) when a provider is unconfigured or the OAuth
+  // exchange itself failed — the click on "Continue with Google" is a real
+  // top-level navigation (must be, for the OAuth consent redirect chain to
+  // work), so this is the only way the backend can hand an error back to a
+  // React state instead of leaving the browser on a bare JSON response.
+  useEffect(() => {
+    const ssoError = searchParams.get('sso_error');
+    if (!ssoError) return;
+    const provider = searchParams.get('provider') || 'This sign-in method';
+    const detail = searchParams.get('detail');
+    const message = ssoError === 'unavailable'
+      ? `${provider} sign-in is temporarily unavailable. Please log in with email/password.`
+      : ssoError === 'no_email'
+      ? `${provider} did not share an email address — this account can't be created.`
+      : `${provider} sign-in failed. Please try again or use email/password.`;
+    setToast({ type: 'error', message: detail || message });
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('sso_error'); next.delete('provider'); next.delete('detail');
+      return next;
+    }, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // clear errors when switching tabs
   useEffect(() => { setError(''); }, [tab]);
 
