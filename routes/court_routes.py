@@ -1176,6 +1176,15 @@ def _proxy_build_upstream_headers() -> dict[str, str]:
     return headers
 
 
+_PROXY_EXCLUDED_COOKIE_NAMES = frozenset({
+    # Flask-JWT-Extended's default cookie names (never renamed via
+    # JWT_ACCESS_COOKIE_NAME etc. in app.py, so these ARE the live names).
+    'access_token_cookie', 'refresh_token_cookie',
+    'csrf_access_token', 'csrf_refresh_token',
+    'session',  # Flask's own session cookie (Authlib OAuth state)
+})
+
+
 def _proxy_make_session() -> requests.Session:
     """
     WAF/Bot-Blocker patch (Patch 2, session + redirect side).
@@ -1188,9 +1197,18 @@ def _proxy_make_session() -> requests.Session:
     session = requests.Session()
     session.max_redirects = 5
 
-    # Copy client cookies into the upstream session verbatim.
-    # This keeps ASP.NET_SessionId and ViewState cookies alive across hops.
+    # Copy client cookies into the upstream session — EXCLUDING LexAmplify's
+    # own auth cookies. request.cookies is every cookie the browser holds
+    # for api.lexamplify.com, which includes the user's own JWT session
+    # (access_token_cookie etc.) whenever they're logged in — the normal
+    # case for anyone using this feature. Forwarding those verbatim would
+    # leak the user's own LexAmplify session to the external (whitelisted,
+    # but still third-party) government domain on every proxied request.
+    # This keeps ASP.NET_SessionId and ViewState cookies alive across hops
+    # without also handing over unrelated app credentials.
     for name, value in request.cookies.items():
+        if name in _PROXY_EXCLUDED_COOKIE_NAMES:
+            continue
         session.cookies.set(name, value)
 
     # ── Redirect SSRF guard ────────────────────────────────────────────────
@@ -1238,20 +1256,42 @@ def _proxy_fetch(target_url: str) -> requests.Response:
             # Raw body (JSON / SOAP / XML) — forward with original Content-Type.
             kwargs['data'] = request.get_data()
             headers['Content-Type'] = request.content_type or 'application/octet-stream'
-        return session.post(target_url, **kwargs)
+
+        # ── TEMPORARY diagnostics — remove once CAPTCHA submission is
+        # confirmed working. Deliberately does not log cookie VALUES (the
+        # government session id is low-sensitivity, but there's no reason
+        # to print it either) or any request body content (may contain the
+        # user-entered CAPTCHA answer / other form fields).
+        print(
+            f"[proxy-diag] POST {target_url}\n"
+            f"  outbound Content-Type: {headers.get('Content-Type', ct)}\n"
+            f"  payload format: {'multipart/form-data' if 'multipart/form-data' in ct else 'application/x-www-form-urlencoded' if 'application/x-www-form-urlencoded' in ct else 'raw/' + ct}\n"
+            f"  ASP.NET_SessionId forwarded: {'ASP.NET_SessionId' in session.cookies.get_dict()}\n"
+            f"  session cookie names forwarded: {list(session.cookies.get_dict().keys())}"
+        )
+        resp = session.post(target_url, **kwargs)
+        print(
+            f"[proxy-diag] upstream response: {resp.status_code}\n"
+            f"  body preview: {resp.text[:250]!r}"
+        )
+        return resp
 
     return session.get(target_url, **kwargs)
 
 
+_CAPTCHA_SRC_RE = re.compile(r'captcha', re.IGNORECASE)
+
+
 def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
     """
-    HTML rewriting pass (Patches 3 & 4).
+    HTML rewriting pass (Patches 3, 4 & 5).
 
     Patch 4 — <base href> injection:
         Inserted as the very first child of <head> so the browser natively
-        resolves every relative asset URL (JS, CSS, images, AJAX endpoints)
-        against the government server.  We do NOT walk every <img>/<script>/
-        <link> tag — the <base> tag handles all of them for free.
+        resolves every relative asset URL (JS, CSS, generic images, AJAX
+        endpoints) against the government server. We do NOT walk every
+        <img>/<script>/<link> tag for this — the <base> tag handles all of
+        them for free.
 
     Patch 3 — <form action> rewriting:
         Every form whose action resolves to a whitelisted domain is rewritten
@@ -1259,6 +1299,23 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
         payload (including __VIEWSTATE / __EVENTVALIDATION) back to the server.
         Forms whose action is outside the whitelist are left untouched — they
         will simply fail to submit, which is the correct safe-failure behavior.
+
+    Patch 5 — CAPTCHA <img src> rewriting (exception to Patch 4):
+        A CAPTCHA image is inherently session-bound on ASP.NET — the
+        generator handler stores the answer against the caller's session
+        the instant it renders the image. Left to <base href> resolution
+        like every other image, the browser fetches it directly against the
+        government origin, carrying none of our proxied session cookie —
+        that request lands in a DIFFERENT server-side session than the one
+        the page load and eventual form POST use. The user then submits an
+        answer that's valid for a session the form's request never touches,
+        so validation fails deterministically, independent of what they
+        typed. Routing just this one image through /api/proxy — matching
+        <base>'s content over the substring "captcha" (case-insensitive;
+        covers CaptchaImage.axd, GetCaptcha.aspx, Captcha.ashx, etc.) —
+        keeps it on the SAME proxied session as everything else, without
+        paying the latency/bandwidth cost of round-tripping every ordinary
+        image (logos, icons) through this server too.
     """
     p            = urlparse(final_url)
     base_origin  = f'{p.scheme}://{p.netloc}'
@@ -1277,6 +1334,18 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
             new_head = soup.new_tag('head')
             new_head.append(soup.new_tag('base', href=f'{base_origin}/'))
             body.insert_before(new_head)
+
+    # ── Patch 5: rewrite CAPTCHA <img src> to route through the proxy ──────
+    for img in soup.find_all('img'):
+        src = (img.get('src') or '').strip()
+        if not src or not _CAPTCHA_SRC_RE.search(src):
+            continue
+        abs_src = urljoin(final_url, src)
+        allowed, _ = _proxy_validate_url(abs_src)
+        if allowed:
+            img['src'] = f'/api/proxy?target_url={quote(abs_src, safe="")}'
+        # else: leave untouched — <base href> resolution is still a safe
+        # fallback (image just won't share the proxied session).
 
     # ── Patch 3: rewrite <form action> attributes ──────────────────────────
     for form in soup.find_all('form'):
