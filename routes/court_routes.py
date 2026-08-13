@@ -1256,30 +1256,12 @@ def _proxy_fetch(target_url: str) -> requests.Response:
             # Raw body (JSON / SOAP / XML) — forward with original Content-Type.
             kwargs['data'] = request.get_data()
             headers['Content-Type'] = request.content_type or 'application/octet-stream'
-
-        # ── TEMPORARY diagnostics — remove once CAPTCHA submission is
-        # confirmed working. Deliberately does not log cookie VALUES (the
-        # government session id is low-sensitivity, but there's no reason
-        # to print it either) or any request body content (may contain the
-        # user-entered CAPTCHA answer / other form fields).
-        print(
-            f"[proxy-diag] POST {target_url}\n"
-            f"  outbound Content-Type: {headers.get('Content-Type', ct)}\n"
-            f"  payload format: {'multipart/form-data' if 'multipart/form-data' in ct else 'application/x-www-form-urlencoded' if 'application/x-www-form-urlencoded' in ct else 'raw/' + ct}\n"
-            f"  ASP.NET_SessionId forwarded: {'ASP.NET_SessionId' in session.cookies.get_dict()}\n"
-            f"  session cookie names forwarded: {list(session.cookies.get_dict().keys())}"
-        )
-        resp = session.post(target_url, **kwargs)
-        print(
-            f"[proxy-diag] upstream response: {resp.status_code}\n"
-            f"  body preview: {resp.text[:250]!r}"
-        )
-        return resp
+        return session.post(target_url, **kwargs)
 
     return session.get(target_url, **kwargs)
 
 
-_CAPTCHA_SRC_RE = re.compile(r'captcha', re.IGNORECASE)
+_CAPTCHA_SRC_RE = re.compile(r'captcha|validationcode|seccode|getcode|verifyimage', re.IGNORECASE)
 
 
 def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
