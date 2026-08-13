@@ -480,26 +480,44 @@ def create_app():
     app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
     app.config['JWT_TOKEN_LOCATION'] = ['cookies', 'headers']  # 'headers' kept only for any not-yet-migrated caller; cookies are primary
     app.config['JWT_COOKIE_HTTPONLY'] = True
-    # Strict works end-to-end in dev because frontend/vite.config.js proxies
-    # /api to Flask — the browser only ever talks to the Vite origin, so the
-    # cookie is first-party from its point of view. No such proxy exists in
-    # front of the deployed backend — the frontend (test.lexamplify.com /
-    # lexamplify-4.web.app) and the API (a separate Render domain) are
-    # genuinely cross-origin there, so a Strict cookie is silently dropped
-    # on every request: the browser never even sends it, which is exactly
-    # the "401 Session expired" symptom despite a valid, already-logged-in
-    # session. None is the correct cross-site setting for that case.
-    app.config['JWT_COOKIE_SAMESITE'] = 'None' if os.getenv('FLASK_ENV') == 'production' else 'Strict'
-    # Secure is mandatory whenever SameSite=None — a browser silently drops
-    # the cookie outright otherwise, per spec. Deriving this FROM samesite
-    # (rather than trusting a separate JWT_COOKIE_SECURE env var to always
-    # be set correctly alongside FLASK_ENV) makes the pairing atomic: no
-    # deploy config can produce SameSite=None with Secure=False. The env
-    # var still applies for anyone who explicitly wants Secure on a non-None
-    # cookie too (e.g. local HTTPS testing) — it just can't turn Secure OFF
-    # when SameSite=None requires it on.
+    # RENDER is a real, Render-set env var (true on every Render service,
+    # regardless of whether FLASK_ENV was also configured in the dashboard)
+    # — a backstop against exactly that omission, not a replacement for it.
+    is_prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
+    # Strict/no-domain works end-to-end in dev because frontend/vite.config.js
+    # proxies /api to Flask — the browser only ever talks to the Vite origin,
+    # so the cookie is first-party from its point of view.
+    #
+    # Production now runs frontend (test.lexamplify.com) and API
+    # (api.lexamplify.com) as sibling subdomains of the same registrable
+    # domain — same-site, not cross-site, by the browser's own SameSite
+    # definition (SITE = eTLD+1, not exact host). That makes Lax correct
+    # and sufficient: same-site cross-subdomain requests aren't restricted
+    # by Lax at all, and Lax is strictly tighter than the None this used to
+    # need back when the API lived on a separate onrender.com domain.
+    #
+    # Domain must be widened to the shared parent (.lexamplify.com) for a
+    # second, unrelated reason: the CSRF double-submit cookie is
+    # deliberately non-HttpOnly so frontend JS can read it
+    # (utils/authFetch.js's getCsrfToken() parses it straight out of
+    # document.cookie) and attach X-CSRF-TOKEN on every mutating request.
+    # With no Domain attribute, a cookie set by api.lexamplify.com defaults
+    # to that exact host — invisible to document.cookie running on
+    # test.lexamplify.com's origin. Every POST/PUT/PATCH/DELETE would
+    # silently lose its CSRF header and get rejected. Widening Domain to
+    # the shared parent is what makes the cookie visible cross-subdomain
+    # for both the browser's auto-attach (HttpOnly cookies) and this
+    # manual JS read (the CSRF cookie).
+    app.config['JWT_COOKIE_SAMESITE'] = 'Lax' if is_prod else 'Strict'
+    app.config['JWT_COOKIE_DOMAIN'] = '.lexamplify.com' if is_prod else None
+    # Secure is mandatory whenever SameSite=None (kept here defensively —
+    # true today only if SAMESITE above is ever rolled back to None) and is
+    # good practice in production regardless. The env var still applies for
+    # anyone who explicitly wants Secure on local HTTPS testing too — it
+    # just can't turn Secure OFF when SameSite=None or is_prod requires it on.
     app.config['JWT_COOKIE_SECURE'] = (
         app.config['JWT_COOKIE_SAMESITE'] == 'None'
+        or is_prod
         or os.getenv('JWT_COOKIE_SECURE', 'False').lower() == 'true'
     )
     # CSRF protection stays ON regardless of SameSite — SameSite=None does
