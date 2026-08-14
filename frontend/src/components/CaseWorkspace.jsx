@@ -509,7 +509,7 @@ function LegalDraftsTab({ documents, loadingDocs }) {
           <div className="cw-empty-icon">📝</div>
           <h2 className="cw-empty-title">No drafts found</h2>
           <p className="cw-empty-msg">
-            Documents saved with "Draft" in their title or type will appear here. Use the InzIQ to generate petitions, notices, or agreements.
+            Documents saved with "Draft" in their title or type will appear here. Use the LexAmplify to generate petitions, notices, or agreements.
           </p>
         </div>
       </div>
@@ -588,7 +588,7 @@ function ChatsTab({ apiBase, folderId }) {
           <div className="cw-empty-icon" style={{ fontSize: 28 }}>🔏</div>
           <h2 className="cw-empty-title">No Provenance Records</h2>
           <p className="cw-empty-msg">
-            When you save a document to this folder via the InzIQ, the full AI conversation that produced it is recorded here as a tamper-evident audit trail.
+            When you save a document to this folder via the LexAmplify, the full AI conversation that produced it is recorded here as a tamper-evident audit trail.
           </p>
         </div>
       </div>
@@ -830,14 +830,14 @@ export default function CaseWorkspace() {
         {sharedFiles.length > 0 && (
           <div style={{ background: 'rgba(139,92,246,0.05)', borderBottom: '1px solid rgba(139,92,246,0.15)' }}>
             <div style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: '7px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
               <span style={{ fontSize: '11px', fontWeight: 700, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Shared from Platform — {sharedFiles.length} file{sharedFiles.length !== 1 ? 's' : ''}
               </span>
             </div>
             {sharedFiles.map(f => (
               <div key={f.id} style={{ padding: '9px 20px', borderTop: '1px solid rgba(139,92,246,0.08)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted, #8F9CAE)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted, #8F9CAE)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                 <span style={{ fontSize: '13px', color: 'var(--text-dark-primary, #fff)', fontWeight: 500, flex: 1 }}>{f.filename}</span>
                 {f.category && <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted, #8F9CAE)', background: 'rgba(139,92,246,0.1)', padding: '2px 8px', borderRadius: '10px' }}>{f.category}</span>}
                 <span style={{ fontSize: '11px', color: 'var(--text-dark-muted, #8F9CAE)' }}>{f.source}</span>

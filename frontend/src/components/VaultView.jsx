@@ -749,10 +749,10 @@ function formatDate(str) {
 // 5-folder court-ready litigation workspace with auto-injected Firm Library templates.
 // templateIds map to [] ids in FirmLibrary.jsx.
 const MATTER_BLUEPRINT_FOLDERS = [
-  { name: '01 - Pleadings & Drafts',   icon: '📝', templateIds: [1, 3] },
-  { name: '02 - Court Filings',         icon: '⚖️', templateIds: [2, 5] },
-  { name: '03 - Evidence & Exhibits',   icon: '🗂️', templateIds: []     },
-  { name: '04 - Correspondence',        icon: '✉️', templateIds: []     },
+  { name: '01 - Pleadings & Drafts', icon: '📝', templateIds: [1, 3] },
+  { name: '02 - Court Filings', icon: '⚖️', templateIds: [2, 5] },
+  { name: '03 - Evidence & Exhibits', icon: '🗂️', templateIds: [] },
+  { name: '04 - Correspondence', icon: '✉️', templateIds: [] },
   { name: '05 - Research & Precedents', icon: '🔬', templateIds: [6, 8] },
 ];
 
@@ -1022,16 +1022,16 @@ export default function VaultView({ targetFolderId = null }) {
 
   // Library Injector Drawer
   const [isLibraryDrawerOpen, setIsLibraryDrawerOpen] = useState(false);
-  const [libSearch, setLibSearch]                     = useState('');
-  const [libEntries, setLibEntries]                   = useState([]);
-  const [injectedIds, setInjectedIds]                 = useState(new Set());
-  const [injectToast, setInjectToast]                 = useState(null);
+  const [libSearch, setLibSearch] = useState('');
+  const [libEntries, setLibEntries] = useState([]);
+  const [injectedIds, setInjectedIds] = useState(new Set());
+  const [injectToast, setInjectToast] = useState(null);
 
   // Library drawer — Dual-Brain RAG
-  const [libRagResult, setLibRagResult]               = useState(null);
-  const [libRagLoading, setLibRagLoading]             = useState(false);
-  const [ragCopied, setRagCopied]                     = useState(false);
-  const [resolvingCitation, setResolvingCitation]     = useState(null); // case_name string being resolved
+  const [libRagResult, setLibRagResult] = useState(null);
+  const [libRagLoading, setLibRagLoading] = useState(false);
+  const [ragCopied, setRagCopied] = useState(false);
+  const [resolvingCitation, setResolvingCitation] = useState(null); // case_name string being resolved
 
   const navigate = useNavigate();
 
@@ -1488,7 +1488,7 @@ export default function VaultView({ targetFolderId = null }) {
   const buildDocData = (doc) => ({
     id: doc.id,
     filename: doc.smart_title || doc.title || 'Vault Document',
-    summary: doc.doc_type ? `${doc.doc_type} — saved from InzIQ` : 'Document from Case Vault',
+    summary: doc.doc_type ? `${doc.doc_type} — saved from LexAmplify` : 'Document from Case Vault',
     text: doc.content || '',
     tags: doc.tags || null,
     case_id: doc.case_id || null,
@@ -1601,18 +1601,18 @@ export default function VaultView({ targetFolderId = null }) {
   // ── Stagger-fill form fields with extracted data ───────────────────────────
   const animateFill = (extracted) => {
     const fieldMap = [
-      ['case_name',          extracted.case_name],
-      ['case_number',        extracted.case_number],
-      ['court',              extracted.court_name || extracted.court],
-      ['judge_name',         extracted.judge_name],
-      ['case_type',          extracted.case_type],
-      ['petitioner_name',    extracted.petitioner_name],
-      ['respondent_name',    extracted.respondent_name],
+      ['case_name', extracted.case_name],
+      ['case_number', extracted.case_number],
+      ['court', extracted.court_name || extracted.court],
+      ['judge_name', extracted.judge_name],
+      ['case_type', extracted.case_type],
+      ['petitioner_name', extracted.petitioner_name],
+      ['respondent_name', extracted.respondent_name],
       ['petitioner_counsel', extracted.petitioner_counsel],
       ['respondent_counsel', extracted.respondent_counsel],
-      ['filing_date',        extracted.filing_date],
-      ['next_hearing',       extracted.next_hearing],
-      ['summary',            extracted.summary],
+      ['filing_date', extracted.filing_date],
+      ['next_hearing', extracted.next_hearing],
+      ['summary', extracted.summary],
     ].filter(([, v]) => v && String(v).trim());
 
     setExtractionState('populating');
@@ -2184,30 +2184,30 @@ export default function VaultView({ targetFolderId = null }) {
                         const citKey = `${c.case_name}-${c.year}`;
                         const isResolving = resolvingCitation === citKey;
                         return (
-                        <div key={i} className="lib-rag-citation">
-                          <button
-                            className="lib-rag-citation-link"
-                            disabled={isResolving}
-                            style={{ background: 'none', border: 'none', padding: 0, cursor: isResolving ? 'default' : 'pointer', fontFamily: 'inherit' }}
-                            onClick={async () => {
-                              const win = window.open('', '_blank');
-                              setResolvingCitation(citKey);
-                              try {
-                                const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
-                                const { exact_url } = await res.json();
-                                win.location.href = exact_url;
-                              } catch {
-                                win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
-                              } finally {
-                                if (!isMountedRef.current) return;
-                                setResolvingCitation(null);
-                              }
-                            }}
-                          >
-                            {isResolving ? '⟳ Resolving…' : `${c.case_name} (${c.year})`}
-                          </button>
-                          {c.relevance_note}
-                        </div>
+                          <div key={i} className="lib-rag-citation">
+                            <button
+                              className="lib-rag-citation-link"
+                              disabled={isResolving}
+                              style={{ background: 'none', border: 'none', padding: 0, cursor: isResolving ? 'default' : 'pointer', fontFamily: 'inherit' }}
+                              onClick={async () => {
+                                const win = window.open('', '_blank');
+                                setResolvingCitation(citKey);
+                                try {
+                                  const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
+                                  const { exact_url } = await res.json();
+                                  win.location.href = exact_url;
+                                } catch {
+                                  win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
+                                } finally {
+                                  if (!isMountedRef.current) return;
+                                  setResolvingCitation(null);
+                                }
+                              }}
+                            >
+                              {isResolving ? '⟳ Resolving…' : `${c.case_name} (${c.year})`}
+                            </button>
+                            {c.relevance_note}
+                          </div>
                         );
                       })}
                     </div>
@@ -2303,11 +2303,11 @@ export default function VaultView({ targetFolderId = null }) {
             filteredLibEntries.map(entry => {
               const catStyle = (() => {
                 const map = {
-                  Template:         { bg: 'rgba(59,130,246,0.12)',  color: '#60A5FA' },
-                  Precedent:        { bg: 'rgba(245,158,11,0.12)',  color: '#FBBF24' },
-                  'Research Memo':  { bg: 'rgba(139,92,246,0.12)',  color: '#A78BFA' },
-                  'Standard Form':  { bg: 'rgba(16,185,129,0.12)',  color: '#34D399' },
-                  'Practice Guide': { bg: 'rgba(20,184,166,0.12)',  color: '#2DD4BF' },
+                  Template: { bg: 'rgba(59,130,246,0.12)', color: '#60A5FA' },
+                  Precedent: { bg: 'rgba(245,158,11,0.12)', color: '#FBBF24' },
+                  'Research Memo': { bg: 'rgba(139,92,246,0.12)', color: '#A78BFA' },
+                  'Standard Form': { bg: 'rgba(16,185,129,0.12)', color: '#34D399' },
+                  'Practice Guide': { bg: 'rgba(20,184,166,0.12)', color: '#2DD4BF' },
                 };
                 return map[entry.category] || { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF' };
               })();
@@ -2494,12 +2494,12 @@ export default function VaultView({ targetFolderId = null }) {
                 <div className="si-scan-icon">
                   {extractionState === 'idle' ? (
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/>
-                      <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14,2 14,8 20,8" />
+                      <line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" />
                     </svg>
                   ) : (
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                     </svg>
                   )}
                 </div>
@@ -2516,7 +2516,7 @@ export default function VaultView({ targetFolderId = null }) {
 
             {extractionState === 'done' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', background: 'rgba(16,185,129,0.08)', borderBottom: '1px solid rgba(16,185,129,0.25)' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.2"><polyline points="20 6 9 17 4 12" /></svg>
                 <span style={{ fontSize: '13px', color: '#10B981', fontWeight: 600 }}>ML Triage complete — review highlighted fields</span>
                 <button onClick={() => setExtractionState('idle')} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', fontSize: '11px', color: 'var(--text-dark-muted)', cursor: 'pointer' }}>Re-scan</button>
               </div>

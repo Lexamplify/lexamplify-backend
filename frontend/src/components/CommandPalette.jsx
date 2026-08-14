@@ -5,9 +5,9 @@ import { useAuth } from '../context/AuthContext';
 // ═══════════════════════════════════════════════════════
 //  SESSION STORE  (localStorage-persisted)
 // ═══════════════════════════════════════════════════════
-const SESSIONS_KEY  = 'lexai_sessions_v2';
-const CURRENT_KEY   = 'lexai_current_session_v2';
-const MAX_SESSIONS  = 25;
+const SESSIONS_KEY = 'lexai_sessions_v2';
+const CURRENT_KEY = 'lexai_current_session_v2';
+const MAX_SESSIONS = 25;
 
 const genId = () => `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -18,7 +18,7 @@ const loadSessions = () => {
 
 const persistSessions = (sessions) => {
   try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions.slice(0, MAX_SESSIONS))); }
-  catch (_) {}
+  catch (_) { }
 };
 
 const makeSession = () => ({
@@ -36,22 +36,22 @@ const makeSession = () => ({
 //  NAVIGATION INTENT MAP  (client-side fast-path)
 // ═══════════════════════════════════════════════════════
 const NAV_MAP = [
-  { kw: ['high court', 'highcourt', 'high courts'],               route: '/court-resources', tab: 'highcourt'  },
-  { kw: ['district court', 'subordinate court', 'district courts'],route: '/court-resources', tab: 'district'   },
-  { kw: ['supreme court'],                                         route: '/court-resources', tab: 'supreme'    },
-  { kw: ['bare act', 'bare acts', 'ipc', 'crpc', 'laws'],         route: '/court-resources', tab: 'laws'       },
-  { kw: ['legal event', 'legal events'],                           route: '/court-resources', tab: 'events'     },
-  { kw: ['court fee', 'fee calculator', 'court fees'],             route: '/court-resources', tab: 'courtfee'  },
-  { kw: ['e-notary', 'enotary', 'notary'],                         route: '/court-resources', tab: 'enotary'   },
-  { kw: ['ip tracker', 'iptracker', 'trademark', 'patent'],        route: '/court-resources', tab: 'iptracker' },
-  { kw: ['court resource', 'ecourt', 'e-court'],                   route: '/court-resources', tab: null        },
-  { kw: ['calendar', 'hearing schedule', 'deadlines', 'schedule'], route: '/calendar',        tab: null        },
-  { kw: ['vault', 'case vault', 'document vault'],                  route: '/vault',           tab: null        },
-  { kw: ['contract analy', 'risk scan', 'analyzer'],               route: '/analyzer',        tab: null        },
+  { kw: ['high court', 'highcourt', 'high courts'], route: '/court-resources', tab: 'highcourt' },
+  { kw: ['district court', 'subordinate court', 'district courts'], route: '/court-resources', tab: 'district' },
+  { kw: ['supreme court'], route: '/court-resources', tab: 'supreme' },
+  { kw: ['bare act', 'bare acts', 'ipc', 'crpc', 'laws'], route: '/court-resources', tab: 'laws' },
+  { kw: ['legal event', 'legal events'], route: '/court-resources', tab: 'events' },
+  { kw: ['court fee', 'fee calculator', 'court fees'], route: '/court-resources', tab: 'courtfee' },
+  { kw: ['e-notary', 'enotary', 'notary'], route: '/court-resources', tab: 'enotary' },
+  { kw: ['ip tracker', 'iptracker', 'trademark', 'patent'], route: '/court-resources', tab: 'iptracker' },
+  { kw: ['court resource', 'ecourt', 'e-court'], route: '/court-resources', tab: null },
+  { kw: ['calendar', 'hearing schedule', 'deadlines', 'schedule'], route: '/calendar', tab: null },
+  { kw: ['vault', 'case vault', 'document vault'], route: '/vault', tab: null },
+  { kw: ['contract analy', 'risk scan', 'analyzer'], route: '/analyzer', tab: null },
   { kw: ['quick draft', 'quickdraft', 'draft studio', 'fast track'], route: '/contract-analyzer', tab: 'quickdraft' },
-  { kw: ['conflict engine', 'cross document', 'conflict check'],   route: '/conflict-engine', tab: null        },
-  { kw: ['war room', 'courtroom simulation', 'virtual court'],      route: '/war-room',        tab: null        },
-  { kw: ['dashboard', 'home', 'overview'],                         route: '/dashboard',       tab: null        },
+  { kw: ['conflict engine', 'cross document', 'conflict check'], route: '/conflict-engine', tab: null },
+  { kw: ['war room', 'courtroom simulation', 'virtual court'], route: '/war-room', tab: null },
+  { kw: ['dashboard', 'home', 'overview'], route: '/dashboard', tab: null },
 ];
 
 const NAV_TRIGGERS = ['go to', 'open', 'navigate to', 'take me to', 'show me', 'switch to', 'open the'];
@@ -70,14 +70,14 @@ const isNavCommand = (q) => NAV_TRIGGERS.some(t => q.toLowerCase().startsWith(t)
 //  SLASH COMMANDS  (/ prefix autocomplete)
 // ═══════════════════════════════════════════════════════
 const SLASH_CMDS = [
-  { cmd: '/nda',         label: 'Mutual NDA Agreement',     fill: 'Draft a mutual Non-Disclosure Agreement' },
-  { cmd: '/notice',      label: 'Legal Notice',             fill: 'Draft a legal notice for breach of contract' },
-  { cmd: '/bail',        label: 'Bail Application',         fill: 'Draft a bail application based on the case facts' },
-  { cmd: '/petition',    label: 'Writ Petition (Art. 226)', fill: 'Draft a writ petition under Article 226 of the Constitution' },
-  { cmd: '/affidavit',   label: 'Supporting Affidavit',     fill: 'Draft a supporting affidavit' },
-  { cmd: '/summarize',   label: 'Summarize Draft',          fill: 'Summarize this draft' },
-  { cmd: '/arbitration', label: 'Add Arbitration Clause',   fill: 'Add an arbitration clause to this draft' },
-  { cmd: '/risk',        label: 'Risk Analysis',            fill: 'Analyse the high risk clauses in this draft' },
+  { cmd: '/nda', label: 'Mutual NDA Agreement', fill: 'Draft a mutual Non-Disclosure Agreement' },
+  { cmd: '/notice', label: 'Legal Notice', fill: 'Draft a legal notice for breach of contract' },
+  { cmd: '/bail', label: 'Bail Application', fill: 'Draft a bail application based on the case facts' },
+  { cmd: '/petition', label: 'Writ Petition (Art. 226)', fill: 'Draft a writ petition under Article 226 of the Constitution' },
+  { cmd: '/affidavit', label: 'Supporting Affidavit', fill: 'Draft a supporting affidavit' },
+  { cmd: '/summarize', label: 'Summarize Draft', fill: 'Summarize this draft' },
+  { cmd: '/arbitration', label: 'Add Arbitration Clause', fill: 'Add an arbitration clause to this draft' },
+  { cmd: '/risk', label: 'Risk Analysis', fill: 'Analyse the high risk clauses in this draft' },
 ];
 
 // ACTION_PILLS are now LLM-driven — sent via SSE as { suggested_actions: [...] }
@@ -87,15 +87,15 @@ const SLASH_CMDS = [
 //  QUICK COMMANDS  (empty-state suggestions)
 // ═══════════════════════════════════════════════════════
 const QUICK_CMDS = [
-  { icon: '🏛️', text: 'Go to High Courts section',                         category: 'Navigate'  },
-  { icon: '📝', text: 'Draft a legal notice for breach of contract',        category: 'Draft'     },
-  { icon: '🔒', text: 'Prepare a mutual NDA agreement',                     category: 'Draft'     },
-  { icon: '📅', text: 'Show my hearings scheduled for this week',           category: 'Calendar'  },
+  { icon: '🏛️', text: 'Go to High Courts section', category: 'Navigate' },
+  { icon: '📝', text: 'Draft a legal notice for breach of contract', category: 'Draft' },
+  { icon: '🔒', text: 'Prepare a mutual NDA agreement', category: 'Draft' },
+  { icon: '📅', text: 'Show my hearings scheduled for this week', category: 'Calendar' },
   { icon: '⚡', text: 'Analyze the uploaded contract for high-risk clauses', category: 'Analysis' },
-  { icon: '⚡', text: 'Open Quick Draft Studio',                             category: 'Draft'    },
-  { icon: '⚖️', text: 'Find similar Supreme Court judgments',               category: 'Research'  },
-  { icon: '🔍', text: 'Research IPC sections related to this matter',       category: 'Research'  },
-  { icon: '📋', text: 'Prepare a bail application based on case facts',     category: 'Draft'     },
+  { icon: '⚡', text: 'Open Quick Draft Studio', category: 'Draft' },
+  { icon: '⚖️', text: 'Find similar Supreme Court judgments', category: 'Research' },
+  { icon: '🔍', text: 'Research IPC sections related to this matter', category: 'Research' },
+  { icon: '📋', text: 'Prepare a bail application based on case facts', category: 'Draft' },
 ];
 
 // ═══════════════════════════════════════════════════════
@@ -105,7 +105,7 @@ const truncate = (str, n) => (str && str.length > n) ? str.slice(0, n) + '…' :
 
 const renderDraftHtml = (text) => {
   if (!text) return '';
-  const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return escaped
     // H1: **ALL CAPS HEADING** or # Heading at line start
     .replace(/^#{1,2}\s+(.+)$/gm, '<div class="draft-h1">$1</div>')
@@ -144,9 +144,9 @@ const renderMarkdown = (text) => {
   let i = 0;
   while (i < lines.length) {
     const ln = lines[i];
-    if (/^### /.test(ln))       { out.push(`<h3 class="md-h3">${applyInline(ln.slice(4))}</h3>`); i++; }
-    else if (/^## /.test(ln))   { out.push(`<h2 class="md-h2">${applyInline(ln.slice(3))}</h2>`); i++; }
-    else if (/^# /.test(ln))    { out.push(`<h1 class="md-h1">${applyInline(ln.slice(2))}</h1>`); i++; }
+    if (/^### /.test(ln)) { out.push(`<h3 class="md-h3">${applyInline(ln.slice(4))}</h3>`); i++; }
+    else if (/^## /.test(ln)) { out.push(`<h2 class="md-h2">${applyInline(ln.slice(3))}</h2>`); i++; }
+    else if (/^# /.test(ln)) { out.push(`<h1 class="md-h1">${applyInline(ln.slice(2))}</h1>`); i++; }
     else if (/^---+$/.test(ln.trim())) { out.push('<hr class="md-hr">'); i++; }
     else if (/^[*\-] /.test(ln)) {
       const items = [];
@@ -177,9 +177,9 @@ const highlightPlaceholders = (html) =>
 
 const relativeDate = (ts) => {
   const d = Date.now() - ts;
-  if (d < 60000)     return 'Just now';
-  if (d < 3600000)   return `${Math.floor(d / 60000)}m ago`;
-  if (d < 86400000)  return `${Math.floor(d / 3600000)}h ago`;
+  if (d < 60000) return 'Just now';
+  if (d < 3600000) return `${Math.floor(d / 60000)}m ago`;
+  if (d < 86400000) return `${Math.floor(d / 3600000)}h ago`;
   if (d < 172800000) return 'Yesterday';
   if (d < 604800000) return `${Math.floor(d / 86400000)}d ago`;
   return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
@@ -212,28 +212,28 @@ const AGENT_CSS = `
   .lex-dot-3        { animation: lex-dot 1.2s infinite ease-in-out; animation-delay:.36s; }
   .lex-ai-breathing { animation: lex-breathe 2.2s ease-in-out infinite; border-radius:7px; }
 
-  /* ── InzIQ Co-Pilot Slide-Over Drawer (right-aligned, non-blocking) ── */
-  @keyframes inziq-drawer-in  { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes inziq-drawer-out { from { opacity: 1; } to { opacity: 0; } }
-  .inziq-drawer {
+  /* ── LexAmplify Co-Pilot Slide-Over Drawer (right-aligned, non-blocking) ── */
+  @keyframes LexAmplify-drawer-in  { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes LexAmplify-drawer-out { from { opacity: 1; } to { opacity: 0; } }
+  .LexAmplify-drawer {
     position: fixed; inset: 0; z-index: 9999;
     display: flex; overflow: hidden;
     background: rgba(3,6,14,.95);
-    animation: inziq-drawer-in .2s ease both;
+    animation: LexAmplify-drawer-in .2s ease both;
   }
-  .inziq-drawer.closing { animation: inziq-drawer-out .18s ease both; }
+  .LexAmplify-drawer.closing { animation: LexAmplify-drawer-out .18s ease both; }
 
   /* ── War Room: full-screen immersive mode (overrides the side drawer) ── */
-  @keyframes inziq-warroom-in  { from { opacity:0; transform:scale(.985); } to { opacity:1; transform:scale(1); } }
-  @keyframes inziq-warroom-out { from { opacity:1; transform:scale(1); }    to { opacity:0; transform:scale(.985); } }
-  .inziq-drawer.war-room {
+  @keyframes LexAmplify-warroom-in  { from { opacity:0; transform:scale(.985); } to { opacity:1; transform:scale(1); } }
+  @keyframes LexAmplify-warroom-out { from { opacity:1; transform:scale(1); }    to { opacity:0; transform:scale(.985); } }
+  .LexAmplify-drawer.war-room {
     inset: 0; width: 100vw !important; height: 100vh; z-index: 101;
     border-left: 0; justify-content: center;
-    animation: inziq-warroom-in .3s cubic-bezier(.4,0,.2,1) both;
+    animation: LexAmplify-warroom-in .3s cubic-bezier(.4,0,.2,1) both;
   }
-  .inziq-drawer.war-room.closing { animation: inziq-warroom-out .28s cubic-bezier(.4,0,.2,1) both; }
+  .LexAmplify-drawer.war-room.closing { animation: LexAmplify-warroom-out .28s cubic-bezier(.4,0,.2,1) both; }
   /* Centered ultra-premium research column with subtle gutters */
-  .inziq-drawer.war-room .lex-chat-main {
+  .LexAmplify-drawer.war-room .lex-chat-main {
     flex: 0 1 1000px !important; max-width: 1000px;
     border-left: 1px solid rgba(255,255,255,.05);
     border-right: 1px solid rgba(255,255,255,.05);
@@ -855,29 +855,29 @@ function RichTextToolbar({ targetRef }) {
 
   const BoldIcon = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/>
+      <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" /><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
     </svg>
   );
   const ItalicIcon = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>
+      <line x1="19" y1="4" x2="10" y2="4" /><line x1="14" y1="20" x2="5" y2="20" /><line x1="15" y1="4" x2="9" y2="20" />
     </svg>
   );
   const UnderlineIcon = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3"/><line x1="4" y1="21" x2="20" y2="21"/>
+      <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3" /><line x1="4" y1="21" x2="20" y2="21" />
     </svg>
   );
   const StrikeIcon = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <line x1="4" y1="12" x2="20" y2="12"/>
-      <path d="M8 8c0-2.2 1.8-4 4-4s4 1.8 4 4c0 1.1-.4 2-1 2.7"/>
-      <path d="M8 16c0 2.2 1.8 4 4 4s4-1.8 4-4"/>
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <path d="M8 8c0-2.2 1.8-4 4-4s4 1.8 4 4c0 1.1-.4 2-1 2.7" />
+      <path d="M8 16c0 2.2 1.8 4 4 4s4-1.8 4-4" />
     </svg>
   );
   const OLIcon = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/>
+      <line x1="10" y1="6" x2="21" y2="6" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" />
       <text x="2" y="7" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">1.</text>
       <text x="2" y="13" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">2.</text>
       <text x="2" y="19" fontSize="6" fill="currentColor" stroke="none" fontWeight="700">3.</text>
@@ -885,16 +885,16 @@ function RichTextToolbar({ targetRef }) {
   );
   const ULIcon = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/>
-      <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/>
-      <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/>
-      <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+      <line x1="9" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="9" y1="18" x2="21" y2="18" />
+      <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
   const ClearIcon = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.375-9.375z"/>
-      <line x1="6" y1="20" x2="10" y2="16" strokeWidth="2.5" stroke="#F87171"/>
+      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.375 2.625a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.375-9.375z" />
+      <line x1="6" y1="20" x2="10" y2="16" strokeWidth="2.5" stroke="#F87171" />
     </svg>
   );
 
@@ -943,23 +943,23 @@ const VAULT_TAG_OPTIONS = ['Draft', 'Client Review', 'Final', 'Approved', 'Privi
 
 const FORMAT_OPTIONS = [
   { value: 'native', label: 'LexAmplify Native (HTML/Text)' },
-  { value: 'pdf',    label: 'PDF Document (.pdf)' },
-  { value: 'docx',   label: 'Word Document (.docx)' },
+  { value: 'pdf', label: 'PDF Document (.pdf)' },
+  { value: 'docx', label: 'Word Document (.docx)' },
 ];
 
 function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) {
-  const [flatFolders,    setFlatFolders]   = useState([]);
-  const [flatDocs,       setFlatDocs]      = useState([]);   // lightweight meta — no content
+  const [flatFolders, setFlatFolders] = useState([]);
+  const [flatDocs, setFlatDocs] = useState([]);   // lightweight meta — no content
   // navStack drives the drill-down breadcrumb — each entry is { id, name }; null id = root
-  const [navStack,       setNavStack]      = useState([{ id: null, name: 'Root (Case Vault)' }]);
-  const [fileName,       setFileName]      = useState('');
-  const [isCreating,     setIsCreating]    = useState(false);
-  const [newFolderName,  setNewFolderName] = useState('');
+  const [navStack, setNavStack] = useState([{ id: null, name: 'Root (Case Vault)' }]);
+  const [fileName, setFileName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   const [newFolderError, setNewFolderError] = useState('');
-  const [saving,         setSaving]        = useState(false);
+  const [saving, setSaving] = useState(false);
   const [loadingFolders, setLoadingFolders] = useState(true);
-  const [selectedTags,   setSelectedTags]  = useState([]);
-  const [saveFormat,     setSaveFormat]    = useState('native');
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [saveFormat, setSaveFormat] = useState('native');
   const newFolderInputRef = useRef(null);
 
   // Guards async continuations (fetch/save callbacks) against setState calls
@@ -995,7 +995,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
       setFileName(smartDefault);
       fileNameSeeded.current = true;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load folders + document metadata in parallel (no content field)
@@ -1013,14 +1013,14 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
         if (fData) setFlatFolders(fData.flat || []);
         if (dData) setFlatDocs(dData.documents || []);
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => { if (isMountedRef.current) setLoadingFolders(false); });
   }, [apiBase]);
 
   // Derived: current view + children visible at this level.
   // isAtRoot uses loose null-check so parent_id null/undefined/0/"" all resolve to root.
-  const currentView  = navStack[navStack.length - 1];
-  const isAtRoot     = currentView.id == null;   // catches null AND undefined
+  const currentView = navStack[navStack.length - 1];
+  const isAtRoot = currentView.id == null;   // catches null AND undefined
 
   const _rootPid = (pid) => pid == null || pid === 0 || pid === '';
 
@@ -1116,9 +1116,9 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
     if (!finalName) return;
     setSaving(true);
     if (destFolderId) {
-      try { localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify({ id: destFolderId, path: destPath })); } catch {}
+      try { localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify({ id: destFolderId, path: destPath })); } catch { }
     } else {
-      try { localStorage.removeItem(LAST_FOLDER_KEY); } catch {}
+      try { localStorage.removeItem(LAST_FOLDER_KEY); } catch { }
     }
     await onConfirm({ fileName: finalName, folderId: destFolderId, folderPath: destPath, smartTitle: finalName, tags: selectedTags, format: saveFormat });
     if (!isMountedRef.current) return;
@@ -1133,13 +1133,13 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
         <div className="svm-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <svg width="15" height="15" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
             <span className="svm-title">Save to Case Vault</span>
           </div>
           <button type="button" className="svm-close" onClick={onClose}>
             <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-              <path d="M18 6L6 18M6 6l12 12"/>
+              <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
         </div>
@@ -1210,7 +1210,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                 onClick={() => { setIsCreating(v => !v); setTimeout(() => newFolderInputRef.current?.focus(), 60); }}
                 style={{ background: 'none', border: '1px solid rgba(59,130,246,.25)', borderRadius: 5, color: '#7EB3F5', fontSize: 11, padding: '2px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
               >
-                <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
                 New Folder
               </button>
             </div>
@@ -1228,8 +1228,8 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                     {idx === 0 ? (
                       <>
                         <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                          <polyline points="9 22 9 12 15 12 15 22"/>
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                          <polyline points="9 22 9 12 15 12 15 22" />
                         </svg>
                         Root
                       </>
@@ -1270,11 +1270,11 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                           )}
                           <div className="svm-folder-grid">
                             {currentChildren.map(folder => {
-                              const docs  = docCountInFolder[folder.id]  || 0;
-                              const subs  = childFolderCount[folder.id]  || 0;
-                              const meta  = [
-                                docs  > 0 ? `${docs} doc${docs !== 1 ? 's' : ''}`   : null,
-                                subs  > 0 ? `${subs} folder${subs !== 1 ? 's' : ''}` : null,
+                              const docs = docCountInFolder[folder.id] || 0;
+                              const subs = childFolderCount[folder.id] || 0;
+                              const meta = [
+                                docs > 0 ? `${docs} doc${docs !== 1 ? 's' : ''}` : null,
+                                subs > 0 ? `${subs} folder${subs !== 1 ? 's' : ''}` : null,
                               ].filter(Boolean).join(' · ');
                               return (
                                 <div
@@ -1288,7 +1288,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                                     {meta && <div className="svm-folder-card-meta">{meta}</div>}
                                   </div>
                                   <svg className="svm-folder-card-chevron" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                                    <polyline points="9 18 15 12 9 6"/>
+                                    <polyline points="9 18 15 12 9 6" />
                                   </svg>
                                 </div>
                               );
@@ -1330,7 +1330,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
                   <div style={{ width: 12, height: 12, border: '2px solid rgba(59,130,246,.2)', borderTopColor: '#3B82F6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
                 ) : (
                   <svg width="12" height="12" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   </svg>
                 )}
                 <input
@@ -1419,29 +1419,29 @@ function ConversationMenu({ session, isActive, onPin, onRename, onShare, onDelet
     >
       <button className="lex-ctx-item" onClick={onPin}>
         <svg className="lex-ctx-item-icon" fill="none" stroke={session.pinned ? '#F59E0B' : 'currentColor'} strokeWidth="2" viewBox="0 0 24 24">
-          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
         </svg>
         {session.pinned ? 'Unpin' : 'Pin to top'}
       </button>
       <button className="lex-ctx-item" onClick={onRename}>
         <svg className="lex-ctx-item-icon" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
         </svg>
         Rename
       </button>
       <button className="lex-ctx-item" onClick={onShare}>
         <svg className="lex-ctx-item-icon" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
         </svg>
         Share
       </button>
       <button className="lex-ctx-item danger" onClick={onDelete}>
         <svg className="lex-ctx-item-icon" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-          <polyline points="3 6 5 6 21 6"/>
-          <path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/>
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
         </svg>
         Delete
       </button>
@@ -1469,14 +1469,14 @@ function ShareModal({ sessionTitle, onClose }) {
         <div className="svm-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <svg width="15" height="15" fill="none" stroke="#3B82F6" strokeWidth="2" viewBox="0 0 24 24">
-              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
             </svg>
             <span className="svm-title">Share Conversation</span>
           </div>
           <button className="svm-close" onClick={onClose}>
-            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" /></svg>
           </button>
         </div>
         <div className="svm-body" style={{ gap: 12 }}>
@@ -1521,29 +1521,29 @@ function ShareModal({ sessionTitle, onClose }) {
 // ═══════════════════════════════════════════════════════
 const CONTEXT_ACTIONS = {
   '/contract-analyzer': [
-    { label: 'Draft Clause',      prompt: 'Draft a new clause for the contract currently under review, compliant with Indian law.' },
+    { label: 'Draft Clause', prompt: 'Draft a new clause for the contract currently under review, compliant with Indian law.' },
     { label: 'Run Liability Scan', prompt: 'Run a liability exposure scan on this contract and flag every clause that shifts disproportionate risk onto our client.' },
-    { label: 'Summarize Risks',   prompt: 'Summarize the top risks in this contract in order of severity, citing the relevant Indian statutes.' },
+    { label: 'Summarize Risks', prompt: 'Summarize the top risks in this contract in order of severity, citing the relevant Indian statutes.' },
   ],
   '/conflict-engine': [
     { label: 'Cross-Reference Parties', prompt: 'Cross-reference all parties across our case roster and surface any representation conflicts.' },
-    { label: 'Scan for Conflicts',      prompt: 'Run a full conflict-of-interest scan against the firm database and rank matches by confidence.' },
+    { label: 'Scan for Conflicts', prompt: 'Run a full conflict-of-interest scan against the firm database and rank matches by confidence.' },
   ],
   '/calendar': [
     { label: 'Calculate Limitation Expiry', prompt: 'Calculate the limitation expiry date for the active matter under the Limitation Act, 1963, and show the countdown.' },
-    { label: 'Upcoming Deadlines',          prompt: 'List all upcoming hearing dates, filing deadlines, and limitation cut-offs for the next 30 days.' },
+    { label: 'Upcoming Deadlines', prompt: 'List all upcoming hearing dates, filing deadlines, and limitation cut-offs for the next 30 days.' },
   ],
   '/court-resources': [
-    { label: 'Find Citation',    prompt: 'Find binding Indian precedents relevant to the issue I am researching, with neutral citations.' },
+    { label: 'Find Citation', prompt: 'Find binding Indian precedents relevant to the issue I am researching, with neutral citations.' },
     { label: 'Cause List Lookup', prompt: 'Look up the cause list for the relevant court and identify the listing for our matter.' },
   ],
   '/vault': [
     { label: 'Summarize Case File', prompt: 'Summarize the key facts, issues, and current status of this case file.' },
-    { label: 'Find Precedents',     prompt: 'Find Indian precedents that support our position in this matter.' },
+    { label: 'Find Precedents', prompt: 'Find Indian precedents that support our position in this matter.' },
   ],
   '/case': [
     { label: 'Summarize Case File', prompt: 'Summarize the key facts, issues, and current status of this case file.' },
-    { label: 'Draft Next Filing',   prompt: 'Draft the next procedural filing required for this matter under the CPC.' },
+    { label: 'Draft Next Filing', prompt: 'Draft the next procedural filing required for this matter under the CPC.' },
   ],
   '/firm-library': [
     { label: 'Search Templates', prompt: 'Search the firm library for the most relevant precedent template for my current task.' },
@@ -1569,69 +1569,69 @@ const resolveContextActions = (pathname) => {
 function CommandPalette() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
-  const location      = useLocation();
+  const location = useLocation();
   const paramsFromHook = useParams();
-  const navigate      = useNavigate();
+  const navigate = useNavigate();
   const { isAuthenticated, isInitializing } = useAuth();
 
   // ── Sessions ────────────────────────────────────────
   const [sessions, setSessions] = useState(() => loadSessions());
   const [currentId, setCurrentId] = useState(() => {
     const saved = localStorage.getItem(CURRENT_KEY);
-    const all   = loadSessions();
+    const all = loadSessions();
     return (saved && all.find(s => s.id === saved)) ? saved : (all[0]?.id || null);
   });
 
   // ── UI ───────────────────────────────────────────────
-  const [isOpen,      setIsOpen]      = useState(false);
-  const [query,       setQuery]       = useState('');
-  const [loading,     setLoading]     = useState(false);
-  const [navRoute,    setNavRoute]    = useState(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [navRoute, setNavRoute] = useState(null);
   const [isListening, setIsListening] = useState(false);
-  const [micError,    setMicError]    = useState(null);
-  const [isAwake,       setIsAwake]       = useState(false);
+  const [micError, setMicError] = useState(null);
+  const [isAwake, setIsAwake] = useState(false);
   const [wakeSupported, setWakeSupported] = useState(null); // null=unknown, true=ok, false=denied/unsupported
   // Sidebar defaults open on desktop (side-by-side layout) but closed on mobile,
   // where it renders as an off-canvas overlay drawer instead (see .lex-sidebar
   // mobile media query below).
-  const [isMobileView,    setIsMobileView]    = useState(() => window.innerWidth < 768);
-  const [sidebarOpen,     setSidebarOpen]     = useState(() => window.innerWidth >= 768);
-  const [isClosing,       setIsClosing]       = useState(false); // drives the slide-out exit animation
-  const [mode,            setMode]            = useState('drawer'); // 'drawer' | 'fullscreen' (War Room)
-  const [drawerOpen,      setDrawerOpen]      = useState(false);
+  const [isMobileView, setIsMobileView] = useState(() => window.innerWidth < 768);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [isClosing, setIsClosing] = useState(false); // drives the slide-out exit animation
+  const [mode, setMode] = useState('drawer'); // 'drawer' | 'fullscreen' (War Room)
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState(null); // { content, title, doc_type }
-  const [slashMenu,         setSlashMenu]         = useState(false);
-  const [copyToast,         setCopyToast]         = useState(false);
-  const [isDrawerExpanded,  setIsDrawerExpanded]  = useState(false);
+  const [slashMenu, setSlashMenu] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
 
   // ── File attachment ──────────────────────────────────
   const [attachedFile, setAttachedFile] = useState(null); // { name, content }
-  const [fileLoading,  setFileLoading]  = useState(false);
+  const [fileLoading, setFileLoading] = useState(false);
 
   // ── Save to Vault Modal ───────────────────────────────
   const [showSaveModal, setShowSaveModal] = useState(false);
 
   // ── Conversation 3-dots menu ──────────────────────────
-  const [openMenuId,      setOpenMenuId]      = useState(null);   // session id with open menu
-  const [renamingId,      setRenamingId]      = useState(null);   // session being renamed
-  const [renameValue,     setRenameValue]     = useState('');
+  const [openMenuId, setOpenMenuId] = useState(null);   // session id with open menu
+  const [renamingId, setRenamingId] = useState(null);   // session being renamed
+  const [renameValue, setRenameValue] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);   // session pending deletion
-  const [shareSessionId,  setShareSessionId]  = useState(null);   // session showing share modal
+  const [shareSessionId, setShareSessionId] = useState(null);   // session showing share modal
 
   // ── Refs ─────────────────────────────────────────────
-  const inputRef       = useRef(null);
-  const fileInputRef   = useRef(null);
+  const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
-  const wakeRecRef     = useRef(null);
-  const isAwakeRef     = useRef(false);
-  const wakeActiveRef  = useRef(false);
-  const isOpenRef      = useRef(false);
+  const wakeRecRef = useRef(null);
+  const isAwakeRef = useRef(false);
+  const wakeActiveRef = useRef(false);
+  const isOpenRef = useRef(false);
   const isListeningRef = useRef(false);   // mirrors isListening for SR callbacks (avoids stale closures)
-  const searchRef      = useRef(null);
+  const searchRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const msgRefs        = useRef({});
-  const drawerBodyRef  = useRef(null);   // contentEditable doc editor
-  const lastDocKeyRef  = useRef(null);   // guards against overwriting user edits on re-render
+  const msgRefs = useRef({});
+  const drawerBodyRef = useRef(null);   // contentEditable doc editor
+  const lastDocKeyRef = useRef(null);   // guards against overwriting user edits on re-render
   // Guards async continuations (SSE stream, file attach, schedule/save calls)
   // against setState calls after this component instance has unmounted.
   //
@@ -1644,26 +1644,26 @@ function CommandPalette() {
   // drafts, all of it) for the rest of the session. Production is
   // unaffected since StrictMode's double-invoke is dev-only — this bug
   // only ever manifests while running the app locally.
-  const isMountedRef   = useRef(true);
+  const isMountedRef = useRef(true);
   useEffect(() => {
     isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
 
   // ── Derived ──────────────────────────────────────────
-  const currentSession  = sessions.find(s => s.id === currentId) || null;
-  const messages        = currentSession?.messages        || [];
+  const currentSession = sessions.find(s => s.id === currentId) || null;
+  const messages = currentSession?.messages || [];
   const pendingSchedule = currentSession?.pendingSchedule || null;
-  const pendingDraft    = currentSession?.pendingDraft    || null;
+  const pendingDraft = currentSession?.pendingDraft || null;
   // activeDocument: the "document on the desk" — survives draft card close/reject
-  const activeDocument  = currentSession?.activeDocument  || null;
+  const activeDocument = currentSession?.activeDocument || null;
 
   // Route params (pathname-aware, works outside <Routes>)
-  const matchDoc  = location.pathname.match(/\/case\/([^/]+)\/doc\/([^/]+)/);
+  const matchDoc = location.pathname.match(/\/case\/([^/]+)\/doc\/([^/]+)/);
   const matchCase = location.pathname.match(/\/case\/([^/]+)/);
   const routeParams = { ...paramsFromHook };
-  if (matchDoc)        { routeParams.caseId = matchDoc[1]; routeParams.docId = matchDoc[2]; }
-  else if (matchCase)  { routeParams.caseId = matchCase[1]; }
+  if (matchDoc) { routeParams.caseId = matchDoc[1]; routeParams.docId = matchDoc[2]; }
+  else if (matchCase) { routeParams.caseId = matchCase[1]; }
 
   // ── Session helpers ──────────────────────────────────
   const mutateSessions = useCallback((updater) => {
@@ -1781,7 +1781,7 @@ function CommandPalette() {
     drawerBodyRef.current.innerHTML = doc
       ? highlightPlaceholders(renderDraftHtml(doc.content))
       : '';
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewingSnapshot, activeDocument]);
 
   // ── Keyboard / toggle ────────────────────────────────
@@ -1791,11 +1791,11 @@ function CommandPalette() {
     const onToggle = (e) => {
       const m = e?.detail?.mode;
       if (m) { setMode(m); setIsOpen(true); }
-      else   { setIsOpen(v => !v); }
+      else { setIsOpen(v => !v); }
     };
     const onKey = (e) => {
       if (e.key === 'Escape' && isOpen) setIsOpen(false);
-      // Cmd/Ctrl+K opens InzIQ directly — added to this SAME listener
+      // Cmd/Ctrl+K opens LexAmplify directly — added to this SAME listener
       // (not a second window.addEventListener elsewhere) so there is
       // exactly one global keydown handler for the palette, never two
       // competing for the same shortcut. IntelligencePalette (the
@@ -1831,14 +1831,19 @@ function CommandPalette() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, loading, pendingSchedule, pendingDraft]);
 
-  // ── Command speech recognition (en-IN, pause-tolerant capture) ─────────
+  // ── Command speech recognition (en-IN, user-activated capture) ──────────
   // continuous + interim with a settle debounce: finals accumulate and submit
   // only ~1.1s after speech stops, so natural pauses no longer truncate a
-  // command. Locale is pinned to en-IN to stabilise Indian-English phonetics
-  // and cut processing latency.
+  // command. Locale is pinned to en-IN to balance Indian-English phonetics
+  // and cut processing latency. Mic turns on ONLY when explicitly triggered.
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR) {
+      setWakeSupported(false);
+      return;
+    }
+    setWakeSupported(true);
+
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
@@ -1855,19 +1860,24 @@ function CommandPalette() {
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const t = ev.results[i][0].transcript;
         if (ev.results[i].isFinal) finalBuffer += t;
-        else                       interim += t;
+        else interim += t;
       }
       setQuery((finalBuffer + interim).trim());
       // Re-arm the submit debounce on every token; fire only once speech settles.
       clearSettle();
       if (finalBuffer.trim()) {
-        settleTimer = setTimeout(() => { try { rec.stop(); } catch (_) {} }, 1100);
+        settleTimer = setTimeout(() => { try { rec.stop(); } catch (_) { } }, 1100);
       }
     };
 
     rec.onerror = (ev) => {
       clearSettle();
-      setMicError(ev.error === 'not-allowed' ? 'Mic access denied' : 'Mic error');
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        setWakeSupported(false);
+        setMicError('Mic access denied');
+      } else {
+        setMicError('Mic error');
+      }
       setIsListening(false);
       setTimeout(() => setMicError(null), 3000);
     };
@@ -1882,102 +1892,13 @@ function CommandPalette() {
     };
 
     recognitionRef.current = rec;
-    return () => { clearSettle(); try { rec.abort(); } catch (_) {} };
+    return () => { clearSettle(); try { rec.abort(); } catch (_) { } };
   }, []);
 
   const toggleMic = () => {
     if (!recognitionRef.current) return alert('Speech recognition not supported in this browser.');
     isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
   };
-
-  // ── Background "Hey InzIQ" wake word listener ─────────
-  useEffect(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { setWakeSupported(false); return; }
-
-    let dead = false;
-    // Matches variations browsers transcribe for "hey inziq":
-    //   "hey inziq", "hey inzig", "hey inzick", "in z i q", "a inziq", etc.
-    // Phonetic fallbacks — Web Speech API frequently mishears "InzIQ".
-    // Match against a normalized (lowercased, whitespace-collapsed) transcript.
-    const WAKE_PHRASES = ['hey inziq', 'hey inzik', 'hey in z i q', 'inziq', 'in zik', 'hey insight', 'hey in sync'];
-
-    const wakeRec = new SR();
-    wakeRec.continuous = true;
-    wakeRec.interimResults = false; // final only — avoids false positives from partial audio
-    wakeRec.lang = 'en-IN';
-
-    // Global daemon: restart is gated only by our own live command mic /
-    // awake state (single SR instance at a time) — never by panel visibility.
-    const tryRestart = () => {
-      if (dead || isAwakeRef.current || isListeningRef.current || wakeActiveRef.current) return;
-      setTimeout(() => {
-        if (dead || isAwakeRef.current || isListeningRef.current || wakeActiveRef.current) return;
-        try { wakeRec.start(); wakeActiveRef.current = true; } catch (_) {}
-      }, 400);
-    };
-
-    wakeRec.onstart = () => setWakeSupported(true);
-
-    wakeRec.onresult = (ev) => {
-      if (isAwakeRef.current) return;
-      let text = '';
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        text += ev.results[i][0].transcript;
-      }
-      const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-      if (!WAKE_PHRASES.some(p => normalized.includes(p))) return;
-      // Wake word detected — surface the InzIQ command view (works from any
-      // route, panel open or closed) and hand off to the command mic.
-      isAwakeRef.current = true;
-      setIsAwake(true);
-      setIsOpen(true);
-      wakeActiveRef.current = false;
-      try { wakeRec.stop(); } catch (_) {}
-      // Chrome needs ~250ms to release mic before a new SR instance can start
-      setTimeout(() => {
-        if (dead || !recognitionRef.current) return;
-        try { recognitionRef.current.start(); } catch (_) {}
-      }, 280);
-    };
-
-    wakeRec.onerror = (ev) => {
-      wakeActiveRef.current = false;
-      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
-        dead = true;
-        setWakeSupported(false);
-        return;
-      }
-      // Transient errors (network, audio-capture) — onend fires and calls tryRestart
-    };
-
-    wakeRec.onend = () => {
-      wakeActiveRef.current = false;
-      tryRestart();
-    };
-
-    wakeRecRef.current = wakeRec;
-    return () => {
-      dead = true;
-      wakeActiveRef.current = false;
-      try { wakeRec.abort(); } catch (_) {}
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Global wake daemon: runs on any authenticated app route (not the public
-  // landing/login pages, and never while the command mic is already live).
-  // Boots silently on mount; pauses only for our own single-SR-instance rule.
-  useEffect(() => {
-    if (!wakeRecRef.current || wakeSupported === false) return;
-    const isPublic = location.pathname === '/' || location.pathname === '/login';
-    const shouldRun = isAuthenticated && !isInitializing && !isPublic && !isListening && !isAwake;
-    if (shouldRun && !wakeActiveRef.current) {
-      try { wakeRecRef.current.start(); wakeActiveRef.current = true; } catch (_) {}
-    } else if (!shouldRun && wakeActiveRef.current) {
-      try { wakeRecRef.current.stop(); } catch (_) {}
-      wakeActiveRef.current = false;
-    }
-  }, [location.pathname, isListening, isAwake, wakeSupported, isAuthenticated, isInitializing]);
 
   // ── File attachment handler ───────────────────────────
   const handleFileAttach = async (e) => {
@@ -1988,7 +1909,7 @@ function CommandPalette() {
     const ext = file.name.split('.').pop().toLowerCase();
     const textTypes = ['txt', 'md', 'json', 'csv', 'js', 'ts', 'py', 'java', 'xml', 'html', 'css'];
 
-    if (['jpg','jpeg','png','gif','webp','bmp','svg'].includes(ext)) {
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
       setAttachedFile({ name: file.name, content: '[Image attached — image analysis is not yet supported by this model. Describe what you need help with and I will assist.]', isImage: true });
       return;
     }
@@ -2046,11 +1967,11 @@ function CommandPalette() {
     // Freeze both file pieces before setAttachedFile(null) clears state.
     // State updates are async — the closure holds stale values after the setter runs.
     const capturedFileContent = attachedFile?.content ?? null;
-    const capturedFileName    = attachedFile?.name    ?? null;
+    const capturedFileName = attachedFile?.name ?? null;
 
     // Build display text and full query (file content appended for backend)
     const displayText = attachedFile ? `📎 ${attachedFile.name}\n\n${q}` : q;
-    const fullQuery   = attachedFile
+    const fullQuery = attachedFile
       ? `[Attached document: ${attachedFile.name}]\n\n${attachedFile.content}\n\n---\n\nUser query: ${q}`
       : q;
 
@@ -2108,10 +2029,10 @@ function CommandPalette() {
           params: routeParams,
           // Always inject activeDocument — persists even when draft card is closed/rejected
           ...(activeDocument && {
-            current_draft_context:  activeDocument.content,
-            current_draft_title:    activeDocument.title,
-            current_draft_type:     activeDocument.doc_type,
-            current_draft_case_id:  activeDocument.case_id,
+            current_draft_context: activeDocument.content,
+            current_draft_title: activeDocument.title,
+            current_draft_type: activeDocument.doc_type,
+            current_draft_case_id: activeDocument.case_id,
           }),
         }),
       });
@@ -2161,18 +2082,18 @@ function CommandPalette() {
             const finalRef = actionPayload.data?.document_reference
               || capturedFileName
               || (() => {
-                   const m = q.match(/\bthe\s+(\w+(?:\s+\w+){0,2})\s+(?:draft|document|case|file)\b/i)
-                          || q.match(/pull(?:ing)?\s+(?:the\s+)?(\w+(?:\s+\w+){0,2})\s+(?:draft|from|and)/i)
-                          || q.match(/(?:simulate|courtroom|war.?room)\s+(?:for\s+)?(?:the\s+)?(\w+(?:\s+\w+){0,2})/i);
-                   return m ? m[1].trim() : q.slice(0, 60).trim();
-                 })();
+                const m = q.match(/\bthe\s+(\w+(?:\s+\w+){0,2})\s+(?:draft|document|case|file)\b/i)
+                  || q.match(/pull(?:ing)?\s+(?:the\s+)?(\w+(?:\s+\w+){0,2})\s+(?:draft|from|and)/i)
+                  || q.match(/(?:simulate|courtroom|war.?room)\s+(?:for\s+)?(?:the\s+)?(\w+(?:\s+\w+){0,2})/i);
+                return m ? m[1].trim() : q.slice(0, 60).trim();
+              })();
 
             // ── Contextual same-route execution ──────────────────────
             // If the tool target IS the page we're already on, don't re-navigate
             // (a remount would wipe in-progress work). Hand the payload to the
             // live page via a global command event so it runs its local action.
             if (actionPayload.destination === location.pathname) {
-              window.dispatchEvent(new CustomEvent('inziq-page-command', {
+              window.dispatchEvent(new CustomEvent('LexAmplify-page-command', {
                 detail: {
                   destination: actionPayload.destination,
                   data: { ...actionPayload.data, document_reference: finalRef, file_content: finalContent },
@@ -2206,7 +2127,7 @@ function CommandPalette() {
 
       // SSE stream — push placeholder bubble then consume token events
       const reader = res.body.getReader();
-      const dec    = new TextDecoder();
+      const dec = new TextDecoder();
       let buf = '', accText = '';
       const msgId = `a_${Date.now()}`;
       pushMessage(sid, { id: msgId, role: 'assistant', text: '', sources: [] });
@@ -2263,7 +2184,7 @@ function CommandPalette() {
             if (p.action === 'navigate') {
               const intent = resolveNavIntent(q);
               const finalRoute = p.target_route;
-              const finalTab   = intent?.tab;
+              const finalTab = intent?.tab;
               setNavRoute(finalRoute);
               patchMessage(sid, msgId, m => ({ ...m, text: `Navigating to ${finalRoute}${finalTab ? ` — opening ${finalTab} section` : ''}…` }));
               setTimeout(() => {
@@ -2313,10 +2234,10 @@ function CommandPalette() {
               continue;
             }
 
-            if (p.metadata)           { patchMessage(sid, msgId, m => ({ ...m, sources: p.metadata.sources })); }
-            if (p.token)              { accText += p.token; patchMessage(sid, msgId, m => ({ ...m, text: accText })); }
-            if (p.suggested_actions)  { patchMessage(sid, msgId, m => ({ ...m, suggestedActions: p.suggested_actions })); }
-            if (p.error)              { patchMessage(sid, msgId, m => ({ ...m, text: accText + '\n\n[Error: ' + p.error + ']' })); }
+            if (p.metadata) { patchMessage(sid, msgId, m => ({ ...m, sources: p.metadata.sources })); }
+            if (p.token) { accText += p.token; patchMessage(sid, msgId, m => ({ ...m, text: accText })); }
+            if (p.suggested_actions) { patchMessage(sid, msgId, m => ({ ...m, suggestedActions: p.suggested_actions })); }
+            if (p.error) { patchMessage(sid, msgId, m => ({ ...m, text: accText + '\n\n[Error: ' + p.error + ']' })); }
           } catch (_) { /* skip malformed chunk */ }
         }
       }
@@ -2376,15 +2297,15 @@ function CommandPalette() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          case_id:        activeDocument.case_id || 'GENERAL',
-          title:          fileName,
-          doc_type:       activeDocument.doc_type || '',
-          content:        activeDocument.content,
-          folder_id:      folderId,
-          smart_title:    smartTitle,
-          tags:           JSON.stringify(tags || []),
-          format:         format || 'native',
-          session_title:  sessionTitleForAudit,
+          case_id: activeDocument.case_id || 'GENERAL',
+          title: fileName,
+          doc_type: activeDocument.doc_type || '',
+          content: activeDocument.content,
+          folder_id: folderId,
+          smart_title: smartTitle,
+          tags: JSON.stringify(tags || []),
+          format: format || 'native',
+          session_title: sessionTitleForAudit,
           audit_messages: JSON.stringify(auditMsgs),
         }),
       });
@@ -2400,8 +2321,8 @@ function CommandPalette() {
           msgs.forEach((m, i) => { if (m.docCard) lastDocIdx = i; });
           const patched = lastDocIdx >= 0
             ? msgs.map((m, i) => i === lastDocIdx
-                ? { ...m, docCard: { ...m.docCard, saved: true, savedPath: displayPath, savedDocId: data?.id, savedFolderId: folderId } }
-                : m)
+              ? { ...m, docCard: { ...m.docCard, saved: true, savedPath: displayPath, savedDocId: data?.id, savedFolderId: folderId } }
+              : m)
             : msgs;
           return { ...s, pendingDraft: null, activeDocument: null, messages: patched };
         });
@@ -2409,13 +2330,13 @@ function CommandPalette() {
           id: `sys_${Date.now()}`,
           role: 'vault_save',
           vaultSave: {
-            docId:      data?.id,
-            docTitle:   fileName,
-            docType:    activeDocument.doc_type || '',
+            docId: data?.id,
+            docTitle: fileName,
+            docType: activeDocument.doc_type || '',
             folderId,
             folderPath,
             displayPath,
-            tags:       tags || [],
+            tags: tags || [],
           },
         });
       } else {
@@ -2447,9 +2368,9 @@ function CommandPalette() {
     const doc = viewingSnapshot || activeDocument;
     if (!doc) return;
     const blob = new Blob([doc.content], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
     a.download = doc.title.replace(/\s+/g, '_') + '.txt';
     a.click();
     URL.revokeObjectURL(url);
@@ -2458,7 +2379,7 @@ function CommandPalette() {
   // ── Close  (does NOT wipe messages) ─────────────────
   const handleClose = () => {
     if (isClosing) return; // guard against double-fire during the exit animation
-    if (isListening) try { recognitionRef.current?.stop(); } catch (_) {}
+    if (isListening) try { recognitionRef.current?.stop(); } catch (_) { }
     // Immediately update isOpenRef so the wake tryRestart loop sees the panel is closed
     isOpenRef.current = false;
     if (isAwakeRef.current) { isAwakeRef.current = false; setIsAwake(false); }
@@ -2480,10 +2401,10 @@ function CommandPalette() {
     if (isInitializing || !isAuthenticated || isPublic) return null;
     return (
       <button
-        className="inziq-fab"
+        className="LexAmplify-fab"
         onClick={() => window.dispatchEvent(new CustomEvent('toggle-rag-palette', { detail: { mode: 'drawer' } }))}
-        title='Ask InzIQ (or say "Hey InzIQ")'
-        aria-label="Open InzIQ assistant"
+        title='Ask LexAmplify (or say "Hey LexAmplify")'
+        aria-label="Open LexAmplify assistant"
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -2496,18 +2417,18 @@ function CommandPalette() {
 
   // Group sessions for sidebar
   const now = Date.now();
-  const pinnedSess    = sessions.filter(s => s.pinned);
-  const unpinned      = sessions.filter(s => !s.pinned);
-  const todaySess     = unpinned.filter(s => now - s.updatedAt < 86400000);
+  const pinnedSess = sessions.filter(s => s.pinned);
+  const unpinned = sessions.filter(s => !s.pinned);
+  const todaySess = unpinned.filter(s => now - s.updatedAt < 86400000);
   const yesterdaySess = unpinned.filter(s => now - s.updatedAt >= 86400000 && now - s.updatedAt < 172800000);
-  const olderSess     = unpinned.filter(s => now - s.updatedAt >= 172800000);
+  const olderSess = unpinned.filter(s => now - s.updatedAt >= 172800000);
 
   // Sidebar session row renderer (with 3-dots menu + nested document tree)
   const SessionRow = ({ s }) => {
-    const isActive      = s.id === currentId;
-    const docHistory    = isActive ? (s.messages || []).filter(m => m.docCard) : [];
-    const activeDrafts  = docHistory.filter(m => !m.docCard.saved);
-    const vaultAssets   = docHistory.filter(m => m.docCard.saved);
+    const isActive = s.id === currentId;
+    const docHistory = isActive ? (s.messages || []).filter(m => m.docCard) : [];
+    const activeDrafts = docHistory.filter(m => !m.docCard.saved);
+    const vaultAssets = docHistory.filter(m => m.docCard.saved);
     const isRenaming = renamingId === s.id;
     const isConfirmDelete = deleteConfirmId === s.id;
     const menuIsOpen = openMenuId === s.id;
@@ -2522,7 +2443,7 @@ function CommandPalette() {
         {isConfirmDelete && (
           <div className="lex-confirm-delete" onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 11.5, color: '#F87171', textAlign: 'center', lineHeight: 1.5 }}>
-              Delete "<strong>{truncate(s.title, 30)}</strong>"?<br/>
+              Delete "<strong>{truncate(s.title, 30)}</strong>"?<br />
               <span style={{ color: '#64748B', fontWeight: 400 }}>This cannot be undone.</span>
             </div>
             <div style={{ display: 'flex', gap: 7 }}>
@@ -2577,7 +2498,7 @@ function CommandPalette() {
               }}
             >
               <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
               </svg>
             </button>
 
@@ -2616,8 +2537,8 @@ function CommandPalette() {
                     }}
                   >
                     <svg width="10" height="10" fill="none" stroke={m.docCard.isUpdate ? '#6366F1' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                      <polyline points="14 2 14 8 20 8"/>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
                     </svg>
                     <span className="lex-doc-tree-label">
                       {m.docCard.isUpdate ? '↺ ' : ''}{truncate(m.docCard.title, 26)}
@@ -2640,8 +2561,8 @@ function CommandPalette() {
                     }}
                   >
                     <svg width="10" height="10" fill="none" stroke="#10B981" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                     </svg>
                     <span className="lex-doc-tree-label">{truncate(m.docCard.title, 26)}</span>
                   </button>
@@ -2666,7 +2587,7 @@ function CommandPalette() {
 
       {/* Full-screen overlay */}
       <div
-        className={`inziq-drawer ${isClosing ? 'closing' : ''}`}
+        className={`LexAmplify-drawer ${isClosing ? 'closing' : ''}`}
         onClick={handleClose}
       >
         {/* Two-column container */}
@@ -2699,8 +2620,8 @@ function CommandPalette() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
                 <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(59,130,246,.3)' }}>
                   <svg width="16" height="16" fill="none" stroke="white" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                    <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
                   </svg>
                 </div>
                 <div>
@@ -2714,7 +2635,7 @@ function CommandPalette() {
                 onClick={startNew}
                 style={{ width: '100%', padding: '8px 12px', background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.22)', borderRadius: '7px', color: '#7EB3F5', fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', transition: 'all .15s' }}
               >
-                <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
                 New Conversation
               </button>
             </div>
@@ -2776,7 +2697,7 @@ function CommandPalette() {
                   title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
                 >
                   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
                   </svg>
                 </button>
                 <span style={{ fontSize: '10px', color: '#475569', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>Context:</span>
@@ -2810,7 +2731,7 @@ function CommandPalette() {
                   title="Collapse to side drawer"
                   style={{ background: 'rgba(99,102,241,.12)', border: '1px solid rgba(99,102,241,.3)', color: '#A5B4FC', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all .15s', flexShrink: 0 }}
                 >
-                  <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l-5-5 5-5M5 12h9"/></svg>
+                  <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l-5-5 5-5M5 12h9" /></svg>
                   Collapse
                 </button>
               )}
@@ -2820,7 +2741,7 @@ function CommandPalette() {
                 onClick={handleClose}
                 style={{ background: 'rgba(255,255,255,.05)', border: '1px solid #1A2030', color: '#4B6280', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all .15s', flexShrink: 0 }}
               >
-                <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" /></svg>
                 Close
               </button>
             </div>
@@ -2842,8 +2763,8 @@ function CommandPalette() {
                     <div style={{ textAlign: 'center', marginBottom: '28px' }}>
                       <div style={{ width: '60px', height: '60px', margin: '0 auto 16px', borderRadius: '15px', background: 'linear-gradient(135deg,rgba(59,130,246,.18),rgba(99,102,241,.18))', border: '1px solid rgba(99,102,241,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <svg width="26" height="26" fill="none" stroke="#93C5FD" strokeWidth="1.6" viewBox="0 0 24 24">
-                          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                          <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+                          <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                          <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
                         </svg>
                       </div>
                       <h2 style={{ fontSize: '21px', fontWeight: 700, color: '#DDE6F0', margin: '0 0 8px' }}>AI Legal Associate</h2>
@@ -2882,7 +2803,7 @@ function CommandPalette() {
                             </div>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: attachedFile?.isImage ? 'rgba(245,158,11,.1)' : 'rgba(16,185,129,.1)', border: `1px solid ${attachedFile?.isImage ? 'rgba(245,158,11,.25)' : 'rgba(16,185,129,.25)'}`, borderRadius: '20px', fontSize: '12px', color: attachedFile?.isImage ? '#FCD34D' : '#6EE7B7', maxWidth: '320px' }}>
-                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedFile?.name}</span>
                               <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', lineHeight: 1, fontSize: '14px', opacity: 0.7 }}>×</button>
                             </div>
@@ -2920,7 +2841,7 @@ function CommandPalette() {
                                   onClick={() => { setQuery(a.prompt); setTimeout(() => searchRef.current?.(null, a.prompt), 30); }}
                                   title={a.prompt}
                                 >
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
                                   {a.label}
                                 </button>
                               ))}
@@ -2929,8 +2850,8 @@ function CommandPalette() {
                         })()}
                         <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.08)'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
                           <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={(isAwake || isListening) ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command your AI Legal Associate… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
-                          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLocked || fileLoading} style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }} title="Attach file"><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
-                          <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`} onClick={wakeSupported === false ? undefined : toggleMic} style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : wakeSupported === false ? '#3D5168' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={wakeSupported === false ? 'Mic access denied — say "Hey InzIQ" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey InzIQ"'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>{wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5"/>}</svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
+                          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLocked || fileLoading} style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }} title="Attach file"><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg></button>
+                          <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`} onClick={wakeSupported === false ? undefined : toggleMic} style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : wakeSupported === false ? '#3D5168' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={wakeSupported === false ? 'Mic access denied — say "Hey LexAmplify" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey LexAmplify"'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />{wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5" />}</svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
                           <button type="submit" className={`lex-send-btn${isAwake ? ' lex-send-awake' : ''}`} disabled={isLocked || (!query.trim() && !attachedFile)} style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}>Send</button>
                         </form>
                       </div>
@@ -2973,7 +2894,7 @@ function CommandPalette() {
                   return (
                     <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                       <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: 'linear-gradient(135deg,#10B981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
-                        <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.8" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                        <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.8" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" /></svg>
                       </div>
                       <div
                         className="lex-vault-save-card"
@@ -3001,7 +2922,7 @@ function CommandPalette() {
                 return (
                   <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                     <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
-                      <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                      <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z" /></svg>
                     </div>
                     <div style={{ flex: 1, background: 'rgba(13,17,28,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: '2px 12px 12px 12px', padding: '12px 16px', minWidth: 0, boxShadow: '0 4px 24px rgba(0,0,0,.28)', backdropFilter: 'blur(8px)' }}>
                       {msg.text ? (
@@ -3014,7 +2935,7 @@ function CommandPalette() {
                           {msg.docCard && (
                             <div className="lex-artifact-card">
                               <div className="lex-artifact-card-header">
-                                <svg width="12" height="12" fill="none" stroke={msg.docCard.isUpdate ? '#6366F1' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                <svg width="12" height="12" fill="none" stroke={msg.docCard.isUpdate ? '#6366F1' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                                 <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#C8D8E8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {msg.docCard.isUpdate ? '✏️ ' : '📄 '}{msg.docCard.title}
                                 </span>
@@ -3086,7 +3007,7 @@ function CommandPalette() {
               {loading && (
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                   <div className="lex-ai-breathing" style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                    <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z" /></svg>
                   </div>
                   <div style={{ background: 'rgba(13,17,28,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: '2px 12px 12px 12px', padding: '14px 18px', boxShadow: '0 4px 24px rgba(0,0,0,.28)', backdropFilter: 'blur(8px)' }}>
                     <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
@@ -3108,9 +3029,9 @@ function CommandPalette() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginBottom: '14px' }}>
                     {pendingSchedule.map((ev, i) => {
-                      const cols  = { drop_dead: '#EF4444', tickler: '#F59E0B', appearance: '#10B981', task: '#3B82F6' };
+                      const cols = { drop_dead: '#EF4444', tickler: '#F59E0B', appearance: '#10B981', task: '#3B82F6' };
                       const icons = { drop_dead: '🚨', tickler: '⏰', appearance: '⚖️', task: '✅' };
-                      const col   = cols[ev.event_type] || '#6B7280';
+                      const col = cols[ev.event_type] || '#6B7280';
                       return (
                         <div key={i} style={{ padding: '9px 12px', borderLeft: `3px solid ${col}`, background: 'rgba(255,255,255,.02)', borderRadius: '0 5px 5px 0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
@@ -3145,166 +3066,166 @@ function CommandPalette() {
                  INPUT BAR — docked (active mode)
             ══════════════════════════════════ */}
             {messages.length > 0 && (
-            <div className="lex-input-bar-docked" style={{ padding: '12px 20px 16px', borderTop: '1px solid rgba(255,255,255,.05)', background: '#090C14', flexShrink: 0 }}>
+              <div className="lex-input-bar-docked" style={{ padding: '12px 20px 16px', borderTop: '1px solid rgba(255,255,255,.05)', background: '#090C14', flexShrink: 0 }}>
 
-              {/* File attachment preview pill */}
-              {(attachedFile || fileLoading) && (
-                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {fileLoading ? (
-                    <div className="lex-shimmer" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.2)', borderRadius: '20px', fontSize: '12px', color: '#7EB3F5' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3B82F6', display: 'inline-block' }} />
-                      Extracting file…
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: attachedFile?.isImage ? 'rgba(245,158,11,.1)' : 'rgba(16,185,129,.1)', border: `1px solid ${attachedFile?.isImage ? 'rgba(245,158,11,.25)' : 'rgba(16,185,129,.25)'}`, borderRadius: '20px', fontSize: '12px', color: attachedFile?.isImage ? '#FCD34D' : '#6EE7B7', maxWidth: '320px' }}>
-                      <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedFile?.name}</span>
-                      <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', lineHeight: 1, fontSize: '14px', opacity: 0.7 }}>×</button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                style={{ display: 'none' }}
-                accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.jpg,.jpeg,.png,.gif,.webp"
-                onChange={handleFileAttach}
-              />
-
-              <div style={{ position: 'relative' }}>
-              {/* ── Slash command popup ── */}
-              {slashMenu && (() => {
-                const slashFilter = query.slice(1).toLowerCase();
-                const filtered = SLASH_CMDS.filter(c =>
-                  !slashFilter ||
-                  c.cmd.includes(slashFilter) ||
-                  c.label.toLowerCase().includes(slashFilter)
-                );
-                return filtered.length > 0 ? (
-                  <div className="lex-slash-menu">
-                    {filtered.map((c, ci) => (
-                      <button
-                        key={ci}
-                        className="lex-slash-item"
-                        onMouseDown={e => {
-                          e.preventDefault(); // prevent textarea blur
-                          setQuery(c.fill);
-                          setSlashMenu(false);
-                          setTimeout(() => inputRef.current?.focus(), 10);
-                        }}
-                      >
-                        <span className="lex-slash-cmd">{c.cmd}</span>
-                        <span className="lex-slash-label">{c.label}</span>
-                      </button>
-                    ))}
+                {/* File attachment preview pill */}
+                {(attachedFile || fileLoading) && (
+                  <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {fileLoading ? (
+                      <div className="lex-shimmer" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.2)', borderRadius: '20px', fontSize: '12px', color: '#7EB3F5' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3B82F6', display: 'inline-block' }} />
+                        Extracting file…
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: attachedFile?.isImage ? 'rgba(245,158,11,.1)' : 'rgba(16,185,129,.1)', border: `1px solid ${attachedFile?.isImage ? 'rgba(245,158,11,.25)' : 'rgba(16,185,129,.25)'}`, borderRadius: '20px', fontSize: '12px', color: attachedFile?.isImage ? '#FCD34D' : '#6EE7B7', maxWidth: '320px' }}>
+                        <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedFile?.name}</span>
+                        <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', lineHeight: 1, fontSize: '14px', opacity: 0.7 }}>×</button>
+                      </div>
+                    )}
                   </div>
-                ) : null;
-              })()}
-              {/* Context-morphing action chips — route-specific quick prompts */}
-              {(() => {
-                const contextActions = resolveContextActions(location.pathname);
-                if (contextActions.length === 0) return null;
-                return (
-                  <div className="lex-ctx-chips">
-                    {contextActions.map((a, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="lex-ctx-chip"
-                        disabled={isLocked}
-                        onClick={() => { setQuery(a.prompt); setTimeout(() => searchRef.current?.(null, a.prompt), 30); }}
-                        title={a.prompt}
-                      >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                        {a.label}
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
-              <form
-                onSubmit={handleSearch}
-                style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
-              >
-                <textarea
-                  ref={inputRef}
-                  className="lex-textarea"
-                  rows={1}
-                  value={query}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setQuery(val);
-                    setSlashMenu(val.startsWith('/') && !val.includes(' '));
-                    e.target.style.height = 'auto';
-                    e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px';
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; }
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); }
-                  }}
-                  disabled={isLocked}
-                  placeholder={
-                    (isAwake || isListening)
-                      ? '🎤 Listening — speak your command…'
-                      : attachedFile
-                      ? `Ask something about ${attachedFile.name}…`
-                      : 'Command your AI Legal Associate… (Shift+Enter for new line)'
-                  }
-                  style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }}
+                )}
+
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  style={{ display: 'none' }}
+                  accept=".pdf,.docx,.doc,.txt,.md,.json,.csv,.jpg,.jpeg,.png,.gif,.webp"
+                  onChange={handleFileAttach}
                 />
 
-                {/* Attach file button */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLocked || fileLoading}
-                  style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}
-                  title="Attach file (PDF, DOCX, TXT, image)"
-                >
-                  <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                  </svg>
-                </button>
+                <div style={{ position: 'relative' }}>
+                  {/* ── Slash command popup ── */}
+                  {slashMenu && (() => {
+                    const slashFilter = query.slice(1).toLowerCase();
+                    const filtered = SLASH_CMDS.filter(c =>
+                      !slashFilter ||
+                      c.cmd.includes(slashFilter) ||
+                      c.label.toLowerCase().includes(slashFilter)
+                    );
+                    return filtered.length > 0 ? (
+                      <div className="lex-slash-menu">
+                        {filtered.map((c, ci) => (
+                          <button
+                            key={ci}
+                            className="lex-slash-item"
+                            onMouseDown={e => {
+                              e.preventDefault(); // prevent textarea blur
+                              setQuery(c.fill);
+                              setSlashMenu(false);
+                              setTimeout(() => inputRef.current?.focus(), 10);
+                            }}
+                          >
+                            <span className="lex-slash-cmd">{c.cmd}</span>
+                            <span className="lex-slash-label">{c.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                  {/* Context-morphing action chips — route-specific quick prompts */}
+                  {(() => {
+                    const contextActions = resolveContextActions(location.pathname);
+                    if (contextActions.length === 0) return null;
+                    return (
+                      <div className="lex-ctx-chips">
+                        {contextActions.map((a, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            className="lex-ctx-chip"
+                            disabled={isLocked}
+                            onClick={() => { setQuery(a.prompt); setTimeout(() => searchRef.current?.(null, a.prompt), 30); }}
+                            title={a.prompt}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  <form
+                    onSubmit={handleSearch}
+                    style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
+                  >
+                    <textarea
+                      ref={inputRef}
+                      className="lex-textarea"
+                      rows={1}
+                      value={query}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setQuery(val);
+                        setSlashMenu(val.startsWith('/') && !val.includes(' '));
+                        e.target.style.height = 'auto';
+                        e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px';
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; }
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); }
+                      }}
+                      disabled={isLocked}
+                      placeholder={
+                        (isAwake || isListening)
+                          ? '🎤 Listening — speak your command…'
+                          : attachedFile
+                            ? `Ask something about ${attachedFile.name}…`
+                            : 'Command your AI Legal Associate… (Shift+Enter for new line)'
+                      }
+                      style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }}
+                    />
 
-                {/* Mic button */}
-                <button
-                  type="button"
-                  className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`}
-                  onClick={wakeSupported === false ? undefined : toggleMic}
-                  style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }}
-                  title={wakeSupported === false ? 'Mic access denied — say "Hey InzIQ" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey InzIQ"'}
-                >
-                  <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
-                    {wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5"/>}
-                  </svg>
-                  {micError && (
-                    <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>
-                      {micError}
-                    </div>
-                  )}
-                </button>
+                    {/* Attach file button */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isLocked || fileLoading}
+                      style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}
+                      title="Attach file (PDF, DOCX, TXT, image)"
+                    >
+                      <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                      </svg>
+                    </button>
 
-                {/* Send button */}
-                <button
-                  type="submit"
-                  className={`lex-send-btn${isAwake ? ' lex-send-awake' : ''}`}
-                  disabled={isLocked || (!query.trim() && !attachedFile)}
-                  style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}
-                >
-                  Send
-                </button>
-              </form>
-              </div>{/* end slash-command wrapper */}
+                    {/* Mic button */}
+                    <button
+                      type="button"
+                      className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`}
+                      onClick={wakeSupported === false ? undefined : toggleMic}
+                      style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }}
+                      title={wakeSupported === false ? 'Mic access denied — say "Hey LexAmplify" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey LexAmplify"'}
+                    >
+                      <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
+                        {wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5" />}
+                      </svg>
+                      {micError && (
+                        <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>
+                          {micError}
+                        </div>
+                      )}
+                    </button>
 
-              <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
-                AI Legal Associate can make mistakes. Always verify critical legal information independently.
+                    {/* Send button */}
+                    <button
+                      type="submit"
+                      className={`lex-send-btn${isAwake ? ' lex-send-awake' : ''}`}
+                      disabled={isLocked || (!query.trim() && !attachedFile)}
+                      style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}
+                    >
+                      Send
+                    </button>
+                  </form>
+                </div>{/* end slash-command wrapper */}
+
+                <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
+                  AI Legal Associate can make mistakes. Always verify critical legal information independently.
+                </div>
               </div>
-            </div>
             )}{/* end docked input bar */}
           </main>
 
@@ -3329,7 +3250,7 @@ function CommandPalette() {
                 {/* Drawer header with utility buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '6px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
-                    <svg width="12" height="12" fill="none" stroke={viewingSnapshot ? '#F59E0B' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <svg width="12" height="12" fill="none" stroke={viewingSnapshot ? '#F59E0B' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     <span style={{ fontSize: '12px', fontWeight: 600, color: '#DDE6F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {viewingSnapshot ? viewingSnapshot.title : activeDocument.title}
                     </span>
@@ -3342,10 +3263,10 @@ function CommandPalette() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0, position: 'relative' }}>
                     {copyToast && <span className="lex-copy-toast">Copied!</span>}
                     <button className="lex-util-btn" title="Copy to clipboard" onClick={handleCopyDraft}>
-                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                     </button>
                     <button className="lex-util-btn" title="Export as .txt" onClick={handleExportDraft}>
-                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                     </button>
                     <button
                       className="lex-util-btn"
@@ -3354,8 +3275,8 @@ function CommandPalette() {
                       style={{ color: isDrawerExpanded ? '#A5B4FC' : undefined }}
                     >
                       {isDrawerExpanded
-                        ? <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                        : <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                        ? <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+                        : <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
                       }
                     </button>
                     <button
@@ -3370,7 +3291,7 @@ function CommandPalette() {
                 {/* Snapshot mode banner */}
                 {viewingSnapshot ? (
                   <div className="lex-snapshot-banner">
-                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                     <span>Viewing historical version — read only</span>
                     <button
                       onClick={() => setViewingSnapshot(null)}
@@ -3400,7 +3321,7 @@ function CommandPalette() {
                     lastDocKeyRef.current = `${(viewingSnapshot || activeDocument)?.title}::${plain.length}`;
                     updateSession(currentId, s => ({
                       ...s,
-                      pendingDraft:   s.pendingDraft   ? { ...s.pendingDraft,   content: plain } : null,
+                      pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: plain } : null,
                       activeDocument: s.activeDocument ? { ...s.activeDocument, content: plain } : null,
                     }));
                   }}
@@ -3680,21 +3601,21 @@ const __REMOVED_BLOCK_START__ = `
 function IntelligencePalette() {
   const navigate = useNavigate();
 
-  const [open,        setOpen]        = useState(false);
-  const [closing,     setClosing]     = useState(false);
-  const [query,       setQuery]       = useState('');
-  const [status,      setStatus]      = useState('idle');  // 'idle'|'loading'|'loaded'|'error'
-  const [result,      setResult]      = useState(null);    // SearchResponse from RAG server
-  const [libResults,  setLibResults]  = useState([]);      // INTERNAL: filtered firm lib entries
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('idle');  // 'idle'|'loading'|'loaded'|'error'
+  const [result, setResult] = useState(null);    // SearchResponse from RAG server
+  const [libResults, setLibResults] = useState([]);      // INTERNAL: filtered firm lib entries
   const [selectedIdx, setSelectedIdx] = useState(0);
 
   const debounceRef = useRef(null);
-  const inputRef    = useRef(null);
+  const inputRef = useRef(null);
 
   // ── Firm Library loader (with FL_SEED fallback) ──────────────────────────────
   const loadLibEntries = useCallback(() => {
     try {
-      const raw    = localStorage.getItem('lexai_firm_library');
+      const raw = localStorage.getItem('lexai_firm_library');
       const parsed = raw ? JSON.parse(raw) : null;
       return (Array.isArray(parsed) && parsed.length > 0) ? parsed : FL_SEED;
     } catch { return FL_SEED; }
@@ -3753,9 +3674,9 @@ function IntelligencePalette() {
           terms.some(t => {
             const tl = t.toLowerCase();
             return (
-              (e.title    || '').toLowerCase().includes(tl) ||
+              (e.title || '').toLowerCase().includes(tl) ||
               (e.category || '').toLowerCase().includes(tl) ||
-              (e.tags     || []).some(tag => tag.toLowerCase().includes(tl))
+              (e.tags || []).some(tag => tag.toLowerCase().includes(tl))
             );
           })
         );
@@ -3795,7 +3716,7 @@ function IntelligencePalette() {
     if (e.key === 'Enter' && result?.brain === 'INTERNAL' && libResults[selectedIdx]) {
       e.preventDefault();
       const entry = libResults[selectedIdx];
-      navigator.clipboard?.writeText(entry.title).catch(() => {});
+      navigator.clipboard?.writeText(entry.title).catch(() => { });
       doClose();
     }
   }, [doClose, result, libResults, selectedIdx, listLength]);
@@ -3805,8 +3726,8 @@ function IntelligencePalette() {
 
   if (!open && !closing) return null;
 
-  const ri      = result?.reliability_index ?? 0;
-  const tier    = trustTier(ri);
+  const ri = result?.reliability_index ?? 0;
+  const tier = trustTier(ri);
   const trustPct = Math.round(ri * 100);
 
   return (
@@ -3819,7 +3740,7 @@ function IntelligencePalette() {
           <div className="ip-search-row">
             <span className="ip-search-icon">
               <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
               </svg>
             </span>
             <input
@@ -3877,7 +3798,7 @@ function IntelligencePalette() {
                   key={entry.id}
                   className={`ip-lib-item${idx === selectedIdx ? ' ip-selected' : ''}`}
                   onClick={() => {
-                    navigator.clipboard?.writeText(entry.title).catch(() => {});
+                    navigator.clipboard?.writeText(entry.title).catch(() => { });
                     doClose();
                   }}
                   onMouseEnter={() => setSelectedIdx(idx)}
@@ -3950,8 +3871,8 @@ function IntelligencePalette() {
                     {result.risk_warnings.map((w, i) => (
                       <span key={i} className="ip-risk-chip">
                         <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
                         </svg>
                         {w}
                       </span>
@@ -3998,7 +3919,7 @@ function IntelligencePalette() {
   );
 }
 
-// ── Root export: InzIQ chat sidebar only (Ctrl+K global RAG removed — Directive 3) ──
+// ── Root export: LexAmplify chat sidebar only (Ctrl+K global RAG removed — Directive 3) ──
 export default function LexCommandSuite() {
   return <CommandPalette />;
 }

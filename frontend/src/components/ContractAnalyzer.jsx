@@ -1790,7 +1790,7 @@ const getFakeConsoleLogs = (progress) => {
     { limit: 95, index: 8 },
     { limit: 100, index: 9 }
   ];
-  
+
   const activeCount = logSteps.filter(s => progress >= s.limit).length;
   return FUTURISTIC_LOGS.slice(0, activeCount + 1);
 };
@@ -1994,7 +1994,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Auto-ingest document piped from Case Vault (or InzIQ tool-routing).
+  // Auto-ingest document piped from Case Vault (or LexAmplify tool-routing).
   // pipedDocDispatchedRef guards against React 18 StrictMode's dev-only
   // double-invoke of effects on mount — without it, two identical Celery
   // jobs would fire for the same piped document (wasted LLM calls, and
@@ -2060,7 +2060,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // ── SESSION PERSISTENCE ─────────────────────────────────────────────
   // Rehydrate an in-progress session on mount so navigating away and back
   // does not wipe the analysis. Skips when a document is being piped in
-  // (Case Vault/InzIQ, the Legal Forms Library, or a Quick Draft Studio
+  // (Case Vault/LexAmplify, the Legal Forms Library, or a Quick Draft Studio
   // launch) — otherwise the restored stale session would immediately
   // overwrite the freshly-imported/blank state.
   useEffect(() => {
@@ -2297,7 +2297,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       if (res?.error) {
         throw new Error(res.message || 'Failed to extract document text.');
       }
-      
+
       const extracted = typeof res === 'string'
         ? res
         : (res?.text || res?.data?.text || res?.extracted_text || res?.data || '');
@@ -2408,7 +2408,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
   };
 
-  // Contextual voice hook: when InzIQ resolves an "analyze this contract" command
+  // Contextual voice hook: when LexAmplify resolves an "analyze this contract" command
   // while the user is already on /contract-analyzer, run the local analysis
   // instead of re-navigating (which would remount and wipe the loaded document).
   useEffect(() => {
@@ -2423,8 +2423,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
         handleTextAnalyze();
       }
     };
-    window.addEventListener('inziq-page-command', onPageCommand);
-    return () => window.removeEventListener('inziq-page-command', onPageCommand);
+    window.addEventListener('LexAmplify-page-command', onPageCommand);
+    return () => window.removeEventListener('LexAmplify-page-command', onPageCommand);
   }, [rawText, ruleBookText, scanStrategy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadAnalysisResults = (data) => {
@@ -2439,11 +2439,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
       id: c.id != null ? String(c.id) : `auto-${idx}`,
       text: c.text || c.original_text || '',
       risk: c.risk || (
-        c.risk_level === 'Red'    ? 'RED'   :
-        c.risk_level === 'Amber'  ? 'AMBER' :
-        c.risk_level === 'Green'  ? 'GREEN' :
-        c.risk_level === 'High'   ? 'RED'   :
-        c.risk_level === 'Medium' ? 'AMBER' : 'GREEN'
+        c.risk_level === 'Red' ? 'RED' :
+          c.risk_level === 'Amber' ? 'AMBER' :
+            c.risk_level === 'Green' ? 'GREEN' :
+              c.risk_level === 'High' ? 'RED' :
+                c.risk_level === 'Medium' ? 'AMBER' : 'GREEN'
       ),
       issue: c.issue || c.explanation || 'Risk identified.',
       suggestedRewrite: c.suggested_rewrite || '',
@@ -2832,7 +2832,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       {/* ── PROVISION MATRIX ── */}
       <div>
         <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-dark-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
           Playbook Precedent Inserts
         </div>
         <div className="provision-matrix-grid">
@@ -2899,7 +2899,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 )}
               </select>
               <span className="custom-select-chevron">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
               </span>
             </div>
           </div>
@@ -2920,7 +2920,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
           <button type="submit" className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" style={{ alignSelf: 'flex-start', padding: '10px 20px' }} disabled={drafting}>
             {drafting ? 'Synthesizing...' : (
               <>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
                 Synthesize Clause
               </>
             )}
@@ -3274,14 +3274,14 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'scanner' ? 'active' : ''}`}
                     onClick={() => setLeftTab('scanner')}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
                     Contract Text
                   </button>
                   <button
                     className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'autodraft' ? 'active' : ''}`}
                     onClick={() => setLeftTab('autodraft')}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
                     Auto-Draft
                   </button>
                 </div>
@@ -3297,7 +3297,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       color: 'var(--text-dark-muted)', cursor: 'pointer',
                     }}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
                     Exit Quick Draft
                   </button>
                 )}
@@ -3483,7 +3483,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         {/* RIGHT COLUMN — Rule Book Strategy */}
                         <div className="upload-col-card">
                           <div className="upload-col-label upload-col-label--rulebook">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
                             Custom Rule Book &amp; Directives
                             <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '10px', color: 'var(--text-dark-muted)' }}>(Optional)</span>
                             {ruleBookText.trim() && (
@@ -3512,7 +3512,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleRuleBookFileUpload(e.dataTransfer.files); }}
                             >
                               <input type="file" ref={ruleBookFileInputRef} multiple style={{ display: 'none' }} onChange={(e) => handleRuleBookFileUpload(e.target.files)} accept=".pdf,.docx" />
-                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
                               {ruleBookFile ? (
                                 <>
                                   <h3 style={{ fontSize: '13px', color: '#A78BFA', marginBottom: '4px' }}>{ruleBookFile.name}</h3>
@@ -3582,51 +3582,51 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       </div>
                     </div>
                   ) : (
-                  <>
-                    <ContractTiptapEditor
-                      documentKey={documentVersion}
-                      initialRawText={rawText}
-                      clauses={clauses}
-                      scanStrategy={scanStrategy}
-                      onRiskClick={inspectRisk}
-                      onTextChange={setRawText}
-                      onEditorReady={(ed) => { editorApiRef.current = ed; }}
-                      editable={!isAnalyzing}
-                      onCommentRequest={handleCommentRequest}
-                      onHighlightClick={handleHighlightClick}
-                      toolbarPortalTarget={toolbarSlotEl}
-                    />
-                    {appendedClauses.length > 0 && (
-                      <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
-                        {appendedClauses.map((ac, idx) => (
-                          <div key={idx} className="appended-clause-wrapper">
-                            <hr className="extension-divider" />
-                            <blockquote className={ac.isNewlyAppended ? "newly-appended-blockquote" : "extension-blockquote"}>
-                              <strong className="extension-title" style={{ userSelect: 'none' }}>
-                                Added Missing Clause: {ac.title}
-                              </strong>
-                              <div
-                                className="extension-body"
-                                contentEditable
-                                suppressContentEditableWarning
-                                onBlur={(e) => {
-                                  const text = e.target.innerText || e.target.textContent || '';
-                                  setAppendedClauses(prev => prev.map((item, i) => {
-                                    if (i === idx) {
-                                      return { ...item, clause: text.trim() };
-                                    }
-                                    return item;
-                                  }));
-                                }}
-                              >
-                                {ac.clause}
-                              </div>
-                            </blockquote>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                    <>
+                      <ContractTiptapEditor
+                        documentKey={documentVersion}
+                        initialRawText={rawText}
+                        clauses={clauses}
+                        scanStrategy={scanStrategy}
+                        onRiskClick={inspectRisk}
+                        onTextChange={setRawText}
+                        onEditorReady={(ed) => { editorApiRef.current = ed; }}
+                        editable={!isAnalyzing}
+                        onCommentRequest={handleCommentRequest}
+                        onHighlightClick={handleHighlightClick}
+                        toolbarPortalTarget={toolbarSlotEl}
+                      />
+                      {appendedClauses.length > 0 && (
+                        <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
+                          {appendedClauses.map((ac, idx) => (
+                            <div key={idx} className="appended-clause-wrapper">
+                              <hr className="extension-divider" />
+                              <blockquote className={ac.isNewlyAppended ? "newly-appended-blockquote" : "extension-blockquote"}>
+                                <strong className="extension-title" style={{ userSelect: 'none' }}>
+                                  Added Missing Clause: {ac.title}
+                                </strong>
+                                <div
+                                  className="extension-body"
+                                  contentEditable
+                                  suppressContentEditableWarning
+                                  onBlur={(e) => {
+                                    const text = e.target.innerText || e.target.textContent || '';
+                                    setAppendedClauses(prev => prev.map((item, i) => {
+                                      if (i === idx) {
+                                        return { ...item, clause: text.trim() };
+                                      }
+                                      return item;
+                                    }));
+                                  }}
+                                >
+                                  {ac.clause}
+                                </div>
+                              </blockquote>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )
                 ) : (
                   <div>
@@ -3649,7 +3649,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     ) : draftError ? (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px', margin: '40px 4px', padding: '18px 20px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderLeft: '3px solid var(--accent-danger, #EF4444)', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                           <span style={{ fontSize: '12px', fontWeight: 700, color: '#FCA5A5', letterSpacing: '0.02em' }}>Synthesis Failed</span>
                         </div>
                         <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.5 }}>{draftError}</span>
@@ -3777,17 +3777,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               minHeight: '60px'
                             }}>
                               <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.isRuleBookViolation ? '#A78BFA' : '#94A3B8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 0 0 6.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 0 0 6.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>
-                                 Playbook Guardrail
-                               </span>
-                               {activeClause.isRuleBookViolation && activeClause.ruleBookReference ? (
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 0 0 6.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 0 0 6.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+                                Playbook Guardrail
+                              </span>
+                              {activeClause.isRuleBookViolation && activeClause.ruleBookReference ? (
                                 <span style={{ fontSize: '12.5px', color: '#F1F5F9', lineHeight: 1.5, fontStyle: 'italic' }}>
-                                   "{activeClause.ruleBookReference}"
-                                 </span>
-                               ) : (
+                                  "{activeClause.ruleBookReference}"
+                                </span>
+                              ) : (
                                 <span style={{ fontSize: '12px', color: '#64748B', fontStyle: 'italic' }}>No rule book override active for this clause.</span>
-                               )}
-                             </div>
+                              )}
+                            </div>
 
                             {/* Revision Workshop — glass card */}
                             <div className="revision-glass-card">
@@ -3851,7 +3851,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                     >
                                       {rewriting ? (
                                         <>
-                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                                           <span>Generating…</span>
                                         </>
                                       ) : (
@@ -3898,7 +3898,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               <div className="scanner-ring-pulse"></div>
                               <div className="scanner-ring-core">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 3s linear infinite' }}>
-                                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
                                 </svg>
                               </div>
                             </div>
@@ -3910,7 +3910,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                             <div className="scanner-status-title">
                               {loadingText || 'Scanning Contract...'}
                             </div>
-                            
+
                             <div className="scanner-progress-wrapper">
                               <div className="scanner-progress-bar" style={{ width: `${scanProgress}%` }}></div>
                             </div>
@@ -3949,22 +3949,22 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               ?.filter(c => c.risk === 'RED' || c.risk === 'AMBER')
                               .sort((a, b) => (a.risk === b.risk ? 0 : a.risk === 'RED' ? -1 : 1))
                               .map((c, idx) => (
-                              <div
-                                key={c.id}
-                                className={`clause-list-item animate-fade-in ${c.risk === 'RED' ? 'red-item' : 'amber-item'}`}
-                                style={{ animationDelay: `${idx * 150}ms` }}
-                                onClick={() => inspectRisk(c.id)}
-                              >
-                                <span className="clause-number">#{idx + 1}</span>
-                                <span className="clause-text-preview">{c.text}</span>
-                                <span className={`clause-risk-badge ${c.risk === 'RED' ? 'red' : 'amber'}`}>
-                                  {c.risk === 'RED' ? 'HIGH' : 'MED'}
-                                </span>
-                                {c.isRuleBookViolation && (
-                                  <span className="rulebook-badge">⚡ Rule Book</span>
-                                )}
-                              </div>
-                            ))}
+                                <div
+                                  key={c.id}
+                                  className={`clause-list-item animate-fade-in ${c.risk === 'RED' ? 'red-item' : 'amber-item'}`}
+                                  style={{ animationDelay: `${idx * 150}ms` }}
+                                  onClick={() => inspectRisk(c.id)}
+                                >
+                                  <span className="clause-number">#{idx + 1}</span>
+                                  <span className="clause-text-preview">{c.text}</span>
+                                  <span className={`clause-risk-badge ${c.risk === 'RED' ? 'red' : 'amber'}`}>
+                                    {c.risk === 'RED' ? 'HIGH' : 'MED'}
+                                  </span>
+                                  {c.isRuleBookViolation && (
+                                    <span className="rulebook-badge">⚡ Rule Book</span>
+                                  )}
+                                </div>
+                              ))}
                             {greenCount > 0 && (
                               <div style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', display: 'inline-block' }}></span>
@@ -3989,7 +3989,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         onClick={fetchMissingProtections}
                         disabled={loadingRecs}
                       >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
                         Re-Scan
                       </button>
                     </div>
@@ -4108,101 +4108,101 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         {citations?.map((prec, i) => {
                           const { displayTitle, kanoonQuery } = resolveCitationDisplay(prec);
                           return (
-                          <div key={i} className="precedent-card animate-fade-in" style={{ marginBottom: 0, animationDelay: `${i * 150}ms` }}>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <span>⚖️</span>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>
-                                    {displayTitle}
-                                  </span>
-                                  {!prec.in_vault && (
-                                    <span className="citation-not-in-vault-badge">Not in Firm Vault</span>
-                                  )}
-                                </div>
-                                <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '6px', lineHeight: '1.5' }}>
-                                  "{prec.snippet}..."
-                                </p>
-                                 <div className="citation-action-footer">
-                                   <button
-                                     type="button"
-                                     onClick={() => insertCitationIntoDocument(prec)}
-                                     className="citation-btn-insert"
-                                   >
-                                     📖 Insert Citation
-                                   </button>
-                                   {prec.in_vault ? (
-                                     <button
-                                       type="button"
-                                       onClick={() => navigate(`/case/vault/doc/${prec.vault_id}`)}
-                                       className="citation-btn-vault"
-                                     >
-                                       📂 View in Vault
-                                     </button>
-                                   ) : (
-                                     <a
-                                       href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
-                                       target="_blank"
-                                       rel="noopener noreferrer"
-                                       className="citation-btn-kanoon"
-                                     >
-                                       <ExternalLinkIcon /> Open Official Record
-                                     </a>
-                                   )}
-                                   <button
-                                     type="button"
-                                     onClick={() => handleSearchRelated(prec, i)}
-                                     disabled={loadingRelated === i}
-                                     className="citation-btn-search-related"
-                                   >
-                                     {loadingRelated === i ? (
-                                       <>
-                                         <span style={{ width: '10px', height: '10px', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: '#60a5fa', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                                         Searching…
-                                       </>
-                                     ) : relatedCitations[i] ? (
-                                       '🔗 Hide Related Citations'
-                                     ) : (
-                                       '🔗 Search Related Citations'
-                                     )}
-                                   </button>
-                                 </div>
-
-                                {relatedCitations[i] && (
-                                  <div style={{ marginLeft: '1rem', borderLeft: '2px solid #374151', paddingLeft: '12px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    {relatedCitations[i].length === 0 ? (
-                                      <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', fontStyle: 'italic', margin: 0 }}>No related citations found.</p>
-                                    ) : (
-                                      relatedCitations[i].map((related, j) => {
-                                        const { displayTitle: relatedTitle, kanoonQuery: relatedKanoonQuery } = resolveCitationDisplay(related);
-                                        return (
-                                          <div key={related.id || j}>
-                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '4px' }}>
-                                              {relatedTitle}
-                                            </div>
-                                            {related.snippet && (
-                                              <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 6px', lineHeight: 1.5 }}>
-                                                "{related.snippet.length > 140 ? `${related.snippet.slice(0, 140)}…` : related.snippet}"
-                                              </p>
-                                            )}
-                                            <a
-                                              className="citation-btn-kanoon"
-                                              href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedKanoonQuery)}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              style={{ fontSize: '10.5px', padding: '4px 10px' }}
-                                            >
-                                              <ExternalLinkIcon /> Open Official Record
-                                            </a>
-                                          </div>
-                                        );
-                                      })
+                            <div key={i} className="precedent-card animate-fade-in" style={{ marginBottom: 0, animationDelay: `${i * 150}ms` }}>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <span>⚖️</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>
+                                      {displayTitle}
+                                    </span>
+                                    {!prec.in_vault && (
+                                      <span className="citation-not-in-vault-badge">Not in Firm Vault</span>
                                     )}
                                   </div>
-                                )}
+                                  <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '6px', lineHeight: '1.5' }}>
+                                    "{prec.snippet}..."
+                                  </p>
+                                  <div className="citation-action-footer">
+                                    <button
+                                      type="button"
+                                      onClick={() => insertCitationIntoDocument(prec)}
+                                      className="citation-btn-insert"
+                                    >
+                                      📖 Insert Citation
+                                    </button>
+                                    {prec.in_vault ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => navigate(`/case/vault/doc/${prec.vault_id}`)}
+                                        className="citation-btn-vault"
+                                      >
+                                        📂 View in Vault
+                                      </button>
+                                    ) : (
+                                      <a
+                                        href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="citation-btn-kanoon"
+                                      >
+                                        <ExternalLinkIcon /> Open Official Record
+                                      </a>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSearchRelated(prec, i)}
+                                      disabled={loadingRelated === i}
+                                      className="citation-btn-search-related"
+                                    >
+                                      {loadingRelated === i ? (
+                                        <>
+                                          <span style={{ width: '10px', height: '10px', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: '#60a5fa', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                                          Searching…
+                                        </>
+                                      ) : relatedCitations[i] ? (
+                                        '🔗 Hide Related Citations'
+                                      ) : (
+                                        '🔗 Search Related Citations'
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  {relatedCitations[i] && (
+                                    <div style={{ marginLeft: '1rem', borderLeft: '2px solid #374151', paddingLeft: '12px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                      {relatedCitations[i].length === 0 ? (
+                                        <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', fontStyle: 'italic', margin: 0 }}>No related citations found.</p>
+                                      ) : (
+                                        relatedCitations[i].map((related, j) => {
+                                          const { displayTitle: relatedTitle, kanoonQuery: relatedKanoonQuery } = resolveCitationDisplay(related);
+                                          return (
+                                            <div key={related.id || j}>
+                                              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '4px' }}>
+                                                {relatedTitle}
+                                              </div>
+                                              {related.snippet && (
+                                                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 6px', lineHeight: 1.5 }}>
+                                                  "{related.snippet.length > 140 ? `${related.snippet.slice(0, 140)}…` : related.snippet}"
+                                                </p>
+                                              )}
+                                              <a
+                                                className="citation-btn-kanoon"
+                                                href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedKanoonQuery)}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ fontSize: '10.5px', padding: '4px 10px' }}
+                                              >
+                                                <ExternalLinkIcon /> Open Official Record
+                                              </a>
+                                            </div>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
                           );
                         })}
                       </div>
@@ -4348,7 +4348,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 onClick={() => setShowExportModal(false)}
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-dark-muted)', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', flexShrink: 0 }}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
 
@@ -4361,10 +4361,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   {/* PDF tile */}
                   <div className={`format-tile ${exportFormat === 'pdf' ? 'selected' : ''}`} onClick={() => setExportFormat('pdf')}>
                     <div className="format-tile-check">
-                      {exportFormat === 'pdf' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                      {exportFormat === 'pdf' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
                     </div>
                     <div className="format-tile-icon-wrap">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'pdf' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'pdf' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
                     </div>
                     <div>
                       <strong style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '2px' }}>PDF Format</strong>
@@ -4374,10 +4374,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   {/* Word tile */}
                   <div className={`format-tile ${exportFormat === 'docx' ? 'selected' : ''}`} onClick={() => setExportFormat('docx')}>
                     <div className="format-tile-check">
-                      {exportFormat === 'docx' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                      {exportFormat === 'docx' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
                     </div>
                     <div className="format-tile-icon-wrap">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'docx' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'docx' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
                     </div>
                     <div>
                       <strong style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '2px' }}>Word Document</strong>
@@ -4408,11 +4408,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '12px', lineHeight: '1.45' }}>Select modules to make this document natively available inside those workspaces.</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {[
-                    { id: 'case-vault',         label: 'Case Vault',         icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> },
-                    { id: 'conflict-engine',    label: 'Conflict Engine',    icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> },
-                    { id: 'virtual-courtroom',  label: 'Virtual Courtroom',  icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> },
-                    { id: 'firm-library',       label: 'Firm Library',       icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> },
-                    { id: 'contract-analyzer',  label: 'Contract Analyzer',  icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+                    { id: 'case-vault', label: 'Case Vault', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
+                    { id: 'conflict-engine', label: 'Conflict Engine', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
+                    { id: 'virtual-courtroom', label: 'Virtual Courtroom', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg> },
+                    { id: 'firm-library', label: 'Firm Library', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg> },
+                    { id: 'contract-analyzer', label: 'Contract Analyzer', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg> },
                   ].map(({ id, label, icon }) => {
                     const isActive = crossSaveTargets.includes(id);
                     return (
@@ -4459,12 +4459,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
               >
                 {exporting ? (
                   <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                     Exporting...
                   </>
                 ) : (
                   <>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                     {crossSaveTargets.length > 0 ? 'Export & Save to Platform' : 'Export & Download'}
                   </>
                 )}

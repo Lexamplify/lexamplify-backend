@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 // Every module under test reads/writes localStorage on mount (theme,
-// InzIQ chat sessions, Firm Library notes/reviewed sets) — start each test
+// LexAmplify chat sessions, Firm Library notes/reviewed sets) — start each test
 // from a clean slate so one test's writes can't change another's render.
 beforeEach(() => {
   window.localStorage.clear();
@@ -24,30 +24,30 @@ if (!window.matchMedia) {
     matches: false,
     media: query,
     onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addListener: () => { },
+    removeListener: () => { },
+    addEventListener: () => { },
+    removeEventListener: () => { },
     dispatchEvent: () => false,
   });
 }
 
 if (!window.ResizeObserver) {
   window.ResizeObserver = class ResizeObserver {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+    observe() { }
+    unobserve() { }
+    disconnect() { }
   };
 }
 
 if (!window.IntersectionObserver) {
   window.IntersectionObserver = class IntersectionObserver {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+    observe() { }
+    unobserve() { }
+    disconnect() { }
   };
 }
 
 if (!window.HTMLElement.prototype.scrollIntoView) {
-  window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.HTMLElement.prototype.scrollIntoView = () => { };
 }

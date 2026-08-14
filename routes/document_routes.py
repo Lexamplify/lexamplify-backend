@@ -231,7 +231,7 @@ def upload_document():
             summary = f"Uploaded legal document '{f.filename}' containing {len(extracted_text)} characters."
 
         # Save metadata record into case_vault — the single source of truth
-        # shared with Firm Library / InzIQ, instead of the old SQLAlchemy
+        # shared with Firm Library / LexAmplify, instead of the old SQLAlchemy
         # Document table. doc_type defaults to "Vault Document" and tags to
         # a valid empty JSON array so the citation json_insert/json_remove
         # SQL functions never choke on a NULL or malformed value.
@@ -277,7 +277,7 @@ def upload_document():
 def list_documents():
     """Lists metadata for case_vault documents, optionally filtered by
     case_id. Queries case_vault directly — the single source of truth shared
-    with Firm Library / InzIQ — instead of the old SQLAlchemy Document table,
+    with Firm Library / LexAmplify — instead of the old SQLAlchemy Document table,
     so ids returned here line up with the citation routes' doc_id space."""
     case_id_raw = request.args.get("case_id")
 

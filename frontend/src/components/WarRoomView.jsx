@@ -1009,7 +1009,7 @@ export default function WarRoomView() {
 
   if (!simulationData) {
     const steps = [
-      { num: '01', title: 'Open the InzIQ', desc: 'Press Ctrl+K or click "InzIQ" in the sidebar.' },
+      { num: '01', title: 'Open the LexAmplify', desc: 'Press Ctrl+K or click "LexAmplify" in the sidebar.' },
       { num: '02', title: 'Trigger the simulation', desc: 'Type a command and the AI routes you here instantly.', chip: '"Pull the [document] and start virtual courtroom simulation"' },
       { num: '03', title: 'War Room activates', desc: '5-Stage AI pipeline runs and populates this dashboard automatically.' },
     ];
@@ -1031,7 +1031,7 @@ export default function WarRoomView() {
               <div style={{ fontSize: '42px', marginBottom: '12px', filter: 'drop-shadow(0 4px 12px rgba(59,130,246,0.3))' }}>⚖️</div>
               <h2 style={{ fontSize: '21px', fontWeight: '700', color: 'white', margin: '0 0 8px' }}>Virtual Courtroom — Ready</h2>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
-                Upload a document directly or trigger via the InzIQ.
+                Upload a document directly or trigger via the LexAmplify.
               </p>
             </div>
 
@@ -1068,7 +1068,7 @@ export default function WarRoomView() {
             )}
 
             {/* ── OR DIVIDER ── */}
-            <div className="wr-or-divider">or use the InzIQ</div>
+            <div className="wr-or-divider">or use the LexAmplify</div>
 
             {/* ── STEP LIST ── */}
             <div style={{ marginBottom: '22px' }}>
@@ -1093,7 +1093,7 @@ export default function WarRoomView() {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
-                Open InzIQ
+                Open LexAmplify
               </button>
               <button
                 style={{ padding: '10px 22px', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '7px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' }}

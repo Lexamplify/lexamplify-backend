@@ -128,7 +128,7 @@
 2. Select a template from one of the 3 categories (Legal Notices, Contracts & NDAs, Court Petitions) — e.g., Bail Application (S.439).
 3. On redirect to the draft workspace, fill in fields manually or let AI draft a first pass from client facts.
 4. Export the completed form as DOCX.","Template list shows all 6 templates across 3 categories; drafting workspace opens with the correct template; AI-assisted draft populates fields from provided facts; DOCX export succeeds and produces a correctly formatted document.","PASS"
-"TC36","InzIQ AI Legal Associate","INZ_TC36.png","Verify the InzIQ AI Legal Associate overlay handles a streamed chat query, the Find Citation quick command, and saving the response to Case Vault.","1. Click the InzIQ button (sidebar or Dashboard) to open the AI Legal Associate overlay.
+"TC36","LexAmplify AI Legal Associate","INZ_TC36.png","Verify the LexAmplify AI Legal Associate overlay handles a streamed chat query, the Find Citation quick command, and saving the response to Case Vault.","1. Click the LexAmplify button (sidebar or Dashboard) to open the AI Legal Associate overlay.
 2. Enter a legal question and submit.
 3. Observe the streamed response render progressively.
 4. Use the Find Citation quick command to look up a specific case citation.

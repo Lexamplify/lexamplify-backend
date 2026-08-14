@@ -462,7 +462,7 @@ export const analyzeContract = async (file = null, text = '', scanStrategy = 'De
 export const extractContractText = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
-  
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -770,7 +770,7 @@ export const sendUniversalChat = async (payload) => {
     console.error('[API Service] sendUniversalChat error:', error);
     return {
       error: true,
-      message: error.message || 'InzIQ Chat failed. Connection timed out or server is offline.'
+      message: error.message || 'LexAmplify Chat failed. Connection timed out or server is offline.'
     };
   }
 };

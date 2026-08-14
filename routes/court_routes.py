@@ -1266,7 +1266,7 @@ _CAPTCHA_SRC_RE = re.compile(r'captcha|validationcode|seccode|getcode|verifyimag
 
 def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
     """
-    HTML rewriting pass (Patches 3, 4 & 5).
+    HTML rewriting pass (Patches 3, 4, 5, 6 & 7).
 
     Patch 4 — <base href> injection:
         Inserted as the very first child of <head> so the browser natively
@@ -1388,6 +1388,38 @@ def _proxy_rewrite_html(raw_bytes: bytes, final_url: str) -> bytes:
             new_head.append(script_tag)
             new_head.append(soup.new_tag('base', href=f'{base_origin}/'))
             body.insert_before(new_head)
+
+    # ── Patch 7: FontAwesome CDN fallback for tofu icon glyphs ─────────────
+    # An icon font is a genuinely different failure mode than a broken
+    # <img>: this page's CSS/font files are NOT proxied (Patch 4's <base
+    # href> resolves them straight against the government origin, same as
+    # any other unproxied asset) — but @font-face src URLs, unlike <img>
+    # src, ARE subject to CORS. The browser's actual page origin is always
+    # api.lexamplify.com (see Patch 6's docstring), so a font file served
+    # from delhihighcourt.nic.in with no Access-Control-Allow-Origin
+    # permitting that origin is fetched but silently refused as a font
+    # resource — renders as tofu, not a network error, which is why this
+    # is easy to miss from the Network tab alone. cdnjs.cloudflare.com
+    # deliberately sends a permissive CORS header on its font assets
+    # specifically to support this kind of cross-origin embedding.
+    # Appended (not prepended, unlike Patch 6's script) so it loads AFTER
+    # the government's own CSS and wins the cascade for matching selectors
+    # at equal specificity.
+    #
+    # Known limitation: this assumes the target markup uses FontAwesome 5's
+    # OWN class names (fas/far/fab). A site still on FontAwesome 4 classes
+    # (fa fa-refresh, etc.) needs FA5's v4-shim compatibility CSS as well —
+    # not included here since it wasn't confirmed which version this
+    # specific portal's markup targets; add it if icons are still missing
+    # after this change.
+    if soup.head:
+        fa_link = soup.new_tag(
+            'link',
+            rel='stylesheet',
+            href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css',
+            crossorigin='anonymous',
+        )
+        soup.head.append(fa_link)
 
     # ── Patch 5: rewrite CAPTCHA <img src> to route through the proxy ──────
     for img in soup.find_all('img'):

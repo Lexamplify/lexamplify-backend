@@ -350,7 +350,7 @@ const landingStyles = `
   .vault-name { font-size: 12.5px; color: #D1D5DB; flex: 1; transition: color 0.4s; }
   [data-theme="light"] .vault-name { color: #1E293B; }
   .vault-size { font-size: 10.5px; color: #4B5563; }
-  .inziq-cmd {
+  .LexAmplify-cmd {
     display: flex; align-items: center; gap: 8px;
     padding: 9px 12px; border-radius: 8px;
     background: rgba(139,92,246,0.06);
@@ -358,11 +358,11 @@ const landingStyles = `
     margin-bottom: 7px; font-size: 12px;
     transition: background 0.45s, border-color 0.45s;
   }
-  [data-theme="light"] .inziq-cmd { background: rgba(139,92,246,0.05); border-color: rgba(139,92,246,0.12); }
-  .inziq-cmd:last-child { margin-bottom: 0; }
-  .inziq-mic { font-size: 14px; }
-  .inziq-text { color: #C4B5FD; }
-  .inziq-arrow { margin-left: auto; color: #6B7280; font-size: 11px; }
+  [data-theme="light"] .LexAmplify-cmd { background: rgba(139,92,246,0.05); border-color: rgba(139,92,246,0.12); }
+  .LexAmplify-cmd:last-child { margin-bottom: 0; }
+  .LexAmplify-mic { font-size: 14px; }
+  .LexAmplify-text { color: #C4B5FD; }
+  .LexAmplify-arrow { margin-left: auto; color: #6B7280; font-size: 11px; }
 
   /* Bento row flex layouts */
   .bc-flex { display: flex; gap: 36px; align-items: flex-start; }
@@ -599,7 +599,7 @@ export default function LandingPage() {
                     <span className="term-dot" style={{ background: '#F59E0B' }} />
                     <span className="term-dot" style={{ background: '#10B981' }} />
                   </div>
-                  <span className="term-title">InzIQ Terminal</span>
+                  <span className="term-title">LexAmplify Terminal</span>
                   <span className="term-status"><span className="term-pulse" /> SECURE</span>
                 </div>
                 <div className="term-body">
@@ -666,8 +666,8 @@ export default function LandingPage() {
                   <div>
                     {[
                       { name: 'Tech Corp India', tag: 'HIGH CONFLICT', cls: 'conflict' },
-                      { name: 'Rajesh Sharma',   tag: 'POTENTIAL',     cls: 'warn'     },
-                      { name: 'Arora & Sons Ltd', tag: 'CLEAR',        cls: 'ok'       },
+                      { name: 'Rajesh Sharma', tag: 'POTENTIAL', cls: 'warn' },
+                      { name: 'Arora & Sons Ltd', tag: 'CLEAR', cls: 'ok' },
                     ].map(({ name, tag, cls }) => (
                       <div key={name} className="mini-row">
                         <span className="mini-row-label">{name}</span>
@@ -682,22 +682,22 @@ export default function LandingPage() {
               </div>
             </SR>
 
-            {/* ── InzIQ AI Suite (small) ── */}
+            {/* ── LexAmplify AI Suite (small) ── */}
             <SR delay="d1" style={{ display: 'contents' }}>
               <div className="bc bc--sm" style={{ borderColor: 'rgba(139,92,246,0.12)' }}>
                 <div className="bc-glow" style={{ background: 'radial-gradient(circle,rgba(139,92,246,0.09) 0%,transparent 70%)' }} />
                 <div className="bc-content">
                   <span className="bc-tag">Module 03</span>
-                  <h3 className="bc-title">InzIQ AI Suite</h3>
+                  <h3 className="bc-title">LexAmplify AI Suite</h3>
                   <p className="bc-desc">Speak a command. Your entire case database responds in real time.</p>
                   {[
-                    { cmd: '"Draft notice to Tech Corp"',      result: 'Drafting → /contract...' },
+                    { cmd: '"Draft notice to Tech Corp"', result: 'Drafting → /contract...' },
                     { cmd: '"Find limitation for Arora case"', result: '14 days remaining' },
                   ].map(({ cmd, result }) => (
-                    <div key={cmd} className="inziq-cmd">
-                      <span className="inziq-mic">🎤</span>
+                    <div key={cmd} className="LexAmplify-cmd">
+                      <span className="LexAmplify-mic">🎤</span>
                       <div>
-                        <div className="inziq-text">{cmd}</div>
+                        <div className="LexAmplify-text">{cmd}</div>
                         <div style={{ fontSize: '11px', color: '#10B981', marginTop: '2px' }}>{result}</div>
                       </div>
                     </div>
@@ -719,8 +719,8 @@ export default function LandingPage() {
                   <div className="cal-grid">
                     {[
                       { date: '07', label: 'HC Hearing', type: 'urgent', badge: 'TODAY' },
-                      { date: '14', label: 'Limitation', type: 'soon',   badge: '7 DAYS' },
-                      { date: '28', label: 'NCLT Filing', type: '',      badge: '' },
+                      { date: '14', label: 'Limitation', type: 'soon', badge: '7 DAYS' },
+                      { date: '28', label: 'NCLT Filing', type: '', badge: '' },
                     ].map(({ date, label, type, badge }) => (
                       <div key={date} className={`cal-item ${type}`}>
                         <div className="cal-date">{date}</div>
@@ -751,9 +751,9 @@ export default function LandingPage() {
                   </div>
                   <div className="bc-flex-r">
                     {[
-                      { icon: '⚖️', title: 'Bench Q: "Section 56 applies?"',      text: 'AI surfaces 3 contrary precedents for drill.' },
-                      { icon: '🔥', title: 'Weakness flagged in Para 7',           text: 'Rewrite prompted before live hearing.' },
-                      { icon: '✅', title: 'Cross-exam simulated',                  text: 'Argument stress-score: 87/100.' },
+                      { icon: '⚖️', title: 'Bench Q: "Section 56 applies?"', text: 'AI surfaces 3 contrary precedents for drill.' },
+                      { icon: '🔥', title: 'Weakness flagged in Para 7', text: 'Rewrite prompted before live hearing.' },
+                      { icon: '✅', title: 'Cross-exam simulated', text: 'Argument stress-score: 87/100.' },
                     ].map(({ icon, title, text }) => (
                       <div key={title} className="wr-step">
                         <span className="wr-step-icon">{icon}</span>
@@ -786,10 +786,10 @@ export default function LandingPage() {
                   </div>
                   <div className="bc-flex-r">
                     {[
-                      { icon: '📄', name: 'Arora_NDA_Draft_v3.pdf',     size: '2.1 MB' },
-                      { icon: '⚖️', name: 'TechCorp_Plaint_HC.docx',    size: '840 KB' },
+                      { icon: '📄', name: 'Arora_NDA_Draft_v3.pdf', size: '2.1 MB' },
+                      { icon: '⚖️', name: 'TechCorp_Plaint_HC.docx', size: '840 KB' },
                       { icon: '📋', name: 'Limitation_Matrix_2026.xlsx', size: '420 KB' },
-                      { icon: '🔒', name: 'Confidential_LOA.pdf',        size: '1.3 MB' },
+                      { icon: '🔒', name: 'Confidential_LOA.pdf', size: '1.3 MB' },
                     ].map(({ icon, name, size }) => (
                       <div key={name} className="vault-row">
                         <span className="vault-icon">{icon}</span>
@@ -907,9 +907,9 @@ export default function LandingPage() {
         <div className="footer-inner">
           <div>© 2026 LexAmplify India Software Solutions. All rights reserved.</div>
           <div className="footer-links">
-            <Link to="/login"  className="footer-link">Advocate Console</Link>
+            <Link to="/login" className="footer-link">Advocate Console</Link>
             <a href="#security" className="footer-link">Security</a>
-            <a href="#pricing"  className="footer-link">Pricing</a>
+            <a href="#pricing" className="footer-link">Pricing</a>
             <span style={{ cursor: 'default' }}>India Kanoon Citations Compliant</span>
           </div>
         </div>

@@ -11,7 +11,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
  *
  * isInitializing starts true and only flips false once that first /me
  * call resolves (success or failure). Components that gate on auth state
- * (route guards, the InzIQ FAB, etc.) MUST check isInitializing first —
+ * (route guards, the LexAmplify FAB, etc.) MUST check isInitializing first —
  * checking `!user` alone during the initial async check would read as
  * "logged out" for a fraction of a second on every reload and could
  * trigger a premature redirect/hide before the cookie is ever verified.

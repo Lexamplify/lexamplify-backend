@@ -5,7 +5,7 @@
  *   2. Contract Analyzer         7. Virtual Courtroom / War Room
  *   3. Court Directory & Resources 8. Firm Library
  *   4. Conflict Engine           9. Legal Forms Library
- *   5. Legal Calendar           10. InzIQ AI Legal Associate
+ *   5. Legal Calendar           10. LexAmplify AI Legal Associate
  *
  * Every module fetches on mount through services/api.js (a thin fetch
  * wrapper), so a single global `fetch` mock with a safe empty-JSON
@@ -58,7 +58,7 @@ function mockFetch(routeHandlers = []) {
 beforeEach(() => {
   mockFetch();
   // A fake session token — several modules (Dashboard shell, War Room,
-  // InzIQ's global FAB) branch on "is the user authenticated" before
+  // LexAmplify's global FAB) branch on "is the user authenticated" before
   // rendering their normal (non-login-gated) UI.
   window.localStorage.setItem('token', 'test-token');
 });
@@ -223,7 +223,7 @@ describe('Virtual Courtroom / War Room', () => {
     expect(screen.getByText(/Drop your case document here/i)).toBeInTheDocument();
   });
 
-  it('dispatches the InzIQ toggle event when "Open InzIQ" is clicked', async () => {
+  it('dispatches the LexAmplify toggle event when "Open LexAmplify" is clicked', async () => {
     render(
       <MemoryRouter>
         <WarRoomView />
@@ -233,8 +233,8 @@ describe('Virtual Courtroom / War Room', () => {
     const listener = vi.fn();
     window.addEventListener('toggle-rag-palette', listener);
 
-    const openInziqBtn = await screen.findByRole('button', { name: /Open InzIQ/i });
-    await userEvent.click(openInziqBtn);
+    const openLexAmplifyBtn = await screen.findByRole('button', { name: /Open LexAmplify/i });
+    await userEvent.click(openLexAmplifyBtn);
 
     expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener('toggle-rag-palette', listener);
@@ -322,10 +322,10 @@ describe('Legal Forms Library', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// 10. InzIQ AI Legal Associate
+// 10. LexAmplify AI Legal Associate
 // ─────────────────────────────────────────────────────────────────────────
 
-describe('InzIQ AI Legal Associate', () => {
+describe('LexAmplify AI Legal Associate', () => {
   it('renders nothing intrusive while closed', () => {
     window.history.pushState({}, '', '/dashboard');
     render(

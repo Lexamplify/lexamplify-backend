@@ -321,9 +321,9 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
-/* ── InzIQ global FAB — persistent assistant trigger (bottom-right) ──────
+/* ── LexAmplify global FAB — persistent assistant trigger (bottom-right) ──────
    Sits at right:32px so it never collides with the centered focus pill. */
-.inziq-fab {
+.LexAmplify-fab {
   position: fixed;
   bottom: 32px;
   right: 32px;
@@ -341,15 +341,15 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 8px 28px rgba(59, 130, 246, 0.35), 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
 }
-.inziq-fab:hover {
+.LexAmplify-fab:hover {
   transform: translateY(-3px) scale(1.04);
   box-shadow: 0 14px 40px rgba(59, 130, 246, 0.5), 0 4px 12px rgba(0, 0, 0, 0.45);
 }
-.inziq-fab:active {
+.LexAmplify-fab:active {
   transform: translateY(-1px) scale(1.0);
 }
 @media (max-width: 768px) {
-  .inziq-fab { bottom: 20px; right: 20px; width: 48px; height: 48px; }
+  .LexAmplify-fab { bottom: 20px; right: 20px; width: 48px; height: 48px; }
 }
 
 /* Floating Command Palette (Ctrl + K) */

@@ -265,7 +265,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   }, [setFocusMode]);
 
   const closeSidebar = () => setIsSidebarOpen(false);
-  // Sidebar InzIQ button opens the AI in immersive full-screen "War Room" mode
+  // Sidebar LexAmplify button opens the AI in immersive full-screen "War Room" mode
   const openAgent = () => window.dispatchEvent(new CustomEvent('toggle-rag-palette', { detail: { mode: 'fullscreen' } }));
   const handleSignOut = () => {
     localStorage.removeItem('token');
@@ -364,10 +364,10 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
         {/* Bottom Controls */}
         <div style={{ padding: isIconOnly ? '10px 8px' : '14px 12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-          {/* InzIQ */}
+          {/* LexAmplify */}
           <button
             onClick={openAgent}
-            title={isIconOnly ? 'InzIQ (⌘K)' : undefined}
+            title={isIconOnly ? 'LexAmplify (⌘K)' : undefined}
             style={{
               width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
               background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
@@ -381,7 +381,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             <span style={{ display: 'flex', alignItems: 'center' }}>{Icons.chat()}</span>
             {!isIconOnly && (
               <>
-                <span>InzIQ</span>
+                <span>LexAmplify</span>
                 <span style={{ marginLeft: 'auto', fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
               </>
             )}
@@ -727,7 +727,7 @@ const DashboardView = () => {
           onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(59,130,246,0.45)'; }}
           onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(59,130,246,0.35)'; }}
         >
-          {Icons.chat(14)} InzIQ
+          {Icons.chat(14)} LexAmplify
           <span style={{ fontSize: '10px', fontFamily: 'monospace', opacity: 0.75, background: 'rgba(255,255,255,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
         </button>
       </div>
