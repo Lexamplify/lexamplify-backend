@@ -73,7 +73,7 @@ describe('Advocate Dashboard', () => {
     render(<AppRouter />);
 
     expect(await screen.findByText(/Advocate Terminal/i)).toBeInTheDocument();
-    expect(screen.getByText(/Limitation Expiries/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Limitation Expiries/i)[0]).toBeInTheDocument();
     expect(screen.getByText(/Tracked Cases/i)).toBeInTheDocument();
     expect(screen.getByText('Quick Actions')).toBeInTheDocument();
   });
