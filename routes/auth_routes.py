@@ -88,7 +88,7 @@ def _ensure_users_table(conn):
             password TEXT NOT NULL
         )
     ''')
-    for col, col_type in (("name", "TEXT"), ("created_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
+    for col, col_type in (("name", "TEXT"), ("phone", "TEXT"), ("created_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
                            ("reset_token_hash", "TEXT"), ("reset_token_expires", "TEXT")):
         try:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
@@ -114,7 +114,8 @@ def register_user():
         data = request.get_json(silent=True) or {}
         email = (data.get('email') or '').strip().lower()
         password = data.get('password') or ''
-        name = (data.get('name') or email.split('@')[0] if email else '').strip()
+        phone = (data.get('phone') or '').strip()
+        name = (data.get('name') or data.get('full_name') or (email.split('@')[0] if email else '')).strip()
 
         if not email or not password:
             return jsonify({"error": "Email and password required"}), 400
@@ -130,14 +131,14 @@ def register_user():
 
         hashed_password = generate_password_hash(password)
         cur = conn.execute(
-            "INSERT INTO users (email, password, name) VALUES (?, ?, ?)",
-            (email, hashed_password, name),
+            "INSERT INTO users (email, password, name, phone) VALUES (?, ?, ?, ?)",
+            (email, hashed_password, name, phone),
         )
         conn.commit()
         user_id = cur.lastrowid
 
         return _issue_session_response(
-            {"message": "Account created.", "user": {"id": user_id, "email": email, "name": name}},
+            {"message": "Account created.", "user": {"id": user_id, "email": email, "name": name, "phone": phone}},
             user_id, status=201,
         )
     except Exception as e:

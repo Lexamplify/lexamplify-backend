@@ -77,7 +77,7 @@ const loginStyles = `
   /* brand */
   .lx-brand { display: flex; align-items: center; gap: 10px; }
   .lx-brand-name {
-    font-size: 20px; font-weight: 700; color: #FFFFFF;
+    font-size: 20px; font-weight: 700; color: #FFFFFF !important;
     letter-spacing: -0.3px;
   }
 
@@ -86,11 +86,11 @@ const loginStyles = `
   .lx-hero-badge {
     display: inline-flex; align-items: center; gap: 7px;
     padding: 5px 13px; border-radius: 30px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
     font-size: 10.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 1.1px;
-    color: #6B7280; margin-bottom: 20px; width: fit-content;
+    color: #94A3B8 !important; margin-bottom: 20px; width: fit-content;
   }
   .lx-badge-dot {
     width: 5px; height: 5px; border-radius: 50%;
@@ -102,13 +102,13 @@ const loginStyles = `
   .lx-hero-h {
     font-family: var(--font-serif);
     font-size: clamp(2rem, 2.8vw, 2.9rem);
-    color: #FFFFFF; line-height: 1.15;
+    color: #FFFFFF !important; line-height: 1.15;
     letter-spacing: -0.8px; margin-bottom: 18px;
     font-weight: 700;
   }
-  .lx-hero-h em { font-style: normal; color: #3B82F6; }
+  .lx-hero-h em { font-style: normal; color: #60A5FA !important; }
   .lx-hero-sub {
-    font-size: 15px; color: rgba(255,255,255,0.45);
+    font-size: 15px; color: rgba(255,255,255,0.7) !important;
     line-height: 1.65; max-width: 400px; margin-bottom: 44px;
   }
 
@@ -117,28 +117,28 @@ const loginStyles = `
   .lx-pillar {
     display: flex; align-items: flex-start; gap: 14px;
     padding: 14px 16px; border-radius: 12px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
     transition: background 0.25s, border-color 0.25s;
     cursor: default;
   }
   .lx-pillar:hover {
-    background: rgba(255,255,255,0.05);
-    border-color: rgba(59,130,246,0.2);
+    background: rgba(255,255,255,0.08) !important;
+    border-color: rgba(59,130,246,0.3) !important;
   }
   .lx-pillar-icon {
     width: 36px; height: 36px; border-radius: 9px;
     display: flex; align-items: center; justify-content: center;
     font-size: 17px; flex-shrink: 0;
   }
-  .lx-pillar-icon.blue   { background: rgba(37,99,235,0.12); }
-  .lx-pillar-icon.violet { background: rgba(139,92,246,0.12); }
-  .lx-pillar-icon.green  { background: rgba(16,185,129,0.12); }
+  .lx-pillar-icon.blue   { background: rgba(37,99,235,0.2) !important; }
+  .lx-pillar-icon.violet { background: rgba(139,92,246,0.2) !important; }
+  .lx-pillar-icon.green  { background: rgba(16,185,129,0.2) !important; }
   .lx-pillar-title {
-    font-size: 13px; font-weight: 600; color: #FFFFFF;
+    font-size: 13px; font-weight: 600; color: #FFFFFF !important;
     margin-bottom: 2px;
   }
-  .lx-pillar-desc { font-size: 12px; color: rgba(255,255,255,0.38); line-height: 1.45; }
+  .lx-pillar-desc { font-size: 12px; color: rgba(255,255,255,0.65) !important; line-height: 1.45; }
 
   /* trust row */
   .lx-trust-row {
@@ -146,9 +146,33 @@ const loginStyles = `
     padding-top: 32px; flex-wrap: wrap;
   }
   .lx-trust-item {
-    font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.25);
+    font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.55) !important;
     letter-spacing: 0.7px; text-transform: uppercase;
     display: flex; align-items: center; gap: 6px;
+  }
+
+  /* Explicit light theme overrides for left panel to prevent index.css h1/global color bleed */
+  [data-theme="light"] .lx-left .lx-brand-name,
+  [data-theme="light"] .lx-left .lx-hero-h,
+  [data-theme="light"] .lx-left .lx-pillar-title {
+    color: #FFFFFF !important;
+  }
+  [data-theme="light"] .lx-left .lx-hero-h em {
+    color: #60A5FA !important;
+  }
+  [data-theme="light"] .lx-left .lx-hero-sub {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+  [data-theme="light"] .lx-left .lx-pillar-desc {
+    color: rgba(255, 255, 255, 0.65) !important;
+  }
+  [data-theme="light"] .lx-left .lx-trust-item {
+    color: rgba(255, 255, 255, 0.55) !important;
+  }
+  [data-theme="light"] .lx-left .lx-hero-badge {
+    color: #94A3B8 !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
   }
   .lx-trust-item-dot {
     width: 4px; height: 4px; border-radius: 50%;
@@ -572,7 +596,9 @@ export default function LoginPage() {
   const resetToken = searchParams.get('resetToken');
 
   const [tab, setTab] = useState('signin'); // 'signin' | 'register'
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
@@ -693,13 +719,16 @@ export default function LoginPage() {
   // for a zero-friction single step (no separate email-verification hop).
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (!email || !password) return setError('Email and password are required.');
+    if (!name.trim()) return setError('Full Name is required.');
+    if (!email.trim()) return setError('Email address is required.');
+    if (!phone.trim()) return setError('Phone number is required.');
+    if (!password) return setError('Password is required.');
     if (password.length < 8) return setError('Password must be at least 8 characters.');
     setLoading(true); setError('');
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), phone: phone.trim(), password }),
       });
       // Same HTML-error-page guard as handleLogin above.
       const data = await res.json().catch(() => ({}));
@@ -866,12 +895,33 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Email — standard stacked label above input. No floating-label
-                pseudo-class trickery: label and input are two plain,
-                independent DOM siblings, permanently in their final
-                position, wired together with htmlFor/id like any other
-                form field. Nothing here can "desync" because nothing here
-                derives its state from anything except its own value prop. */}
+            {/* Full Name — rendered in Create Account mode */}
+            {!isSignIn && (
+              <div className="lx-field">
+                <label htmlFor="reg-name" className="lx-label">Full Name</label>
+                <div className="lx-input-wrap">
+                  <span className="lx-input-icon">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                  </span>
+                  <input
+                    id="reg-name"
+                    type="text"
+                    className="lx-input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Adv. Rajesh Sharma"
+                    disabled={loading}
+                    autoComplete="name"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Email address */}
             <div className="lx-field">
               <label htmlFor="login-email" className="lx-label">Email address</label>
               <div className="lx-input-wrap">
@@ -887,13 +937,38 @@ export default function LoginPage() {
                   className="lx-input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
+                  placeholder="user@gmail.com"
                   disabled={loading}
                   autoComplete="email"
                   required
                 />
               </div>
             </div>
+
+            {/* Phone Number — rendered in Create Account mode */}
+            {!isSignIn && (
+              <div className="lx-field">
+                <label htmlFor="reg-phone" className="lx-label">Phone Number</label>
+                <div className="lx-input-wrap">
+                  <span className="lx-input-icon">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                    </svg>
+                  </span>
+                  <input
+                    id="reg-phone"
+                    type="tel"
+                    className="lx-input"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    disabled={loading}
+                    autoComplete="tel"
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Password — same stacked layout */}
             <div className="lx-field" style={{ marginBottom: isSignIn ? '8px' : '20px' }}>
