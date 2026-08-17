@@ -1862,11 +1862,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
     ruleBookText,
     setRuleBookText,
     autoDraftText,
-    setAutoDraftText,
-    autoDraftPrompt,
-    setAutoDraftPrompt,
-    autoDraftVersion,
-    setAutoDraftVersion,
   } = useContractStore();
   const rawTextDebounceRef = useRef(null);
   const clauses = flaggedClauses;
@@ -1937,7 +1932,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   // Tab states
   const [activeTab, setActiveTab] = useState('risks');
-  const [leftTab, setLeftTab] = useState('scanner');
+  const [leftTab, setLeftTab] = useState('contract-text');
 
   // Tab opacity fade-in transition state
   const [tabOpacity, setTabOpacity] = useState('opacity-100');
@@ -1979,15 +1974,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // Appended clause extensions
   const [appendedClauses, setAppendedClauses] = useState([]);
 
-  // Auto-Drafting states
+  // Auto-Drafting reference states
   const [vaultDocs, setVaultDocs] = useState([]);
   const [selectedDocId, setSelectedDocId] = useState('none');
   const [sharedFiles, setSharedFiles] = useState(() => {
     try { return JSON.parse(localStorage.getItem('lex_shared_workspace') || '[]'); } catch { return []; }
   });
-  const [drafting, setDrafting] = useState(false);
-  const [draftStatus, setDraftStatus] = useState('');
-  const [draftError, setDraftError] = useState('');
 
   // Chat RAG states
   const [chatHistory, setChatHistory] = useState([
@@ -2836,190 +2828,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   };
 
 
-  // ── 5. AUTO-DRAFT (SYNTHESIS) HANDLERS ───────────────────────────────
-  const handleAutoDraft = async (e) => {
-    e.preventDefault();
-    if (!autoDraftPrompt.trim()) {
-      setDraftError('Please provide drafting instructions before synthesizing.');
-      return;
-    }
-    // Bridge the panes immediately — user watches the draft resolve on the left
-    setLeftTab('autodraft');
-    setDrafting(true);
-    setDraftError('');
-    setDraftStatus('Synthesizing dynamic context node...');
-    setAutoDraftText('');
 
-    try {
-      const contextValue = selectedDocId === 'none' ? null : selectedDocId;
-      const response = await fetch(`${API_BASE}/api/documents/draft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: autoDraftPrompt.trim(), context: contextValue })
-      });
-      const data = await response.json();
-
-      if (!isMountedRef.current) return;
-      setDrafting(false);
-      setDraftStatus('');
-
-      if (response.ok && data.draft) {
-        const clean = data.draft.replace(/^"|"$/g, '').trim();
-        setAutoDraftText(clean);
-        setAutoDraftVersion((v) => v + 1);
-      } else {
-        // Backend's error shape is {"error": true, "message": "..."} —
-        // "error" is a boolean, not the message text. data.error was
-        // truthy-but-useless here, producing a blank error banner.
-        setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
-      }
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      setDrafting(false);
-      setDraftStatus('');
-      setDraftError('Network timeout in the AI reasoning engine. Please retry.');
-    }
-  };
-
-  // Cycles draftStatus through a few plausible-sounding phases while the
-  // request is in flight — real progress isn't observable mid-generation,
-  // but a static "Synthesizing…" reads as stalled after a couple seconds,
-  // and this signals the request is actively moving through real work.
-  useEffect(() => {
-    if (!drafting) return;
-    const phases = [
-      'Interpreting drafting instructions…',
-      'Cross-referencing Indian statutes…',
-      'Synthesizing clause language…',
-      'Refining for enforceability…',
-    ];
-    let i = 0;
-    setDraftStatus(phases[0]);
-    const id = setInterval(() => {
-      i = (i + 1) % phases.length;
-      setDraftStatus(phases[i]);
-    }, 1700);
-    return () => clearInterval(id);
-  }, [drafting]);
-
-  // Studio controls (Playbook precedents, reference context, drafting
-  // instructions, generation progress) — a plain function returning JSX
-  // rather than its own component: it closes over this component's own
-  // state/handlers directly (autoDraftPrompt, handleAutoDraft, etc.), so
-  // splitting it out as a separate component would just mean threading
-  // every one of those through as props for no isolation benefit. Lives in
-  // the right analysis-column's own "Auto-Draft" tab (not squeezed inside
-  // the editor column) — that column is the full width dedicated to
-  // secondary panels, so the Studio isn't fighting the editor for space.
-  const renderAutoDraftStudio = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-
-      {/* ── PROVISION MATRIX ── */}
-      <div>
-        <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-dark-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-          Playbook Precedent Inserts
-        </div>
-        <div className="provision-matrix-grid">
-          {[
-            {
-              label: 'Dispute Escalation',
-              act: 'Arbitration & Conciliation Act, 1996',
-              prompt: 'Draft a dispute resolution clause using a three-tier escalation mechanism: (1) senior management negotiation within 15 days, (2) mediation under the Indian Mediation Centre rules within 30 days, and (3) binding arbitration under the Arbitration and Conciliation Act, 1996 before a sole arbitrator seated in New Delhi. All proceedings shall be in English. The arbitral award shall be final and binding.'
-            },
-            {
-              label: 'IP Assignment',
-              act: 'Copyright Act, 1957 · Patents Act, 1970',
-              prompt: 'Draft a comprehensive intellectual property assignment clause. All work product, inventions, developments, software, and derivative works created by the Vendor under this Agreement shall be "works made for hire" as defined under the Copyright Act, 1957, vesting exclusively in the Client. To the extent any rights do not vest automatically, the Vendor hereby assigns all rights in perpetuity worldwide to the Client. Vendor retains no residual license.'
-            },
-            {
-              label: 'Severability Provision',
-              act: 'Indian Contract Act, 1872 — s.24',
-              prompt: 'Draft a severability clause: If any provision of this Agreement is held invalid, illegal, or unenforceable by a court of competent jurisdiction under the Indian Contract Act, 1872, such provision shall be modified to the minimum extent necessary to make it enforceable, or severed if modification is not possible, without affecting the validity and enforceability of the remaining provisions which shall continue in full force.'
-            },
-            {
-              label: 'Mutual Notice Terms',
-              act: 'General Clauses Act, 1897',
-              prompt: 'Draft a mutual notice clause: All notices, demands, or communications under this Agreement shall be in writing and deemed duly served when delivered by: (a) hand delivery with signed acknowledgement, (b) registered post with acknowledgement due to the address on the cover page, or (c) email to the designated contact with read-receipt confirmation. Notices take effect on the date of receipt. Either party may update its notice details with 7 days written notice to the other party.'
-            },
-          ].map(({ label, act, prompt }) => (
-            <button
-              key={label}
-              type="button"
-              className="provision-pill"
-              onClick={() => setAutoDraftPrompt(prompt)}
-            >
-              {label}
-              <span className="provision-pill-act">{act}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <form onSubmit={handleAutoDraft}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div className="input-group">
-            <label className="input-label">Reference Context <span style={{ fontWeight: 400, opacity: 0.55, fontSize: '10px' }}>(Optional)</span></label>
-            <div className="custom-select-wrapper">
-              <select
-                className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                style={{ width: '100%' }}
-                value={selectedDocId}
-                onChange={(e) => setSelectedDocId(e.target.value)}
-              >
-                <option value="none">No Reference Context (Draft from Scratch)</option>
-                {vaultDocs.length > 0 && (
-                  <optgroup label="Vault Documents">
-                    {vaultDocs.map(doc => (
-                      <option key={doc.id} value={doc.id}>{doc.filename}</option>
-                    ))}
-                  </optgroup>
-                )}
-                {sharedFiles.length > 0 && (
-                  <optgroup label="Shared Workspace">
-                    {sharedFiles.map(f => (
-                      <option key={f.id} value={`shared:${f.id}`}>{f.name || f.filename || 'Untitled'}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              <span className="custom-select-chevron">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-              </span>
-            </div>
-          </div>
-
-          <div className="input-group">
-            <label className="input-label">Drafting Instructions *</label>
-            <input
-              type="text"
-              placeholder="e.g. Synthesize a non-disclosure agreement clause..."
-              className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-              style={{ width: '100%', boxSizing: 'border-box' }}
-              required
-              value={autoDraftPrompt}
-              onChange={(e) => setAutoDraftPrompt(e.target.value)}
-            />
-          </div>
-
-          <button type="submit" className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" style={{ alignSelf: 'flex-start', padding: '10px 20px' }} disabled={drafting}>
-            {drafting ? 'Synthesizing...' : (
-              <>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-                Synthesize Clause
-              </>
-            )}
-          </button>
-        </div>
-      </form>
-
-      {draftStatus && (
-        <div style={{ color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-          {draftStatus}
-        </div>
-      )}
-    </div>
-  );
 
   // ── 6. RAG CHAT HANDLER ──────────────────────────────────────────────
   const submitRagQuery = async (query) => {
@@ -3356,18 +3165,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
               <div className="editor-header-bar">
                 <div className="editor-tabs">
                   <button
-                    className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'scanner' ? 'active' : ''}`}
-                    onClick={() => setLeftTab('scanner')}
+                    className="editor-tab-btn active transition-all duration-300 ease-in-out hover:bg-gray-700"
+                    onClick={() => setLeftTab('contract-text')}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
                     Contract Text
-                  </button>
-                  <button
-                    className={`editor-tab-btn transition-all duration-300 ease-in-out hover:bg-gray-700 ${leftTab === 'autodraft' ? 'active' : ''}`}
-                    onClick={() => setLeftTab('autodraft')}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-                    Auto-Draft
                   </button>
                 </div>
 
@@ -3387,16 +3189,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   </button>
                 )}
 
-                {/* The risk-count badges that used to live here duplicated the
-                    exact same "N High / N Med" counters already shown at the
-                    top of the page — replaced with the Mandate/Status pair
-                    that used to occupy its own separate row below (see the
-                    now-freed .scan-meta-bar row underneath, which hosts the
-                    toolbar's portal target instead). One less redundant row,
-                    one less duplicated stat. */}
-                {leftTab !== 'scanner' ? (
-                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Auto-Draft Workspace</span>
-                ) : !rawText && !quickDraftMode ? (
+                {!rawText && !quickDraftMode ? (
                   // No document yet at all, and not in Quick Draft either —
                   // nothing to scan, so no scan trigger here either. The
                   // left panel body below is showing the dropzone/paste UI,
@@ -3477,8 +3270,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     <span style={{ fontSize: '11.5px', color: '#93C5FD', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{Math.round(scanProgress)}%</span>
                   </div>
                 )}
-                {leftTab === 'scanner' ? (
-                  !rawText && !quickDraftMode ? (
+                {!rawText && !quickDraftMode ? (
                     // No document yet, and the user hasn't explicitly opted
                     // into a blank drafting canvas either — show the
                     // dropzone/paste UI INSIDE this same left panel instead
@@ -3712,65 +3504,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         </div>
                       )}
                     </>
-                  )
-                ) : (
-                  <div>
-                    {drafting ? (
-                      <div className="auto-draft-loading-card">
-                        <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-primary)', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ width: '10px', height: '10px', border: '2px solid var(--accent-primary)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                          <span key={draftStatus} className="ca-status-fade">{draftStatus || 'Synthesizing clause…'}</span>
-                        </div>
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '42%', height: '17px', marginBottom: '20px', animationDelay: '0ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '60ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '96%', animationDelay: '120ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '99%', animationDelay: '180ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '70%', marginBottom: '22px', animationDelay: '240ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '100%', animationDelay: '300ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '88%', animationDelay: '360ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '93%', animationDelay: '420ms' }} />
-                        <div className="shimmer-bar shimmer-bar-in" style={{ width: '55%', animationDelay: '480ms' }} />
-                      </div>
-                    ) : draftError ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px', margin: '40px 4px', padding: '18px 20px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderLeft: '3px solid var(--accent-danger, #EF4444)', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#FCA5A5', letterSpacing: '0.02em' }}>Synthesis Failed</span>
-                        </div>
-                        <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.5 }}>{draftError}</span>
-                        <button onClick={() => setDraftError('')} style={{ marginTop: '2px', background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: 'var(--text-dark-muted)', fontSize: '11px', fontWeight: 600, padding: '5px 12px', borderRadius: '6px', cursor: 'pointer' }}>
-                          Dismiss
-                        </button>
-                      </div>
-                    ) : autoDraftText ? (
-                      // Same rich editor the Contract Text tab uses (full MS
-                      // Word-style toolbar: font family/size, bold/italic/
-                      // underline, alignment) instead of a bare
-                      // contentEditable div — "unify the editor across the
-                      // app" per this feature's own goal. clauses/onRiskClick
-                      // /onCommentRequest/onHighlightClick are all omitted:
-                      // risk-decoration and comment/citation workflows are
-                      // scanner-specific and don't apply to a freshly
-                      // synthesized clause. onEditorReady is deliberately
-                      // NOT wired to editorApiRef — that ref is read by
-                      // scanner-only actions (insertCitationIntoDocument,
-                      // handleAcceptRevision, etc.) that must keep targeting
-                      // the Contract Text editor even while this tab is open,
-                      // not silently redirect to whichever editor mounted
-                      // most recently.
-                      <ContractTiptapEditor
-                        documentKey={autoDraftVersion}
-                        initialRawText={autoDraftText}
-                        onTextChange={setAutoDraftText}
-                        clauses={[]}
-                      />
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                        No auto-drafted clause generated yet. Execute instructions in the "Auto-Draft" tab on the right to compile legal clauses.
-                      </div>
-                    )}
-                  </div>
-                )}
+                  )}
               </div>
             </div>
 
@@ -3782,9 +3516,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'recs' ? 'active' : ''}`} onClick={() => { switchTab('recs'); if (recommendations.length === 0) fetchMissingProtections(); }}>
                   Missing {recommendations.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{recommendations.length}</span>}
-                </button>
-                <button className="analysis-tab-btn transition-all duration-300 ease-in-out" onClick={() => navigate('/auto-draft')}>
-                  Auto-Draft ⚡
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => switchTab('chat')}>
                   RAG Chat
@@ -4124,9 +3855,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     )}
                   </div>
                 )}
-
-                {/* SUB TAB: Auto-Draft */}
-                {activeTab === 'draft' && renderAutoDraftStudio()}
 
                 {/* SUB TAB: Chat */}
                 {activeTab === 'chat' && (
