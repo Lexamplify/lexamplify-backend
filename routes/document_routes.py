@@ -145,12 +145,20 @@ def auto_draft():
     if not instructions:
         return jsonify({"error": True, "message": "Drafting instructions required."}), 400
 
+    depth = str(data.get('depth') or 'comprehensive').strip()
+
     system_prompt = (
-        "Act as an expert Indian legal draftsman. Synthesize the following "
-        "clause based strictly on Indian law.\n\n"
-        "Output plain text only — no HTML tags, no markdown formatting, no "
-        "preambles or commentary. Only the drafted clause itself."
+        "You are a Senior Indian Legal Advocate & Corporate Law Partner. "
+        "Synthesize a highly detailed, comprehensive, enterprise-grade legal clause or agreement draft based strictly on Indian Law.\n\n"
+        "FORMATTING & STRUCTURE REQUIREMENTS:\n"
+        "1. Use Markdown formatting: Use level-3 headings (### 1. Title of Clause) for main headings.\n"
+        "2. Format clauses into distinct numbered sub-clauses (e.g. 1.1, 1.2, 1.3) with double line breaks between paragraphs so that clauses are cleanly spaced.\n"
+        "3. For sub-conditions or itemized lists, use lettered indents (e.g. (a), (b), (c)) on separate lines.\n"
+        "4. Include explicit Indian statutory citations (e.g., **Indian Contract Act, 1872**, **Arbitration & Conciliation Act, 1996**, **Copyright Act, 1957**, **Specific Relief Act, 1963**, **Information Technology Act, 2000**) wherever applicable.\n"
+        "5. Depth & Details: Provide thorough, enterprise-level depth with operative obligations, notice requirements, cure periods, remedies, and governing law. Do NOT produce short 2-sentence summaries. Write a complete, execution-ready legal text without conversational fluff or preambles."
     )
+    if depth == 'comprehensive':
+        system_prompt += "\n6. Include full definitions, operating obligations, indemnity scope, liability caps, and dispute escalation steps."
     if context:
         system_prompt += f"\n\nREFERENCE CONTEXT:\n{context}"
     if precedent:

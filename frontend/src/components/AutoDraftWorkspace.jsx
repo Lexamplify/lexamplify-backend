@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
+import DraftsModal from './DraftsModal.jsx';
 import { useContractStore } from '../store/useContractStore.js';
 import { fetchDocuments } from '../services/api.js';
 
-// Relative in dev (same-origin via Vite's proxy) and set to the deployed
-// API origin in production — same pattern as api.js / CommandPalette.jsx.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function AutoDraftWorkspace() {
@@ -22,6 +21,9 @@ export default function AutoDraftWorkspace() {
     setAutoDraftPrompt,
     autoDraftVersion,
     setAutoDraftVersion,
+    openDraftsModal,
+    setClauses,
+    setSummary,
   } = useContractStore();
 
   // Local synthesis studio state
@@ -30,17 +32,21 @@ export default function AutoDraftWorkspace() {
   const [draftError, setDraftError] = useState('');
   const [vaultDocs, setVaultDocs] = useState([]);
   const [selectedContextMode, setSelectedContextMode] = useState('active_contract');
+  const [draftDepth, setDraftDepth] = useState('comprehensive');
   const [copied, setCopied] = useState(false);
   const [appended, setAppended] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
     isMountedRef.current = true;
     const loadVault = async () => {
-      const res = await fetchDocuments();
-      if (!isMountedRef.current) return;
-      if (Array.isArray(res)) {
-        setVaultDocs(res);
-      }
+      try {
+        const res = await fetchDocuments();
+        if (!isMountedRef.current) return;
+        if (Array.isArray(res)) {
+          setVaultDocs(res);
+        }
+      } catch (e) {}
     };
     loadVault();
     return () => {
@@ -52,30 +58,30 @@ export default function AutoDraftWorkspace() {
   useEffect(() => {
     if (!drafting) return;
     const phases = [
-      'Interpreting drafting instructions…',
-      'Cross-referencing Indian statutes…',
-      'Synthesizing clause language…',
-      'Refining for enforceability…',
+      'Interpreting drafting instructions & statutory bounds…',
+      'Cross-referencing Indian Contract Act & Supreme Court precedents…',
+      'Synthesizing structured, multi-tier legal provisions…',
+      'Refining clause numbering, indents & statutory enforceability…',
     ];
     let i = 0;
     setDraftStatus(phases[0]);
     const id = setInterval(() => {
       i = (i + 1) % phases.length;
       setDraftStatus(phases[i]);
-    }, 1700);
+    }, 1600);
     return () => clearInterval(id);
   }, [drafting]);
 
   const handleSynthesize = async (e) => {
     if (e) e.preventDefault();
     if (!autoDraftPrompt.trim()) {
-      setDraftError('Please provide drafting instructions before synthesizing.');
+      setDraftError('Please enter drafting instructions before synthesizing.');
       return;
     }
 
     setDrafting(true);
     setDraftError('');
-    setDraftStatus('Synthesizing dynamic context node…');
+    setDraftStatus('Initializing Groq Llama3 Indian Legal Reasoning Engine…');
 
     try {
       let contextValue = null;
@@ -88,7 +94,11 @@ export default function AutoDraftWorkspace() {
       const response = await fetch(`${API_BASE}/api/documents/draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: autoDraftPrompt.trim(), context: contextValue }),
+        body: JSON.stringify({
+          prompt: autoDraftPrompt.trim(),
+          context: contextValue,
+          depth: draftDepth,
+        }),
       });
       const data = await response.json();
 
@@ -96,9 +106,9 @@ export default function AutoDraftWorkspace() {
       setDrafting(false);
       setDraftStatus('');
 
-      if (response.ok && data.draft) {
-        const clean = data.draft.replace(/^"|"$/g, '').trim();
-        setAutoDraftText(clean);
+      if (response.ok && (data.draft || data.clause || data.content)) {
+        const generated = (data.draft || data.clause || data.content).replace(/^"|"$/g, '').trim();
+        setAutoDraftText(generated);
         setAutoDraftVersion((v) => v + 1);
       } else {
         setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
@@ -107,7 +117,7 @@ export default function AutoDraftWorkspace() {
       if (!isMountedRef.current) return;
       setDrafting(false);
       setDraftStatus('');
-      setDraftError('Network timeout in the AI reasoning engine. Please retry.');
+      setDraftError('Network timeout in the AI legal reasoning engine. Please retry.');
     }
   };
 
@@ -126,109 +136,420 @@ export default function AutoDraftWorkspace() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleSaveToDrafts = async () => {
+    if (!autoDraftText.trim()) return;
+    const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
+    const title = titleMatch ? `Draft: ${titleMatch}…` : 'Synthesized Legal Clause Draft';
+
+    const newDraft = {
+      id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      timestamp: new Date().toISOString(),
+      rawText: autoDraftText,
+      clauses: [],
+      summary: 'Auto-Draft Studio synthesized legal draft.',
+    };
+
+    try {
+      await fetch(`${API_BASE}/api/drafts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDraft),
+      });
+    } catch (e) {}
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
+      const updated = [newDraft, ...existing.filter((d) => d.id !== newDraft.id)];
+      localStorage.setItem('lexamplify_drafts', JSON.stringify(updated));
+    } catch (e) {}
+
+    window.dispatchEvent(new CustomEvent('lexamplify-drafts-updated'));
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const addChipToPrompt = (chipText) => {
+    setAutoDraftPrompt((prev) => (prev.trim() ? `${prev.trim()}\n- ${chipText}` : chipText));
+  };
+
   const PRECEDENTS = [
     {
-      label: 'Dispute Escalation',
-      act: 'Arbitration & Conciliation Act, 1996',
-      prompt: 'Draft a dispute resolution clause using a three-tier escalation mechanism: (1) senior management negotiation within 15 days, (2) mediation under the Indian Mediation Centre rules within 30 days, and (3) binding arbitration under the Arbitration and Conciliation Act, 1996 before a sole arbitrator seated in New Delhi. All proceedings shall be in English. The arbitral award shall be final and binding.',
+      label: 'Dispute Escalation & Arbitration',
+      badge: 'Arbitration Act 1996',
+      prompt: 'Draft a three-tier dispute escalation clause: (1) Good-faith executive negotiation within 15 business days, (2) Conciliation under Indian Mediation Rules, and (3) Binding arbitration under the Arbitration and Conciliation Act, 1996 before a sole arbitrator seated in New Delhi. Language of proceedings shall be English.',
     },
     {
-      label: 'IP Assignment',
-      act: 'Copyright Act, 1957 · Patents Act, 1970',
-      prompt: 'Draft a comprehensive intellectual property assignment clause. All work product, inventions, developments, software, and derivative works created by the Vendor under this Agreement shall be "works made for hire" as defined under the Copyright Act, 1957, vesting exclusively in the Client. To the extent any rights do not vest automatically, the Vendor hereby assigns all rights in perpetuity worldwide to the Client. Vendor retains no residual license.',
+      label: 'Intellectual Property Assignment',
+      badge: 'Copyright Act 1957',
+      prompt: 'Draft a comprehensive IP Assignment & Work Made for Hire clause. All deliverables, software, documentation, and developments created by Party B shall vest exclusively in Party A under Section 17 of the Copyright Act, 1957. Include worldwide perpetual assignment, waiver of moral rights to the fullest extent permitted by Indian Law, and no residual vendor licenses.',
     },
     {
-      label: 'Severability Provision',
-      act: 'Indian Contract Act, 1872 — s.24',
-      prompt: 'Draft a severability clause: If any provision of this Agreement is held invalid, illegal, or unenforceable by a court of competent jurisdiction under the Indian Contract Act, 1872, such provision shall be modified to the minimum extent necessary to make it enforceable, or severed if modification is not possible, without affecting the validity and enforceability of the remaining provisions which shall continue in full force.',
+      label: 'Severability & Statutory Validity',
+      badge: 'Contract Act s.24',
+      prompt: 'Draft a severability clause under Section 24 of the Indian Contract Act, 1872. If any provision is held invalid, illegal, or unenforceable by a court of competent jurisdiction, such provision shall be modified to the minimum extent necessary to make it enforceable, or severed if modification is impossible, without invalidating the remainder of this Agreement.',
     },
     {
-      label: 'Mutual Notice Terms',
-      act: 'General Clauses Act, 1897',
-      prompt: 'Draft a mutual notice clause: All notices, demands, or communications under this Agreement shall be in writing and deemed duly served when delivered by: (a) hand delivery with signed acknowledgement, (b) registered post with acknowledgement due to the address on the cover page, or (c) email to the designated contact with read-receipt confirmation. Notices take effect on the date of receipt. Either party may update its notice details with 7 days written notice to the other party.',
+      label: 'Mutual Notice & Service Terms',
+      badge: 'General Clauses Act 1897',
+      prompt: 'Draft a comprehensive notice clause. All formal legal notices must be in writing and delivered by: (a) Hand delivery with signed receipt, (b) Registered Post AD to the registered office, or (c) Encrypted email with read-receipt. Deemed service dates: hand delivery on same day, registered post within 3 business days, email on acknowledgment.',
     },
     {
-      label: 'Indemnification & Defense',
-      act: 'Indian Contract Act, 1872 — s.124',
-      prompt: 'Draft a mutual indemnification clause under Section 124 of the Indian Contract Act, 1872. Each party agrees to defend, indemnify, and hold harmless the other party against any third-party claims, losses, or liabilities arising directly out of gross negligence, willful misconduct, or breach of confidentiality obligations.',
+      label: 'Indemnification & Third-Party Claims',
+      badge: 'Contract Act s.124',
+      prompt: 'Draft a mutual indemnification clause under Section 124 of the Indian Contract Act, 1872. Each party shall defend, indemnify, and hold harmless the other party, its directors, officers, and employees against any third-party claims, liabilities, losses, or legal expenses arising from gross negligence, willful misconduct, or breach of confidentiality.',
+    },
+    {
+      label: 'Non-Compete & Confidentiality',
+      badge: 'Contract Act s.27',
+      prompt: 'Draft a non-disclosure and non-compete provision compliant with Section 27 of the Indian Contract Act, 1872. Restrict disclosure of proprietary trade secrets during the term and for 3 years post-termination. For non-compete, scope shall be narrowly tailored to active client solicitation and misuse of proprietary know-how.',
     },
   ];
 
+  const wordCount = autoDraftText.trim() ? autoDraftText.trim().split(/\s+/).length : 0;
+  const charCount = autoDraftText.length;
+  const paragraphCount = autoDraftText.trim() ? autoDraftText.split(/\n\s*\n/).length : 0;
+
   return (
-    <div className="autodraft-page-container" style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto', color: 'var(--text-primary)' }}>
-      {/* ── HEADER & NAVIGATION ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', background: 'var(--bg-panel)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+    <div className="autodraft-page-wrapper">
+      <style>{`
+        .autodraft-page-wrapper {
+          padding: 24px 28px;
+          max-width: 1560px;
+          margin: 0 auto;
+          color: var(--text-primary, #F8FAFC);
+          font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+        }
+
+        /* Top Header Bar */
+        .ad-header-card {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: rgba(15, 23, 42, 0.75);
+          backdrop-filter: blur(12px);
+          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          padding: 16px 24px;
+          border-radius: 14px;
+          margin-bottom: 24px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+        }
+
+        .ad-header-title-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .ad-title-gradient {
+          font-size: 20px;
+          font-weight: 800;
+          margin: 0;
+          background: linear-gradient(135deg, #FFFFFF 0%, #94A3B8 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          letter-spacing: -0.02em;
+        }
+
+        .ad-sovereign-badge {
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          background: linear-gradient(135deg, rgba(59,130,246,0.18) 0%, rgba(139,92,246,0.18) 100%);
+          color: #93C5FD;
+          border: 1px solid rgba(59,130,246,0.35);
+          padding: 3px 10px;
+          borderRadius: 20px;
+        }
+
+        /* Workspace Grid */
+        .ad-workspace-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
+          gap: 24px;
+          align-items: start;
+        }
+
+        @media (max-width: 1080px) {
+          .ad-workspace-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        /* Left Canvas Panel */
+        .ad-canvas-panel {
+          background: var(--bg-panel, #0F172A);
+          border-radius: 16px;
+          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          padding: 24px;
+          min-height: 680px;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+          position: relative;
+        }
+
+        .ad-canvas-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding-bottom: 16px;
+          border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          margin-bottom: 20px;
+        }
+
+        .ad-metric-pill {
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--text-muted, #94A3B8);
+          background: rgba(255,255,255,0.04);
+          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          padding: 4px 10px;
+          border-radius: 6px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .ad-action-btn {
+          font-size: 12px;
+          font-weight: 600;
+          padding: 7px 14px;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border: none;
+        }
+
+        .ad-btn-primary {
+          background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+          color: #FFFFFF;
+          box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+        }
+        .ad-btn-primary:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(37,99,235,0.45);
+        }
+
+        .ad-btn-secondary {
+          background: rgba(255,255,255,0.06);
+          border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
+          color: var(--text-primary, #F8FAFC);
+        }
+        .ad-btn-secondary:hover {
+          background: rgba(255,255,255,0.12);
+        }
+
+        .ad-btn-purple {
+          background: rgba(139,92,246,0.14);
+          border: 1px solid rgba(139,92,246,0.35);
+          color: #C4B5FD;
+        }
+        .ad-btn-purple:hover {
+          background: rgba(139,92,246,0.25);
+        }
+
+        /* Right Control Panel */
+        .ad-controls-panel {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+
+        .ad-card {
+          background: var(--bg-panel, #0F172A);
+          border-radius: 16px;
+          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          padding: 20px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+        }
+
+        .ad-card-title {
+          font-size: 12px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #94A3B8;
+          margin-bottom: 14px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .ad-precedent-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .ad-precedent-card {
+          display: flex;
+          flex-direction: column;
+          text-align: left;
+          padding: 12px 14px;
+          border-radius: 10px;
+          background: rgba(255,255,255,0.025);
+          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .ad-precedent-card:hover {
+          background: rgba(59,130,246,0.08);
+          border-color: rgba(59,130,246,0.35);
+          transform: translateX(3px);
+        }
+
+        .ad-chip-btn {
+          font-size: 11px;
+          font-weight: 600;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.1);
+          color: #CBD5E1;
+          padding: 4px 10px;
+          border-radius: 14px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .ad-chip-btn:hover {
+          background: rgba(59,130,246,0.15);
+          color: #93C5FD;
+          border-color: rgba(59,130,246,0.4);
+        }
+
+        /* Enhanced TipTap Document Typography in Auto-Draft Workspace */
+        .ad-document-canvas .scanner-body .ProseMirror {
+          min-height: 480px;
+          padding: 24px;
+          background: rgba(3, 7, 18, 0.5);
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.06);
+          font-size: 14px;
+          line-height: 1.75;
+          color: #E2E8F0;
+          outline: none;
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror h3 {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #F8FAFC;
+          border-bottom: 1px solid rgba(255,255,255,0.12);
+          padding-bottom: 6px;
+          margin-top: 1.6rem;
+          margin-bottom: 1rem;
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror p {
+          margin-bottom: 1.2rem;
+          text-align: justify;
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror strong {
+          color: #93C5FD;
+          font-weight: 700;
+        }
+
+        .ad-loading-pulse {
+          animation: pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+
+      {/* ── TOP HEADER & NAVIGATION ── */}
+      <div className="ad-header-card">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '20px' }}>⚡</span>
-            <h1 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Auto-Draft Studio</h1>
-            <span style={{ fontSize: '11px', fontWeight: 600, background: 'rgba(59,130,246,0.12)', color: 'var(--accent-primary)', padding: '3px 9px', borderRadius: '12px', border: '1px solid rgba(59,130,246,0.25)' }}>
-              Standalone Route
-            </span>
+          <div className="ad-header-title-row">
+            <span style={{ fontSize: '22px' }}>⚡</span>
+            <h1 className="ad-title-gradient">Auto-Draft Studio</h1>
+            <span className="ad-sovereign-badge">Sovereign Legal Engine · Indian Law</span>
           </div>
-          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-            Synthesize enforceable Indian legal clauses &amp; contract provisions using precedent AI reasoning
+          <p style={{ fontSize: '12.5px', color: '#94A3B8', margin: '4px 0 0' }}>
+            Synthesize execution-ready Indian legal agreements, clauses, and precedents with AI statutory reasoning
           </p>
         </div>
 
-        {/* Active Contract Status Pill */}
+        {/* Active Contract & Toolbar Shortcuts */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ padding: '8px 14px', background: rawText.trim() ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)', border: rawText.trim() ? '1px solid rgba(16,185,129,0.25)' : '1px solid var(--border-subtle)', borderRadius: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              padding: '8px 14px',
+              background: rawText.trim() ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)',
+              border: rawText.trim() ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border-subtle, rgba(255,255,255,0.08))',
+              borderRadius: '8px',
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: rawText.trim() ? '#10B981' : '#94A3B8' }} />
             <span>
               {rawText.trim() ? (
-                <>Active Contract Loaded: <strong style={{ color: 'var(--text-primary)' }}>{rawText.length.toLocaleString()} chars</strong></>
+                <>Active Contract Loaded: <strong style={{ color: '#F8FAFC' }}>{rawText.length.toLocaleString()} chars</strong></>
               ) : (
-                <span style={{ color: 'var(--text-muted)' }}>No Contract Active (Drafting from Scratch)</span>
+                <span style={{ color: '#94A3B8' }}>No Active Contract (Standalone Clause Synthesis)</span>
               )}
             </span>
           </div>
 
+          <button onClick={openDraftsModal} className="ad-action-btn ad-btn-purple">
+            📁 Saved Drafts
+          </button>
+
           <Link to="/contract-analyzer" style={{ textDecoration: 'none' }}>
-            <button className="db-sync-btn" style={{ fontSize: '12.5px', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>🔍 Open Analyzer</span>
+            <button className="ad-action-btn ad-btn-primary">
+              🔍 Open Contract Analyzer →
             </button>
           </Link>
         </div>
       </div>
 
       {/* ── MAIN WORKSPACE GRID ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr)', gap: '20px', alignItems: 'start' }}>
-        {/* LEFT COLUMN — Live Editor View */}
-        <div style={{ background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--border-subtle)', padding: '20px', minHeight: '620px', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>Synthesized Draft Workspace</span>
-              {autoDraftText && (
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>
-                  {autoDraftText.length.toLocaleString()} chars
-                </span>
-              )}
+      <div className="ad-workspace-grid">
+
+        {/* LEFT COLUMN — Live Editor & Document Canvas */}
+        <div className="ad-canvas-panel">
+          <div className="ad-canvas-header">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '15px', fontWeight: 700, color: '#F8FAFC' }}>Synthesized Document Workspace</span>
+                {autoDraftText && (
+                  <span className="ad-metric-pill">
+                    ⚡ {wordCount} words · {charCount} chars · {paragraphCount} clauses
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Quick Actions for Draft */}
+            {/* Quick Actions for Active Draft */}
             {autoDraftText && (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={handleCopyDraft}
-                  style={{ padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', cursor: 'pointer' }}
-                >
-                  {copied ? '✓ Copied!' : '📋 Copy Draft'}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button type="button" onClick={handleCopyDraft} className="ad-action-btn ad-btn-secondary">
+                  {copied ? '✓ Copied!' : '📋 Copy Text'}
+                </button>
+                <button type="button" onClick={handleSaveToDrafts} className="ad-action-btn ad-btn-purple">
+                  {savedSuccess ? '✓ Saved to Drafts!' : '💾 Save Session Draft'}
                 </button>
                 {rawText.trim() && (
-                  <button
-                    type="button"
-                    onClick={handleAppendToContract}
-                    style={{ padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', color: 'var(--accent-primary)', cursor: 'pointer' }}
-                  >
-                    {appended ? '✓ Appended to Contract!' : '➕ Append to Contract'}
+                  <button type="button" onClick={handleAppendToContract} className="ad-action-btn ad-btn-primary">
+                    {appended ? '✓ Appended to Contract!' : '➕ Append to Active Contract'}
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setAutoDraftText('')}
-                  style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', cursor: 'pointer' }}
+                  style={{
+                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'transparent',
+                    border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', cursor: 'pointer', fontWeight: 600,
+                  }}
                 >
                   Clear
                 </button>
@@ -236,19 +557,30 @@ export default function AutoDraftWorkspace() {
             )}
           </div>
 
-          {/* Editor / In-flight Status / Standby state */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* Editor Canvas / In-Flight Reasoning State / Standby Hero */}
+          <div className="ad-document-canvas" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             {drafting ? (
-              <div style={{ padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', flex: 1 }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid var(--accent-primary)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-primary)' }}>{draftStatus || 'Synthesizing clause…'}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Analyzing precedent law &amp; Indian Contract Act statutory bounds…</div>
+              <div style={{ padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', flex: 1, textAlign: 'center' }}>
+                <div style={{ position: 'relative', width: '48px', height: '48px' }}>
+                  <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid #3B82F6', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+                  <div style={{ position: 'absolute', inset: '8px', borderRadius: '50%', border: '3px solid #8B5CF6', borderBottomColor: 'transparent', animation: 'spin 1.2s linear infinite reverse' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#3B82F6', marginBottom: '6px' }} className="ad-loading-pulse">
+                    {draftStatus || 'Synthesizing clause…'}
+                  </div>
+                  <div style={{ fontSize: '12.5px', color: '#94A3B8', maxWidth: '420px', lineHeight: 1.6 }}>
+                    Cross-referencing Indian Contract Act, statutory enforceability guidelines, and Supreme Court precedent parameters…
+                  </div>
+                </div>
               </div>
             ) : draftError ? (
-              <div style={{ padding: '20px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444', marginBottom: '16px' }}>
-                <div style={{ fontWeight: 700, fontSize: '13px', marginBottom: '4px' }}>Synthesis Failed</div>
-                <div style={{ fontSize: '12.5px', lineHeight: 1.5 }}>{draftError}</div>
-                <button onClick={() => setDraftError('')} style={{ marginTop: '10px', padding: '4px 10px', borderRadius: '4px', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#EF4444', fontSize: '11px', cursor: 'pointer' }}>Dismiss</button>
+              <div style={{ padding: '24px', borderRadius: '12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', marginBottom: '16px' }}>
+                <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>⚠️</span> Synthesis Error
+                </div>
+                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#FCA5A5' }}>{draftError}</div>
+                <button onClick={() => setDraftError('')} style={{ marginTop: '14px', padding: '6px 14px', borderRadius: '6px', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#EF4444', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
               </div>
             ) : autoDraftText ? (
               <ContractTiptapEditor
@@ -258,105 +590,172 @@ export default function AutoDraftWorkspace() {
                 clauses={[]}
               />
             ) : (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '12px', opacity: 0.4 }}>
-                  <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>Auto-Draft Studio Ready</div>
-                <div style={{ fontSize: '12.5px', maxWidth: '380px', lineHeight: 1.5 }}>
-                  Select a precedent from the right panel or enter custom drafting instructions to synthesize dynamic legal clauses.
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center', color: '#94A3B8' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                </div>
+                <div style={{ fontSize: '17px', fontWeight: 700, color: '#F8FAFC', marginBottom: '8px' }}>Enterprise Auto-Draft Canvas Ready</div>
+                <div style={{ fontSize: '13px', maxWidth: '420px', lineHeight: 1.6, color: '#94A3B8' }}>
+                  Select an Indian Playbook Precedent from the right console or enter custom legal drafting instructions to synthesize structured, execution-ready contract clauses.
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* RIGHT COLUMN — Synthesis Studio Controls */}
-        <div style={{ background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--border-subtle)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Playbook Precedents */}
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              ⚡ Playbook Precedent Inserts
+        {/* RIGHT COLUMN — Synthesis Control Console */}
+        <div className="ad-controls-panel">
+
+          {/* Card 1: Playbook Precedents */}
+          <div className="ad-card">
+            <div className="ad-card-title">
+              <span>📜</span> Indian Playbook Precedent Inserts
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {PRECEDENTS.map(({ label, act, prompt }) => (
-                <button
+            <div className="ad-precedent-grid">
+              {PRECEDENTS.map(({ label, badge, prompt }) => (
+                <div
                   key={label}
-                  type="button"
+                  className="ad-precedent-card"
                   onClick={() => setAutoDraftPrompt(prompt)}
-                  style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left',
-                    padding: '10px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59,130,246,0.08)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.3)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
                 >
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{label}</span>
-                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>{act}</span>
-                </button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#F8FAFC' }}>{label}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(59,130,246,0.12)', color: '#93C5FD', padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.25)' }}>
+                      {badge}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11.5px', color: '#94A3B8', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {prompt}
+                  </span>
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Reference Context Selector */}
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
-              Reference Context
-            </label>
-            <select
-              className="toolbar-select"
-              value={selectedContextMode}
-              onChange={(e) => setSelectedContextMode(e.target.value)}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '13px' }}
-            >
-              <option value="active_contract">Active Loaded Contract ({rawText.length} chars)</option>
-              <option value="none">No Context (Draft from Scratch)</option>
-              {vaultDocs.length > 0 && (
-                <optgroup label="Vault Documents">
-                  {vaultDocs.map((doc) => (
-                    <option key={doc.id} value={doc.id}>{doc.filename}</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </div>
-
-          {/* Synthesis Form */}
-          <form onSubmit={handleSynthesize} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
-                Drafting Instructions *
-              </label>
-              <textarea
-                required
-                rows={5}
-                placeholder="e.g. Synthesize a non-compete clause limited to 2 years within India under Section 27 of the Indian Contract Act..."
-                value={autoDraftPrompt}
-                onChange={(e) => setAutoDraftPrompt(e.target.value)}
-                style={{
-                  width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: '8px',
-                  background: 'var(--bg-main)', border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical',
-                }}
-              />
+          {/* Card 2: Context & Depth Engine */}
+          <div className="ad-card">
+            <div className="ad-card-title">
+              <span>⚙️</span> Synthesis Depth &amp; Reference Context
             </div>
 
-            <button
-              type="submit"
-              disabled={drafting}
-              style={{
-                width: '100%', padding: '12px', borderRadius: '8px', fontWeight: 600, fontSize: '14px',
-                background: 'var(--accent-primary)', color: 'white', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                opacity: drafting ? 0.7 : 1, transition: 'all 0.2s',
-              }}
-            >
-              {drafting ? 'Synthesizing Clause…' : '⚡ Synthesize Clause'}
-            </button>
-          </form>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#CBD5E1', marginBottom: '6px' }}>
+                  Reference Context Mode
+                </label>
+                <select
+                  value={selectedContextMode}
+                  onChange={(e) => setSelectedContextMode(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'rgba(3,7,18,0.6)', border: '1px solid var(--border-subtle, rgba(255,255,255,0.12))', color: '#F8FAFC', fontSize: '13px' }}
+                >
+                  <option value="active_contract">Active Loaded Contract ({rawText.length} chars)</option>
+                  <option value="none">No Context (Standalone Clause)</option>
+                  {vaultDocs.length > 0 && (
+                    <optgroup label="Vault Documents">
+                      {vaultDocs.map((doc) => (
+                        <option key={doc.id} value={doc.id}>{doc.filename}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#CBD5E1', marginBottom: '6px' }}>
+                  Draft Scope &amp; Legal Detail Depth
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDraftDepth('comprehensive')}
+                    style={{
+                      padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                      background: draftDepth === 'comprehensive' ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.03)',
+                      border: draftDepth === 'comprehensive' ? '1px solid #3B82F6' : '1px solid var(--border-subtle, rgba(255,255,255,0.08))',
+                      color: draftDepth === 'comprehensive' ? '#93C5FD' : '#94A3B8', cursor: 'pointer',
+                    }}
+                  >
+                    Comprehensive (Recitals &amp; Remedies)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDraftDepth('standard')}
+                    style={{
+                      padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                      background: draftDepth === 'standard' ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.03)',
+                      border: draftDepth === 'standard' ? '1px solid #3B82F6' : '1px solid var(--border-subtle, rgba(255,255,255,0.08))',
+                      color: draftDepth === 'standard' ? '#93C5FD' : '#94A3B8', cursor: 'pointer',
+                    }}
+                  >
+                    Standard Clause Only
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: AI Synthesis Prompt Engine */}
+          <div className="ad-card">
+            <div className="ad-card-title">
+              <span>✍️</span> Custom Drafting Instructions
+            </div>
+
+            <form onSubmit={handleSynthesize} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <textarea
+                  required
+                  rows={5}
+                  placeholder="e.g. Synthesize a non-compete clause limited to 2 years within India under Section 27 of the Indian Contract Act, including a 30-day cure period and New Delhi arbitration..."
+                  value={autoDraftPrompt}
+                  onChange={(e) => setAutoDraftPrompt(e.target.value)}
+                  style={{
+                    width: '100%', boxSizing: 'border-box', padding: '14px', borderRadius: '10px',
+                    background: 'rgba(3,7,18,0.6)', border: '1px solid var(--border-subtle, rgba(255,255,255,0.12))',
+                    color: '#F8FAFC', fontSize: '13.5px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5,
+                  }}
+                />
+              </div>
+
+              {/* Quick Modifier Chips */}
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#94A3B8', marginBottom: '8px' }}>
+                  Quick Provision Insert Modifiers:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Include 30-day written cure period before escalation.')}>
+                    + 30-Day Cure
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Cap aggregate liability at 100% of fees paid.')}>
+                    + 100% Fee Cap
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Seat of arbitration shall be New Delhi under ICA Rules.')}>
+                    + New Delhi Seat
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Include Section 27 Indian Contract Act exception for trade secrets.')}>
+                    + Sec 27 Carve-out
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={drafting}
+                className="ad-action-btn ad-btn-primary"
+                style={{ width: '100%', padding: '14px', fontSize: '14.5px', fontWeight: 700, borderRadius: '10px', justifyContent: 'center' }}
+              >
+                {drafting ? 'Synthesizing Legal Clause…' : '⚡ Synthesize Enterprise Clause'}
+              </button>
+            </form>
+          </div>
+
         </div>
+
       </div>
+
+      <DraftsModal />
     </div>
   );
 }
