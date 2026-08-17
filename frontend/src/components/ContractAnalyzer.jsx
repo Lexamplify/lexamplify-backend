@@ -16,6 +16,7 @@ import { findClauseRange } from '../tiptap/positionMapping.js';
 import { useCitationStore } from '../tiptap/citationStore.js';
 import { useContractStore } from '../store/useContractStore.js';
 import useContractJobStream from '../hooks/useContractJobStream.js';
+import DraftsModal from './DraftsModal.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
@@ -1862,6 +1863,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     ruleBookText,
     setRuleBookText,
     autoDraftText,
+    openDraftsModal,
   } = useContractStore();
   const rawTextDebounceRef = useRef(null);
   const clauses = flaggedClauses;
@@ -3105,6 +3107,20 @@ export default function ContractAnalyzer({ setFocusMode }) {
               </select>
             </div>
 
+            <button
+              onClick={openDraftsModal}
+              title="View and restore saved contract drafts"
+              style={{
+                fontSize: '12px', background: 'rgba(139, 92, 246, 0.14)', border: '1px solid rgba(139, 92, 246, 0.35)',
+                color: '#A78BFA', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.2s', fontWeight: 600,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.25)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.14)'; }}
+            >
+              📁 Drafts
+            </button>
+
             {isAnalyzed && (
               <>
                 <button
@@ -3126,6 +3142,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
               </>
             )}
           </div>
+
+          <DraftsModal />
         </div>
 
         {/* ── COLLAPSIBLE EXECUTIVE SUMMARY ── */}

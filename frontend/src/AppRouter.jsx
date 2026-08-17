@@ -10,6 +10,7 @@ import CourtResources from './components/CourtResources';
 import ContractAnalyzer from './components/ContractAnalyzer';
 import AutoDraftWorkspace from './components/AutoDraftWorkspace';
 import { useContractStore } from './store/useContractStore';
+import DraftsModal from './components/DraftsModal.jsx';
 import ConflictEngine from './components/ConflictEngine';
 import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
@@ -1288,66 +1289,7 @@ const DashboardView = () => {
         </div>
       )}
       {/* ── SAVED SESSION DRAFTS MODAL OVERLAY ── */}
-      {showDraftsModal && (
-        <div
-          onClick={() => setShowDraftsModal(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(3,6,14,0.7)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%', maxWidth: '640px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)',
-              borderRadius: '16px', boxShadow: '0 25px 60px rgba(0,0,0,0.5)', overflow: 'hidden',
-            }}
-          >
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>📝 Drafts Pending Review</h3>
-              <button onClick={() => setShowDraftsModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}>✕</button>
-            </div>
-
-            <div style={{ maxHeight: '420px', overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {savedDrafts.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)', fontSize: '13.5px' }}>
-                  No saved session drafts pending review. When you click "New" in Contract Analyzer, active sessions are saved here automatically.
-                </div>
-              ) : (
-                savedDrafts.map((d) => (
-                  <div key={d.id} style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '14px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {d.title}
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                        <span>{new Date(d.timestamp).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                        {d.clauses?.length > 0 && <span style={{ color: '#FCD34D' }}>⚠️ {d.clauses.length} Flagged Risks</span>}
-                        <span>{d.rawText?.length || 0} chars</span>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                      <button
-                        onClick={() => restoreDraftToAnalyzer(d)}
-                        className="db-sync-btn"
-                        style={{ fontSize: '12px', padding: '6px 12px' }}
-                      >
-                        Restore to Analyzer →
-                      </button>
-                      <button
-                        onClick={() => deleteSavedDraft(d.id)}
-                        style={{ fontSize: '12px', padding: '6px 10px', background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', borderRadius: '6px', cursor: 'pointer' }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <DraftsModal isOpen={showDraftsModal} onClose={() => setShowDraftsModal(false)} />
     </div>
   );
 };

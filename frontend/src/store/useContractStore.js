@@ -28,6 +28,11 @@ export const useContractStore = create((set, get) => ({
       autoDraftVersion: typeof v === 'function' ? v(state.autoDraftVersion) : v,
     })),
 
+  isDraftsModalOpen: false,
+  setIsDraftsModalOpen: (open) => set({ isDraftsModalOpen: open }),
+  openDraftsModal: () => set({ isDraftsModalOpen: true }),
+  closeDraftsModal: () => set({ isDraftsModalOpen: false }),
+
   clearContract: () =>
     set({
       rawText: '',
@@ -38,5 +43,6 @@ export const useContractStore = create((set, get) => ({
       autoDraftText: '',
       autoDraftPrompt: '',
       autoDraftVersion: 0,
+      isDraftsModalOpen: false,
     }),
 }));
