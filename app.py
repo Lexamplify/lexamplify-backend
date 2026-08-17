@@ -755,6 +755,67 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    @app.route('/api/drafts', methods=['GET', 'POST', 'OPTIONS'])
+    def handle_drafts():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+
+        drafts_file = os.path.join(os.getcwd(), "saved_drafts_data.json")
+
+        def load_drafts():
+            if os.path.exists(drafts_file):
+                try:
+                    with open(drafts_file, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    return []
+            return []
+
+        def save_drafts_data(data):
+            with open(drafts_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+
+        if request.method == 'GET':
+            return jsonify(load_drafts()), 200
+
+        if request.method == 'POST':
+            try:
+                data = request.get_json(force=True, silent=True) or {}
+                drafts = load_drafts()
+                draft_id = data.get('id') or f"draft_{int(time.time())}"
+                payload = {
+                    "id": draft_id,
+                    "timestamp": data.get('timestamp') or datetime.now().isoformat(),
+                    "title": data.get('title') or "Untitled Contract Draft",
+                    "rawText": data.get('rawText') or "",
+                    "clauses": data.get('clauses') or [],
+                    "summary": data.get('summary') or "",
+                    "comments": data.get('comments') or [],
+                    "appendedClauses": data.get('appendedClauses') or []
+                }
+                drafts = [d for d in drafts if d.get('id') != draft_id]
+                drafts.insert(0, payload)
+                save_drafts_data(drafts)
+                return jsonify({"status": "success", "draft": payload}), 200
+            except Exception as e:
+                return jsonify({"error": True, "message": str(e)}), 500
+
+    @app.route('/api/drafts/<string:draft_id>', methods=['DELETE', 'OPTIONS'])
+    def delete_draft(draft_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            drafts_file = os.path.join(os.getcwd(), "saved_drafts_data.json")
+            if os.path.exists(drafts_file):
+                with open(drafts_file, "r", encoding="utf-8") as f:
+                    drafts = json.load(f)
+                drafts = [d for d in drafts if str(d.get('id')) != str(draft_id)]
+                with open(drafts_file, "w", encoding="utf-8") as f:
+                    json.dump(drafts, f, indent=2)
+            return jsonify({"status": "success", "deleted_id": draft_id}), 200
+        except Exception as e:
+            return jsonify({"error": True, "message": str(e)}), 500
+
     @app.route('/api/vault/save', methods=['POST', 'OPTIONS'])
     def save_vault_document():
         if request.method == 'OPTIONS':

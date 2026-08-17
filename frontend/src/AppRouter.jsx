@@ -9,6 +9,7 @@ import DocumentViewer from './components/DocumentViewer';
 import CourtResources from './components/CourtResources';
 import ContractAnalyzer from './components/ContractAnalyzer';
 import AutoDraftWorkspace from './components/AutoDraftWorkspace';
+import { useContractStore } from './store/useContractStore';
 import ConflictEngine from './components/ConflictEngine';
 import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
@@ -542,6 +543,58 @@ const DashboardView = () => {
     navigate('/firm-library/draft', { state: { templateId: template.id } });
   };
 
+  // Saved session drafts state & restoration logic
+  const [savedDrafts, setSavedDrafts] = useState([]);
+  const [showDraftsModal, setShowDraftsModal] = useState(false);
+
+  const fetchSavedDrafts = async () => {
+    let apiDrafts = [];
+    try {
+      const res = await fetch(`${API_BASE}/api/drafts`);
+      if (res.ok) apiDrafts = await res.json();
+    } catch (e) {}
+
+    let localDrafts = [];
+    try {
+      localDrafts = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
+    } catch (e) {}
+
+    const combined = [...apiDrafts];
+    for (const ld of localDrafts) {
+      if (!combined.some((d) => d.id === ld.id)) {
+        combined.push(ld);
+      }
+    }
+    setSavedDrafts(combined);
+  };
+
+  useEffect(() => {
+    fetchSavedDrafts();
+    window.addEventListener('lexamplify-drafts-updated', fetchSavedDrafts);
+    return () => window.removeEventListener('lexamplify-drafts-updated', fetchSavedDrafts);
+  }, []);
+
+  const restoreDraftToAnalyzer = (draft) => {
+    const store = useContractStore.getState();
+    store.setRawText(draft.rawText || '');
+    store.setClauses(draft.clauses || []);
+    store.setSummary(draft.summary || '');
+    setShowDraftsModal(false);
+    navigate('/contract-analyzer');
+  };
+
+  const deleteSavedDraft = async (draftId) => {
+    try {
+      await fetch(`${API_BASE}/api/drafts/${draftId}`, { method: 'DELETE' });
+    } catch (e) {}
+    try {
+      const local = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
+      const updated = local.filter((d) => d.id !== draftId);
+      localStorage.setItem('lexamplify_drafts', JSON.stringify(updated));
+    } catch (e) {}
+    setSavedDrafts((prev) => prev.filter((d) => d.id !== draftId));
+  };
+
   // CNR sync bar
   const [cnrNumber, setCnrNumber] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -966,7 +1019,14 @@ const DashboardView = () => {
       {/* ── TRIAGE METRICS ── */}
       <div className="db-metrics-grid">
         {stats.map((s, i) => (
-          <div key={i} className="db-metric-card" style={{ borderTop: `3px solid ${s.accent}` }}>
+          <div
+            key={i}
+            className="db-metric-card"
+            style={{ borderTop: `3px solid ${s.accent}`, cursor: s.label === 'Drafts Pending Review' ? 'pointer' : 'default' }}
+            onClick={() => {
+              if (s.label === 'Drafts Pending Review') setShowDraftsModal(true);
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
               <div style={{
                 width: '42px', height: '42px', borderRadius: '10px',
@@ -1220,6 +1280,67 @@ const DashboardView = () => {
                   >
                     <span style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600 }}>📋 {t.title}</span>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>{t.category}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── SAVED SESSION DRAFTS MODAL OVERLAY ── */}
+      {showDraftsModal && (
+        <div
+          onClick={() => setShowDraftsModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(3,6,14,0.7)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: '640px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)',
+              borderRadius: '16px', boxShadow: '0 25px 60px rgba(0,0,0,0.5)', overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>📝 Drafts Pending Review</h3>
+              <button onClick={() => setShowDraftsModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ maxHeight: '420px', overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {savedDrafts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)', fontSize: '13.5px' }}>
+                  No saved session drafts pending review. When you click "New" in Contract Analyzer, active sessions are saved here automatically.
+                </div>
+              ) : (
+                savedDrafts.map((d) => (
+                  <div key={d.id} style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--bg-main)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {d.title}
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                        <span>{new Date(d.timestamp).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        {d.clauses?.length > 0 && <span style={{ color: '#FCD34D' }}>⚠️ {d.clauses.length} Flagged Risks</span>}
+                        <span>{d.rawText?.length || 0} chars</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      <button
+                        onClick={() => restoreDraftToAnalyzer(d)}
+                        className="db-sync-btn"
+                        style={{ fontSize: '12px', padding: '6px 12px' }}
+                      >
+                        Restore to Analyzer →
+                      </button>
+                      <button
+                        onClick={() => deleteSavedDraft(d.id)}
+                        style={{ fontSize: '12px', padding: '6px 10px', background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', borderRadius: '6px', cursor: 'pointer' }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

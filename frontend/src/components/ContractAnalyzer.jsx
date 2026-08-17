@@ -2779,6 +2779,63 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }, 1500);
   };
 
+  // Guarded session reset with auto-save to drafts
+  const handleNewSession = async () => {
+    if (!rawText || !rawText.trim()) {
+      performReset();
+      return;
+    }
+
+    const draftPayload = {
+      id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      title: contractFile?.name || (rawText ? rawText.slice(0, 45).replace(/\n/g, ' ').trim() + '…' : 'Untitled Draft'),
+      rawText: rawText || '',
+      clauses: clauses || [],
+      summary: summary || '',
+      comments: comments || [],
+      appendedClauses: appendedClauses || [],
+      documentVersion: documentVersion || 0,
+    };
+
+    try {
+      await fetch(`${API_BASE}/api/drafts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draftPayload),
+      });
+    } catch (err) {
+      console.warn('Backend draft save failed, saving to localStorage:', err);
+    }
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
+      const updated = [draftPayload, ...existing.filter((d) => d.id !== draftPayload.id)];
+      localStorage.setItem('lexamplify_drafts', JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('lexamplify-drafts-updated'));
+    } catch (e) {
+      console.error('Failed localStorage draft write:', e);
+    }
+
+    performReset();
+  };
+
+  const performReset = () => {
+    setIsAnalyzed(false);
+    setRawText('');
+    setClauses([]);
+    setSummary('');
+    setAppendedClauses([]);
+    setActiveClauseId(null);
+    setRewrittenText('');
+    setSummaryCollapsed(true);
+    setComments([]);
+    setActiveCommentDraft(null);
+    if (setContractFile) setContractFile(null);
+    setDocumentVersion((v) => v + 1);
+  };
+
+
   // ── 5. AUTO-DRAFT (SYNTHESIS) HANDLERS ───────────────────────────────
   const handleAutoDraft = async (e) => {
     e.preventDefault();
@@ -3249,8 +3306,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                   Export
                 </button>
-                <button
-                  onClick={() => { setIsAnalyzed(false); setRawText(''); setClauses([]); setSummary(''); setAppendedClauses([]); setActiveClauseId(null); setRewrittenText(''); setSummaryCollapsed(true); setComments([]); setActiveCommentDraft(null); }}
+                 <button
+                  onClick={handleNewSession}
                   style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = '#9CA3AF'; e.currentTarget.style.borderColor = 'var(--border-dark-subtle)'; }}
