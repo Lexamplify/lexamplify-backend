@@ -1469,6 +1469,29 @@ def create_app():
     # plain "-" is placed last in the class so it's never misread as a
     # range operator against a neighbouring \uXXXX-style escape.
     _KANOON_DASH_QUOTE_RE = re.compile('[—–“”‘’"\'\xa0-]')
+    # LLM-generated citations occasionally arrive camelCase-glued with no
+    # spaces at all around legal separators, e.g. "Company vsFoodCorporation
+    # OfIndiaon 16 Nov" — Kanoon's own search then returns nothing, and
+    # _KANOON_CASE_SPLIT_RE above (which requires \s+ on BOTH sides of v/vs)
+    # never even recognizes it as a case citation. A blanket camelCase
+    # splitter would fix this but also shreds real names ("McDonald" ->
+    # "Mc Donald") and common words ("Corporation" ends in "-on", "Brand"
+    # ends in "-and") — each pattern below is bounded tightly enough to
+    # only fire on the specific glue point it targets, never mid-word:
+    #   - v./vs glue: only when "v"/"vs" is DIRECTLY followed by a capital
+    #     letter (the next party name) — "versus"/"very"/"value" all have a
+    #     lowercase letter next and are left untouched.
+    #   - on+date glue: only when "on" is directly followed by whitespace
+    #     then a digit (a hearing date) — "Corporation", "Washington",
+    #     "Amazon" etc. are never followed by "on \d" and are untouched.
+    #   - And glue: only when a literal capital "And" sits directly between
+    #     a lowercase letter and another capital letter (i.e. it's gluing
+    #     two words together) — "Brand", "Grand", "Command", "Understand"
+    #     all contain "and" but never as a capitalized word glued on both
+    #     sides, so none of them match.
+    _KANOON_VS_GLUE_RE = re.compile(r'\b([Vv][Ss]?\.?)([A-Z])')
+    _KANOON_ON_DATE_GLUE_RE = re.compile(r'([a-z])(on\s+\d)')
+    _KANOON_AND_GLUE_RE = re.compile(r'([a-z])And([A-Z])')
     _KANOON_BRACKETS_RE = re.compile(r'\([^)]*\)|\[[^\]]*\]')
     _KANOON_YEAR_PAREN_RE = re.compile(r'\(\s*(\d{4})\s*\)')
     _KANOON_REPORTER_RE = re.compile(r'\b(SCC|AIR|SCR|INSC)\b', re.IGNORECASE)
@@ -1596,6 +1619,16 @@ def create_app():
         # for a normal space around "v."/"vs." could otherwise dodge the
         # \s+ boundaries in the case-split regex.
         cleaned_query = _KANOON_DASH_QUOTE_RE.sub(' ', query)
+        # Restore spaces at the specific glue points malformed LLM citations
+        # collapse — must run BEFORE is_case detection below, since
+        # _KANOON_CASE_SPLIT_RE requires whitespace on both sides of v/vs
+        # and would otherwise never recognize a glued citation as a case at
+        # all. re.sub target strings only reference their OWN pattern's
+        # capture groups, so running all three back-to-back is safe even
+        # though each can shift where the next one's matches fall.
+        cleaned_query = _KANOON_VS_GLUE_RE.sub(r'\1 \2', cleaned_query)
+        cleaned_query = _KANOON_ON_DATE_GLUE_RE.sub(r'\1 \2', cleaned_query)
+        cleaned_query = _KANOON_AND_GLUE_RE.sub(r'\1 And \2', cleaned_query)
         cleaned_query = re.sub(r'\s+', ' ', cleaned_query).strip()
 
         is_case = bool(_KANOON_CASE_SPLIT_RE.search(cleaned_query))
