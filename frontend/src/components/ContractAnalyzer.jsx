@@ -2111,17 +2111,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
     hydratedRef.current = true;
   }, []);
 
-  // Auto-Collapse Sidebar on Mount (Focus Mode)
-  useEffect(() => {
-    if (setFocusMode) {
-      setFocusMode(true);
-    }
-    return () => {
-      if (setFocusMode) {
-        setFocusMode(false);
-      }
-    };
-  }, [setFocusMode]);
 
   // Load vault documents on mount for auto-draft context
   useEffect(() => {
