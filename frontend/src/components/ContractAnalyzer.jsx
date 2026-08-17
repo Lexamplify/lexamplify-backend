@@ -804,6 +804,39 @@ const styles = `
     color: inherit;
   }
   .scanner-body .ProseMirror p:last-child { margin-bottom: 0; }
+  .scanner-body .ProseMirror h1,
+  .scanner-body .ProseMirror h2,
+  .scanner-body .ProseMirror h3,
+  .scanner-body .ProseMirror h4,
+  .scanner-body .ProseMirror h5,
+  .scanner-body .ProseMirror h6 {
+    font-weight: 700;
+    color: var(--text-dark-primary, inherit);
+    margin: 1.3em 0 0.5em;
+    line-height: 1.35;
+  }
+  .scanner-body .ProseMirror h1 { font-size: 1.45em; border-bottom: 1px solid var(--border-dark-subtle, rgba(255,255,255,0.1)); padding-bottom: 0.3em; }
+  .scanner-body .ProseMirror h2 { font-size: 1.25em; }
+  .scanner-body .ProseMirror h3 { font-size: 1.12em; }
+  .scanner-body .ProseMirror h4 { font-size: 1.02em; }
+  .scanner-body .ProseMirror strong,
+  .scanner-body .ProseMirror b {
+    font-weight: 700;
+    color: var(--text-dark-primary, inherit);
+  }
+  .scanner-body .ProseMirror ul,
+  .scanner-body .ProseMirror ol {
+    padding-left: 1.75em;
+    margin: 0.6em 0 1.1em;
+  }
+  .scanner-body .ProseMirror li {
+    margin-bottom: 0.4em;
+    line-height: 1.6;
+  }
+  .scanner-body .ProseMirror li > p {
+    margin-bottom: 0.3em;
+  }
+
 
   /* Track Changes marks — real inline document content, not decorations */
   .ai-insertion {
