@@ -50,6 +50,17 @@ function ToolbarButton({ onClick, active, title, children }) {
       onClick={onClick}
       title={title}
       className={`toolbar-btn${active ? ' active' : ''}`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: '30px',
+        height: '28px',
+        padding: '4px 8px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        flexShrink: 0,
+      }}
     >
       {children}
     </button>
@@ -68,7 +79,7 @@ function ContractEditorToolbar({ editor }) {
   const currentFontSize = editor.getAttributes('textStyle').fontSize || '';
 
   return (
-    <div className="rich-text-toolbar">
+    <div className="rich-text-toolbar" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', padding: '6px 12px', minHeight: '40px', boxSizing: 'border-box', border: '1px solid var(--border-subtle)', borderRadius: '8px', background: 'var(--bg-panel)' }}>
       <select
         className="toolbar-select"
         title="Font Family"

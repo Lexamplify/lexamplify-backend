@@ -343,7 +343,7 @@ export default function AutoDraftWorkspace() {
         .ad-btn-purple {
           background: rgba(139,92,246,0.14);
           border: 1px solid rgba(139,92,246,0.35);
-          color: #A78BFA;
+          color: #8B5CF6;
         }
         .ad-btn-purple:hover {
           background: rgba(139,92,246,0.25);
@@ -369,7 +369,7 @@ export default function AutoDraftWorkspace() {
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.08em;
-          color: var(--text-muted);
+          color: var(--text-primary);
           margin-bottom: 14px;
           display: flex;
           align-items: center;
@@ -399,6 +399,28 @@ export default function AutoDraftWorkspace() {
           transform: translateX(3px);
         }
 
+        .ad-precedent-title {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .ad-precedent-desc {
+          font-size: 11.5px;
+          color: var(--text-muted);
+          line-height: 1.4;
+        }
+
+        .ad-precedent-badge {
+          font-size: 10px;
+          font-weight: 700;
+          background: rgba(59,130,246,0.12);
+          color: var(--accent-primary);
+          padding: 2px 7px;
+          border-radius: 4px;
+          border: 1px solid rgba(59,130,246,0.25);
+        }
+
         .ad-chip-btn {
           font-size: 11px;
           font-weight: 600;
@@ -416,7 +438,7 @@ export default function AutoDraftWorkspace() {
           border-color: var(--accent-primary);
         }
 
-        /* Enhanced TipTap Document Typography in Auto-Draft Workspace */
+        /* TipTap Document Canvas Styling */
         .ad-document-canvas .scanner-body .ProseMirror {
           min-height: 480px;
           padding: 24px;
@@ -458,6 +480,127 @@ export default function AutoDraftWorkspace() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
+
+        /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
+        :root[data-theme="light"] .ad-header-card {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+        }
+
+        :root[data-theme="light"] .ad-title-gradient {
+          color: #0F172A !important;
+        }
+
+        :root[data-theme="light"] .ad-sovereign-badge {
+          background: rgba(37,99,235,0.1) !important;
+          color: #1D4ED8 !important;
+          border-color: rgba(37,99,235,0.3) !important;
+        }
+
+        :root[data-theme="light"] .ad-card {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+        }
+
+        :root[data-theme="light"] .ad-card-title {
+          color: #0F172A !important;
+          font-weight: 800 !important;
+        }
+
+        :root[data-theme="light"] .ad-canvas-panel {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-card {
+          background: #F8FAFC !important;
+          border-color: #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-card:hover {
+          background: #EFF6FF !important;
+          border-color: #3B82F6 !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-title {
+          color: #0F172A !important;
+          font-weight: 700 !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-desc {
+          color: #334155 !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-badge {
+          background: rgba(37,99,235,0.1) !important;
+          color: #1D4ED8 !important;
+          border-color: rgba(37,99,235,0.3) !important;
+        }
+
+        :root[data-theme="light"] .ad-chip-btn {
+          background: #F1F5F9 !important;
+          border-color: #CBD5E1 !important;
+          color: #0F172A !important;
+          font-weight: 600 !important;
+        }
+
+        :root[data-theme="light"] .ad-chip-btn:hover {
+          background: #DBEAFE !important;
+          color: #1D4ED8 !important;
+          border-color: #3B82F6 !important;
+        }
+
+        :root[data-theme="light"] textarea,
+        :root[data-theme="light"] select {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          color: #0F172A !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body {
+          background: #F8FAFC !important;
+          border: 1px solid #CBD5E1 !important;
+          border-radius: 12px !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror {
+          background: #FFFFFF !important;
+          color: #0F172A !important;
+          border: none !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror p {
+          color: #1E293B !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h1,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h2,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h3,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h4 {
+          color: #0F172A !important;
+          border-bottom-color: #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror strong,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror b {
+          color: #1D4ED8 !important;
+          font-weight: 700 !important;
+        }
+
+        :root[data-theme="light"] .ad-metric-pill {
+          background: #F1F5F9 !important;
+          border-color: #CBD5E1 !important;
+          color: #334155 !important;
+        }
+
+        :root[data-theme="light"] .ad-btn-secondary {
+          background: #F8FAFC !important;
+          border-color: #CBD5E1 !important;
+          color: #0F172A !important;
+        }
       `}</style>
 
       {/* ── TOP HEADER & NAVIGATION ── */}
@@ -468,7 +611,7 @@ export default function AutoDraftWorkspace() {
             <h1 className="ad-title-gradient">Auto-Draft Studio</h1>
             <span className="ad-sovereign-badge">Sovereign Legal Engine · Indian Law</span>
           </div>
-          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '4px 0 0' }}>
+          <p className="ad-header-desc" style={{ fontSize: '12.5px', margin: '4px 0 0' }}>
             Synthesize execution-ready Indian legal agreements, clauses, and precedents with AI statutory reasoning
           </p>
         </div>
@@ -619,12 +762,12 @@ export default function AutoDraftWorkspace() {
                   onClick={() => setAutoDraftPrompt(prompt)}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{label}</span>
-                    <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(59,130,246,0.12)', color: 'var(--accent-primary)', padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.25)' }}>
+                    <span className="ad-precedent-title">{label}</span>
+                    <span className="ad-precedent-badge">
                       {badge}
                     </span>
                   </div>
-                  <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  <span className="ad-precedent-desc" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                     {prompt}
                   </span>
                 </div>
