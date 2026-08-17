@@ -2039,3 +2039,117 @@ textarea:focus,
   background: linear-gradient(90deg, rgba(0,0,0,.04) 25%, rgba(0,0,0,.08) 50%, rgba(0,0,0,.04) 75%) !important;
   background-size: 800px 100% !important;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MS-Word Rich Text Toolbar & TipTap Editor Global Styling
+   ───────────────────────────────────────────────────────────────────────── */
+.rich-text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  min-height: 38px;
+  box-sizing: border-box;
+}
+
+.toolbar-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  transition: all 0.15s ease-in-out;
+  flex-shrink: 0;
+}
+
+.toolbar-btn:hover {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent-primary);
+}
+
+.toolbar-btn.active {
+  background: var(--accent-primary);
+  color: #FFFFFF !important;
+  border-color: var(--accent-primary);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-subtle);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.toolbar-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 12px;
+  border-radius: 6px;
+  padding: 3px 8px;
+  height: 28px;
+  min-width: 85px;
+  max-width: 130px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.toolbar-select-size {
+  min-width: 60px;
+  max-width: 75px;
+}
+
+.toolbar-select:hover {
+  border-color: var(--accent-primary);
+}
+
+.toolbar-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+/* Light Theme Overrides for Rich Text Toolbar */
+:root[data-theme="light"] .rich-text-toolbar {
+  background: #F0F2F8 !important;
+  border-color: #C8CEDC !important;
+}
+
+:root[data-theme="light"] .toolbar-btn {
+  color: #4A5568 !important;
+}
+
+:root[data-theme="light"] .toolbar-btn:hover {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #2563EB !important;
+}
+
+:root[data-theme="light"] .toolbar-btn.active {
+  background: #2563EB !important;
+  color: #FFFFFF !important;
+}
+
+:root[data-theme="light"] .toolbar-select {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+  color: #1A2234 !important;
+}
+
+:root[data-theme="light"] .toolbar-divider {
+  background: #C8CEDC !important;
+}
+

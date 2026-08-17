@@ -22,8 +22,6 @@ export default function AutoDraftWorkspace() {
     autoDraftVersion,
     setAutoDraftVersion,
     openDraftsModal,
-    setClauses,
-    setSummary,
   } = useContractStore();
 
   // Local synthesis studio state
@@ -217,7 +215,7 @@ export default function AutoDraftWorkspace() {
           padding: 24px 28px;
           max-width: 1560px;
           margin: 0 auto;
-          color: var(--text-primary, #F8FAFC);
+          color: var(--text-primary);
           font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
         }
 
@@ -226,13 +224,12 @@ export default function AutoDraftWorkspace() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: rgba(15, 23, 42, 0.75);
-          backdrop-filter: blur(12px);
-          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          background: var(--bg-panel);
+          border: 1px solid var(--border-subtle);
           padding: 16px 24px;
           border-radius: 14px;
           margin-bottom: 24px;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.12);
         }
 
         .ad-header-title-row {
@@ -245,9 +242,7 @@ export default function AutoDraftWorkspace() {
           font-size: 20px;
           font-weight: 800;
           margin: 0;
-          background: linear-gradient(135deg, #FFFFFF 0%, #94A3B8 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
+          color: var(--text-primary);
           letter-spacing: -0.02em;
         }
 
@@ -256,11 +251,11 @@ export default function AutoDraftWorkspace() {
           font-weight: 700;
           letter-spacing: 0.05em;
           text-transform: uppercase;
-          background: linear-gradient(135deg, rgba(59,130,246,0.18) 0%, rgba(139,92,246,0.18) 100%);
-          color: #93C5FD;
-          border: 1px solid rgba(59,130,246,0.35);
+          background: var(--accent-muted, rgba(59,130,246,0.12));
+          color: var(--accent-primary, #3B82F6);
+          border: 1px solid rgba(59,130,246,0.3);
           padding: 3px 10px;
-          borderRadius: 20px;
+          border-radius: 20px;
         }
 
         /* Workspace Grid */
@@ -279,14 +274,14 @@ export default function AutoDraftWorkspace() {
 
         /* Left Canvas Panel */
         .ad-canvas-panel {
-          background: var(--bg-panel, #0F172A);
+          background: var(--bg-panel);
           border-radius: 16px;
-          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          border: 1px solid var(--border-subtle);
           padding: 24px;
           min-height: 680px;
           display: flex;
           flex-direction: column;
-          box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+          box-shadow: 0 16px 40px rgba(0,0,0,0.15);
           position: relative;
         }
 
@@ -295,16 +290,16 @@ export default function AutoDraftWorkspace() {
           justify-content: space-between;
           align-items: center;
           padding-bottom: 16px;
-          border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          border-bottom: 1px solid var(--border-subtle);
           margin-bottom: 20px;
         }
 
         .ad-metric-pill {
           font-size: 11.5px;
           font-weight: 600;
-          color: var(--text-muted, #94A3B8);
-          background: rgba(255,255,255,0.04);
-          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          color: var(--text-muted);
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
           padding: 4px 10px;
           border-radius: 6px;
           display: inline-flex;
@@ -326,28 +321,29 @@ export default function AutoDraftWorkspace() {
         }
 
         .ad-btn-primary {
-          background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-          color: #FFFFFF;
-          box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+          background: var(--accent-primary, #3B82F6);
+          color: #FFFFFF !important;
+          box-shadow: 0 4px 12px rgba(37,99,235,0.25);
         }
         .ad-btn-primary:hover {
+          background: var(--accent-hover, #2563EB);
           transform: translateY(-1px);
-          box-shadow: 0 6px 16px rgba(37,99,235,0.45);
         }
 
         .ad-btn-secondary {
-          background: rgba(255,255,255,0.06);
-          border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
-          color: var(--text-primary, #F8FAFC);
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
         }
         .ad-btn-secondary:hover {
-          background: rgba(255,255,255,0.12);
+          background: var(--accent-muted);
+          border-color: var(--accent-primary);
         }
 
         .ad-btn-purple {
           background: rgba(139,92,246,0.14);
           border: 1px solid rgba(139,92,246,0.35);
-          color: #C4B5FD;
+          color: #A78BFA;
         }
         .ad-btn-purple:hover {
           background: rgba(139,92,246,0.25);
@@ -361,11 +357,11 @@ export default function AutoDraftWorkspace() {
         }
 
         .ad-card {
-          background: var(--bg-panel, #0F172A);
+          background: var(--bg-panel);
           border-radius: 16px;
-          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          border: 1px solid var(--border-subtle);
           padding: 20px;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.1);
         }
 
         .ad-card-title {
@@ -373,7 +369,7 @@ export default function AutoDraftWorkspace() {
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.08em;
-          color: #94A3B8;
+          color: var(--text-muted);
           margin-bottom: 14px;
           display: flex;
           align-items: center;
@@ -392,52 +388,52 @@ export default function AutoDraftWorkspace() {
           text-align: left;
           padding: 12px 14px;
           border-radius: 10px;
-          background: rgba(255,255,255,0.025);
-          border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
           cursor: pointer;
           transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .ad-precedent-card:hover {
-          background: rgba(59,130,246,0.08);
-          border-color: rgba(59,130,246,0.35);
+          background: var(--accent-muted);
+          border-color: var(--accent-primary);
           transform: translateX(3px);
         }
 
         .ad-chip-btn {
           font-size: 11px;
           font-weight: 600;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.1);
-          color: #CBD5E1;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
           padding: 4px 10px;
           border-radius: 14px;
           cursor: pointer;
           transition: all 0.15s;
         }
         .ad-chip-btn:hover {
-          background: rgba(59,130,246,0.15);
-          color: #93C5FD;
-          border-color: rgba(59,130,246,0.4);
+          background: var(--accent-muted);
+          color: var(--accent-primary);
+          border-color: var(--accent-primary);
         }
 
         /* Enhanced TipTap Document Typography in Auto-Draft Workspace */
         .ad-document-canvas .scanner-body .ProseMirror {
           min-height: 480px;
           padding: 24px;
-          background: rgba(3, 7, 18, 0.5);
+          background: var(--bg-card);
           border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.06);
+          border: 1px solid var(--border-subtle);
           font-size: 14px;
           line-height: 1.75;
-          color: #E2E8F0;
+          color: var(--text-primary);
           outline: none;
         }
 
         .ad-document-canvas .scanner-body .ProseMirror h3 {
           font-size: 1.25rem;
           font-weight: 700;
-          color: #F8FAFC;
-          border-bottom: 1px solid rgba(255,255,255,0.12);
+          color: var(--text-primary);
+          border-bottom: 1px solid var(--border-subtle);
           padding-bottom: 6px;
           margin-top: 1.6rem;
           margin-bottom: 1rem;
@@ -446,10 +442,11 @@ export default function AutoDraftWorkspace() {
         .ad-document-canvas .scanner-body .ProseMirror p {
           margin-bottom: 1.2rem;
           text-align: justify;
+          color: var(--text-primary);
         }
 
         .ad-document-canvas .scanner-body .ProseMirror strong {
-          color: #93C5FD;
+          color: var(--accent-primary);
           font-weight: 700;
         }
 
@@ -471,7 +468,7 @@ export default function AutoDraftWorkspace() {
             <h1 className="ad-title-gradient">Auto-Draft Studio</h1>
             <span className="ad-sovereign-badge">Sovereign Legal Engine · Indian Law</span>
           </div>
-          <p style={{ fontSize: '12.5px', color: '#94A3B8', margin: '4px 0 0' }}>
+          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '4px 0 0' }}>
             Synthesize execution-ready Indian legal agreements, clauses, and precedents with AI statutory reasoning
           </p>
         </div>
@@ -481,8 +478,8 @@ export default function AutoDraftWorkspace() {
           <div
             style={{
               padding: '8px 14px',
-              background: rawText.trim() ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.04)',
-              border: rawText.trim() ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border-subtle, rgba(255,255,255,0.08))',
+              background: rawText.trim() ? 'rgba(16,185,129,0.08)' : 'var(--bg-card)',
+              border: rawText.trim() ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border-subtle)',
               borderRadius: '8px',
               fontSize: '12px',
               display: 'flex',
@@ -493,9 +490,9 @@ export default function AutoDraftWorkspace() {
             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: rawText.trim() ? '#10B981' : '#94A3B8' }} />
             <span>
               {rawText.trim() ? (
-                <>Active Contract Loaded: <strong style={{ color: '#F8FAFC' }}>{rawText.length.toLocaleString()} chars</strong></>
+                <>Active Contract Loaded: <strong style={{ color: 'var(--text-primary)' }}>{rawText.length.toLocaleString()} chars</strong></>
               ) : (
-                <span style={{ color: '#94A3B8' }}>No Active Contract (Standalone Clause Synthesis)</span>
+                <span style={{ color: 'var(--text-muted)' }}>No Active Contract (Standalone Clause Synthesis)</span>
               )}
             </span>
           </div>
@@ -520,7 +517,7 @@ export default function AutoDraftWorkspace() {
           <div className="ad-canvas-header">
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '15px', fontWeight: 700, color: '#F8FAFC' }}>Synthesized Document Workspace</span>
+                <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Synthesized Document Workspace</span>
                 {autoDraftText && (
                   <span className="ad-metric-pill">
                     ⚡ {wordCount} words · {charCount} chars · {paragraphCount} clauses
@@ -569,7 +566,7 @@ export default function AutoDraftWorkspace() {
                   <div style={{ fontSize: '15px', fontWeight: 700, color: '#3B82F6', marginBottom: '6px' }} className="ad-loading-pulse">
                     {draftStatus || 'Synthesizing clause…'}
                   </div>
-                  <div style={{ fontSize: '12.5px', color: '#94A3B8', maxWidth: '420px', lineHeight: 1.6 }}>
+                  <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', maxWidth: '420px', lineHeight: 1.6 }}>
                     Cross-referencing Indian Contract Act, statutory enforceability guidelines, and Supreme Court precedent parameters…
                   </div>
                 </div>
@@ -590,15 +587,15 @@ export default function AutoDraftWorkspace() {
                 clauses={[]}
               />
             ) : (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center', color: '#94A3B8' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 20h9" />
                     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                   </svg>
                 </div>
-                <div style={{ fontSize: '17px', fontWeight: 700, color: '#F8FAFC', marginBottom: '8px' }}>Enterprise Auto-Draft Canvas Ready</div>
-                <div style={{ fontSize: '13px', maxWidth: '420px', lineHeight: 1.6, color: '#94A3B8' }}>
+                <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>Enterprise Auto-Draft Canvas Ready</div>
+                <div style={{ fontSize: '13px', maxWidth: '420px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
                   Select an Indian Playbook Precedent from the right console or enter custom legal drafting instructions to synthesize structured, execution-ready contract clauses.
                 </div>
               </div>
@@ -622,12 +619,12 @@ export default function AutoDraftWorkspace() {
                   onClick={() => setAutoDraftPrompt(prompt)}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#F8FAFC' }}>{label}</span>
-                    <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(59,130,246,0.12)', color: '#93C5FD', padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.25)' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{label}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, background: 'rgba(59,130,246,0.12)', color: 'var(--accent-primary)', padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.25)' }}>
                       {badge}
                     </span>
                   </div>
-                  <span style={{ fontSize: '11.5px', color: '#94A3B8', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                     {prompt}
                   </span>
                 </div>
@@ -643,13 +640,13 @@ export default function AutoDraftWorkspace() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#CBD5E1', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
                   Reference Context Mode
                 </label>
                 <select
                   value={selectedContextMode}
                   onChange={(e) => setSelectedContextMode(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'rgba(3,7,18,0.6)', border: '1px solid var(--border-subtle, rgba(255,255,255,0.12))', color: '#F8FAFC', fontSize: '13px' }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '13px' }}
                 >
                   <option value="active_contract">Active Loaded Contract ({rawText.length} chars)</option>
                   <option value="none">No Context (Standalone Clause)</option>
@@ -664,7 +661,7 @@ export default function AutoDraftWorkspace() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#CBD5E1', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
                   Draft Scope &amp; Legal Detail Depth
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -673,9 +670,9 @@ export default function AutoDraftWorkspace() {
                     onClick={() => setDraftDepth('comprehensive')}
                     style={{
                       padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-                      background: draftDepth === 'comprehensive' ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.03)',
-                      border: draftDepth === 'comprehensive' ? '1px solid #3B82F6' : '1px solid var(--border-subtle, rgba(255,255,255,0.08))',
-                      color: draftDepth === 'comprehensive' ? '#93C5FD' : '#94A3B8', cursor: 'pointer',
+                      background: draftDepth === 'comprehensive' ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+                      border: draftDepth === 'comprehensive' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                      color: draftDepth === 'comprehensive' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer',
                     }}
                   >
                     Comprehensive (Recitals &amp; Remedies)
@@ -685,9 +682,9 @@ export default function AutoDraftWorkspace() {
                     onClick={() => setDraftDepth('standard')}
                     style={{
                       padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-                      background: draftDepth === 'standard' ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.03)',
-                      border: draftDepth === 'standard' ? '1px solid #3B82F6' : '1px solid var(--border-subtle, rgba(255,255,255,0.08))',
-                      color: draftDepth === 'standard' ? '#93C5FD' : '#94A3B8', cursor: 'pointer',
+                      background: draftDepth === 'standard' ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+                      border: draftDepth === 'standard' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                      color: draftDepth === 'standard' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer',
                     }}
                   >
                     Standard Clause Only
@@ -713,15 +710,15 @@ export default function AutoDraftWorkspace() {
                   onChange={(e) => setAutoDraftPrompt(e.target.value)}
                   style={{
                     width: '100%', boxSizing: 'border-box', padding: '14px', borderRadius: '10px',
-                    background: 'rgba(3,7,18,0.6)', border: '1px solid var(--border-subtle, rgba(255,255,255,0.12))',
-                    color: '#F8FAFC', fontSize: '13.5px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5,
+                    background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-primary)', fontSize: '13.5px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5,
                   }}
                 />
               </div>
 
               {/* Quick Modifier Chips */}
               <div>
-                <div style={{ fontSize: '11px', fontWeight: 600, color: '#94A3B8', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
                   Quick Provision Insert Modifiers:
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
