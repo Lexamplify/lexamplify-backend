@@ -15,7 +15,7 @@ from utils.ai_helper import extract_json_from_llm_response
 argument_bp = Blueprint("argument", __name__)
 
 # Constraint 1: Default to Gemini 1.5 Flash via LiteLLM to remain model-agnostic
-MODEL_NAME = "groq/llama-3.3-70b-versatile"
+MODEL_NAME = "groq/openai/gpt-oss-120b"
 
 last_llm_error = "Unknown failure"
 

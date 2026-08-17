@@ -13,7 +13,7 @@ from utils.ai_helper import extract_json_from_llm_response
 
 conflict_bp = Blueprint('conflict', __name__)
 
-MODEL_NAME = "groq/llama-3.3-70b-versatile"
+MODEL_NAME = "groq/openai/gpt-oss-120b"
 
 
 def ask_llm(prompt: str) -> str:

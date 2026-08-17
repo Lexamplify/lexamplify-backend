@@ -495,7 +495,7 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
     """
     Dual-Engine Architecture with Threaded Heartbeats to prevent Render proxy timeouts.
       - Engine 1 (llama-3.1-8b-instant): Sub-500ms intent router.
-      - Engine 2 (llama-3.3-70b-versatile): Draft / simulation / RAG generation.
+      - Engine 2 (openai/gpt-oss-120b): Draft / simulation / RAG generation.
     """
     client = get_groq_client()
     if not client:
@@ -525,7 +525,7 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         )
         try:
             edit_res = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[{"role": "user", "content": edit_prompt}],
                 temperature=0.2,
             )
@@ -563,7 +563,7 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         try:
             yield f"data: {json.dumps({'metadata': {'action': 'chat', 'sources': []}})}\n\n"
             qa_completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[{"role": "user", "content": qa_prompt}],
                 temperature=0.1,
                 stream=True,
@@ -658,7 +658,7 @@ Return a JSON object with EXACTLY these keys:
 }}
 Return ONLY raw JSON matching this schema."""
                         sim_res = client.chat.completions.create(
-                            model="llama-3.3-70b-versatile",
+                            model="openai/gpt-oss-120b",
                             messages=[{"role": "user", "content": sim_prompt}],
                             temperature=0.2,
                             response_format={"type": "json_object"}
@@ -726,7 +726,7 @@ Return ONLY raw JSON matching this schema."""
                     "clauses, and formatting suitable for Indian courts."
                 )
                 draft_res = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="openai/gpt-oss-120b",
                     messages=[{"role": "user", "content": draft_prompt}],
                     temperature=0.3,
                 )
@@ -771,7 +771,7 @@ Return ONLY raw JSON matching this schema."""
         yield f"data: {json.dumps({'metadata': metadata})}\n\n"
 
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}

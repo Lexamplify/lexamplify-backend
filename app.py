@@ -2278,7 +2278,7 @@ def create_app():
                     )
                     
                     res_stage1 = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model="openai/gpt-oss-120b",
                         messages=force_pristine_groq_messages([{"role": "user", "content": stage1_prompt}]),
                         response_format={"type": "json_object"}
                     )
@@ -2322,7 +2322,7 @@ def create_app():
                     )
                     
                     res_stage3 = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model="openai/gpt-oss-120b",
                         messages=force_pristine_groq_messages([{"role": "user", "content": stage3_prompt}])
                     )
                     stage3_text = res_stage3.choices[0].message.content or ""
@@ -2339,7 +2339,7 @@ def create_app():
                     )
                     
                     res_stage4 = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model="openai/gpt-oss-120b",
                         messages=force_pristine_groq_messages([{"role": "user", "content": stage4_prompt}]),
                         response_format={"type": "json_object"}
                     )

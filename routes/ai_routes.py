@@ -395,7 +395,7 @@ def run_simulation():
 
         # Stage 1: Extract legal issues + search query
         s1 = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": (
                 f"Analyze this legal document:\n\n{truncated}\n\n"
                 "Extract the top 3 core legal issues and a 5-word search query. "
@@ -434,7 +434,7 @@ def run_simulation():
 
         # Stage 3: Opening argument
         s3 = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": (
                 f"Act as an Indian Advocate representing the {client_side}. "
                 "Draft a structured opening argument for your case.\n"
@@ -449,7 +449,7 @@ def run_simulation():
 
         # Stage 4: Red-team opposition
         s4 = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": (
                 "Act as opposing counsel in this litigation.\n"
                 f"Here is the opening argument by the {client_side}:\n\n"

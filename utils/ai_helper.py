@@ -1,7 +1,7 @@
 """
 utils/ai_helper.py
 LLM Gateway — routes through LiteLLM with automatic fallbacks.
-Primary: groq/llama-3.3-70b-versatile
+Primary: groq/openai/gpt-oss-120b
 Fallbacks: groq/llama-3.1-8b-instant → groq/gemma2-9b-it
 Set GROQ_API_KEY in .env.
 """
@@ -28,7 +28,7 @@ def ask_groq(system_prompt: str, user_msg: str) -> str:
 
     try:
         response = completion(
-            model="groq/llama-3.3-70b-versatile",
+            model="groq/openai/gpt-oss-120b",
             messages=messages,
             fallbacks=["groq/llama-3.1-8b-instant", "groq/gemma2-9b-it"],
             num_retries=2,

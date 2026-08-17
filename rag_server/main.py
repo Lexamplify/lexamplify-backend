@@ -18,7 +18,7 @@ POST /api/search
   │
   └── Brain: EXTERNAL
         ├── Query ChromaDB (query_texts → default SentenceTransformer embedder)
-        └── Synthesize    (llama-3.3-70b-versatile via Groq, structured JSON)
+        └── Synthesize    (openai/gpt-oss-120b via Groq, structured JSON)
               Returns: citations[], reliability_index, risk_warnings,
                        facts_vs_ruling, synthesis text
 
@@ -429,7 +429,7 @@ def _synthesize(query: str, chunks: list[dict], avg_distance: float) -> dict:
     )
 
     resp = _groq.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": _SYNTHESIS_SYSTEM},
             {"role": "user", "content": user_msg},
@@ -724,7 +724,7 @@ class ContractAnalysisRequest(BaseModel):
 @app.post("/api/analyze-contract")
 async def analyze_contract(req: ContractAnalysisRequest):
     """
-    Map-Reduce contract risk scanner powered by llama-3.3-70b-versatile.
+    Map-Reduce contract risk scanner powered by openai/gpt-oss-120b.
 
     Step 1 — General Indian law analysis (Contract Act 1872, NI Act, IT Act, etc.)
     Step 2 — Rule Book enforcement: if rule_book is provided, its directives are
@@ -806,7 +806,7 @@ Return ONLY a valid JSON object — no markdown, no commentary:
         # a failure degrades to "no findings in this chunk", not a crash.
         try:
             response = _groq.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 temperature=0.15,
                 max_tokens=3000,
                 response_format={"type": "json_object"},
@@ -964,7 +964,7 @@ Return ONLY a valid JSON object — no markdown, no commentary:
 
     try:
         response = _groq.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             temperature=0.2,
             max_tokens=800,
             response_format={"type": "json_object"},
