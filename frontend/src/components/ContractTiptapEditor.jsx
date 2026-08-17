@@ -17,6 +17,7 @@ import { AiInsertion, AiDeletion, TrackChangesCommands } from '../tiptap/trackCh
 import { InlineCitation } from '../tiptap/InlineCitationNode.js';
 import { CommentHighlight } from '../tiptap/commentHighlightMark.js';
 import { rawTextToHtml } from '../tiptap/textToHtml.js';
+import { inlineEditSelection } from '../services/api.js';
 
 const FONT_FAMILIES = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Garamond', 'Trebuchet MS'];
 const FONT_SIZES = ['10pt', '11pt', '12pt', '14pt', '16pt', '18pt', '24pt', '36pt'];
@@ -149,30 +150,203 @@ function ContractEditorToolbar({ editor }) {
 }
 
 // Selecting text now surfaces this instead of a toolbar button — comment /
-// draft-revision only make sense in the context of a live selection, so a
-// tethered menu that appears exactly where the selection is beats a
-// permanently-visible toolbar icon the user has to go hunt for.
-function CommentBubbleMenu({ editor, onAction }) {
+// draft-revision / AI rewrite only make sense in the context of a live
+// selection, so a tethered menu that appears exactly where the selection
+// is beats a permanently-visible toolbar icon the user has to go hunt for.
+//
+// `onAction` (Comment / Draft Revision) is optional — ContractAnalyzer.jsx
+// passes it because it has a sidebar to report into; AutoDraftWorkspace.jsx
+// doesn't. AI Rewrite has no such dependency (it's fully self-contained:
+// its own fetch, its own in-place replacement), so it's always available
+// wherever this editor is used, and both live in ONE BubbleMenu rather
+// than two separately-shown ones that would otherwise fight over the same
+// selection and visually collide.
+function SelectionBubbleMenu({ editor, onAction }) {
+  const [mode, setMode] = useState('actions'); // 'actions' | 'ai-rewrite'
+  const [instruction, setInstruction] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  // The exact ProseMirror range at the moment "AI Rewrite" was opened —
+  // NOT re-read from editor.state.selection at submit time. By the time
+  // the fetch resolves, the user has been typing in a plain <input> that
+  // lives outside the editor's DOM; editor.state.selection could have
+  // moved (or the input's own focus could make the live selection
+  // ambiguous). Locking {from, to} once, up front, is what makes the
+  // eventual replacement land in the right place regardless of what
+  // happened to focus/selection in between.
+  const lockedRangeRef = useRef(null);
+
   if (!editor) return null;
+
+  const openAiRewrite = () => {
+    const { from, to, empty } = editor.state.selection;
+    if (empty) return;
+    lockedRangeRef.current = { from, to };
+    setMode('ai-rewrite');
+    setInstruction('');
+    setError('');
+  };
+
+  const closeAiRewrite = () => {
+    setMode('actions');
+    setInstruction('');
+    setError('');
+    lockedRangeRef.current = null;
+  };
+
+  const handleRewriteSubmit = async (e) => {
+    e.preventDefault();
+    const range = lockedRangeRef.current;
+    if (!range || !instruction.trim() || loading) return;
+
+    const selectedText = editor.state.doc.textBetween(range.from, range.to, ' ');
+    setLoading(true);
+    setError('');
+    // Blocks any document edit — including the user's own typing elsewhere
+    // in the document — for the duration of the request. Locking the
+    // {from, to} coordinates alone only protects against the SELECTION
+    // moving; it does nothing to stop the underlying DOCUMENT shifting
+    // under those same coordinates (e.g. text typed/deleted earlier in the
+    // doc while the request is in flight), which would silently replace
+    // the wrong span. Re-enabled in the `finally` below no matter how the
+    // request ends.
+    editor.setEditable(false);
+
+    try {
+      const result = await inlineEditSelection(selectedText, instruction.trim());
+      if (result?.error || !result?.html) {
+        setError(result?.message || 'AI rewrite failed. Please retry.');
+        return;
+      }
+      // The LLM's output has no idea whether the surrounding document
+      // already supplies a word boundary at the seam — a selection like
+      // "may" (no trailing space, word-selected via double-click) rewritten
+      // to "...Act, 1872" butts straight into whatever follows ("terminate")
+      // with zero separation. Pad the seam only where it's actually needed:
+      // the adjacent original character is a word character and the
+      // replacement doesn't already supply its own whitespace there.
+      const docSize = editor.state.doc.content.size;
+      const nextChar = range.to < docSize
+        ? editor.state.doc.textBetween(range.to, Math.min(range.to + 1, docSize), '')
+        : '';
+      const prevChar = range.from > 0
+        ? editor.state.doc.textBetween(Math.max(range.from - 1, 0), range.from, '')
+        : '';
+      const plainText = result.html.replace(/<[^>]*>/g, '');
+      let finalHtml = result.html;
+      if (nextChar && /\w/.test(nextChar) && plainText && !/\s$/.test(plainText)) {
+        finalHtml += ' ';
+      }
+      if (prevChar && /\w/.test(prevChar) && plainText && !/^\s/.test(plainText)) {
+        finalHtml = ' ' + finalHtml;
+      }
+      // Matches the same setTextSelection().insertContent() idiom this
+      // codebase already uses for the sidebar Draft-Revision accept flow
+      // (ContractAnalyzer.jsx) — insertContent parses its string argument
+      // as HTML against the editor's schema, which is also what keeps this
+      // safe from injecting anything the schema doesn't recognize (no
+      // <script>, no arbitrary attributes), unlike a raw innerHTML swap.
+      editor.chain().setTextSelection(range).insertContent(finalHtml).run();
+      closeAiRewrite();
+    } catch (err) {
+      setError('Network error contacting the AI rewrite engine.');
+    } finally {
+      setLoading(false);
+      editor.setEditable(true);
+    }
+  };
+
   return (
-    <BubbleMenu editor={editor} shouldShow={({ state }) => !state.selection.empty}>
+    <BubbleMenu
+      editor={editor}
+      // Default shouldShow hides the menu once the editor's DOM view loses
+      // focus — which happens the instant the user clicks into the plain
+      // <input> below, since it lives outside the ProseMirror view. That's
+      // the exact "BubbleMenu disappears while typing" bug this exists to
+      // avoid: while in ai-rewrite mode, stay shown regardless of focus.
+      shouldShow={({ state }) => mode === 'ai-rewrite' || !state.selection.empty}
+    >
       <div className="ca-bubble-menu">
-        <button
-          type="button"
-          className="ca-bubble-menu-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onAction('comment')}
-        >
-          💬 Comment
-        </button>
-        <button
-          type="button"
-          className="ca-bubble-menu-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onAction('draft-revision')}
-        >
-          🪄 Draft Revision
-        </button>
+        {mode === 'actions' ? (
+          <>
+            {onAction && (
+              <>
+                <button
+                  type="button"
+                  className="ca-bubble-menu-btn"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onAction('comment')}
+                >
+                  💬 Comment
+                </button>
+                <button
+                  type="button"
+                  className="ca-bubble-menu-btn"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onAction('draft-revision')}
+                >
+                  🪄 Draft Revision
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="ca-bubble-menu-btn"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={openAiRewrite}
+            >
+              ✨ AI Rewrite
+            </button>
+          </>
+        ) : (
+          <form onSubmit={handleRewriteSubmit} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input
+              autoFocus
+              type="text"
+              className="ca-bubble-ai-input"
+              value={instruction}
+              disabled={loading}
+              onChange={(e) => setInstruction(e.target.value)}
+              // Keystrokes in this plain input must never reach TipTap's
+              // own keymap (Bold/Italic shortcuts, etc.) or any app-level
+              // keydown listener (e.g. a command-palette hotkey) — this is
+              // a normal text field, not editor content.
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Escape') closeAiRewrite();
+              }}
+              // Closing on blur is what dismisses the panel when the user
+              // clicks away entirely (shouldShow above no longer does that
+              // automatically once in ai-rewrite mode). Guarded by `loading`
+              // because setting `disabled` on a focused input forces a
+              // browser blur event — without this guard, submitting would
+              // immediately blur-close the panel (nulling lockedRangeRef)
+              // while the request was still in flight.
+              onBlur={() => { if (!loading) closeAiRewrite(); }}
+              placeholder="Rewrite instruction… e.g. make this more formal"
+            />
+            <button
+              type="submit"
+              className="ca-bubble-menu-btn"
+              disabled={loading || !instruction.trim()}
+              onMouseDown={(e) => e.preventDefault()}
+              title="Apply rewrite"
+            >
+              {loading ? '…' : '↵'}
+            </button>
+            <button
+              type="button"
+              className="ca-bubble-menu-btn"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={closeAiRewrite}
+              disabled={loading}
+              title="Cancel"
+            >
+              ✕
+            </button>
+            {error && <span className="ca-bubble-ai-error">{error}</span>}
+          </form>
+        )}
       </div>
     </BubbleMenu>
   );
@@ -326,13 +500,11 @@ function ContractTiptapEditor({
   return (
     <div className="tiptap-editor-shell">
       {toolbarPortalTarget ? createPortal(toolbar, toolbarPortalTarget) : toolbar}
-      {/* Comment/Draft-Revision only make sense where there's somewhere to
-          send the result — Auto-Draft's editor doesn't pass onCommentRequest
-          (it has no comment sidebar of its own), so it gets no bubble menu
-          at all rather than buttons that would silently do nothing. */}
-      {onCommentRequest && (
-        <CommentBubbleMenu editor={editor} onAction={handleBubbleAction} />
-      )}
+      {/* Comment/Draft-Revision buttons only render where there's a sidebar
+          to report into (ContractAnalyzer passes onCommentRequest;
+          Auto-Draft's editor doesn't). AI Rewrite is self-contained and
+          always available, so the bubble menu itself is unconditional. */}
+      <SelectionBubbleMenu editor={editor} onAction={onCommentRequest ? handleBubbleAction : null} />
       <EditorContent editor={editor} className="scanner-body" />
     </div>
   );

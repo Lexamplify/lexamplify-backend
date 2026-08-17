@@ -167,8 +167,10 @@ export default function AutoDraftWorkspace() {
     setTimeout(() => setSavedSuccess(false), 2500);
   };
 
-  const addChipToPrompt = (chipText) => {
-    setAutoDraftPrompt((prev) => (prev.trim() ? `${prev.trim()}\n- ${chipText}` : chipText));
+  const handleAddModifier = (modifierText) => {
+    const currentPrompt = autoDraftPrompt;
+    if (currentPrompt.includes(modifierText)) return;
+    setAutoDraftPrompt(currentPrompt.trim() ? `${currentPrompt.trim()}\n- ${modifierText}` : modifierText);
   };
 
   const PRECEDENTS = [
@@ -865,16 +867,16 @@ export default function AutoDraftWorkspace() {
                   Quick Provision Insert Modifiers:
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Include 30-day written cure period before escalation.')}>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include 30-day written cure period before escalation.')}>
                     + 30-Day Cure
                   </button>
-                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Cap aggregate liability at 100% of fees paid.')}>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Cap aggregate liability at 100% of fees paid.')}>
                     + 100% Fee Cap
                   </button>
-                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Seat of arbitration shall be New Delhi under ICA Rules.')}>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Seat of arbitration shall be New Delhi under ICA Rules.')}>
                     + New Delhi Seat
                   </button>
-                  <button type="button" className="ad-chip-btn" onClick={() => addChipToPrompt('Include Section 27 Indian Contract Act exception for trade secrets.')}>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include Section 27 Indian Contract Act exception for trade secrets.')}>
                     + Sec 27 Carve-out
                   </button>
                 </div>

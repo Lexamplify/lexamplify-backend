@@ -881,18 +881,10 @@ const styles = `
     text-shadow: none !important;
   }
 
-  /* ── BubbleMenu: Comment / Draft Revision ─────────────────────────── */
-  .ca-bubble-menu {
-    display: flex; gap: 4px; padding: 4px;
-    background: #171c26; border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.45);
-  }
-  .ca-bubble-menu-btn {
-    background: transparent; border: none; color: #E2E8F0;
-    font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px;
-    cursor: pointer; white-space: nowrap; font-family: inherit; transition: background 0.15s;
-  }
-  .ca-bubble-menu-btn:hover { background: rgba(59,130,246,0.18); }
+  /* .ca-bubble-menu / .ca-bubble-menu-btn now live in index.css (global) —
+     ContractTiptapEditor.jsx's bubble menu is shared with
+     AutoDraftWorkspace.jsx, which has no page-scoped style block of its
+     own to define them in. */
 
   /* ── AI Auto-Resolution: Original vs. Revised diff block ────────────── */
   .ca-diff-block { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }

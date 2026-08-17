@@ -577,6 +577,29 @@ export const draftRevision = async (originalText, surroundingContext, userCommen
 };
 
 /**
+ * AI BubbleMenu inline rewrite: applies a free-form instruction to an
+ * arbitrary editor selection and returns HTML meant to replace it in place.
+ * @param {string} selectedText
+ * @param {string} instruction
+ */
+export const inlineEditSelection = async (selectedText, instruction) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/documents/inline-edit`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ selectedText, instruction }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] inlineEditSelection error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to rewrite selection.'
+    };
+  }
+};
+
+/**
  * Rewrites a high-risk clause based on a specified user intent.
  * @param {string} originalClause
  * @param {string} issue

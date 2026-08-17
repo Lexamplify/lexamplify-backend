@@ -2153,3 +2153,36 @@ textarea:focus,
   background: #C8CEDC !important;
 }
 
+/* ── Selection BubbleMenu: Comment / Draft Revision / AI Rewrite ────────
+   Global (not page-scoped) because ContractTiptapEditor.jsx — and this
+   bubble menu — is shared between ContractAnalyzer.jsx and
+   AutoDraftWorkspace.jsx; a page-scoped <style> block would leave it
+   unstyled wherever it's used outside the page that happened to define it.
+   Intentionally NOT theme-varianted: it floats over arbitrary document
+   content in both themes, so a fixed dark chrome (like a native OS/browser
+   context menu) reads correctly regardless of page background. */
+.ca-bubble-menu {
+  display: flex; gap: 4px; padding: 4px; align-items: center;
+  background: #171c26; border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+}
+.ca-bubble-menu-btn {
+  background: transparent; border: none; color: #E2E8F0;
+  font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px;
+  cursor: pointer; white-space: nowrap; font-family: inherit; transition: background 0.15s;
+}
+.ca-bubble-menu-btn:hover { background: rgba(59,130,246,0.18); }
+.ca-bubble-menu-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ca-bubble-menu-btn:disabled:hover { background: transparent; }
+
+.ca-bubble-ai-input {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16);
+  color: #E2E8F0; font-size: 12px; font-family: inherit;
+  padding: 6px 8px; border-radius: 6px; min-width: 220px; outline: none;
+}
+.ca-bubble-ai-input:focus { border-color: rgba(59,130,246,0.6); }
+.ca-bubble-ai-input::placeholder { color: rgba(226,232,240,0.45); }
+.ca-bubble-ai-error {
+  font-size: 11px; color: #FCA5A5; padding: 0 4px; max-width: 220px;
+}
+

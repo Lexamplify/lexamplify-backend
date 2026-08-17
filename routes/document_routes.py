@@ -1,13 +1,15 @@
 """
 routes/document_routes.py
 Blueprint: /api/documents
-  POST /api/documents/draft    — AI clause/document synthesis (instructions + optional precedent/context)
-  POST /api/documents/upload   — Upload files (PDF/DOCX/TXT), extract text, save and vectorize (RAG)
-  GET  /api/documents          — List uploaded documents (filtered by case_id)
-  DELETE /api/documents/<id>   — Delete document and cascade delete RAG vectors
+  POST /api/documents/draft        — AI clause/document synthesis (instructions + optional precedent/context)
+  POST /api/documents/inline-edit  — AI rewrite of a selected editor range (BubbleMenu "AI Rewrite")
+  POST /api/documents/upload       — Upload files (PDF/DOCX/TXT), extract text, save and vectorize (RAG)
+  GET  /api/documents              — List uploaded documents (filtered by case_id)
+  DELETE /api/documents/<id>       — Delete document and cascade delete RAG vectors
 """
 import os
 import io
+import re
 import uuid
 import sqlite3
 from flask import Blueprint, jsonify, request, current_app
@@ -17,6 +19,19 @@ from utils.ai_helper import ask_groq
 from utils.rag_pipeline import ingest_document
 
 doc_bp = Blueprint("document", __name__)
+
+# Strips a ```html / ``` code fence and stray wrapping quotes the LLM adds
+# despite being told not to — same defensive posture as
+# extract_json_from_llm_response in ai_helper.py, applied to HTML instead
+# of JSON.
+_CODE_FENCE_RE = re.compile(r'^```(?:html)?\s*|\s*```$', re.MULTILINE)
+
+
+def _clean_inline_html(raw: str) -> str:
+    text = _CODE_FENCE_RE.sub('', raw).strip()
+    if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+        text = text[1:-1].strip()
+    return text
 
 DB_PATH = "lex_assistant.db"
 
@@ -182,6 +197,50 @@ def auto_draft():
     except Exception as e:
         print(f"[Auto-Draft Error]: {e}")
         return jsonify({"error": True, "message": "AI reasoning engine timeout or failure. Please retry."}), 500
+
+# ── 2b. INLINE AI REWRITE (BubbleMenu "AI Rewrite") ────────────────────
+# Rewrites an arbitrary selection from the contract editor in place. Unlike
+# /draft (which synthesizes a whole new clause), the caller here already
+# has a locked {from, to} range in the live ProseMirror doc and replaces
+# it directly with whatever HTML comes back — so the output MUST be a
+# small inline-safe fragment, not a full document.
+
+@doc_bp.route("/inline-edit", methods=["POST", "OPTIONS"])
+def inline_edit():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
+    data = request.get_json(force=True, silent=True) or {}
+    selected_text = str(data.get('selectedText') or data.get('selected_text') or '').strip()
+    instruction = str(data.get('instruction') or '').strip()
+
+    if not selected_text or not instruction:
+        return jsonify({"error": True, "message": "selectedText and instruction are required."}), 400
+
+    system_prompt = (
+        "You are an inline legal drafting assistant embedded in a rich-text contract editor. "
+        "Rewrite the SELECTED TEXT by applying the INSTRUCTION, preserving legal meaning and Indian "
+        "statutory terminology unless the instruction says otherwise.\n\n"
+        "Output rules (strict):\n"
+        "1. Output ONLY the rewritten result as raw HTML — no Markdown code fences (no ```), no "
+        "explanation, no preamble, no surrounding quotes.\n"
+        "2. The result replaces a selection INSIDE an existing paragraph — use inline formatting only "
+        "(<strong>, <em>, <u>, <br>). Do NOT wrap the output in <p>, <div>, <html>, or <body> tags.\n"
+        "3. If no formatting is needed, return plain text with no tags at all."
+    )
+    user_msg = f"SELECTED TEXT:\n{selected_text}\n\nINSTRUCTION: {instruction}"
+
+    try:
+        raw = ask_groq(system_prompt, user_msg)
+        if not raw or not raw.strip():
+            raise ValueError("LLM returned an empty rewrite.")
+        html = _clean_inline_html(raw)
+        if not html:
+            raise ValueError("LLM rewrite was empty after cleanup.")
+        return jsonify({"status": "success", "html": html}), 200
+    except Exception as e:
+        print(f"[Inline Edit Error]: {e}")
+        return jsonify({"error": True, "message": "AI inline rewrite failed. Please retry."}), 500
 
 # ── 3. ENTERPRISE UPLOAD & RAG INGESTION ROUTE ─────────────────────────
 
