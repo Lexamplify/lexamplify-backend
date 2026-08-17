@@ -8,6 +8,7 @@ import CaseVault from './components/CaseVault';
 import DocumentViewer from './components/DocumentViewer';
 import CourtResources from './components/CourtResources';
 import ContractAnalyzer from './components/ContractAnalyzer';
+import AutoDraftWorkspace from './components/AutoDraftWorkspace';
 import ConflictEngine from './components/ConflictEngine';
 import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
@@ -105,6 +106,12 @@ const Icons = {
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </svg>
   ),
+  wand: (w = 16) => (
+    <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  ),
   upload: (w = 16) => (
     <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -179,6 +186,7 @@ const Breadcrumbs = () => {
   const p = location.pathname;
   if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
   else if (p === '/contract-analyzer') items.push({ label: 'Contract Analyzer', url: p });
+  else if (p === '/auto-draft') items.push({ label: 'Auto-Draft Studio', url: p });
   else if (p === '/conflict-engine') items.push({ label: 'Conflict Engine', url: p });
   else if (p === '/calendar') items.push({ label: 'Legal Calendar', url: p });
   else if (p === '/vault') items.push({ label: 'Case Vault', url: p });
@@ -322,6 +330,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
           <NavItem to="/dashboard" icon={Icons.dashboard()} label="Dashboard Home" isActive={p === '/dashboard'} onClick={closeSidebar} />
           <NavItem to="/contract-analyzer" icon={Icons.contract()} label="Contract Analyzer" isActive={p === '/contract-analyzer'} onClick={closeSidebar} />
+          <NavItem to="/auto-draft" icon={Icons.wand()} label="Auto-Draft Studio" isActive={p === '/auto-draft'} onClick={closeSidebar} />
           <NavItem to="/court-resources" icon={Icons.scales()} label="Court Resources" isActive={p === '/court-resources'} onClick={closeSidebar} />
           <NavItem to="/conflict-engine" icon={Icons.search()} label="Conflict Engine" isActive={p === '/conflict-engine'} onClick={closeSidebar} />
           <NavItem to="/calendar" icon={Icons.calendar()} label="Legal Calendar" isActive={p === '/calendar'} onClick={closeSidebar} />
@@ -1235,6 +1244,7 @@ function AppRouterContent() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
         <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
+        <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AutoDraftWorkspace /></Layout>} />
         <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
         <Route path="/conflict-engine" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ConflictEngine /></Layout>} />
         <Route path="/case/:caseId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />

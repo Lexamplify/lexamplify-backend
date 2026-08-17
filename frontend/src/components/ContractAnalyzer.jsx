@@ -14,6 +14,7 @@ import {
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import { findClauseRange } from '../tiptap/positionMapping.js';
 import { useCitationStore } from '../tiptap/citationStore.js';
+import { useContractStore } from '../store/useContractStore.js';
 import useContractJobStream from '../hooks/useContractJobStream.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
@@ -1847,13 +1848,29 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // 'quickdraft' } })).
   const [quickDraftMode, setQuickDraftMode] = useState(false);
   const [scanStrategy, setScanStrategy] = useState('Defensive');
-  const [rawText, setRawText] = useState('');
+
+  // Lifted contract state via shared Zustand store (persists across /contract-analyzer and /auto-draft)
+  const {
+    rawText,
+    setRawText,
+    contractFile,
+    setContractFile,
+    clauses: flaggedClauses,
+    setClauses: setFlaggedClauses,
+    summary,
+    setSummary,
+    ruleBookText,
+    setRuleBookText,
+    autoDraftText,
+    setAutoDraftText,
+    autoDraftPrompt,
+    setAutoDraftPrompt,
+    autoDraftVersion,
+    setAutoDraftVersion,
+  } = useContractStore();
   const rawTextDebounceRef = useRef(null);
-  const [flaggedClauses, setFlaggedClauses] = useState([]);
   const clauses = flaggedClauses;
   const setClauses = setFlaggedClauses;
-
-  const [summary, setSummary] = useState('');
   const [citations, setCitations] = useState([]);
   const [loadingText, setLoadingText] = useState("Extracting clauses...");
   const [scanProgress, setScanProgress] = useState(0);
@@ -1968,15 +1985,6 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [sharedFiles, setSharedFiles] = useState(() => {
     try { return JSON.parse(localStorage.getItem('lex_shared_workspace') || '[]'); } catch { return []; }
   });
-  const [autoDraftPrompt, setAutoDraftPrompt] = useState('');
-  const [autoDraftText, setAutoDraftText] = useState('');
-  // Mirrors documentVersion's role for the scanner's own editor, scoped to
-  // Auto-Draft specifically: ContractTiptapEditor only re-reads its content
-  // prop when documentKey changes, so without bumping this on every fresh
-  // synthesis, a second "Synthesize Clause" click would generate new text
-  // that the already-mounted editor instance would just silently ignore,
-  // still showing the first draft.
-  const [autoDraftVersion, setAutoDraftVersion] = useState(0);
   const [drafting, setDrafting] = useState(false);
   const [draftStatus, setDraftStatus] = useState('');
   const [draftError, setDraftError] = useState('');
@@ -2001,12 +2009,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [crossSaveStatus, setCrossSaveStatus] = useState('');
 
   // Rule Book states
-  const [ruleBookText, setRuleBookText] = useState('');
   const [ruleBookFile, setRuleBookFile] = useState(null);
   const [ruleBookUploadLoading, setRuleBookUploadLoading] = useState(false);
 
   // Contract upload (decoupled from analysis — see handleFileUpload)
-  const [contractFile, setContractFile] = useState(null);
   const [contractUploadLoading, setContractUploadLoading] = useState(false);
   const [uploadToast, setUploadToast] = useState(null); // { message } | null
 
@@ -3720,8 +3726,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'recs' ? 'active' : ''}`} onClick={() => { switchTab('recs'); if (recommendations.length === 0) fetchMissingProtections(); }}>
                   Missing {recommendations.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{recommendations.length}</span>}
                 </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'draft' ? 'active' : ''}`} onClick={() => switchTab('draft')}>
-                  Auto-Draft
+                <button className="analysis-tab-btn transition-all duration-300 ease-in-out" onClick={() => navigate('/auto-draft')}>
+                  Auto-Draft ⚡
                 </button>
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => switchTab('chat')}>
                   RAG Chat
