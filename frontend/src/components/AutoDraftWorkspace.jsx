@@ -4,7 +4,9 @@ import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import { useContractStore } from '../store/useContractStore.js';
 import { fetchDocuments } from '../services/api.js';
 
-const API_BASE = 'http://localhost:5000';
+// Relative in dev (same-origin via Vite's proxy) and set to the deployed
+// API origin in production — same pattern as api.js / CommandPalette.jsx.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function AutoDraftWorkspace() {
   const navigate = useNavigate();
