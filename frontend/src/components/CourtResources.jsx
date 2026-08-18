@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
+import { formatCourtDisplayName } from '../utils/courtNameFormatter.js';
+import JudgesDirectory from './JudgesDirectory.jsx';
 import {
   fetchCourtGlobals,
   fetchCourtData,
@@ -772,7 +774,7 @@ export default function CourtResources() {
   // When the AI navigates here with { state: { openTab: 'highcourt' } }, auto-switch tab
   useEffect(() => {
     const requestedTab = location.state?.openTab;
-    const VALID_TABS = ['supreme','highcourt','district','laws','forms','events','courtfee','enotary','iptracker'];
+    const VALID_TABS = ['supreme','highcourt','district','judges','laws','forms','events','courtfee','enotary','iptracker'];
     if (requestedTab && VALID_TABS.includes(requestedTab)) {
       setActiveTab(requestedTab);
     }
@@ -1182,6 +1184,7 @@ export default function CourtResources() {
           <button className={`tab-btn ${activeTab === 'supreme' ? 'active' : ''}`} onClick={() => { setActiveTab('supreme'); setSearchQuery(''); }}>🏛️ Supreme Court</button>
           <button className={`tab-btn ${activeTab === 'highcourt' ? 'active' : ''}`} onClick={() => { setActiveTab('highcourt'); setSearchQuery(''); }}>🏢 High Courts</button>
           <button className={`tab-btn ${activeTab === 'district' ? 'active' : ''}`} onClick={() => { setActiveTab('district'); setSearchQuery(''); }}>📂 District Courts</button>
+          <button className={`tab-btn ${activeTab === 'judges' ? 'active' : ''}`} onClick={() => { setActiveTab('judges'); setSearchQuery(''); }}>🧑‍⚖️ Judges Directory</button>
           <button className={`tab-btn ${activeTab === 'laws' ? 'active' : ''}`} onClick={() => { setActiveTab('laws'); setSearchQuery(''); }}>📖 Bare Acts</button>
           <button className={`tab-btn ${activeTab === 'forms' ? 'active' : ''}`} onClick={() => { setActiveTab('forms'); setSearchQuery(''); }}>📋 Legal Forms</button>
           <button className={`tab-btn ${activeTab === 'events' ? 'active' : ''}`} onClick={() => { setActiveTab('events'); setSearchQuery(''); }}>📅 Legal Events</button>
@@ -1464,7 +1467,10 @@ export default function CourtResources() {
                     .slice()
                     .sort((a,b) => a.name.localeCompare(b.name))
                     .map(d => (
-                      <option key={d.name} value={d.name}>{d.name}</option>
+                      // value stays the raw eCourts name — the DB lookup on
+                      // line ~1476 and the cause-list URL both key off this
+                      // exact string; only the visible label is formatted.
+                      <option key={d.name} value={d.name}>{formatCourtDisplayName(selectedDistState, d.name)}</option>
                     ))
                   }
                 </select>
@@ -1481,7 +1487,7 @@ export default function CourtResources() {
                   <div className="dc-court-header">
                     <div className="dc-court-icon">🏛️</div>
                     <div>
-                      <div className="dc-court-name">{selectedDistrict}</div>
+                      <div className="dc-court-name">{formatCourtDisplayName(selectedDistState, selectedDistrict)}</div>
                       <div className="dc-court-meta">District &amp; Sessions Court · Subordinate Judiciary</div>
                     </div>
                     <span className="dc-state-chip">{selectedDistState}</span>
@@ -1523,6 +1529,8 @@ export default function CourtResources() {
             )}
           </div>
         )}
+
+        {activeTab === 'judges' && <JudgesDirectory />}
 
         {/* ────────── TAB 4: BARE ACTS ────────── */}
         {activeTab === 'laws' && (

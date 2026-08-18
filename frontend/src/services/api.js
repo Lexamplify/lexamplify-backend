@@ -176,6 +176,29 @@ export const queryRAGChat = async (query, scope = 'all_cases', caseId = null, do
 };
 
 /**
+ * Fetches the live-scraped judges directory (Supreme Court + Delhi High
+ * Court). Response includes `errors` for any source that failed to
+ * scrape — a 200/502 with a partial judges list plus non-empty `errors`
+ * is a valid, expected shape, not a client-side failure to catch.
+ */
+export const fetchJudgesDirectory = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/courts/judges`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    // Backend returns {judges, errors} on both 200 (partial success) and
+    // 502 (all sources failed) — read the body either way rather than
+    // throwing on !response.ok, or the per-source error detail is lost.
+    const data = await response.json().catch(() => ({ judges: [], errors: ['Malformed response from server.'] }));
+    return { judges: data.judges || [], errors: data.errors || [] };
+  } catch (error) {
+    console.error('[API Service] fetchJudgesDirectory error:', error);
+    return { judges: [], errors: [error.message || 'Failed to reach the judges directory service.'] };
+  }
+};
+
+/**
  * Fetches global court statistics, virtual court numbers, and upcoming events.
  */
 export const fetchCourtGlobals = async () => {

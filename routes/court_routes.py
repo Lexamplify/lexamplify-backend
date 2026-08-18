@@ -12,6 +12,8 @@ import requests
 from bs4 import BeautifulSoup
 from flask import Blueprint, render_template, jsonify, request, make_response
 
+from utils.judicial_scraper import get_all_judges
+
 court_bp = Blueprint('court', __name__)
 
 # ── DB path (relative to this file → instance/client_data.db) ─────────────────
@@ -458,6 +460,19 @@ def get_court_globals():
         'events':         _EVENTS,
         'cause_list_urls': _CAUSE_LIST_URLS,
     })
+
+
+@court_bp.route('/api/courts/judges', methods=['GET', 'OPTIONS'])
+def get_judges_directory():
+    """Live-scraped Supreme Court + Delhi High Court sitting judges — see
+    utils/judicial_scraper.py for source verification notes and caching."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    result = get_all_judges()
+    if not result['judges'] and result['errors']:
+        return jsonify(result), 502
+    return jsonify(result), 200
 
 
 # ── Live Legal Events — RSS ingestion pipeline ────────────────────────────────
