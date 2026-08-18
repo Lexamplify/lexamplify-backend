@@ -149,13 +149,66 @@ const Icons = {
   ),
 };
 
+const NAVIGATION_GROUPS = [
+  {
+    title: "CORE WORKSPACE",
+    items: [
+      { name: "Dashboard Home", path: "/dashboard", icon: Icons.dashboard() },
+      { name: "Contract Analyzer", path: "/contract-analyzer", icon: Icons.contract() },
+      { name: "Auto-Draft Studio", path: "/auto-draft", icon: Icons.wand() },
+    ]
+  },
+  {
+    title: "LITIGATION & DISPUTES",
+    items: [
+      { name: "Court Resources", path: "/court-resources", icon: Icons.scales(), badge: { type: "live", label: "●" } },
+      { name: "Legal Calendar", path: "/calendar", icon: Icons.calendar(), badgeKey: "urgentDeadlines" },
+      { name: "Virtual Courtroom", path: "/war-room", icon: Icons.gavel() },
+    ]
+  },
+  {
+    title: "PRACTICE & VAULT",
+    items: [
+      { name: "Case Vault", path: "/vault", icon: Icons.lock() },
+      { name: "Conflict Engine", path: "/conflict-engine", icon: Icons.search() },
+      { name: "Firm Library", path: "/firm-library", icon: Icons.library() },
+      { name: "Legal Forms", path: "/legal-forms", icon: Icons.forms() },
+    ]
+  }
+];
+
 // ── SIDEBAR NAV ITEM ───────────────────────────────────────────────────────────
-const NavItem = ({ to, icon, label, isActive, onClick }) => (
-  <Link to={to} onClick={onClick} title={label} className={`sidebar-nav-item${isActive ? ' active' : ''}`}>
-    <span className="nav-icon">{icon}</span>
-    <span className="nav-label">{label}</span>
-  </Link>
-);
+const NavItem = ({ item, isActive, isCollapsed, onClick }) => {
+  const activeStyle = isActive
+    ? { borderLeft: '2px solid #3B82F6', background: 'rgba(59, 130, 246, 0.1)', color: '#60A5FA', fontWeight: 500 }
+    : { borderLeft: '2px solid transparent', color: 'var(--text-muted)' };
+
+  return (
+    <Link
+      to={item.path}
+      onClick={onClick}
+      className={`sidebar-nav-item${isActive ? ' active' : ''}`}
+      style={{ ...activeStyle, display: 'flex', alignItems: 'center', padding: '8px 12px 8px 14px', textDecoration: 'none', transition: 'all 0.2s', marginBottom: '4px' }}
+      title={isCollapsed ? item.name : undefined}
+    >
+      <span className="nav-icon" style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7 }}>
+        {item.icon}
+      </span>
+      
+      {!isCollapsed && (
+        <span className="nav-label" style={{ marginLeft: '12px', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+          {item.name}
+        </span>
+      )}
+
+      {!isCollapsed && item.badge?.type === 'live' && (
+        <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#34D399', fontWeight: 'bold', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
+          ● Live
+        </span>
+      )}
+    </Link>
+  );
+};
 
 // ── SPINNER ────────────────────────────────────────────────────────────────────
 const Spinner = ({ size = 20 }) => (
@@ -329,22 +382,35 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
-          <NavItem to="/dashboard" icon={Icons.dashboard()} label="Dashboard Home" isActive={p === '/dashboard'} onClick={closeSidebar} />
-          <NavItem to="/contract-analyzer" icon={Icons.contract()} label="Contract Analyzer" isActive={p === '/contract-analyzer'} onClick={closeSidebar} />
-          <NavItem to="/auto-draft" icon={Icons.wand()} label="Auto-Draft Studio" isActive={p === '/auto-draft'} onClick={closeSidebar} />
-          <NavItem to="/court-resources" icon={Icons.scales()} label="Court Resources" isActive={p === '/court-resources'} onClick={closeSidebar} />
-          <NavItem to="/conflict-engine" icon={Icons.search()} label="Conflict Engine" isActive={p === '/conflict-engine'} onClick={closeSidebar} />
-          <NavItem to="/calendar" icon={Icons.calendar()} label="Legal Calendar" isActive={p === '/calendar'} onClick={closeSidebar} />
-          <NavItem to="/vault" icon={Icons.lock()} label="Case Vault" isActive={p === '/vault'} onClick={closeSidebar} />
-          <NavItem to="/war-room" icon={Icons.gavel()} label="Virtual Courtroom" isActive={p === '/war-room'} onClick={closeSidebar} />
-          <NavItem to="/firm-library" icon={Icons.library()} label="Firm Library" isActive={p === '/firm-library'} onClick={closeSidebar} />
-          <NavItem to="/legal-forms" icon={Icons.forms()} label="Legal Forms" isActive={p === '/legal-forms'} onClick={closeSidebar} />
+        <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 0' }}>
+          {NAVIGATION_GROUPS.map((group, gIdx) => (
+            <div key={group.title} style={{ marginBottom: gIdx === NAVIGATION_GROUPS.length - 1 ? 0 : '16px' }}>
+              {!isIconOnly && (
+                <div style={{ padding: '0 24px', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.9px' }}>
+                    {group.title}
+                  </span>
+                </div>
+              )}
+              {group.items.map(item => {
+                const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
+                return (
+                  <NavItem
+                    key={item.path}
+                    item={item}
+                    isActive={isActive}
+                    isCollapsed={isIconOnly}
+                    onClick={closeSidebar}
+                  />
+                );
+              })}
+            </div>
+          ))}
 
           {/* Live case listing from API */}
           {!isIconOnly && sidebarCases.length > 0 && (
-            <>
-              <div style={{ margin: '14px 0 6px', padding: '0 24px' }}>
+            <div style={{ marginTop: '20px' }}>
+              <div style={{ margin: '0 0 6px', padding: '0 24px' }}>
                 <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.9px' }}>
                   Tracked Cases
                 </span>
@@ -369,7 +435,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                   </span>
                 </Link>
               ))}
-            </>
+            </div>
           )}
         </nav>
 
