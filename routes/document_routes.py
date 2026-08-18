@@ -170,7 +170,8 @@ def auto_draft():
         "2. Format clauses into distinct numbered sub-clauses (e.g. 1.1, 1.2, 1.3) with double line breaks between paragraphs so that clauses are cleanly spaced.\n"
         "3. For sub-conditions or itemized lists, use lettered indents (e.g. (a), (b), (c)) on separate lines.\n"
         "4. Include explicit Indian statutory citations (e.g., **Indian Contract Act, 1872**, **Arbitration & Conciliation Act, 1996**, **Copyright Act, 1957**, **Specific Relief Act, 1963**, **Information Technology Act, 2000**) wherever applicable.\n"
-        "5. Depth & Details: Provide thorough, enterprise-level depth with operative obligations, notice requirements, cure periods, remedies, and governing law. Do NOT produce short 2-sentence summaries. Write a complete, execution-ready legal text without conversational fluff or preambles."
+        "5. Depth & Details: Provide thorough, enterprise-level depth with operative obligations, notice requirements, cure periods, remedies, and governing law. Do NOT produce short 2-sentence summaries. Write a complete, execution-ready legal text without conversational fluff or preambles.\n\n"
+        "MANDATORY INSTRUCTION: You must generate the complete agreement from Title, Parties, Recitals, Operative Clauses (1 through N), to Boilerplate (Severability, Notices, Jurisdiction), concluding strictly with the formal Execution & Signature Block. Never truncate, omit sections, or leave trailing markdown tokens."
     )
     if depth == 'comprehensive':
         system_prompt += "\n6. Include full definitions, operating obligations, indemnity scope, liability caps, and dispute escalation steps."
@@ -180,7 +181,7 @@ def auto_draft():
         system_prompt += f"\n\nPRECEDENT TO INCORPORATE:\n{precedent}"
 
     try:
-        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions}")
+        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions}", max_tokens=8192, timeout=120)
         if not generated_text or not generated_text.strip():
             raise ValueError("LLM returned an empty draft.")
         generated_text = generated_text.strip()

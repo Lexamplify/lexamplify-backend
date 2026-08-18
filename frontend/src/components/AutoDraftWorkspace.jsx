@@ -659,37 +659,38 @@ export default function AutoDraftWorkspace() {
 
         {/* LEFT COLUMN — Live Editor & Document Canvas */}
         <div className="ad-canvas-panel">
-          <div className="ad-canvas-header">
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Synthesized Document Workspace</span>
-                {autoDraftText && (
-                  <span className="ad-metric-pill">
-                    ⚡ {wordCount} words · {charCount} chars · {paragraphCount} clauses
-                  </span>
-                )}
-              </div>
+          <div className="ad-canvas-header" style={{ gap: '12px', flexWrap: 'nowrap' }}>
+            {/* Left: Title & Truncated Stats */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
+                Synthesized Document
+              </h3>
+              {autoDraftText && (
+                <span className="ad-metric-pill" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  ⚡ {wordCount} words · {charCount} chars
+                </span>
+              )}
             </div>
 
-            {/* Quick Actions for Active Draft */}
+            {/* Right: Action Buttons Group */}
             {autoDraftText && (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button type="button" onClick={handleCopyDraft} className="ad-action-btn ad-btn-secondary">
-                  {copied ? '✓ Copied!' : '📋 Copy Text'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                <button type="button" onClick={handleCopyDraft} className="ad-action-btn ad-btn-secondary" style={{ padding: '6px 12px' }}>
+                  {copied ? '✓ Copied!' : '📋 Copy'}
                 </button>
-                <button type="button" onClick={handleSaveToDrafts} className="ad-action-btn ad-btn-purple">
-                  {savedSuccess ? '✓ Saved to Drafts!' : '💾 Save Session Draft'}
+                <button type="button" onClick={handleSaveToDrafts} className="ad-action-btn ad-btn-purple" style={{ padding: '6px 12px' }}>
+                  {savedSuccess ? '✓ Saved!' : '💾 Save Draft'}
                 </button>
                 {rawText.trim() && (
-                  <button type="button" onClick={handleAppendToContract} className="ad-action-btn ad-btn-primary">
-                    {appended ? '✓ Appended to Contract!' : '➕ Append to Active Contract'}
+                  <button type="button" onClick={handleAppendToContract} className="ad-action-btn ad-btn-primary" style={{ padding: '6px 12px' }}>
+                    {appended ? '✓ Appended!' : '➕ Append'}
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setAutoDraftText('')}
                   style={{
-                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'transparent',
+                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'rgba(239,68,68,0.1)',
                     border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', cursor: 'pointer', fontWeight: 600,
                   }}
                 >

@@ -15,7 +15,7 @@ from litellm import completion
 litellm.set_verbose = False
 
 
-def ask_groq(system_prompt: str, user_msg: str) -> str:
+def ask_groq(system_prompt: str, user_msg: str, **kwargs) -> str:
     """
     LLM Gateway Router.
     Attempts the primary model first. If it hits a Token Limit or Rate Limit,
@@ -32,7 +32,8 @@ def ask_groq(system_prompt: str, user_msg: str) -> str:
             messages=messages,
             fallbacks=["groq/llama-3.1-8b-instant", "groq/gemma2-9b-it"],
             num_retries=2,
-            drop_params=True
+            drop_params=True,
+            **kwargs
         )
         return response.choices[0].message.content
     except Exception as e:
