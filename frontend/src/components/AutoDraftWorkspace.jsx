@@ -603,6 +603,76 @@ export default function AutoDraftWorkspace() {
           border-color: #CBD5E1 !important;
           color: #0F172A !important;
         }
+
+        /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
+        @media (max-width: 768px) {
+          .ad-header-card {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 8px !important;
+          }
+          .ad-sovereign-badge, .ad-active-contract-status {
+            position: static !important;
+            top: auto !important;
+            right: auto !important;
+            transform: none !important;
+            margin: 8px 0 0 0 !important;
+            width: 100% !important;
+          }
+          .ad-header-desc {
+            width: 100% !important;
+          }
+          .ad-draft-scope-grid {
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            gap: 8px !important;
+          }
+          .ad-draft-scope-grid button {
+            width: 100% !important;
+            min-height: 44px !important;
+            padding: 10px 14px !important;
+            text-align: center !important;
+            white-space: normal !important;
+            justify-content: center !important;
+          }
+          .ad-precedent-header {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            justify-content: space-between !important;
+            align-items: flex-start !important;
+            gap: 6px !important;
+          }
+          .ad-precedent-title {
+            font-size: 13px !important;
+            line-height: 1.4 !important;
+            flex: 1 1 auto !important;
+            max-width: calc(100% - 100px) !important;
+          }
+          .ad-precedent-badge {
+            flex-shrink: 0 !important;
+            font-size: 10px !important;
+            padding: 2px 6px !important;
+          }
+          .ad-modifiers-row {
+            flex-wrap: wrap !important;
+            gap: 6px !important;
+          }
+          .ad-chip-btn {
+            min-height: 32px !important;
+          }
+          .ad-synthesize-btn {
+            width: 100% !important;
+            min-height: 48px !important;
+            font-size: 14px !important;
+          }
+          .autodraft-page-wrapper {
+            padding-bottom: 96px !important;
+            overflow-x: hidden !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+          }
+        }
       `}</style>
 
       {/* ── TOP HEADER & NAVIGATION ── */}
@@ -619,7 +689,7 @@ export default function AutoDraftWorkspace() {
         </div>
 
         {/* Active Contract & Toolbar Shortcuts */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="ad-active-contract-status" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
               padding: '8px 14px',
@@ -764,7 +834,7 @@ export default function AutoDraftWorkspace() {
                   className="ad-precedent-card"
                   onClick={() => setAutoDraftPrompt(prompt)}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <div className="ad-precedent-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                     <span className="ad-precedent-title">{label}</span>
                     <span className="ad-precedent-badge">
                       {badge}
@@ -807,10 +877,10 @@ export default function AutoDraftWorkspace() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-primary)', marginBottom: '8px' }}>
                   Draft Scope &amp; Legal Detail Depth
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div className="ad-draft-scope-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   <button
                     type="button"
                     onClick={() => setDraftDepth('comprehensive')}
@@ -867,7 +937,7 @@ export default function AutoDraftWorkspace() {
                 <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
                   Quick Provision Insert Modifiers:
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <div className="ad-modifiers-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include 30-day written cure period before escalation.')}>
                     + 30-Day Cure
                   </button>
@@ -886,7 +956,7 @@ export default function AutoDraftWorkspace() {
               <button
                 type="submit"
                 disabled={drafting}
-                className="ad-action-btn ad-btn-primary"
+                className="ad-action-btn ad-btn-primary ad-synthesize-btn"
                 style={{ width: '100%', padding: '14px', fontSize: '14.5px', fontWeight: 700, borderRadius: '10px', justifyContent: 'center' }}
               >
                 {drafting ? 'Synthesizing Legal Clause…' : '⚡ Synthesize Enterprise Clause'}

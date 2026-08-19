@@ -154,6 +154,41 @@ const calendarStyles = `
   :root[data-theme="light"] .dag-shell { background: #fff; border-color: rgba(0,0,0,0.1); }
   :root[data-theme="light"] .dag-agenda-head { background: rgba(0,0,0,0.03); }
   :root[data-theme="light"] .dag-form-footer { background: rgba(0,0,0,0.02); }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
+  @media (max-width: 768px) {
+    .calendar-grid {
+      grid-template-columns: repeat(7, 1fr) !important;
+      gap: 4px !important;
+    }
+    .calendar-grid-cell {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 38px !important;
+      padding: 0 !important;
+      position: relative !important;
+    }
+    .calendar-grid-cell > div {
+      justify-content: center !important;
+      width: 100% !important;
+      align-items: center !important;
+    }
+    .today-text-badge {
+      display: none !important;
+    }
+    .today-cell {
+      border: 1.5px solid var(--accent-blue, #3b82f6) !important;
+      border-radius: 8px !important;
+      font-weight: 700 !important;
+    }
+    .dag-shell {
+      padding-bottom: 96px !important;
+      overflow-x: hidden !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+  }
 `;
 
 // ── Hover Brief Tooltip (rendered via ReactDOM.createPortal) ─────────────────
@@ -476,7 +511,7 @@ export default function CalendarView() {
       {!loading && !error && (
         <div key={gridKey} className="animate-fade">
           {/* Weekday headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '4px' }}>
+          <div className="calendar-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '4px' }}>
             {weekDays.map(d => (
               <div key={d} style={{ textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-dark-muted, #8F9CAE)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '8px 0' }}>
                 {d}
@@ -485,7 +520,7 @@ export default function CalendarView() {
           </div>
 
           {/* Day cells */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
+          <div className="calendar-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
             {paddingCells.map((_, i) => <div key={`pad-${i}`} className="calendar-grid-cell padding-cell" />)}
 
             {dayCells.map(day => {
@@ -505,7 +540,7 @@ export default function CalendarView() {
                       {day}
                     </span>
                     {isToday && (
-                      <span style={{ fontSize: '7.5px', fontWeight: '800', color: '#3B82F6', background: 'rgba(59,130,246,0.12)', padding: '1px 4px', borderRadius: '3px', letterSpacing: '0.4px' }}>
+                      <span className="today-text-badge" style={{ fontSize: '7.5px', fontWeight: '800', color: '#3B82F6', background: 'rgba(59,130,246,0.12)', padding: '1px 4px', borderRadius: '3px', letterSpacing: '0.4px' }}>
                         TODAY
                       </span>
                     )}
