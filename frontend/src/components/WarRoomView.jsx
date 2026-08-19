@@ -562,6 +562,106 @@ ${MARKDOWN_CSS}
     margin: 0 auto 10px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
+  @media (max-width: 768px) {
+    /* 1. WORKSPACE SPLIT-PANE & GRID STACKING */
+    .wr-results-page, .wr-results-body {
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      height: auto !important;
+      min-height: 0 !important;
+    }
+    .wr-results-body {
+      padding: 12px 14px 96px 14px !important;
+    }
+    
+    /* 2. HEADER FLOW & STRATEGY BADGES SCROLL */
+    .wr-results-header {
+      position: relative !important;
+      top: auto !important;
+      width: 100% !important;
+      margin-bottom: 14px !important;
+      z-index: 10 !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      padding: 12px 14px !important;
+      box-sizing: border-box !important;
+      height: auto !important;
+    }
+    .wr-header-badges {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+      gap: 6px !important;
+      width: 100% !important;
+      padding: 2px 0 6px 0 !important;
+      box-sizing: border-box !important;
+    }
+    .wr-header-badges::-webkit-scrollbar { display: none !important; }
+    .wr-header-badges > * { flex-shrink: 0 !important; }
+
+    /* 3. FULL-WIDTH ARGUMENT & CITATION CARDS */
+    .wr-cit-grid {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 12px !important;
+    }
+    .wr-issue-row, .wr-cit-card, .wr-threat-card, .wr-chat-msg, .wr-pipeline-card, .wr-setup-card {
+      margin: 8px 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    .wr-card-body, .wr-cit-card, .wr-threat-card {
+      padding: 12px 14px !important;
+    }
+    .wr-cit-title, .wr-cit-snippet, .wr-issue-text, .wr-chat-msg {
+      font-size: 14px !important;
+      line-height: 1.55 !important;
+      overflow-wrap: break-word !important;
+      word-break: break-word !important;
+      white-space: normal !important;
+    }
+
+    /* 4. REBUTTAL ACCORDIONS & TOUCH-FRIENDLY SUGGESTION CHIPS */
+    .wr-quick-replies button, .wr-qr-pill {
+      display: block !important;
+      width: 100% !important;
+      text-align: left !important;
+      padding: 12px 14px !important;
+      margin-bottom: 8px !important;
+      border-radius: 8px !important;
+      font-size: 13px !important;
+      line-height: 1.4 !important;
+      box-sizing: border-box !important;
+      min-height: 44px !important;
+    }
+    .wr-qr-arrow {
+      display: none !important;
+    }
+    .wr-use-rebuttal-btn, .wr-chat-form input, .wr-chat-form button, .wr-chat-submit {
+      min-height: 44px !important;
+    }
+
+    /* 5. EMPTY STATE TOUCH REFACTOR */
+    .desktop-only-shortcut, .wr-shortcut-pill, .wr-kbd {
+      display: none !important;
+    }
+
+    /* 6. VIEWPORT CLEARANCE (FAB AVOIDANCE) */
+    .wr-results-page, .wr-fallback, .wr-pipeline-wrap, .wr-setup-card, .wr-results-body {
+      padding-bottom: 96px !important;
+      overflow-x: hidden !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+  }
 `;
 
 // ── Sub-component: ThreatCard ────────────────────────────────────────────────
