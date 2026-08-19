@@ -181,7 +181,15 @@ def auto_draft():
         system_prompt += f"\n\nPRECEDENT TO INCORPORATE:\n{precedent}"
 
     try:
-        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions}", max_tokens=8192, timeout=120)
+        # 4096, not 8192 — this Groq account's on_demand tier caps
+        # openai/gpt-oss-120b at an 8000 *tokens-per-minute* budget, and
+        # that budget covers the whole request (prompt + max_tokens), not
+        # just completion length. max_tokens=8192 alone already exceeds it
+        # before a single prompt token is counted, so every call failed
+        # with a 413/RateLimitError — verified live. 4096 leaves headroom
+        # for the (often several-hundred-token) system + drafting-
+        # instructions prompt while still allowing a substantial document.
+        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions}", max_tokens=4096, timeout=120)
         if not generated_text or not generated_text.strip():
             raise ValueError("LLM returned an empty draft.")
         generated_text = generated_text.strip()
@@ -196,7 +204,11 @@ def auto_draft():
             "content": generated_text,
         }), 200
     except Exception as e:
-        print(f"[Auto-Draft Error]: {e}")
+        # .exception() (not .error()) captures the full traceback, not just
+        # str(e) — the only way to see e.g. "which of the 3 fallback models
+        # failed and why" from the server console instead of a one-line
+        # summary that hides which stage actually broke.
+        current_app.logger.exception(f"[Auto-Draft Error] synthesis failed: {e}")
         return jsonify({"error": True, "message": "AI reasoning engine timeout or failure. Please retry."}), 500
 
 # ── 2b. INLINE AI REWRITE (BubbleMenu "AI Rewrite") ────────────────────

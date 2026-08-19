@@ -2,8 +2,15 @@
 utils/ai_helper.py
 LLM Gateway — routes through LiteLLM with automatic fallbacks.
 Primary: groq/openai/gpt-oss-120b
-Fallbacks: groq/llama-3.1-8b-instant → groq/gemma2-9b-it
+Fallbacks: groq/openai/gpt-oss-20b → groq/qwen/qwen3.6-27b
 Set GROQ_API_KEY in .env.
+
+Fallback chain verified live against this account's actual model catalog
+(GET https://api.groq.com/openai/v1/models) — the previous fallbacks,
+groq/llama-3.1-8b-instant and groq/gemma2-9b-it, both 404/400 on this
+account (not found / decommissioned) and were silently making every
+fallback attempt fail closed, with only the primary model's own failure
+ever actually surfacing.
 """
 import json
 import re
@@ -13,6 +20,13 @@ from litellm import completion
 
 # Suppress excessive LiteLLM logging in the terminal
 litellm.set_verbose = False
+
+# qwen/qwen3.6-27b (unlike the gpt-oss family, which keeps reasoning in a
+# separate hidden channel) inlines its chain-of-thought directly into
+# `.content` as a <think>...</think> block — confirmed live. Only matters
+# when this fallback actually fires, but a lawyer-facing draft leaking raw
+# reasoning text is a real quality bug, not a hypothetical one.
+_THINK_BLOCK_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
 
 
 def ask_groq(system_prompt: str, user_msg: str, **kwargs) -> str:
@@ -30,12 +44,13 @@ def ask_groq(system_prompt: str, user_msg: str, **kwargs) -> str:
         response = completion(
             model="groq/openai/gpt-oss-120b",
             messages=messages,
-            fallbacks=["groq/llama-3.1-8b-instant", "groq/gemma2-9b-it"],
+            fallbacks=["groq/openai/gpt-oss-20b", "groq/qwen/qwen3.6-27b"],
             num_retries=2,
             drop_params=True,
             **kwargs
         )
-        return response.choices[0].message.content
+        content = response.choices[0].message.content or ''
+        return _THINK_BLOCK_RE.sub('', content).strip()
     except Exception as e:
         print(f"LLM Gateway Exhausted all fallbacks. Error: {str(e)}")
         raise e
