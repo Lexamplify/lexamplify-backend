@@ -831,6 +831,131 @@ const flStyles = `
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.6) !important;
     border-radius: 2px;
   }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS (FirmLibrary & Document Reader) */
+  @media (max-width: 768px) {
+    /* 1. DOCUMENT READER MODAL OVERHAUL */
+    .dv-content-layout {
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      height: auto !important;
+      overflow-y: auto !important;
+    }
+    .dv-main-viewer, .dv-text-wrap, .dv-body {
+      width: 100% !important;
+      max-width: 100% !important;
+      flex: 1 1 100% !important;
+      padding: 14px !important;
+      box-sizing: border-box !important;
+      min-width: 0 !important;
+    }
+    .document-viewer-text {
+      word-break: normal !important;
+      overflow-wrap: break-word !important;
+      white-space: normal !important;
+      letter-spacing: normal !important;
+      font-size: 14px !important;
+      line-height: 1.6 !important;
+    }
+    .dv-sidebar-outline { display: none !important; }
+    .dv-action-bar {
+      display: grid !important;
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 6px !important;
+      width: 100% !important;
+    }
+    
+    /* 2. STACK EXTERNAL DB & SEARCH RESULT METADATA CARDS */
+    .fl-table, .fl-table tbody, .fl-table tr, .fl-table td {
+      display: block !important;
+      width: 100% !important;
+    }
+    .fl-table thead { display: none !important; }
+    .fl-table tr {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      width: 100% !important;
+      gap: 4px !important;
+      padding: 12px 14px !important;
+      border-bottom: 1px solid var(--border-subtle) !important;
+    }
+    .fl-table td {
+      padding: 4px 0 !important;
+      border: none !important;
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      overflow-wrap: break-word !important;
+      word-break: break-word !important;
+      white-space: normal !important;
+    }
+    .fl-table td::before {
+      content: attr(data-label);
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .fl-ext-result-head {
+      flex-direction: column !important;
+    }
+    .fl-ext-result-title {
+      overflow-wrap: break-word !important;
+      word-break: break-word !important;
+      white-space: normal !important;
+    }
+
+    /* 3. HORIZONTALLY SWIPEABLE CATEGORY PILLS & SCOPE TOGGLES */
+    .fl-cat-filter {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+      gap: 6px !important;
+      width: 100% !important;
+      padding-bottom: 4px !important;
+      box-sizing: border-box !important;
+    }
+    .fl-cat-filter::-webkit-scrollbar { display: none !important; }
+    .fl-cat-filter > * { flex-shrink: 0 !important; white-space: nowrap !important; }
+    .fl-mode-toggle {
+      display: flex !important;
+      width: 100% !important;
+    }
+    .fl-mode-btn { flex: 1 !important; text-align: center !important; }
+
+    /* 4. TOP ACTION BUTTONS & SEARCH BAR */
+    .fl-top-actions {
+      display: flex !important;
+      width: 100% !important;
+      gap: 8px !important;
+    }
+    .fl-top-actions > button {
+      flex: 1 1 50% !important;
+      min-height: 44px !important;
+      justify-content: center !important;
+    }
+    .fl-search-wrap, .fl-search-input {
+      width: 100% !important;
+      min-height: 44px !important;
+      box-sizing: border-box !important;
+    }
+
+    /* 5. VIEWPORT CLEARANCE & FAB OFFSET */
+    .fl-page {
+      padding-bottom: 96px !important;
+      overflow-x: hidden !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+  }
 `;
 
 
@@ -1752,7 +1877,7 @@ export default function FirmLibrary() {
               Central knowledge management — precedents, templates, and practice guides.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="fl-top-actions" style={{ display: 'flex', gap: '10px' }}>
             <button
               className="btn-accent"
               onClick={() => navigate('/legal-forms')}
