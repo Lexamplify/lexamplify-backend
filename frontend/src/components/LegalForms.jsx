@@ -118,6 +118,75 @@ const styles = `
     border-radius: 8px; padding: 12px; color: var(--text-dark-primary); font-size: 13px; font-family: inherit; outline: none;
   }
   .lf-modal-footer { padding: 14px 20px; border-top: 1px solid var(--border-dark-subtle); display: flex; justify-content: flex-end; gap: 10px; }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS (Legal Forms Editor) */
+  @media (max-width: 768px) {
+    /* 1. SPLIT-PANE STACKING & LIVE PREVIEW WIDTH */
+    .lf-workspace {
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+    }
+    .lf-preview-scroll, .lf-preview-doc {
+      margin: 16px 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      padding: 16px 14px !important;
+    }
+    .lf-preview-doc {
+      font-size: 14px !important;
+      line-height: 1.6 !important;
+      word-wrap: break-word !important;
+    }
+
+    /* 2. SINGLE-COLUMN FORM INPUTS */
+    .lf-form-body {
+      display: grid !important;
+      grid-template-columns: 1fr !important;
+      gap: 12px !important;
+      width: 100% !important;
+    }
+    .lf-field-input {
+      min-height: 48px !important;
+      font-size: 16px !important;
+    }
+
+    /* 4. HEADER COMPRESSION & BUTTON STACKING */
+    .lf-save-bar, .lf-panel-head {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 12px !important;
+      align-items: stretch !important;
+      width: 100% !important;
+    }
+    .lf-save-bar button, .lf-panel-head button {
+      width: 100% !important;
+      min-height: 44px !important;
+      justify-content: center !important;
+      margin: 0 !important;
+    }
+
+    /* 5. VIEWPORT CLEARANCE (FAB AVOIDANCE) */
+    .lf-action-bar {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 8px !important;
+      width: 100% !important;
+    }
+    .lf-action-bar button {
+      width: 100% !important;
+      min-height: 44px !important;
+      justify-content: center !important;
+      flex: none !important;
+    }
+    .lf-shell {
+      padding-bottom: 96px !important;
+      overflow-x: hidden !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+  }
 `;
 
 function FieldInput({ field, value, status, onChange }) {

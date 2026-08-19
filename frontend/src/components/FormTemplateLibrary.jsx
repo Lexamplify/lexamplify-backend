@@ -27,6 +27,30 @@ const styles = `
   .ftl-template-card-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #93C5FD; }
   .ftl-template-card-title { font-size: 15px; font-weight: 600; color: var(--text-dark-primary); }
   .ftl-template-card-meta { font-size: 11.5px; color: var(--text-dark-muted); }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS (FormTemplateLibrary) */
+  @media (max-width: 768px) {
+    .ftl-category-tabs { 
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none !important;
+      gap: 8px !important;
+      padding-bottom: 4px !important;
+      width: 100% !important;
+    }
+    .ftl-category-tabs::-webkit-scrollbar { display: none !important; }
+    .ftl-category-tabs > * { flex-shrink: 0 !important; white-space: nowrap !important; }
+
+    .ftl-shell {
+      padding-bottom: 96px !important;
+      overflow-x: hidden !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+  }
 `;
 
 // The single, canonical place a user picks a form template from — the
