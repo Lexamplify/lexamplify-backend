@@ -1010,30 +1010,132 @@ const DashboardView = () => {
           background: linear-gradient(135deg, #EFF6FF 0%, #F3E8FF 100%);
           border-color: #BFDBFE;
         }
+
+        /* ── MOBILE RESPONSIVENESS (max-width: 768px) ── */
+        .db-container {
+          overflow-x: hidden;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        @media (max-width: 768px) {
+          .db-container {
+            padding: 16px 16px 96px 16px;
+          }
+          
+          /* Sync Bar */
+          .db-sync-card {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+            padding: 12px;
+          }
+          .db-sync-input {
+            width: 100%;
+            min-height: 44px;
+            box-sizing: border-box;
+          }
+          .db-sync-actions {
+            display: flex;
+            width: 100%;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: center;
+          }
+          .db-sync-btn {
+            flex: 1;
+            min-height: 44px;
+            justify-content: center;
+          }
+          .desktop-only-shortcut {
+            display: none !important;
+          }
+          
+          /* Metrics Grid 2x2 */
+          .db-metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-bottom: 24px;
+          }
+          .db-metric-card {
+            padding: 10px;
+            min-height: auto;
+          }
+          .db-metric-card-header {
+            margin-bottom: 8px !important;
+          }
+          .db-metric-title {
+            font-size: 11px !important;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .db-metric-sub {
+            font-size: 9px !important;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .db-metric-action {
+            display: none;
+          }
+          .db-metric-value {
+            font-size: 24px !important;
+          }
+
+          /* Header Text Alignment */
+          .db-section-header {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 4px;
+          }
+          .db-section-header h2 {
+            font-size: clamp(1rem, 4vw, 1.25rem) !important;
+          }
+
+          /* Quick Actions Balanced Grid */
+          .db-actions-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+          }
+          .db-actions-grid > :last-child:nth-child(odd) {
+            grid-column: span 2;
+          }
+          .db-action-card {
+            padding: 12px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+          }
+        }
       `}</style>
 
       {/* ── CNR SYNC BAR ── */}
       <form onSubmit={handleCnrSync} className="db-sync-card">
-        <div style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-          {Icons.scales(18)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+          <div style={{ color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            {Icons.scales(18)}
+          </div>
+          <input
+            type="text"
+            className="db-sync-input"
+            placeholder="Enter eCourts CNR Number to Sync Matter"
+            value={cnrNumber}
+            onChange={e => setCnrNumber(e.target.value)}
+            disabled={isSyncing}
+          />
         </div>
-        <input
-          type="text"
-          className="db-sync-input"
-          placeholder="Enter eCourts CNR Number to Sync Matter — e.g. MHNS010123452024"
-          value={cnrNumber}
-          onChange={e => setCnrNumber(e.target.value)}
-          disabled={isSyncing}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', display: 'none' }} className="db-pill-label">Try:</span>
-          <button type="button" className="db-cnr-pill" onClick={() => setCnrNumber('MHNS010123452024')} title="Click to autofill sample CNR">
-            MHNS010123452024
+        <div className="db-sync-actions">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }} className="desktop-only-shortcut">Try:</span>
+            <button type="button" className="db-cnr-pill" onClick={() => setCnrNumber('MHNS010123452024')} title="Click to autofill sample CNR">
+              MHNS010123452024
+            </button>
+          </div>
+          <button type="submit" disabled={isSyncing || !cnrNumber.trim()} className="db-sync-btn">
+            {isSyncing ? <><Spinner size={14} /> Syncing…</> : 'Sync Matter'}
           </button>
         </div>
-        <button type="submit" disabled={isSyncing || !cnrNumber.trim()} className="db-sync-btn">
-          {isSyncing ? <><Spinner size={14} /> Syncing…</> : 'Sync Matter'}
-        </button>
       </form>
 
       {/* CNR Toast */}
@@ -1079,7 +1181,7 @@ const DashboardView = () => {
           onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(59,130,246,0.35)'; }}
         >
           {Icons.chat(15)} LexAmplify AI
-          <span style={{ fontSize: '10.5px', fontFamily: 'monospace', opacity: 0.85, background: 'rgba(255,255,255,0.2)', padding: '2px 6px', borderRadius: '4px' }}>⌘K</span>
+          <span className="desktop-only-shortcut" style={{ fontSize: '10.5px', fontFamily: 'monospace', opacity: 0.85, background: 'rgba(255,255,255,0.2)', padding: '2px 6px', borderRadius: '4px' }}>⌘K</span>
         </button>
       </div>
 
@@ -1094,7 +1196,7 @@ const DashboardView = () => {
               if (s.label === 'Drafts Pending Review') setShowDraftsModal(true);
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+            <div className="db-metric-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
               <div style={{
                 width: '42px', height: '42px', borderRadius: '10px',
                 background: s.bgTint, color: s.accent,
@@ -1102,16 +1204,16 @@ const DashboardView = () => {
               }}>
                 {s.icon}
               </div>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: s.accent, background: s.bgTint, padding: '2px 8px', borderRadius: '12px' }}>
+              <span className="db-metric-action" style={{ fontSize: '11px', fontWeight: 700, color: s.accent, background: s.bgTint, padding: '2px 8px', borderRadius: '12px' }}>
                 {s.value > 0 ? 'Action Reqd' : 'Clear'}
               </span>
             </div>
             <div>
-              <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, fontFamily: 'var(--font-sans)', letterSpacing: '-0.8px' }}>
+              <div className="db-metric-value" style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, fontFamily: 'var(--font-sans)', letterSpacing: '-0.8px' }}>
                 {loading ? <Spinner size={22} /> : s.value}
               </div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '8px' }}>{s.label}</div>
-              <div style={{ fontSize: '11px', color: s.accent, marginTop: '3px', fontWeight: 500 }}>{s.sub}</div>
+              <div className="db-metric-title" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '8px' }}>{s.label}</div>
+              <div className="db-metric-sub" style={{ fontSize: '11px', color: s.accent, marginTop: '3px', fontWeight: 500 }}>{s.sub}</div>
             </div>
           </div>
         ))}
@@ -1125,7 +1227,7 @@ const DashboardView = () => {
 
       {/* ── MORNING TRIAGE SPLIT-SCREEN ── */}
       <div style={{ marginBottom: '32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <div className="db-section-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Morning Triage & Vault Digest</h2>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Updated live from your practice records</span>
         </div>
@@ -1226,11 +1328,11 @@ const DashboardView = () => {
           <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>Quick Draft</div>
           <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>Jump straight to a legal template — NDA, recovery notice, bail petition, eviction petition — without leaving this console</div>
         </div>
-        <span style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '3px 8px', background: 'var(--bg-panel)' }}>⌘K</span>
+        <span className="desktop-only-shortcut" style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '3px 8px', background: 'var(--bg-panel)' }}>⌘K</span>
       </div>
 
       {/* ── QUICK ACTIONS ── */}
-      <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="db-section-header" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Quick Actions</h2>
         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Law Practice Modules</span>
       </div>
