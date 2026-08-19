@@ -719,6 +719,69 @@ const vaultStyles = `
   }
   .lib-rag-action-btn.inject:hover { background: rgba(99,102,241,0.18); border-color: rgba(99,102,241,0.5); }
   .lib-rag-action-btn.done { color: #34D399; border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.07); }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS (CaseVault) */
+  @media (max-width: 768px) {
+    /* 2. TWO-TIER NAVIGATION TABS HORIZONTAL SCROLL */
+    .tabs-wrapper {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+      gap: 8px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      padding-bottom: 2px !important;
+    }
+    .tabs-wrapper::-webkit-scrollbar { display: none !important; }
+    .tabs-wrapper > .tab-btn { flex-shrink: 0 !important; white-space: nowrap !important; }
+
+    /* 3. ACTION BARS, BUTTON CLUSTERS & SEARCH INPUT */
+    .vault-breadcrumb {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 8px !important;
+      width: 100% !important;
+    }
+    .vault-breadcrumb > button, .lib-browse-btn, .btn-accent, .btn-secondary {
+      min-height: 44px !important;
+      padding: 10px 14px !important;
+      font-size: 13px !important;
+      justify-content: center !important;
+      flex: 1 1 auto !important;
+    }
+    .vault-search-wrapper, .vault-search-bar {
+      width: 100% !important;
+      min-height: 44px !important;
+      box-sizing: border-box !important;
+    }
+
+    /* 5. DOCUMENT CARDS, FILENAMES & FAB CLEARANCE */
+    .vault-grid-card, .vault-doc-row {
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    .vault-doc-title {
+      overflow-wrap: anywhere !important;
+      word-break: break-word !important;
+      font-size: 15px !important;
+      line-height: 1.4 !important;
+      white-space: normal !important;
+    }
+    .vault-grid-card button {
+      width: 100% !important;
+      min-height: 44px !important;
+    }
+    .vault-layout, .dashboard-panel, .animate-fade-in {
+      padding-bottom: 96px !important;
+      overflow-x: hidden !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+  }
 `;
 
 const DOC_TYPE_STYLES = {
@@ -2053,7 +2116,7 @@ export default function VaultView({ targetFolderId = null }) {
                         </div>
 
                         {/* Title */}
-                        <h3 style={{ fontSize: '14.5px', fontWeight: '600', color: 'var(--text-dark-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.smart_title || doc.title}>
+                        <h3 className="vault-doc-title" style={{ fontSize: '14.5px', fontWeight: '600', color: 'var(--text-dark-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.smart_title || doc.title}>
                           {doc.smart_title || doc.title}
                         </h3>
 

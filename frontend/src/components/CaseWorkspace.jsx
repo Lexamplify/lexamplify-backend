@@ -317,6 +317,63 @@ const WS_CSS = `
     font-family: var(--font-serif, Georgia, serif);
   }
   .cw-empty-msg { font-size: 13px; color: var(--text-dark-muted, #8F9CAE); line-height: 1.6; max-width: 340px; }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS (CaseWorkspace & VaultView Tabs) */
+  @media (max-width: 768px) {
+    /* 1. HEADER UN-CONSTRICTION (TITLE & STATUS BADGES) */
+    .cw-header {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      gap: 8px !important;
+      width: 100% !important;
+      height: auto !important;
+      padding: 12px 14px !important;
+    }
+    .cw-case-title {
+      width: 100% !important;
+      max-width: none !important;
+      white-space: normal !important;
+      word-break: break-word !important;
+      font-size: 18px !important;
+    }
+    .cw-badges {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 6px !important;
+    }
+
+    /* 2. TWO-TIER NAVIGATION TABS HORIZONTAL SCROLL */
+    .cw-tab-bar {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+      gap: 4px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      padding-bottom: 2px !important;
+    }
+    .cw-tab-bar::-webkit-scrollbar { display: none !important; }
+    .cw-tab-bar > * { flex-shrink: 0 !important; white-space: nowrap !important; }
+
+    /* 4. AI EXTRACTOR CARD STACKING (EVENTS TAB) */
+    .cw-card-head {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 12px !important;
+      height: auto !important;
+    }
+    .cw-card-head button {
+      width: 100% !important;
+      min-height: 48px !important;
+      justify-content: center !important;
+    }
+  }
 `;
 
 // ────────────────────────────────────────────────────────────────────────────
