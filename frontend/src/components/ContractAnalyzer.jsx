@@ -1790,6 +1790,138 @@ const styles = `
     50% { top: 100%; }
     100% { top: 0%; }
   }
+
+  /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
+  @media (max-width: 768px) {
+    /* 1. Full-Width Text Editor Readability */
+    .analyzer-container { overflow-x: hidden !important; }
+    .workspace-pane { 
+      display: flex !important; 
+      flex-direction: column !important; 
+      padding-bottom: 88px !important; 
+    }
+    .ca-editor-container, .ca-paper, .editor-column, .ProseMirror-container {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      border-radius: 0 !important;
+      border: none !important;
+      box-sizing: border-box !important;
+    }
+    .ProseMirror, .editor-content {
+      padding: 12px 14px !important;
+      font-size: 14px !important;
+      line-height: 1.6 !important;
+      letter-spacing: normal !important;
+    }
+
+    /* 2. Horizontally Scrollable Toolbar */
+    .ca-toolbar, .editor-toolbar, .rich-text-toolbar {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+      gap: 6px !important;
+      padding: 6px 8px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    .ca-toolbar::-webkit-scrollbar, .editor-toolbar::-webkit-scrollbar, .rich-text-toolbar::-webkit-scrollbar {
+      display: none !important;
+    }
+    .ca-toolbar > *, .editor-toolbar > *, .rich-text-toolbar > * {
+      flex-shrink: 0 !important;
+      min-height: 36px !important;
+    }
+
+    /* 3. Compact Top Controls & Header Consolidation */
+    .analyzer-header {
+      padding: 8px 12px !important;
+      gap: 6px !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      height: auto !important;
+    }
+    .analyzer-actions {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 6px !important;
+      flex-basis: auto !important;
+      width: 100%;
+    }
+    .risk-metric-pill {
+      font-size: 11px !important;
+      padding: 2px 6px !important;
+    }
+    .analyzer-title-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .summary-banner {
+      padding: 6px 10px !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+    .scan-meta-box, .scan-meta {
+      flex-direction: column !important;
+      gap: 2px !important;
+      align-items: flex-start !important;
+    }
+    .scan-meta-label, .scan-meta-value {
+      font-size: 11px !important;
+    }
+
+    /* 4. Horizontally Scrollable Analysis Tabs & Chips */
+    .analysis-tabs, .analysis-tabs-nav {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+      gap: 8px !important;
+      padding: 6px 12px !important;
+      border-bottom: 1px solid var(--border-dark-subtle);
+    }
+    .analysis-tabs::-webkit-scrollbar, .analysis-tabs-nav::-webkit-scrollbar {
+      display: none !important;
+    }
+    .analysis-tab-btn, .tab-item {
+      flex-shrink: 0 !important;
+      white-space: nowrap !important;
+      padding: 8px 12px !important;
+      font-size: 12px !important;
+    }
+    .rag-chips-container, .rag-chip-container {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+      padding: 4px 0 !important;
+    }
+    .rag-chips-container::-webkit-scrollbar, .rag-chip-container::-webkit-scrollbar {
+      display: none !important;
+    }
+    .rag-chip {
+      flex-shrink: 0 !important;
+      white-space: nowrap !important;
+    }
+
+    /* 5. Viewport Clearance & FAB Padding */
+    .analysis-pane {
+      padding-bottom: 88px !important;
+    }
+  }
 `;
 
 const FUTURISTIC_LOGS = [
