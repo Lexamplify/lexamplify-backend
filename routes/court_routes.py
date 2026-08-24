@@ -462,6 +462,44 @@ def get_court_globals():
     })
 
 
+# Static domain data — the 25 Indian High Courts never change at runtime,
+# so this is served from memory rather than a DB round-trip.
+_HIGH_COURTS = [
+    {"id": "allahabad", "name": "Allahabad High Court", "jurisdiction": "Uttar Pradesh"},
+    {"id": "andhra", "name": "Andhra Pradesh High Court", "jurisdiction": "Andhra Pradesh"},
+    {"id": "bombay", "name": "Bombay High Court", "jurisdiction": "Maharashtra, Goa, D&D, D&NH"},
+    {"id": "calcutta", "name": "Calcutta High Court", "jurisdiction": "West Bengal, A&N Islands"},
+    {"id": "chhattisgarh", "name": "Chhattisgarh High Court", "jurisdiction": "Chhattisgarh"},
+    {"id": "delhi", "name": "Delhi High Court", "jurisdiction": "NCT of Delhi"},
+    {"id": "gauhati", "name": "Gauhati High Court", "jurisdiction": "Assam, Nagaland, Mizoram, Arunachal Pradesh"},
+    {"id": "gujarat", "name": "Gujarat High Court", "jurisdiction": "Gujarat"},
+    {"id": "himachal", "name": "Himachal Pradesh High Court", "jurisdiction": "Himachal Pradesh"},
+    {"id": "jk_ladakh", "name": "High Court of J&K and Ladakh", "jurisdiction": "Jammu & Kashmir, Ladakh"},
+    {"id": "jharkhand", "name": "Jharkhand High Court", "jurisdiction": "Jharkhand"},
+    {"id": "karnataka", "name": "Karnataka High Court", "jurisdiction": "Karnataka"},
+    {"id": "kerala", "name": "Kerala High Court", "jurisdiction": "Kerala, Lakshadweep"},
+    {"id": "mp", "name": "Madhya Pradesh High Court", "jurisdiction": "Madhya Pradesh"},
+    {"id": "madras", "name": "Madras High Court", "jurisdiction": "Tamil Nadu, Puducherry"},
+    {"id": "manipur", "name": "Manipur High Court", "jurisdiction": "Manipur"},
+    {"id": "meghalaya", "name": "Meghalaya High Court", "jurisdiction": "Meghalaya"},
+    {"id": "orissa", "name": "Orissa High Court", "jurisdiction": "Odisha"},
+    {"id": "patna", "name": "Patna High Court", "jurisdiction": "Bihar"},
+    {"id": "punjab_haryana", "name": "Punjab & Haryana High Court", "jurisdiction": "Punjab, Haryana, Chandigarh"},
+    {"id": "rajasthan", "name": "Rajasthan High Court", "jurisdiction": "Rajasthan"},
+    {"id": "sikkim", "name": "Sikkim High Court", "jurisdiction": "Sikkim"},
+    {"id": "telangana", "name": "Telangana High Court", "jurisdiction": "Telangana"},
+    {"id": "tripura", "name": "Tripura High Court", "jurisdiction": "Tripura"},
+    {"id": "uttarakhand", "name": "Uttarakhand High Court", "jurisdiction": "Uttarakhand"},
+]
+
+
+@court_bp.route('/api/courts/high-courts', methods=['GET', 'OPTIONS'])
+def get_high_courts():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    return jsonify(_HIGH_COURTS)
+
+
 @court_bp.route('/api/courts/judges', methods=['GET', 'OPTIONS'])
 def get_judges_directory():
     """Live-scraped Supreme Court + Delhi High Court sitting judges — see

@@ -218,8 +218,30 @@ export const fetchCourtGlobals = async () => {
 };
 
 /**
+ * Fetches the static list of all 25 Indian High Courts (id/name/jurisdiction)
+ * for the searchable court-selector grid. Backend returns a bare array —
+ * normalized here into {courts, error} so callers don't special-case that.
+ */
+export const fetchHighCourts = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/courts/high-courts`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    const data = await handleResponse(response);
+    if (!Array.isArray(data)) {
+      return { courts: [], error: true, message: 'Malformed response from server.' };
+    }
+    return { courts: data, error: false };
+  } catch (error) {
+    console.error('[API Service] fetchHighCourts error:', error);
+    return { courts: [], error: true, message: error.message || 'Failed to retrieve High Courts list.' };
+  }
+};
+
+/**
  * Fetches High Court information, judges roster, and forms for a specific state.
- * @param {string} state 
+ * @param {string} state
  */
 export const fetchCourtData = async (state) => {
   try {

@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
 import { formatCourtDisplayName } from '../utils/courtNameFormatter.js';
 import JudgesDirectory from './JudgesDirectory.jsx';
+import HighCourtSelector from './HighCourtSelector.jsx';
 import {
   fetchCourtGlobals,
   fetchCourtData,
@@ -124,6 +125,28 @@ const HIGH_COURT_LINKS = {
     caseStatus:   'https://digi-courts.aphc.ap.gov.in/csis_ap/',
     displayBoard: 'https://aphc.gov.in/Hcdbs/displayboard.jsp',
   },
+};
+
+// The full 25-court /api/courts/high-courts list uses court-name ids
+// (bombay, madras, allahabad, calcutta, ...); HIGH_COURT_LINKS above and
+// the backend's /api/court-data/<state> route still key off the older
+// 11-court state-slug ids (maharashtra, tamil_nadu, up, west_bengal — see
+// stateLabelMap in the component below). Only alias where a legacy entry
+// actually exists — the other 14 courts intentionally fall through to
+// "Not Available" / an empty overview rather than fetchCourtData's own
+// fallback-to-Delhi behavior silently showing the wrong court's data.
+const LEGACY_STATE_KEY_BY_COURT_ID = {
+  delhi: 'delhi',
+  bombay: 'maharashtra',
+  madras: 'tamil_nadu',
+  karnataka: 'karnataka',
+  allahabad: 'up',
+  gujarat: 'gujarat',
+  rajasthan: 'rajasthan',
+  calcutta: 'west_bengal',
+  kerala: 'kerala',
+  telangana: 'telangana',
+  andhra: 'andhra',
 };
 
 const styles = `
@@ -783,7 +806,7 @@ export default function CourtResources() {
   const [loadingGlobals, setLoadingGlobals] = useState(true);
   
   // High Court States
-  const [hcState, setHcState] = useState('delhi');
+  const [activeCourtId, setActiveCourtId] = useState('delhi');
   const [hcData, setHcData] = useState({ hc: null, judges: [], forms: [] });
   const [loadingHC, setLoadingHC] = useState(true);
   const [hcSubTab, setHcSubTab] = useState('overview');
@@ -958,11 +981,23 @@ export default function CourtResources() {
     loadGlobals();
   }, []);
 
-  // ── Load High Court data when state changes ────────────────────────────
+  // ── Load High Court data when the selected court changes ───────────────
   useEffect(() => {
+    const legacyKey = LEGACY_STATE_KEY_BY_COURT_ID[activeCourtId] || null;
+    // fetchCourtData's backend route falls back to Delhi's data for any
+    // key it doesn't recognize — for the 14 of 25 courts with no legacy
+    // entry, that would silently show the WRONG court's overview/judges
+    // instead of "not available", so those are never sent to the fetch at
+    // all; hcData just resets to empty and the existing "Not Available" /
+    // hcData.hc-guarded UI below handles it correctly.
+    if (!legacyKey) {
+      setHcData({ hc: null, judges: [], forms: [] });
+      setLoadingHC(false);
+      return;
+    }
     const loadHCData = async () => {
       setLoadingHC(true);
-      const res = await fetchCourtData(hcState);
+      const res = await fetchCourtData(legacyKey);
       // Same guard as loadGlobals above — a malformed/incomplete response
       // (e.g. an array) must not overwrite the safe default shape, since
       // hcData.judges.length and hcData.forms.filter(...) below assume
@@ -977,7 +1012,7 @@ export default function CourtResources() {
       setLoadingHC(false);
     };
     loadHCData();
-  }, [hcState]);
+  }, [activeCourtId]);
 
   // districts.json is bundled at build time — no async load needed.
 
@@ -1147,7 +1182,8 @@ export default function CourtResources() {
     andhra: 'Andhra Pradesh'
   };
 
-  const hcLinks = HIGH_COURT_LINKS[hcState] || {};
+  const activeLegacyStateKey = LEGACY_STATE_KEY_BY_COURT_ID[activeCourtId] || null;
+  const hcLinks = activeLegacyStateKey ? (HIGH_COURT_LINKS[activeLegacyStateKey] || {}) : {};
 
   const formatIPDate = (dateStr) => {
     if (!dateStr) return '—';
@@ -1266,16 +1302,15 @@ export default function CourtResources() {
         {/* ────────── TAB 2: HIGH COURTS ────────── */}
         {activeTab === 'highcourt' && (
           <div className="resource-panel">
-            <div className="control-row">
-              <div className="input-group" style={{ maxWidth: '320px' }}>
-                <label className="input-label">Select State High Court</label>
-                <select className="select-element" value={hcState} onChange={(e) => { setHcState(e.target.value); setHcSubTab('overview'); setSearchQuery(''); }}>
-                  {Object.keys(stateLabelMap).map(k => (
-                    <option key={k} value={k}>{stateLabelMap[k]} High Court</option>
-                  ))}
-                </select>
-              </div>
+            <div className="panel-header">
+              <h2>High Courts of India</h2>
+              <p>Search or browse all 25 High Courts, then open official portals, cause lists, and judges rosters.</p>
             </div>
+
+            <HighCourtSelector
+              activeCourtId={activeCourtId}
+              onSelect={(id) => { setActiveCourtId(id); setHcSubTab('overview'); setSearchQuery(''); }}
+            />
 
             <div className="sub-tabs-wrapper">
               <button className={`sub-tab-btn ${hcSubTab === 'overview' ? 'active' : ''}`} onClick={() => setHcSubTab('overview')}>🏛️ Overview &amp; Links</button>
@@ -1287,6 +1322,11 @@ export default function CourtResources() {
             ) : (
               <div>
                 {/* SUB TAB: Overview */}
+                {hcSubTab === 'overview' && !hcData.hc && (
+                  <div style={{ padding: '20px', backgroundColor: 'var(--bg-dark-card)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-dark-muted)' }}>
+                    Portal links and judges roster for this court haven't been added to the directory yet.
+                  </div>
+                )}
                 {hcSubTab === 'overview' && hcData.hc && (
                   <div>
                     <div style={{ padding: '12px 16px', background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.15)', borderRadius: '8px', marginBottom: '24px', fontSize: '13.5px' }}>
