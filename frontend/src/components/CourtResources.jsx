@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
 import { formatCourtDisplayName, getMetroComplexes, resolveDistrictSelection } from '../utils/courtNameFormatter.js';
@@ -149,6 +149,19 @@ const LEGACY_STATE_KEY_BY_COURT_ID = {
   andhra: 'andhra',
 };
 
+const COURT_TABS = [
+  { id: 'supreme',   icon: '🏛️', label: 'Supreme Court' },
+  { id: 'highcourt', icon: '🏢', label: 'High Courts' },
+  { id: 'district',  icon: '📂', label: 'District Courts' },
+  { id: 'judges',    icon: '🧑‍⚖️', label: 'Judges Directory' },
+  { id: 'laws',      icon: '📖', label: 'Bare Acts' },
+  { id: 'forms',     icon: '📋', label: 'Legal Forms' },
+  { id: 'events',    icon: '📅', label: 'Legal Events' },
+  { id: 'courtfee',  icon: '⚖️', label: 'Fee Calculator' },
+  { id: 'enotary',   icon: '🔏', label: 'e-Notary' },
+  { id: 'iptracker', icon: '🏷️', label: 'IP Tracker' },
+];
+
 const styles = `
   .resources-container {
     padding: 24px;
@@ -210,40 +223,122 @@ const styles = `
     }
   }
 
-  /* Tabs Navigation — wraps onto multiple lines on narrow viewports instead of
-     scrolling horizontally (Bug #3), matching the filter-pill pattern already
-     used in Legal Forms Library / Firm Library. */
-  .tabs-wrapper {
-    display: flex;
-    flex-wrap: wrap;
-    border-bottom: 1px solid var(--border-dark-subtle);
-    margin-bottom: 24px;
-    gap: 8px;
-    padding-bottom: 8px;
+  /* ── Sub-Tabs Navigation (Single-row capsule bar with wheel scrolling & edge indicators) ── */
+  .court-subtabs-wrapper {
+    position: relative !important;
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    border-bottom: 1px solid var(--border-color, var(--border-dark-subtle, rgba(0, 0, 0, 0.08))) !important;
+    margin-bottom: 24px !important;
   }
 
-  .tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-dark-muted);
-    padding: 10px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    border-radius: 6px;
-    white-space: nowrap;
-    transition: all 0.2s;
+  .court-subtabs-bar {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+    gap: 6px !important;
+    padding: 8px 4px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    scroll-behavior: smooth !important;
   }
 
-  .tab-btn:hover {
-    color: var(--text-dark-primary);
-    background-color: rgba(255, 255, 255, 0.04);
+  .court-subtabs-bar::-webkit-scrollbar {
+    display: none !important;
   }
 
-  .tab-btn.active {
-    color: var(--accent-primary);
-    background-color: var(--accent-muted);
-    font-weight: 600;
+  /* Edge overflow indicators */
+  .court-overflow-indicator-left,
+  .court-overflow-indicator-right {
+    position: absolute !important;
+    top: 0 !important;
+    bottom: 1px !important;
+    width: 32px !important;
+    pointer-events: none !important;
+    z-index: 2 !important;
+    opacity: 0 !important;
+    transition: opacity 0.2s ease-in-out !important;
+  }
+
+  .court-overflow-indicator-left {
+    left: 0 !important;
+    background: linear-gradient(90deg, var(--bg-dark-app, var(--bg-app, #0A0E17)) 0%, transparent 100%) !important;
+  }
+
+  .court-overflow-indicator-right {
+    right: 0 !important;
+    background: linear-gradient(270deg, var(--bg-dark-app, var(--bg-app, #0A0E17)) 0%, transparent 100%) !important;
+  }
+
+  :root[data-theme="light"] .court-overflow-indicator-left {
+    background: linear-gradient(90deg, var(--bg-app, #EAEDF3) 0%, transparent 100%) !important;
+  }
+
+  :root[data-theme="light"] .court-overflow-indicator-right {
+    background: linear-gradient(270deg, var(--bg-app, #EAEDF3) 0%, transparent 100%) !important;
+  }
+
+  .court-overflow-indicator-left.visible,
+  .court-overflow-indicator-right.visible {
+    opacity: 1 !important;
+  }
+
+  .court-subtab-item {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 7px 13px !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease-in-out !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    color: var(--text-secondary, var(--text-dark-muted, #64748b)) !important;
+    scroll-margin: 0 16px !important;
+    user-select: none !important;
+    font-family: inherit !important;
+  }
+
+  .court-subtab-item:hover {
+    background: var(--bg-hover, rgba(255, 255, 255, 0.04)) !important;
+    color: var(--text-primary, var(--text-dark-primary, #0f172a)) !important;
+  }
+
+  :root[data-theme="light"] .court-subtab-item:hover {
+    background: var(--bg-hover, rgba(0, 0, 0, 0.04)) !important;
+  }
+
+  .court-subtab-item.active {
+    background: var(--accent-blue-subtle, var(--accent-muted, rgba(59, 130, 246, 0.1))) !important;
+    color: var(--accent-blue, var(--accent-primary, #2563eb)) !important;
+    border-color: var(--accent-blue-border, rgba(59, 130, 246, 0.25)) !important;
+    font-weight: 600 !important;
+  }
+
+  .court-subtab-item:focus-visible {
+    outline: 2px solid var(--accent-blue, var(--accent-primary, #3b82f6)) !important;
+    outline-offset: 2px !important;
+  }
+
+  @media (max-width: 768px) {
+    .court-subtabs-bar {
+      padding: 6px 2px !important;
+      gap: 4px !important;
+    }
+    .court-subtab-item {
+      min-height: 42px !important;
+      padding: 8px 12px !important;
+      font-size: 12.5px !important;
+    }
   }
 
   /* Panels and Sub-Tabs */
@@ -792,6 +887,58 @@ export default function CourtResources() {
   const location = useLocation();
 
   const [activeTab, setActiveTab] = useState('supreme');
+  const tabsBarRef = useRef(null);
+  const [overflowLeft, setOverflowLeft] = useState(false);
+  const [overflowRight, setOverflowRight] = useState(false);
+
+  const checkOverflow = useCallback(() => {
+    const el = tabsBarRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setOverflowLeft(scrollLeft > 6);
+    setOverflowRight(scrollLeft + clientWidth < scrollWidth - 6);
+  }, []);
+
+  // Native non-passive horizontal wheel listener
+  useEffect(() => {
+    const el = tabsBarRef.current;
+    if (!el) return;
+
+    const handleWheelNative = (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+
+    el.addEventListener('wheel', handleWheelNative, { passive: false });
+    el.addEventListener('scroll', checkOverflow, { passive: true });
+    window.addEventListener('resize', checkOverflow);
+    checkOverflow();
+
+    return () => {
+      el.removeEventListener('wheel', handleWheelNative);
+      el.removeEventListener('scroll', checkOverflow);
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, [checkOverflow]);
+
+  const handleWheel = (e) => {
+    if (e.deltaY !== 0 && tabsBarRef.current) {
+      tabsBarRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
+  // Auto-scroll active tab into view on mount or tab change
+  useEffect(() => {
+    if (tabsBarRef.current) {
+      const activeEl = tabsBarRef.current.querySelector('.court-subtab-item.active');
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      }
+      checkOverflow();
+    }
+  }, [activeTab, checkOverflow]);
 
   // ── Deep-link from AI Legal Associate navigation ──────────────────────────
   // When the AI navigates here with { state: { openTab: 'highcourt' } }, auto-switch tab
@@ -1215,18 +1362,39 @@ export default function CourtResources() {
           </Link>
         </div>
 
-        {/* Global tab options */}
-        <div className="tabs-wrapper">
-          <button className={`tab-btn ${activeTab === 'supreme' ? 'active' : ''}`} onClick={() => { setActiveTab('supreme'); setSearchQuery(''); }}>🏛️ Supreme Court</button>
-          <button className={`tab-btn ${activeTab === 'highcourt' ? 'active' : ''}`} onClick={() => { setActiveTab('highcourt'); setSearchQuery(''); }}>🏢 High Courts</button>
-          <button className={`tab-btn ${activeTab === 'district' ? 'active' : ''}`} onClick={() => { setActiveTab('district'); setSearchQuery(''); }}>📂 District Courts</button>
-          <button className={`tab-btn ${activeTab === 'judges' ? 'active' : ''}`} onClick={() => { setActiveTab('judges'); setSearchQuery(''); }}>🧑‍⚖️ Judges Directory</button>
-          <button className={`tab-btn ${activeTab === 'laws' ? 'active' : ''}`} onClick={() => { setActiveTab('laws'); setSearchQuery(''); }}>📖 Bare Acts</button>
-          <button className={`tab-btn ${activeTab === 'forms' ? 'active' : ''}`} onClick={() => { setActiveTab('forms'); setSearchQuery(''); }}>📋 Legal Forms</button>
-          <button className={`tab-btn ${activeTab === 'events' ? 'active' : ''}`} onClick={() => { setActiveTab('events'); setSearchQuery(''); }}>📅 Legal Events</button>
-          <button className={`tab-btn ${activeTab === 'courtfee' ? 'active' : ''}`} onClick={() => { setActiveTab('courtfee'); setSearchQuery(''); }}>⚖️ Fee Calculator</button>
-          <button className={`tab-btn ${activeTab === 'enotary' ? 'active' : ''}`} onClick={() => { setActiveTab('enotary'); setSearchQuery(''); }}>🔏 e-Notary</button>
-          <button className={`tab-btn ${activeTab === 'iptracker' ? 'active' : ''}`} onClick={() => { setActiveTab('iptracker'); setSearchQuery(''); }}>🏷️ IP Tracker</button>
+        {/* Sub-tab navigation (single-row horizontally scrollable capsule bar) */}
+        <div className="court-subtabs-wrapper">
+          <div
+            className={`court-overflow-indicator-left ${overflowLeft ? 'visible' : ''}`}
+            aria-hidden="true"
+          />
+          <div
+            ref={tabsBarRef}
+            className="court-subtabs-bar"
+            onWheel={handleWheel}
+            role="tablist"
+            aria-label="Court Resource Sub-Tabs"
+          >
+            {COURT_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                className={`court-subtab-item ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setSearchQuery('');
+                }}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+          <div
+            className={`court-overflow-indicator-right ${overflowRight ? 'visible' : ''}`}
+            aria-hidden="true"
+          />
         </div>
 
         {/* ────────── TAB 1: SUPREME COURT ────────── */}
