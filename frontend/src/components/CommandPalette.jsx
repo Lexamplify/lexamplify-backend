@@ -28,6 +28,7 @@ const makeSession = () => ({
   pendingSchedule: null,
   pendingDraft: null,
   activeDocument: null,   // persists after draft card is rejected/closed
+  savedAssets: [],
   createdAt: Date.now(),
   updatedAt: Date.now(),
 });
@@ -69,7 +70,7 @@ const resolveNavIntent = (q) => {
 const isNavCommand = (q) => NAV_TRIGGERS.some(t => q.toLowerCase().startsWith(t));
 
 // ═══════════════════════════════════════════════════════
-//  HUMAN-READABLE ROUTE LABELS (Replacing raw URLs in TopNav)
+//  HUMAN-READABLE ROUTE LABELS
 // ═══════════════════════════════════════════════════════
 const ROUTE_LABELS = {
   '/dashboard': 'Legal Workspace / Advocate Terminal',
@@ -96,7 +97,7 @@ const getHumanRouteLabel = (pathname) => {
 // ═══════════════════════════════════════════════════════
 const SLASH_CMDS = [
   { cmd: '/nda', label: 'Mutual NDA Agreement', fill: 'Draft a mutual Non-Disclosure Agreement compliant with the Indian Contract Act, 1872' },
-  { cmd: '/notice', label: 'Legal Notice', fill: 'Draft a legal notice for breach of contract with a 15-day cure period' },
+  { cmd: '/notice', label: 'Legal Notice for Breach', fill: 'Draft a legal notice for breach of contract with a 15-day cure period under Section 73 Indian Contract Act' },
   { cmd: '/bail', label: 'Bail Application', fill: 'Draft a regular bail application under Section 439 CrPC / Section 483 BNSS' },
   { cmd: '/petition', label: 'Writ Petition (Art. 226)', fill: 'Draft a writ petition under Article 226 of the Constitution of India' },
   { cmd: '/affidavit', label: 'Supporting Affidavit', fill: 'Draft a supporting affidavit with verification block' },
@@ -106,13 +107,32 @@ const SLASH_CMDS = [
 ];
 
 // ═══════════════════════════════════════════════════════
-//  CATEGORIZED LEGAL TOOLS (Replaces raw quick commands)
+//  PROMPT SUGGESTIONS (Try asking...)
+// ═══════════════════════════════════════════════════════
+const PROMPT_SUGGESTIONS = [
+  { label: '✦ Draft Mutual NDA', prompt: 'Draft a mutual Non-Disclosure Agreement compliant with the Indian Contract Act, 1872, including confidentiality covenants, permitted disclosures, non-circumvention, and injunctive relief.' },
+  { label: '✦ Analyze Contract Risks', prompt: 'Analyze this contract for high-risk clauses, uncapped indemnities, one-sided termination terms, and compliance gaps under Indian contract law.' },
+  { label: '✦ Supreme Court Precedents', prompt: 'Find landmark Supreme Court and High Court precedents regarding the principles of specific performance, damages, and interim injunctions.' },
+  { label: '✦ Section 420 IPC / 318 BNS', prompt: 'Research relevant statutory provisions, ingredients, and judicial interpretations under Section 420 IPC / Section 318 BNS for cheating and dishonestly inducing delivery of property.' },
+];
+
+// ═══════════════════════════════════════════════════════
+//  ASSISTANT TOOLS
+// ═══════════════════════════════════════════════════════
+const ASSISTANT_TOOLS = [
+  { id: 'citation', label: 'Find Citation', icon: 'bookmark', prompt: 'Retrieve the neutral citation, quorum, bench composition, and key ratio decidendi for leading judgments on Section 9 and Section 34 of the Arbitration and Conciliation Act, 1996.' },
+  { id: 'causelist', label: 'Cause List', icon: 'gavel', prompt: 'Open today\'s cause list and courtroom roster for the Supreme Court of India.' },
+  { id: 'statute', label: 'Statutory Research', icon: 'search', prompt: 'Research statutory provisions, ingredients, and recent judicial interpretations for criminal breach of trust under the Indian Penal Code and Bharatiya Nyaya Sanhita.' },
+];
+
+// ═══════════════════════════════════════════════════════
+//  CATEGORIZED LEGAL TOOLS
 // ═══════════════════════════════════════════════════════
 const LEGAL_TOOL_CATEGORIES = [
   { id: 'all', label: 'All Tools' },
-  { id: 'draft', label: 'Draft' },
+  { id: 'draft', label: 'Drafting' },
   { id: 'research', label: 'Research' },
-  { id: 'analyze', label: 'Analyze' },
+  { id: 'analyze', label: 'Analysis' },
 ];
 
 const LEGAL_TOOLS = [
@@ -124,7 +144,7 @@ const LEGAL_TOOLS = [
   
   // Research Category
   { id: 't-sc', title: 'Find Judgments', category: 'research', desc: 'Search binding Supreme Court precedents & ratio', prompt: 'Find landmark Supreme Court and High Court precedents regarding the principles of specific performance, damages, and interim injunctions.', icon: 'scales' },
-  { id: 't-sec', title: 'Research Sections', category: 'research', desc: 'Analyze IPC / BNS / CRPC statutory provisions', prompt: 'Research relevant statutory provisions, ingredients, and judicial interpretations under Section 420 IPC / Section 318 BNS for criminal breach of trust.', icon: 'search' },
+  { id: 't-sec', title: 'Research Statutes', category: 'research', desc: 'Analyze IPC / BNS / CRPC statutory provisions', prompt: 'Research relevant statutory provisions, ingredients, and judicial interpretations under Section 420 IPC / Section 318 BNS for criminal breach of trust.', icon: 'search' },
   { id: 't-cite', title: 'Find Citation', category: 'research', desc: 'Retrieve neutral citation and bench composition', prompt: 'Retrieve the neutral citation, quorum, bench composition, and key ratio decidendi for leading judgments on Section 9 and Section 34 of the Arbitration and Conciliation Act, 1996.', icon: 'bookmark' },
   
   // Analyze Category
@@ -151,7 +171,6 @@ const generateConversationTitle = (text) => {
     return m ? `${m[0].toUpperCase()} Research` : 'Statutory Provisions Research';
   }
 
-  // General clean sentence to title
   const words = clean.replace(/[^\w\s-]/g, '').split(/\s+/).slice(0, 5).join(' ');
   if (!words) return 'Legal Consultation';
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -160,8 +179,6 @@ const generateConversationTitle = (text) => {
 // ═══════════════════════════════════════════════════════
 //  HELPERS
 // ═══════════════════════════════════════════════════════
-const truncate = (str, n) => (str && str.length > n) ? str.slice(0, n) + '…' : (str || '');
-
 const escHtml = (s) =>
   s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 
@@ -204,37 +221,29 @@ const renderMarkdown = (text) => {
   return out.join('');
 };
 
-// Formats draft text with structured legal document hierarchy
 const renderDraftHtml = (text) => {
   if (!text) return '';
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return escaped
-    // Section headers: e.g. 01 PARTIES or 1. PARTIES or ## 1. PARTIES
-    .replace(/^(?:#{1,3}\s*)?(\d{1,2}\.?\s+[A-Z\s]{3,40})$/gm, '<div class="draft-section-head"><span class="draft-sec-num">§</span> $1</div>')
-    // Sub-headings
+    .replace(/^(?:#{1,3}\s*)?(\d{1,2}\.?\s+[A-Z\s]{3,40})$/gm, (match, p1) => {
+      const slug = p1.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+      return `<div id="sec_${slug}" class="draft-section-head"><span class="draft-sec-num">§</span> ${p1}</div>`;
+    })
     .replace(/^#{2,3}\s+(.+)$/gm, '<div class="draft-h2">$1</div>')
-    // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Horizontal rule
     .replace(/^---+$/gm, '<hr class="draft-hr">')
-    // Double newline → paragraph break
     .replace(/\n\n/g, '</p><p class="draft-p">')
-    // Single newline → break
     .replace(/\n/g, '<br>')
-    // Wrap
     .replace(/^/, '<p class="draft-p">')
     .replace(/$/, '</p>');
 };
 
-// Detects and wraps placeholder tokens like [Insert Name], [Effective Date]
 const highlightPlaceholders = (html) =>
   html.replace(/\[([A-Za-z0-9\s'\/\-,\.&]{2,50})\]/g,
     '<span class="lex-placeholder" title="Click to fill field">[$1]</span>'
   );
 
-// Extracts distinct placeholders from text
 const extractPlaceholders = (text) => {
   if (!text) return [];
   const matches = text.match(/\[([A-Za-z0-9\s'\/\-,\.&]{2,50})\]/g) || [];
@@ -242,20 +251,20 @@ const extractPlaceholders = (text) => {
   return unique.filter(u => !u.toLowerCase().startsWith('http') && !u.toLowerCase().includes('done') && u.length > 2);
 };
 
-// Extracts numbered sections from text for the document outline
 const extractSections = (text) => {
   if (!text) return [];
   const lines = text.split('\n');
   const sections = [];
   lines.forEach((l, idx) => {
     const trimmed = l.trim();
-    // Match "1. PARTIES", "01. RECITALS", "## 1. DEFINITIONS", "SECTION 1: TITLE"
     const m = trimmed.match(/^(?:#{1,3}\s*)?(\d{1,2})[\.\s:]+([A-Za-z\s]{3,40})$/i)
       || trimmed.match(/^(?:SECTION|CLAUSE)\s+(\d{1,2})[\.\s:]+([A-Za-z\s]{3,40})$/i);
     if (m) {
       sections.push({
         num: String(m[1]).padStart(2, '0'),
         title: m[2].trim(),
+        full: `${String(m[1]).padStart(2, '0')} ${m[2].trim()}`,
+        slug: `${String(m[1]).padStart(2, '0')}_${m[2].trim()}`.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
         line: idx,
       });
     }
@@ -274,7 +283,7 @@ const relativeDate = (ts) => {
 };
 
 // ═══════════════════════════════════════════════════════
-//  SVG ICON REPOSITORY (Clean & consistent visual system)
+//  SVG ICON REPOSITORY
 // ═══════════════════════════════════════════════════════
 const Icon = ({ name, size = 16, className = '', style = {} }) => {
   const props = {
@@ -428,20 +437,18 @@ const Icon = ({ name, size = 16, className = '', style = {} }) => {
           <line x1="6" y1="6" x2="18" y2="18" />
         </svg>
       );
-    case 'refresh':
-      return (
-        <svg {...props}>
-          <polyline points="23 4 23 10 17 10" />
-          <polyline points="1 20 1 14 7 14" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
-      );
     case 'outline':
       return (
         <svg {...props}>
           <line x1="21" y1="6" x2="3" y2="6" />
           <line x1="15" y1="12" x2="3" y2="12" />
           <line x1="17" y1="18" x2="3" y2="18" />
+        </svg>
+      );
+    case 'folder':
+      return (
+        <svg {...props}>
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
       );
     default:
@@ -454,21 +461,15 @@ const Icon = ({ name, size = 16, className = '', style = {} }) => {
 };
 
 // ═══════════════════════════════════════════════════════
-//  SCOPED CSS ARCHITECTURE (Dual-theme & High-contrast)
+//  SCOPED CSS ARCHITECTURE
 // ═══════════════════════════════════════════════════════
 const AGENT_CSS = `
-  /* Keyframes */
   @keyframes lex-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes lex-fade-in { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes lex-pulse-ring {
-    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-    70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
-    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-  }
   @keyframes lex-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   @keyframes lex-pulse-dot { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+  @keyframes lex-flash { 0% { background: rgba(37,99,235,0.25); } 100% { background: transparent; } }
 
-  /* Drawer Overlay */
   .LexAmplify-drawer {
     position: fixed; inset: 0; z-index: 9999;
     display: flex; overflow: hidden;
@@ -478,7 +479,6 @@ const AGENT_CSS = `
   }
   .LexAmplify-drawer.closing { animation: lex-fade-in 0.18s ease reverse both; }
 
-  /* Light theme color palette as specified in PDF */
   :root[data-theme="light"], [data-theme="light"] {
     --lex-bg-main: #F7F8FC;
     --lex-bg-sidebar: #EEF1F7;
@@ -493,7 +493,6 @@ const AGENT_CSS = `
     --lex-accent-indigo: #6366F1;
   }
 
-  /* Dark theme color palette */
   :root[data-theme="dark"], [data-theme="dark"] {
     --lex-bg-main: #0A0E17;
     --lex-bg-sidebar: #0C101A;
@@ -508,47 +507,28 @@ const AGENT_CSS = `
     --lex-accent-indigo: #818CF8;
   }
 
-  /* ══════════════════════════════════════════════
-       SIDEBAR CONVERSATION MANAGER
-  ══════════════════════════════════════════════ */
+  /* Sidebar Styles */
   .lex-sidebar {
     background: var(--lex-bg-sidebar, #EEF1F7) !important;
     border-right: 1px solid var(--lex-border, #E2E6EF) !important;
     display: flex; flex-direction: column; overflow: hidden;
   }
-
-  .lex-sidebar-search-wrap {
-    padding: 10px 14px 6px;
-    position: relative;
-  }
+  .lex-sidebar-search-wrap { padding: 10px 14px 6px; position: relative; }
   .lex-sidebar-search-input {
-    width: 100%;
-    background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 8px;
-    padding: 7px 28px 7px 30px;
-    font-size: 12px;
-    color: var(--lex-text-primary, #172033);
-    outline: none;
-    transition: all 0.15s ease;
-    box-sizing: border-box;
-    font-family: inherit;
+    width: 100%; background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF); border-radius: 8px;
+    padding: 7px 28px 7px 30px; font-size: 12px;
+    color: var(--lex-text-primary, #172033); outline: none;
+    transition: all 0.15s ease; box-sizing: border-box; font-family: inherit;
   }
   .lex-sidebar-search-input:focus {
     border-color: var(--lex-accent-blue, #2563EB);
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
   }
-  .lex-sidebar-search-icon {
-    position: absolute; left: 22px; top: 18px;
-    color: var(--lex-text-muted, #8E98A8); pointer-events: none;
-  }
-  .lex-sidebar-search-clear {
-    position: absolute; right: 22px; top: 17px;
-    background: none; border: none; color: var(--lex-text-muted, #8E98A8);
-    cursor: pointer; padding: 2px; font-size: 11px;
-  }
+  .lex-sidebar-search-icon { position: absolute; left: 22px; top: 18px; color: var(--lex-text-muted, #8E98A8); pointer-events: none; }
+  .lex-sidebar-search-clear { position: absolute; right: 22px; top: 17px; background: none; border: none; color: var(--lex-text-muted, #8E98A8); cursor: pointer; padding: 2px; font-size: 11px; }
 
-  /* Conversation Cards */
+  /* Conversation Item & Nested Tree */
   .lex-sess-item {
     background: var(--lex-bg-card, #FFFFFF) !important;
     border: 1px solid var(--lex-border, #E2E6EF) !important;
@@ -574,322 +554,312 @@ const AGENT_CSS = `
     border-left: 3.5px solid var(--lex-accent-blue, #2563EB) !important;
     box-shadow: 0 3px 10px rgba(37, 99, 235, 0.12) !important;
   }
-
   .lex-sess-title {
-    font-size: 12.5px !important;
-    font-weight: 600 !important;
+    font-size: 12.5px !important; font-weight: 600 !important;
     color: var(--lex-text-primary, #172033) !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    line-height: 1.3 !important;
+    white-space: nowrap !important; overflow: hidden !important;
+    text-overflow: ellipsis !important; line-height: 1.3 !important;
   }
   .lex-sess-meta {
-    font-size: 10.5px !important;
-    color: var(--lex-text-secondary, #667085) !important;
-    margin-top: 2px !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 5px !important;
+    font-size: 10.5px !important; color: var(--lex-text-secondary, #667085) !important;
+    margin-top: 2px !important; display: flex !important; align-items: center !important; gap: 5px !important;
   }
 
-  /* ══════════════════════════════════════════════
-       COMPOSER & COMMAND CENTER (P0)
-  ══════════════════════════════════════════════ */
+  /* Nested Sidebar Tree */
+  .lex-sidebar-tree {
+    margin: 2px 10px 6px 22px;
+    padding-left: 10px;
+    border-left: 1.5px solid var(--lex-border, #E2E6EF);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .lex-sidebar-tree-node {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 8px; border-radius: 5px; font-size: 11px;
+    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    background: transparent; border: none; text-align: left; width: 100%;
+    transition: all 0.12s ease;
+  }
+  .lex-sidebar-tree-node:hover {
+    background: var(--lex-accent-blue-subtle, #EFF6FF);
+    color: var(--lex-accent-blue, #2563EB);
+  }
+
+  /* Composer & Command Center */
+  .lex-composer-wrapper { position: relative; width: 100%; }
   .lex-composer-container {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
     border-radius: 14px;
-    padding: 10px 14px 10px 14px;
+    padding: 10px 14px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     display: flex; flex-direction: column; gap: 8px;
+    position: relative;
   }
   .lex-composer-container:focus-within {
     border-color: var(--lex-accent-blue, #2563EB);
     box-shadow: 0 4px 24px rgba(37, 99, 235, 0.12), 0 0 0 1px var(--lex-accent-blue, #2563EB);
   }
-
   .lex-textarea {
-    width: 100%;
-    min-height: 54px;
-    max-height: 160px;
-    background: transparent;
-    border: none;
-    outline: none;
-    resize: none;
-    font-family: inherit;
-    font-size: 14.5px;
-    line-height: 1.55;
-    color: var(--lex-text-primary, #172033);
-    box-sizing: border-box;
-    padding: 0;
+    width: 100%; min-height: 54px; max-height: 160px;
+    background: transparent; border: none; outline: none; resize: none;
+    font-family: inherit; font-size: 14.5px; line-height: 1.55;
+    color: var(--lex-text-primary, #172033); box-sizing: border-box; padding: 0;
   }
-  .lex-textarea::placeholder {
-    color: var(--lex-text-muted, #8E98A8);
-  }
+  .lex-textarea::placeholder { color: var(--lex-text-muted, #8E98A8); }
 
   .lex-composer-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-top: 4px;
-    border-top: 1px solid var(--lex-border, #E2E6EF);
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 6px; border-top: 1px solid var(--lex-border, #E2E6EF);
   }
-
-  .lex-composer-tools {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
+  .lex-composer-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .lex-tool-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 12px;
-    color: var(--lex-text-secondary, #667085);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    transition: all 0.15s ease;
-    font-family: inherit;
-    font-weight: 500;
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    padding: 5px 8px; font-size: 12px; color: var(--lex-text-secondary, #667085);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+    transition: all 0.15s ease; font-family: inherit; font-weight: 500;
   }
   .lex-tool-btn:hover:not(:disabled) {
     background: var(--lex-accent-blue-subtle, #EFF6FF);
     color: var(--lex-accent-blue, #2563EB);
     border-color: var(--lex-border, #E2E6EF);
   }
-  .lex-tool-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
+  .lex-tool-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* Slash Autocomplete Popup */
+  .lex-slash-popup {
+    position: absolute; bottom: calc(100% + 8px); left: 0; right: 0;
+    background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF);
+    border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    padding: 6px; z-index: 50; display: flex; flex-direction: column; gap: 2px;
+    max-height: 220px; overflow-y: auto; animation: lex-in 0.15s ease;
+  }
+  .lex-slash-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-radius: 6px; background: transparent;
+    border: none; cursor: pointer; text-align: left; transition: all 0.1s ease;
+  }
+  .lex-slash-item:hover, .lex-slash-item.selected {
+    background: var(--lex-accent-blue-subtle, #EFF6FF);
+  }
+  .lex-slash-cmd { font-weight: 700; color: var(--lex-accent-blue, #2563EB); font-size: 12.5px; }
+  .lex-slash-label { font-size: 11.5px; color: var(--lex-text-secondary, #667085); }
+
+  /* Prompt Suggestion Chips */
+  .lex-suggestions-bar {
+    display: flex; align-items: center; gap: 6px; overflow-x: auto;
+    padding: 4px 0 8px; scrollbar-width: none;
+  }
+  .lex-suggestions-bar::-webkit-scrollbar { display: none; }
+  .lex-suggest-chip {
+    white-space: nowrap; background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF); border-radius: 16px;
+    padding: 4px 10px; font-size: 11px; font-weight: 500;
+    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    transition: all 0.12s ease; flex-shrink: 0;
+  }
+  .lex-suggest-chip:hover {
+    border-color: var(--lex-accent-blue, #2563EB);
+    color: var(--lex-accent-blue, #2563EB);
+    background: var(--lex-accent-blue-subtle, #EFF6FF);
   }
 
-  /* 3-State Send Button */
+  /* Assistant Tools Bar */
+  .lex-assistant-tools {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  }
+  .lex-ast-tool-btn {
+    background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF);
+    border-radius: 6px; padding: 4px 8px; font-size: 11.5px;
+    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: all 0.12s ease; font-weight: 500;
+  }
+  .lex-ast-tool-btn:hover {
+    border-color: var(--lex-accent-blue, #2563EB);
+    color: var(--lex-accent-blue, #2563EB);
+    background: var(--lex-accent-blue-subtle, #EFF6FF);
+  }
+
+  /* Send / Stop Buttons */
   .lex-send-btn {
     background: var(--lex-accent-blue, #2563EB) !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 8px !important;
-    padding: 7px 16px !important;
-    font-size: 13px !important;
-    font-weight: 600 !important;
-    cursor: pointer !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    transition: all 0.15s ease !important;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
-    font-family: inherit !important;
+    color: #FFFFFF !important; border: none !important; border-radius: 8px !important;
+    padding: 7px 16px !important; font-size: 13px !important; font-weight: 600 !important;
+    cursor: pointer !important; display: inline-flex !important; align-items: center !important;
+    gap: 6px !important; transition: all 0.15s ease !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important; font-family: inherit !important;
   }
   .lex-send-btn:hover:not(:disabled) {
-    background: #1D4ED8 !important;
-    transform: translateY(-1px) !important;
+    background: #1D4ED8 !important; transform: translateY(-1px) !important;
     box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35) !important;
   }
   .lex-send-btn:disabled {
     background: var(--lex-border, #E2E6EF) !important;
     color: var(--lex-text-muted, #8E98A8) !important;
-    cursor: not-allowed !important;
-    box-shadow: none !important;
-    transform: none !important;
+    cursor: not-allowed !important; box-shadow: none !important; transform: none !important;
   }
-
   .lex-stop-btn {
-    background: #DC2626 !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 8px !important;
-    padding: 7px 14px !important;
-    font-size: 12.5px !important;
-    font-weight: 600 !important;
-    cursor: pointer !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25) !important;
-    animation: lex-in 0.2s ease;
+    background: #DC2626 !important; color: #FFFFFF !important;
+    border: none !important; border-radius: 8px !important; padding: 7px 14px !important;
+    font-size: 12.5px !important; font-weight: 600 !important; cursor: pointer !important;
+    display: inline-flex !important; align-items: center !important; gap: 6px !important;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25) !important; animation: lex-in 0.2s ease;
   }
-  .lex-stop-btn:hover {
-    background: #B91C1C !important;
-  }
+  .lex-stop-btn:hover { background: #B91C1C !important; }
 
-  /* ══════════════════════════════════════════════
-       TRANSPARENT AI GENERATION WORKFLOW
-  ══════════════════════════════════════════════ */
+  /* Generation Card */
   .lex-generation-card {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 12px;
-    padding: 16px 18px;
+    border-radius: 12px; padding: 16px 18px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
-    margin: 6px 0;
-    animation: lex-in 0.2s ease;
+    margin: 6px 0; animation: lex-in 0.2s ease;
   }
-  .lex-gen-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
+  .lex-gen-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
   .lex-gen-spinner {
-    width: 20px; height: 20px;
-    border-radius: 50%;
+    width: 20px; height: 20px; border-radius: 50%;
     border: 2px solid var(--lex-accent-blue-subtle, #EFF6FF);
     border-top-color: var(--lex-accent-blue, #2563EB);
-    animation: lex-spin 0.8s linear infinite;
-    flex-shrink: 0;
+    animation: lex-spin 0.8s linear infinite; flex-shrink: 0;
   }
   .lex-gen-steps {
     display: flex; flex-direction: column; gap: 7px;
-    padding-left: 6px;
-    border-left: 2px solid var(--lex-border, #E2E6EF);
-    margin-left: 8px;
+    padding-left: 6px; border-left: 2px solid var(--lex-border, #E2E6EF); margin-left: 8px;
   }
-  .lex-gen-step {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 12px; color: var(--lex-text-secondary, #667085);
-  }
+  .lex-gen-step { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--lex-text-secondary, #667085); }
   .lex-gen-step.done { color: #16A34A; font-weight: 500; }
   .lex-gen-step.active { color: var(--lex-accent-blue, #2563EB); font-weight: 600; }
   .lex-step-pulse { animation: lex-pulse-dot 1.2s infinite ease-in-out; }
 
-  /* ══════════════════════════════════════════════
-       LEGAL DOCUMENT WORKSPACE & A4 CONTAINER
-  ══════════════════════════════════════════════ */
-  .lex-doc-container {
-    max-width: 820px;
-    margin: 0 auto;
+  /* Artifact Chat Card */
+  .lex-artifact-card {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 12px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
-    overflow: hidden;
-    display: flex; flex-direction: column;
+    border-radius: 12px; padding: 14px 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    display: flex; flex-direction: column; gap: 10px;
+    margin-top: 8px; border-left: 4px solid var(--lex-accent-blue, #2563EB);
   }
-  
-  .lex-doc-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 18px;
-    background: var(--lex-bg-sidebar, #EEF1F7);
-    border-bottom: 1px solid var(--lex-border, #E2E6EF);
-    flex-wrap: wrap;
-    gap: 8px;
+  .lex-artifact-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .lex-artifact-title { font-size: 13.5px; font-weight: 700; color: var(--lex-text-primary, #172033); }
+  .lex-artifact-badge {
+    font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 12px;
+    background: var(--lex-accent-blue-subtle, #EFF6FF); color: var(--lex-accent-blue, #2563EB);
   }
-  
-  .lex-doc-paper {
-    padding: 40px 50px;
-    font-family: Georgia, 'Times New Roman', Cambria, serif;
-    font-size: 14.5px;
-    line-height: 1.85;
-    color: var(--lex-text-primary, #172033);
-    outline: none;
+  .lex-artifact-meta { font-size: 11.5px; color: var(--lex-text-secondary, #667085); display: flex; align-items: center; gap: 12px; }
+  .lex-artifact-open-btn {
+    align-self: flex-start; padding: 6px 14px; border-radius: 7px;
+    background: var(--lex-accent-blue, #2563EB); color: #FFFFFF;
+    border: none; font-size: 12px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s ease;
   }
+  .lex-artifact-open-btn:hover { background: #1D4ED8; }
 
+  /* Paper Legal Workspace */
+  .lex-doc-container {
+    max-width: 820px; margin: 0 auto;
+    background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF);
+    border-radius: 12px; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .lex-doc-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 18px; background: var(--lex-bg-sidebar, #EEF1F7);
+    border-bottom: 1px solid var(--lex-border, #E2E6EF); flex-wrap: wrap; gap: 8px;
+  }
+  .lex-doc-paper {
+    padding: 36px 48px;
+    font-family: Georgia, 'Times New Roman', Cambria, serif;
+    font-size: 14.5px; line-height: 1.85;
+    color: var(--lex-text-primary, #172033); outline: none;
+  }
   .lex-doc-paper .draft-section-head {
-    font-family: inherit;
-    font-size: 14.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--lex-text-primary, #172033);
-    margin: 22px 0 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--lex-border, #E2E6EF);
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    font-family: inherit; font-size: 14.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--lex-text-primary, #172033); margin: 24px 0 10px;
+    padding-bottom: 4px; border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    display: flex; align-items: center; gap: 8px;
   }
-  .lex-sec-num {
-    color: var(--lex-accent-blue, #2563EB);
-    font-size: 14px;
+  .lex-doc-paper .draft-section-head.highlighted {
+    animation: lex-flash 1.5s ease;
   }
+  .draft-sec-num { color: var(--lex-accent-blue, #2563EB); font-size: 14px; }
 
   /* Interactive Placeholders */
   .lex-placeholder {
     background: rgba(245, 158, 11, 0.15) !important;
     border: 1px solid rgba(245, 158, 11, 0.4) !important;
-    color: #B45309 !important;
-    border-radius: 4px !important;
-    padding: 1px 5px !important;
-    font-weight: 600 !important;
-    cursor: pointer !important;
-    transition: all 0.15s ease !important;
+    color: #B45309 !important; border-radius: 4px !important;
+    padding: 1px 5px !important; font-weight: 600 !important;
+    cursor: pointer !important; transition: all 0.15s ease !important;
   }
   [data-theme="dark"] .lex-placeholder {
     background: rgba(245, 158, 11, 0.2) !important;
-    border-color: rgba(245, 158, 11, 0.45) !important;
-    color: #FCD34D !important;
-  }
-  .lex-placeholder:hover {
-    background: rgba(245, 158, 11, 0.3) !important;
-    transform: scale(1.02);
+    border-color: rgba(245, 158, 11, 0.45) !important; color: #FCD34D !important;
   }
 
-  /* AI Clause Action Hover Bar */
-  .lex-clause-hover-bar {
-    display: flex;
-    gap: 6px;
-    margin: 6px 0 14px;
-    padding: 4px 8px;
+  /* Document Outline Panel */
+  .lex-outline-panel {
     background: var(--lex-bg-sidebar, #EEF1F7);
-    border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 6px;
+    border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    padding: 10px 16px; display: flex; flex-direction: column; gap: 6px;
+    max-height: 180px; overflow-y: auto; animation: lex-in 0.15s ease;
   }
-  .lex-clause-btn {
-    background: transparent;
-    border: none;
-    font-size: 11px;
-    font-weight: 500;
+  .lex-outline-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 8px; border-radius: 6px; background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF); font-size: 11.5px;
+    color: var(--lex-text-primary, #172033); cursor: pointer; text-align: left;
+    transition: all 0.12s ease;
+  }
+  .lex-outline-item:hover {
+    border-color: var(--lex-accent-blue, #2563EB);
     color: var(--lex-accent-blue, #2563EB);
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
-  }
-  .lex-clause-btn:hover {
     background: var(--lex-accent-blue-subtle, #EFF6FF);
   }
 
-  /* Quick Actions Grid */
-  .lex-tools-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+  /* Section Level AI Actions Bar */
+  .lex-section-ai-bar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 6px 14px; background: var(--lex-bg-sidebar, #EEF1F7);
+    border-bottom: 1px solid var(--lex-border, #E2E6EF);
   }
+  .lex-clause-action-btn {
+    background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF);
+    border-radius: 5px; padding: 3px 8px; font-size: 11px;
+    font-weight: 500; color: var(--lex-accent-blue, #2563EB);
+    cursor: pointer; transition: all 0.12s ease;
+  }
+  .lex-clause-action-btn:hover {
+    background: var(--lex-accent-blue, #2563EB);
+    color: #FFFFFF; border-color: var(--lex-accent-blue, #2563EB);
+  }
+
+  /* Quick Actions Grid */
+  .lex-tools-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .lex-tool-card {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 10px;
-    padding: 11px 14px;
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    text-align: left;
-    width: 100%;
+    border-radius: 10px; padding: 11px 14px; display: flex; align-items: flex-start;
+    gap: 12px; cursor: pointer; transition: all 0.15s ease; text-align: left; width: 100%;
   }
   .lex-tool-card:hover {
     border-color: var(--lex-accent-blue, #2563EB);
     background: var(--lex-accent-blue-subtle, #EFF6FF);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 
-  /* Mobile responsiveness */
   @media (max-width: 768px) {
     .lex-tools-grid { grid-template-columns: 1fr !important; }
-    .lex-doc-paper { padding: 24px 18px !important; }
+    .lex-doc-paper { padding: 24px 16px !important; }
     .lex-sidebar {
       position: fixed; top: 0; left: 0; height: 100%; z-index: 30;
-      width: 280px; max-width: 85vw;
-      transform: translateX(-100%);
+      width: 280px; max-width: 85vw; transform: translateX(-100%);
       transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: 6px 0 30px rgba(0, 0, 0, 0.4);
     }
@@ -932,19 +902,13 @@ const generateSmartName = (doc_type, sessionTitle) => {
 };
 
 // ═══════════════════════════════════════════════════════
-//  SAVE TO VAULT MODAL (Preserved Integration)
+//  SAVE TO VAULT MODAL
 // ═══════════════════════════════════════════════════════
 function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) {
   const [flatFolders, setFlatFolders] = useState([]);
-  const [flatDocs, setFlatDocs] = useState([]);
   const [navStack, setNavStack] = useState([{ id: null, name: 'Root (Case Vault)' }]);
   const [fileName, setFileName] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [loadingFolders, setLoadingFolders] = useState(true);
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [saveFormat, setSaveFormat] = useState('native');
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -956,18 +920,13 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   useEffect(() => { setFileName(smartDefault); }, [smartDefault]);
 
   useEffect(() => {
-    Promise.all([
-      fetch(`${apiBase}/api/vault/folders`),
-      fetch(`${apiBase}/api/vault/meta`),
-    ])
-      .then(([fRes, dRes]) => Promise.all([fRes.ok ? fRes.json() : null, dRes.ok ? dRes.json() : null]))
-      .then(([fData, dData]) => {
+    fetch(`${apiBase}/api/vault/folders`)
+      .then(res => res.ok ? res.json() : null)
+      .then(fData => {
         if (!isMountedRef.current) return;
         if (fData) setFlatFolders(fData.flat || []);
-        if (dData) setFlatDocs(dData.documents || []);
       })
-      .catch(() => {})
-      .finally(() => { if (isMountedRef.current) setLoadingFolders(false); });
+      .catch(() => {});
   }, [apiBase]);
 
   const currentView = navStack[navStack.length - 1];
@@ -987,14 +946,12 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
       folderId: destFolderId,
       folderPath: destPath,
       smartTitle: fileName.trim(),
-      tags: selectedTags,
-      format: saveFormat,
     });
   };
 
   return (
     <div className="svm-backdrop" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10020, background: 'rgba(3,6,14,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'lex-in 0.18s ease' }}>
-      <div className="svm-panel" style={{ background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 14, width: 640, maxWidth: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div className="svm-panel" style={{ background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 14, width: 620, maxWidth: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Icon name="draft" size={16} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
@@ -1040,7 +997,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
 // ═══════════════════════════════════════════════════════
 function ShareModal({ sessionTitle, onClose }) {
   const [copied, setCopied] = useState(false);
-  const shareUrl = `${window.location.origin}/vault?ref=${encodeURIComponent(sessionTitle.slice(0, 40))}`;
+  const shareUrl = `${window.location.origin}/vault?ref=${encodeURIComponent((sessionTitle || 'Legal Matter').slice(0, 40))}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -1117,9 +1074,7 @@ function CommandPalette() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
   const location = useLocation();
-  const paramsFromHook = useParams();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
 
   // ── Sessions state ──────────────────────────────────
   const [sessions, setSessions] = useState(() => loadSessions());
@@ -1135,26 +1090,24 @@ function CommandPalette() {
   const [loading, setLoading] = useState(false);
   const [navRoute, setNavRoute] = useState(null);
   const [isListening, setIsListening] = useState(false);
-  const [micError, setMicError] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [isClosing, setIsClosing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState(null);
-  const [slashMenu, setSlashMenu] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
   
-  // ── Upgrades State (P0, P1, P2) ───────────────────────
+  // ── Intelligence & Refinements State ─────────────────
   const [sessSearch, setSessSearch] = useState('');
   const [toolCategory, setToolCategory] = useState('all');
   const [showCompletionPanel, setShowCompletionPanel] = useState(false);
   const [missingFieldInputs, setMissingFieldInputs] = useState({});
-  const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const [selectedSection, setSelectedSection] = useState(null);
+  const [slashIndex, setSlashIndex] = useState(0);
 
   // ── File attachment ──────────────────────────────────
   const [attachedFile, setAttachedFile] = useState(null);
-  const [fileLoading, setFileLoading] = useState(false);
 
   // ── Modals & Menus ───────────────────────────────────
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -1170,7 +1123,6 @@ function CommandPalette() {
   const isListeningRef = useRef(false);
   const searchRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const msgRefs = useRef({});
   const drawerBodyRef = useRef(null);
   const lastDocKeyRef = useRef(null);
   const isMountedRef = useRef(true);
@@ -1184,14 +1136,20 @@ function CommandPalette() {
   // ── Derived Data ─────────────────────────────────────
   const currentSession = sessions.find(s => s.id === currentId) || null;
   const messages = currentSession?.messages || [];
-  const pendingSchedule = currentSession?.pendingSchedule || null;
-  const pendingDraft = currentSession?.pendingDraft || null;
   const activeDocument = currentSession?.activeDocument || null;
 
   // Extract missing placeholders and sections from active document
   const activeDocText = viewingSnapshot ? viewingSnapshot.content : (activeDocument?.content || '');
   const missingPlaceholders = useMemo(() => extractPlaceholders(activeDocText), [activeDocText]);
   const docSections = useMemo(() => extractSections(activeDocText), [activeDocText]);
+
+  // Slash commands popup filter
+  const isSlashActive = query.startsWith('/') && !query.includes(' ');
+  const filteredSlashCmds = useMemo(() => {
+    if (!isSlashActive) return [];
+    const search = query.slice(1).toLowerCase();
+    return SLASH_CMDS.filter(c => c.cmd.toLowerCase().includes(search) || c.label.toLowerCase().includes(search));
+  }, [query, isSlashActive]);
 
   // Filtered sessions based on search
   const filteredSessions = useMemo(() => {
@@ -1210,11 +1168,10 @@ function CommandPalette() {
   const yesterdaySess = unpinnedSess.filter(s => Date.now() - s.updatedAt >= 86400000 && Date.now() - s.updatedAt < 172800000);
   const olderSess = unpinnedSess.filter(s => Date.now() - s.updatedAt >= 172800000);
 
-  // Filtered legal tools
-  const filteredTools = useMemo(() => {
-    if (toolCategory === 'all') return LEGAL_TOOLS;
-    return LEGAL_TOOLS.filter(t => t.category === toolCategory);
-  }, [toolCategory]);
+  // Categorized tools lists
+  const draftTools = useMemo(() => LEGAL_TOOLS.filter(t => t.category === 'draft'), []);
+  const researchTools = useMemo(() => LEGAL_TOOLS.filter(t => t.category === 'research'), []);
+  const analyzeTools = useMemo(() => LEGAL_TOOLS.filter(t => t.category === 'analyze'), []);
 
   // ── Session Helpers ──────────────────────────────────
   const mutateSessions = useCallback((updater) => {
@@ -1324,7 +1281,7 @@ function CommandPalette() {
     };
   }, [isOpen]);
 
-  // Sync drawer innerHTML safely without wiping active edits
+  // Sync drawer innerHTML safely
   useEffect(() => {
     const doc = viewingSnapshot || activeDocument;
     if (!drawerBodyRef.current) return;
@@ -1336,7 +1293,6 @@ function CommandPalette() {
       : '';
   }, [viewingSnapshot, activeDocument]);
 
-  // Focus input on open
   useEffect(() => {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 80);
   }, [isOpen]);
@@ -1346,12 +1302,11 @@ function CommandPalette() {
     isListeningRef.current = isListening;
   });
 
-  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, loading]);
 
-  // ── Speech Recognition Integration ───────────────────
+  // Speech Recognition
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
@@ -1364,7 +1319,6 @@ function CommandPalette() {
       const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
       setQuery(transcript);
     };
-    rec.onerror = (e) => setMicError(e.error);
     rec.onend = () => setIsListening(false);
     recognitionRef.current = rec;
   }, []);
@@ -1375,13 +1329,11 @@ function CommandPalette() {
       recognitionRef.current.stop();
       setIsListening(false);
     } else {
-      setMicError(null);
       recognitionRef.current.start();
       setIsListening(true);
     }
   };
 
-  // ── Stop Generation Handler ──────────────────────────
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -1390,22 +1342,17 @@ function CommandPalette() {
     setLoading(false);
   };
 
-  // ── File Attachment ──────────────────────────────────
   const handleFileAttach = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setFileLoading(true);
     try {
       const text = await file.text();
       setAttachedFile({ name: file.name, content: text });
     } catch (_) {
       setAttachedFile({ name: file.name, content: `[Attached file: ${file.name}]` });
-    } finally {
-      setFileLoading(false);
     }
   };
 
-  // ── Batch Placeholder Replacement ────────────────────
   const handleBatchFillPlaceholders = () => {
     if (!activeDocument?.content) return;
     let updated = activeDocument.content;
@@ -1424,7 +1371,34 @@ function CommandPalette() {
     setMissingFieldInputs({});
   };
 
-  // ── Core Search & Generation Stream ──────────────────
+  // Section scroll navigation
+  const handleScrollToSection = (slug) => {
+    if (!drawerBodyRef.current) return;
+    const el = drawerBodyRef.current.querySelector(`#sec_${slug}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('highlighted');
+      setTimeout(() => el.classList.remove('highlighted'), 1500);
+    }
+  };
+
+  // Contextual Clause Action Handler
+  const handleClauseAction = (sectionTitle, actionType) => {
+    const promptMap = {
+      improve: `Improve and strengthen clause "${sectionTitle}" in the current draft to provide standard commercial legal protection under Indian law.`,
+      simplify: `Simplify and clarify the wording in clause "${sectionTitle}" into plain legal English without losing legal enforceability.`,
+      stronger: `Make clause "${sectionTitle}" legally stronger, inserting strict covenants, indemnification, and immediate injunctive relief remedies.`,
+      explain: `Explain the practical legal implications and risks of clause "${sectionTitle}" for my client.`,
+      protections: `Review clause "${sectionTitle}" and add missing safeguards or standard market carve-outs under the Indian Contract Act, 1872.`,
+    };
+
+    const targetPrompt = promptMap[actionType] || `Review clause "${sectionTitle}"`;
+    setDrawerOpen(false);
+    setQuery(targetPrompt);
+    setTimeout(() => searchRef.current?.(null, targetPrompt), 40);
+  };
+
+  // Core Search & Stream Handler
   async function handleSearch(e, directQuery = null) {
     if (e) e.preventDefault();
     const q = (directQuery !== null ? directQuery : query).trim();
@@ -1495,7 +1469,6 @@ function CommandPalette() {
         return;
       }
 
-      // Check for JSON actions
       const contentType = res.headers.get('Content-Type') || '';
       if (contentType.includes('application/json')) {
         const actionPayload = await res.json();
@@ -1507,7 +1480,6 @@ function CommandPalette() {
         }
       }
 
-      // Read SSE stream
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '', accText = '';
@@ -1530,15 +1502,29 @@ function CommandPalette() {
           try {
             const p = JSON.parse(json);
             if (p.action === 'update_document') {
-              updateSession(sid, s => {
-                const updated = { title: p.title || 'Updated Document', content: p.updated_content, doc_type: 'Draft Edit' };
-                return { ...s, pendingDraft: updated, activeDocument: updated };
-              });
+              const updated = { title: p.title || 'Updated Document', content: p.updated_content, doc_type: 'Draft Edit' };
+              updateSession(sid, s => ({
+                ...s,
+                pendingDraft: updated,
+                activeDocument: updated,
+              }));
+              patchMessage(sid, msgId, m => ({
+                ...m,
+                docCard: updated,
+              }));
               setDrawerOpen(true);
             } else if (p.action === 'review_document' && p.draft) {
               const smart = generateSmartName(p.draft.doc_type, currentSession?.title);
               const enriched = { ...p.draft, smartTitle: smart };
-              updateSession(sid, s => ({ ...s, pendingDraft: enriched, activeDocument: enriched }));
+              updateSession(sid, s => ({
+                ...s,
+                pendingDraft: enriched,
+                activeDocument: enriched,
+              }));
+              patchMessage(sid, msgId, m => ({
+                ...m,
+                docCard: enriched,
+              }));
               setDrawerOpen(true);
             } else if (p.token) {
               accText += p.token;
@@ -1557,7 +1543,6 @@ function CommandPalette() {
     }
   }
 
-  // ── Document Actions ─────────────────────────────────
   const handleCopyDraft = () => {
     const text = viewingSnapshot ? viewingSnapshot.content : (activeDocument?.content || '');
     if (!text) return;
@@ -1579,11 +1564,6 @@ function CommandPalette() {
     URL.revokeObjectURL(url);
   };
 
-  const handlePrintDraft = () => {
-    window.print();
-  };
-
-  // Close handler with animation
   const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
@@ -1739,31 +1719,32 @@ function CommandPalette() {
             {/* Scrollable Conversation Stream */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-              {/* ── Empty / Landing State ── */}
+              {/* ── Empty / Landing State (Complete All Tools Display) ── */}
               {messages.length === 0 && (
-                <div style={{ maxWidth: 740, width: '100%', margin: 'auto' }}>
+                <div style={{ maxWidth: 780, width: '100%', margin: 'auto' }}>
                   <div style={{ textAlign: 'center', marginBottom: 20 }}>
                     <div style={{ width: 52, height: 52, margin: '0 auto 12px', borderRadius: 14, background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(99,102,241,0.15))', border: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)' }}>
                       <Icon name="scales" size={24} />
                     </div>
                     <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--lex-text-primary, #172033)', margin: '0 0 6px' }}>AI Legal Associate</h2>
-                    <p style={{ fontSize: 13, color: 'var(--lex-text-secondary, #667085)', maxWidth: 440, margin: '0 auto', lineHeight: 1.5 }}>
+                    <p style={{ fontSize: 13, color: 'var(--lex-text-secondary, #667085)', maxWidth: 460, margin: '0 auto', lineHeight: 1.5 }}>
                       Your AI counsel for legal drafting, research, clause risk analysis, and workflow automation.
                     </p>
                   </div>
 
                   {/* Category Filter Tabs */}
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
                     {LEGAL_TOOL_CATEGORIES.map(c => (
                       <button
                         key={c.id}
                         onClick={() => setToolCategory(c.id)}
                         style={{
-                          padding: '4px 12px', borderRadius: 20,
+                          padding: '5px 14px', borderRadius: 20,
                           background: toolCategory === c.id ? 'var(--lex-accent-blue, #2563EB)' : 'var(--lex-bg-card, #FFFFFF)',
                           color: toolCategory === c.id ? '#FFFFFF' : 'var(--lex-text-secondary, #667085)',
                           border: '1px solid var(--lex-border, #E2E6EF)',
-                          fontSize: 11.5, fontWeight: 600, cursor: 'pointer'
+                          fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                          transition: 'all 0.12s ease'
                         }}
                       >
                         {c.label}
@@ -1771,27 +1752,33 @@ function CommandPalette() {
                     ))}
                   </div>
 
-                  {/* Categorized Tools Grid */}
-                  <div className="lex-tools-grid">
-                    {filteredTools.slice(0, 6).map(t => (
-                      <button
-                        key={t.id}
-                        className="lex-tool-card"
-                        onClick={() => {
-                          setQuery(t.prompt);
-                          setTimeout(() => searchRef.current?.(null, t.prompt), 30);
-                        }}
-                      >
-                        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--lex-accent-blue-subtle, #EFF6FF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)', flexShrink: 0 }}>
-                          <Icon name={t.icon} size={16} />
+                  {/* Balanced Tools Display */}
+                  {toolCategory === 'all' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', marginBottom: 8, letterSpacing: '0.04em' }}>Drafting Tools</div>
+                        <div className="lex-tools-grid">
+                          {draftTools.map(t => renderToolCard(t))}
                         </div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--lex-text-primary, #172033)' }}>{t.title}</div>
-                          <div style={{ fontSize: 11, color: 'var(--lex-text-secondary, #667085)', marginTop: 2, lineHeight: 1.35 }}>{t.desc}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', marginBottom: 8, letterSpacing: '0.04em' }}>Legal Research & Precedents</div>
+                        <div className="lex-tools-grid">
+                          {researchTools.map(t => renderToolCard(t))}
                         </div>
-                      </button>
-                    ))}
-                  </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', marginBottom: 8, letterSpacing: '0.04em' }}>Contract & Risk Analysis</div>
+                        <div className="lex-tools-grid">
+                          {analyzeTools.map(t => renderToolCard(t))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="lex-tools-grid">
+                      {LEGAL_TOOLS.filter(t => t.category === toolCategory).map(t => renderToolCard(t))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1822,13 +1809,40 @@ function CommandPalette() {
                       <Icon name="sparkles" size={15} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0, background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: '2px 14px 14px 14px', padding: '16px 20px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-                      <div className="lex-md" style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--lex-text-primary, #172033)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
+                      {msg.text && (
+                        <div className="lex-md" style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--lex-text-primary, #172033)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
+                      )}
+
+                      {/* Generated Draft Chat Artifact Card */}
+                      {msg.docCard && (
+                        <div className="lex-artifact-card">
+                          <div className="lex-artifact-head">
+                            <div className="lex-artifact-title">{msg.docCard.title || 'Legal Document Draft'}</div>
+                            <span className="lex-artifact-badge">AI Generated · Draft</span>
+                          </div>
+                          <div className="lex-artifact-meta">
+                            <span>§ {extractSections(msg.docCard.content).length} Sections</span>
+                            <span>·</span>
+                            <span>{extractPlaceholders(msg.docCard.content).length} Details Required</span>
+                          </div>
+                          <button
+                            className="lex-artifact-open-btn"
+                            onClick={() => {
+                              updateSession(currentId, s => ({ ...s, activeDocument: msg.docCard }));
+                              setDrawerOpen(true);
+                            }}
+                          >
+                            <Icon name="draft" size={13} />
+                            Open Draft in Workspace →
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
 
-              {/* ── Transparent AI Progress Indicator (P0) ── */}
+              {/* ── Transparent AI Progress Indicator ── */}
               {loading && (
                 <div className="lex-generation-card">
                   <div className="lex-gen-header">
@@ -1858,8 +1872,42 @@ function CommandPalette() {
             {/* ══════════════════════════════════════════════
                  COMMAND CENTER / COMPOSER (P0)
             ══════════════════════════════════════════════ */}
-            <div style={{ padding: '12px 20px 16px', background: 'var(--lex-bg-card, #FFFFFF)', borderTop: '1px solid var(--lex-border, #E2E6EF)' }}>
+            <div style={{ padding: '8px 20px 16px', background: 'var(--lex-bg-card, #FFFFFF)', borderTop: '1px solid var(--lex-border, #E2E6EF)' }}>
               
+              {/* Prompt Suggestions Bar */}
+              <div className="lex-suggestions-bar">
+                {PROMPT_SUGGESTIONS.map((s, idx) => (
+                  <button
+                    key={idx}
+                    className="lex-suggest-chip"
+                    onClick={() => {
+                      setQuery(s.prompt);
+                      setTimeout(() => searchRef.current?.(null, s.prompt), 30);
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Assistant Tools Bar */}
+              <div className="lex-assistant-tools">
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--lex-text-muted, #8E98A8)', textTransform: 'uppercase', marginRight: 2 }}>Tools:</span>
+                {ASSISTANT_TOOLS.map(t => (
+                  <button
+                    key={t.id}
+                    className="lex-ast-tool-btn"
+                    onClick={() => {
+                      setQuery(t.prompt);
+                      setTimeout(() => searchRef.current?.(null, t.prompt), 30);
+                    }}
+                  >
+                    <Icon name={t.icon} size={12} />
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
               {/* Attached file preview badge */}
               {attachedFile && (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--lex-accent-blue-subtle, #EFF6FF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 20, fontSize: 11.5, color: 'var(--lex-accent-blue, #2563EB)', marginBottom: 8 }}>
@@ -1871,52 +1919,90 @@ function CommandPalette() {
 
               <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept=".pdf,.docx,.doc,.txt,.md" onChange={handleFileAttach} />
 
-              <div className="lex-composer-container">
-                <textarea
-                  ref={inputRef}
-                  className="lex-textarea"
-                  rows={2}
-                  value={query}
-                  onChange={e => {
-                    setQuery(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSearch(null);
-                    }
-                  }}
-                  placeholder="Ask LexAmplify anything... (Shift+Enter for new line)"
-                />
-
-                <div className="lex-composer-bottom">
-                  <div className="lex-composer-tools">
-                    <button type="button" className="lex-tool-btn" onClick={() => fileInputRef.current?.click()} title="Attach Document (PDF, DOCX, TXT)">
-                      <Icon name="attach" size={14} /> Attach
-                    </button>
-                    <button type="button" className="lex-tool-btn" onClick={toggleMic} style={{ color: isListening ? '#DC2626' : undefined }} title="Voice Command">
-                      <Icon name="mic" size={14} /> {isListening ? 'Listening…' : 'Voice'}
-                    </button>
-                  </div>
-
-                  <div>
-                    {loading ? (
-                      <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
-                        <Icon name="stop" size={12} /> Stop
-                      </button>
-                    ) : (
+              <div className="lex-composer-wrapper">
+                {/* Slash Commands Autocomplete Popup */}
+                {isSlashActive && filteredSlashCmds.length > 0 && (
+                  <div className="lex-slash-popup">
+                    {filteredSlashCmds.map((c, i) => (
                       <button
-                        type="button"
-                        className="lex-send-btn"
-                        disabled={!query.trim() && !attachedFile}
-                        onClick={() => handleSearch(null)}
+                        key={c.cmd}
+                        className={`lex-slash-item ${i === slashIndex ? 'selected' : ''}`}
+                        onClick={() => {
+                          setQuery(c.fill);
+                          inputRef.current?.focus();
+                        }}
                       >
-                        <span>Send</span>
-                        <Icon name="send" size={13} />
+                        <span className="lex-slash-cmd">{c.cmd}</span>
+                        <span className="lex-slash-label">{c.label}</span>
                       </button>
-                    )}
+                    ))}
+                  </div>
+                )}
+
+                <div className="lex-composer-container">
+                  <textarea
+                    ref={inputRef}
+                    className="lex-textarea"
+                    rows={2}
+                    value={query}
+                    onChange={e => {
+                      setQuery(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+                    }}
+                    onKeyDown={e => {
+                      if (isSlashActive && filteredSlashCmds.length > 0) {
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setSlashIndex(prev => (prev + 1) % filteredSlashCmds.length);
+                          return;
+                        }
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setSlashIndex(prev => (prev - 1 + filteredSlashCmds.length) % filteredSlashCmds.length);
+                          return;
+                        }
+                        if (e.key === 'Enter' || e.key === 'Tab') {
+                          e.preventDefault();
+                          setQuery(filteredSlashCmds[slashIndex].fill);
+                          return;
+                        }
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSearch(null);
+                      }
+                    }}
+                    placeholder="Ask LexAmplify anything... Type / for drafting commands (Shift+Enter for new line)"
+                  />
+
+                  <div className="lex-composer-bottom">
+                    <div className="lex-composer-tools">
+                      <button type="button" className="lex-tool-btn" onClick={() => fileInputRef.current?.click()} title="Attach Document (PDF, DOCX, TXT)">
+                        <Icon name="attach" size={14} /> Attach
+                      </button>
+                      <button type="button" className="lex-tool-btn" onClick={toggleMic} style={{ color: isListening ? '#DC2626' : undefined }} title="Voice Command">
+                        <Icon name="mic" size={14} /> {isListening ? 'Listening…' : 'Voice'}
+                      </button>
+                    </div>
+
+                    <div>
+                      {loading ? (
+                        <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
+                          <Icon name="stop" size={12} /> Stop
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="lex-send-btn"
+                          disabled={!query.trim() && !attachedFile}
+                          onClick={() => handleSearch(null)}
+                        >
+                          <span>Send</span>
+                          <Icon name="send" size={13} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1929,7 +2015,7 @@ function CommandPalette() {
           </main>
 
           {/* ══════════════════════════════════════════════
-               RIGHT: LEGAL DOCUMENT WORKSPACE DRAWER (P1/P2)
+               RIGHT: LEGAL DOCUMENT WORKSPACE DRAWER (P1)
           ══════════════════════════════════════════════ */}
           <aside
             style={{
@@ -1956,13 +2042,23 @@ function CommandPalette() {
 
                   {/* Toolbar Actions */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {docSections.length > 0 && (
+                      <button
+                        className="lex-tool-btn"
+                        onClick={() => setOutlineOpen(v => !v)}
+                        style={{ background: outlineOpen ? 'var(--lex-accent-blue-subtle, #EFF6FF)' : undefined, color: outlineOpen ? 'var(--lex-accent-blue, #2563EB)' : undefined }}
+                        title="Toggle Document Outline"
+                      >
+                        <Icon name="outline" size={13} /> {outlineOpen ? 'Outline ▲' : `Outline (${docSections.length})`}
+                      </button>
+                    )}
                     <button className="lex-tool-btn" onClick={handleCopyDraft} title="Copy Draft">
                       <Icon name="copy" size={13} /> {copyToast ? 'Copied!' : 'Copy'}
                     </button>
                     <button className="lex-tool-btn" onClick={handleDownloadDraft} title="Download .MD">
                       <Icon name="download" size={13} /> Export
                     </button>
-                    <button className="lex-tool-btn" onClick={handlePrintDraft} title="Print / PDF">
+                    <button className="lex-tool-btn" onClick={() => window.print()} title="Print / PDF">
                       <Icon name="print" size={13} />
                     </button>
                     <button className="lex-tool-btn" onClick={() => setIsDrawerExpanded(v => !v)} title="Toggle Theater Mode">
@@ -1987,6 +2083,38 @@ function CommandPalette() {
                       {showCompletionPanel ? 'Hide Form' : '⚡ Complete Draft Fields'}
                     </button>
                   )}
+                </div>
+
+                {/* Collapsible Document Outline Panel */}
+                {outlineOpen && docSections.length > 0 && (
+                  <div className="lex-outline-panel">
+                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.04em' }}>Document Outline</div>
+                    {docSections.map((sec, si) => (
+                      <div
+                        key={si}
+                        className="lex-outline-item"
+                        onClick={() => {
+                          setSelectedSection(sec.full);
+                          handleScrollToSection(sec.slug);
+                        }}
+                      >
+                        <span>§ {sec.full}</span>
+                        <span style={{ fontSize: 10, color: 'var(--lex-accent-blue, #2563EB)' }}>Jump →</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Contextual Clause Action Bar */}
+                <div className="lex-section-ai-bar">
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--lex-text-secondary, #667085)' }}>
+                    Clause AI Actions {selectedSection ? `(${selectedSection})` : ''}:
+                  </span>
+                  <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'improve')}>✦ Improve</button>
+                  <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'stronger')}>✦ Legally Stronger</button>
+                  <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'simplify')}>✦ Simplify</button>
+                  <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'explain')}>✦ Explain</button>
+                  <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'protections')}>✦ Add Protections</button>
                 </div>
 
                 {/* Batch Placeholders Completion Panel */}
@@ -2064,8 +2192,14 @@ function CommandPalette() {
           draft={activeDocument}
           sessionTitle={currentSession?.title || ''}
           apiBase={API_BASE}
-          onConfirm={({ fileName, folderId, folderPath, tags, format }) => {
-            updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
+          onConfirm={({ fileName, folderId, folderPath }) => {
+            const savedItem = { id: `v_${Date.now()}`, name: fileName, path: folderPath };
+            updateSession(currentId, s => ({
+              ...s,
+              savedAssets: [...(s.savedAssets || []), savedItem],
+              pendingDraft: null,
+              activeDocument: null,
+            }));
             setShowSaveModal(false);
             setDrawerOpen(false);
             pushMessage(currentId, {
@@ -2088,59 +2222,118 @@ function CommandPalette() {
     </>
   );
 
+  // Helper renderer for each quick action tool card
+  function renderToolCard(t) {
+    return (
+      <button
+        key={t.id}
+        className="lex-tool-card"
+        onClick={() => {
+          setQuery(t.prompt);
+          setTimeout(() => searchRef.current?.(null, t.prompt), 30);
+        }}
+      >
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--lex-accent-blue-subtle, #EFF6FF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)', flexShrink: 0 }}>
+          <Icon name={t.icon} size={16} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--lex-text-primary, #172033)' }}>{t.title}</div>
+          <div style={{ fontSize: 11, color: 'var(--lex-text-secondary, #667085)', marginTop: 2, lineHeight: 1.35 }}>{t.desc}</div>
+        </div>
+      </button>
+    );
+  }
+
   // Helper renderer for each session card in the sidebar
   function renderSessionRow(s) {
     const isActive = s.id === currentId;
     const isMenuOpen = openMenuId === s.id;
+    const hasActiveDraft = s.activeDocument;
+    const hasSavedAssets = s.savedAssets && s.savedAssets.length > 0;
+
     return (
-      <div
-        key={s.id}
-        className={`lex-sess-item ${isActive ? 'active' : ''}`}
-        onClick={() => selectSession(s.id)}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {renamingId === s.id ? (
-            <input
-              autoFocus
-              value={renameValue}
-              onChange={e => setRenameValue(e.target.value)}
-              onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
-                if (e.key === 'Escape') setRenamingId(null);
-              }}
-              style={{ width: '100%', fontSize: 12, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--lex-accent-blue, #2563EB)', outline: 'none' }}
-              onClick={e => e.stopPropagation()}
-            />
-          ) : (
-            <>
-              <div className="lex-sess-title">{s.title || 'New conversation'}</div>
-              <div className="lex-sess-meta">
-                <span>{relativeDate(s.updatedAt)}</span>
-                {s.messages?.length > 0 && <span>· {s.messages.length} turns</span>}
-              </div>
-            </>
-          )}
+      <div key={s.id}>
+        <div
+          className={`lex-sess-item ${isActive ? 'active' : ''}`}
+          onClick={() => selectSession(s.id)}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {renamingId === s.id ? (
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
+                  if (e.key === 'Escape') setRenamingId(null);
+                }}
+                style={{ width: '100%', fontSize: 12, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--lex-accent-blue, #2563EB)', outline: 'none' }}
+                onClick={e => e.stopPropagation()}
+              />
+            ) : (
+              <>
+                <div className="lex-sess-title">{s.title || 'New conversation'}</div>
+                <div className="lex-sess-meta">
+                  <span>{relativeDate(s.updatedAt)}</span>
+                  {s.messages?.length > 0 && <span>· {s.messages.length} turns</span>}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setOpenMenuId(isMenuOpen ? null : s.id)}
+              style={{ background: 'none', border: 'none', color: 'var(--lex-text-muted, #8E98A8)', cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}
+            >
+              ⋮
+            </button>
+            {isMenuOpen && (
+              <ConversationMenu
+                session={s}
+                onPin={() => { pinSession(s.id); setOpenMenuId(null); }}
+                onRename={() => { setRenamingId(s.id); setRenameValue(s.title); setOpenMenuId(null); }}
+                onShare={() => { setShareSessionId(s.id); setOpenMenuId(null); }}
+                onDelete={() => { deleteSession(s.id); setOpenMenuId(null); }}
+                onClose={() => setOpenMenuId(null)}
+              />
+            )}
+          </div>
         </div>
 
-        <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
-          <button
-            onClick={() => setOpenMenuId(isMenuOpen ? null : s.id)}
-            style={{ background: 'none', border: 'none', color: 'var(--lex-text-muted, #8E98A8)', cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}
-          >
-            ⋮
-          </button>
-          {isMenuOpen && (
-            <ConversationMenu
-              session={s}
-              onPin={() => { pinSession(s.id); setOpenMenuId(null); }}
-              onRename={() => { setRenamingId(s.id); setRenameValue(s.title); setOpenMenuId(null); }}
-              onShare={() => { setShareSessionId(s.id); setOpenMenuId(null); }}
-              onDelete={() => { deleteSession(s.id); setOpenMenuId(null); }}
-              onClose={() => setOpenMenuId(null)}
-            />
-          )}
-        </div>
+        {/* Restored Nested Document Tree under Active Session */}
+        {isActive && (hasActiveDraft || hasSavedAssets) && (
+          <div className="lex-sidebar-tree">
+            {hasActiveDraft && (
+              <button
+                className="lex-sidebar-tree-node"
+                onClick={() => setDrawerOpen(true)}
+                title="Open Active Draft"
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Icon name="draft" size={11} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
+                  {s.activeDocument.title || 'Draft in Progress'}
+                </span>
+                <span style={{ fontSize: 10, color: 'var(--lex-accent-blue, #2563EB)', fontWeight: 600 }}>Open</span>
+              </button>
+            )}
+            {hasSavedAssets && s.savedAssets.map((asset, ai) => (
+              <button
+                key={ai}
+                className="lex-sidebar-tree-node"
+                onClick={() => navigate('/vault')}
+                title={`Saved to ${asset.path || 'Vault'}`}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Icon name="folder" size={11} style={{ color: '#16A34A' }} />
+                  {asset.name}
+                </span>
+                <span style={{ fontSize: 9.5, color: '#16A34A' }}>Vault</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
