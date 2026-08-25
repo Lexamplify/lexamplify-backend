@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
-import { formatCourtDisplayName } from '../utils/courtNameFormatter.js';
+import { formatCourtDisplayName, getMetroComplexes, resolveDistrictSelection } from '../utils/courtNameFormatter.js';
 import JudgesDirectory from './JudgesDirectory.jsx';
 import HighCourtSelector from './HighCourtSelector.jsx';
 import {
@@ -1503,22 +1503,40 @@ export default function CourtResources() {
                   style={{ opacity: selectedDistState ? 1 : 0.6, cursor: selectedDistState ? 'pointer' : 'not-allowed' }}
                 >
                   <option value="">Select District</option>
-                  {selectedDistState && (districtsDb[selectedDistState] || [])
-                    .slice()
-                    .sort((a,b) => a.name.localeCompare(b.name))
-                    .map(d => (
-                      // value stays the raw eCourts name — the DB lookup on
-                      // line ~1476 and the cause-list URL both key off this
-                      // exact string; only the visible label is formatted.
-                      <option key={d.name} value={d.name}>{formatCourtDisplayName(selectedDistState, d.name)}</option>
-                    ))
-                  }
+                  {selectedDistState && (() => {
+                    // Most districts pass straight through as {value: raw
+                    // eCourts name, label: formatted name} — value stays the
+                    // raw name so the DB lookup below and the cause-list URL
+                    // keep keying off it. A metro override (Chennai,
+                    // Bengaluru) expands into several complex options that
+                    // aren't themselves real eCourts districts, so their
+                    // value instead encodes "<realDistrictName>::<index>" —
+                    // resolveDistrictSelection() unpacks that back to the
+                    // real name for .url lookups and to the right complex
+                    // label for display.
+                    const options = [];
+                    for (const d of (districtsDb[selectedDistState] || [])) {
+                      const complexes = getMetroComplexes(selectedDistState, d.name);
+                      if (complexes) {
+                        complexes.forEach((label, i) => {
+                          options.push({ value: `${d.name}::${i}`, label });
+                        });
+                      } else {
+                        options.push({ value: d.name, label: formatCourtDisplayName(selectedDistState, d.name) });
+                      }
+                    }
+                    options.sort((a, b) => a.label.localeCompare(b.label));
+                    return options.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ));
+                  })()}
                 </select>
               </div>
             </div>
 
             {selectedDistrict ? (() => {
-              const distData   = (districtsDb[selectedDistState] || []).find(d => d.name === selectedDistrict);
+              const { realDistrictName, displayName } = resolveDistrictSelection(selectedDistState, selectedDistrict);
+              const distData   = (districtsDb[selectedDistState] || []).find(d => d.name === realDistrictName);
               const officialUrl  = distData?.url || null;
               const causeListUrl = generateCauseListUrl(officialUrl);
               return (
@@ -1527,7 +1545,7 @@ export default function CourtResources() {
                   <div className="dc-court-header">
                     <div className="dc-court-icon">🏛️</div>
                     <div>
-                      <div className="dc-court-name">{formatCourtDisplayName(selectedDistState, selectedDistrict)}</div>
+                      <div className="dc-court-name">{displayName}</div>
                       <div className="dc-court-meta">District &amp; Sessions Court · Subordinate Judiciary</div>
                     </div>
                     <span className="dc-state-chip">{selectedDistState}</span>

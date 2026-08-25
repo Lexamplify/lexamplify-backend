@@ -68,3 +68,66 @@ export function formatCourtDisplayName(stateName, districtName) {
 
   return `District Court, ${trimmed}`;
 }
+
+// ── Metro court-complex overrides ────────────────────────────────────────────
+// A directive asking to inject named complexes for Mumbai, Kolkata,
+// Hyderabad, and Ahmedabad (in addition to Chennai and Bengaluru) was only
+// half right: districts.json already splits those four metros' courts into
+// multiple correctly-named entries that bypass the generic fallback above on
+// their own merit (they contain "Court"), e.g. "Mumbai CMM Court", "Kolkata-
+// City Civil Court", "Hyderabad-Metropolitan Sessions Court", "City Civil &
+// Sessions Court, Ahmedabad". Replacing those with a hand-typed alternate
+// list would have meant discarding real, already-correct eCourts-sourced
+// entries in favor of unverified guesses — so only the two states below,
+// where a single bare entry ("Chennai" / "Bengaluru") genuinely exists and
+// falls through to "District Court, X", get expanded. Complex names verified
+// against districts.ecourts.gov.in and bengaluru.dcourts.gov.in.
+const METRO_COURT_COMPLEXES = {
+  'tamil nadu|chennai': [
+    'City Civil Court Complex (High Court Campus)',
+    'Chief Metropolitan Magistrate Court, Egmore',
+    'Small Causes Court, Chennai',
+    'Saidapet Court Complex',
+    'George Town Court Complex',
+  ],
+  'karnataka|bengaluru': [
+    'City Civil and Sessions Court Complex, Bengaluru',
+    'Chief Metropolitan Magistrate Court Complex',
+    'Court of Small Causes, Bengaluru',
+    'Mayo Hall Court Complex',
+  ],
+};
+
+/**
+ * Returns the list of metro court-complex names for a (state, raw district)
+ * pair, or null if this district has no override. Order here is not
+ * meaningful — callers sort by final display label.
+ */
+export function getMetroComplexes(stateName, districtName) {
+  if (typeof stateName !== 'string' || typeof districtName !== 'string') return null;
+  const key = `${stateName.trim().toLowerCase()}|${districtName.trim().toLowerCase()}`;
+  return METRO_COURT_COMPLEXES[key] || null;
+}
+
+/**
+ * Resolves a district <select> value back to (a) the real eCourts district
+ * name — needed to look up `.url` for the official-site/cause-list buttons,
+ * since a metro complex isn't itself a real eCourts district — and (b) the
+ * correct display label. Metro-complex values are encoded as
+ * "<realDistrictName>::<complexIndex>"; anything else is a normal district
+ * name passed straight through formatCourtDisplayName.
+ */
+export function resolveDistrictSelection(stateName, selectedValue) {
+  if (!selectedValue) return { realDistrictName: selectedValue, displayName: selectedValue };
+
+  const sepIndex = selectedValue.lastIndexOf('::');
+  if (sepIndex === -1) {
+    return { realDistrictName: selectedValue, displayName: formatCourtDisplayName(stateName, selectedValue) };
+  }
+
+  const realDistrictName = selectedValue.slice(0, sepIndex);
+  const complexIndex = Number(selectedValue.slice(sepIndex + 2));
+  const complexes = getMetroComplexes(stateName, realDistrictName);
+  const displayName = (complexes && complexes[complexIndex] != null) ? complexes[complexIndex] : realDistrictName;
+  return { realDistrictName, displayName };
+}
