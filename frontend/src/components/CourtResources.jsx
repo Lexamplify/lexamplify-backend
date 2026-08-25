@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
 import { formatCourtDisplayName, getMetroComplexes, resolveDistrictSelection } from '../utils/courtNameFormatter.js';
@@ -149,13 +149,22 @@ const LEGACY_STATE_KEY_BY_COURT_ID = {
   andhra: 'andhra',
 };
 
-const COURT_TABS = [
+// Ids are load-bearing — they're exactly what every `{activeTab === '...'
+// && (...)}` panel condition below already checks against (also mirrored
+// in VALID_TABS for the AI-assistant deep-link effect), so they're kept
+// identical to the previous COURT_TABS ids rather than the more verbose
+// ones a fresh design would pick, or every panel in the file would stop
+// rendering.
+const PRIMARY_COURT_TABS = [
   { id: 'supreme',   icon: '🏛️', label: 'Supreme Court' },
   { id: 'highcourt', icon: '🏢', label: 'High Courts' },
-  { id: 'district',  icon: '📂', label: 'District Courts' },
-  { id: 'judges',    icon: '🧑‍⚖️', label: 'Judges Directory' },
+  { id: 'district',  icon: '📁', label: 'District Courts' },
+  { id: 'judges',    icon: '👨‍⚖️', label: 'Judges Directory' },
+];
+
+const UTILITY_TABS = [
   { id: 'laws',      icon: '📖', label: 'Bare Acts' },
-  { id: 'forms',     icon: '📋', label: 'Legal Forms' },
+  { id: 'forms',     icon: '📝', label: 'Legal Forms' },
   { id: 'events',    icon: '📅', label: 'Legal Events' },
   { id: 'courtfee',  icon: '⚖️', label: 'Fee Calculator' },
   { id: 'enotary',   icon: '🔏', label: 'e-Notary' },
@@ -223,97 +232,60 @@ const styles = `
     }
   }
 
-  /* ── Sub-Tabs Navigation (Single-row capsule bar with wheel scrolling & edge indicators) ── */
-  .court-subtabs-wrapper {
-    position: relative !important;
-    width: 100% !important;
+  /* ── Court Navigation (fixed, non-scrolling: 4 primary tabs + a
+     "Legal Utilities" dropdown for the 6 ancillary tools). Replaces an
+     earlier horizontally-scrollable capsule bar that manually translated
+     wheel deltaY into scrollLeft — that fights a trackpad's native inertial
+     momentum physics (the browser and the JS handler both try to own the
+     scroll position at once), which reads as jank/stutter on laptops. A
+     fixed nav with no scroll container removes the whole class of bug
+     rather than tuning the wheel math. ── */
+  .court-nav-container {
     display: flex !important;
     align-items: center !important;
-    border-bottom: 1px solid var(--border-color, var(--border-dark-subtle, rgba(0, 0, 0, 0.08))) !important;
-    margin-bottom: 24px !important;
-  }
-
-  .court-subtabs-bar {
-    display: flex !important;
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    -webkit-overflow-scrolling: touch !important;
-    scrollbar-width: none !important;
-    -ms-overflow-style: none !important;
-    gap: 6px !important;
-    padding: 8px 4px !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
     width: 100% !important;
+    padding-bottom: 12px !important;
+    margin-bottom: 24px !important;
+    border-bottom: 1px solid var(--border-color, var(--border-dark-subtle, rgba(0, 0, 0, 0.08))) !important;
     box-sizing: border-box !important;
-    scroll-behavior: smooth !important;
   }
 
-  .court-subtabs-bar::-webkit-scrollbar {
-    display: none !important;
-  }
-
-  /* Edge overflow indicators */
-  .court-overflow-indicator-left,
-  .court-overflow-indicator-right {
-    position: absolute !important;
-    top: 0 !important;
-    bottom: 1px !important;
-    width: 32px !important;
-    pointer-events: none !important;
-    z-index: 2 !important;
-    opacity: 0 !important;
-    transition: opacity 0.2s ease-in-out !important;
-  }
-
-  .court-overflow-indicator-left {
-    left: 0 !important;
-    background: linear-gradient(90deg, var(--bg-dark-app, var(--bg-app, #0A0E17)) 0%, transparent 100%) !important;
-  }
-
-  .court-overflow-indicator-right {
-    right: 0 !important;
-    background: linear-gradient(270deg, var(--bg-dark-app, var(--bg-app, #0A0E17)) 0%, transparent 100%) !important;
-  }
-
-  :root[data-theme="light"] .court-overflow-indicator-left {
-    background: linear-gradient(90deg, var(--bg-app, #EAEDF3) 0%, transparent 100%) !important;
-  }
-
-  :root[data-theme="light"] .court-overflow-indicator-right {
-    background: linear-gradient(270deg, var(--bg-app, #EAEDF3) 0%, transparent 100%) !important;
-  }
-
-  .court-overflow-indicator-left.visible,
-  .court-overflow-indicator-right.visible {
-    opacity: 1 !important;
+  .court-dropdown-wrapper {
+    position: relative !important;
+    display: inline-block !important;
   }
 
   .court-subtab-item {
-    flex-shrink: 0 !important;
-    white-space: nowrap !important;
     display: inline-flex !important;
     align-items: center !important;
     gap: 6px !important;
-    padding: 7px 13px !important;
+    padding: 8px 14px !important;
     border-radius: 8px !important;
     font-size: 13px !important;
     font-weight: 500 !important;
     cursor: pointer !important;
-    transition: all 0.15s ease-in-out !important;
     border: 1px solid transparent !important;
     background: transparent !important;
     color: var(--text-secondary, var(--text-dark-muted, #64748b)) !important;
-    scroll-margin: 0 16px !important;
+    transition: all 0.15s ease-in-out !important;
+    white-space: nowrap !important;
     user-select: none !important;
     font-family: inherit !important;
   }
 
-  .court-subtab-item:hover {
+  /* :not(.active) — otherwise this rule's higher specificity (a
+     [data-theme] attribute selector in the light-mode variant) beats
+     .court-subtab-item.active's background the moment the pointer lingers
+     over the tab you just clicked, leaving blue text/border but a gray
+     background. */
+  .court-subtab-item:hover:not(.active) {
     background: var(--bg-hover, rgba(255, 255, 255, 0.04)) !important;
     color: var(--text-primary, var(--text-dark-primary, #0f172a)) !important;
   }
 
-  :root[data-theme="light"] .court-subtab-item:hover {
+  :root[data-theme="light"] .court-subtab-item:hover:not(.active) {
     background: var(--bg-hover, rgba(0, 0, 0, 0.04)) !important;
   }
 
@@ -329,15 +301,67 @@ const styles = `
     outline-offset: 2px !important;
   }
 
+  .court-dropdown-menu {
+    position: absolute !important;
+    top: calc(100% + 6px) !important;
+    left: 0 !important;
+    min-width: 210px !important;
+    background: var(--bg-panel, var(--bg-dark-panel, #ffffff)) !important;
+    border: 1px solid var(--border-color, var(--border-dark-subtle, rgba(0, 0, 0, 0.12))) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+    padding: 6px !important;
+    z-index: 100 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+  }
+
+  .court-dropdown-item {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    color: var(--text-primary, var(--text-dark-primary, #0f172a)) !important;
+    background: transparent !important;
+    border: none !important;
+    cursor: pointer !important;
+    text-align: left !important;
+    transition: background 0.12s ease !important;
+    box-sizing: border-box !important;
+    font-family: inherit !important;
+  }
+
+  .court-dropdown-item:hover:not(.active) {
+    background: var(--bg-hover, rgba(255, 255, 255, 0.04)) !important;
+  }
+
+  :root[data-theme="light"] .court-dropdown-item:hover:not(.active) {
+    background: var(--bg-hover, rgba(0, 0, 0, 0.05)) !important;
+  }
+
+  .court-dropdown-item.active {
+    background: var(--accent-blue-subtle, var(--accent-muted, rgba(59, 130, 246, 0.1))) !important;
+    color: var(--accent-blue, var(--accent-primary, #2563eb)) !important;
+    font-weight: 600 !important;
+  }
+
+  .court-dropdown-item:focus-visible {
+    outline: 2px solid var(--accent-blue, var(--accent-primary, #3b82f6)) !important;
+    outline-offset: -2px !important;
+  }
+
   @media (max-width: 768px) {
-    .court-subtabs-bar {
-      padding: 6px 2px !important;
-      gap: 4px !important;
-    }
     .court-subtab-item {
-      min-height: 42px !important;
-      padding: 8px 12px !important;
-      font-size: 12.5px !important;
+      min-height: 40px !important;
+    }
+    .court-dropdown-menu {
+      left: auto !important;
+      right: 0 !important;
+      max-width: 90vw !important;
     }
   }
 
@@ -887,58 +911,33 @@ export default function CourtResources() {
   const location = useLocation();
 
   const [activeTab, setActiveTab] = useState('supreme');
-  const tabsBarRef = useRef(null);
-  const [overflowLeft, setOverflowLeft] = useState(false);
-  const [overflowRight, setOverflowRight] = useState(false);
+  const [isUtilityOpen, setIsUtilityOpen] = useState(false);
+  const utilityDropdownRef = useRef(null);
 
-  const checkOverflow = useCallback(() => {
-    const el = tabsBarRef.current;
-    if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    setOverflowLeft(scrollLeft > 6);
-    setOverflowRight(scrollLeft + clientWidth < scrollWidth - 6);
-  }, []);
+  const isUtilityActive = UTILITY_TABS.some((tab) => tab.id === activeTab);
+  const activeUtility = UTILITY_TABS.find((tab) => tab.id === activeTab) || null;
 
-  // Native non-passive horizontal wheel listener
+  // Close the Legal Utilities dropdown on an outside click or Escape — the
+  // two standard dismissal paths for any accessible popover menu.
   useEffect(() => {
-    const el = tabsBarRef.current;
-    if (!el) return;
+    if (!isUtilityOpen) return;
 
-    const handleWheelNative = (e) => {
-      if (e.deltaY !== 0) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY;
+    const handleOutsideClick = (e) => {
+      if (utilityDropdownRef.current && !utilityDropdownRef.current.contains(e.target)) {
+        setIsUtilityOpen(false);
       }
     };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setIsUtilityOpen(false);
+    };
 
-    el.addEventListener('wheel', handleWheelNative, { passive: false });
-    el.addEventListener('scroll', checkOverflow, { passive: true });
-    window.addEventListener('resize', checkOverflow);
-    checkOverflow();
-
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
     return () => {
-      el.removeEventListener('wheel', handleWheelNative);
-      el.removeEventListener('scroll', checkOverflow);
-      window.removeEventListener('resize', checkOverflow);
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
     };
-  }, [checkOverflow]);
-
-  const handleWheel = (e) => {
-    if (e.deltaY !== 0 && tabsBarRef.current) {
-      tabsBarRef.current.scrollLeft += e.deltaY;
-    }
-  };
-
-  // Auto-scroll active tab into view on mount or tab change
-  useEffect(() => {
-    if (tabsBarRef.current) {
-      const activeEl = tabsBarRef.current.querySelector('.court-subtab-item.active');
-      if (activeEl) {
-        activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-      }
-      checkOverflow();
-    }
-  }, [activeTab, checkOverflow]);
+  }, [isUtilityOpen]);
 
   // ── Deep-link from AI Legal Associate navigation ──────────────────────────
   // When the AI navigates here with { state: { openTab: 'highcourt' } }, auto-switch tab
@@ -1362,39 +1361,59 @@ export default function CourtResources() {
           </Link>
         </div>
 
-        {/* Sub-tab navigation (single-row horizontally scrollable capsule bar) */}
-        <div className="court-subtabs-wrapper">
-          <div
-            className={`court-overflow-indicator-left ${overflowLeft ? 'visible' : ''}`}
-            aria-hidden="true"
-          />
-          <div
-            ref={tabsBarRef}
-            className="court-subtabs-bar"
-            onWheel={handleWheel}
-            role="tablist"
-            aria-label="Court Resource Sub-Tabs"
-          >
-            {COURT_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                className={`court-subtab-item ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setSearchQuery('');
-                }}
-              >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
+        {/* Court navigation: 4 fixed primary tabs + a "Legal Utilities"
+            dropdown for the 6 ancillary tools. No scroll container, no
+            wheel listeners — see the .court-nav-container CSS comment. */}
+        <div className="court-nav-container" aria-label="Court Resource Tabs">
+          {PRIMARY_COURT_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              aria-selected={activeTab === tab.id}
+              className={`court-subtab-item ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setSearchQuery('');
+              }}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+
+          <div className="court-dropdown-wrapper" ref={utilityDropdownRef}>
+            <button
+              type="button"
+              className={`court-subtab-item ${isUtilityActive ? 'active' : ''}`}
+              onClick={() => setIsUtilityOpen((open) => !open)}
+              aria-haspopup="true"
+              aria-expanded={isUtilityOpen}
+            >
+              <span>{activeUtility ? `${activeUtility.icon} ${activeUtility.label}` : '⚡ Legal Utilities'}</span>
+              <span style={{ fontSize: '10px', marginLeft: '4px' }}>{isUtilityOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {isUtilityOpen && (
+              <div className="court-dropdown-menu" role="menu">
+                {UTILITY_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="menuitem"
+                    className={`court-dropdown-item ${activeTab === tab.id ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      setSearchQuery('');
+                      setIsUtilityOpen(false);
+                    }}
+                  >
+                    <span>{tab.icon}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <div
-            className={`court-overflow-indicator-right ${overflowRight ? 'visible' : ''}`}
-            aria-hidden="true"
-          />
         </div>
 
         {/* ────────── TAB 1: SUPREME COURT ────────── */}

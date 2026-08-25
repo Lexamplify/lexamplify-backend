@@ -134,7 +134,7 @@ describe('Court Directory & Resources', () => {
     await userEvent.click(highCourtTab);
 
     expect(highCourtTab.className).toContain('active');
-    expect(await screen.findByText(/Select State High Court/i)).toBeInTheDocument();
+    expect(await screen.findByText(/High Courts of India/i)).toBeInTheDocument();
   });
 });
 
