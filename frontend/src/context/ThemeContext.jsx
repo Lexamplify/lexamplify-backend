@@ -4,7 +4,7 @@ const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('lexai_theme') || 'dark';
+    return localStorage.getItem('lexai_theme') || 'light';
   });
 
   useEffect(() => {
