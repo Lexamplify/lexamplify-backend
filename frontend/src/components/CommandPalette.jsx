@@ -218,7 +218,8 @@ const AGENT_CSS = `
   .LexAmplify-drawer {
     position: fixed; inset: 0; z-index: 9999;
     display: flex; overflow: hidden;
-    background: rgba(3,6,14,.95);
+    background: var(--bg-app, #0A0E17);
+    color: var(--text-primary, #F3F4F6);
     animation: LexAmplify-drawer-in .2s ease both;
   }
   .LexAmplify-drawer.closing { animation: LexAmplify-drawer-out .18s ease both; }
@@ -263,7 +264,7 @@ const AGENT_CSS = `
 
   .lex-side-scroll::-webkit-scrollbar       { width:3px; }
   .lex-side-scroll::-webkit-scrollbar-track { background:transparent; }
-  .lex-side-scroll::-webkit-scrollbar-thumb { background:#1A2030; border-radius:4px; }
+  .lex-side-scroll::-webkit-scrollbar-thumb { background:var(--bg-card, #1A2030); border-radius:4px; }
 
   /* ── Draft Document renderer ── */
   .lex-draft-doc {
@@ -318,7 +319,7 @@ const AGENT_CSS = `
   .lex-sess-item.active { background:rgba(59,130,246,.13); border-color:rgba(59,130,246,.28); }
 
 
-  .lex-quick { cursor:pointer; padding:10px 14px; border-radius:8px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); display:flex; align-items:flex-start; gap:10px; transition:all .15s; text-align:left; width:100%; }
+  .lex-quick { cursor:pointer; padding:10px 14px; border-radius:8px; background:var(--bg-card, rgba(255,255,255,.03)); border:1px solid var(--border-subtle, rgba(255,255,255,.06)); display:flex; align-items:flex-start; gap:10px; transition:all .15s; text-align:left; width:100%; }
   .lex-quick:hover { background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); }
 
   .lex-close-btn:hover      { background:rgba(239,68,68,.1)!important; border-color:rgba(239,68,68,.3)!important; color:#EF4444!important; }
@@ -379,15 +380,15 @@ const AGENT_CSS = `
   .lex-drawer-body::-webkit-scrollbar-thumb { background:#1E2533; border-radius:4px; }
 
   /* ── Markdown output in chat bubbles ── */
-  .lex-md { word-break:break-word; }
-  .lex-md .md-h1 { font-size:15px; font-weight:700; color:#DDE6F0; margin:14px 0 4px; }
-  .lex-md .md-h2 { font-size:14px; font-weight:700; color:#C8D8E8; margin:12px 0 4px; }
-  .lex-md .md-h3 { font-size:13px; font-weight:700; color:#B0C4D8; margin:10px 0 3px; letter-spacing:.01em; }
+  .lex-md { word-break:break-word; color: inherit; }
+  .lex-md .md-h1 { font-size:15px; font-weight:700; color:inherit; margin:14px 0 4px; }
+  .lex-md .md-h2 { font-size:14px; font-weight:700; color:inherit; margin:12px 0 4px; }
+  .lex-md .md-h3 { font-size:13px; font-weight:700; color:inherit; margin:10px 0 3px; letter-spacing:.01em; }
   .lex-md .md-p  { margin:4px 0; }
   .lex-md .md-ul, .lex-md .md-ol { margin:5px 0 5px 18px; padding:0; }
   .lex-md li     { margin:2px 0; }
-  .lex-md .md-hr { border:none; border-top:1px solid #1A2030; margin:10px 0; }
-  .lex-md .md-code { background:#0F1420; border:1px solid #1A2030; padding:1px 5px; border-radius:3px; font-family:monospace; font-size:12px; color:#93C5FD; }
+  .lex-md .md-hr { border:none; border-top:1px solid var(--border-subtle, #1A2030); margin:10px 0; }
+  .lex-md .md-code { background:#0F1420; border:1px solid var(--border-subtle, #1A2030); padding:1px 5px; border-radius:3px; font-family:monospace; font-size:12px; color:#93C5FD; }
   .lex-md .md-gap { height:6px; }
 
   /* ── Artifact card in chat (glassmorphism) ── */
@@ -419,7 +420,7 @@ const AGENT_CSS = `
   .lex-snapshot-banner { background:rgba(245,158,11,.08); border-bottom:1px solid rgba(245,158,11,.22); padding:5px 14px; display:flex; align-items:center; gap:8px; font-size:11px; color:#FCD34D; flex-shrink:0; }
   .lex-util-btn { background:none; border:none; cursor:pointer; color:#3D5168; padding:3px 6px; border-radius:4px; line-height:1; transition:all .15s; flex-shrink:0; display:flex; align-items:center; }
   .lex-util-btn:hover { color:#7EB3F5; background:rgba(59,130,246,.1); }
-  .lex-copy-toast { position:absolute; top:-26px; right:0; background:#1A2030; border:1px solid #1E2A3A; color:#6EE7B7; font-size:10px; padding:2px 8px; border-radius:4px; white-space:nowrap; pointer-events:none; animation:lex-in .2s ease; }
+  .lex-copy-toast { position:absolute; top:-26px; right:0; background:var(--bg-card, #1A2030); border:1px solid #1E2A3A; color:#6EE7B7; font-size:10px; padding:2px 8px; border-radius:4px; white-space:nowrap; pointer-events:none; animation:lex-in .2s ease; }
 
   /* ── Nested document tree in sidebar ── */
   .lex-doc-tree-wrap  { margin-top:5px; padding-left:8px; display:flex; flex-direction:column; gap:1px; border-left:1px solid rgba(59,130,246,.18); }
@@ -2449,7 +2450,7 @@ function CommandPalette() {
             <div style={{ display: 'flex', gap: 7 }}>
               <button
                 onClick={e => { e.stopPropagation(); setDeleteConfirmId(null); }}
-                style={{ padding: '5px 13px', background: 'transparent', border: '1px solid #1A2030', borderRadius: 5, color: '#64748B', fontSize: 11, cursor: 'pointer' }}
+                style={{ padding: '5px 13px', background: 'transparent', border: '1px solid var(--border-subtle, #1A2030)', borderRadius: 5, color: '#64748B', fontSize: 11, cursor: 'pointer' }}
               >Cancel</button>
               <button
                 onClick={e => { e.stopPropagation(); deleteSession(s.id); setDeleteConfirmId(null); }}
@@ -2584,6 +2585,119 @@ function CommandPalette() {
   return (
     <>
       <style>{AGENT_CSS}</style>
+      <style>{`
+        /* ======== AI ASSOCIATE POLISH ======== */
+        /* Sidebar Upgrades */
+        .lex-sidebar {
+          background: var(--bg-sidebar, #F8FAFC) !important;
+          border-right: 1px solid var(--border-subtle, #E2E8F0) !important;
+        }
+        [data-theme="dark"] .lex-sidebar {
+          background: var(--bg-sidebar, #080B14) !important;
+          border-right: 1px solid var(--border-subtle, #141B28) !important;
+        }
+
+        /* History list items (conversations) */
+        .lex-sess-item {
+          background: var(--bg-panel, #ffffff) !important;
+          border: 1px solid var(--border-subtle, #E2E8F0) !important;
+          border-radius: 8px !important;
+          margin: 4px 12px !important;
+          padding: 10px 12px !important;
+          transition: all 0.2s ease !important;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+          color: var(--text-primary, #1E293B) !important;
+        }
+        .lex-sess-item:hover {
+          transform: translateY(-1px) !important;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.08) !important;
+          border-color: #3B82F6 !important;
+        }
+        .lex-sess-item.active {
+          background: #EFF6FF !important;
+          border-color: #3B82F6 !important;
+          box-shadow: 0 4px 12px rgba(59,130,246,0.15) !important;
+        }
+        [data-theme="dark"] .lex-sess-item {
+          background: var(--bg-panel, #0D111C) !important;
+          border-color: var(--border-subtle, #1A2030) !important;
+          color: var(--text-primary, #E2E8F0) !important;
+        }
+        [data-theme="dark"] .lex-sess-item.active {
+          background: rgba(59,130,246,0.12) !important;
+        }
+        
+        .lex-sess-title { color: var(--text-primary, #1E293B) !important; font-weight: 600 !important; }
+        [data-theme="dark"] .lex-sess-title { color: var(--text-primary, #E2E8F0) !important; }
+
+        /* Input Box Upgrades */
+        .lex-input-bar-docked {
+          background: var(--bg-sidebar, #F8FAFC) !important;
+        }
+        [data-theme="dark"] .lex-input-bar-docked {
+          background: var(--bg-sidebar, #090C14) !important;
+        }
+
+        form[onSubmit] {
+          background: var(--bg-panel, #ffffff) !important;
+          border: 1px solid var(--border-subtle, #CBD5E1) !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
+        }
+        [data-theme="dark"] form[onSubmit] {
+          background: var(--bg-panel, #111827) !important;
+          border-color: var(--border-subtle, #1F2937) !important;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.35) !important;
+        }
+
+        form[onSubmit] .lex-textarea {
+          min-height: 48px !important;
+          font-size: 15px !important;
+          color: var(--text-primary, #0F172A) !important;
+        }
+        [data-theme="dark"] form[onSubmit] .lex-textarea {
+          color: var(--text-primary, #E2E8F0) !important;
+        }
+        
+        /* Send Button Visibility Fix */
+        .lex-send-btn {
+          background: #3B82F6 !important;
+          color: #ffffff !important;
+          opacity: 1 !important;
+          box-shadow: 0 2px 8px rgba(59,130,246,0.3) !important;
+        }
+        .lex-send-btn:disabled {
+          background: var(--border-subtle, #CBD5E1) !important;
+          color: #64748B !important;
+          box-shadow: none !important;
+          opacity: 0.8 !important;
+        }
+        [data-theme="dark"] .lex-send-btn:disabled {
+          background: rgba(59,130,246,0.18) !important;
+          color: rgba(255,255,255,0.4) !important;
+        }
+
+        /* Generated Result Message Bubble Fixes */
+        .lex-msg-ai-bubble {
+          background: var(--bg-panel, #ffffff) !important;
+          border: 1px solid var(--border-subtle, #E2E8F0) !important;
+          color: var(--text-primary, #1E293B) !important;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.06) !important;
+          border-radius: 4px 16px 16px 16px !important;
+          padding: 18px 24px !important;
+          font-size: 14.5px !important;
+          line-height: 1.65 !important;
+        }
+        [data-theme="dark"] .lex-msg-ai-bubble {
+          background: var(--bg-panel, #0D111C) !important;
+          border-color: rgba(255,255,255,0.06) !important;
+          color: var(--text-primary, #C8D8E8) !important;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.28) !important;
+        }
+        .lex-md p { margin-bottom: 12px !important; }
+        .lex-md p:last-child { margin-bottom: 0 !important; }
+        .lex-md ul, .lex-md ol { padding-left: 20px !important; margin-bottom: 12px !important; }
+        .lex-md li { margin-bottom: 6px !important; }
+      `}</style>
 
       {/* Full-screen overlay */}
       <div
@@ -2610,13 +2724,13 @@ function CommandPalette() {
             style={{
               flex: sidebarOpen ? '0 0 255px' : '0 0 0px', minWidth: 0,
               transition: 'flex-basis .25s cubic-bezier(.4,0,.2,1)',
-              background: '#080B14', borderRight: '1px solid #141B28',
+              background: 'var(--bg-sidebar, #080B14)', borderRight: '1px solid var(--border-subtle, #141B28)',
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
             }}
           >
 
             {/* Brand header */}
-            <div style={{ padding: '18px 14px 12px', borderBottom: '1px solid #141B28' }}>
+            <div style={{ padding: '18px 14px 12px', borderBottom: '1px solid var(--border-subtle, #141B28)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
                 <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(59,130,246,.3)' }}>
                   <svg width="16" height="16" fill="none" stroke="white" strokeWidth="2" viewBox="0 0 24 24">
@@ -2625,8 +2739,8 @@ function CommandPalette() {
                   </svg>
                 </div>
                 <div>
-                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#E2E8F0', letterSpacing: '0.2px' }}>AI Legal Associate</div>
-                  <div style={{ fontSize: '10px', color: '#3D5168', marginTop: '1px' }}>LexAmplify · Junior Counsel</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary, #E2E8F0)', letterSpacing: '0.2px' }}>AI Legal Associate</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted, #3D5168)', marginTop: '1px' }}>LexAmplify · Junior Counsel</div>
                 </div>
               </div>
 
@@ -2668,14 +2782,14 @@ function CommandPalette() {
             </div>
 
             {/* Keyboard shortcut hints */}
-            <div style={{ padding: '10px 14px', borderTop: '1px solid #141B28' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#2D3D50' }}>
+            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border-subtle, #141B28)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted, #2D3D50)' }}>
                 <span>
-                  <kbd style={{ background: '#0F1420', border: '1px solid #1A2030', borderRadius: '3px', padding: '1px 5px', fontSize: '9px', color: '#3D5168' }}>Ctrl K</kbd>
+                  <kbd style={{ background: '#0F1420', border: '1px solid var(--border-subtle, #1A2030)', borderRadius: '3px', padding: '1px 5px', fontSize: '9px', color: '#3D5168' }}>Ctrl K</kbd>
                   {' '}toggle
                 </span>
                 <span>
-                  <kbd style={{ background: '#0F1420', border: '1px solid #1A2030', borderRadius: '3px', padding: '1px 5px', fontSize: '9px', color: '#3D5168' }}>Esc</kbd>
+                  <kbd style={{ background: '#0F1420', border: '1px solid var(--border-subtle, #1A2030)', borderRadius: '3px', padding: '1px 5px', fontSize: '9px', color: '#3D5168' }}>Esc</kbd>
                   {' '}close
                 </span>
               </div>
@@ -2685,10 +2799,10 @@ function CommandPalette() {
           {/* ══════════════════════════════════
                MAIN CHAT AREA
           ══════════════════════════════════ */}
-          <main className="lex-chat-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#0C1018', overflow: 'hidden' }}>
+          <main className="lex-chat-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-app, #0C1018)', color: 'var(--text-primary, #E2E8F0)', overflow: 'hidden' }}>
 
             {/* Top header bar */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border-subtle, #141B28)', background: 'var(--bg-sidebar, #090C14)', flexShrink: 0, gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                 {/* Sidebar collapse toggle */}
                 <button
@@ -2739,7 +2853,7 @@ function CommandPalette() {
               <button
                 className="lex-close-btn"
                 onClick={handleClose}
-                style={{ background: 'rgba(255,255,255,.05)', border: '1px solid #1A2030', color: '#4B6280', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all .15s', flexShrink: 0 }}
+                style={{ background: 'rgba(255,255,255,.05)', border: '1px solid var(--border-subtle, #1A2030)', color: '#4B6280', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all .15s', flexShrink: 0 }}
               >
                 <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" /></svg>
                 Close
@@ -2767,8 +2881,8 @@ function CommandPalette() {
                           <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
                         </svg>
                       </div>
-                      <h2 style={{ fontSize: '21px', fontWeight: 700, color: '#DDE6F0', margin: '0 0 8px' }}>AI Legal Associate</h2>
-                      <p style={{ fontSize: '13.5px', color: '#3E5470', lineHeight: '1.6', maxWidth: '420px', margin: '0 auto' }}>
+                      <h2 style={{ fontSize: '21px', fontWeight: 700, color: 'var(--text-primary, #DDE6F0)', margin: '0 0 8px' }}>AI Legal Associate</h2>
+                      <p style={{ fontSize: '13.5px', color: 'var(--text-muted, #3E5470)', lineHeight: '1.6', maxWidth: '420px', margin: '0 auto' }}>
                         Your junior counsel for LexAmplify. Draft documents, research law,
                         navigate any feature, manage schedules — all through natural conversation.
                       </p>
@@ -2783,10 +2897,10 @@ function CommandPalette() {
                         >
                           <span style={{ fontSize: '20px', flexShrink: 0, lineHeight: 1, marginTop: '1px' }}>{cmd.icon}</span>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: '12px', color: '#9BAFC0', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--text-primary, #9BAFC0)', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                               {cmd.text}
                             </div>
-                            <div style={{ fontSize: '9.5px', color: '#64748B', marginTop: '3px', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>{cmd.category}</div>
+                            <div style={{ fontSize: '9.5px', color: 'var(--text-muted, #64748B)', marginTop: '3px', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>{cmd.category}</div>
                           </div>
                         </button>
                       ))}
@@ -2848,14 +2962,14 @@ function CommandPalette() {
                             </div>
                           );
                         })()}
-                        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.08)'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
+                        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: 'var(--bg-panel, #111827)', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'var(--border-subtle, rgba(255,255,255,.08))'}`, borderRadius: '12px', padding: '10px 12px', transition: 'border-color .2s', boxShadow: '0 4px 24px rgba(0,0,0,.35)' }}>
                           <textarea ref={inputRef} className="lex-textarea" rows={1} value={query} onChange={e => { const val = e.target.value; setQuery(val); setSlashMenu(val.startsWith('/') && !val.includes(' ')); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={e => { if (e.key === 'Escape' && slashMenu) { e.preventDefault(); setSlashMenu(false); return; } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); } }} disabled={isLocked} placeholder={(isAwake || isListening) ? '🎤 Listening — speak your command…' : attachedFile ? `Ask something about ${attachedFile.name}…` : 'Command your AI Legal Associate… (Shift+Enter for new line)'} style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: isLocked ? '#2D3D50' : '#C8D8E8', fontSize: '14px', lineHeight: '1.55', overflowY: 'hidden', minHeight: '22px', maxHeight: '130px', cursor: isLocked ? 'not-allowed' : 'text' }} />
-                          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLocked || fileLoading} style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }} title="Attach file"><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg></button>
-                          <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`} onClick={wakeSupported === false ? undefined : toggleMic} style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : wakeSupported === false ? '#3D5168' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={wakeSupported === false ? 'Mic access denied — say "Hey LexAmplify" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey LexAmplify"'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />{wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5" />}</svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
+                          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLocked || fileLoading} style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : 'var(--border-subtle, #1A2030)'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }} title="Attach file"><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg></button>
+                          <button type="button" className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`} onClick={wakeSupported === false ? undefined : toggleMic} style={{ background: 'transparent', border: '1px solid var(--border-subtle, #1A2030)', color: isListening ? '#EF4444' : wakeSupported === false ? '#3D5168' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }} title={wakeSupported === false ? 'Mic access denied — say "Hey LexAmplify" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey LexAmplify"'}><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />{wakeSupported === false && <line x1="2" y1="2" x2="22" y2="22" stroke="#EF4444" strokeWidth="2.5" />}</svg>{micError && <div style={{ position: 'absolute', bottom: 'calc(100% + 7px)', right: 0, background: '#EF4444', color: '#fff', padding: '3px 9px', borderRadius: '4px', fontSize: '10.5px', whiteSpace: 'nowrap', zIndex: 10 }}>{micError}</div>}</button>
                           <button type="submit" className={`lex-send-btn${isAwake ? ' lex-send-awake' : ''}`} disabled={isLocked || (!query.trim() && !attachedFile)} style={{ background: (isLocked || (!query.trim() && !attachedFile)) ? 'rgba(59,130,246,.18)' : '#3B82F6', border: 'none', color: '#fff', borderRadius: '7px', padding: '7px 18px', fontSize: '13px', fontWeight: 600, cursor: (isLocked || (!query.trim() && !attachedFile)) ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'all .15s', opacity: (isLocked || (!query.trim() && !attachedFile)) ? 0.45 : 1 }}>Send</button>
                         </form>
                       </div>
-                      <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
+                      <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-muted, #1E2C3D)', textAlign: 'center' }}>
                         AI Legal Associate can make mistakes. Always verify critical legal information independently.
                       </div>
                     </div>
@@ -2868,7 +2982,7 @@ function CommandPalette() {
                 if (msg.role === 'user') {
                   return (
                     <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <div style={{ maxWidth: '72%', background: 'rgba(59,130,246,.14)', border: '1px solid rgba(59,130,246,.24)', borderRadius: '12px 12px 2px 12px', padding: '11px 16px', fontSize: '13.5px', color: '#D5E2F0', lineHeight: '1.6', wordBreak: 'break-word' }}>
+                      <div style={{ maxWidth: '72%', background: 'var(--accent-primary, #3B82F6)', border: '1px solid var(--accent-primary, #3B82F6)', borderRadius: '12px 12px 2px 12px', padding: '11px 16px', fontSize: '13.5px', color: '#ffffff', lineHeight: '1.6', wordBreak: 'break-word' }}>
                         {msg.text}
                       </div>
                     </div>
@@ -2876,9 +2990,9 @@ function CommandPalette() {
                 }
                 if (msg.role === 'error') {
                   return (
-                    <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.17)', borderLeft: '3px solid #EF4444', borderRadius: '3px 8px 8px 3px', padding: '10px 14px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#EF4444', marginBottom: '4px' }}>Error</div>
-                      <div style={{ fontSize: '13px', color: '#FCA5A5', lineHeight: '1.5' }}>{msg.text}</div>
+                    <div key={idx} ref={el => { if (el) msgRefs.current[msg.id] = el; }} className="lex-msg-in" style={{ background: 'var(--badge-danger-bg, rgba(239,68,68,.06))', border: '1px solid var(--badge-danger-border, rgba(239,68,68,.17))', borderLeft: '3px solid var(--badge-danger-color, #EF4444)', borderRadius: '3px 8px 8px 3px', padding: '10px 14px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px', color: 'var(--badge-danger-color, #EF4444)', marginBottom: '4px' }}>Error</div>
+                      <div style={{ fontSize: '13px', color: 'var(--badge-danger-color, #EF4444)', lineHeight: '1.5' }}>{msg.text}</div>
                       {msg.isAuth && (
                         <button
                           onClick={() => { handleClose(); navigate('/login'); }}
@@ -2924,12 +3038,12 @@ function CommandPalette() {
                     <div style={{ width: '28px', height: '28px', borderRadius: '7px', background: 'linear-gradient(135deg,#3B82F6,#6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
                       <svg width="13" height="13" fill="none" stroke="white" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z" /></svg>
                     </div>
-                    <div style={{ flex: 1, background: 'rgba(13,17,28,.8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: '2px 12px 12px 12px', padding: '12px 16px', minWidth: 0, boxShadow: '0 4px 24px rgba(0,0,0,.28)', backdropFilter: 'blur(8px)' }}>
+                    <div className="lex-msg-ai-bubble" style={{ flex: 1, background: 'var(--bg-panel, #0D111C)', color: 'var(--text-primary, #C8D8E8)', border: '1px solid rgba(255,255,255,.06)', borderRadius: '2px 12px 12px 12px', padding: '12px 16px', minWidth: 0, boxShadow: '0 4px 24px rgba(0,0,0,.28)', backdropFilter: 'blur(8px)' }}>
                       {msg.text ? (
                         <>
                           <div
                             className="lex-md"
-                            style={{ fontSize: '13.5px', lineHeight: '1.7', color: '#C8D8E8' }}
+                            style={{ fontSize: '13.5px', lineHeight: '1.7', color: 'inherit' }}
                             dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
                           />
                           {msg.docCard && (
@@ -3021,8 +3135,8 @@ function CommandPalette() {
 
               {/* ── Pending schedule approval card ── */}
               {pendingSchedule && pendingSchedule.length > 0 && (
-                <div className="lex-msg-in" style={{ background: '#111827', border: '1px solid #1A2030', borderRadius: '10px', padding: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #1A2030' }}>
+                <div className="lex-msg-in" style={{ background: 'var(--bg-panel, #111827)', border: '1px solid var(--border-subtle, #1A2030)', borderRadius: '10px', padding: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle, #1A2030)' }}>
                     <span style={{ fontSize: '16px' }}>📅</span>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#7EB3F5' }}>Review Proposed Schedule</span>
                     <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#64748B', letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 600 }}>{pendingSchedule.length} event{pendingSchedule.length !== 1 ? 's' : ''}</span>
@@ -3049,7 +3163,7 @@ function CommandPalette() {
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                     <button
                       onClick={() => updateSession(currentId, s => ({ ...s, pendingSchedule: null }))}
-                      style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid #1A2030', borderRadius: '6px', cursor: 'pointer' }}
+                      style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid var(--border-subtle, #1A2030)', borderRadius: '6px', cursor: 'pointer' }}
                     >Discard</button>
                     <button
                       onClick={handleApproveSchedule}
@@ -3066,7 +3180,7 @@ function CommandPalette() {
                  INPUT BAR — docked (active mode)
             ══════════════════════════════════ */}
             {messages.length > 0 && (
-              <div className="lex-input-bar-docked" style={{ padding: '12px 20px 16px', borderTop: '1px solid rgba(255,255,255,.05)', background: '#090C14', flexShrink: 0 }}>
+              <div className="lex-input-bar-docked" style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border-subtle, rgba(255,255,255,.05))', background: 'var(--bg-sidebar, #090C14)', flexShrink: 0 }}>
 
                 {/* File attachment preview pill */}
                 {(attachedFile || fileLoading) && (
@@ -3148,7 +3262,7 @@ function CommandPalette() {
                   })()}
                   <form
                     onSubmit={handleSearch}
-                    style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: '#111827', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : '#1A2030'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
+                    style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', background: 'var(--bg-panel, #111827)', border: `1px solid ${(isAwake || isListening) ? 'rgba(239,68,68,.5)' : attachedFile ? 'rgba(16,185,129,.35)' : 'var(--border-subtle, #1A2030)'}`, borderRadius: '10px', padding: '10px 12px', transition: 'border-color .2s' }}
                   >
                     <textarea
                       ref={inputRef}
@@ -3182,7 +3296,7 @@ function CommandPalette() {
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isLocked || fileLoading}
-                      style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : '#1A2030'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}
+                      style={{ background: attachedFile ? 'rgba(16,185,129,.12)' : 'transparent', border: `1px solid ${attachedFile ? 'rgba(16,185,129,.3)' : 'var(--border-subtle, #1A2030)'}`, color: attachedFile ? '#6EE7B7' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: isLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}
                       title="Attach file (PDF, DOCX, TXT, image)"
                     >
                       <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -3195,7 +3309,7 @@ function CommandPalette() {
                       type="button"
                       className={`lex-mic-btn ${isListening ? 'lex-mic-live' : ''} ${wakeSupported === false ? 'lex-mic-denied' : ''}`}
                       onClick={wakeSupported === false ? undefined : toggleMic}
-                      style={{ background: 'transparent', border: '1px solid #1A2030', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }}
+                      style={{ background: 'transparent', border: '1px solid var(--border-subtle, #1A2030)', color: isListening ? '#EF4444' : '#3D5168', borderRadius: '7px', padding: '6px 9px', cursor: wakeSupported === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s', position: 'relative' }}
                       title={wakeSupported === false ? 'Mic access denied — say "Hey LexAmplify" unavailable' : isListening ? 'Stop listening' : 'Voice command · or say "Hey LexAmplify"'}
                     >
                       <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -3222,7 +3336,7 @@ function CommandPalette() {
                   </form>
                 </div>{/* end slash-command wrapper */}
 
-                <div style={{ marginTop: '6px', fontSize: '10px', color: '#1E2C3D', textAlign: 'center' }}>
+                <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-muted, #1E2C3D)', textAlign: 'center' }}>
                   AI Legal Associate can make mistakes. Always verify critical legal information independently.
                 </div>
               </div>
@@ -3238,8 +3352,9 @@ function CommandPalette() {
               flex: drawerOpen && activeDocument ? `0 0 ${isDrawerExpanded ? '60vw' : '440px'}` : '0 0 0px',
               minWidth: 0,
               transition: 'flex-basis .28s cubic-bezier(.4,0,.2,1)',
-              background: '#090C14',
-              borderLeft: '1px solid #141B28',
+              background: 'var(--bg-sidebar, #090C14)',
+              color: 'var(--text-primary, #E2E8F0)',
+              borderLeft: '1px solid var(--border-subtle, #141B28)',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
@@ -3248,10 +3363,10 @@ function CommandPalette() {
             {activeDocument && (
               <>
                 {/* Drawer header with utility buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #141B28', background: '#090C14', flexShrink: 0, gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--border-subtle, #141B28)', background: 'var(--bg-app, #090C14)', flexShrink: 0, gap: '6px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
                     <svg width="12" height="12" fill="none" stroke={viewingSnapshot ? '#F59E0B' : '#7EB3F5'} strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#DDE6F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary, #DDE6F0)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {viewingSnapshot ? viewingSnapshot.title : activeDocument.title}
                     </span>
                     {(viewingSnapshot || activeDocument).doc_type && (
@@ -3329,14 +3444,14 @@ function CommandPalette() {
 
                 {/* Drawer footer */}
                 {!viewingSnapshot && (
-                  <div style={{ padding: '10px 14px', borderTop: '1px solid #141B28', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexShrink: 0, background: '#090C14' }}>
+                  <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border-subtle, #141B28)', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexShrink: 0, background: 'var(--bg-app, #090C14)' }}>
                     <button
                       onClick={() => {
                         updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
                         setViewingSnapshot(null);
                         setDrawerOpen(false);
                       }}
-                      style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid #1A2030', borderRadius: '6px', cursor: 'pointer' }}
+                      style={{ padding: '7px 16px', fontSize: '12px', color: '#506275', background: 'transparent', border: '1px solid var(--border-subtle, #1A2030)', borderRadius: '6px', cursor: 'pointer' }}
                     >Reject</button>
                     <button
                       onClick={handleApproveDraft}
