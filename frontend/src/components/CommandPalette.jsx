@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useLocation, useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 // ═══════════════════════════════════════════════════════
 //  SESSION STORE  (localStorage-persisted)
@@ -27,7 +26,7 @@ const makeSession = () => ({
   messages: [],
   pendingSchedule: null,
   pendingDraft: null,
-  activeDocument: null,   // persists after draft card is rejected/closed
+  activeDocument: null,
   savedAssets: [],
   createdAt: Date.now(),
   updatedAt: Date.now(),
@@ -129,27 +128,22 @@ const ASSISTANT_TOOLS = [
 //  CATEGORIZED LEGAL TOOLS
 // ═══════════════════════════════════════════════════════
 const LEGAL_TOOL_CATEGORIES = [
-  { id: 'all', label: 'All Tools' },
+  { id: 'all', label: 'All Workflows' },
   { id: 'draft', label: 'Drafting' },
   { id: 'research', label: 'Research' },
   { id: 'analyze', label: 'Analysis' },
 ];
 
 const LEGAL_TOOLS = [
-  // Draft Category
-  { id: 't-nda', title: 'Draft Mutual NDA', category: 'draft', desc: 'Standard non-disclosure agreement with 3-year survival clause', prompt: 'Draft a comprehensive mutual Non-Disclosure Agreement compliant with the Indian Contract Act, 1872, including confidentiality covenants, permitted disclosures, non-circumvention, and injunctive relief.', icon: 'lock' },
-  { id: 't-notice', title: 'Draft Legal Notice', category: 'draft', desc: 'Pre-litigation demand notice for contract breach', prompt: 'Draft a formal legal notice for breach of contract demanding remediation and payment within 15 days with statutory interest, citing the Indian Contract Act, 1872.', icon: 'notice' },
-  { id: 't-contract', title: 'Draft Commercial Contract', category: 'draft', desc: 'Master services agreement with warranties & SLA', prompt: 'Draft a commercial Master Services Agreement outlining scope of work, fee schedules, intellectual property assignment, limitation of liability, and dispute resolution via arbitration.', icon: 'draft' },
-  { id: 't-bail', title: 'Draft Bail Application', category: 'draft', desc: 'Regular bail under Section 439 CrPC / 483 BNSS', prompt: 'Draft a regular bail application under Section 439 CrPC / Section 483 BNSS highlighting cooperation with investigation, clean antecedents, and parity with co-accused.', icon: 'gavel' },
-  
-  // Research Category
-  { id: 't-sc', title: 'Find Judgments', category: 'research', desc: 'Search binding Supreme Court precedents & ratio', prompt: 'Find landmark Supreme Court and High Court precedents regarding the principles of specific performance, damages, and interim injunctions.', icon: 'scales' },
-  { id: 't-sec', title: 'Research Statutes', category: 'research', desc: 'Analyze IPC / BNS / CRPC statutory provisions', prompt: 'Research relevant statutory provisions, ingredients, and judicial interpretations under Section 420 IPC / Section 318 BNS for criminal breach of trust.', icon: 'search' },
-  { id: 't-cite', title: 'Find Citation', category: 'research', desc: 'Retrieve neutral citation and bench composition', prompt: 'Retrieve the neutral citation, quorum, bench composition, and key ratio decidendi for leading judgments on Section 9 and Section 34 of the Arbitration and Conciliation Act, 1996.', icon: 'bookmark' },
-  
-  // Analyze Category
-  { id: 't-risk', title: 'Analyze Contract', category: 'analyze', desc: 'Audit indemnities, liabilities & termination terms', prompt: 'Analyze this contract for high-risk clauses, uncapped indemnities, one-sided termination terms, and compliance gaps under Indian contract law.', icon: 'shield' },
-  { id: 't-clauses', title: 'Identify High-Risk Clauses', category: 'analyze', desc: 'Audit dispute resolution and jurisdiction clauses', prompt: 'Perform an audit of the governing law, dispute resolution, limitation of liability, and jurisdiction clauses in this draft, highlighting any enforceability issues in Indian courts.', icon: 'alert' },
+  { id: 't-nda', title: 'Mutual NDA', category: 'draft', desc: 'Standard non-disclosure with 3-year survival covenants', prompt: 'Draft a comprehensive mutual Non-Disclosure Agreement compliant with the Indian Contract Act, 1872, including confidentiality covenants, permitted disclosures, non-circumvention, and injunctive relief.', icon: 'lock' },
+  { id: 't-notice', title: 'Legal Notice', category: 'draft', desc: 'Pre-litigation demand notice for contract breach', prompt: 'Draft a formal legal notice for breach of contract demanding remediation and payment within 15 days with statutory interest, citing the Indian Contract Act, 1872.', icon: 'notice' },
+  { id: 't-contract', title: 'Commercial Contract', category: 'draft', desc: 'Master services agreement with warranties & SLA', prompt: 'Draft a commercial Master Services Agreement outlining scope of work, fee schedules, intellectual property assignment, limitation of liability, and dispute resolution via arbitration.', icon: 'draft' },
+  { id: 't-bail', title: 'Bail Application', category: 'draft', desc: 'Regular bail under Section 439 CrPC / 483 BNSS', prompt: 'Draft a regular bail application under Section 439 CrPC / Section 483 BNSS highlighting cooperation with investigation, clean antecedents, and parity with co-accused.', icon: 'gavel' },
+  { id: 't-sc', title: 'SC Judgments', category: 'research', desc: 'Search binding Supreme Court precedents & ratio', prompt: 'Find landmark Supreme Court and High Court precedents regarding the principles of specific performance, damages, and interim injunctions.', icon: 'scales' },
+  { id: 't-sec', title: 'Statutes & Codes', category: 'research', desc: 'Analyze IPC / BNS / CRPC statutory provisions', prompt: 'Research relevant statutory provisions, ingredients, and judicial interpretations under Section 420 IPC / Section 318 BNS for criminal breach of trust.', icon: 'search' },
+  { id: 't-cite', title: 'Neutral Citations', category: 'research', desc: 'Retrieve neutral citation and bench composition', prompt: 'Retrieve the neutral citation, quorum, bench composition, and key ratio decidendi for leading judgments on Section 9 and Section 34 of the Arbitration and Conciliation Act, 1996.', icon: 'bookmark' },
+  { id: 't-risk', title: 'Contract Risk Scan', category: 'analyze', desc: 'Audit indemnities, liabilities & termination terms', prompt: 'Analyze this contract for high-risk clauses, uncapped indemnities, one-sided termination terms, and compliance gaps under Indian contract law.', icon: 'shield' },
+  { id: 't-clauses', title: 'Jurisdiction Audit', category: 'analyze', desc: 'Audit dispute resolution and governing law clauses', prompt: 'Perform an audit of the governing law, dispute resolution, limitation of liability, and jurisdiction clauses in this draft, highlighting any enforceability issues in Indian courts.', icon: 'alert' },
 ];
 
 // ═══════════════════════════════════════════════════════
@@ -177,7 +171,7 @@ const generateConversationTitle = (text) => {
 };
 
 // ═══════════════════════════════════════════════════════
-//  HELPERS
+//  MARKDOWN & TABLE RENDERING ENGINE
 // ═══════════════════════════════════════════════════════
 const escHtml = (s) =>
   s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
@@ -188,6 +182,56 @@ const applyInline = (s) =>
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code class="md-code">$1</code>');
 
+const parseRowCells = (row) => {
+  let clean = row.trim();
+  if (clean.startsWith('|')) clean = clean.slice(1);
+  if (clean.endsWith('|')) clean = clean.slice(0, -1);
+  return clean.split('|').map(c => c.trim());
+};
+
+const isTableSeparator = (line) => {
+  const trimmed = line.trim();
+  if (!trimmed.includes('-')) return false;
+  const cells = parseRowCells(trimmed);
+  return cells.length > 0 && cells.every(c => /^:?-+:?$/.test(c.trim()));
+};
+
+const parseMarkdownTable = (lines, startIdx) => {
+  const headerLine = lines[startIdx];
+  const sepLine = lines[startIdx + 1];
+  if (!headerLine || !sepLine) return null;
+  if (!headerLine.includes('|') || !isTableSeparator(sepLine)) return null;
+  
+  const headers = parseRowCells(headerLine);
+  const rows = [];
+  let curr = startIdx + 2;
+  while (curr < lines.length && lines[curr].trim().includes('|') && !/^---+$/.test(lines[curr].trim())) {
+    rows.push(parseRowCells(lines[curr]));
+    curr++;
+  }
+  
+  const tableHtml = `
+    <div class="lex-table-responsive">
+      <table class="lex-legal-table">
+        <thead>
+          <tr>
+            ${headers.map(h => `<th>${applyInline(h)}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              ${r.map(cell => `<td>${applyInline(cell || '')}</td>`).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  
+  return { html: tableHtml, nextIdx: curr };
+};
+
 const renderMarkdown = (text) => {
   if (!text) return '';
   const lines = text.split('\n');
@@ -195,27 +239,39 @@ const renderMarkdown = (text) => {
   let i = 0;
   while (i < lines.length) {
     const ln = lines[i];
+    const trimmed = ln.trim();
+
+    // Check for Table
+    if (trimmed.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const tableRes = parseMarkdownTable(lines, i);
+      if (tableRes) {
+        out.push(tableRes.html);
+        i = tableRes.nextIdx;
+        continue;
+      }
+    }
+
     if (/^### /.test(ln)) { out.push(`<h3 class="md-h3">${applyInline(ln.slice(4))}</h3>`); i++; }
     else if (/^## /.test(ln)) { out.push(`<h2 class="md-h2">${applyInline(ln.slice(3))}</h2>`); i++; }
     else if (/^# /.test(ln)) { out.push(`<h1 class="md-h1">${applyInline(ln.slice(2))}</h1>`); i++; }
-    else if (/^---+$/.test(ln.trim())) { out.push('<hr class="md-hr">'); i++; }
-    else if (/^[*\-] /.test(ln)) {
+    else if (/^---+$/.test(trimmed)) { out.push('<hr class="md-hr">'); i++; }
+    else if (/^[*\-] /.test(trimmed)) {
       const items = [];
-      while (i < lines.length && /^[*\-] /.test(lines[i])) {
-        items.push(`<li>${applyInline(lines[i].replace(/^[*\-] /, ''))}</li>`);
+      while (i < lines.length && /^[*\-] /.test(lines[i].trim())) {
+        items.push(`<li>${applyInline(lines[i].trim().replace(/^[*\-] /, ''))}</li>`);
         i++;
       }
       out.push(`<ul class="md-ul">${items.join('')}</ul>`);
     }
-    else if (/^\d+\. /.test(ln)) {
+    else if (/^\d+\. /.test(trimmed)) {
       const items = [];
-      while (i < lines.length && /^\d+\. /.test(lines[i])) {
-        items.push(`<li>${applyInline(lines[i].replace(/^\d+\. /, ''))}</li>`);
+      while (i < lines.length && /^\d+\. /.test(lines[i].trim())) {
+        items.push(`<li>${applyInline(lines[i].trim().replace(/^\d+\. /, ''))}</li>`);
         i++;
       }
       out.push(`<ol class="md-ol">${items.join('')}</ol>`);
     }
-    else if (ln.trim() === '') { out.push('<div class="md-gap"></div>'); i++; }
+    else if (trimmed === '') { out.push('<div class="md-gap"></div>'); i++; }
     else { out.push(`<p class="md-p">${applyInline(ln)}</p>`); i++; }
   }
   return out.join('');
@@ -223,20 +279,84 @@ const renderMarkdown = (text) => {
 
 const renderDraftHtml = (text) => {
   if (!text) return '';
-  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return escaped
-    .replace(/^(?:#{1,3}\s*)?(\d{1,2}\.?\s+[A-Z\s]{3,40})$/gm, (match, p1) => {
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  
+  while (i < lines.length) {
+    const ln = lines[i];
+    const trimmed = ln.trim();
+    
+    // Check for Table
+    if (trimmed.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const tableRes = parseMarkdownTable(lines, i);
+      if (tableRes) {
+        out.push(tableRes.html);
+        i = tableRes.nextIdx;
+        continue;
+      }
+    }
+    
+    // Section headers: e.g. 01 PARTIES, ## 1. DEFINITIONS, SECTION 1: CONFIDENTIALITY
+    const secMatch = trimmed.match(/^(?:#{1,3}\s*)?(\d{1,2}\.?\s+[A-Z\s]{3,40})$/i)
+      || trimmed.match(/^(?:SECTION|CLAUSE)\s+(\d{1,2})[\.\s:]+([A-Za-z\s]{3,40})$/i);
+    if (secMatch) {
+      const p1 = trimmed.replace(/^#{1,3}\s*/, '');
       const slug = p1.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-      return `<div id="sec_${slug}" class="draft-section-head"><span class="draft-sec-num">§</span> ${p1}</div>`;
-    })
-    .replace(/^#{2,3}\s+(.+)$/gm, '<div class="draft-h2">$1</div>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^---+$/gm, '<hr class="draft-hr">')
-    .replace(/\n\n/g, '</p><p class="draft-p">')
-    .replace(/\n/g, '<br>')
-    .replace(/^/, '<p class="draft-p">')
-    .replace(/$/, '</p>');
+      out.push(`<div id="sec_${slug}" class="draft-section-head"><span class="draft-sec-num">§</span> ${applyInline(p1)}</div>`);
+      i++;
+      continue;
+    }
+    
+    // Sub-headings
+    if (/^#{2,3}\s+/.test(trimmed)) {
+      out.push(`<div class="draft-h2">${applyInline(trimmed.replace(/^#{2,3}\s+/, ''))}</div>`);
+      i++;
+      continue;
+    }
+    
+    // Horizontal Rule
+    if (/^---+$/.test(trimmed)) {
+      out.push('<hr class="draft-hr" />');
+      i++;
+      continue;
+    }
+    
+    // Unordered List
+    if (/^[*\-] /.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^[*\-] /.test(lines[i].trim())) {
+        items.push(`<li>${applyInline(lines[i].trim().replace(/^[*\-] /, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ul class="draft-ul">${items.join('')}</ul>`);
+      continue;
+    }
+    
+    // Ordered List
+    if (/^\d+\. /.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i].trim())) {
+        items.push(`<li>${applyInline(lines[i].trim().replace(/^\d+\. /, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ol class="draft-ol">${items.join('')}</ol>`);
+      continue;
+    }
+    
+    // Blank line
+    if (trimmed === '') {
+      out.push('<div class="draft-gap"></div>');
+      i++;
+      continue;
+    }
+    
+    // Regular paragraph
+    out.push(`<p class="draft-p">${applyInline(ln)}</p>`);
+    i++;
+  }
+  
+  return out.join('');
 };
 
 const highlightPlaceholders = (html) =>
@@ -534,7 +654,7 @@ const AGENT_CSS = `
     border: 1px solid var(--lex-border, #E2E6EF) !important;
     border-radius: 8px !important;
     margin: 4px 10px !important;
-    padding: 9px 12px !important;
+    padding: 8px 11px !important;
     cursor: pointer !important;
     transition: all 0.15s ease !important;
     position: relative !important;
@@ -555,26 +675,26 @@ const AGENT_CSS = `
     box-shadow: 0 3px 10px rgba(37, 99, 235, 0.12) !important;
   }
   .lex-sess-title {
-    font-size: 12.5px !important; font-weight: 600 !important;
+    font-size: 12px !important; font-weight: 600 !important;
     color: var(--lex-text-primary, #172033) !important;
     white-space: nowrap !important; overflow: hidden !important;
     text-overflow: ellipsis !important; line-height: 1.3 !important;
   }
   .lex-sess-meta {
-    font-size: 10.5px !important; color: var(--lex-text-secondary, #667085) !important;
+    font-size: 10px !important; color: var(--lex-text-secondary, #667085) !important;
     margin-top: 2px !important; display: flex !important; align-items: center !important; gap: 5px !important;
   }
 
   /* Nested Sidebar Tree */
   .lex-sidebar-tree {
-    margin: 2px 10px 6px 22px;
+    margin: 2px 10px 6px 20px;
     padding-left: 10px;
     border-left: 1.5px solid var(--lex-border, #E2E6EF);
     display: flex; flex-direction: column; gap: 3px;
   }
   .lex-sidebar-tree-node {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 4px 8px; border-radius: 5px; font-size: 11px;
+    padding: 3px 8px; border-radius: 5px; font-size: 11px;
     color: var(--lex-text-secondary, #667085); cursor: pointer;
     background: transparent; border: none; text-align: left; width: 100%;
     transition: all 0.12s ease;
@@ -584,47 +704,94 @@ const AGENT_CSS = `
     color: var(--lex-accent-blue, #2563EB);
   }
 
-  /* Composer & Command Center */
-  .lex-composer-wrapper { position: relative; width: 100%; }
-  .lex-composer-container {
+  /* ══════════════════════════════════════════════
+       UNIFIED COMMAND CENTER (P0)
+  ══════════════════════════════════════════════ */
+  .lex-unified-command-center {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
     border-radius: 14px;
-    padding: 10px 14px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    display: flex; flex-direction: column; gap: 8px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
     position: relative;
   }
-  .lex-composer-container:focus-within {
+  .lex-unified-command-center:focus-within {
     border-color: var(--lex-accent-blue, #2563EB);
     box-shadow: 0 4px 24px rgba(37, 99, 235, 0.12), 0 0 0 1px var(--lex-accent-blue, #2563EB);
   }
+
+  /* Command Center Suggestions Top Bar */
+  .lex-command-top-strip {
+    background: var(--lex-bg-sidebar, #EEF1F7);
+    border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    padding: 6px 12px;
+    display: flex; align-items: center; gap: 6px;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .lex-command-top-strip::-webkit-scrollbar { display: none; }
+  .lex-suggest-label {
+    font-size: 10.5px; font-weight: 700; color: var(--lex-text-secondary, #667085);
+    text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
+  }
+  .lex-suggest-chip {
+    white-space: nowrap; background: var(--lex-bg-card, #FFFFFF);
+    border: 1px solid var(--lex-border, #E2E6EF); border-radius: 12px;
+    padding: 3px 9px; font-size: 11px; font-weight: 500;
+    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    transition: all 0.12s ease; flex-shrink: 0;
+  }
+  .lex-suggest-chip:hover {
+    border-color: var(--lex-accent-blue, #2563EB);
+    color: var(--lex-accent-blue, #2563EB);
+    background: var(--lex-accent-blue-subtle, #EFF6FF);
+  }
+
+  /* Textarea Area */
+  .lex-composer-body {
+    padding: 10px 14px 4px;
+    display: flex; flex-direction: column;
+  }
   .lex-textarea {
-    width: 100%; min-height: 54px; max-height: 160px;
+    width: 100%; min-height: 52px; max-height: 160px;
     background: transparent; border: none; outline: none; resize: none;
-    font-family: inherit; font-size: 14.5px; line-height: 1.55;
+    font-family: inherit; font-size: 14px; line-height: 1.55;
     color: var(--lex-text-primary, #172033); box-sizing: border-box; padding: 0;
   }
   .lex-textarea::placeholder { color: var(--lex-text-muted, #8E98A8); }
 
+  /* Bottom Actions Bar */
   .lex-composer-bottom {
     display: flex; align-items: center; justify-content: space-between;
-    padding-top: 6px; border-top: 1px solid var(--lex-border, #E2E6EF);
+    padding: 6px 12px 8px;
+    background: transparent;
   }
-  .lex-composer-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .lex-composer-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .lex-tool-divider { width: 1px; height: 16px; background: var(--lex-border, #E2E6EF); margin: 0 3px; }
   .lex-tool-btn {
     background: transparent; border: 1px solid transparent; border-radius: 6px;
-    padding: 5px 8px; font-size: 12px; color: var(--lex-text-secondary, #667085);
-    cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 7px; font-size: 11.5px; color: var(--lex-text-secondary, #667085);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
     transition: all 0.15s ease; font-family: inherit; font-weight: 500;
   }
   .lex-tool-btn:hover:not(:disabled) {
     background: var(--lex-accent-blue-subtle, #EFF6FF);
     color: var(--lex-accent-blue, #2563EB);
-    border-color: var(--lex-border, #E2E6EF);
   }
-  .lex-tool-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .lex-ast-tool-btn {
+    background: var(--lex-bg-main, #F7F8FC);
+    border: 1px solid var(--lex-border, #E2E6EF);
+    border-radius: 6px; padding: 4px 8px; font-size: 11px;
+    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: all 0.12s ease; font-weight: 500;
+  }
+  .lex-ast-tool-btn:hover {
+    border-color: var(--lex-accent-blue, #2563EB);
+    color: var(--lex-accent-blue, #2563EB);
+    background: var(--lex-accent-blue-subtle, #EFF6FF);
+  }
 
   /* Slash Autocomplete Popup */
   .lex-slash-popup {
@@ -646,55 +813,17 @@ const AGENT_CSS = `
   .lex-slash-cmd { font-weight: 700; color: var(--lex-accent-blue, #2563EB); font-size: 12.5px; }
   .lex-slash-label { font-size: 11.5px; color: var(--lex-text-secondary, #667085); }
 
-  /* Prompt Suggestion Chips */
-  .lex-suggestions-bar {
-    display: flex; align-items: center; gap: 6px; overflow-x: auto;
-    padding: 4px 0 8px; scrollbar-width: none;
-  }
-  .lex-suggestions-bar::-webkit-scrollbar { display: none; }
-  .lex-suggest-chip {
-    white-space: nowrap; background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF); border-radius: 16px;
-    padding: 4px 10px; font-size: 11px; font-weight: 500;
-    color: var(--lex-text-secondary, #667085); cursor: pointer;
-    transition: all 0.12s ease; flex-shrink: 0;
-  }
-  .lex-suggest-chip:hover {
-    border-color: var(--lex-accent-blue, #2563EB);
-    color: var(--lex-accent-blue, #2563EB);
-    background: var(--lex-accent-blue-subtle, #EFF6FF);
-  }
-
-  /* Assistant Tools Bar */
-  .lex-assistant-tools {
-    display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
-  }
-  .lex-ast-tool-btn {
-    background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 6px; padding: 4px 8px; font-size: 11.5px;
-    color: var(--lex-text-secondary, #667085); cursor: pointer;
-    display: inline-flex; align-items: center; gap: 5px;
-    transition: all 0.12s ease; font-weight: 500;
-  }
-  .lex-ast-tool-btn:hover {
-    border-color: var(--lex-accent-blue, #2563EB);
-    color: var(--lex-accent-blue, #2563EB);
-    background: var(--lex-accent-blue-subtle, #EFF6FF);
-  }
-
   /* Send / Stop Buttons */
   .lex-send-btn {
     background: var(--lex-accent-blue, #2563EB) !important;
     color: #FFFFFF !important; border: none !important; border-radius: 8px !important;
-    padding: 7px 16px !important; font-size: 13px !important; font-weight: 600 !important;
+    padding: 6px 14px !important; font-size: 12.5px !important; font-weight: 600 !important;
     cursor: pointer !important; display: inline-flex !important; align-items: center !important;
-    gap: 6px !important; transition: all 0.15s ease !important;
+    gap: 5px !important; transition: all 0.15s ease !important;
     box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important; font-family: inherit !important;
   }
   .lex-send-btn:hover:not(:disabled) {
     background: #1D4ED8 !important; transform: translateY(-1px) !important;
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35) !important;
   }
   .lex-send-btn:disabled {
     background: var(--lex-border, #E2E6EF) !important;
@@ -703,33 +832,31 @@ const AGENT_CSS = `
   }
   .lex-stop-btn {
     background: #DC2626 !important; color: #FFFFFF !important;
-    border: none !important; border-radius: 8px !important; padding: 7px 14px !important;
-    font-size: 12.5px !important; font-weight: 600 !important; cursor: pointer !important;
-    display: inline-flex !important; align-items: center !important; gap: 6px !important;
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25) !important; animation: lex-in 0.2s ease;
+    border: none !important; border-radius: 8px !important; padding: 6px 12px !important;
+    font-size: 12px !important; font-weight: 600 !important; cursor: pointer !important;
+    display: inline-flex !important; align-items: center !important; gap: 5px !important;
   }
-  .lex-stop-btn:hover { background: #B91C1C !important; }
 
   /* Generation Card */
   .lex-generation-card {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 12px; padding: 16px 18px;
+    border-radius: 12px; padding: 14px 16px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
     margin: 6px 0; animation: lex-in 0.2s ease;
   }
-  .lex-gen-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .lex-gen-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
   .lex-gen-spinner {
-    width: 20px; height: 20px; border-radius: 50%;
+    width: 18px; height: 18px; border-radius: 50%;
     border: 2px solid var(--lex-accent-blue-subtle, #EFF6FF);
     border-top-color: var(--lex-accent-blue, #2563EB);
     animation: lex-spin 0.8s linear infinite; flex-shrink: 0;
   }
   .lex-gen-steps {
-    display: flex; flex-direction: column; gap: 7px;
+    display: flex; flex-direction: column; gap: 6px;
     padding-left: 6px; border-left: 2px solid var(--lex-border, #E2E6EF); margin-left: 8px;
   }
-  .lex-gen-step { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--lex-text-secondary, #667085); }
+  .lex-gen-step { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--lex-text-secondary, #667085); }
   .lex-gen-step.done { color: #16A34A; font-weight: 500; }
   .lex-gen-step.active { color: var(--lex-accent-blue, #2563EB); font-weight: 600; }
   .lex-step-pulse { animation: lex-pulse-dot 1.2s infinite ease-in-out; }
@@ -738,56 +865,119 @@ const AGENT_CSS = `
   .lex-artifact-card {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 12px; padding: 14px 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
-    display: flex; flex-direction: column; gap: 10px;
-    margin-top: 8px; border-left: 4px solid var(--lex-accent-blue, #2563EB);
+    border-radius: 10px; padding: 12px 14px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+    display: flex; flex-direction: column; gap: 8px;
+    margin-top: 8px; border-left: 3.5px solid var(--lex-accent-blue, #2563EB);
   }
   .lex-artifact-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .lex-artifact-title { font-size: 13.5px; font-weight: 700; color: var(--lex-text-primary, #172033); }
+  .lex-artifact-title { font-size: 13px; font-weight: 700; color: var(--lex-text-primary, #172033); }
   .lex-artifact-badge {
-    font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 12px;
+    font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px;
     background: var(--lex-accent-blue-subtle, #EFF6FF); color: var(--lex-accent-blue, #2563EB);
   }
-  .lex-artifact-meta { font-size: 11.5px; color: var(--lex-text-secondary, #667085); display: flex; align-items: center; gap: 12px; }
+  .lex-artifact-meta { font-size: 11px; color: var(--lex-text-secondary, #667085); display: flex; align-items: center; gap: 10px; }
   .lex-artifact-open-btn {
-    align-self: flex-start; padding: 6px 14px; border-radius: 7px;
+    align-self: flex-start; padding: 5px 12px; border-radius: 6px;
     background: var(--lex-accent-blue, #2563EB); color: #FFFFFF;
-    border: none; font-size: 12px; font-weight: 600; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s ease;
+    border: none; font-size: 11.5px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px; transition: all 0.12s ease;
   }
   .lex-artifact-open-btn:hover { background: #1D4ED8; }
 
-  /* Paper Legal Workspace */
-  .lex-doc-container {
-    max-width: 820px; margin: 0 auto;
-    background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 12px; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
-    overflow: hidden; display: flex; flex-direction: column;
+  /* ══════════════════════════════════════════════
+       A4 LEGAL DOCUMENT WORKSPACE & TABLES (P0)
+  ══════════════════════════════════════════════ */
+  .lex-doc-canvas {
+    background: #EAEFF6;
+    padding: 28px 20px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
   }
-  .lex-doc-toolbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 18px; background: var(--lex-bg-sidebar, #EEF1F7);
-    border-bottom: 1px solid var(--lex-border, #E2E6EF); flex-wrap: wrap; gap: 8px;
+  [data-theme="dark"] .lex-doc-canvas {
+    background: #080C14;
   }
+
   .lex-doc-paper {
-    padding: 36px 48px;
-    font-family: Georgia, 'Times New Roman', Cambria, serif;
-    font-size: 14.5px; line-height: 1.85;
-    color: var(--lex-text-primary, #172033); outline: none;
+    width: 100%;
+    max-width: 720px;
+    min-height: 880px;
+    background: #FFFFFF !important;
+    border: 1px solid var(--lex-border, #E2E6EF);
+    border-radius: 4px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+    padding: 44px 52px;
+    font-family: 'Charter', 'Georgia', 'Times New Roman', Cambria, serif;
+    font-size: 14.5px;
+    line-height: 1.85;
+    color: #172033 !important;
+    outline: none;
+    box-sizing: border-box;
   }
+  [data-theme="dark"] .lex-doc-paper {
+    background: #111827 !important;
+    color: #F3F4F6 !important;
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.4);
+  }
+
   .lex-doc-paper .draft-section-head {
     font-family: inherit; font-size: 14.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--lex-text-primary, #172033); margin: 24px 0 10px;
+    color: #172033; margin: 24px 0 10px;
     padding-bottom: 4px; border-bottom: 1px solid var(--lex-border, #E2E6EF);
     display: flex; align-items: center; gap: 8px;
+  }
+  [data-theme="dark"] .lex-doc-paper .draft-section-head {
+    color: #F3F4F6;
   }
   .lex-doc-paper .draft-section-head.highlighted {
     animation: lex-flash 1.5s ease;
   }
   .draft-sec-num { color: var(--lex-accent-blue, #2563EB); font-size: 14px; }
+
+  /* Semantic Legal Tables */
+  .lex-table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    margin: 16px 0;
+    border-radius: 6px;
+    border: 1px solid var(--lex-border, #E2E6EF);
+    background: var(--lex-bg-card, #FFFFFF);
+  }
+  .lex-legal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    line-height: 1.5;
+  }
+  .lex-legal-table th {
+    background: var(--lex-bg-sidebar, #EEF1F7);
+    padding: 8px 12px;
+    font-weight: 700;
+    color: var(--lex-text-primary, #172033);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1.5px solid var(--lex-border, #E2E6EF);
+    border-right: 1px solid var(--lex-border, #E2E6EF);
+  }
+  .lex-legal-table th:last-child { border-right: none; }
+  .lex-legal-table td {
+    padding: 8px 12px;
+    color: var(--lex-text-primary, #172033);
+    border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    border-right: 1px solid var(--lex-border, #E2E6EF);
+  }
+  .lex-legal-table td:last-child { border-right: none; }
+  .lex-legal-table tr:last-child td { border-bottom: none; }
+  .lex-legal-table tr:nth-child(even) td { background: rgba(0, 0, 0, 0.015); }
+  [data-theme="dark"] .lex-legal-table tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
 
   /* Interactive Placeholders */
   .lex-placeholder {
@@ -806,12 +996,12 @@ const AGENT_CSS = `
   .lex-outline-panel {
     background: var(--lex-bg-sidebar, #EEF1F7);
     border-bottom: 1px solid var(--lex-border, #E2E6EF);
-    padding: 10px 16px; display: flex; flex-direction: column; gap: 6px;
+    padding: 10px 16px; display: flex; flex-direction: column; gap: 5px;
     max-height: 180px; overflow-y: auto; animation: lex-in 0.15s ease;
   }
   .lex-outline-item {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 5px 8px; border-radius: 6px; background: var(--lex-bg-card, #FFFFFF);
+    padding: 5px 8px; border-radius: 5px; background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF); font-size: 11.5px;
     color: var(--lex-text-primary, #172033); cursor: pointer; text-align: left;
     transition: all 0.12s ease;
@@ -824,14 +1014,14 @@ const AGENT_CSS = `
 
   /* Section Level AI Actions Bar */
   .lex-section-ai-bar {
-    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
     padding: 6px 14px; background: var(--lex-bg-sidebar, #EEF1F7);
     border-bottom: 1px solid var(--lex-border, #E2E6EF);
   }
   .lex-clause-action-btn {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 5px; padding: 3px 8px; font-size: 11px;
+    border-radius: 4px; padding: 2px 7px; font-size: 11px;
     font-weight: 500; color: var(--lex-accent-blue, #2563EB);
     cursor: pointer; transition: all 0.12s ease;
   }
@@ -840,22 +1030,32 @@ const AGENT_CSS = `
     color: #FFFFFF; border-color: var(--lex-accent-blue, #2563EB);
   }
 
-  /* Quick Actions Grid */
-  .lex-tools-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .lex-tool-card {
+  /* ══════════════════════════════════════════════
+       LANDING PAGE & TOOLS GRID (P1)
+  ══════════════════════════════════════════════ */
+  .lex-landing-hero {
+    text-align: center; margin-bottom: 14px;
+  }
+  .lex-tools-compact-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  }
+  .lex-tool-compact-card {
     background: var(--lex-bg-card, #FFFFFF);
     border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 10px; padding: 11px 14px; display: flex; align-items: flex-start;
-    gap: 12px; cursor: pointer; transition: all 0.15s ease; text-align: left; width: 100%;
+    border-radius: 8px; padding: 8px 10px; display: flex; align-items: flex-start;
+    gap: 8px; cursor: pointer; transition: all 0.12s ease; text-align: left; width: 100%;
   }
-  .lex-tool-card:hover {
+  .lex-tool-compact-card:hover {
     border-color: var(--lex-accent-blue, #2563EB);
     background: var(--lex-accent-blue-subtle, #EFF6FF);
-    transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   }
 
+  @media (max-width: 900px) {
+    .lex-tools-compact-grid { grid-template-columns: repeat(2, 1fr); }
+  }
   @media (max-width: 768px) {
-    .lex-tools-grid { grid-template-columns: 1fr !important; }
+    .lex-tools-compact-grid { grid-template-columns: 1fr !important; }
     .lex-doc-paper { padding: 24px 16px !important; }
     .lex-sidebar {
       position: fixed; top: 0; left: 0; height: 100%; z-index: 30;
@@ -1093,7 +1293,7 @@ function CommandPalette() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [isClosing, setIsClosing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [viewingSnapshot, setViewingSnapshot] = useState(null);
+  const [viewingSnapshot] = useState(null);
   const [copyToast, setCopyToast] = useState(false);
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
   
@@ -1167,11 +1367,6 @@ function CommandPalette() {
   const todaySess = unpinnedSess.filter(s => Date.now() - s.updatedAt < 86400000);
   const yesterdaySess = unpinnedSess.filter(s => Date.now() - s.updatedAt >= 86400000 && Date.now() - s.updatedAt < 172800000);
   const olderSess = unpinnedSess.filter(s => Date.now() - s.updatedAt >= 172800000);
-
-  // Categorized tools lists
-  const draftTools = useMemo(() => LEGAL_TOOLS.filter(t => t.category === 'draft'), []);
-  const researchTools = useMemo(() => LEGAL_TOOLS.filter(t => t.category === 'research'), []);
-  const analyzeTools = useMemo(() => LEGAL_TOOLS.filter(t => t.category === 'analyze'), []);
 
   // ── Session Helpers ──────────────────────────────────
   const mutateSessions = useCallback((updater) => {
@@ -1588,31 +1783,31 @@ function CommandPalette() {
           <aside
             className={`lex-sidebar ${sidebarOpen ? 'mobile-open' : ''}`}
             style={{
-              flex: sidebarOpen ? '0 0 270px' : '0 0 0px',
+              flex: sidebarOpen ? '0 0 260px' : '0 0 0px',
               minWidth: 0,
               transition: 'flex-basis 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
             {/* Header with New Conversation Button */}
-            <div style={{ padding: '16px 14px 10px', borderBottom: '1px solid var(--lex-border, #E2E6EF)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg, #2563EB, #6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
-                  <Icon name="sparkles" size={16} />
+            <div style={{ padding: '14px 12px 10px', borderBottom: '1px solid var(--lex-border, #E2E6EF)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: 'linear-gradient(135deg, #2563EB, #6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
+                  <Icon name="sparkles" size={15} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>AI Legal Associate</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--lex-text-secondary, #667085)' }}>LexAmplify · Junior Counsel</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>AI Legal Associate</div>
+                  <div style={{ fontSize: 10, color: 'var(--lex-text-secondary, #667085)' }}>Junior Counsel & Drafting</div>
                 </div>
               </div>
 
               <button
                 onClick={startNew}
                 style={{
-                  width: '100%', padding: '8px 12px',
+                  width: '100%', padding: '7px 10px',
                   background: 'var(--lex-accent-blue-subtle, #EFF6FF)',
                   border: '1px solid var(--lex-border, #E2E6EF)',
-                  borderRadius: 8, color: 'var(--lex-accent-blue, #2563EB)',
-                  fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                  borderRadius: 7, color: 'var(--lex-accent-blue, #2563EB)',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   transition: 'all 0.15s ease',
                 }}
@@ -1636,7 +1831,7 @@ function CommandPalette() {
             </div>
 
             {/* Conversation List */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
               {filteredSessions.length === 0 ? (
                 <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--lex-text-muted, #8E98A8)', fontSize: 12 }}>
                   No matching matters found.
@@ -1645,25 +1840,25 @@ function CommandPalette() {
                 <>
                   {pinnedSess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 14px 2px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Pinned Matters</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Pinned Matters</div>
                       {pinnedSess.map(s => renderSessionRow(s))}
                     </>
                   )}
                   {todaySess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 14px 2px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Today</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Today</div>
                       {todaySess.map(s => renderSessionRow(s))}
                     </>
                   )}
                   {yesterdaySess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 14px 2px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Yesterday</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Yesterday</div>
                       {yesterdaySess.map(s => renderSessionRow(s))}
                     </>
                   )}
                   {olderSess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 14px 2px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Earlier</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Earlier</div>
                       {olderSess.map(s => renderSessionRow(s))}
                     </>
                   )}
@@ -1672,9 +1867,9 @@ function CommandPalette() {
             </div>
 
             {/* Shortcut Hint Footer */}
-            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--lex-text-muted, #8E98A8)' }}>
-              <span><kbd style={{ background: 'var(--lex-bg-card, #FFF)', border: '1px solid var(--lex-border, #E2E6EF)', padding: '1px 5px', borderRadius: 4 }}>Ctrl+K</kbd> Toggle</span>
-              <span><kbd style={{ background: 'var(--lex-bg-card, #FFF)', border: '1px solid var(--lex-border, #E2E6EF)', padding: '1px 5px', borderRadius: 4 }}>Esc</kbd> Close</span>
+            <div style={{ padding: '8px 12px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--lex-text-muted, #8E98A8)' }}>
+              <span><kbd style={{ background: 'var(--lex-bg-card, #FFF)', border: '1px solid var(--lex-border, #E2E6EF)', padding: '1px 4px', borderRadius: 3 }}>Ctrl+K</kbd> Toggle</span>
+              <span><kbd style={{ background: 'var(--lex-bg-card, #FFF)', border: '1px solid var(--lex-border, #E2E6EF)', padding: '1px 4px', borderRadius: 3 }}>Esc</kbd> Close</span>
             </div>
           </aside>
 
@@ -1684,66 +1879,66 @@ function CommandPalette() {
           <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--lex-bg-main, #F7F8FC)', overflow: 'hidden' }}>
 
             {/* Professional Top Navigation Bar */}
-            <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-card, #FFFFFF)', flexShrink: 0, gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                <button onClick={() => setSidebarOpen(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', padding: '4px 6px', borderRadius: 6 }} title="Toggle Sidebar">
-                  <Icon name="outline" size={16} />
+            <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 16px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-card, #FFFFFF)', flexShrink: 0, gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <button onClick={() => setSidebarOpen(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', padding: '3px 5px', borderRadius: 5 }} title="Toggle Sidebar">
+                  <Icon name="outline" size={15} />
                 </button>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--lex-text-primary, #172033)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--lex-text-primary, #172033)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {getHumanRouteLabel(location.pathname)}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {activeDocument && (
                   <button
                     onClick={() => setDrawerOpen(v => !v)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
+                      display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
                       background: drawerOpen ? 'var(--lex-accent-blue-subtle, #EFF6FF)' : 'transparent',
-                      border: '1px solid var(--lex-accent-blue, #2563EB)', borderRadius: 6,
-                      color: 'var(--lex-accent-blue, #2563EB)', fontSize: 12, fontWeight: 600, cursor: 'pointer'
+                      border: '1px solid var(--lex-accent-blue, #2563EB)', borderRadius: 5,
+                      color: 'var(--lex-accent-blue, #2563EB)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer'
                     }}
                   >
-                    <Icon name="draft" size={13} />
+                    <Icon name="draft" size={12} />
                     {drawerOpen ? 'Hide Draft' : 'View Draft'}
                   </button>
                 )}
-                <button onClick={handleClose} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'transparent', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 6, color: 'var(--lex-text-secondary, #667085)', fontSize: 12, cursor: 'pointer' }}>
-                  <Icon name="close" size={13} />
+                <button onClick={handleClose} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'transparent', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 5, color: 'var(--lex-text-secondary, #667085)', fontSize: 11.5, cursor: 'pointer' }}>
+                  <Icon name="close" size={12} />
                   Exit Workspace
                 </button>
               </div>
             </header>
 
             {/* Scrollable Conversation Stream */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-              {/* ── Empty / Landing State (Complete All Tools Display) ── */}
+              {/* ── Empty / Landing State (Refined Visual Hierarchy) ── */}
               {messages.length === 0 && (
-                <div style={{ maxWidth: 780, width: '100%', margin: 'auto' }}>
-                  <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                    <div style={{ width: 52, height: 52, margin: '0 auto 12px', borderRadius: 14, background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(99,102,241,0.15))', border: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)' }}>
-                      <Icon name="scales" size={24} />
+                <div style={{ maxWidth: 740, width: '100%', margin: 'auto' }}>
+                  <div className="lex-landing-hero">
+                    <div style={{ width: 44, height: 44, margin: '0 auto 8px', borderRadius: 12, background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(99,102,241,0.15))', border: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)' }}>
+                      <Icon name="scales" size={20} />
                     </div>
-                    <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--lex-text-primary, #172033)', margin: '0 0 6px' }}>AI Legal Associate</h2>
-                    <p style={{ fontSize: 13, color: 'var(--lex-text-secondary, #667085)', maxWidth: 460, margin: '0 auto', lineHeight: 1.5 }}>
+                    <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--lex-text-primary, #172033)', margin: '0 0 4px' }}>AI Legal Associate</h2>
+                    <p style={{ fontSize: 12.5, color: 'var(--lex-text-secondary, #667085)', maxWidth: 440, margin: '0 auto', lineHeight: 1.45 }}>
                       Your AI counsel for legal drafting, research, clause risk analysis, and workflow automation.
                     </p>
                   </div>
 
                   {/* Category Filter Tabs */}
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 12 }}>
                     {LEGAL_TOOL_CATEGORIES.map(c => (
                       <button
                         key={c.id}
                         onClick={() => setToolCategory(c.id)}
                         style={{
-                          padding: '5px 14px', borderRadius: 20,
+                          padding: '4px 12px', borderRadius: 16,
                           background: toolCategory === c.id ? 'var(--lex-accent-blue, #2563EB)' : 'var(--lex-bg-card, #FFFFFF)',
                           color: toolCategory === c.id ? '#FFFFFF' : 'var(--lex-text-secondary, #667085)',
                           border: '1px solid var(--lex-border, #E2E6EF)',
-                          fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                          fontSize: 11, fontWeight: 600, cursor: 'pointer',
                           transition: 'all 0.12s ease'
                         }}
                       >
@@ -1752,33 +1947,13 @@ function CommandPalette() {
                     ))}
                   </div>
 
-                  {/* Balanced Tools Display */}
-                  {toolCategory === 'all' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', marginBottom: 8, letterSpacing: '0.04em' }}>Drafting Tools</div>
-                        <div className="lex-tools-grid">
-                          {draftTools.map(t => renderToolCard(t))}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', marginBottom: 8, letterSpacing: '0.04em' }}>Legal Research & Precedents</div>
-                        <div className="lex-tools-grid">
-                          {researchTools.map(t => renderToolCard(t))}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', marginBottom: 8, letterSpacing: '0.04em' }}>Contract & Risk Analysis</div>
-                        <div className="lex-tools-grid">
-                          {analyzeTools.map(t => renderToolCard(t))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="lex-tools-grid">
-                      {LEGAL_TOOLS.filter(t => t.category === toolCategory).map(t => renderToolCard(t))}
-                    </div>
-                  )}
+                  {/* Compact Quick Workflows Grid */}
+                  <div className="lex-tools-compact-grid">
+                    {toolCategory === 'all'
+                      ? LEGAL_TOOLS.map(t => renderToolCompactCard(t))
+                      : LEGAL_TOOLS.filter(t => t.category === toolCategory).map(t => renderToolCompactCard(t))
+                    }
+                  </div>
                 </div>
               )}
 
@@ -1787,7 +1962,7 @@ function CommandPalette() {
                 if (msg.role === 'user') {
                   return (
                     <div key={idx} className="lex-msg-in" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <div style={{ maxWidth: '75%', background: 'var(--lex-accent-blue, #2563EB)', color: '#FFFFFF', borderRadius: '14px 14px 2px 14px', padding: '12px 18px', fontSize: 14, lineHeight: 1.6, wordBreak: 'break-word', boxShadow: '0 2px 8px rgba(37,99,235,0.2)' }}>
+                      <div style={{ maxWidth: '75%', background: 'var(--lex-accent-blue, #2563EB)', color: '#FFFFFF', borderRadius: '14px 14px 2px 14px', padding: '10px 16px', fontSize: 13.5, lineHeight: 1.55, wordBreak: 'break-word', boxShadow: '0 2px 8px rgba(37,99,235,0.2)' }}>
                         {msg.text}
                       </div>
                     </div>
@@ -1796,7 +1971,7 @@ function CommandPalette() {
 
                 if (msg.role === 'error') {
                   return (
-                    <div key={idx} className="lex-msg-in" style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderLeft: '4px solid #DC2626', borderRadius: '4px 10px 10px 4px', padding: '12px 16px', color: '#DC2626', fontSize: 13 }}>
+                    <div key={idx} className="lex-msg-in" style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderLeft: '4px solid #DC2626', borderRadius: '4px 10px 10px 4px', padding: '10px 14px', color: '#DC2626', fontSize: 12.5 }}>
                       <strong>Error:</strong> {msg.text}
                     </div>
                   );
@@ -1804,13 +1979,13 @@ function CommandPalette() {
 
                 // AI Associate Output
                 return (
-                  <div key={idx} className="lex-msg-in" style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: 'linear-gradient(135deg, #2563EB, #6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0, marginTop: 2 }}>
-                      <Icon name="sparkles" size={15} />
+                  <div key={idx} className="lex-msg-in" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg, #2563EB, #6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0, marginTop: 2 }}>
+                      <Icon name="sparkles" size={14} />
                     </div>
-                    <div style={{ flex: 1, minWidth: 0, background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: '2px 14px 14px 14px', padding: '16px 20px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+                    <div style={{ flex: 1, minWidth: 0, background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: '2px 12px 12px 12px', padding: '14px 18px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
                       {msg.text && (
-                        <div className="lex-md" style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--lex-text-primary, #172033)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
+                        <div className="lex-md" style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--lex-text-primary, #172033)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
                       )}
 
                       {/* Generated Draft Chat Artifact Card */}
@@ -1846,19 +2021,19 @@ function CommandPalette() {
               {loading && (
                 <div className="lex-generation-card">
                   <div className="lex-gen-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div className="lex-gen-spinner" />
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>LexAmplify AI Associate is working…</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>LexAmplify AI Associate is working…</div>
                         <div style={{ fontSize: 11, color: 'var(--lex-text-secondary, #667085)' }}>Analyzing statutory provisions & drafting provisions</div>
                       </div>
                     </div>
                     <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
-                      <Icon name="stop" size={12} /> Stop
+                      <Icon name="stop" size={11} /> Stop
                     </button>
                   </div>
                   <div className="lex-gen-steps">
-                    <div className="lex-gen-step done"><span><Icon name="check" size={12} /></span> Understanding legal context & statutory scope</div>
+                    <div className="lex-gen-step done"><span><Icon name="check" size={11} /></span> Understanding legal context & statutory scope</div>
                     <div className="lex-gen-step active"><span className="lex-step-pulse">●</span> Analyzing provisions & Indian legal precedents</div>
                     <div className="lex-gen-step"><span>○</span> Structuring enforceable agreement clauses</div>
                     <div className="lex-gen-step"><span>○</span> Finalizing reviewable legal draft</div>
@@ -1870,48 +2045,14 @@ function CommandPalette() {
             </div>
 
             {/* ══════════════════════════════════════════════
-                 COMMAND CENTER / COMPOSER (P0)
+                 UNIFIED COMMAND CENTER (P0)
             ══════════════════════════════════════════════ */}
-            <div style={{ padding: '8px 20px 16px', background: 'var(--lex-bg-card, #FFFFFF)', borderTop: '1px solid var(--lex-border, #E2E6EF)' }}>
+            <div style={{ padding: '6px 18px 14px', background: 'var(--lex-bg-card, #FFFFFF)', borderTop: '1px solid var(--lex-border, #E2E6EF)' }}>
               
-              {/* Prompt Suggestions Bar */}
-              <div className="lex-suggestions-bar">
-                {PROMPT_SUGGESTIONS.map((s, idx) => (
-                  <button
-                    key={idx}
-                    className="lex-suggest-chip"
-                    onClick={() => {
-                      setQuery(s.prompt);
-                      setTimeout(() => searchRef.current?.(null, s.prompt), 30);
-                    }}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Assistant Tools Bar */}
-              <div className="lex-assistant-tools">
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--lex-text-muted, #8E98A8)', textTransform: 'uppercase', marginRight: 2 }}>Tools:</span>
-                {ASSISTANT_TOOLS.map(t => (
-                  <button
-                    key={t.id}
-                    className="lex-ast-tool-btn"
-                    onClick={() => {
-                      setQuery(t.prompt);
-                      setTimeout(() => searchRef.current?.(null, t.prompt), 30);
-                    }}
-                  >
-                    <Icon name={t.icon} size={12} />
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
               {/* Attached file preview badge */}
               {attachedFile && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--lex-accent-blue-subtle, #EFF6FF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 20, fontSize: 11.5, color: 'var(--lex-accent-blue, #2563EB)', marginBottom: 8 }}>
-                  <Icon name="draft" size={13} />
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', background: 'var(--lex-accent-blue-subtle, #EFF6FF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 16, fontSize: 11, color: 'var(--lex-accent-blue, #2563EB)', marginBottom: 6 }}>
+                  <Icon name="draft" size={12} />
                   <span>{attachedFile.name}</span>
                   <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px' }}>×</button>
                 </div>
@@ -1919,7 +2060,7 @@ function CommandPalette() {
 
               <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept=".pdf,.docx,.doc,.txt,.md" onChange={handleFileAttach} />
 
-              <div className="lex-composer-wrapper">
+              <div className="lex-unified-command-center">
                 {/* Slash Commands Autocomplete Popup */}
                 {isSlashActive && filteredSlashCmds.length > 0 && (
                   <div className="lex-slash-popup">
@@ -1939,7 +2080,25 @@ function CommandPalette() {
                   </div>
                 )}
 
-                <div className="lex-composer-container">
+                {/* Integrated Suggestions Strip */}
+                <div className="lex-command-top-strip">
+                  <span className="lex-suggest-label">Try:</span>
+                  {PROMPT_SUGGESTIONS.map((s, idx) => (
+                    <button
+                      key={idx}
+                      className="lex-suggest-chip"
+                      onClick={() => {
+                        setQuery(s.prompt);
+                        setTimeout(() => searchRef.current?.(null, s.prompt), 30);
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Composer Textarea */}
+                <div className="lex-composer-body">
                   <textarea
                     ref={inputRef}
                     className="lex-textarea"
@@ -1975,51 +2134,70 @@ function CommandPalette() {
                     }}
                     placeholder="Ask LexAmplify anything... Type / for drafting commands (Shift+Enter for new line)"
                   />
+                </div>
 
-                  <div className="lex-composer-bottom">
-                    <div className="lex-composer-tools">
-                      <button type="button" className="lex-tool-btn" onClick={() => fileInputRef.current?.click()} title="Attach Document (PDF, DOCX, TXT)">
-                        <Icon name="attach" size={14} /> Attach
-                      </button>
-                      <button type="button" className="lex-tool-btn" onClick={toggleMic} style={{ color: isListening ? '#DC2626' : undefined }} title="Voice Command">
-                        <Icon name="mic" size={14} /> {isListening ? 'Listening…' : 'Voice'}
-                      </button>
-                    </div>
+                {/* Integrated Bottom Toolbar */}
+                <div className="lex-composer-bottom">
+                  <div className="lex-composer-tools">
+                    <button type="button" className="lex-tool-btn" onClick={() => fileInputRef.current?.click()} title="Attach Document (PDF, DOCX, TXT)">
+                      <Icon name="attach" size={13} /> Attach
+                    </button>
+                    <button type="button" className="lex-tool-btn" onClick={toggleMic} style={{ color: isListening ? '#DC2626' : undefined }} title="Voice Command">
+                      <Icon name="mic" size={13} /> {isListening ? 'Listening…' : 'Voice'}
+                    </button>
 
-                    <div>
-                      {loading ? (
-                        <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
-                          <Icon name="stop" size={12} /> Stop
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="lex-send-btn"
-                          disabled={!query.trim() && !attachedFile}
-                          onClick={() => handleSearch(null)}
-                        >
-                          <span>Send</span>
-                          <Icon name="send" size={13} />
-                        </button>
-                      )}
-                    </div>
+                    <div className="lex-tool-divider" />
+
+                    {/* Integrated Assistant Tools */}
+                    {ASSISTANT_TOOLS.map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className="lex-ast-tool-btn"
+                        onClick={() => {
+                          setQuery(t.prompt);
+                          setTimeout(() => searchRef.current?.(null, t.prompt), 30);
+                        }}
+                      >
+                        <Icon name={t.icon} size={11} />
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div>
+                    {loading ? (
+                      <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
+                        <Icon name="stop" size={11} /> Stop
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="lex-send-btn"
+                        disabled={!query.trim() && !attachedFile}
+                        onClick={() => handleSearch(null)}
+                      >
+                        <span>Send</span>
+                        <Icon name="send" size={12} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Disclaimer */}
-              <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--lex-text-muted, #8E98A8)', textAlign: 'center' }}>
-                ⓘ LexAmplify provides AI-assisted legal drafting. Always verify critical information independently.
+              <div style={{ marginTop: 5, fontSize: 10, color: 'var(--lex-text-muted, #8E98A8)', textAlign: 'center' }}>
+                ⓘ LexAmplify provides AI-assisted legal drafting. Always verify critical statutory information independently.
               </div>
             </div>
           </main>
 
           {/* ══════════════════════════════════════════════
-               RIGHT: LEGAL DOCUMENT WORKSPACE DRAWER (P1)
+               RIGHT: LEGAL DOCUMENT WORKSPACE DRAWER (P0/P1)
           ══════════════════════════════════════════════ */}
           <aside
             style={{
-              flex: drawerOpen && activeDocument ? `0 0 ${isDrawerExpanded ? '60vw' : '480px'}` : '0 0 0px',
+              flex: drawerOpen && activeDocument ? `0 0 ${isDrawerExpanded ? '65vw' : '520px'}` : '0 0 0px',
               minWidth: 0,
               transition: 'flex-basis 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
               background: 'var(--lex-bg-card, #FFFFFF)',
@@ -2031,11 +2209,11 @@ function CommandPalette() {
           >
             {activeDocument && (
               <>
-                {/* Document Drawer Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-sidebar, #EEF1F7)', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    <Icon name="draft" size={15} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--lex-text-primary, #172033)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {/* Document Drawer Header with Discoverable Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-sidebar, #EEF1F7)', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                    <Icon name="draft" size={14} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #172033)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {activeDocument.title || 'Legal Document Draft'}
                     </span>
                   </div>
@@ -2049,29 +2227,32 @@ function CommandPalette() {
                         style={{ background: outlineOpen ? 'var(--lex-accent-blue-subtle, #EFF6FF)' : undefined, color: outlineOpen ? 'var(--lex-accent-blue, #2563EB)' : undefined }}
                         title="Toggle Document Outline"
                       >
-                        <Icon name="outline" size={13} /> {outlineOpen ? 'Outline ▲' : `Outline (${docSections.length})`}
+                        <Icon name="outline" size={12} /> {outlineOpen ? 'Outline ▲' : `Outline (${docSections.length})`}
                       </button>
                     )}
                     <button className="lex-tool-btn" onClick={handleCopyDraft} title="Copy Draft">
-                      <Icon name="copy" size={13} /> {copyToast ? 'Copied!' : 'Copy'}
+                      <Icon name="copy" size={12} /> {copyToast ? 'Copied!' : 'Copy'}
                     </button>
-                    <button className="lex-tool-btn" onClick={handleDownloadDraft} title="Download .MD">
-                      <Icon name="download" size={13} /> Export
+                    <button className="lex-tool-btn" onClick={handleDownloadDraft} title="Download Markdown (.md)">
+                      <Icon name="download" size={12} /> Export
                     </button>
-                    <button className="lex-tool-btn" onClick={() => window.print()} title="Print / PDF">
-                      <Icon name="print" size={13} />
+                    <button className="lex-tool-btn" onClick={() => window.print()} title="Print or Save as PDF">
+                      <Icon name="print" size={12} /> Print
                     </button>
-                    <button className="lex-tool-btn" onClick={() => setIsDrawerExpanded(v => !v)} title="Toggle Theater Mode">
-                      <Icon name="sparkles" size={13} />
+                    <button className="lex-tool-btn" onClick={() => setShowSaveModal(true)} style={{ color: 'var(--lex-accent-blue, #2563EB)', fontWeight: 600 }} title="Save to Case Vault">
+                      <Icon name="folder" size={12} /> Save to Vault
                     </button>
-                    <button className="lex-tool-btn" onClick={() => setDrawerOpen(false)} title="Close Draft">
-                      <Icon name="close" size={14} />
+                    <button className="lex-tool-btn" onClick={() => setIsDrawerExpanded(v => !v)} title="Toggle Full Width">
+                      <Icon name="sparkles" size={12} />
+                    </button>
+                    <button className="lex-tool-btn" onClick={() => setDrawerOpen(false)} title="Close Draft Workspace">
+                      <Icon name="close" size={13} />
                     </button>
                   </div>
                 </div>
 
                 {/* Document Status & AI Review Badge */}
-                <div style={{ padding: '8px 16px', background: 'var(--lex-bg-main, #F7F8FC)', borderBottom: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                <div style={{ padding: '7px 14px', background: 'var(--lex-bg-main, #F7F8FC)', borderBottom: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
                   <span style={{ color: 'var(--lex-text-secondary, #667085)' }}>
                     AI Generated · Draft · {missingPlaceholders.length} details required
                   </span>
@@ -2088,7 +2269,7 @@ function CommandPalette() {
                 {/* Collapsible Document Outline Panel */}
                 {outlineOpen && docSections.length > 0 && (
                   <div className="lex-outline-panel">
-                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.04em' }}>Document Outline</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.04em' }}>Document Outline</div>
                     {docSections.map((sec, si) => (
                       <div
                         key={si}
@@ -2107,7 +2288,7 @@ function CommandPalette() {
 
                 {/* Contextual Clause Action Bar */}
                 <div className="lex-section-ai-bar">
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--lex-text-secondary, #667085)' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--lex-text-secondary, #667085)' }}>
                     Clause AI Actions {selectedSection ? `(${selectedSection})` : ''}:
                   </span>
                   <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'improve')}>✦ Improve</button>
@@ -2119,62 +2300,63 @@ function CommandPalette() {
 
                 {/* Batch Placeholders Completion Panel */}
                 {showCompletionPanel && missingPlaceholders.length > 0 && (
-                  <div style={{ padding: '12px 16px', background: 'rgba(245,158,11,0.06)', borderBottom: '1px solid rgba(245,158,11,0.2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#B45309' }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(245,158,11,0.06)', borderBottom: '1px solid rgba(245,158,11,0.2)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#B45309' }}>
                       Required Draft Details ({missingPlaceholders.length})
                     </div>
                     {missingPlaceholders.map((field, fi) => (
-                      <div key={fi} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 11.5, color: 'var(--lex-text-primary, #172033)', width: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{field}:</span>
+                      <div key={fi} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 11, color: 'var(--lex-text-primary, #172033)', width: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{field}:</span>
                         <input
                           placeholder={`Enter ${field}`}
                           value={missingFieldInputs[field] || ''}
                           onChange={e => setMissingFieldInputs(prev => ({ ...prev, [field]: e.target.value }))}
-                          style={{ flex: 1, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--lex-border, #E2E6EF)', fontSize: 11.5, outline: 'none' }}
+                          style={{ flex: 1, padding: '3px 7px', borderRadius: 4, border: '1px solid var(--lex-border, #E2E6EF)', fontSize: 11, outline: 'none' }}
                         />
                       </div>
                     ))}
                     <button
                       onClick={handleBatchFillPlaceholders}
-                      style={{ marginTop: 4, padding: '6px 12px', background: '#B45309', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                      style={{ marginTop: 3, padding: '5px 10px', background: '#B45309', color: '#fff', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                     >
                       Fill All in Draft
                     </button>
                   </div>
                 )}
 
-                {/* A4 Paper Document Content Editor */}
-                <div
-                  ref={drawerBodyRef}
-                  className="lex-doc-paper"
-                  contentEditable
-                  suppressContentEditableWarning
-                  style={{ flex: 1, overflowY: 'auto' }}
-                  onBlur={e => {
-                    const plain = e.currentTarget.innerText || '';
-                    lastDocKeyRef.current = `${activeDocument?.title}::${plain.length}`;
-                    updateSession(currentId, s => ({
-                      ...s,
-                      pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: plain } : null,
-                      activeDocument: s.activeDocument ? { ...s.activeDocument, content: plain } : null,
-                    }));
-                  }}
-                />
+                {/* Centered A4 Document Canvas */}
+                <div className="lex-doc-canvas">
+                  <div
+                    ref={drawerBodyRef}
+                    className="lex-doc-paper"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={e => {
+                      const plain = e.currentTarget.innerText || '';
+                      lastDocKeyRef.current = `${activeDocument?.title}::${plain.length}`;
+                      updateSession(currentId, s => ({
+                        ...s,
+                        pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: plain } : null,
+                        activeDocument: s.activeDocument ? { ...s.activeDocument, content: plain } : null,
+                      }));
+                    }}
+                  />
+                </div>
 
                 {/* Document Drawer Footer with Save Action */}
-                <div style={{ padding: '12px 18px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-sidebar, #EEF1F7)' }}>
+                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-sidebar, #EEF1F7)' }}>
                   <button
                     onClick={() => {
                       updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
                       setDrawerOpen(false);
                     }}
-                    style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--lex-border, #E2E6EF)', background: 'transparent', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', fontSize: 12 }}
+                    style={{ padding: '5px 12px', borderRadius: 5, border: '1px solid var(--lex-border, #E2E6EF)', background: 'transparent', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', fontSize: 11.5 }}
                   >
                     Discard
                   </button>
                   <button
                     onClick={() => setShowSaveModal(true)}
-                    style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: 'var(--lex-accent-blue, #2563EB)', color: '#FFFFFF', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}
+                    style={{ padding: '5px 14px', borderRadius: 5, border: 'none', background: 'var(--lex-accent-blue, #2563EB)', color: '#FFFFFF', fontWeight: 600, cursor: 'pointer', fontSize: 11.5 }}
                   >
                     Save to Case Vault
                   </button>
@@ -2222,23 +2404,23 @@ function CommandPalette() {
     </>
   );
 
-  // Helper renderer for each quick action tool card
-  function renderToolCard(t) {
+  // Helper renderer for compact quick workflow cards
+  function renderToolCompactCard(t) {
     return (
       <button
         key={t.id}
-        className="lex-tool-card"
+        className="lex-tool-compact-card"
         onClick={() => {
           setQuery(t.prompt);
           setTimeout(() => searchRef.current?.(null, t.prompt), 30);
         }}
       >
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--lex-accent-blue-subtle, #EFF6FF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)', flexShrink: 0 }}>
-          <Icon name={t.icon} size={16} />
+        <div style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--lex-accent-blue-subtle, #EFF6FF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)', flexShrink: 0 }}>
+          <Icon name={t.icon} size={13} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--lex-text-primary, #172033)' }}>{t.title}</div>
-          <div style={{ fontSize: 11, color: 'var(--lex-text-secondary, #667085)', marginTop: 2, lineHeight: 1.35 }}>{t.desc}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--lex-text-primary, #172033)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
+          <div style={{ fontSize: 10, color: 'var(--lex-text-secondary, #667085)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.desc}</div>
         </div>
       </button>
     );
@@ -2268,7 +2450,7 @@ function CommandPalette() {
                   if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
                   if (e.key === 'Escape') setRenamingId(null);
                 }}
-                style={{ width: '100%', fontSize: 12, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--lex-accent-blue, #2563EB)', outline: 'none' }}
+                style={{ width: '100%', fontSize: 11.5, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--lex-accent-blue, #2563EB)', outline: 'none' }}
                 onClick={e => e.stopPropagation()}
               />
             ) : (
@@ -2315,7 +2497,7 @@ function CommandPalette() {
                   <Icon name="draft" size={11} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
                   {s.activeDocument.title || 'Draft in Progress'}
                 </span>
-                <span style={{ fontSize: 10, color: 'var(--lex-accent-blue, #2563EB)', fontWeight: 600 }}>Open</span>
+                <span style={{ fontSize: 9.5, color: 'var(--lex-accent-blue, #2563EB)', fontWeight: 600 }}>Open</span>
               </button>
             )}
             {hasSavedAssets && s.savedAssets.map((asset, ai) => (
@@ -2329,7 +2511,7 @@ function CommandPalette() {
                   <Icon name="folder" size={11} style={{ color: '#16A34A' }} />
                   {asset.name}
                 </span>
-                <span style={{ fontSize: 9.5, color: '#16A34A' }}>Vault</span>
+                <span style={{ fontSize: 9, color: '#16A34A' }}>Vault</span>
               </button>
             ))}
           </div>
