@@ -7,10 +7,26 @@ import CommandPalette from '../components/CommandPalette';
 import { AuthProvider } from '../context/AuthContext';
 
 describe('FINAL RED-TEAM PRODUCTION QA — LexAmplify AI Legal Associate', () => {
+  // Overridable per-test so the failure-path test below can force a
+  // rejected save without a separate mock setup.
+  let vaultSaveResponse = () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ success: true, id: 42, location: 'Contracts / Mutual NDA Agreement' }),
+  });
+
   beforeEach(() => {
     localStorage.clear();
+    vaultSaveResponse = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, id: 42, location: 'Contracts / Mutual NDA Agreement' }),
+    });
     global.fetch = vi.fn((url, options) => {
       const urlStr = String(url);
+      if (urlStr.includes('/api/vault/save')) {
+        return Promise.resolve(vaultSaveResponse());
+      }
       if (urlStr.includes('/api/vault/folders')) {
         return Promise.resolve({
           ok: true,
@@ -212,7 +228,69 @@ describe('FINAL RED-TEAM PRODUCTION QA — LexAmplify AI Legal Associate', () =>
     const confirmBtn = screen.getByText('Confirm & Save');
     await userEvent.click(confirmBtn);
 
+    // The modal must actually hit the backend — a sidebar entry appearing
+    // is not proof the document was persisted (this previously passed with
+    // zero network calls to /api/vault/save, silently discarding the draft).
+    await waitFor(() => {
+      const saveCall = global.fetch.mock.calls.find(([url]) => String(url).includes('/api/vault/save'));
+      expect(saveCall).toBeTruthy();
+      const body = JSON.parse(saveCall[1].body);
+      expect(body.title).toBeTruthy();
+      expect(body.content).toContain('Disclosing Party');
+      expect(body.case_id).toBeTruthy();
+      expect(body.doc_type).toBe('nda');
+    });
+
     // Verify sidebar shows saved asset or draft node
     expect(await screen.findByText('Vault')).toBeInTheDocument();
+  });
+
+  it('Flow F: Save to Vault surfaces a backend failure instead of a false success', async () => {
+    vaultSaveResponse = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ error: true, message: 'Vault database is unavailable.' }),
+    });
+
+    const testSession = {
+      id: 's_test_2',
+      title: 'Mutual NDA Agreement',
+      messages: [{ role: 'user', text: 'Draft NDA' }],
+      activeDocument: {
+        title: 'Mutual NDA Agreement',
+        doc_type: 'nda',
+        content: '# 01 PARTIES\n\nDisclosing Party: [Name]',
+      },
+      savedAssets: [],
+      updatedAt: Date.now(),
+    };
+    localStorage.setItem('lexai_sessions_v2', JSON.stringify([testSession]));
+    localStorage.setItem('lexai_current_session_v2', 's_test_2');
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <CommandPalette />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    window.dispatchEvent(new CustomEvent('toggle-rag-palette'));
+
+    const viewDraftBtn = await screen.findByText('View Draft');
+    await userEvent.click(viewDraftBtn);
+
+    const saveToVaultBtn = screen.getByTitle('Save to Case Vault');
+    await userEvent.click(saveToVaultBtn);
+    await screen.findByText('Save Draft to Case Vault');
+
+    const confirmBtn = screen.getByText('Confirm & Save');
+    await userEvent.click(confirmBtn);
+
+    // The failure must surface in the modal, the modal must stay open,
+    // and no false "saved" message may be pushed into the conversation.
+    expect(await screen.findByText('Vault database is unavailable.')).toBeInTheDocument();
+    expect(screen.getByText('Save Draft to Case Vault')).toBeInTheDocument();
+    expect(screen.queryByText(/saved to Case Vault/i)).not.toBeInTheDocument();
   });
 });

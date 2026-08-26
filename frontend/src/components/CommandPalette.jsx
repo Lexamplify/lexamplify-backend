@@ -1109,6 +1109,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   const [navStack, setNavStack] = useState([{ id: null, name: 'Root (Case Vault)' }]);
   const [fileName, setFileName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -1138,15 +1139,22 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   const destFolderId = isAtRoot ? null : currentView.id;
   const destPath = navStack.map(s => s.name).join(' / ');
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!fileName.trim()) return;
     setSaving(true);
-    onConfirm({
+    setSaveError('');
+    const result = await onConfirm({
       fileName: fileName.trim(),
       folderId: destFolderId,
       folderPath: destPath,
       smartTitle: fileName.trim(),
     });
+    if (!isMountedRef.current) return;
+    if (result && result.success === false) {
+      setSaving(false);
+      setSaveError(result.message || 'Failed to save to Case Vault. Please try again.');
+    }
+    // On success the parent closes this modal itself.
   };
 
   return (
@@ -1183,7 +1191,8 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
             </div>
           </div>
         </div>
-        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-sidebar, #EEF1F7)' }}>
+        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-sidebar, #EEF1F7)' }}>
+          {saveError && <span style={{ fontSize: 11, color: '#DC2626', marginRight: 'auto' }}>{saveError}</span>}
           <button onClick={onClose} style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--lex-border, #E2E6EF)', background: 'transparent', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
           <button onClick={handleConfirm} disabled={saving || !fileName.trim()} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--lex-accent-blue, #2563EB)', color: '#FFFFFF', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>{saving ? 'Saving…' : 'Confirm & Save'}</button>
         </div>
@@ -1332,7 +1341,10 @@ function CommandPalette() {
 
   useEffect(() => {
     isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
+    return () => {
+      isMountedRef.current = false;
+      abortControllerRef.current?.abort();
+    };
   }, []);
 
   // ── Derived Data ─────────────────────────────────────
@@ -1555,7 +1567,8 @@ function CommandPalette() {
     let updated = activeDocument.content;
     Object.entries(missingFieldInputs).forEach(([key, val]) => {
       if (val && val.trim()) {
-        const regex = new RegExp(`\\[${key}\\]`, 'g');
+        const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\[${escapedKey}\\]`, 'g');
         updated = updated.replace(regex, val.trim());
       }
     });
@@ -1660,6 +1673,8 @@ function CommandPalette() {
         }),
       });
 
+      if (!isMountedRef.current) return;
+
       if (!res.ok) {
         pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text: 'Server communication error. Please try again.' });
         setLoading(false);
@@ -1669,6 +1684,7 @@ function CommandPalette() {
       const contentType = res.headers.get('Content-Type') || '';
       if (contentType.includes('application/json')) {
         const actionPayload = await res.json();
+        if (!isMountedRef.current) return;
         if (actionPayload.is_action && actionPayload.intent === 'ROUTE') {
           navigate(actionPayload.destination);
           setLoading(false);
@@ -1686,6 +1702,7 @@ function CommandPalette() {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        if (!isMountedRef.current) { reader.cancel().catch(() => {}); break; }
         buf += dec.decode(value, { stream: true });
         const lines = buf.split('\n');
         buf = lines.pop();
@@ -1699,7 +1716,12 @@ function CommandPalette() {
           try {
             const p = JSON.parse(json);
             if (p.action === 'update_document') {
-              const updated = { title: p.title || 'Updated Document', content: p.updated_content, doc_type: 'Draft Edit' };
+              const updated = {
+                case_id: activeDocument?.case_id,
+                title: p.title || 'Updated Document',
+                content: p.updated_content,
+                doc_type: 'Draft Edit',
+              };
               updateSession(sid, s => ({
                 ...s,
                 pendingDraft: updated,
@@ -1731,11 +1753,11 @@ function CommandPalette() {
         }
       }
     } catch (err) {
-      if (err.name !== 'AbortError') {
+      if (err.name !== 'AbortError' && isMountedRef.current) {
         pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text: 'Connection interrupted. Please try again.' });
       }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
       abortControllerRef.current = null;
     }
   }
@@ -2389,21 +2411,50 @@ function CommandPalette() {
           draft={activeDocument}
           sessionTitle={currentSession?.title || ''}
           apiBase={API_BASE}
-          onConfirm={({ fileName, folderId, folderPath }) => {
-            const savedItem = { id: `v_${Date.now()}`, name: fileName, path: folderPath };
-            updateSession(currentId, s => ({
-              ...s,
-              savedAssets: [...(s.savedAssets || []), savedItem],
-              pendingDraft: null,
-              activeDocument: null,
-            }));
-            setShowSaveModal(false);
-            setDrawerOpen(false);
-            pushMessage(currentId, {
-              id: `sys_${Date.now()}`,
-              role: 'assistant',
-              text: `✅ Document **${fileName}** saved to Case Vault (${folderPath || 'Root'}).`,
-            });
+          onConfirm={async ({ fileName, folderId, folderPath, smartTitle }) => {
+            if (!activeDocument?.content) {
+              return { success: false, message: 'No draft content to save.' };
+            }
+            try {
+              const res = await fetch(`${API_BASE}/api/vault/save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  case_id: activeDocument.case_id || 'AI_ASSOCIATE',
+                  title: fileName,
+                  doc_type: activeDocument.doc_type || 'AI Draft',
+                  content: activeDocument.content,
+                  folder_id: folderId,
+                  smart_title: smartTitle,
+                  session_title: currentSession?.title || '',
+                  audit_messages: JSON.stringify(
+                    messages.map(m => ({ role: m.role, text: m.text }))
+                  ),
+                }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok || data.error) {
+                return { success: false, message: data.message || 'Failed to save to Case Vault.' };
+              }
+
+              const savedItem = { id: data.id ?? `v_${Date.now()}`, name: fileName, path: folderPath };
+              updateSession(currentId, s => ({
+                ...s,
+                savedAssets: [...(s.savedAssets || []), savedItem],
+                pendingDraft: null,
+                activeDocument: null,
+              }));
+              setShowSaveModal(false);
+              setDrawerOpen(false);
+              pushMessage(currentId, {
+                id: `sys_${Date.now()}`,
+                role: 'assistant',
+                text: `✅ Document **${fileName}** saved to Case Vault (${data.location || folderPath || 'Root'}).`,
+              });
+              return { success: true };
+            } catch (_) {
+              return { success: false, message: 'Connection error while saving to Case Vault.' };
+            }
           }}
           onClose={() => setShowSaveModal(false)}
         />

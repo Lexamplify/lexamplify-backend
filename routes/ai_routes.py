@@ -328,13 +328,17 @@ def run_simulation():
                 c_lex = conn_lex.cursor()
 
                 # ── Pass 1: case_vault — title + doc_type fuzzy match ─────
+                # Scoped to this user's own documents (plus legacy/unowned
+                # rows) — without this a document_reference guess could pull
+                # another user's private draft into the simulation.
                 if ref_pattern:
                     c_lex.execute(
                         "SELECT content FROM case_vault "
                         "WHERE (LOWER(title) LIKE LOWER(?) OR LOWER(doc_type) LIKE LOWER(?)) "
                         "  AND content IS NOT NULL AND content != '' "
+                        "  AND (user_id = ? OR user_id IS NULL) "
                         "ORDER BY created_at DESC LIMIT 1",
-                        (ref_pattern, ref_pattern)
+                        (ref_pattern, ref_pattern, user_id_int)
                     )
                     row = c_lex.fetchone()
                     if row and row[0]:
@@ -365,11 +369,16 @@ def run_simulation():
                             ).strip()
 
                 # ── Pass 3: most-recent vault doc (empty-reference fallback) ─
+                # Same ownership scoping as Pass 1 — this fallback must not
+                # be able to hand back whichever user in the whole system
+                # most recently saved a document.
                 if not document_content:
                     c_lex.execute(
                         "SELECT content FROM case_vault "
                         "WHERE content IS NOT NULL AND content != '' "
-                        "ORDER BY created_at DESC LIMIT 1"
+                        "  AND (user_id = ? OR user_id IS NULL) "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        (user_id_int,)
                     )
                     row = c_lex.fetchone()
                     if row and row[0]:

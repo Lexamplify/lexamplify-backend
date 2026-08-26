@@ -319,8 +319,8 @@ def upload_document():
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO case_vault (case_id, title, doc_type, content, tags) VALUES (?, ?, ?, ?, ?)",
-                (case_id, f.filename, "Vault Document", extracted_text, "[]")
+                "INSERT INTO case_vault (case_id, title, doc_type, content, tags, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (case_id, f.filename, "Vault Document", extracted_text, "[]", user_id)
             )
             conn.commit()
             new_doc_id = cursor.lastrowid
@@ -358,7 +358,12 @@ def list_documents():
     """Lists metadata for case_vault documents, optionally filtered by
     case_id. Queries case_vault directly — the single source of truth shared
     with Firm Library / LexAmplify — instead of the old SQLAlchemy Document table,
-    so ids returned here line up with the citation routes' doc_id space."""
+    so ids returned here line up with the citation routes' doc_id space.
+
+    Scoped to the caller's own documents plus legacy/unowned rows that
+    predate the vault ownership column — see the Case Vault authorization
+    audit for why those stay visible rather than being hidden or reassigned."""
+    user_id = int(get_jwt_identity())
     case_id_raw = request.args.get("case_id")
 
     conn = sqlite3.connect(DB_PATH)
@@ -367,13 +372,15 @@ def list_documents():
         if case_id_raw:
             rows = conn.execute(
                 "SELECT id AS doc_id, case_id, title, doc_type, tags, created_at "
-                "FROM case_vault WHERE case_id = ? ORDER BY created_at DESC",
-                (case_id_raw,)
+                "FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+                "ORDER BY created_at DESC",
+                (case_id_raw, user_id)
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT id AS doc_id, case_id, title, doc_type, tags, created_at "
-                "FROM case_vault ORDER BY created_at DESC"
+                "FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC",
+                (user_id,)
             ).fetchall()
     except Exception as e:
         print(f"[List Docs Error]: {e}")
@@ -401,15 +408,16 @@ def get_document_details(doc_id):
     """Fetches case_vault document metadata and reconstructs full text from
     its RAG chunks, falling back to the row's own stored content if no
     chunks exist."""
+    user_id = int(get_jwt_identity())
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute(
-            "SELECT id AS doc_id, case_id, title, doc_type, tags, content, created_at "
+            "SELECT id AS doc_id, case_id, title, doc_type, tags, content, created_at, user_id "
             "FROM case_vault WHERE id = ?",
             (doc_id,)
         ).fetchone()
-        if not row:
+        if not row or not (row["user_id"] is None or row["user_id"] == user_id):
             return jsonify({"error": "Document not found."}), 404
 
         chunk_rows = conn.execute(
@@ -441,10 +449,11 @@ def get_document_details(doc_id):
 @jwt_required()
 def delete_document(doc_id):
     """Deletes the case_vault document and cascade-deletes its RAG chunks."""
+    user_id = int(get_jwt_identity())
     conn = sqlite3.connect(DB_PATH)
     try:
-        row = conn.execute("SELECT id FROM case_vault WHERE id = ?", (doc_id,)).fetchone()
-        if not row:
+        row = conn.execute("SELECT id, user_id FROM case_vault WHERE id = ?", (doc_id,)).fetchone()
+        if not row or not (row[1] is None or row[1] == user_id):
             return jsonify({"error": "Document not found."}), 404
 
         conn.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))

@@ -1,6 +1,6 @@
 from flask import Flask, render_template, jsonify, request, redirect
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
 from database import db as sqlalchemy_db
 from datetime import timedelta
@@ -88,6 +88,7 @@ def init_db():
             id   INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT    NOT NULL,
             parent_id INTEGER REFERENCES vault_folders(id) ON DELETE CASCADE,
+            user_id INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -95,6 +96,18 @@ def init_db():
     for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'), ('file_blob', 'BLOB'), ('file_format', 'TEXT')):
         try:
             c.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
+        except Exception:
+            pass
+    # Ownership boundary — nullable, and deliberately NEVER backfilled for
+    # pre-existing rows (see the vault authorization audit): every row that
+    # predates this column has no reliable owner in the data itself, so it
+    # stays NULL rather than being fabricated. NULL is treated as "legacy/
+    # shared" at the authorization layer, not as "owned by nobody = locked".
+    # New rows written through the now-authenticated vault endpoints always
+    # get a real user_id going forward.
+    for _tbl in ('case_vault', 'vault_folders'):
+        try:
+            c.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
         except Exception:
             pass
     # AI Provenance / Audit Trail — links saved docs to the agent conversation that produced them
@@ -432,6 +445,26 @@ def resolve_vault_title(raw_title, case_id, content):
     return format_vault_title(raw_title, case_id)
 
 
+# ── Case Vault authorization ────────────────────────────────────────────
+# case_vault/vault_folders predate any per-user boundary — 912 rows already
+# exist with no attributable owner (case_id is a free-text label, not a
+# user reference). Rather than fabricate ownership for them, `user_id`
+# stays NULL on that legacy data and is treated here as "shared/legacy":
+# readable and mutable by any authenticated user, exactly as all vault data
+# behaved before this boundary existed — a deliberate, disclosed decision,
+# not an oversight. Every row created from this point on gets a real
+# user_id from the authenticated session and is then strictly private to
+# that user. See the Case Vault authorization audit for the full rationale.
+def _vault_owner_ok(row_user_id, current_user_id):
+    return row_user_id is None or int(row_user_id) == int(current_user_id)
+
+
+def _current_vault_user_id():
+    """int user id from the verified JWT identity. Routes calling this are
+    always behind @jwt_required(), so the identity is always present."""
+    return int(get_jwt_identity())
+
+
 def create_app():
     app = Flask(__name__)
     # Render terminates TLS at its edge and proxies to this app over plain
@@ -601,25 +634,32 @@ def create_app():
 
     # ── Vault Folders API ─────────────────────────────────────────────────────
     @app.route('/api/vault/folders', methods=['GET', 'OPTIONS'])
+    @jwt_required()
     def get_vault_folders():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             conn = db
             old_rf = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
                 rows = conn.execute(
-                    'SELECT id, name, parent_id, created_at FROM vault_folders ORDER BY name ASC'
+                    'SELECT id, name, parent_id, created_at FROM vault_folders '
+                    'WHERE user_id = ? OR user_id IS NULL ORDER BY name ASC',
+                    (uid,)
                 ).fetchall()
                 folders = [dict(r) for r in rows]
 
                 # Cheap GROUP BY for per-folder document counts — never touches
                 # `content`, so this stays fast regardless of table size and
                 # lets the frontend show folder counts without loading every
-                # document just to count them client-side.
+                # document just to count them client-side. Scoped the same
+                # way as the folder list itself.
                 count_rows = conn.execute(
-                    'SELECT folder_id, COUNT(*) AS cnt FROM case_vault GROUP BY folder_id'
+                    'SELECT folder_id, COUNT(*) AS cnt FROM case_vault '
+                    'WHERE user_id = ? OR user_id IS NULL GROUP BY folder_id',
+                    (uid,)
                 ).fetchall()
                 doc_counts = {
                     ('root' if r['folder_id'] is None else str(r['folder_id'])): r['cnt']
@@ -643,7 +683,9 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/folders', methods=['POST'])
+    @jwt_required()
     def create_vault_folder():
+        uid = _current_vault_user_id()
         try:
             data = request.get_json(force=True, silent=True) or {}
             name = (data.get('name') or '').strip()
@@ -655,18 +697,30 @@ def create_app():
                 return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
 
             conn = db
-            # Uniqueness check: same name + same parent
+
+            # A parent_id must be a folder this user can actually see —
+            # otherwise anyone could nest a folder under another user's
+            # private folder id (folder_id is a small sequential integer,
+            # trivially guessable/enumerable).
+            if parent_id is not None:
+                parent_row = conn.execute(
+                    'SELECT user_id FROM vault_folders WHERE id = ?', (parent_id,)
+                ).fetchone()
+                if not parent_row or not _vault_owner_ok(parent_row[0], uid):
+                    return jsonify({'error': True, 'message': 'Parent folder not found.'}), 404
+
+            # Uniqueness check: same name + same parent, within this user's own folders
             existing = conn.execute(
-                'SELECT id FROM vault_folders WHERE name = ? AND (parent_id IS ? OR parent_id = ?)',
-                (name, parent_id, parent_id)
+                'SELECT id FROM vault_folders WHERE name = ? AND (parent_id IS ? OR parent_id = ?) AND user_id = ?',
+                (name, parent_id, parent_id, uid)
             ).fetchone()
             if existing:
                 return jsonify({'error': True, 'message': f'A folder named "{name}" already exists here.'}), 409
 
             c = conn.cursor()
             c.execute(
-                'INSERT INTO vault_folders (name, parent_id) VALUES (?, ?)',
-                (name, parent_id)
+                'INSERT INTO vault_folders (name, parent_id, user_id) VALUES (?, ?, ?)',
+                (name, parent_id, uid)
             )
             conn.commit()
             folder_id = c.lastrowid
@@ -675,10 +729,16 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/folders/<int:folder_id>', methods=['PATCH', 'OPTIONS'])
+    @jwt_required()
     def update_vault_folder(folder_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
+            owner_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+                return jsonify({'error': True, 'message': 'Folder not found.'}), 404
+
             data = request.get_json(force=True, silent=True) or {}
 
             if 'name' in data:
@@ -693,6 +753,13 @@ def create_app():
 
             if 'parent_id' in data:
                 new_parent = data.get('parent_id')  # None = move to root
+                # The destination folder must also belong to this user (or be
+                # legacy/shared) — otherwise a folder could be relocated
+                # underneath another user's private tree by guessing an id.
+                if new_parent is not None:
+                    dest_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (new_parent,)).fetchone()
+                    if not dest_row or not _vault_owner_ok(dest_row[0], uid):
+                        return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
                 # Prevent circular parentage: new_parent must not be self or a descendant
                 def get_descendants(fid):
                     kids = [r['id'] for r in db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()]
@@ -711,18 +778,36 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/folders/<int:folder_id>', methods=['DELETE', 'OPTIONS'])
+    @jwt_required()
     def delete_vault_folder(folder_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
+            owner_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+                return jsonify({'error': True, 'message': 'Folder not found.'}), 404
+
             def recursive_delete(fid):
-                # Delete all documents in this folder
-                db.execute('DELETE FROM case_vault WHERE folder_id = ?', (fid,))
-                # Get all child folders
-                children = [r['id'] for r in db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()]
+                # Delete all documents in this folder that this user may
+                # touch — a shared/legacy child document sitting inside an
+                # otherwise-owned folder is still left alone rather than
+                # deleted out from under whoever else can see it.
+                db.execute(
+                    'DELETE FROM case_vault WHERE folder_id = ? AND (user_id = ? OR user_id IS NULL)',
+                    (fid, uid)
+                )
+                # Only recurse into child folders this user actually owns
+                # (or legacy/unowned ones) — never cascade into a subtree
+                # that was somehow reparented under another user's folder.
+                children = [
+                    r['id'] for r in db.execute(
+                        'SELECT id FROM vault_folders WHERE parent_id = ? AND (user_id = ? OR user_id IS NULL)',
+                        (fid, uid)
+                    ).fetchall()
+                ]
                 for child_id in children:
                     recursive_delete(child_id)
-                # Delete this folder
                 db.execute('DELETE FROM vault_folders WHERE id = ?', (fid,))
 
             recursive_delete(folder_id)
@@ -732,10 +817,16 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/documents/<int:doc_id>', methods=['PUT', 'OPTIONS'])
+    @jwt_required()
     def update_vault_document(doc_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
+            owner_row = db.execute('SELECT user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+                return jsonify({'error': True, 'message': 'Document not found.'}), 404
+
             data = request.get_json(force=True, silent=True) or {}
             new_content = data.get('content', '')
             db.execute('UPDATE case_vault SET content = ? WHERE id = ?', (new_content, doc_id))
@@ -745,10 +836,15 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/documents/<int:doc_id>', methods=['DELETE', 'OPTIONS'])
+    @jwt_required()
     def delete_vault_document(doc_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
+            owner_row = db.execute('SELECT user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+                return jsonify({'error': True, 'message': 'Document not found.'}), 404
             db.execute('DELETE FROM case_vault WHERE id = ?', (doc_id,))
             db.commit()
             return jsonify({'success': True, 'deleted_id': doc_id}), 200
@@ -817,9 +913,11 @@ def create_app():
             return jsonify({"error": True, "message": str(e)}), 500
 
     @app.route('/api/vault/save', methods=['POST', 'OPTIONS'])
+    @jwt_required()
     def save_vault_document():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             data = request.get_json(force=True, silent=True) or {}
 
@@ -874,6 +972,15 @@ def create_app():
             if not case_id or not title:
                 return jsonify({"error": True, "message": "Missing required fields (case_id, title)."}), 400
 
+            # A folder_id must be a folder this user can actually see — a
+            # bare integer id is trivially guessable, so without this check
+            # a client could file a document straight into another user's
+            # private folder just by sending its id.
+            if folder_id:
+                folder_owner = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+                if not folder_owner or not _vault_owner_ok(folder_owner[0], uid):
+                    return jsonify({"error": True, "message": "Destination folder not found."}), 404
+
             # Format conversion — generate binary blob if requested
             save_format = data.get('format', 'native')
             file_blob = None
@@ -914,8 +1021,8 @@ def create_app():
             conn = db
             c = conn.cursor()
             c.execute(
-                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title, tags, file_blob, file_format)
+                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title, tags, file_blob, file_format, uid)
             )
             conn.commit()
             inserted_id = c.lastrowid
@@ -943,9 +1050,11 @@ def create_app():
             return jsonify({"error": True, "message": str(e)}), 500
 
     @app.route('/api/cases/autocomplete', methods=['GET', 'OPTIONS'])
+    @jwt_required()
     def api_cases_autocomplete():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         q = request.args.get('q', '').strip()
         if not q:
             return jsonify([]), 200
@@ -955,8 +1064,9 @@ def create_app():
             # Parameterized placeholder — the LIKE wildcard is built into the
             # bound value, never concatenated into the SQL string itself.
             c.execute(
-                "SELECT id, title FROM case_vault WHERE title LIKE ? ORDER BY created_at DESC LIMIT 10",
-                (f'%{q}%',)
+                "SELECT id, title FROM case_vault WHERE title LIKE ? AND (user_id = ? OR user_id IS NULL) "
+                "ORDER BY created_at DESC LIMIT 10",
+                (f'%{q}%', uid)
             )
             rows = c.fetchall()
             return jsonify([{"id": r[0], "title": r[1]} for r in rows]), 200
@@ -998,9 +1108,11 @@ def create_app():
     """
 
     @app.route('/api/vault/documents/<int:doc_id>/citations', methods=['POST', 'OPTIONS'])
+    @jwt_required()
     def add_vault_citation(doc_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             data = request.get_json(force=True, silent=True) or {}
             citation_id = str(data.get('id', '')).strip()
@@ -1012,8 +1124,8 @@ def create_app():
 
             conn = db
             conn.execute('BEGIN IMMEDIATE')
-            row = conn.execute('SELECT id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
-            if not row:
+            row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row or not _vault_owner_ok(row[1], uid):
                 conn.rollback()
                 return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
             conn.execute(_CITATION_INSERT_SQL, (citation_id, payload, doc_id, doc_id))
@@ -1029,14 +1141,16 @@ def create_app():
             return jsonify({"error": True, "message": str(e)}), 500
 
     @app.route('/api/vault/documents/<int:doc_id>/citations/<string:citation_id>', methods=['DELETE', 'OPTIONS'])
+    @jwt_required()
     def remove_vault_citation(doc_id, citation_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             conn = db
             conn.execute('BEGIN IMMEDIATE')
-            row = conn.execute('SELECT id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
-            if not row:
+            row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row or not _vault_owner_ok(row[1], uid):
                 conn.rollback()
                 return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
             conn.execute(_CITATION_DELETE_SQL, (doc_id, citation_id, doc_id))
@@ -1052,15 +1166,19 @@ def create_app():
             return jsonify({"error": True, "message": str(e)}), 500
 
     @app.route('/api/vault/documents/<int:doc_id>/download', methods=['GET', 'OPTIONS'])
+    @jwt_required()
     def download_vault_document(doc_id):
         from flask import Response as FlaskResponse
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             row = db.execute(
-                'SELECT file_blob, file_format, smart_title, title FROM case_vault WHERE id = ?', (doc_id,)
+                'SELECT file_blob, file_format, smart_title, title, user_id FROM case_vault WHERE id = ?', (doc_id,)
             ).fetchone()
-            if not row or not row[0]:
+            if not row or not _vault_owner_ok(row[4], uid):
+                return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            if not row[0]:
                 return jsonify({'error': True, 'message': 'No binary file stored for this document.'}), 404
             fmt = row[1] or 'native'
             name = row[2] or row[3] or f'document_{doc_id}'
@@ -1080,9 +1198,11 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/audit-trail', methods=['GET', 'OPTIONS'])
+    @jwt_required()
     def vault_audit_trail():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             folder_id = request.args.get('folder_id', type=int)
             conn = db
@@ -1090,6 +1210,9 @@ def create_app():
             conn.row_factory = sqlite3.Row
             try:
                 c = conn.cursor()
+                # An audit record's owner is transitive through the vault
+                # document it documents — vault_audit itself carries no
+                # user_id, so ownership is resolved via the case_vault join.
                 if folder_id is not None:
                     c.execute('''
                         SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
@@ -1099,9 +1222,9 @@ def create_app():
                         FROM   vault_audit va
                         LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
                         LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
-                        WHERE  va.folder_id = ?
+                        WHERE  va.folder_id = ? AND (cv.user_id = ? OR cv.user_id IS NULL)
                         ORDER  BY va.created_at DESC
-                    ''', (folder_id,))
+                    ''', (folder_id, uid))
                 else:
                     c.execute('''
                         SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
@@ -1111,9 +1234,10 @@ def create_app():
                         FROM   vault_audit va
                         LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
                         LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
+                        WHERE  cv.user_id = ? OR cv.user_id IS NULL
                         ORDER  BY va.created_at DESC
                         LIMIT  60
-                    ''')
+                    ''', (uid,))
                 rows = c.fetchall()
                 threads = []
                 for row in rows:
@@ -1130,7 +1254,9 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/vault/documents', methods=['GET'])
+    @jwt_required()
     def get_vault_documents():
+        uid = _current_vault_user_id()
         try:
             q = (request.args.get('q') or '').strip()
             folder_id_param = request.args.get('folder_id')
@@ -1143,8 +1269,8 @@ def create_app():
             except (TypeError, ValueError):
                 offset = 0
 
-            where_clauses = []
-            params = []
+            where_clauses = ['(cv.user_id = ? OR cv.user_id IS NULL)']
+            params = [uid]
             if q:
                 like = f'%{q}%'
                 where_clauses.append('(cv.title LIKE ? OR cv.content LIKE ? OR cv.case_id LIKE ?)')
@@ -1201,11 +1327,13 @@ def create_app():
             return jsonify({"error": True, "message": str(e)}), 500
 
     @app.route('/api/vault/meta', methods=['GET', 'OPTIONS'])
+    @jwt_required()
     def get_vault_meta():
         """Lightweight document metadata for the Save-to-Vault modal explorer.
         Returns id, title, doc_type, folder_id, file_format, created_at — NO content field."""
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             conn = db
             old_rf = conn.row_factory
@@ -1213,7 +1341,8 @@ def create_app():
             try:
                 rows = conn.execute(
                     'SELECT id, title, doc_type, folder_id, file_format, created_at '
-                    'FROM case_vault ORDER BY created_at DESC'
+                    'FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+                    (uid,)
                 ).fetchall()
                 docs = [dict(r) for r in rows]
             finally:
@@ -1917,9 +2046,11 @@ def create_app():
             }), 200
 
     @app.route('/api/legal-research/document/<string:case_id>', methods=['GET', 'OPTIONS'])
+    @jwt_required()
     def api_legal_research_document(case_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
 
         # Strict allow-list validation — case_id arrives as a raw URL path
         # segment, so this is the only thing standing between an attacker and
@@ -1931,8 +2062,9 @@ def create_app():
             conn = db
             c = conn.cursor()
             c.execute(
-                "SELECT title, content FROM case_vault WHERE case_id = ? ORDER BY created_at DESC LIMIT 1",
-                (case_id,)
+                "SELECT title, content FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+                "ORDER BY created_at DESC LIMIT 1",
+                (case_id, uid)
             )
             row = c.fetchone()
 
@@ -2058,9 +2190,11 @@ def create_app():
             return jsonify({"error": True, "message": str(e)}), 500
 
     @app.route('/api/chat', methods=['POST', 'OPTIONS'])
+    @jwt_required()
     def api_chat():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        chat_uid = _current_vault_user_id()
         try:
             # 1. Safe Payload Parsing with force=True to handle missing/wrong Content-Type header
             data = request.get_json(force=True, silent=True) or {}
@@ -2352,7 +2486,11 @@ def create_app():
                     
                     conn = db
                     c = conn.cursor()
-                    c.execute("SELECT content FROM case_vault WHERE case_id = ? ORDER BY created_at DESC LIMIT 1", (str(case_id),))
+                    c.execute(
+                        "SELECT content FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        (str(case_id), chat_uid)
+                    )
                     row = c.fetchone()
                     if not row or not row[0]:
                         return jsonify({"error": True, "message": f"Document with Case ID '{case_id}' not found in the Case Vault."}), 400
@@ -2488,10 +2626,17 @@ def create_app():
                         search_query = args.get("search_query")
                         
                         if case_id and str(case_id).lower() != "null":
-                            c.execute("SELECT * FROM case_vault WHERE case_id = ? ORDER BY created_at DESC", (str(case_id),))
+                            c.execute(
+                                "SELECT * FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+                                "ORDER BY created_at DESC",
+                                (str(case_id), chat_uid)
+                            )
                             rows = c.fetchall()
                         elif search_query:
-                            c.execute("SELECT * FROM case_vault ORDER BY created_at DESC")
+                            c.execute(
+                                "SELECT * FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC",
+                                (chat_uid,)
+                            )
                             all_docs = c.fetchall()
                             stop_words = {"a", "an", "the", "and", "or", "but", "if", "for", "with", "about", "as", "by", "in", "to", "of", "on", "is", "are"}
                             keywords = [w.lower() for w in search_query.split() if w.lower() not in stop_words]
@@ -2508,7 +2653,10 @@ def create_app():
                             
                             rows = [best_doc] if best_doc else []
                         else:
-                            c.execute("SELECT * FROM case_vault ORDER BY created_at DESC")
+                            c.execute(
+                                "SELECT * FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC",
+                                (chat_uid,)
+                            )
                             rows = c.fetchall()
                     finally:
                         conn.row_factory = old_row_factory
@@ -2754,6 +2902,7 @@ def create_app():
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 name      TEXT NOT NULL,
                 parent_id INTEGER REFERENCES vault_folders(id) ON DELETE CASCADE,
+                user_id   INTEGER,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -2770,6 +2919,18 @@ def create_app():
         ):
             try:
                 conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
+            except Exception:
+                pass
+        # Vault authorization boundary — nullable and never backfilled for
+        # pre-existing rows. See the Case Vault authorization audit: rows
+        # that predate this column have no attributable owner in the data
+        # (case_id is a free-text string, not a user reference), so they
+        # stay NULL ("legacy/shared") rather than being assigned an owner
+        # that would be a fabrication. New rows get a real user_id from the
+        # authenticated session going forward.
+        for _tbl in ('case_vault', 'vault_folders'):
+            try:
+                conn.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
             except Exception:
                 pass
         conn.execute('''
