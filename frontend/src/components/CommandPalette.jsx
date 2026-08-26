@@ -1200,10 +1200,12 @@ function ShareModal({ sessionTitle, onClose }) {
   const shareUrl = `${window.location.origin}/vault?ref=${encodeURIComponent((sessionTitle || 'Legal Matter').slice(0, 40))}`;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => {});
+    }
   };
 
   return (
@@ -1741,10 +1743,23 @@ function CommandPalette() {
   const handleCopyDraft = () => {
     const text = viewingSnapshot ? viewingSnapshot.content : (activeDocument?.content || '');
     if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-      setCopyToast(true);
-      setTimeout(() => setCopyToast(false), 2000);
-    });
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopyToast(true);
+        setTimeout(() => setCopyToast(false), 2000);
+      }).catch(() => {});
+    } else {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setCopyToast(true);
+        setTimeout(() => setCopyToast(false), 2000);
+      } catch (_) {}
+    }
   };
 
   const handleDownloadDraft = () => {
