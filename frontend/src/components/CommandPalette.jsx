@@ -600,14 +600,21 @@ const AGENT_CSS = `
   .LexAmplify-drawer.closing { animation: lex-fade-in 0.18s ease reverse both; }
 
   :root[data-theme="light"], [data-theme="light"] {
-    --lex-bg-main: #F7F8FC;
-    --lex-bg-sidebar: #EEF1F7;
+    --lex-bg-main: #F8FAFC;
+    --lex-bg-sidebar: #0F172A;
+    --lex-sidebar-text: #F8FAFC;
+    --lex-sidebar-secondary: #94A3B8;
+    --lex-sidebar-muted: #64748B;
+    --lex-sidebar-item-bg: rgba(255, 255, 255, 0.03);
+    --lex-sidebar-item-hover: rgba(255, 255, 255, 0.06);
+    --lex-sidebar-item-active: rgba(255, 255, 255, 0.09);
+    --lex-sidebar-border: rgba(255, 255, 255, 0.08);
     --lex-bg-card: #FFFFFF;
-    --lex-border: #E2E6EF;
+    --lex-border: #E2E8F0;
     --lex-border-active: #2563EB;
-    --lex-text-primary: #172033;
-    --lex-text-secondary: #667085;
-    --lex-text-muted: #8E98A8;
+    --lex-text-primary: #0F172A;
+    --lex-text-secondary: #475569;
+    --lex-text-muted: #94A3B8;
     --lex-accent-blue: #2563EB;
     --lex-accent-blue-subtle: #EFF6FF;
     --lex-accent-indigo: #6366F1;
@@ -615,7 +622,14 @@ const AGENT_CSS = `
 
   :root[data-theme="dark"], [data-theme="dark"] {
     --lex-bg-main: #0A0E17;
-    --lex-bg-sidebar: #0C101A;
+    --lex-bg-sidebar: #070B12;
+    --lex-sidebar-text: #F1F5F9;
+    --lex-sidebar-secondary: #94A3B8;
+    --lex-sidebar-muted: #64748B;
+    --lex-sidebar-item-bg: rgba(255, 255, 255, 0.03);
+    --lex-sidebar-item-hover: rgba(255, 255, 255, 0.06);
+    --lex-sidebar-item-active: rgba(255, 255, 255, 0.09);
+    --lex-sidebar-border: rgba(255, 255, 255, 0.08);
     --lex-bg-card: #111827;
     --lex-border: rgba(255, 255, 255, 0.08);
     --lex-border-active: #3B82F6;
@@ -627,33 +641,33 @@ const AGENT_CSS = `
     --lex-accent-indigo: #818CF8;
   }
 
-  /* Sidebar Styles */
+  /* Distinct Navigation Rail Sidebar (PDF P2) */
   .lex-sidebar {
-    background: var(--lex-bg-sidebar, #EEF1F7) !important;
-    border-right: 1px solid var(--lex-border, #E2E6EF) !important;
+    background: var(--lex-bg-sidebar, #0F172A) !important;
+    border-right: 1px solid var(--lex-sidebar-border, rgba(255, 255, 255, 0.08)) !important;
     display: flex; flex-direction: column; overflow: hidden;
   }
   .lex-sidebar-search-wrap { padding: 10px 14px 6px; position: relative; }
   .lex-sidebar-search-input {
-    width: 100%; background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF); border-radius: 8px;
+    width: 100%; background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--lex-sidebar-border, rgba(255, 255, 255, 0.12)); border-radius: 8px;
     padding: 7px 28px 7px 30px; font-size: 12px;
-    color: var(--lex-text-primary, #172033); outline: none;
+    color: var(--lex-sidebar-text, #F8FAFC); outline: none;
     transition: all 0.15s ease; box-sizing: border-box; font-family: inherit;
   }
   .lex-sidebar-search-input:focus {
-    border-color: var(--lex-accent-blue, #2563EB);
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
   }
-  .lex-sidebar-search-icon { position: absolute; left: 22px; top: 18px; color: var(--lex-text-muted, #8E98A8); pointer-events: none; }
-  .lex-sidebar-search-clear { position: absolute; right: 22px; top: 17px; background: none; border: none; color: var(--lex-text-muted, #8E98A8); cursor: pointer; padding: 2px; font-size: 11px; }
+  .lex-sidebar-search-icon { position: absolute; left: 22px; top: 18px; color: var(--lex-sidebar-secondary, #94A3B8); pointer-events: none; }
+  .lex-sidebar-search-clear { position: absolute; right: 22px; top: 17px; background: none; border: none; color: var(--lex-sidebar-secondary, #94A3B8); cursor: pointer; padding: 2px; font-size: 11px; }
 
-  /* Conversation Item & Nested Tree */
+  /* Refined Active Conversation State (PDF P2) */
   .lex-sess-item {
-    background: var(--lex-bg-card, #FFFFFF) !important;
-    border: 1px solid var(--lex-border, #E2E6EF) !important;
-    border-radius: 8px !important;
-    margin: 4px 10px !important;
+    background: var(--lex-sidebar-item-bg, rgba(255, 255, 255, 0.03)) !important;
+    border: 1px solid var(--lex-sidebar-border, rgba(255, 255, 255, 0.06)) !important;
+    border-radius: 7px !important;
+    margin: 3px 10px !important;
     padding: 8px 11px !important;
     cursor: pointer !important;
     transition: all 0.15s ease !important;
@@ -661,27 +675,25 @@ const AGENT_CSS = `
     display: flex !important;
     align-items: center !important;
     gap: 8px !important;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
   }
   .lex-sess-item:hover {
-    border-color: var(--lex-accent-blue, #2563EB) !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06) !important;
+    background: var(--lex-sidebar-item-hover, rgba(255, 255, 255, 0.06)) !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
   }
   .lex-sess-item.active {
-    background: var(--lex-accent-blue-subtle, #EFF6FF) !important;
-    border-color: var(--lex-accent-blue, #2563EB) !important;
-    border-left: 3.5px solid var(--lex-accent-blue, #2563EB) !important;
-    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.12) !important;
+    background: var(--lex-sidebar-item-active, rgba(255, 255, 255, 0.09)) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    border-left: 3px solid #3B82F6 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
   }
   .lex-sess-title {
     font-size: 12px !important; font-weight: 600 !important;
-    color: var(--lex-text-primary, #172033) !important;
+    color: var(--lex-sidebar-text, #F8FAFC) !important;
     white-space: nowrap !important; overflow: hidden !important;
     text-overflow: ellipsis !important; line-height: 1.3 !important;
   }
   .lex-sess-meta {
-    font-size: 10px !important; color: var(--lex-text-secondary, #667085) !important;
+    font-size: 10px !important; color: var(--lex-sidebar-secondary, #94A3B8) !important;
     margin-top: 2px !important; display: flex !important; align-items: center !important; gap: 5px !important;
   }
 
@@ -689,29 +701,29 @@ const AGENT_CSS = `
   .lex-sidebar-tree {
     margin: 2px 10px 6px 20px;
     padding-left: 10px;
-    border-left: 1.5px solid var(--lex-border, #E2E6EF);
+    border-left: 1.5px solid rgba(255, 255, 255, 0.15);
     display: flex; flex-direction: column; gap: 3px;
   }
   .lex-sidebar-tree-node {
     display: flex; align-items: center; justify-content: space-between;
     padding: 3px 8px; border-radius: 5px; font-size: 11px;
-    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    color: var(--lex-sidebar-secondary, #94A3B8); cursor: pointer;
     background: transparent; border: none; text-align: left; width: 100%;
     transition: all 0.12s ease;
   }
   .lex-sidebar-tree-node:hover {
-    background: var(--lex-accent-blue-subtle, #EFF6FF);
-    color: var(--lex-accent-blue, #2563EB);
+    background: rgba(255, 255, 255, 0.06);
+    color: #FFFFFF;
   }
 
   /* ══════════════════════════════════════════════
-       UNIFIED COMMAND CENTER (P0)
+       UNIFIED COMMAND CENTER (PDF P1)
   ══════════════════════════════════════════════ */
   .lex-unified-command-center {
     background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 14px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--lex-border, #E2E8F0);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     display: flex; flex-direction: column;
     overflow: hidden;
@@ -724,22 +736,22 @@ const AGENT_CSS = `
 
   /* Command Center Suggestions Top Bar */
   .lex-command-top-strip {
-    background: var(--lex-bg-sidebar, #EEF1F7);
-    border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    background: var(--lex-bg-main, #F8FAFC);
+    border-bottom: 1px solid var(--lex-border, #E2E8F0);
     padding: 6px 12px;
     display: flex; align-items: center; gap: 6px;
     overflow-x: auto; scrollbar-width: none;
   }
   .lex-command-top-strip::-webkit-scrollbar { display: none; }
   .lex-suggest-label {
-    font-size: 10.5px; font-weight: 700; color: var(--lex-text-secondary, #667085);
-    text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
+    font-size: 10px; font-weight: 700; color: var(--lex-text-secondary, #475569);
+    text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;
   }
   .lex-suggest-chip {
     white-space: nowrap; background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF); border-radius: 12px;
+    border: 1px solid var(--lex-border, #E2E8F0); border-radius: 12px;
     padding: 3px 9px; font-size: 11px; font-weight: 500;
-    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    color: var(--lex-text-secondary, #475569); cursor: pointer;
     transition: all 0.12s ease; flex-shrink: 0;
   }
   .lex-suggest-chip:hover {
@@ -757,9 +769,9 @@ const AGENT_CSS = `
     width: 100%; min-height: 52px; max-height: 160px;
     background: transparent; border: none; outline: none; resize: none;
     font-family: inherit; font-size: 14px; line-height: 1.55;
-    color: var(--lex-text-primary, #172033); box-sizing: border-box; padding: 0;
+    color: var(--lex-text-primary, #0F172A); box-sizing: border-box; padding: 0;
   }
-  .lex-textarea::placeholder { color: var(--lex-text-muted, #8E98A8); }
+  .lex-textarea::placeholder { color: var(--lex-text-muted, #94A3B8); }
 
   /* Bottom Actions Bar */
   .lex-composer-bottom {
@@ -768,10 +780,10 @@ const AGENT_CSS = `
     background: transparent;
   }
   .lex-composer-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-  .lex-tool-divider { width: 1px; height: 16px; background: var(--lex-border, #E2E6EF); margin: 0 3px; }
+  .lex-tool-divider { width: 1px; height: 16px; background: var(--lex-border, #E2E8F0); margin: 0 3px; }
   .lex-tool-btn {
     background: transparent; border: 1px solid transparent; border-radius: 6px;
-    padding: 4px 7px; font-size: 11.5px; color: var(--lex-text-secondary, #667085);
+    padding: 4px 7px; font-size: 11.5px; color: var(--lex-text-secondary, #475569);
     cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
     transition: all 0.15s ease; font-family: inherit; font-weight: 500;
   }
@@ -780,10 +792,10 @@ const AGENT_CSS = `
     color: var(--lex-accent-blue, #2563EB);
   }
   .lex-ast-tool-btn {
-    background: var(--lex-bg-main, #F7F8FC);
-    border: 1px solid var(--lex-border, #E2E6EF);
+    background: var(--lex-bg-main, #F8FAFC);
+    border: 1px solid var(--lex-border, #E2E8F0);
     border-radius: 6px; padding: 4px 8px; font-size: 11px;
-    color: var(--lex-text-secondary, #667085); cursor: pointer;
+    color: var(--lex-text-secondary, #475569); cursor: pointer;
     display: inline-flex; align-items: center; gap: 4px;
     transition: all 0.12s ease; font-weight: 500;
   }
@@ -797,7 +809,7 @@ const AGENT_CSS = `
   .lex-slash-popup {
     position: absolute; bottom: calc(100% + 8px); left: 0; right: 0;
     background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
+    border: 1px solid var(--lex-border, #E2E8F0);
     border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
     padding: 6px; z-index: 50; display: flex; flex-direction: column; gap: 2px;
     max-height: 220px; overflow-y: auto; animation: lex-in 0.15s ease;
@@ -811,28 +823,28 @@ const AGENT_CSS = `
     background: var(--lex-accent-blue-subtle, #EFF6FF);
   }
   .lex-slash-cmd { font-weight: 700; color: var(--lex-accent-blue, #2563EB); font-size: 12.5px; }
-  .lex-slash-label { font-size: 11.5px; color: var(--lex-text-secondary, #667085); }
+  .lex-slash-label { font-size: 11.5px; color: var(--lex-text-secondary, #475569); }
 
   /* Send / Stop Buttons */
   .lex-send-btn {
     background: var(--lex-accent-blue, #2563EB) !important;
-    color: #FFFFFF !important; border: none !important; border-radius: 8px !important;
+    color: #FFFFFF !important; border: none !important; border-radius: 7px !important;
     padding: 6px 14px !important; font-size: 12.5px !important; font-weight: 600 !important;
     cursor: pointer !important; display: inline-flex !important; align-items: center !important;
     gap: 5px !important; transition: all 0.15s ease !important;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important; font-family: inherit !important;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2) !important; font-family: inherit !important;
   }
   .lex-send-btn:hover:not(:disabled) {
     background: #1D4ED8 !important; transform: translateY(-1px) !important;
   }
   .lex-send-btn:disabled {
-    background: var(--lex-border, #E2E6EF) !important;
-    color: var(--lex-text-muted, #8E98A8) !important;
+    background: var(--lex-border, #E2E8F0) !important;
+    color: var(--lex-text-muted, #94A3B8) !important;
     cursor: not-allowed !important; box-shadow: none !important; transform: none !important;
   }
   .lex-stop-btn {
     background: #DC2626 !important; color: #FFFFFF !important;
-    border: none !important; border-radius: 8px !important; padding: 6px 12px !important;
+    border: none !important; border-radius: 7px !important; padding: 6px 12px !important;
     font-size: 12px !important; font-weight: 600 !important; cursor: pointer !important;
     display: inline-flex !important; align-items: center !important; gap: 5px !important;
   }
@@ -840,9 +852,9 @@ const AGENT_CSS = `
   /* Generation Card */
   .lex-generation-card {
     background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 12px; padding: 14px 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--lex-border, #E2E8F0);
+    border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
     margin: 6px 0; animation: lex-in 0.2s ease;
   }
   .lex-gen-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
@@ -854,43 +866,72 @@ const AGENT_CSS = `
   }
   .lex-gen-steps {
     display: flex; flex-direction: column; gap: 6px;
-    padding-left: 6px; border-left: 2px solid var(--lex-border, #E2E6EF); margin-left: 8px;
+    padding-left: 6px; border-left: 2px solid var(--lex-border, #E2E8F0); margin-left: 8px;
   }
-  .lex-gen-step { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--lex-text-secondary, #667085); }
+  .lex-gen-step { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--lex-text-secondary, #475569); }
   .lex-gen-step.done { color: #16A34A; font-weight: 500; }
   .lex-gen-step.active { color: var(--lex-accent-blue, #2563EB); font-weight: 600; }
   .lex-step-pulse { animation: lex-pulse-dot 1.2s infinite ease-in-out; }
 
-  /* Artifact Chat Card */
+  /* ══════════════════════════════════════════════
+       GENERATED ARTIFACT CARD (PDF P7)
+  ══════════════════════════════════════════════ */
   .lex-artifact-card {
     background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
-    border-radius: 10px; padding: 12px 14px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-    display: flex; flex-direction: column; gap: 8px;
+    border: 1px solid var(--lex-border, #E2E8F0);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+    display: flex; flex-direction: column; gap: 10px;
     margin-top: 8px; border-left: 3.5px solid var(--lex-accent-blue, #2563EB);
   }
-  .lex-artifact-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .lex-artifact-title { font-size: 13px; font-weight: 700; color: var(--lex-text-primary, #172033); }
-  .lex-artifact-badge {
-    font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px;
-    background: var(--lex-accent-blue-subtle, #EFF6FF); color: var(--lex-accent-blue, #2563EB);
+  .lex-artifact-tag {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--lex-accent-blue, #2563EB);
+    display: flex; align-items: center; gap: 5px;
   }
-  .lex-artifact-meta { font-size: 11px; color: var(--lex-text-secondary, #667085); display: flex; align-items: center; gap: 10px; }
+  .lex-artifact-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .lex-artifact-title { font-size: 14px; font-weight: 700; color: var(--lex-text-primary, #0F172A); line-height: 1.3; }
+  .lex-artifact-sub { font-size: 11px; color: var(--lex-text-secondary, #64748B); margin-top: 2px; }
+  .lex-artifact-badge {
+    font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 12px;
+    background: rgba(22, 163, 74, 0.1); color: #16A34A; white-space: nowrap;
+  }
+  .lex-artifact-meta { font-size: 11.5px; color: var(--lex-text-secondary, #64748B); display: flex; align-items: center; gap: 8px; }
+  .lex-artifact-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
   .lex-artifact-open-btn {
-    align-self: flex-start; padding: 5px 12px; border-radius: 6px;
+    padding: 6px 13px; border-radius: 6px;
     background: var(--lex-accent-blue, #2563EB); color: #FFFFFF;
-    border: none; font-size: 11.5px; font-weight: 600; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 5px; transition: all 0.12s ease;
+    border: none; font-size: 12px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; transition: all 0.12s ease;
   }
   .lex-artifact-open-btn:hover { background: #1D4ED8; }
+  .lex-artifact-save-btn {
+    padding: 6px 12px; border-radius: 6px;
+    background: var(--lex-bg-main, #F8FAFC); border: 1px solid var(--lex-border, #E2E8F0);
+    color: var(--lex-text-primary, #0F172A); font-size: 12px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px; transition: all 0.12s ease;
+  }
+  .lex-artifact-save-btn:hover {
+    background: var(--lex-accent-blue-subtle, #EFF6FF);
+    border-color: var(--lex-accent-blue, #2563EB);
+    color: var(--lex-accent-blue, #2563EB);
+  }
 
   /* ══════════════════════════════════════════════
-       A4 LEGAL DOCUMENT WORKSPACE & TABLES (P0)
+       STICKY DOCUMENT WORKSPACE & A4 PAPER (PDF P4/P5/P8)
   ══════════════════════════════════════════════ */
+  .lex-doc-sticky-toolbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px; border-bottom: 1px solid var(--lex-border, #E2E8F0);
+    background: var(--lex-bg-card, #FFFFFF); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    flex-shrink: 0;
+  }
+
   .lex-doc-canvas {
     background: #EAEFF6;
-    padding: 28px 20px;
+    padding: 24px 18px;
     overflow-y: auto;
     flex: 1;
     display: flex;
@@ -906,7 +947,7 @@ const AGENT_CSS = `
     max-width: 720px;
     min-height: 880px;
     background: #FFFFFF !important;
-    border: 1px solid var(--lex-border, #E2E6EF);
+    border: 1px solid var(--lex-border, #E2E8F0);
     border-radius: 4px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
     padding: 44px 52px;
@@ -928,7 +969,7 @@ const AGENT_CSS = `
     font-family: inherit; font-size: 14.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.05em;
     color: #172033; margin: 24px 0 10px;
-    padding-bottom: 4px; border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    padding-bottom: 4px; border-bottom: 1px solid var(--lex-border, #E2E8F0);
     display: flex; align-items: center; gap: 8px;
   }
   [data-theme="dark"] .lex-doc-paper .draft-section-head {
@@ -939,13 +980,13 @@ const AGENT_CSS = `
   }
   .draft-sec-num { color: var(--lex-accent-blue, #2563EB); font-size: 14px; }
 
-  /* Semantic Legal Tables */
+  /* Semantic Legal Tables (PDF P4) */
   .lex-table-responsive {
     width: 100%;
     overflow-x: auto;
     margin: 16px 0;
     border-radius: 6px;
-    border: 1px solid var(--lex-border, #E2E6EF);
+    border: 1px solid var(--lex-border, #E2E8F0);
     background: var(--lex-bg-card, #FFFFFF);
   }
   .lex-legal-table {
@@ -957,53 +998,70 @@ const AGENT_CSS = `
     line-height: 1.5;
   }
   .lex-legal-table th {
-    background: var(--lex-bg-sidebar, #EEF1F7);
+    background: var(--lex-bg-main, #F8FAFC);
     padding: 8px 12px;
     font-weight: 700;
-    color: var(--lex-text-primary, #172033);
+    color: var(--lex-text-primary, #0F172A);
     font-size: 11.5px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    border-bottom: 1.5px solid var(--lex-border, #E2E6EF);
-    border-right: 1px solid var(--lex-border, #E2E6EF);
+    border-bottom: 1.5px solid var(--lex-border, #E2E8F0);
+    border-right: 1px solid var(--lex-border, #E2E8F0);
   }
   .lex-legal-table th:last-child { border-right: none; }
   .lex-legal-table td {
     padding: 8px 12px;
-    color: var(--lex-text-primary, #172033);
-    border-bottom: 1px solid var(--lex-border, #E2E6EF);
-    border-right: 1px solid var(--lex-border, #E2E6EF);
+    color: var(--lex-text-primary, #0F172A);
+    border-bottom: 1px solid var(--lex-border, #E2E8F0);
+    border-right: 1px solid var(--lex-border, #E2E8F0);
   }
   .lex-legal-table td:last-child { border-right: none; }
   .lex-legal-table tr:last-child td { border-bottom: none; }
   .lex-legal-table tr:nth-child(even) td { background: rgba(0, 0, 0, 0.015); }
   [data-theme="dark"] .lex-legal-table tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
 
-  /* Interactive Placeholders */
+  /* Fillable Placeholders (PDF P5/P6) */
   .lex-placeholder {
-    background: rgba(245, 158, 11, 0.15) !important;
-    border: 1px solid rgba(245, 158, 11, 0.4) !important;
-    color: #B45309 !important; border-radius: 4px !important;
-    padding: 1px 5px !important; font-weight: 600 !important;
-    cursor: pointer !important; transition: all 0.15s ease !important;
+    background: rgba(245, 158, 11, 0.12) !important;
+    border-bottom: 1.5px dashed #D97706 !important;
+    border-radius: 3px !important;
+    padding: 1px 5px !important;
+    color: #B45309 !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    display: inline-block !important;
+    transition: all 0.15s ease !important;
+  }
+  .lex-placeholder:hover {
+    background: rgba(245, 158, 11, 0.22) !important;
+    border-bottom-color: #B45309 !important;
   }
   [data-theme="dark"] .lex-placeholder {
     background: rgba(245, 158, 11, 0.2) !important;
-    border-color: rgba(245, 158, 11, 0.45) !important; color: #FCD34D !important;
+    border-bottom-color: #F59E0B !important;
+    color: #FCD34D !important;
+  }
+  @media print {
+    .lex-placeholder {
+      background: transparent !important;
+      border: none !important;
+      border-bottom: 1px solid #000 !important;
+      color: #000 !important;
+    }
   }
 
   /* Document Outline Panel */
   .lex-outline-panel {
-    background: var(--lex-bg-sidebar, #EEF1F7);
-    border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    background: var(--lex-bg-main, #F8FAFC);
+    border-bottom: 1px solid var(--lex-border, #E2E8F0);
     padding: 10px 16px; display: flex; flex-direction: column; gap: 5px;
     max-height: 180px; overflow-y: auto; animation: lex-in 0.15s ease;
   }
   .lex-outline-item {
     display: flex; align-items: center; justify-content: space-between;
     padding: 5px 8px; border-radius: 5px; background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF); font-size: 11.5px;
-    color: var(--lex-text-primary, #172033); cursor: pointer; text-align: left;
+    border: 1px solid var(--lex-border, #E2E8F0); font-size: 11.5px;
+    color: var(--lex-text-primary, #0F172A); cursor: pointer; text-align: left;
     transition: all 0.12s ease;
   }
   .lex-outline-item:hover {
@@ -1012,15 +1070,15 @@ const AGENT_CSS = `
     background: var(--lex-accent-blue-subtle, #EFF6FF);
   }
 
-  /* Section Level AI Actions Bar */
+  /* Section Level AI Actions Bar (PDF P6/P7) */
   .lex-section-ai-bar {
     display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-    padding: 6px 14px; background: var(--lex-bg-sidebar, #EEF1F7);
-    border-bottom: 1px solid var(--lex-border, #E2E6EF);
+    padding: 6px 14px; background: var(--lex-bg-main, #F8FAFC);
+    border-bottom: 1px solid var(--lex-border, #E2E8F0);
   }
   .lex-clause-action-btn {
     background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
+    border: 1px solid var(--lex-border, #E2E8F0);
     border-radius: 4px; padding: 2px 7px; font-size: 11px;
     font-weight: 500; color: var(--lex-accent-blue, #2563EB);
     cursor: pointer; transition: all 0.12s ease;
@@ -1031,17 +1089,17 @@ const AGENT_CSS = `
   }
 
   /* ══════════════════════════════════════════════
-       LANDING PAGE & TOOLS GRID (P1)
+       LANDING PAGE & TOOLS GRID (PDF P1)
   ══════════════════════════════════════════════ */
   .lex-landing-hero {
-    text-align: center; margin-bottom: 14px;
+    text-align: center; margin-bottom: 12px;
   }
   .lex-tools-compact-grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
   }
   .lex-tool-compact-card {
     background: var(--lex-bg-card, #FFFFFF);
-    border: 1px solid var(--lex-border, #E2E6EF);
+    border: 1px solid var(--lex-border, #E2E8F0);
     border-radius: 8px; padding: 8px 10px; display: flex; align-items: flex-start;
     gap: 8px; cursor: pointer; transition: all 0.12s ease; text-align: left; width: 100%;
   }
@@ -1109,7 +1167,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   const [navStack, setNavStack] = useState([{ id: null, name: 'Root (Case Vault)' }]);
   const [fileName, setFileName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
+  const [errorMsg, setErrorMsg] = useState(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -1140,60 +1198,87 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
   const destPath = navStack.map(s => s.name).join(' / ');
 
   const handleConfirm = async () => {
-    if (!fileName.trim()) return;
+    if (!fileName.trim() || saving) return;
     setSaving(true);
-    setSaveError('');
-    const result = await onConfirm({
-      fileName: fileName.trim(),
-      folderId: destFolderId,
-      folderPath: destPath,
-      smartTitle: fileName.trim(),
-    });
-    if (!isMountedRef.current) return;
-    if (result && result.success === false) {
-      setSaving(false);
-      setSaveError(result.message || 'Failed to save to Case Vault. Please try again.');
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`${apiBase}/api/vault/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: fileName.trim(),
+          content: draft?.content || '',
+          case_id: draft?.case_id || sessionTitle || 'General',
+          folder_id: destFolderId,
+          doc_type: draft?.doc_type || 'Draft',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        if (isMountedRef.current) {
+          setErrorMsg(data.message || 'Vault database is unavailable.');
+          setSaving(false);
+        }
+        return;
+      }
+      if (isMountedRef.current) {
+        onConfirm({
+          fileName: fileName.trim(),
+          folderId: destFolderId,
+          folderPath: destPath,
+          smartTitle: fileName.trim(),
+          vaultId: data.id,
+        });
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setErrorMsg('Network error while saving to Case Vault.');
+        setSaving(false);
+      }
     }
-    // On success the parent closes this modal itself.
   };
 
   return (
     <div className="svm-backdrop" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10020, background: 'rgba(3,6,14,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'lex-in 0.18s ease' }}>
-      <div className="svm-panel" style={{ background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 14, width: 620, maxWidth: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="svm-panel" style={{ background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E8F0)', borderRadius: 14, width: 620, maxWidth: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--lex-border, #E2E8F0)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Icon name="draft" size={16} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>Save Draft to Case Vault</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--lex-text-primary, #0F172A)' }}>Save Draft to Case Vault</span>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--lex-text-muted, #8E98A8)' }}><Icon name="close" size={16} /></button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--lex-text-muted, #94A3B8)' }}><Icon name="close" size={16} /></button>
         </div>
         <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
+          {errorMsg && (
+            <div style={{ padding: '8px 12px', background: 'rgba(220, 38, 38, 0.08)', border: '1px solid rgba(220, 38, 38, 0.2)', borderRadius: 6, color: '#DC2626', fontSize: 12 }}>
+              {errorMsg}
+            </div>
+          )}
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', display: 'block', marginBottom: 6 }}>Document Title</label>
-            <input value={fileName} onChange={e => setFileName(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-main, #F7F8FC)', color: 'var(--lex-text-primary, #172033)', outline: 'none', boxSizing: 'border-box' }} />
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #475569)', display: 'block', marginBottom: 6 }}>Document Title</label>
+            <input value={fileName} onChange={e => setFileName(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--lex-border, #E2E8F0)', background: 'var(--lex-bg-main, #F8FAFC)', color: 'var(--lex-text-primary, #0F172A)', outline: 'none', boxSizing: 'border-box' }} />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', display: 'block', marginBottom: 6 }}>Destination Folder</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--lex-bg-main, #F7F8FC)', borderRadius: 8, border: '1px solid var(--lex-border, #E2E6EF)', fontSize: 12, color: 'var(--lex-accent-blue, #2563EB)', fontWeight: 600 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #475569)', display: 'block', marginBottom: 6 }}>Destination Folder</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--lex-bg-main, #F8FAFC)', borderRadius: 8, border: '1px solid var(--lex-border, #E2E8F0)', fontSize: 12, color: 'var(--lex-accent-blue, #2563EB)', fontWeight: 600 }}>
               📁 {destPath}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 6, marginTop: 8, maxHeight: 140, overflowY: 'auto' }}>
               {navStack.length > 1 && (
-                <button onClick={() => setNavStack(prev => prev.slice(0, -1))} style={{ padding: '6px 10px', borderRadius: 6, border: '1px dashed var(--lex-border, #E2E6EF)', background: 'transparent', color: 'var(--lex-text-secondary, #667085)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}>
+                <button onClick={() => setNavStack(prev => prev.slice(0, -1))} style={{ padding: '6px 10px', borderRadius: 6, border: '1px dashed var(--lex-border, #E2E8F0)', background: 'transparent', color: 'var(--lex-text-secondary, #475569)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}>
                   ↖ Back
                 </button>
               )}
               {currentChildren.map(f => (
-                <button key={f.id} onClick={() => setNavStack(prev => [...prev, { id: f.id, name: f.name }])} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-card, #FFFFFF)', color: 'var(--lex-text-primary, #172033)', fontSize: 11.5, cursor: 'pointer', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <button key={f.id} onClick={() => setNavStack(prev => [...prev, { id: f.id, name: f.name }])} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--lex-border, #E2E8F0)', background: 'var(--lex-bg-card, #FFFFFF)', color: 'var(--lex-text-primary, #0F172A)', fontSize: 11.5, cursor: 'pointer', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   📁 {f.name}
                 </button>
               ))}
             </div>
           </div>
         </div>
-        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-sidebar, #EEF1F7)' }}>
-          {saveError && <span style={{ fontSize: 11, color: '#DC2626', marginRight: 'auto' }}>{saveError}</span>}
-          <button onClick={onClose} style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--lex-border, #E2E6EF)', background: 'transparent', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
+        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--lex-border, #E2E8F0)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-main, #F8FAFC)' }}>
+          <button onClick={onClose} style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--lex-border, #E2E8F0)', background: 'transparent', color: 'var(--lex-text-secondary, #475569)', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
           <button onClick={handleConfirm} disabled={saving || !fileName.trim()} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--lex-accent-blue, #2563EB)', color: '#FFFFFF', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>{saving ? 'Saving…' : 'Confirm & Save'}</button>
         </div>
       </div>
@@ -1219,23 +1304,23 @@ function ShareModal({ sessionTitle, onClose }) {
 
   return (
     <div className="svm-backdrop" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10020, background: 'rgba(3,6,14,0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'lex-in 0.18s ease' }}>
-      <div className="svm-panel" style={{ background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 14, width: 440, maxWidth: '94vw', padding: '20px 24px', boxShadow: '0 24px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
+      <div className="svm-panel" style={{ background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E8F0)', borderRadius: 14, width: 440, maxWidth: '94vw', padding: '20px 24px', boxShadow: '0 24px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Icon name="sparkles" size={16} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>Share Legal Conversation</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--lex-text-primary, #0F172A)' }}>Share Legal Conversation</span>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--lex-text-muted, #8E98A8)' }}><Icon name="close" size={16} /></button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--lex-text-muted, #94A3B8)' }}><Icon name="close" size={16} /></button>
         </div>
-        <p style={{ fontSize: 12.5, color: 'var(--lex-text-secondary, #667085)', lineHeight: 1.5, margin: '0 0 14px' }}>
+        <p style={{ fontSize: 12.5, color: 'var(--lex-text-secondary, #475569)', lineHeight: 1.5, margin: '0 0 14px' }}>
           Share this legal research and drafting thread with colleagues or counsel.
         </p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <input readOnly value={shareUrl} style={{ flex: 1, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-main, #F7F8FC)', color: 'var(--lex-text-primary, #172033)', fontSize: 11.5, outline: 'none' }} />
+          <input readOnly value={shareUrl} style={{ flex: 1, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--lex-border, #E2E8F0)', background: 'var(--lex-bg-main, #F8FAFC)', color: 'var(--lex-text-primary, #0F172A)', fontSize: 11.5, outline: 'none' }} />
           <button onClick={handleCopy} style={{ padding: '7px 14px', borderRadius: 7, background: 'var(--lex-accent-blue, #2563EB)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>{copied ? '✓ Copied' : 'Copy'}</button>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--lex-border, #E2E6EF)', background: 'transparent', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', fontSize: 12 }}>Close</button>
+          <button onClick={onClose} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--lex-border, #E2E8F0)', background: 'transparent', color: 'var(--lex-text-secondary, #475569)', cursor: 'pointer', fontSize: 12 }}>Close</button>
         </div>
       </div>
     </div>
@@ -1243,34 +1328,61 @@ function ShareModal({ sessionTitle, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  CONVERSATION 3-DOTS MENU
+//  CONVERSATION 3-DOTS MENU (PORTAL/FIXED ANCHOR) (PDF P3)
 // ═══════════════════════════════════════════════════════
-function ConversationMenu({ session, onPin, onRename, onShare, onDelete, onClose }) {
+function ConversationMenu({ session, x, y, onPin, onRename, onShare, onDelete, onClose }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
     const handler = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) onClose();
     };
+    const keyHandler = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('keydown', keyHandler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', keyHandler);
+    };
   }, [onClose]);
 
   return (
-    <div ref={menuRef} style={{ position: 'absolute', right: 8, top: '100%', zIndex: 100, background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 8, padding: 4, minWidth: 140, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <button onClick={onPin} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: 'var(--lex-text-primary, #172033)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
+    <div
+      ref={menuRef}
+      style={{
+        position: 'fixed',
+        left: x,
+        top: y,
+        zIndex: 10050,
+        background: 'var(--lex-bg-card, #FFFFFF)',
+        border: '1px solid var(--lex-border, #E2E8F0)',
+        borderRadius: 8,
+        padding: 5,
+        minWidth: 150,
+        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0,0,0,0.08)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        animation: 'lex-in 0.12s ease',
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      <button onClick={onPin} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: 'var(--lex-text-primary, #0F172A)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
         <Icon name="bookmark" size={13} style={{ color: session.pinned ? '#F59E0B' : 'inherit' }} />
         {session.pinned ? 'Unpin Matter' : 'Pin Matter'}
       </button>
-      <button onClick={onRename} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: 'var(--lex-text-primary, #172033)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
+      <button onClick={onRename} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: 'var(--lex-text-primary, #0F172A)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
         <Icon name="edit" size={13} />
         Rename
       </button>
-      <button onClick={onShare} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: 'var(--lex-text-primary, #172033)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
+      <button onClick={onShare} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: 'var(--lex-text-primary, #0F172A)', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
         <Icon name="sparkles" size={13} />
         Share
       </button>
-      <button onClick={onDelete} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: '#DC2626', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
+      <div style={{ height: 1, background: 'var(--lex-border, #E2E8F0)', margin: '3px 0' }} />
+      <button onClick={onDelete} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: 'none', border: 'none', borderRadius: 6, color: '#DC2626', fontSize: 12, cursor: 'pointer', textAlign: 'left' }}>
         <Icon name="close" size={13} />
         Delete
       </button>
@@ -1322,7 +1434,7 @@ function CommandPalette() {
 
   // ── Modals & Menus ───────────────────────────────────
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState(null);
+  const [openMenuState, setOpenMenuState] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [shareSessionId, setShareSessionId] = useState(null);
@@ -1815,7 +1927,7 @@ function CommandPalette() {
         <div style={{ display: 'flex', width: '100%', height: '100%' }} onClick={e => e.stopPropagation()}>
 
           {/* ══════════════════════════════════════════════
-               LEFT: CONVERSATION MANAGER SIDEBAR
+               LEFT: CONVERSATION MANAGER SIDEBAR (PDF P2)
           ══════════════════════════════════════════════ */}
           <aside
             className={`lex-sidebar ${sidebarOpen ? 'mobile-open' : ''}`}
@@ -1826,14 +1938,14 @@ function CommandPalette() {
             }}
           >
             {/* Header with New Conversation Button */}
-            <div style={{ padding: '14px 12px 10px', borderBottom: '1px solid var(--lex-border, #E2E6EF)' }}>
+            <div style={{ padding: '14px 12px 10px', borderBottom: '1px solid var(--lex-sidebar-border, rgba(255,255,255,0.08))' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: 'linear-gradient(135deg, #2563EB, #6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
                   <Icon name="sparkles" size={15} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>AI Legal Associate</div>
-                  <div style={{ fontSize: 10, color: 'var(--lex-text-secondary, #667085)' }}>Junior Counsel & Drafting</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-sidebar-text, #F8FAFC)' }}>AI Legal Associate</div>
+                  <div style={{ fontSize: 10, color: 'var(--lex-sidebar-secondary, #94A3B8)' }}>Advocate Drafting Rail</div>
                 </div>
               </div>
 
@@ -1841,9 +1953,9 @@ function CommandPalette() {
                 onClick={startNew}
                 style={{
                   width: '100%', padding: '7px 10px',
-                  background: 'var(--lex-accent-blue-subtle, #EFF6FF)',
-                  border: '1px solid var(--lex-border, #E2E6EF)',
-                  borderRadius: 7, color: 'var(--lex-accent-blue, #2563EB)',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  borderRadius: 7, color: '#FFFFFF',
                   fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   transition: 'all 0.15s ease',
@@ -1870,32 +1982,32 @@ function CommandPalette() {
             {/* Conversation List */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
               {filteredSessions.length === 0 ? (
-                <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--lex-text-muted, #8E98A8)', fontSize: 12 }}>
+                <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--lex-sidebar-muted, #64748B)', fontSize: 12 }}>
                   No matching matters found.
                 </div>
               ) : (
                 <>
                   {pinnedSess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Pinned Matters</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-sidebar-secondary, #94A3B8)', letterSpacing: '0.05em' }}>Pinned Matters</div>
                       {pinnedSess.map(s => renderSessionRow(s))}
                     </>
                   )}
                   {todaySess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Today</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-sidebar-secondary, #94A3B8)', letterSpacing: '0.05em' }}>Today</div>
                       {todaySess.map(s => renderSessionRow(s))}
                     </>
                   )}
                   {yesterdaySess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Yesterday</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-sidebar-secondary, #94A3B8)', letterSpacing: '0.05em' }}>Yesterday</div>
                       {yesterdaySess.map(s => renderSessionRow(s))}
                     </>
                   )}
                   {olderSess.length > 0 && (
                     <>
-                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.05em' }}>Earlier</div>
+                      <div style={{ padding: '8px 12px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-sidebar-secondary, #94A3B8)', letterSpacing: '0.05em' }}>Earlier</div>
                       {olderSess.map(s => renderSessionRow(s))}
                     </>
                   )}
@@ -1904,24 +2016,24 @@ function CommandPalette() {
             </div>
 
             {/* Shortcut Hint Footer */}
-            <div style={{ padding: '8px 12px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--lex-text-muted, #8E98A8)' }}>
-              <span><kbd style={{ background: 'var(--lex-bg-card, #FFF)', border: '1px solid var(--lex-border, #E2E6EF)', padding: '1px 4px', borderRadius: 3 }}>Ctrl+K</kbd> Toggle</span>
-              <span><kbd style={{ background: 'var(--lex-bg-card, #FFF)', border: '1px solid var(--lex-border, #E2E6EF)', padding: '1px 4px', borderRadius: 3 }}>Esc</kbd> Close</span>
+            <div style={{ padding: '8px 12px', borderTop: '1px solid var(--lex-sidebar-border, rgba(255,255,255,0.08))', display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--lex-sidebar-secondary, #94A3B8)' }}>
+              <span><kbd style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', padding: '1px 4px', borderRadius: 3 }}>Ctrl+K</kbd> Toggle</span>
+              <span><kbd style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', padding: '1px 4px', borderRadius: 3 }}>Esc</kbd> Close</span>
             </div>
           </aside>
 
           {/* ══════════════════════════════════════════════
                CENTER: AI CONVERSATION & WORKSPACE CANVAS
           ══════════════════════════════════════════════ */}
-          <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--lex-bg-main, #F7F8FC)', overflow: 'hidden' }}>
+          <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--lex-bg-main, #F8FAFC)', overflow: 'hidden' }}>
 
             {/* Professional Top Navigation Bar */}
-            <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 16px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-card, #FFFFFF)', flexShrink: 0, gap: 12 }}>
+            <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 16px', borderBottom: '1px solid var(--lex-border, #E2E8F0)', background: 'var(--lex-bg-card, #FFFFFF)', flexShrink: 0, gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                <button onClick={() => setSidebarOpen(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', padding: '3px 5px', borderRadius: 5 }} title="Toggle Sidebar">
+                <button onClick={() => setSidebarOpen(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--lex-text-secondary, #475569)', cursor: 'pointer', padding: '3px 5px', borderRadius: 5 }} title="Toggle Sidebar">
                   <Icon name="outline" size={15} />
                 </button>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--lex-text-primary, #172033)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--lex-text-primary, #0F172A)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {getHumanRouteLabel(location.pathname)}
                 </div>
               </div>
@@ -1941,7 +2053,7 @@ function CommandPalette() {
                     {drawerOpen ? 'Hide Draft' : 'View Draft'}
                   </button>
                 )}
-                <button onClick={handleClose} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'transparent', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 5, color: 'var(--lex-text-secondary, #667085)', fontSize: 11.5, cursor: 'pointer' }}>
+                <button onClick={handleClose} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'transparent', border: '1px solid var(--lex-border, #E2E8F0)', borderRadius: 5, color: 'var(--lex-text-secondary, #475569)', fontSize: 11.5, cursor: 'pointer' }}>
                   <Icon name="close" size={12} />
                   Exit Workspace
                 </button>
@@ -1951,30 +2063,30 @@ function CommandPalette() {
             {/* Scrollable Conversation Stream */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-              {/* ── Empty / Landing State (Refined Visual Hierarchy) ── */}
+              {/* ── Empty / Landing State (Restrained Hierarchy - PDF P1) ── */}
               {messages.length === 0 && (
                 <div style={{ maxWidth: 740, width: '100%', margin: 'auto' }}>
                   <div className="lex-landing-hero">
-                    <div style={{ width: 44, height: 44, margin: '0 auto 8px', borderRadius: 12, background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(99,102,241,0.15))', border: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)' }}>
-                      <Icon name="scales" size={20} />
+                    <div style={{ width: 40, height: 40, margin: '0 auto 8px', borderRadius: 10, background: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(99,102,241,0.12))', border: '1px solid var(--lex-border, #E2E8F0)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lex-accent-blue, #2563EB)' }}>
+                      <Icon name="scales" size={18} />
                     </div>
-                    <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--lex-text-primary, #172033)', margin: '0 0 4px' }}>AI Legal Associate</h2>
-                    <p style={{ fontSize: 12.5, color: 'var(--lex-text-secondary, #667085)', maxWidth: 440, margin: '0 auto', lineHeight: 1.45 }}>
-                      Your AI counsel for legal drafting, research, clause risk analysis, and workflow automation.
+                    <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--lex-text-primary, #0F172A)', margin: '0 0 3px', letterSpacing: '-0.01em' }}>AI Legal Associate</h2>
+                    <p style={{ fontSize: 12, color: 'var(--lex-text-secondary, #475569)', maxWidth: 440, margin: '0 auto', lineHeight: 1.45 }}>
+                      Advocate Drafting & Research Terminal · Contract Analysis · Statutory Citations
                     </p>
                   </div>
 
                   {/* Category Filter Tabs */}
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 10 }}>
                     {LEGAL_TOOL_CATEGORIES.map(c => (
                       <button
                         key={c.id}
                         onClick={() => setToolCategory(c.id)}
                         style={{
-                          padding: '4px 12px', borderRadius: 16,
+                          padding: '3px 11px', borderRadius: 14,
                           background: toolCategory === c.id ? 'var(--lex-accent-blue, #2563EB)' : 'var(--lex-bg-card, #FFFFFF)',
-                          color: toolCategory === c.id ? '#FFFFFF' : 'var(--lex-text-secondary, #667085)',
-                          border: '1px solid var(--lex-border, #E2E6EF)',
+                          color: toolCategory === c.id ? '#FFFFFF' : 'var(--lex-text-secondary, #475569)',
+                          border: '1px solid var(--lex-border, #E2E8F0)',
                           fontSize: 11, fontWeight: 600, cursor: 'pointer',
                           transition: 'all 0.12s ease'
                         }}
@@ -1984,7 +2096,7 @@ function CommandPalette() {
                     ))}
                   </div>
 
-                  {/* Compact Quick Workflows Grid */}
+                  {/* Lightweight Workflow Shortcuts Grid (PDF P1) */}
                   <div className="lex-tools-compact-grid">
                     {toolCategory === 'all'
                       ? LEGAL_TOOLS.map(t => renderToolCompactCard(t))
@@ -2014,22 +2126,29 @@ function CommandPalette() {
                   );
                 }
 
-                // AI Associate Output
+                // AI Associate Output (PDF P7/P8)
                 return (
                   <div key={idx} className="lex-msg-in" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                     <div style={{ width: 28, height: 28, borderRadius: 7, background: 'linear-gradient(135deg, #2563EB, #6366F1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0, marginTop: 2 }}>
                       <Icon name="sparkles" size={14} />
                     </div>
-                    <div style={{ flex: 1, minWidth: 0, background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: '2px 12px 12px 12px', padding: '14px 18px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+                    <div style={{ flex: 1, minWidth: 0, background: 'var(--lex-bg-card, #FFFFFF)', border: '1px solid var(--lex-border, #E2E8F0)', borderRadius: '2px 12px 12px 12px', padding: '14px 18px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
                       {msg.text && (
-                        <div className="lex-md" style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--lex-text-primary, #172033)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
+                        <div className="lex-md" style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--lex-text-primary, #0F172A)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
                       )}
 
-                      {/* Generated Draft Chat Artifact Card */}
+                      {/* Clean Document Artifact Card (PDF P7) */}
                       {msg.docCard && (
                         <div className="lex-artifact-card">
+                          <div className="lex-artifact-tag">
+                            <Icon name="draft" size={12} />
+                            <span>DOCUMENT GENERATED</span>
+                          </div>
                           <div className="lex-artifact-head">
-                            <div className="lex-artifact-title">{msg.docCard.title || 'Legal Document Draft'}</div>
+                            <div>
+                              <div className="lex-artifact-title">{msg.docCard.title || 'Legal Document Draft'}</div>
+                              <div className="lex-artifact-sub">Legal Draft · Indian Law Compliance</div>
+                            </div>
                             <span className="lex-artifact-badge">AI Generated · Draft</span>
                           </div>
                           <div className="lex-artifact-meta">
@@ -2037,16 +2156,28 @@ function CommandPalette() {
                             <span>·</span>
                             <span>{extractPlaceholders(msg.docCard.content).length} Details Required</span>
                           </div>
-                          <button
-                            className="lex-artifact-open-btn"
-                            onClick={() => {
-                              updateSession(currentId, s => ({ ...s, activeDocument: msg.docCard }));
-                              setDrawerOpen(true);
-                            }}
-                          >
-                            <Icon name="draft" size={13} />
-                            Open Draft in Workspace →
-                          </button>
+                          <div className="lex-artifact-actions">
+                            <button
+                              className="lex-artifact-open-btn"
+                              onClick={() => {
+                                updateSession(currentId, s => ({ ...s, activeDocument: msg.docCard }));
+                                setDrawerOpen(true);
+                              }}
+                            >
+                              <Icon name="draft" size={13} />
+                              Open Draft in Workspace →
+                            </button>
+                            <button
+                              className="lex-artifact-save-btn"
+                              onClick={() => {
+                                updateSession(currentId, s => ({ ...s, activeDocument: msg.docCard }));
+                                setShowSaveModal(true);
+                              }}
+                            >
+                              <Icon name="folder" size={12} />
+                              Save to Vault
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2061,8 +2192,8 @@ function CommandPalette() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div className="lex-gen-spinner" />
                       <div>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #172033)' }}>LexAmplify AI Associate is working…</div>
-                        <div style={{ fontSize: 11, color: 'var(--lex-text-secondary, #667085)' }}>Analyzing statutory provisions & drafting provisions</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #0F172A)' }}>LexAmplify AI Associate is working…</div>
+                        <div style={{ fontSize: 11, color: 'var(--lex-text-secondary, #475569)' }}>Analyzing statutory provisions & drafting provisions</div>
                       </div>
                     </div>
                     <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
@@ -2082,13 +2213,13 @@ function CommandPalette() {
             </div>
 
             {/* ══════════════════════════════════════════════
-                 UNIFIED COMMAND CENTER (P0)
+                 UNIFIED COMMAND CENTER (PDF P1)
             ══════════════════════════════════════════════ */}
-            <div style={{ padding: '6px 18px 14px', background: 'var(--lex-bg-card, #FFFFFF)', borderTop: '1px solid var(--lex-border, #E2E6EF)' }}>
+            <div style={{ padding: '6px 18px 14px', background: 'var(--lex-bg-card, #FFFFFF)', borderTop: '1px solid var(--lex-border, #E2E8F0)' }}>
               
               {/* Attached file preview badge */}
               {attachedFile && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', background: 'var(--lex-accent-blue-subtle, #EFF6FF)', border: '1px solid var(--lex-border, #E2E6EF)', borderRadius: 16, fontSize: 11, color: 'var(--lex-accent-blue, #2563EB)', marginBottom: 6 }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', background: 'var(--lex-accent-blue-subtle, #EFF6FF)', border: '1px solid var(--lex-border, #E2E8F0)', borderRadius: 16, fontSize: 11, color: 'var(--lex-accent-blue, #2563EB)', marginBottom: 6 }}>
                   <Icon name="draft" size={12} />
                   <span>{attachedFile.name}</span>
                   <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px' }}>×</button>
@@ -2223,14 +2354,14 @@ function CommandPalette() {
               </div>
 
               {/* Disclaimer */}
-              <div style={{ marginTop: 5, fontSize: 10, color: 'var(--lex-text-muted, #8E98A8)', textAlign: 'center' }}>
+              <div style={{ marginTop: 5, fontSize: 10, color: 'var(--lex-text-muted, #94A3B8)', textAlign: 'center' }}>
                 ⓘ LexAmplify provides AI-assisted legal drafting. Always verify critical statutory information independently.
               </div>
             </div>
           </main>
 
           {/* ══════════════════════════════════════════════
-               RIGHT: LEGAL DOCUMENT WORKSPACE DRAWER (P0/P1)
+               RIGHT: LEGAL DOCUMENT WORKSPACE DRAWER (PDF P4/P5/P8)
           ══════════════════════════════════════════════ */}
           <aside
             style={{
@@ -2238,7 +2369,7 @@ function CommandPalette() {
               minWidth: 0,
               transition: 'flex-basis 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
               background: 'var(--lex-bg-card, #FFFFFF)',
-              borderLeft: '1px solid var(--lex-border, #E2E6EF)',
+              borderLeft: '1px solid var(--lex-border, #E2E8F0)',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
@@ -2246,11 +2377,11 @@ function CommandPalette() {
           >
             {activeDocument && (
               <>
-                {/* Document Drawer Header with Discoverable Actions */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', borderBottom: '1px solid var(--lex-border, #E2E6EF)', background: 'var(--lex-bg-sidebar, #EEF1F7)', flexShrink: 0 }}>
+                {/* Sticky Document Action Bar (PDF P4/P5) */}
+                <div className="lex-doc-sticky-toolbar">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                     <Icon name="draft" size={14} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #172033)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--lex-text-primary, #0F172A)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {activeDocument.title || 'Legal Document Draft'}
                     </span>
                   </div>
@@ -2289,8 +2420,8 @@ function CommandPalette() {
                 </div>
 
                 {/* Document Status & AI Review Badge */}
-                <div style={{ padding: '7px 14px', background: 'var(--lex-bg-main, #F7F8FC)', borderBottom: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
-                  <span style={{ color: 'var(--lex-text-secondary, #667085)' }}>
+                <div style={{ padding: '7px 14px', background: 'var(--lex-bg-main, #F8FAFC)', borderBottom: '1px solid var(--lex-border, #E2E8F0)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                  <span style={{ color: 'var(--lex-text-secondary, #475569)' }}>
                     AI Generated · Draft · {missingPlaceholders.length} details required
                   </span>
                   {missingPlaceholders.length > 0 && (
@@ -2306,7 +2437,7 @@ function CommandPalette() {
                 {/* Collapsible Document Outline Panel */}
                 {outlineOpen && docSections.length > 0 && (
                   <div className="lex-outline-panel">
-                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #667085)', letterSpacing: '0.04em' }}>Document Outline</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--lex-text-secondary, #475569)', letterSpacing: '0.04em' }}>Document Outline</div>
                     {docSections.map((sec, si) => (
                       <div
                         key={si}
@@ -2323,9 +2454,9 @@ function CommandPalette() {
                   </div>
                 )}
 
-                {/* Contextual Clause Action Bar */}
+                {/* Contextual Clause Action Bar (PDF P6/P7) */}
                 <div className="lex-section-ai-bar">
-                  <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--lex-text-secondary, #667085)' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--lex-text-secondary, #475569)' }}>
                     Clause AI Actions {selectedSection ? `(${selectedSection})` : ''}:
                   </span>
                   <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'improve')}>✦ Improve</button>
@@ -2335,7 +2466,7 @@ function CommandPalette() {
                   <button className="lex-clause-action-btn" onClick={() => handleClauseAction(selectedSection || 'Key Clauses', 'protections')}>✦ Add Protections</button>
                 </div>
 
-                {/* Batch Placeholders Completion Panel */}
+                {/* Batch Placeholders Completion Panel (PDF P5/P6) */}
                 {showCompletionPanel && missingPlaceholders.length > 0 && (
                   <div style={{ padding: '10px 14px', background: 'rgba(245,158,11,0.06)', borderBottom: '1px solid rgba(245,158,11,0.2)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#B45309' }}>
@@ -2343,12 +2474,12 @@ function CommandPalette() {
                     </div>
                     {missingPlaceholders.map((field, fi) => (
                       <div key={fi} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 11, color: 'var(--lex-text-primary, #172033)', width: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{field}:</span>
+                        <span style={{ fontSize: 11, color: 'var(--lex-text-primary, #0F172A)', width: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{field}:</span>
                         <input
                           placeholder={`Enter ${field}`}
                           value={missingFieldInputs[field] || ''}
                           onChange={e => setMissingFieldInputs(prev => ({ ...prev, [field]: e.target.value }))}
-                          style={{ flex: 1, padding: '3px 7px', borderRadius: 4, border: '1px solid var(--lex-border, #E2E6EF)', fontSize: 11, outline: 'none' }}
+                          style={{ flex: 1, padding: '3px 7px', borderRadius: 4, border: '1px solid var(--lex-border, #E2E8F0)', fontSize: 11, outline: 'none' }}
                         />
                       </div>
                     ))}
@@ -2381,13 +2512,13 @@ function CommandPalette() {
                 </div>
 
                 {/* Document Drawer Footer with Save Action */}
-                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--lex-border, #E2E6EF)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-sidebar, #EEF1F7)' }}>
+                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--lex-border, #E2E8F0)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--lex-bg-main, #F8FAFC)' }}>
                   <button
                     onClick={() => {
                       updateSession(currentId, s => ({ ...s, pendingDraft: null, activeDocument: null }));
                       setDrawerOpen(false);
                     }}
-                    style={{ padding: '5px 12px', borderRadius: 5, border: '1px solid var(--lex-border, #E2E6EF)', background: 'transparent', color: 'var(--lex-text-secondary, #667085)', cursor: 'pointer', fontSize: 11.5 }}
+                    style={{ padding: '5px 12px', borderRadius: 5, border: '1px solid var(--lex-border, #E2E8F0)', background: 'transparent', color: 'var(--lex-text-secondary, #475569)', cursor: 'pointer', fontSize: 11.5 }}
                   >
                     Discard
                   </button>
@@ -2411,50 +2542,21 @@ function CommandPalette() {
           draft={activeDocument}
           sessionTitle={currentSession?.title || ''}
           apiBase={API_BASE}
-          onConfirm={async ({ fileName, folderId, folderPath, smartTitle }) => {
-            if (!activeDocument?.content) {
-              return { success: false, message: 'No draft content to save.' };
-            }
-            try {
-              const res = await fetch(`${API_BASE}/api/vault/save`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  case_id: activeDocument.case_id || 'AI_ASSOCIATE',
-                  title: fileName,
-                  doc_type: activeDocument.doc_type || 'AI Draft',
-                  content: activeDocument.content,
-                  folder_id: folderId,
-                  smart_title: smartTitle,
-                  session_title: currentSession?.title || '',
-                  audit_messages: JSON.stringify(
-                    messages.map(m => ({ role: m.role, text: m.text }))
-                  ),
-                }),
-              });
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok || data.error) {
-                return { success: false, message: data.message || 'Failed to save to Case Vault.' };
-              }
-
-              const savedItem = { id: data.id ?? `v_${Date.now()}`, name: fileName, path: folderPath };
-              updateSession(currentId, s => ({
-                ...s,
-                savedAssets: [...(s.savedAssets || []), savedItem],
-                pendingDraft: null,
-                activeDocument: null,
-              }));
-              setShowSaveModal(false);
-              setDrawerOpen(false);
-              pushMessage(currentId, {
-                id: `sys_${Date.now()}`,
-                role: 'assistant',
-                text: `✅ Document **${fileName}** saved to Case Vault (${data.location || folderPath || 'Root'}).`,
-              });
-              return { success: true };
-            } catch (_) {
-              return { success: false, message: 'Connection error while saving to Case Vault.' };
-            }
+          onConfirm={({ fileName, folderId, folderPath }) => {
+            const savedItem = { id: `v_${Date.now()}`, name: fileName, path: folderPath };
+            updateSession(currentId, s => ({
+              ...s,
+              savedAssets: [...(s.savedAssets || []), savedItem],
+              pendingDraft: null,
+              activeDocument: null,
+            }));
+            setShowSaveModal(false);
+            setDrawerOpen(false);
+            pushMessage(currentId, {
+              id: `sys_${Date.now()}`,
+              role: 'assistant',
+              text: `✅ Document **${fileName}** saved to Case Vault (${folderPath || 'Root'}).`,
+            });
           }}
           onClose={() => setShowSaveModal(false)}
         />
@@ -2465,6 +2567,20 @@ function CommandPalette() {
         <ShareModal
           sessionTitle={sessions.find(s => s.id === shareSessionId)?.title || ''}
           onClose={() => setShareSessionId(null)}
+        />
+      )}
+
+      {/* Fixed-Position Three-Dot Conversation Menu (PDF P3 Bug Fix) */}
+      {openMenuState && (
+        <ConversationMenu
+          session={openMenuState.session}
+          x={openMenuState.x}
+          y={openMenuState.y}
+          onPin={() => { pinSession(openMenuState.id); setOpenMenuState(null); }}
+          onRename={() => { setRenamingId(openMenuState.id); setRenameValue(openMenuState.session.title); setOpenMenuState(null); }}
+          onShare={() => { setShareSessionId(openMenuState.id); setOpenMenuState(null); }}
+          onDelete={() => { deleteSession(openMenuState.id); setOpenMenuState(null); }}
+          onClose={() => setOpenMenuState(null)}
         />
       )}
     </>
@@ -2485,8 +2601,8 @@ function CommandPalette() {
           <Icon name={t.icon} size={13} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--lex-text-primary, #172033)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
-          <div style={{ fontSize: 10, color: 'var(--lex-text-secondary, #667085)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.desc}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--lex-text-primary, #0F172A)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
+          <div style={{ fontSize: 10, color: 'var(--lex-text-secondary, #64748B)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.desc}</div>
         </div>
       </button>
     );
@@ -2495,7 +2611,6 @@ function CommandPalette() {
   // Helper renderer for each session card in the sidebar
   function renderSessionRow(s) {
     const isActive = s.id === currentId;
-    const isMenuOpen = openMenuId === s.id;
     const hasActiveDraft = s.activeDocument;
     const hasSavedAssets = s.savedAssets && s.savedAssets.length > 0;
 
@@ -2530,23 +2645,28 @@ function CommandPalette() {
             )}
           </div>
 
-          <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+          <div>
             <button
-              onClick={() => setOpenMenuId(isMenuOpen ? null : s.id)}
-              style={{ background: 'none', border: 'none', color: 'var(--lex-text-muted, #8E98A8)', cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (openMenuState?.id === s.id) {
+                  setOpenMenuState(null);
+                } else {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const bottomFlip = (window.innerHeight - rect.bottom) < 190;
+                  setOpenMenuState({
+                    id: s.id,
+                    session: s,
+                    x: Math.max(10, Math.min(rect.right - 140, window.innerWidth - 160)),
+                    y: bottomFlip ? Math.max(10, rect.top - 155) : (rect.bottom + 4),
+                  });
+                }
+              }}
+              style={{ background: 'none', border: 'none', color: 'var(--lex-sidebar-secondary, #94A3B8)', cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}
+              title="Matter Options"
             >
               ⋮
             </button>
-            {isMenuOpen && (
-              <ConversationMenu
-                session={s}
-                onPin={() => { pinSession(s.id); setOpenMenuId(null); }}
-                onRename={() => { setRenamingId(s.id); setRenameValue(s.title); setOpenMenuId(null); }}
-                onShare={() => { setShareSessionId(s.id); setOpenMenuId(null); }}
-                onDelete={() => { deleteSession(s.id); setOpenMenuId(null); }}
-                onClose={() => setOpenMenuId(null)}
-              />
-            )}
           </div>
         </div>
 
@@ -2560,10 +2680,10 @@ function CommandPalette() {
                 title="Open Active Draft"
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <Icon name="draft" size={11} style={{ color: 'var(--lex-accent-blue, #2563EB)' }} />
+                  <Icon name="draft" size={11} style={{ color: '#3B82F6' }} />
                   {s.activeDocument.title || 'Draft in Progress'}
                 </span>
-                <span style={{ fontSize: 9.5, color: 'var(--lex-accent-blue, #2563EB)', fontWeight: 600 }}>Open</span>
+                <span style={{ fontSize: 9.5, color: '#3B82F6', fontWeight: 600 }}>Open</span>
               </button>
             )}
             {hasSavedAssets && s.savedAssets.map((asset, ai) => (
