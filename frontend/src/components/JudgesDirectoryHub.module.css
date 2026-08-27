@@ -1,0 +1,56 @@
+.hubContainer {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg-primary, #F7F8FC);
+}
+
+.topSelectorBar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--bg-surface, #FFFFFF);
+  border-bottom: 1px solid var(--border-default, #E2E6EF);
+  flex-wrap: wrap;
+}
+
+.selectorLabel {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary, #667085);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.courtButtons {
+  display: flex;
+  gap: 10px;
+}
+
+.courtBtn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-subtle, #F8FAFC);
+  color: var(--text-primary, #172033);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.courtBtn:hover {
+  border-color: var(--accent-primary, #2563EB);
+}
+
+.activeCourtBtn {
+  background: var(--accent-primary, #2563EB) !important;
+  color: #FFFFFF !important;
+  border-color: var(--accent-primary, #2563EB) !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+}
+
+.activeDirectoryCanvas {
+  flex: 1;
+}

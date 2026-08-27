@@ -1,0 +1,437 @@
+.container {
+  padding: 24px;
+  background-color: var(--bg-primary, #F7F8FC);
+  color: var(--text-primary, #172033);
+  min-height: 100%;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.badgeRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.districtBadge {
+  background: var(--accent-primary, #2563EB);
+  color: #FFFFFF;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.complexBadge {
+  background: var(--accent-light, #EFF6FF);
+  color: var(--accent-primary, #2563EB);
+  border: 1px solid var(--border-subtle, #BFDBFE);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary, #172033);
+  margin: 0 0 4px 0;
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #667085);
+  margin: 0;
+}
+
+.folderNav {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle, #E2E6EF);
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.folderTab {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--text-secondary, #667085);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.folderTab:hover {
+  background: var(--bg-hover, #F1F5F9);
+}
+
+.activeFolderTab {
+  background: var(--accent-primary, #2563EB) !important;
+  color: #FFFFFF !important;
+  border-color: var(--accent-primary, #2563EB) !important;
+}
+
+.searchWrapper {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  stroke: var(--text-secondary, #667085);
+}
+
+.searchInput {
+  width: 100%;
+  padding: 10px 36px 10px 38px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--text-primary, #172033);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--accent-primary, #2563EB);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.clearBtn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #667085);
+  cursor: pointer;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E6EF);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.cardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.courtBadge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-primary, #2563EB);
+  background: var(--accent-light, #EFF6FF);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.desigTag {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #667085);
+  font-weight: 500;
+}
+
+.judgeName {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary, #172033);
+  margin: 0 0 10px 0;
+}
+
+.metaBox {
+  background: var(--bg-subtle, #F8FAFC);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.metaLabel {
+  color: var(--text-secondary, #667085);
+  font-weight: 600;
+  min-width: 90px;
+}
+
+.metaVal code {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E6EF);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.miniCopy {
+  margin-left: auto;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.emailLink {
+  color: var(--accent-primary, #2563EB);
+  text-decoration: none;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+}
+
+.joinBtn {
+  flex: 1;
+  background: var(--accent-primary, #2563EB);
+  color: #FFFFFF;
+  text-align: center;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.copyBtn {
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Bail Roster Styles */
+.bailList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bailCard {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E6EF);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.bailHeader {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle, #E2E6EF);
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.bailJudge {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 6px 0 2px 0;
+}
+
+.psBox {
+  max-width: 450px;
+}
+
+.psLabel {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary, #667085);
+  margin-bottom: 6px;
+}
+
+.psTags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.psBadge {
+  background: var(--accent-light, #EFF6FF);
+  color: var(--accent-primary, #2563EB);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle, #BFDBFE);
+}
+
+.linkJudgesContainer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.linkBox {
+  background: var(--bg-subtle, #F8FAFC);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.linkTitle {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #667085);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.linkName {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary, #172033);
+}
+
+/* Leave Tracker Styles */
+.leaveList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.leaveCard {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid #FECACA;
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.leaveHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.leaveStatusPill {
+  background: #FEE2E2;
+  color: #DC2626;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.leaveJudgeName {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 2px 0;
+}
+
+.transferBox {
+  margin-top: 14px;
+  background: var(--bg-subtle, #F8FAFC);
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--accent-primary, #2563EB);
+}
+
+.transferArrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-primary, #2563EB);
+  margin-bottom: 4px;
+}
+
+.assignedLinkName {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary, #172033);
+  margin-bottom: 6px;
+}
+
+.leaveInstructions {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #667085);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* PDF Viewer Styles */
+.pdfContainer {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E6EF);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.pdfHeaderActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pdfTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 2px 0;
+}
+
+.pdfSubtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #667085);
+  margin: 0;
+}
+
+.downloadPdfBtn {
+  background: var(--accent-primary, #2563EB);
+  color: #FFFFFF;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.pdfIframe {
+  width: 100%;
+  height: 700px;
+  border: 1px solid var(--border-subtle, #E2E6EF);
+  border-radius: 8px;
+}

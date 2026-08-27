@@ -1,0 +1,38 @@
+[
+  {
+    "id": "bail-01",
+    "police_stations": ["Bawana", "Narela", "Narela Industrial Area"],
+    "presiding_officer": "Sh. Dhirendra Rana",
+    "designation": "ASJ / Special Judge (NDPS)",
+    "court_room": "207",
+    "first_link": "Sh. Sushil Kumar (ASJ-04, CR No. 206)",
+    "second_link": "Sh. Viplav Dabass (ASJ/FTC, CR No. 204)"
+  },
+  {
+    "id": "bail-02",
+    "police_stations": ["Swaroop Nagar", "Samaypur Badli", "Bhalswa Dairy"],
+    "presiding_officer": "Sh. Sushil Kumar",
+    "designation": "Additional Sessions Judge-04",
+    "court_room": "206",
+    "first_link": "Sh. Sushil Anuj Tyagi (ASJ-02, CR No. 202)",
+    "second_link": "Sh. Dhirendra Rana (ASJ/NDPS, CR No. 207)"
+  },
+  {
+    "id": "bail-03",
+    "police_stations": ["Alipur", "Shahbad Dairy", "Cyber Police Station (North)"],
+    "presiding_officer": "Sh. Sushil Anuj Tyagi",
+    "designation": "Additional Sessions Judge-02",
+    "court_room": "202",
+    "first_link": "Sh. Viplav Dabass (ASJ/FTC, CR No. 204)",
+    "second_link": "Sh. Neeraj Sharma (ASJ/Electricity, CR No. 201)"
+  },
+  {
+    "id": "bail-04",
+    "police_stations": ["Prashant Vihar", "K.N. Katju Marg", "Model Town (North)"],
+    "presiding_officer": "Sh. Viplav Dabass",
+    "designation": "Additional Sessions Judge (FTC)",
+    "court_room": "204",
+    "first_link": "Sh. Neeraj Sharma (ASJ/Electricity, CR No. 201)",
+    "second_link": "Sh. Sushil Kumar (ASJ-04, CR No. 206)"
+  }
+]

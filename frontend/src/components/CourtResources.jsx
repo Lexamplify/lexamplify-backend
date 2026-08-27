@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
 import { formatCourtDisplayName, getMetroComplexes, resolveDistrictSelection } from '../utils/courtNameFormatter.js';
-import DelhiJudgesDirectory from './DelhiJudgesDirectory.jsx';
+import JudgesDirectoryHub from './JudgesDirectoryHub.jsx';
 import HighCourtSelector from './HighCourtSelector.jsx';
 import DelhiHighCourtJudges from './DelhiHighCourtJudges.jsx';
 import {
@@ -1784,7 +1784,7 @@ export default function CourtResources() {
           </div>
         )}
 
-        {activeTab === 'judges' && <DelhiJudgesDirectory />}
+        {activeTab === 'judges' && <JudgesDirectoryHub />}
 
         {/* ────────── TAB 4: BARE ACTS ────────── */}
         {activeTab === 'laws' && (

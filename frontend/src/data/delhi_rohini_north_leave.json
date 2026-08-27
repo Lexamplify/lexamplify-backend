@@ -1,0 +1,22 @@
+[
+  {
+    "id": "leave-01",
+    "judge_name": "Dr. Neha Kheria",
+    "designation": "Metropolitan Magistrate-01 (North)",
+    "court_room": "108",
+    "leave_date": "Today",
+    "status": "On Leave",
+    "link_judge": "Sh. Abhinav Singh (MM-02, CR No. 106)",
+    "instructions": "All urgent bail applications, remand hearings, and mentioning memos will be taken up by Court Room No. 106."
+  },
+  {
+    "id": "leave-02",
+    "judge_name": "Ms. Vandana",
+    "designation": "Additional Sessions Judge (POCSO)",
+    "court_room": "205",
+    "leave_date": "Today",
+    "status": "On Leave",
+    "link_judge": "Sh. Sushil Anuj Tyagi (ASJ-02, CR No. 202)",
+    "instructions": "All urgent POCSO remand matters and bail hearings assigned to Court Room No. 202."
+  }
+]
