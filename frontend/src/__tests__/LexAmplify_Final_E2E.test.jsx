@@ -214,6 +214,22 @@ describe('FINAL RED-TEAM PRODUCTION QA — LexAmplify AI Legal Associate', () =>
     const viewDraftBtn = await screen.findByText('View Draft');
     await userEvent.click(viewDraftBtn);
 
+    // The document canvas must actually render the draft's content, not
+    // just the toolbar/title around it — activeDocument was already
+    // populated (from localStorage) before the palette was ever opened,
+    // which previously left the canvas permanently empty: the sync effect
+    // ran while isOpen was still false (this component returns null when
+    // closed, so the canvas's DOM node didn't exist yet), bailed out on a
+    // null ref without recording a key, and then never got another chance
+    // to run once the palette opened and the node was created, because
+    // activeDocument itself never changed again.
+    await waitFor(() => {
+      const paper = document.querySelector('.lex-doc-paper');
+      expect(paper).toBeTruthy();
+      expect(paper.textContent).toContain('01 PARTIES');
+      expect(paper.textContent).toContain('Confidential information terms');
+    });
+
     // Test Copy button
     const copyBtn = screen.getByTitle('Copy Draft');
     await userEvent.click(copyBtn);
@@ -239,6 +255,17 @@ describe('FINAL RED-TEAM PRODUCTION QA — LexAmplify AI Legal Associate', () =>
       expect(body.content).toContain('Disclosing Party');
       expect(body.case_id).toBeTruthy();
       expect(body.doc_type).toBe('nda');
+
+      // AI-provenance audit trail: the backend's vault_audit table (and the
+      // audit-trail authorization boundary protecting it) only has anything
+      // to protect if the save request actually carries this — a prior
+      // UI refactor silently dropped these two fields from the request
+      // while leaving every other assertion here green.
+      expect(body.session_title).toBe('Mutual NDA Agreement');
+      expect(typeof body.audit_messages).toBe('string');
+      const auditMessages = JSON.parse(body.audit_messages);
+      expect(Array.isArray(auditMessages)).toBe(true);
+      expect(auditMessages.some(m => m.role === 'user')).toBe(true);
     });
 
     // Verify sidebar shows saved asset or draft node
@@ -292,5 +319,40 @@ describe('FINAL RED-TEAM PRODUCTION QA — LexAmplify AI Legal Associate', () =>
     expect(await screen.findByText('Vault database is unavailable.')).toBeInTheDocument();
     expect(screen.getByText('Save Draft to Case Vault')).toBeInTheDocument();
     expect(screen.queryByText(/saved to Case Vault/i)).not.toBeInTheDocument();
+  });
+
+  it('Flow G: Fixed-position conversation menu closes on scroll instead of going stale', async () => {
+    const testSession = {
+      id: 's_test_3',
+      title: 'Menu Position Test',
+      messages: [],
+      savedAssets: [],
+      updatedAt: Date.now(),
+    };
+    localStorage.setItem('lexai_sessions_v2', JSON.stringify([testSession]));
+    localStorage.setItem('lexai_current_session_v2', 's_test_3');
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <CommandPalette />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    window.dispatchEvent(new CustomEvent('toggle-rag-palette'));
+
+    const menuTrigger = await screen.findByTitle('Matter Options');
+    await userEvent.click(menuTrigger);
+    expect(await screen.findByText('Pin Matter')).toBeInTheDocument();
+
+    // The menu's {x, y} is a one-time getBoundingClientRect() snapshot from
+    // the trigger button, not re-measured on scroll — without a dismiss
+    // listener it would stay floating at that stale position, detached
+    // from the row that opened it, once the sidebar list scrolls.
+    window.dispatchEvent(new Event('scroll'));
+    await waitFor(() => {
+      expect(screen.queryByText('Pin Matter')).not.toBeInTheDocument();
+    });
   });
 });

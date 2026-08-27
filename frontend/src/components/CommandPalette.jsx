@@ -1162,7 +1162,7 @@ const generateSmartName = (doc_type, sessionTitle) => {
 // ═══════════════════════════════════════════════════════
 //  SAVE TO VAULT MODAL
 // ═══════════════════════════════════════════════════════
-function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) {
+function SaveToVaultModal({ draft, sessionTitle, apiBase, messages, onConfirm, onClose }) {
   const [flatFolders, setFlatFolders] = useState([]);
   const [navStack, setNavStack] = useState([{ id: null, name: 'Root (Case Vault)' }]);
   const [fileName, setFileName] = useState('');
@@ -1211,6 +1211,8 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose }) 
           case_id: draft?.case_id || sessionTitle || 'General',
           folder_id: destFolderId,
           doc_type: draft?.doc_type || 'Draft',
+          session_title: sessionTitle || '',
+          audit_messages: JSON.stringify((messages || []).map(m => ({ role: m.role, text: m.text }))),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1340,11 +1342,20 @@ function ConversationMenu({ session, x, y, onPin, onRename, onShare, onDelete, o
     const keyHandler = (e) => {
       if (e.key === 'Escape') onClose();
     };
+    // x/y are a one-time getBoundingClientRect() snapshot from the trigger
+    // button, not re-measured — scrolling the sidebar list or resizing the
+    // window would otherwise leave the menu floating at its stale position,
+    // detached from the row that opened it. Closing on either is simpler
+    // and safer than re-measuring on every scroll/resize tick.
     document.addEventListener('mousedown', handler);
     document.addEventListener('keydown', keyHandler);
+    window.addEventListener('scroll', onClose, true);
+    window.addEventListener('resize', onClose);
     return () => {
       document.removeEventListener('mousedown', handler);
       document.removeEventListener('keydown', keyHandler);
+      window.removeEventListener('scroll', onClose, true);
+      window.removeEventListener('resize', onClose);
     };
   }, [onClose]);
 
@@ -1602,7 +1613,15 @@ function CommandPalette() {
     };
   }, [isOpen]);
 
-  // Sync drawer innerHTML safely
+  // Sync drawer innerHTML safely. isOpen must be a dependency: while closed
+  // this component returns null, so drawerBodyRef's DOM node doesn't exist
+  // yet. If activeDocument is already populated at that point (e.g.
+  // restored from localStorage before the palette is opened), this effect
+  // fires once with a null ref and bails without recording a key, then
+  // never gets another chance — activeDocument doesn't change again, so
+  // nothing else re-triggers it and the canvas stays permanently empty.
+  // Re-running on isOpen also matters because the whole tree unmounts and
+  // remounts on every open, so the ref is a fresh, empty node each time.
   useEffect(() => {
     const doc = viewingSnapshot || activeDocument;
     if (!drawerBodyRef.current) return;
@@ -1612,7 +1631,7 @@ function CommandPalette() {
     drawerBodyRef.current.innerHTML = doc
       ? highlightPlaceholders(renderDraftHtml(doc.content))
       : '';
-  }, [viewingSnapshot, activeDocument]);
+  }, [viewingSnapshot, activeDocument, isOpen]);
 
   useEffect(() => {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 80);
@@ -2542,8 +2561,9 @@ function CommandPalette() {
           draft={activeDocument}
           sessionTitle={currentSession?.title || ''}
           apiBase={API_BASE}
-          onConfirm={({ fileName, folderId, folderPath }) => {
-            const savedItem = { id: `v_${Date.now()}`, name: fileName, path: folderPath };
+          messages={messages}
+          onConfirm={({ fileName, folderPath, vaultId }) => {
+            const savedItem = { id: vaultId ?? `v_${Date.now()}`, name: fileName, path: folderPath };
             updateSession(currentId, s => ({
               ...s,
               savedAssets: [...(s.savedAssets || []), savedItem],
