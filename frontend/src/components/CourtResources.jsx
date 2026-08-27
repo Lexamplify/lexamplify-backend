@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../../../data/districts.json';
 import { formatCourtDisplayName, getMetroComplexes, resolveDistrictSelection } from '../utils/courtNameFormatter.js';
-import JudgesDirectory from './JudgesDirectory.jsx';
+import DelhiJudgesDirectory from './DelhiJudgesDirectory.jsx';
 import HighCourtSelector from './HighCourtSelector.jsx';
+import DelhiHighCourtJudges from './DelhiHighCourtJudges.jsx';
 import {
   fetchCourtGlobals,
   fetchCourtData,
@@ -1502,6 +1503,9 @@ export default function CourtResources() {
             <div className="sub-tabs-wrapper">
               <button className={`sub-tab-btn ${hcSubTab === 'overview' ? 'active' : ''}`} onClick={() => setHcSubTab('overview')}>🏛️ Overview &amp; Links</button>
               <button className={`sub-tab-btn ${hcSubTab === 'judges' ? 'active' : ''}`} onClick={() => setHcSubTab('judges')}>📋 Judges Roster ({hcData.judges.length})</button>
+              {activeLegacyStateKey === 'delhi' && (
+                <button className={`sub-tab-btn ${hcSubTab === 'dhc-directory' ? 'active' : ''}`} onClick={() => setHcSubTab('dhc-directory')}>🎥 Official Virtual Court Directory</button>
+              )}
             </div>
 
             {loadingHC ? (
@@ -1656,6 +1660,11 @@ export default function CourtResources() {
                     )}
                   </div>
                 )}
+
+                {/* SUB TAB: Official Delhi HC Virtual Court Directory (verified static roster) */}
+                {hcSubTab === 'dhc-directory' && activeLegacyStateKey === 'delhi' && (
+                  <DelhiHighCourtJudges />
+                )}
               </div>
             )}
           </div>
@@ -1775,7 +1784,7 @@ export default function CourtResources() {
           </div>
         )}
 
-        {activeTab === 'judges' && <JudgesDirectory />}
+        {activeTab === 'judges' && <DelhiJudgesDirectory />}
 
         {/* ────────── TAB 4: BARE ACTS ────────── */}
         {activeTab === 'laws' && (
