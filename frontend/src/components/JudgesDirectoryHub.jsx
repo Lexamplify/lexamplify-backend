@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import DelhiJudgesDirectory from './DelhiJudgesDirectory';
 import RohiniCourtDirectory from './RohiniCourtDirectory';
+import RohiniNorthWestDirectory from './RohiniNorthWestDirectory'; // <-- Add Import
 import styles from './JudgesDirectoryHub.module.css';
 
 export default function JudgesDirectoryHub() {
@@ -8,7 +9,6 @@ export default function JudgesDirectoryHub() {
 
   return (
     <div className={styles.hubContainer}>
-      {/* Top Directory Selection Switcher */}
       <div className={styles.topSelectorBar}>
         <div className={styles.selectorLabel}>Select Court Complex:</div>
         <div className={styles.courtButtons}>
@@ -16,21 +16,28 @@ export default function JudgesDirectoryHub() {
             className={`${styles.courtBtn} ${selectedCourt === 'delhi_hc' ? styles.activeCourtBtn : ''}`}
             onClick={() => setSelectedCourt('delhi_hc')}
           >
-            🏛️ Delhi High Court (30 Benches)
+            🏛️ Delhi High Court
           </button>
           <button
             className={`${styles.courtBtn} ${selectedCourt === 'delhi_rohini' ? styles.activeCourtBtn : ''}`}
             onClick={() => setSelectedCourt('delhi_rohini')}
           >
-            🏢 Rohini District Court — North District
+            🏢 Rohini (North District)
+          </button>
+          {/* Add North-West Button */}
+          <button
+            className={`${styles.courtBtn} ${selectedCourt === 'delhi_rohini_nw' ? styles.activeCourtBtn : ''}`}
+            onClick={() => setSelectedCourt('delhi_rohini_nw')}
+          >
+            🏢 Rohini (North-West)
           </button>
         </div>
       </div>
 
-      {/* Directory Router */}
       <div className={styles.activeDirectoryCanvas}>
         {selectedCourt === 'delhi_hc' && <DelhiJudgesDirectory/>}
         {selectedCourt === 'delhi_rohini' && <RohiniCourtDirectory/>}
+        {selectedCourt === 'delhi_rohini_nw' && <RohiniNorthWestDirectory/>} {/* <-- Render */}
       </div>
     </div>
   );

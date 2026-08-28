@@ -1,0 +1,271 @@
+.container {
+  padding: 24px;
+  background-color: var(--bg-primary, transparent);
+  color: var(--text-primary, inherit);
+  min-height: 100%;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.badgeRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.districtBadge {
+  background: var(--accent-primary, #2563EB);
+  color: #FFFFFF;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.complexBadge {
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  color: var(--accent-primary, #2563EB);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary, inherit);
+  margin: 0 0 4px 0;
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  /* --text-secondary is not a defined token in this app's theme (verified
+     against index.css) — falling back to --text-muted, the real muted-text
+     token, instead of a flat "gray" that would ignore both themes equally. */
+  color: var(--text-secondary, var(--text-muted, gray));
+  margin: 0;
+}
+
+.folderNav {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle, color-mix(in srgb, var(--text-primary) 15%, transparent));
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.folderTab {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 20%, transparent));
+  background: var(--bg-surface, transparent);
+  color: var(--text-secondary, var(--text-muted, inherit));
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.folderTab:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.activeFolderTab {
+  background: var(--accent-primary, #2563EB) !important;
+  color: #FFFFFF !important;
+  border-color: var(--accent-primary, #2563EB) !important;
+}
+
+.searchWrapper {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  stroke: var(--text-secondary, var(--text-muted, gray));
+}
+
+.searchInput {
+  width: 100%;
+  padding: 10px 36px 10px 38px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 20%, transparent));
+  /* An input needs to read as a distinct, fillable surface — a fully
+     transparent fallback would make it visually indistinguishable from
+     the page behind it. --bg-card is the app's real elevated-surface
+     token (white in light mode, dark slate in dark mode). */
+  background: var(--bg-surface, var(--bg-card, transparent));
+  color: var(--text-primary, inherit);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--accent-primary, #2563EB);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 20%, transparent);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.card, .bailCard, .leaveCard, .pdfContainer {
+  /* Same reasoning as .searchInput above: these are the primary content
+     cards, not ghost/outline elements — they need real surface elevation
+     against the page background in both themes, not a fallback that
+     resolves to nothing. */
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 15%, transparent));
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.leaveCard {
+  border-color: color-mix(in srgb, #DC2626 40%, transparent);
+}
+
+.cardTop, .bailHeader, .leaveHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.courtBadge, .psBadge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-primary, #3b82f6);
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.desigTag {
+  font-size: 0.75rem;
+  color: var(--text-secondary, var(--text-muted, gray));
+  font-weight: 500;
+}
+
+.judgeName, .bailJudge, .leaveJudgeName, .pdfTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary, inherit);
+  margin: 0 0 10px 0;
+}
+
+.metaBox, .linkBox, .transferBox {
+  background: var(--bg-subtle, color-mix(in srgb, var(--text-primary) 5%, transparent));
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.transferBox {
+  border-left: 3px solid var(--accent-primary, #2563EB);
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.metaLabel, .linkTitle {
+  color: var(--text-secondary, var(--text-muted, gray));
+  font-weight: 600;
+  min-width: 90px;
+}
+
+.metaVal code {
+  /* A code/id chip reads best with a background one shade off its
+     container — same real-surface-token reasoning as the cards above. */
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid color-mix(in srgb, var(--text-primary) 15%, transparent);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 600;
+  color: var(--text-primary, inherit);
+}
+
+.miniCopy, .copyBtn {
+  margin-left: auto;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
+  background: var(--bg-surface, transparent);
+  color: var(--text-primary, inherit);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.emailLink {
+  color: var(--accent-primary, #3b82f6);
+  text-decoration: none;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+}
+
+.joinBtn, .downloadPdfBtn {
+  flex: 1;
+  background: var(--accent-primary, #2563EB);
+  color: #FFFFFF;
+  text-align: center;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.leaveStatusPill {
+  background: color-mix(in srgb, #DC2626 15%, transparent);
+  color: #DC2626;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.pdfHeaderActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pdfIframe {
+  width: 100%;
+  height: 700px;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 15%, transparent);
+  border-radius: 8px;
+}

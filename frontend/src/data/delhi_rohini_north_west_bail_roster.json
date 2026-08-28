@@ -1,0 +1,20 @@
+[
+  {
+    "id": "bail-nw-01",
+    "police_stations": ["Mangol Puri", "Sultan Puri", "Aman Vihar"],
+    "presiding_officer": "Sh. Rakesh Kumar-IV",
+    "designation": "ASJ-02 / Special Judge (NDPS)",
+    "court_room": "202",
+    "first_link": "Ms. Shefali Barnala Tandon (ASJ-06, CR No. 24)",
+    "second_link": "Sh. Puneet Sangwan (ACMM, CR No. 136)"
+  },
+  {
+    "id": "bail-nw-02",
+    "police_stations": ["Kanjhawala", "Begumpur", "Vijay Vihar"],
+    "presiding_officer": "Ms. Shefali Barnala Tandon",
+    "designation": "ASJ-06",
+    "court_room": "24",
+    "first_link": "Sh. Puneet Sangwan (ACMM, CR No. 136)",
+    "second_link": "Sh. Rakesh Kumar-IV (ASJ-02, CR No. 202)"
+  }
+]
