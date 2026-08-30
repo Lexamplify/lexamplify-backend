@@ -358,3 +358,57 @@ describe('LexAmplify AI Legal Associate', () => {
     expect(await screen.findByRole('heading', { name: /AI Legal Associate/i })).toBeInTheDocument();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// 11. Sidebar Focus Mode Theme-Adaptive Tooltips
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('Sidebar Focus Mode Tooltips', () => {
+  it('renders data-tooltip attributes on all sidebar navigation items and bottom controls', async () => {
+    window.history.pushState({}, '', '/dashboard');
+    render(<AppRouter />);
+
+    const sidebar = document.querySelector('aside.sidebar');
+    const sidebarQueries = within(sidebar);
+
+    // Check main navigation items
+    expect(sidebarQueries.getByRole('link', { name: /Dashboard Home/i })).toHaveAttribute('data-tooltip', 'Dashboard Home');
+    expect(sidebarQueries.getByRole('link', { name: /Contract Analyzer/i })).toHaveAttribute('data-tooltip', 'Contract Analyzer');
+    expect(sidebarQueries.getByRole('link', { name: /Auto-Draft Studio/i })).toHaveAttribute('data-tooltip', 'Auto-Draft Studio');
+    expect(sidebarQueries.getByRole('link', { name: /Court Resources/i })).toHaveAttribute('data-tooltip', 'Court Resources');
+    expect(sidebarQueries.getByRole('link', { name: /Legal Calendar/i })).toHaveAttribute('data-tooltip', 'Legal Calendar');
+    expect(sidebarQueries.getByRole('link', { name: /Virtual Courtroom/i })).toHaveAttribute('data-tooltip', 'Virtual Courtroom');
+    expect(sidebarQueries.getByRole('link', { name: /Case Vault/i })).toHaveAttribute('data-tooltip', 'Case Vault');
+    expect(sidebarQueries.getByRole('link', { name: /Conflict Engine/i })).toHaveAttribute('data-tooltip', 'Conflict Engine');
+    expect(sidebarQueries.getByRole('link', { name: /Firm Library/i })).toHaveAttribute('data-tooltip', 'Firm Library');
+    expect(sidebarQueries.getByRole('link', { name: /Legal Forms/i })).toHaveAttribute('data-tooltip', 'Legal Forms');
+
+    // Check bottom controls
+    const lexAmplifyBtn = sidebarQueries.getByRole('button', { name: /LexAmplify/i });
+    expect(lexAmplifyBtn).toHaveAttribute('data-tooltip', 'LexAmplify (⌘K)');
+
+    const logoutLink = sidebarQueries.getByRole('link', { name: /Log Out/i });
+    expect(logoutLink).toHaveAttribute('data-tooltip', 'Log Out');
+
+    const focusToggle = sidebar.querySelector('.sidebar-focus-toggle');
+    expect(focusToggle).toHaveAttribute('data-tooltip', 'Focus Mode (Ctrl+\\)');
+  });
+
+  it('applies collapsed styling classes when sidebar is collapsed', async () => {
+    window.history.pushState({}, '', '/dashboard');
+    render(<AppRouter />);
+
+    const collapseBtn = screen.getByLabelText(/Collapse sidebar/i);
+    await userEvent.click(collapseBtn);
+
+    const sidebar = document.querySelector('aside.sidebar');
+    expect(sidebar).toHaveClass('sidebar-collapsed');
+    expect(sidebar).toHaveClass('collapsed');
+
+    const navItems = document.querySelectorAll('.sidebar-nav-item');
+    expect(navItems.length).toBeGreaterThan(0);
+    navItems.forEach(item => {
+      expect(item).toHaveAttribute('data-tooltip');
+    });
+  });
+});

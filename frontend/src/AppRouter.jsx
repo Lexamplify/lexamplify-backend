@@ -187,9 +187,9 @@ const NavItem = ({ item, isActive, isCollapsed, onClick }) => {
     <Link
       to={item.path}
       onClick={onClick}
-      className={`sidebar-nav-item${isActive ? ' active' : ''}`}
-      style={{ ...activeStyle, display: 'flex', alignItems: 'center', padding: '8px 12px 8px 14px', textDecoration: 'none', transition: 'all 0.2s', marginBottom: '4px' }}
-      title={isCollapsed ? item.name : undefined}
+      className={`sidebar-nav-item navItem${isActive ? ' active' : ''}${isCollapsed ? ' collapsed' : ''}`}
+      data-tooltip={item.name}
+      style={{ ...activeStyle, display: 'flex', alignItems: 'center', padding: '8px 12px 8px 14px', textDecoration: 'none', transition: 'all 0.2s', marginBottom: '4px', position: 'relative' }}
     >
       <span className="nav-icon" style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7 }}>
         {item.icon}
@@ -342,7 +342,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       <div className={`sidebar-overlay ${isSidebarOpen ? 'visible' : ''}`} onClick={closeSidebar} />
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className={`sidebar bg-[#0B0F17] opacity-100 sticky top-0 z-50 h-screen ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed' : ''}`}>
+      <aside className={`sidebar bg-[#0B0F17] opacity-100 sticky top-0 z-50 h-screen ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed collapsed' : ''}`}>
 
         {/* Logo / brand header */}
         <div
@@ -352,9 +352,10 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             borderBottom: '1px solid var(--border-subtle)',
             flexShrink: 0,
             cursor: isCollapsed ? 'pointer' : 'default',
+            position: 'relative',
           }}
           onClick={isCollapsed ? () => setIsCollapsed(false) : undefined}
-          title={isCollapsed ? 'Expand sidebar' : undefined}
+          data-tooltip={isCollapsed ? "Expand sidebar" : ""}
         >
           <div className="sidebar-brand" style={{ justifyContent: isIconOnly ? 'center' : 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
@@ -372,8 +373,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
               <button
                 className={`sidebar-collapse-btn${isCollapsed ? ' merged' : ''}`}
                 onClick={(e) => { e.stopPropagation(); setIsCollapsed(c => !c); }}
-                title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                data-tooltip={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 {isCollapsed ? Icons.chevronRight(14) : Icons.chevronLeft(12)}
               </button>
@@ -382,7 +383,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         </div>
 
         {/* Navigation */}
-        <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 0' }}>
+        <nav className="sidebar-nav" style={{ flex: 1, overflowY: isIconOnly ? 'visible' : 'auto', overflowX: 'visible', padding: '16px 0' }}>
           {NAVIGATION_GROUPS.map((group, gIdx) => (
             <div key={group.title} style={{ marginBottom: gIdx === NAVIGATION_GROUPS.length - 1 ? 0 : '16px' }}>
               {!isIconOnly && (
@@ -415,26 +416,34 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                   Tracked Cases
                 </span>
               </div>
-              {sidebarCases.map(c => (
-                <Link
-                  key={c.id}
-                  to={`/case/${c.id}`}
-                  onClick={closeSidebar}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '7px 16px', margin: '1px 8px', borderRadius: '6px',
-                    color: params.caseId === String(c.id) ? 'var(--accent-primary)' : 'var(--text-muted)',
-                    textDecoration: 'none', fontSize: '12.5px',
-                    background: params.caseId === String(c.id) ? 'rgba(59,130,246,0.08)' : 'transparent',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <span style={{ flexShrink: 0, opacity: 0.65 }}>{Icons.folder()}</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {c.case_name || c.title || `Case #${c.id}`}
-                  </span>
-                </Link>
-              ))}
+              {sidebarCases.map(c => {
+                const caseName = c.case_name || c.title || `Case #${c.id}`;
+                return (
+                  <Link
+                    key={c.id}
+                    to={`/case/${c.id}`}
+                    onClick={closeSidebar}
+                    className={`sidebar-nav-item navItem${params.caseId === String(c.id) ? ' active' : ''}${isIconOnly ? ' collapsed' : ''}`}
+                    data-tooltip={caseName}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '7px 16px', margin: '1px 8px', borderRadius: '6px',
+                      color: params.caseId === String(c.id) ? 'var(--accent-primary)' : 'var(--text-muted)',
+                      textDecoration: 'none', fontSize: '12.5px',
+                      background: params.caseId === String(c.id) ? 'rgba(59,130,246,0.08)' : 'transparent',
+                      transition: 'all 0.15s',
+                      position: 'relative',
+                    }}
+                  >
+                    <span style={{ flexShrink: 0, opacity: 0.65 }}>{Icons.folder()}</span>
+                    {!isIconOnly && (
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {caseName}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </nav>
@@ -444,7 +453,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           {/* LexAmplify */}
           <button
             onClick={openAgent}
-            title={isIconOnly ? 'LexAmplify (⌘K)' : undefined}
+            data-tooltip="LexAmplify (⌘K)"
+            className={`sidebar-nav-item navItem sidebar-bottom-btn${isIconOnly ? ' collapsed' : ''}`}
             style={{
               width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
               background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
@@ -453,6 +463,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
               color: 'var(--accent-primary)',
               display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px',
               transition: 'all 0.2s',
+              position: 'relative',
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center' }}>{Icons.chat()}</span>
@@ -465,43 +476,60 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           </button>
 
           {/* Log Out */}
-          <Link to="/" onClick={handleSignOut} style={{ textDecoration: 'none' }}>
-            <button title={isIconOnly ? 'Log Out' : undefined} style={{
-              width: '100%', padding: isIconOnly ? '8px' : '8px 12px',
-              background: 'transparent', color: 'var(--text-muted)',
-              border: '1px solid var(--border-subtle)', borderRadius: '7px',
-              cursor: 'pointer', fontSize: '12.5px',
-              display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px', transition: 'all 0.15s',
-            }}>
+          <Link
+            to="/"
+            onClick={handleSignOut}
+            data-tooltip="Log Out"
+            className={`sidebar-nav-item navItem sidebar-bottom-link${isIconOnly ? ' collapsed' : ''}`}
+            style={{ textDecoration: 'none', display: 'block', padding: 0, margin: 0, position: 'relative' }}
+          >
+            <button
+              style={{
+                width: '100%', padding: isIconOnly ? '8px' : '8px 12px',
+                background: 'transparent', color: 'var(--text-muted)',
+                border: '1px solid var(--border-subtle)', borderRadius: '7px',
+                cursor: 'pointer', fontSize: '12.5px',
+                display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px', transition: 'all 0.15s',
+                pointerEvents: isIconOnly ? 'none' : 'auto',
+              }}
+            >
               <span style={{ display: 'flex', alignItems: 'center', opacity: 0.7 }}>{Icons.logout()}</span>
               {!isIconOnly && 'Log Out'}
             </button>
           </Link>
 
-          {/* Focus Mode toggle — hidden when icon-only on desktop (Ctrl+\ still works there);
-              kept visible on mobile since it's the only tap-reachable way to exit focus mode
-              once the floating exit pill is hidden on small viewports (Bug #2). */}
-          {(!isIconOnly || isMobileNav) && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px', fontSize: '12px', color: 'var(--text-muted)' }}>
-              <span>Focus Mode</span>
-              <div
-                onClick={() => setFocusMode(f => !f)}
-                style={{
-                  width: '32px', height: '17px', borderRadius: '10px', cursor: 'pointer',
-                  background: focusMode ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                  border: '1px solid transparent', position: 'relative', transition: 'background 0.2s',
-                }}
-              >
-                <div style={{
-                  position: 'absolute', top: '2px',
-                  left: focusMode ? '15px' : '2px',
-                  width: '11px', height: '11px', borderRadius: '50%',
-                  background: 'white', transition: 'left 0.2s',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                }} />
-              </div>
+          {/* Focus Mode toggle */}
+          <div
+            data-tooltip={focusMode ? "Exit Focus Mode (Ctrl+\\)" : "Focus Mode (Ctrl+\\)"}
+            className={`sidebar-nav-item navItem sidebar-focus-toggle${isIconOnly ? ' collapsed' : ''}`}
+            onClick={() => setFocusMode(f => !f)}
+            style={{
+              display: 'flex', alignItems: 'center',
+              justifyContent: isIconOnly ? 'center' : 'space-between',
+              padding: isIconOnly ? '8px 0' : '2px 4px',
+              fontSize: '12px', color: 'var(--text-muted)',
+              cursor: 'pointer', position: 'relative',
+              margin: isIconOnly ? '2px 0' : '0',
+            }}
+          >
+            {!isIconOnly && <span>Focus Mode</span>}
+            <div
+              style={{
+                width: '32px', height: '17px', borderRadius: '10px', cursor: 'pointer',
+                background: focusMode ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                border: '1px solid transparent', position: 'relative', transition: 'background 0.2s',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: '2px',
+                left: focusMode ? '15px' : '2px',
+                width: '11px', height: '11px', borderRadius: '50%',
+                background: 'white', transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              }} />
             </div>
-          )}
+          </div>
         </div>
       </aside>
 
