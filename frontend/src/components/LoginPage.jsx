@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import LexLogoMark from './LexLogoMark';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
@@ -591,9 +592,23 @@ const PILLARS = [
 
 export default function LoginPage() {
   const { theme, toggleTheme } = useTheme();
+  const { isAuthenticated, isInitializing, refreshSession } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const resetToken = searchParams.get('resetToken');
+
+  // Public-route guard: an already-authenticated user landing here (e.g. via
+  // browser back after login) is bounced straight to /dashboard. Gated on
+  // !isInitializing so this never fires on the stale `isAuthenticated: false`
+  // that's true for an instant while the /me cookie check is in flight — that
+  // would flash the login form into a redirect on every fresh page load.
+  // A live resetToken is excluded: an authenticated user opening a password-
+  // reset link must still be able to complete that flow, not get redirected away.
+  useEffect(() => {
+    if (isAuthenticated && !isInitializing && !resetToken) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, isInitializing, resetToken, navigate]);
 
   const [tab, setTab] = useState('signin'); // 'signin' | 'register'
   const [name, setName] = useState('');
@@ -738,7 +753,11 @@ export default function LoginPage() {
           (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Registration failed.')
         );
       }
-      navigate('/dashboard');
+      // Refresh the AuthContext's user state before navigating away — otherwise
+      // isAuthenticated stays stale (false) until the next /me poll, and hitting
+      // back to /login would re-render the form instead of the guard redirecting.
+      await refreshSession();
+      navigate('/dashboard', { replace: true });
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
@@ -767,7 +786,8 @@ export default function LoginPage() {
           (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Invalid credentials.')
         );
       }
-      navigate('/dashboard');
+      await refreshSession();
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       if (err.name === 'AbortError') {
         setError('Authentication server is slow to respond (possibly waking from sleep). Please try again in a moment.');
