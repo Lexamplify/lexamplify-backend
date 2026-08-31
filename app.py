@@ -2869,7 +2869,7 @@ def create_app():
         from models.user import User
         from models.case import Case
         from models.document import Document
-        from models.court_models import JudicialOfficer
+        from models.court_models import JudicialOfficer, SupremeCourtRoster
         sqlalchemy_db.create_all()
 
     # --- START DATABASE BUILDER ---
@@ -3005,6 +3005,14 @@ def create_app():
         if os.getenv('FLASK_ENV') == 'production':
             return jsonify({"error": "An unexpected server error occurred."}), 500
         return jsonify({"error": f"Server error: {e}"}), 500
+
+    @app.cli.command("seed-supreme-court")
+    def seed_supreme_court_command():
+        """Idempotently (re)seeds the Supreme Court virtual-court roster from
+        the hardcoded, image-transcribed data in services/supreme_court_seeder.py."""
+        from services.supreme_court_seeder import seed_supreme_court_roster
+        count = seed_supreme_court_roster(sqlalchemy_db, SupremeCourtRoster)
+        print(f"Seeded {count} Supreme Court roster record(s).")
 
     @app.cli.command("scrape-roster")
     def scrape_roster_command():

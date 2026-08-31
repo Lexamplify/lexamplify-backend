@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 from flask import Blueprint, render_template, jsonify, request, make_response
 
-from models.court_models import JudicialOfficer
+from models.court_models import JudicialOfficer, SupremeCourtRoster
 from utils.judicial_scraper import get_all_judges
 
 court_bp = Blueprint('court', __name__)
@@ -541,6 +541,14 @@ def get_directory_judges():
             return jsonify(json.load(f)), 200
     except (FileNotFoundError, json.JSONDecodeError):
         return jsonify([]), 200
+
+
+@court_bp.route('/api/directory/supreme-court', methods=['GET', 'OPTIONS'])
+def get_supreme_court_roster():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    records = SupremeCourtRoster.query.order_by(SupremeCourtRoster.id).all()
+    return jsonify([r.to_dict() for r in records]), 200
 
 
 @court_bp.route('/api/admin/sync-court-data', methods=['GET'])

@@ -951,6 +951,9 @@ export default function CourtResources() {
   }, [location.state]);
   const [globals, setGlobals] = useState({ sc_courts: [], bare_acts: [], events: [], cause_list_urls: {} });
   const [loadingGlobals, setLoadingGlobals] = useState(true);
+  const [scRoster, setScRoster] = useState([]);
+  const [scLoading, setScLoading] = useState(true);
+  const [scError, setScError] = useState(null);
   
   // High Court States
   const [activeCourtId, setActiveCourtId] = useState('delhi');
@@ -1126,6 +1129,43 @@ export default function CourtResources() {
       setLoadingGlobals(false);
     };
     loadGlobals();
+  }, []);
+
+  // ── INIT: Load the real, DB-backed Supreme Court roster ─────────────────
+  // Replaces the old globals.sc_courts (hardcoded courts 1-34 with a fake
+  // "View on Display Board" placeholder link and a pattern-guessed email
+  // for every room) with the actual 19-room roster transcribed from the
+  // official court-list screenshots and served from SupremeCourtRoster.
+  useEffect(() => {
+    const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+    const controller = new AbortController();
+    setScLoading(true);
+    setScError(null);
+
+    fetch(`${BASE_URL}/api/directory/supreme-court`, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status} (${res.statusText})`);
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error(`Expected JSON response but received ${contentType || 'non-JSON payload'}`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        setScRoster(Array.isArray(data) ? data : []);
+        setScLoading(false);
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('Failed to load Supreme Court roster:', err);
+          setScError(err.message || 'Failed to fetch the Supreme Court roster');
+          setScLoading(false);
+        }
+      });
+
+    return () => controller.abort();
   }, []);
 
   // ── Load High Court data when the selected court changes ───────────────
@@ -1422,39 +1462,47 @@ export default function CourtResources() {
           <div className="resource-panel">
             <div className="panel-header">
               <h2>Supreme Court of India</h2>
-              <p>Virtual hearing details, courtroom video links, and official display boards.</p>
+              <p>Virtual hearing details and courtroom video links.</p>
             </div>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '24px', alignItems: 'start' }}>
               <div className="responsive-table-container">
-                {loadingGlobals ? (
+                {scLoading ? (
                   <div style={{ padding: '30px', textAlign: 'center', fontStyle: 'italic', color: 'var(--text-dark-muted)' }}>Loading virtual court directory...</div>
+                ) : scError && scRoster.length === 0 ? (
+                  <div style={{ padding: '30px', textAlign: 'center', color: 'var(--accent-danger, #EF4444)' }}>
+                    Couldn't load the Supreme Court roster ({scError}).
+                  </div>
                 ) : (
                   <table className="premium-table lex-responsive-table">
                     <thead>
                       <tr>
                         <th>Courtroom</th>
-                        <th>VC Webex Meeting Link</th>
-                        <th>Status</th>
+                        <th>Judges</th>
+                        <th>Virtual Court</th>
                         <th>Court Master Email</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {globals.sc_courts.map((court, i) => (
-                        <tr key={i}>
-                          <td data-label="Courtroom"><strong>Court {court.room}</strong></td>
-                          <td data-label="VC Webex Meeting Link" style={{ minWidth: 0 }}>
-                            <a href={court.vc} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom' }}>
-                              {court.vc.length > 40 ? `${court.vc.slice(0, 40)}...` : court.vc}
+                      {scRoster.map((court) => (
+                        <tr key={court.id}>
+                          <td data-label="Courtroom"><strong>Court {court.court_room}</strong></td>
+                          <td data-label="Judges">{court.judges || 'Vacant Court'}</td>
+                          <td data-label="Virtual Court" style={{ minWidth: 0 }}>
+                            <a
+                              href={court.vc_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="copy-btn-link"
+                              style={{ display: 'inline-block', marginLeft: 0 }}
+                            >
+                              Join Virtual Court ↗
                             </a>
-                            <button className="copy-btn-link" onClick={() => handleCopy(court.vc)}>Copy</button>
+                            {court.vc_link && (
+                              <button className="copy-btn-link" onClick={() => handleCopy(court.vc_link)}>Copy</button>
+                            )}
                           </td>
-                          <td data-label="Status">
-                            <button className="copy-btn-link" style={{ marginLeft: 0 }} onClick={() => openInAppBrowser('https://sci.gov.in/display-board')}>
-                              📺 {court.meetId} ↗
-                            </button>
-                          </td>
-                          <td data-label="Court Master Email" style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>{court.email}</td>
+                          <td data-label="Court Master Email" style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)' }}>{court.court_master_email || '—'}</td>
                         </tr>
                       ))}
                     </tbody>

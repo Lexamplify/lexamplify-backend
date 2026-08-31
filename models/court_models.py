@@ -32,3 +32,27 @@ class JudicialOfficer(db.Model):
 
     def __repr__(self):
         return f"<JudicialOfficer id={self.id} hmj='{self.hmj}'>"
+
+
+class SupremeCourtRoster(db.Model):
+    __tablename__ = "supreme_court_roster"
+
+    id                 = db.Column(db.Integer, primary_key=True)
+    court_room         = db.Column(db.String(20), nullable=False)
+    judges             = db.Column(db.String(200), nullable=True)
+    vc_link            = db.Column(db.String(500))
+    court_master_email = db.Column(db.String(200))
+    updated_at         = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "court_room": self.court_room,
+            "judges": self.judges,
+            "vc_link": self.vc_link,
+            "court_master_email": self.court_master_email,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f"<SupremeCourtRoster id={self.id} court_room='{self.court_room}'>"
