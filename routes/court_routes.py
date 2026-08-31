@@ -570,12 +570,14 @@ def trigger_court_sync():
     if not expected_token or request.args.get('token') != expected_token:
         return jsonify({'error': 'Unauthorized'}), 403
 
+    from database import db
     from services.court_scraper import (
         scrape_and_upsert_roster,
         scrape_vc_links_from_pdf,
         sync_judges_on_leave,
         DISTRICT_PDF_URLS,
     )
+    from services.supreme_court_seeder import seed_supreme_court_roster
 
     results = {}
     for d_key in ['delhi_rohini', 'delhi_rohini_nw']:
@@ -583,6 +585,13 @@ def trigger_court_sync():
         v_ok = scrape_vc_links_from_pdf(DISTRICT_PDF_URLS[d_key], d_key)
         l_ok = sync_judges_on_leave(d_key)
         results[d_key] = {'roster': r_ok, 'vc_links': v_ok, 'leave': l_ok}
+
+    try:
+        sc_count = seed_supreme_court_roster(db, SupremeCourtRoster)
+        results['supreme_court'] = {'roster': True, 'count': sc_count}
+    except Exception as e:
+        db.session.rollback()
+        results['supreme_court'] = {'roster': False, 'error': str(e)}
 
     return jsonify({'status': 'complete', 'results': results}), 200
 
