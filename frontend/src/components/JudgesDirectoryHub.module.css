@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  background: var(--bg-primary, #F7F8FC);
+  background: var(--bg-primary, transparent);
 }
 
 .topSelectorBar {
@@ -10,15 +10,15 @@
   align-items: center;
   gap: 16px;
   padding: 16px 24px;
-  background: var(--bg-surface, #FFFFFF);
-  border-bottom: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border-bottom: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 15%, transparent));
   flex-wrap: wrap;
 }
 
 .selectorLabel {
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -31,9 +31,9 @@
 .courtBtn {
   padding: 8px 16px;
   border-radius: 8px;
-  border: 1px solid var(--border-default, #E2E6EF);
-  background: var(--bg-subtle, #F8FAFC);
-  color: var(--text-primary, #172033);
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 20%, transparent));
+  background: var(--bg-subtle, color-mix(in srgb, var(--text-primary) 5%, transparent));
+  color: var(--text-primary, inherit);
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -48,7 +48,7 @@
   background: var(--accent-primary, #2563EB) !important;
   color: #FFFFFF !important;
   border-color: var(--accent-primary, #2563EB) !important;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-primary) 20%, transparent);
 }
 
 .activeDirectoryCanvas {
