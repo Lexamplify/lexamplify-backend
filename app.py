@@ -3032,7 +3032,7 @@ def create_app():
     @click.option("--pdf-url", default=None, help="Override default PDF circular URL (applies to every district run when --district=all)")
     def sync_district_command(district, pdf_url):
         """Synchronizes judicial rosters and enriches VC links/emails for specified district(s)."""
-        from services.court_scraper import scrape_and_upsert_roster, scrape_vc_links_from_pdf
+        from services.court_scraper import scrape_and_upsert_roster, scrape_vc_links_from_pdf, sync_judges_on_leave
 
         target_districts = ["delhi_rohini", "delhi_rohini_nw"] if district == "all" else [district]
 
@@ -3050,11 +3050,17 @@ def create_app():
             if target_pdf:
                 pdf_ok = scrape_vc_links_from_pdf(target_pdf, d_key)
                 if pdf_ok:
-                    click.secho(f"District '{d_key}' fully synchronized.", fg="green")
+                    click.secho(f"VC links/emails synchronized for '{d_key}'.", fg="green")
                 else:
                     click.secho(f"VC enrichment had warnings for '{d_key}'.", fg="yellow")
             else:
                 click.secho(f"No PDF URL configured for {d_key}. HTML roster updated only.", fg="yellow")
+
+            leave_ok = sync_judges_on_leave(d_key)
+            if leave_ok:
+                click.secho(f"District '{d_key}' fully synchronized (roster + VC + leave status).", fg="green")
+            else:
+                click.secho(f"Leave-status sync had warnings for '{d_key}'.", fg="yellow")
 
     return app
 

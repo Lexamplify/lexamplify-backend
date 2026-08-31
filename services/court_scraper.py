@@ -61,6 +61,7 @@ import os
 import re
 import tempfile
 import uuid
+from datetime import date, datetime, timedelta, timezone
 
 import pdfplumber
 import requests
@@ -314,22 +315,25 @@ def _iter_pdf_rows(pdf):
                 yield row, page_hyperlinks, dict(columns)
 
 
+def _name_matches_officer(text: str, off: JudicialOfficer) -> bool:
+    """WHOLE-WORD containment either direction (a source string often
+    combines "Name, Designation" and hmj is name-only). Plain substring
+    containment was tried first and, against the real PDF, matched "Ms.
+    Gita" (normalizes to just "gita") to an unrelated row for "Sh. Yashu
+    Khurana ... Digital Traffic Court" — "gita" is a raw substring of
+    "digital". Comparing word SETS instead of raw strings fixes that:
+    "gita" is a whole word in her own row but not in "digital traffic
+    court". Shared by the PDF row matcher and the leave-list matcher below."""
+    text_words = set(normalize_name(text).split())
+    off_words = set(normalize_name(off.hmj).split())
+    return bool(off_words) and bool(text_words) and (off_words <= text_words or text_words <= off_words)
+
+
 def _match_officer(row, officers) -> "JudicialOfficer | None":
-    # Priority 1: normalized name — WHOLE-WORD containment either direction
-    # (a cell often combines "Name, Designation" and hmj is name-only).
-    # Plain substring containment was tried first and, against the real PDF,
-    # matched "Ms. Gita" (normalizes to just "gita") to an unrelated row for
-    # "Sh. Yashu Khurana ... Digital Traffic Court" — "gita" is a raw
-    # substring of "digital". Comparing word SETS instead of raw strings
-    # fixes that: "gita" is a whole word in her own row but not in
-    # "digital traffic court".
+    # Priority 1: normalized name.
     for cell in row:
-        cell_words = set(normalize_name(cell).split())
-        if not cell_words:
-            continue
         for off in officers:
-            off_words = set(normalize_name(off.hmj).split())
-            if off_words and (off_words <= cell_words or cell_words <= off_words):
+            if _name_matches_officer(cell, off):
                 return off
 
     # Priority 2: court room number fallback.
@@ -425,3 +429,91 @@ def scrape_vc_links_from_pdf(pdf_source, district_key="delhi_rohini_nw"):
                 os.remove(temp_path)
             except OSError:
                 pass
+
+
+# ── Daily leave-status sync ────────────────────────────────────────────────
+# Confirmed live on both portals — a genuine HTML table (not a PDF circular,
+# the other branch the spec asked me to check for): judges-on-leave/ renders
+# ONE table.data-table-1 with columns [Serial No., Name, On leave from, On
+# leave till, Nature of Leave], dates as DD/MM/YYYY. The page appears to
+# already list only current/near-future entries (there's a separate
+# "Archive" link for past ones), but that's not relied on — every row's own
+# from/till dates are still checked against IST-today before marking anyone
+# on leave, per the spec's explicit date-validity requirement.
+
+_LEAVE_PORTALS = {
+    "delhi_rohini_nw": "https://rohini.dcourts.gov.in/judges-on-leave/",
+    "delhi_rohini": "https://northdelhi.dcourts.gov.in/judges-on-leave/",
+}
+
+_LEAVE_DATE_FORMAT = "%d/%m/%Y"
+
+
+def get_ist_today() -> date:
+    return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).date()
+
+
+def _parse_leave_table(html: str) -> list[dict]:
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.select_one("table.data-table-1")
+    if not table:
+        return []
+
+    entries = []
+    for tr in table.select("tbody tr"):
+        tds = tr.find_all("td")
+        if len(tds) < 4:
+            continue
+        name = tds[1].get_text(strip=True)
+        if not name:
+            continue
+        try:
+            from_date = datetime.strptime(tds[2].get_text(strip=True), _LEAVE_DATE_FORMAT).date()
+            till_date = datetime.strptime(tds[3].get_text(strip=True), _LEAVE_DATE_FORMAT).date()
+        except ValueError:
+            # An unparseable date is a reason to skip this row, not to guess
+            # a date and risk wrongly marking (or missing) a leave.
+            continue
+        entries.append({"hmj": name, "from": from_date, "till": till_date})
+    return entries
+
+
+def sync_judges_on_leave(district_key: str = "delhi_rohini_nw") -> bool:
+    target_url = _LEAVE_PORTALS.get(district_key)
+    if not target_url:
+        print(f"No leave portal configured for {district_key}.")
+        return False
+
+    try:
+        response = requests.get(target_url, headers=_HEADERS, timeout=15, verify=False)
+        response.raise_for_status()
+        entries = _parse_leave_table(response.text)
+
+        today = get_ist_today()
+        on_leave_names = {e["hmj"] for e in entries if e["from"] <= today <= e["till"]}
+
+        # Everything above can raise (network, parsing) without touching the
+        # DB at all. Only once it has ALL succeeded do we touch ORM state —
+        # and even then nothing is written to the database until commit()
+        # below, so a failure between here and commit() rolls back to the
+        # prior is_on_leave values via the except block, never a half-reset.
+        officers = JudicialOfficer.query.filter_by(district_key=district_key).all()
+        for off in officers:
+            off.is_on_leave = False
+
+        matched_count = 0
+        for name in on_leave_names:
+            for off in officers:
+                if _name_matches_officer(name, off):
+                    off.is_on_leave = True
+                    matched_count += 1
+                    break
+
+        db.session.commit()
+        print(f"{matched_count} officer(s) on leave today ({today.isoformat()}) for {district_key}.")
+        return True
+
+    except Exception as e:
+        print(f"Leave sync error for {district_key}: {e}")
+        db.session.rollback()
+        return False
