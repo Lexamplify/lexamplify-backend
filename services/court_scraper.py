@@ -183,14 +183,72 @@ def _upsert_judge(district_key: str, parsed: dict) -> None:
         ))
 
 
-def scrape_and_upsert_roster(district_key: str = "delhi_rohini_nw") -> bool:
+def seed_district_from_json(district_key: str, records: list[dict]) -> int:
+    """Upserts a district's judges from an already-loaded JSON snapshot (the
+    frontend fallback files, themselves a full export of a previous live
+    sync) — matched on (hmj, district_key), zero network I/O. This is the
+    FAST default path for the admin sync route: live scraping from Render's
+    IPs was hanging against dcourts.gov.in past Gunicorn's 30s worker
+    timeout and getting SIGKILLed (see routes/court_routes.py's
+    trigger_court_sync docstring), so the route now seeds from this
+    instead unless ?source=live is explicitly requested — and falls back
+    to this same function if that live attempt fails.
+
+    Unlike _upsert_judge (which merges partial, possibly-incomplete scrape
+    results into an existing row), each JSON record here is already a
+    complete snapshot of one officer, so every field is written straight
+    through rather than skipped-if-falsy — there's no partial-cell-parse
+    risk to guard against the way there is with a live scrape.
+
+    Fetches all of the district's existing officers in ONE query up front
+    instead of one filter_by().first() per record — the naive per-record
+    version measured ~85ms for 41 rows (2ms/row of pure ORM round-trip
+    overhead against SQLite), which alone blew well past this route's
+    whole point of running near-instantly instead of risking a timeout.
+    """
+    existing_by_name = {
+        o.hmj: o for o in JudicialOfficer.query.filter_by(district_key=district_key).all()
+    }
+    count = 0
+    for record in records:
+        hmj = record.get("hmj")
+        if not hmj:
+            continue
+        existing = existing_by_name.get(hmj)
+        if existing:
+            existing.designation = record.get("designation")
+            existing.court_room = record.get("court_room")
+            existing.vc_link = record.get("vc_link")
+            existing.vc_meeting_id = record.get("vc_meeting_id")
+            existing.email_id = record.get("email_id")
+            existing.is_on_leave = bool(record.get("is_on_leave", False))
+        else:
+            new_officer = JudicialOfficer(
+                id=str(uuid.uuid4()),
+                district_key=district_key,
+                hmj=hmj,
+                designation=record.get("designation"),
+                court_room=record.get("court_room"),
+                vc_link=record.get("vc_link"),
+                vc_meeting_id=record.get("vc_meeting_id"),
+                email_id=record.get("email_id"),
+                is_on_leave=bool(record.get("is_on_leave", False)),
+            )
+            db.session.add(new_officer)
+            existing_by_name[hmj] = new_officer  # guards a duplicate hmj within the same JSON batch
+        count += 1
+    db.session.commit()
+    return count
+
+
+def scrape_and_upsert_roster(district_key: str = "delhi_rohini_nw", timeout: int = 15) -> bool:
     target_url = _DISTRICT_URLS.get(district_key)
     if not target_url:
         print(f"Scraper Error: no known roster URL for district_key={district_key!r}")
         return False
 
     try:
-        response = requests.get(target_url, headers=_HEADERS, timeout=15, verify=False)
+        response = requests.get(target_url, headers=_HEADERS, timeout=timeout, verify=False)
         response.raise_for_status()
 
         judges = _parse_roster(response.text, district_key)
@@ -360,11 +418,11 @@ def _match_officer(row, officers) -> "JudicialOfficer | None":
     return None
 
 
-def scrape_vc_links_from_pdf(pdf_source, district_key="delhi_rohini_nw"):
+def scrape_vc_links_from_pdf(pdf_source, district_key="delhi_rohini_nw", timeout: int = 25):
     temp_path = None
     try:
         if pdf_source.startswith("http://") or pdf_source.startswith("https://"):
-            res = requests.get(pdf_source, headers=_HEADERS, verify=False, timeout=25)
+            res = requests.get(pdf_source, headers=_HEADERS, verify=False, timeout=timeout)
             res.raise_for_status()
 
             # Explicitly closed (the `with` block exits) before pdfplumber
@@ -491,14 +549,14 @@ def _parse_leave_table(html: str) -> list[dict]:
     return entries
 
 
-def sync_judges_on_leave(district_key: str = "delhi_rohini_nw") -> bool:
+def sync_judges_on_leave(district_key: str = "delhi_rohini_nw", timeout: int = 15) -> bool:
     target_url = _LEAVE_PORTALS.get(district_key)
     if not target_url:
         print(f"No leave portal configured for {district_key}.")
         return False
 
     try:
-        response = requests.get(target_url, headers=_HEADERS, timeout=15, verify=False)
+        response = requests.get(target_url, headers=_HEADERS, timeout=timeout, verify=False)
         response.raise_for_status()
         entries = _parse_leave_table(response.text)
 

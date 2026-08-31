@@ -551,49 +551,87 @@ def get_supreme_court_roster():
     return jsonify([r.to_dict() for r in records]), 200
 
 
+def _load_district_json(district_key: str) -> list:
+    filename = _DISTRICT_JSON_MAP.get(district_key)
+    if not filename:
+        return []
+    json_path = os.path.join(_JUDGES_DATA_DIR, filename)
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
 @court_bp.route('/api/admin/sync-court-data', methods=['GET'])
 def trigger_court_sync():
     """Manual sync trigger for environments without terminal access (e.g. a
-    free-tier Render deploy with no shell) — runs the same roster/VC/leave
-    sync as `flask sync-district --district all`.
+    free-tier Render deploy with no shell).
+
+    ROOT CAUSE this route was rewritten for: Render logs showed Gunicorn
+    SIGKILLing the worker (urllib3.connection.create_connection hanging)
+    because live HTTP requests to dcourts.gov.in from Render's cloud IPs
+    were hanging past Gunicorn's 30s worker timeout. So by DEFAULT (no
+    ?source= param, or ?source=local) this now does instant local-JSON
+    seeding — zero outbound requests — via
+    services.court_scraper.seed_district_from_json against the same
+    frontend/src/data/*.json files the /api/directory/judges fallback
+    already reads. Live scraping only runs on ?source=live, with a short
+    5s per-request timeout and a fall-back to the local JSON for any
+    district where it fails, so this route can never hang the worker
+    regardless of which mode is requested.
 
     Gated by a shared-secret query param (?token=...) checked against the
     ADMIN_SYNC_TOKEN env var: this is a GET route meant to be opened
     directly in a browser with no session, so without some check it would
-    be a public, unauthenticated endpoint that anyone who finds the URL
-    could use to repeatedly trigger live scraping of government sites and
-    writes to this app's database. Fails closed — if ADMIN_SYNC_TOKEN isn't
-    configured, the route refuses everyone rather than silently allowing
-    all requests through.
+    be a public, unauthenticated endpoint anyone who finds the URL could
+    hit repeatedly. Fails closed — if ADMIN_SYNC_TOKEN isn't configured,
+    the route refuses everyone rather than silently allowing all requests.
     """
     expected_token = os.environ.get('ADMIN_SYNC_TOKEN')
     if not expected_token or request.args.get('token') != expected_token:
         return jsonify({'error': 'Unauthorized'}), 403
 
     from database import db
-    from services.court_scraper import (
-        scrape_and_upsert_roster,
-        scrape_vc_links_from_pdf,
-        sync_judges_on_leave,
-        DISTRICT_PDF_URLS,
-    )
+    db.create_all()
+
+    from services.court_scraper import seed_district_from_json
     from services.supreme_court_seeder import seed_supreme_court_roster
 
-    results = {}
-    for d_key in ['delhi_rohini', 'delhi_rohini_nw']:
-        r_ok = scrape_and_upsert_roster(d_key)
-        v_ok = scrape_vc_links_from_pdf(DISTRICT_PDF_URLS[d_key], d_key)
-        l_ok = sync_judges_on_leave(d_key)
-        results[d_key] = {'roster': r_ok, 'vc_links': v_ok, 'leave': l_ok}
+    source = request.args.get('source', 'local')
+    district_keys = ['delhi_rohini', 'delhi_rohini_nw']
+    seeded = {}
 
-    try:
-        sc_count = seed_supreme_court_roster(db, SupremeCourtRoster)
-        results['supreme_court'] = {'roster': True, 'count': sc_count}
-    except Exception as e:
-        db.session.rollback()
-        results['supreme_court'] = {'roster': False, 'error': str(e)}
+    if source == 'live':
+        from services.court_scraper import (
+            scrape_and_upsert_roster,
+            scrape_vc_links_from_pdf,
+            sync_judges_on_leave,
+            DISTRICT_PDF_URLS,
+        )
+        for d_key in district_keys:
+            try:
+                # Tight per-request timeouts (vs. the CLI's generous 15/25s)
+                # so a hanging dcourts.gov.in connection surfaces as a quick
+                # Timeout exception here rather than the worker just sitting
+                # there — the whole reason this route no longer scrapes live
+                # by default.
+                if not scrape_and_upsert_roster(d_key, timeout=5):
+                    raise RuntimeError('live roster scrape returned failure')
+                scrape_vc_links_from_pdf(DISTRICT_PDF_URLS[d_key], d_key, timeout=5)
+                sync_judges_on_leave(d_key, timeout=5)
+                seeded[d_key] = JudicialOfficer.query.filter_by(district_key=d_key).count()
+            except Exception as e:
+                db.session.rollback()
+                print(f"Live sync failed for {d_key} ({e}); falling back to local JSON.")
+                seeded[d_key] = seed_district_from_json(d_key, _load_district_json(d_key))
+    else:
+        for d_key in district_keys:
+            seeded[d_key] = seed_district_from_json(d_key, _load_district_json(d_key))
 
-    return jsonify({'status': 'complete', 'results': results}), 200
+    seeded['supreme_court'] = seed_supreme_court_roster(db, SupremeCourtRoster)
+
+    return jsonify({'status': 'complete', 'seeded': seeded}), 200
 
 
 @court_bp.route('/api/courts/judges', methods=['GET', 'OPTIONS'])
