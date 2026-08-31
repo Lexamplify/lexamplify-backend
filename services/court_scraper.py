@@ -5,23 +5,28 @@ district's official court site. No fabricated data: a cell that fails to
 parse is left as None (and, on an existing record, left UNCHANGED — see
 _upsert_judge) rather than guessed at or blanked out.
 
-── Rohini North-West District (delhi_rohini_nw) ──────────────────────────
+── Rohini North / North-West Districts (delhi_rohini / delhi_rohini_nw) ──
 The directive's originally-given URL (delhidistrictcourts.nic.in/lockdown-
 filing) is NOT a judges directory — live inspection showed it's a leftover
 COVID-era "admit card" print page, unrelated to any roster. The correct
-source, per the official site's own "List of Judges" nav item, is the
-modern eCourts-platform subdomain:
-    https://rohini.dcourts.gov.in/list-of-judges/
-Confirmed live: 13 `table.data-table-1` blocks (one per designation
+sources, per each site's own "List of Judges" nav item, are TWO SEPARATE
+eCourts-platform portals — not one page with two sections, as later
+re-verified when North District support was added:
+    delhi_rohini_nw → https://rohini.dcourts.gov.in/list-of-judges/
+    delhi_rohini    → https://northdelhi.dcourts.gov.in/list-of-judges/
+Confirmed live on both: `table.data-table-1` blocks (one per designation
 category — "District and Sessions Judge", "District Judge Commercial
 Court", etc.), each with a uniform 5-column row:
     td[0] profile photo (unused) · td[1] name (as an <a> link) ·
     td[2] designation · td[3] room number · td[4] location
-42 rows observed, all "North West District" — this subdomain serves only
-that one district, matching delhi_rohini_nw exactly. No rowspans/colspans
-were found across any table (verified programmatically), so the fixed
-5-cell-per-row assumption below is safe for this source as it stands today
-— re-verify if the site's markup changes.
+rohini.dcourts.gov.in: 42 rows, 100% "North West District". northdelhi.
+dcourts.gov.in: same structure, 100% "North District". Each portal serves
+only its own district — _parse_roster's location check (td[4] against
+_EXPECTED_LOCATION) is a defensive backstop for if that ever stops being
+true, not the primary isolation mechanism (the URL choice is). No
+rowspans/colspans were found across any table on either site (verified
+programmatically), so the fixed 5-cell-per-row assumption below is safe as
+things stand today — re-verify if either site's markup changes.
 
 VC links/meeting IDs are NOT available in this table — see the PDF scraper
 below for those.
@@ -79,18 +84,46 @@ _HEADERS = {
 }
 
 _DISTRICT_URLS = {
+    # Confirmed live: these are two ENTIRELY SEPARATE eCourts portals, not
+    # one page with two sections. rohini.dcourts.gov.in/list-of-judges/ was
+    # re-checked for this task and still returns 42 rows, 100% labeled
+    # "North West District" — zero "North District" rows exist there.
+    # North District has its own portal, northdelhi.dcourts.gov.in, with the
+    # identical page/table structure but exclusively "North District" rows.
+    # So per-district isolation is achieved by URL selection, not by
+    # filtering sections within a shared page — _EXPECTED_LOCATION below is
+    # still enforced per row as a defensive check in case that ever changes.
     "delhi_rohini_nw": "https://rohini.dcourts.gov.in/list-of-judges/",
+    "delhi_rohini": "https://northdelhi.dcourts.gov.in/list-of-judges/",
+}
+
+_EXPECTED_LOCATION = {
+    "delhi_rohini_nw": "north west district",
+    "delhi_rohini": "north district",
 }
 
 
-def _parse_roster(html: str) -> list[dict]:
+def _parse_roster(html: str, district_key: str) -> list[dict]:
+    expected_location = _EXPECTED_LOCATION.get(district_key)
     soup = BeautifulSoup(html, "html.parser")
     judges = []
+    skipped_wrong_district = 0
     for table in soup.select("table.data-table-1"):
         for tr in table.select("tbody tr"):
             tds = tr.find_all("td")
             if len(tds) < 4:
                 continue  # not a judge row we recognize — skip, don't guess
+            # Defensive district isolation: the 5th column ("Location") names
+            # the district this row belongs to. Both portals currently only
+            # ever contain their own district's rows, but if that ever
+            # changes (or a district_key is pointed at the wrong URL), this
+            # stops a cross-district row from being silently upserted rather
+            # than trusting table position alone.
+            if expected_location and len(tds) >= 5:
+                location = tds[4].get_text(strip=True).lower()
+                if location and location != expected_location:
+                    skipped_wrong_district += 1
+                    continue
             name_cell = tds[1]
             name_link = name_cell.find("a")
             name = (name_link or name_cell).get_text(strip=True)
@@ -103,6 +136,8 @@ def _parse_roster(html: str) -> list[dict]:
                 "designation": designation or None,
                 "court_room": court_room or None,
             })
+    if skipped_wrong_district:
+        print(f"Skipped {skipped_wrong_district} row(s) labeled for a different district than {district_key!r}.")
     return judges
 
 
@@ -144,7 +179,7 @@ def scrape_and_upsert_roster(district_key: str = "delhi_rohini_nw") -> bool:
         response = requests.get(target_url, headers=_HEADERS, timeout=15, verify=False)
         response.raise_for_status()
 
-        judges = _parse_roster(response.text)
+        judges = _parse_roster(response.text, district_key)
         if not judges:
             # Zero rows almost always means the site's markup changed under
             # us, not that the roster is genuinely empty — treat as a

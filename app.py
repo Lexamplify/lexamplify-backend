@@ -3018,34 +3018,43 @@ def create_app():
         else:
             print("PDF scraping failed. Check logs above.")
 
+    # Each district has its OWN circular PDF — confirmed live by fetching
+    # each district's document-category/vc-links/ page directly, rather than
+    # assuming (as the original directive did) that one PDF covers both.
+    # They live on different S3 buckets entirely, not just different paths.
+    DISTRICT_PDF_DEFAULTS = {
+        "delhi_rohini_nw": "https://cdnbbsr.s3waas.gov.in/s3ec0277ee3bc58ce560b86c2b59363281/uploads/2026/08/2026082227.pdf",
+        "delhi_rohini": "https://cdnbbsr.s3waas.gov.in/s3ec0232b3ee0272954b956a7d1f86f76a/uploads/2026/08/2026080849.pdf",
+    }
+
     @app.cli.command("sync-district")
-    @click.option("--district", default="delhi_rohini_nw", help="District key identifier")
-    @click.option(
-        "--pdf-url",
-        # The URL given in the spec (rohini.dcourts.gov.in/uploads/...) 404s —
-        # confirmed live. The circular is actually served from the site's S3
-        # CDN, at the URL already verified working in services/court_scraper.py.
-        default="https://cdnbbsr.s3waas.gov.in/s3ec0277ee3bc58ce560b86c2b59363281/uploads/2026/08/2026082227.pdf",
-        help="Direct URL or path to active circular PDF",
-    )
+    @click.option("--district", default="all", type=click.Choice(["delhi_rohini", "delhi_rohini_nw", "all"]), help="Target district key or 'all'")
+    @click.option("--pdf-url", default=None, help="Override default PDF circular URL (applies to every district run when --district=all)")
     def sync_district_command(district, pdf_url):
-        """Orchestrates full HTML roster sync followed by PDF VC & Email enrichment."""
+        """Synchronizes judicial rosters and enriches VC links/emails for specified district(s)."""
         from services.court_scraper import scrape_and_upsert_roster, scrape_vc_links_from_pdf
 
-        click.echo(f"=== [1/2] Syncing HTML Roster for {district} ===")
-        html_success = scrape_and_upsert_roster(district)
+        target_districts = ["delhi_rohini", "delhi_rohini_nw"] if district == "all" else [district]
 
-        if not html_success:
-            click.secho("HTML roster scrape failed. Aborting VC enrichment.", fg="red")
-            return
+        for d_key in target_districts:
+            click.echo(f"\n==========================================")
+            click.echo(f"  Starting Sync for District: {d_key}")
+            click.echo(f"==========================================")
 
-        click.echo(f"=== [2/2] Enriching VC Links & Emails from PDF ===")
-        pdf_success = scrape_vc_links_from_pdf(pdf_url, district)
+            html_ok = scrape_and_upsert_roster(d_key)
+            if not html_ok:
+                click.secho(f"HTML scraping failed for {d_key}. Skipping VC enrichment.", fg="red")
+                continue
 
-        if html_success and pdf_success:
-            click.secho(f"District '{district}' successfully synchronized end-to-end.", fg="green")
-        else:
-            click.secho("Partial sync completed with warnings. Check logs.", fg="yellow")
+            target_pdf = pdf_url or DISTRICT_PDF_DEFAULTS.get(d_key)
+            if target_pdf:
+                pdf_ok = scrape_vc_links_from_pdf(target_pdf, d_key)
+                if pdf_ok:
+                    click.secho(f"District '{d_key}' fully synchronized.", fg="green")
+                else:
+                    click.secho(f"VC enrichment had warnings for '{d_key}'.", fg="yellow")
+            else:
+                click.secho(f"No PDF URL configured for {d_key}. HTML roster updated only.", fg="yellow")
 
     return app
 
