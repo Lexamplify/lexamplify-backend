@@ -511,7 +511,42 @@ def create_app():
             response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
 
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///database.db')
+    # Local dev's .env sets DATABASE_URL=sqlite:///database.db explicitly (not
+    # unset), so "is DATABASE_URL truthy" can't be the signal for "apply
+    # Postgres-only engine options" — connect_args like sslmode/connect_timeout
+    # are psycopg2 kwargs that SQLite's DBAPI doesn't accept and would crash
+    # on the very first connection. Branch on the URL's actual scheme instead.
+    _raw_db_url = os.getenv('DATABASE_URL', 'sqlite:///database.db')
+    if _raw_db_url.startswith('postgres://') or _raw_db_url.startswith('postgresql://'):
+        # Neon (and Heroku-style providers) hand out postgres:// — normalize
+        # both that and plain postgresql:// to the psycopg2 dialect
+        # Flask-SQLAlchemy actually needs.
+        _db_url = re.sub(r'^postgres(?:ql)?://', 'postgresql+psycopg2://', _raw_db_url, count=1)
+        # Neon appends channel_binding=require, which psycopg2's URL parser
+        # doesn't understand and raises on — strip it, leave sslmode etc. alone.
+        _db_url = re.sub(r'[?&]channel_binding=[^&]+', '', _db_url)
+        if '?' not in _db_url and '&' in _db_url:
+            _db_url = _db_url.replace('&', '?', 1)
+
+        app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_pre_ping': True,   # Neon's serverless Postgres can drop idle
+                                     # connections; a dead one is detected and
+                                     # replaced instead of surfacing as an error.
+            'pool_recycle': 300,     # recycle before PgBouncer's own idle timeout
+            'pool_size': 10,
+            'max_overflow': 20,
+            'connect_args': {
+                'connect_timeout': 10,
+                'sslmode': 'require',
+            },
+        }
+    else:
+        # SQLite (the local dev default, or DATABASE_URL explicitly set to
+        # one) — none of the Postgres engine options above are meaningful
+        # here, so SQLALCHEMY_ENGINE_OPTIONS is simply left unset.
+        app.config['SQLALCHEMY_DATABASE_URI'] = _raw_db_url
+
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     # ── JWT secret: no static fallback, ever ─────────────────────────────
@@ -2871,6 +2906,8 @@ def create_app():
         from models.document import Document
         from models.court_models import JudicialOfficer, SupremeCourtRoster
         sqlalchemy_db.create_all()
+        _db_kind = 'Neon PostgreSQL' if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql+psycopg2://') else 'SQLite'
+        app.logger.info(f"Database schema verified and initialized on {_db_kind}.")
 
     # --- START DATABASE BUILDER ---
     import sqlite3

@@ -1,6 +1,7 @@
 Flask
 Flask-JWT-Extended
 Flask-SQLAlchemy
+psycopg2-binary
 python-dotenv==1.2.1
 groq
 tavily-python
