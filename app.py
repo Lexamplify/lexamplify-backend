@@ -296,6 +296,14 @@ PROD_ORIGINS = {
     'https://test.lexamplify.com',
     'https://lexamplify.com',
 }
+# Firebase Hosting preview channels get their own subdomain per deploy
+# (e.g. lexamplify-4--pr123-abc12.web.app), which PROD_ORIGINS' exact-match
+# set can't cover without listing every past/future channel by hand.
+# Anchored start-to-end, like LOCAL_DEV_ORIGIN_RE above, so a lookalike host
+# such as "https://evilweb.app" or "https://x.web.app.evil.com" can't slip
+# through — the subdomain must be followed by a literal '.' immediately
+# before 'web.app'/'firebaseapp.com', and the match must end there.
+FIREBASE_HOSTING_ORIGIN_RE = re.compile(r"^https://[a-zA-Z0-9][a-zA-Z0-9-]*\.(web\.app|firebaseapp\.com)$")
 
 # Strict allow-list for the document-retrieval route's case_id path segment —
 # alphanumeric plus underscore/hyphen only, anchored start-to-end, so a
@@ -488,7 +496,11 @@ def create_app():
     @app.after_request
     def add_cors_headers(response):
         origin = request.headers.get('Origin')
-        if origin and (origin in PROD_ORIGINS or LOCAL_DEV_ORIGIN_RE.match(origin)):
+        if origin and (
+            origin in PROD_ORIGINS
+            or LOCAL_DEV_ORIGIN_RE.match(origin)
+            or FIREBASE_HOSTING_ORIGIN_RE.match(origin)
+        ):
             # Echo back the validated origin rather than hardcoding one — never
             # assign '*', since Allow-Credentials requires a specific origin.
             # Use direct assignment so we never produce duplicate CORS headers
