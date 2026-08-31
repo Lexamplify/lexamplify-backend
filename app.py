@@ -2856,6 +2856,7 @@ def create_app():
         from models.user import User
         from models.case import Case
         from models.document import Document
+        from models.court_models import JudicialOfficer
         sqlalchemy_db.create_all()
 
     # --- START DATABASE BUILDER ---
@@ -2991,6 +2992,17 @@ def create_app():
         if os.getenv('FLASK_ENV') == 'production':
             return jsonify({"error": "An unexpected server error occurred."}), 500
         return jsonify({"error": f"Server error: {e}"}), 500
+
+    @app.cli.command("scrape-roster")
+    def scrape_roster_command():
+        """Scrapes official court portals and updates the JudicialOfficer database."""
+        from services.court_scraper import scrape_and_upsert_roster
+        print("Initiating official portal scrape for Rohini North-West...")
+        success = scrape_and_upsert_roster('delhi_rohini_nw')
+        if success:
+            print("Database successfully synchronized with official records.")
+        else:
+            print("Scraping failed. Check logs.")
 
     return app
 

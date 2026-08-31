@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import judgesData from '../data/delhi_rohini_north_west_judges.json';
 import bailData from '../data/delhi_rohini_north_west_bail_roster.json';
 import leaveData from '../data/delhi_rohini_north_west_leave.json';
+import { useJudgesDirectory } from '../hooks/useJudgesDirectory';
 import styles from './RohiniNorthWestDirectory.module.css';
 
 export default function RohiniNorthWestDirectory() {
+  const { judges: judgesData, isLoading, error, refetch } = useJudgesDirectory('delhi_rohini_nw');
   const [activeFolder, setActiveFolder] = useState('judges');
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedId, setCopiedId] = useState(null);
@@ -25,7 +26,7 @@ export default function RohiniNorthWestDirectory() {
       const rawMeeting = j.vc_meeting_id ? j.vc_meeting_id.replace(/\s+/g, '').toLowerCase() : '';
       return matchName || matchRoom || matchDesig || rawMeeting.includes(q);
     });
-  }, [searchTerm]);
+  }, [searchTerm, judgesData]);
 
   const filteredBail = useMemo(() => {
     const q = searchTerm.toLowerCase();
@@ -58,7 +59,7 @@ export default function RohiniNorthWestDirectory() {
           className={`${styles.folderTab} ${activeFolder === 'judges' ? styles.activeFolderTab : ''}`}
           onClick={() => { setActiveFolder('judges'); setSearchTerm(''); }}
         >
-          👨‍⚖️ Judges List ({judgesData.length})
+          👨‍⚖️ Judges List ({isLoading ? '...' : judgesData.length})
         </button>
         <button
           className={`${styles.folderTab} ${activeFolder === 'bail' ? styles.activeFolderTab : ''}`}
@@ -102,7 +103,22 @@ export default function RohiniNorthWestDirectory() {
 
       {activeFolder === 'judges' && (
         <div className={styles.grid}>
-          {filteredJudges.map((j) => (
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={`skel-${i}`} className={styles.skeletonCard}>
+                <div className={`${styles.skeletonLine} ${styles.skeletonLineShort}`} />
+                <div className={`${styles.skeletonLine} ${styles.skeletonLineFull}`} />
+                <div className={`${styles.skeletonLine} ${styles.skeletonLineFull}`} />
+                <div className={`${styles.skeletonLine} ${styles.skeletonLineShort}`} />
+              </div>
+            ))
+          ) : error && judgesData.length === 0 ? (
+            <div className={styles.errorBanner}>
+              Couldn't load the judges list ({error}).{' '}
+              <button className={styles.miniCopy} onClick={refetch}>Retry</button>
+            </div>
+          ) : (
+            filteredJudges.map((j) => (
             <div key={j.id} className={styles.card}>
               <div className={styles.cardTop}>
                 <span className={styles.courtBadge}>Court Room {j.court_room}</span>
@@ -129,7 +145,8 @@ export default function RohiniNorthWestDirectory() {
                 </button>
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
       )}
 

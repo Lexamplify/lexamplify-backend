@@ -269,3 +269,49 @@
   border: 1px solid color-mix(in srgb, var(--text-primary) 15%, transparent);
   border-radius: 8px;
 }
+
+/* Skeleton Loader for Dynamic Fetching */
+.skeletonCard {
+  /* --bg-surface/--border-default aren't real tokens in this app's theme
+     (see .searchInput/.card above) — same real-token fallback chain. */
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 15%, transparent));
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  animation: pulseSkeleton 1.5s ease-in-out infinite;
+}
+
+.skeletonLine {
+  height: 12px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  margin-bottom: 8px;
+}
+
+.skeletonLineShort {
+  width: 45%;
+}
+
+.skeletonLineFull {
+  width: 100%;
+}
+
+@keyframes pulseSkeleton {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.25; }
+}
+
+.errorBanner {
+  grid-column: 1 / -1;
+  padding: 16px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #DC2626 10%, transparent);
+  border: 1px solid color-mix(in srgb, #DC2626 30%, transparent);
+  color: #DC2626;
+  font-size: 0.85rem;
+  text-align: center;
+}

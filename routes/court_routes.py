@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import email.utils
+import json
 import os
 import re
 import sqlite3
@@ -12,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 from flask import Blueprint, render_template, jsonify, request, make_response
 
+from models.court_models import JudicialOfficer
 from utils.judicial_scraper import get_all_judges
 
 court_bp = Blueprint('court', __name__)
@@ -498,6 +500,47 @@ def get_high_courts():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     return jsonify(_HIGH_COURTS)
+
+
+# ── District judges directory: DB-backed with a static-JSON fallback ──────────
+# The frontend's per-district directories (Delhi HC, Rohini North, Rohini
+# North-West, ...) started as static JSON in frontend/src/data/. This lets a
+# district's roster move into JudicialOfficer rows (e.g. once an admin panel
+# writes updates) without breaking districts that haven't been migrated yet.
+_JUDGES_DATA_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', 'frontend', 'src', 'data')
+)
+
+_DISTRICT_JSON_MAP = {
+    'delhi_hc':        'delhi_judges.json',
+    'delhi_rohini':    'delhi_rohini_north_judges.json',
+    'delhi_rohini_nw': 'delhi_rohini_north_west_judges.json',
+}
+
+
+@court_bp.route('/api/directory/judges', methods=['GET', 'OPTIONS'])
+def get_directory_judges():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    district = request.args.get('district', '').strip()
+    if not district:
+        return jsonify({'error': 'district query parameter is required'}), 400
+
+    records = JudicialOfficer.query.filter_by(district_key=district).all()
+    if records:
+        return jsonify([judge.to_dict() for judge in records]), 200
+
+    filename = _DISTRICT_JSON_MAP.get(district)
+    if not filename:
+        return jsonify([]), 200
+
+    json_path = os.path.join(_JUDGES_DATA_DIR, filename)
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            return jsonify(json.load(f)), 200
+    except (FileNotFoundError, json.JSONDecodeError):
+        return jsonify([]), 200
 
 
 @court_bp.route('/api/courts/judges', methods=['GET', 'OPTIONS'])
