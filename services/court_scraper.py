@@ -84,6 +84,19 @@ _HEADERS = {
     )
 }
 
+# Each district has its OWN circular PDF — confirmed live by fetching each
+# district's document-category/vc-links/ page directly, rather than assuming
+# one PDF covers both. They live on different S3 buckets entirely, not just
+# different paths. Exported (not module-private) so app.py's CLI command and
+# the /api/admin/sync-court-data route both read the one verified copy
+# instead of each hardcoding their own — a later task handed both a
+# DIFFERENT, 404ing URL for each district, which duplicated literals would
+# have silently reintroduced.
+DISTRICT_PDF_URLS = {
+    "delhi_rohini_nw": "https://cdnbbsr.s3waas.gov.in/s3ec0277ee3bc58ce560b86c2b59363281/uploads/2026/08/2026082227.pdf",
+    "delhi_rohini": "https://cdnbbsr.s3waas.gov.in/s3ec0232b3ee0272954b956a7d1f86f76a/uploads/2026/08/2026080849.pdf",
+}
+
 _DISTRICT_URLS = {
     # Confirmed live: these are two ENTIRELY SEPARATE eCourts portals, not
     # one page with two sections. rohini.dcourts.gov.in/list-of-judges/ was

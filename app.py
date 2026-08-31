@@ -3030,21 +3030,17 @@ def create_app():
         else:
             print("PDF scraping failed. Check logs above.")
 
-    # Each district has its OWN circular PDF — confirmed live by fetching
-    # each district's document-category/vc-links/ page directly, rather than
-    # assuming (as the original directive did) that one PDF covers both.
-    # They live on different S3 buckets entirely, not just different paths.
-    DISTRICT_PDF_DEFAULTS = {
-        "delhi_rohini_nw": "https://cdnbbsr.s3waas.gov.in/s3ec0277ee3bc58ce560b86c2b59363281/uploads/2026/08/2026082227.pdf",
-        "delhi_rohini": "https://cdnbbsr.s3waas.gov.in/s3ec0232b3ee0272954b956a7d1f86f76a/uploads/2026/08/2026080849.pdf",
-    }
-
     @app.cli.command("sync-district")
     @click.option("--district", default="all", type=click.Choice(["delhi_rohini", "delhi_rohini_nw", "all"]), help="Target district key or 'all'")
     @click.option("--pdf-url", default=None, help="Override default PDF circular URL (applies to every district run when --district=all)")
     def sync_district_command(district, pdf_url):
         """Synchronizes judicial rosters and enriches VC links/emails for specified district(s)."""
-        from services.court_scraper import scrape_and_upsert_roster, scrape_vc_links_from_pdf, sync_judges_on_leave
+        from services.court_scraper import (
+            scrape_and_upsert_roster,
+            scrape_vc_links_from_pdf,
+            sync_judges_on_leave,
+            DISTRICT_PDF_URLS,
+        )
 
         target_districts = ["delhi_rohini", "delhi_rohini_nw"] if district == "all" else [district]
 
@@ -3058,7 +3054,7 @@ def create_app():
                 click.secho(f"HTML scraping failed for {d_key}. Skipping VC enrichment.", fg="red")
                 continue
 
-            target_pdf = pdf_url or DISTRICT_PDF_DEFAULTS.get(d_key)
+            target_pdf = pdf_url or DISTRICT_PDF_URLS.get(d_key)
             if target_pdf:
                 pdf_ok = scrape_vc_links_from_pdf(target_pdf, d_key)
                 if pdf_ok:

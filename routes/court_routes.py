@@ -543,6 +543,42 @@ def get_directory_judges():
         return jsonify([]), 200
 
 
+@court_bp.route('/api/admin/sync-court-data', methods=['GET'])
+def trigger_court_sync():
+    """Manual sync trigger for environments without terminal access (e.g. a
+    free-tier Render deploy with no shell) — runs the same roster/VC/leave
+    sync as `flask sync-district --district all`.
+
+    Gated by a shared-secret query param (?token=...) checked against the
+    ADMIN_SYNC_TOKEN env var: this is a GET route meant to be opened
+    directly in a browser with no session, so without some check it would
+    be a public, unauthenticated endpoint that anyone who finds the URL
+    could use to repeatedly trigger live scraping of government sites and
+    writes to this app's database. Fails closed — if ADMIN_SYNC_TOKEN isn't
+    configured, the route refuses everyone rather than silently allowing
+    all requests through.
+    """
+    expected_token = os.environ.get('ADMIN_SYNC_TOKEN')
+    if not expected_token or request.args.get('token') != expected_token:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from services.court_scraper import (
+        scrape_and_upsert_roster,
+        scrape_vc_links_from_pdf,
+        sync_judges_on_leave,
+        DISTRICT_PDF_URLS,
+    )
+
+    results = {}
+    for d_key in ['delhi_rohini', 'delhi_rohini_nw']:
+        r_ok = scrape_and_upsert_roster(d_key)
+        v_ok = scrape_vc_links_from_pdf(DISTRICT_PDF_URLS[d_key], d_key)
+        l_ok = sync_judges_on_leave(d_key)
+        results[d_key] = {'roster': r_ok, 'vc_links': v_ok, 'leave': l_ok}
+
+    return jsonify({'status': 'complete', 'results': results}), 200
+
+
 @court_bp.route('/api/courts/judges', methods=['GET', 'OPTIONS'])
 def get_judges_directory():
     """Live-scraped Supreme Court + Delhi High Court sitting judges — see
