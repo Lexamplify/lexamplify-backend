@@ -1,7 +1,7 @@
 .container {
   padding: 24px;
-  background-color: var(--bg-primary, #F7F8FC);
-  color: var(--text-primary, #172033);
+  background-color: var(--bg-primary, transparent);
+  color: var(--text-primary, inherit);
   min-height: 100%;
 }
 
@@ -25,9 +25,9 @@
 }
 
 .complexBadge {
-  background: var(--accent-light, #EFF6FF);
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
   color: var(--accent-primary, #2563EB);
-  border: 1px solid var(--border-subtle, #BFDBFE);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
   font-size: 0.75rem;
   font-weight: 600;
   padding: 2px 8px;
@@ -37,20 +37,20 @@
 .title {
   font-size: 1.3rem;
   font-weight: 700;
-  color: var(--text-primary, #172033);
+  color: var(--text-primary, inherit);
   margin: 0 0 4px 0;
 }
 
 .subtitle {
   font-size: 0.85rem;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   margin: 0;
 }
 
 .folderNav {
   display: flex;
   gap: 8px;
-  border-bottom: 1px solid var(--border-subtle, #E2E6EF);
+  border-bottom: 1px solid var(--border-subtle, color-mix(in srgb, var(--text-primary) 15%, transparent));
   padding-bottom: 12px;
   margin-bottom: 20px;
   flex-wrap: wrap;
@@ -59,9 +59,9 @@
 .folderTab {
   padding: 8px 16px;
   border-radius: 8px;
-  border: 1px solid var(--border-default, #E2E6EF);
-  background: var(--bg-surface, #FFFFFF);
-  color: var(--text-secondary, #667085);
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 20%, transparent));
+  background: var(--bg-surface, transparent);
+  color: var(--text-secondary, var(--text-muted, inherit));
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -69,7 +69,7 @@
 }
 
 .folderTab:hover {
-  background: var(--bg-hover, #F1F5F9);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .activeFolderTab {
@@ -90,16 +90,16 @@
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  stroke: var(--text-secondary, #667085);
+  stroke: var(--text-secondary, var(--text-muted, gray));
 }
 
 .searchInput {
   width: 100%;
   padding: 10px 36px 10px 38px;
   border-radius: 8px;
-  border: 1px solid var(--border-default, #E2E6EF);
-  background: var(--bg-surface, #FFFFFF);
-  color: var(--text-primary, #172033);
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 20%, transparent));
+  background: var(--bg-surface, var(--bg-card, transparent));
+  color: var(--text-primary, inherit);
   font-size: 0.9rem;
   outline: none;
   transition: border-color 0.2s ease;
@@ -107,7 +107,7 @@
 
 .searchInput:focus {
   border-color: var(--accent-primary, #2563EB);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 20%, transparent);
 }
 
 .clearBtn {
@@ -117,7 +117,7 @@
   transform: translateY(-50%);
   border: none;
   background: transparent;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   cursor: pointer;
 }
 
@@ -128,8 +128,8 @@
 }
 
 .card {
-  background: var(--bg-surface, #FFFFFF);
-  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 15%, transparent));
   border-radius: 12px;
   padding: 16px;
   display: flex;
@@ -147,27 +147,27 @@
 .courtBadge {
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--accent-primary, #2563EB);
-  background: var(--accent-light, #EFF6FF);
+  color: var(--accent-primary, #3b82f6);
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
   padding: 2px 8px;
   border-radius: 4px;
 }
 
 .desigTag {
   font-size: 0.75rem;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   font-weight: 500;
 }
 
 .judgeName {
   font-size: 0.95rem;
   font-weight: 700;
-  color: var(--text-primary, #172033);
+  color: var(--text-primary, inherit);
   margin: 0 0 10px 0;
 }
 
 .metaBox {
-  background: var(--bg-subtle, #F8FAFC);
+  background: var(--bg-subtle, color-mix(in srgb, var(--text-primary) 5%, transparent));
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 0.8rem;
@@ -184,23 +184,25 @@
 }
 
 .metaLabel {
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   font-weight: 600;
   min-width: 90px;
 }
 
 .metaVal code {
-  background: var(--bg-surface, #FFFFFF);
-  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid color-mix(in srgb, var(--text-primary) 15%, transparent);
   padding: 1px 4px;
   border-radius: 4px;
   font-weight: 600;
+  color: var(--text-primary, inherit);
 }
 
 .miniCopy {
   margin-left: auto;
-  border: 1px solid var(--border-default, #E2E6EF);
-  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
+  background: var(--bg-surface, transparent);
+  color: var(--text-primary, inherit);
   border-radius: 4px;
   padding: 2px 6px;
   font-size: 0.7rem;
@@ -208,7 +210,7 @@
 }
 
 .emailLink {
-  color: var(--accent-primary, #2563EB);
+  color: var(--accent-primary, #3b82f6);
   text-decoration: none;
   font-size: 0.75rem;
   overflow: hidden;
@@ -234,8 +236,9 @@
 }
 
 .copyBtn {
-  border: 1px solid var(--border-default, #E2E6EF);
-  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
+  background: var(--bg-surface, transparent);
+  color: var(--text-primary, inherit);
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 0.8rem;
@@ -251,8 +254,8 @@
 }
 
 .bailCard {
-  background: var(--bg-surface, #FFFFFF);
-  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 15%, transparent));
   border-radius: 12px;
   padding: 20px;
 }
@@ -260,7 +263,7 @@
 .bailHeader {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-subtle, #E2E6EF);
+  border-bottom: 1px solid var(--border-subtle, color-mix(in srgb, var(--text-primary) 15%, transparent));
   padding-bottom: 16px;
   margin-bottom: 16px;
   flex-wrap: wrap;
@@ -270,6 +273,7 @@
 .bailJudge {
   font-size: 1.05rem;
   font-weight: 700;
+  color: var(--text-primary, inherit);
   margin: 6px 0 2px 0;
 }
 
@@ -280,7 +284,7 @@
 .psLabel {
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   margin-bottom: 6px;
 }
 
@@ -291,13 +295,13 @@
 }
 
 .psBadge {
-  background: var(--accent-light, #EFF6FF);
-  color: var(--accent-primary, #2563EB);
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  color: var(--accent-primary, #3b82f6);
   font-size: 0.75rem;
   font-weight: 600;
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid var(--border-subtle, #BFDBFE);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
 }
 
 .linkJudgesContainer {
@@ -307,7 +311,7 @@
 }
 
 .linkBox {
-  background: var(--bg-subtle, #F8FAFC);
+  background: var(--bg-subtle, color-mix(in srgb, var(--text-primary) 5%, transparent));
   padding: 12px;
   border-radius: 8px;
 }
@@ -315,7 +319,7 @@
 .linkTitle {
   display: block;
   font-size: 0.75rem;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -323,7 +327,7 @@
 .linkName {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-primary, #172033);
+  color: var(--text-primary, inherit);
 }
 
 /* Leave Tracker Styles */
@@ -334,8 +338,8 @@
 }
 
 .leaveCard {
-  background: var(--bg-surface, #FFFFFF);
-  border: 1px solid #FECACA;
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid color-mix(in srgb, #DC2626 40%, transparent);
   border-radius: 12px;
   padding: 18px;
 }
@@ -347,7 +351,7 @@
 }
 
 .leaveStatusPill {
-  background: #FEE2E2;
+  background: color-mix(in srgb, #DC2626 15%, transparent);
   color: #DC2626;
   font-size: 0.75rem;
   font-weight: 700;
@@ -358,12 +362,13 @@
 .leaveJudgeName {
   font-size: 1rem;
   font-weight: 700;
+  color: var(--text-primary, inherit);
   margin: 0 0 2px 0;
 }
 
 .transferBox {
   margin-top: 14px;
-  background: var(--bg-subtle, #F8FAFC);
+  background: var(--bg-subtle, color-mix(in srgb, var(--text-primary) 5%, transparent));
   padding: 12px;
   border-radius: 8px;
   border-left: 3px solid var(--accent-primary, #2563EB);
@@ -379,21 +384,21 @@
 .assignedLinkName {
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--text-primary, #172033);
+  color: var(--text-primary, inherit);
   margin-bottom: 6px;
 }
 
 .leaveInstructions {
   font-size: 0.75rem;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   margin: 0;
   line-height: 1.4;
 }
 
 /* PDF Viewer Styles */
 .pdfContainer {
-  background: var(--bg-surface, #FFFFFF);
-  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 15%, transparent));
   border-radius: 12px;
   padding: 16px;
 }
@@ -410,12 +415,13 @@
 .pdfTitle {
   font-size: 1rem;
   font-weight: 700;
+  color: var(--text-primary, inherit);
   margin: 0 0 2px 0;
 }
 
 .pdfSubtitle {
   font-size: 0.8rem;
-  color: var(--text-secondary, #667085);
+  color: var(--text-secondary, var(--text-muted, gray));
   margin: 0;
 }
 
@@ -432,6 +438,50 @@
 .pdfIframe {
   width: 100%;
   height: 700px;
-  border: 1px solid var(--border-subtle, #E2E6EF);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 15%, transparent);
   border-radius: 8px;
+}
+
+/* Skeleton Loader for Dynamic Fetching */
+.skeletonCard {
+  background: var(--bg-surface, var(--bg-card, transparent));
+  border: 1px solid var(--border-default, color-mix(in srgb, var(--text-primary) 15%, transparent));
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  animation: pulseSkeleton 1.5s ease-in-out infinite;
+}
+
+.skeletonLine {
+  height: 12px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  margin-bottom: 8px;
+}
+
+.skeletonLineShort {
+  width: 45%;
+}
+
+.skeletonLineFull {
+  width: 100%;
+}
+
+@keyframes pulseSkeleton {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.25; }
+}
+
+.errorBanner {
+  grid-column: 1 / -1;
+  padding: 16px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #DC2626 10%, transparent);
+  border: 1px solid color-mix(in srgb, #DC2626 30%, transparent);
+  color: #DC2626;
+  font-size: 0.85rem;
+  text-align: center;
 }
