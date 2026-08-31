@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import os
 import re
 import secrets
+import click
 import sqlite3
 import json
 import io
@@ -3003,6 +3004,19 @@ def create_app():
             print("Database successfully synchronized with official records.")
         else:
             print("Scraping failed. Check logs.")
+
+    @app.cli.command("scrape-vc-pdf")
+    @click.argument("pdf_source")
+    @click.option("--district", default="delhi_rohini_nw", help="District key identifier")
+    def scrape_vc_pdf_command(pdf_source, district):
+        """Parses a local or remote PDF circular to extract and update VC links."""
+        from services.court_scraper import scrape_vc_links_from_pdf
+        print(f"Extracting VC links from {pdf_source} for district: {district}...")
+        success = scrape_vc_links_from_pdf(pdf_source, district)
+        if success:
+            print("Database VC links successfully updated.")
+        else:
+            print("PDF scraping failed. Check logs above.")
 
     return app
 
