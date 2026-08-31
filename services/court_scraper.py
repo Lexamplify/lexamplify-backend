@@ -174,6 +174,7 @@ _HONORIFIC_RE = re.compile(
 _NON_ALPHA_RE = re.compile(r"[^a-zA-Z\s]")
 _WEBEX_RE = re.compile(r"https?://[^\s]*webex\.com/[^\s]*", re.IGNORECASE)
 _MEETING_ID_RE = re.compile(r"\b(\d{3,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4})\b")
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 
 
 def normalize_name(name):
@@ -214,6 +215,18 @@ def extract_meeting_id(text):
         if 9 <= len(digits) <= 11:
             return digits
     return None
+
+
+def extract_email(text):
+    """A row's email lives in its own column ('Email ID of Courts') and
+    nothing else in the row could accidentally match an '@'-containing
+    pattern, so — unlike the meeting-ID/phone collision above — a whole-row
+    scan is unambiguous here; no column targeting needed."""
+    if not text:
+        return None
+    text_clean = " ".join(str(text).split())
+    match = _EMAIL_RE.search(text_clean)
+    return match.group(0).rstrip(".,;:") if match else None
 
 
 def _clean_cell(cell) -> str:
@@ -326,21 +339,24 @@ def scrape_vc_links_from_pdf(pdf_source, district_key="delhi_rohini_nw"):
                 if len(row) < 2:
                     continue
 
+                # Whole-row text is the fallback for meeting/link when no
+                # header column was found, and the only source for email
+                # (unambiguous — see extract_email's docstring).
+                row_str = " ".join(_clean_cell(c) for c in row)
+
                 if columns.get("meeting") is not None and columns["meeting"] < len(row):
                     parsed_meeting_id = extract_meeting_id(_clean_cell(row[columns["meeting"]]))
                 else:
-                    # No header found for this row's table — fall back to a
-                    # whole-row scan (may be less precise; see docstring).
-                    row_str = " ".join(_clean_cell(c) for c in row)
                     parsed_meeting_id = extract_meeting_id(row_str)
 
                 if columns.get("link") is not None and columns["link"] < len(row):
                     parsed_link = extract_webex_link(_clean_cell(row[columns["link"]]), page_hyperlinks)
                 else:
-                    row_str = " ".join(_clean_cell(c) for c in row)
                     parsed_link = extract_webex_link(row_str, page_hyperlinks)
 
-                if not parsed_link and not parsed_meeting_id:
+                parsed_email = extract_email(row_str)
+
+                if not parsed_link and not parsed_meeting_id and not parsed_email:
                     continue
 
                 matched_officer = _match_officer(row, officers)
@@ -353,6 +369,9 @@ def scrape_vc_links_from_pdf(pdf_source, district_key="delhi_rohini_nw"):
                     changed = True
                 if parsed_meeting_id and matched_officer.vc_meeting_id != parsed_meeting_id:
                     matched_officer.vc_meeting_id = parsed_meeting_id
+                    changed = True
+                if parsed_email and matched_officer.email_id != parsed_email:
+                    matched_officer.email_id = parsed_email
                     changed = True
                 if changed:
                     updated_count += 1

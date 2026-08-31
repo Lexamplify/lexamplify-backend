@@ -3018,6 +3018,35 @@ def create_app():
         else:
             print("PDF scraping failed. Check logs above.")
 
+    @app.cli.command("sync-district")
+    @click.option("--district", default="delhi_rohini_nw", help="District key identifier")
+    @click.option(
+        "--pdf-url",
+        # The URL given in the spec (rohini.dcourts.gov.in/uploads/...) 404s —
+        # confirmed live. The circular is actually served from the site's S3
+        # CDN, at the URL already verified working in services/court_scraper.py.
+        default="https://cdnbbsr.s3waas.gov.in/s3ec0277ee3bc58ce560b86c2b59363281/uploads/2026/08/2026082227.pdf",
+        help="Direct URL or path to active circular PDF",
+    )
+    def sync_district_command(district, pdf_url):
+        """Orchestrates full HTML roster sync followed by PDF VC & Email enrichment."""
+        from services.court_scraper import scrape_and_upsert_roster, scrape_vc_links_from_pdf
+
+        click.echo(f"=== [1/2] Syncing HTML Roster for {district} ===")
+        html_success = scrape_and_upsert_roster(district)
+
+        if not html_success:
+            click.secho("HTML roster scrape failed. Aborting VC enrichment.", fg="red")
+            return
+
+        click.echo(f"=== [2/2] Enriching VC Links & Emails from PDF ===")
+        pdf_success = scrape_vc_links_from_pdf(pdf_url, district)
+
+        if html_success and pdf_success:
+            click.secho(f"District '{district}' successfully synchronized end-to-end.", fg="green")
+        else:
+            click.secho("Partial sync completed with warnings. Check logs.", fg="yellow")
+
     return app
 
 if __name__ == '__main__':
