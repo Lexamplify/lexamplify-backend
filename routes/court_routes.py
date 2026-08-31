@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+import traceback
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse, quote
@@ -556,11 +557,16 @@ def _load_district_json(district_key: str) -> list:
     if not filename:
         return []
     json_path = os.path.join(_JUDGES_DATA_DIR, filename)
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
+    # RAISE on a missing file rather than swallowing it into [] — silently
+    # seeding 0 records still returns {"status": "complete"}, which would
+    # hide exactly the failure mode (frontend/src/data/ not present on
+    # Render's filesystem) this task is trying to surface. Include the
+    # resolved absolute path in the message since that's the one piece of
+    # information that actually tells us what Render's filesystem looks like.
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(f"JSON not found at: {json_path}")
+    with open(json_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
 
 @court_bp.route('/api/admin/sync-court-data', methods=['GET'])
@@ -593,45 +599,67 @@ def trigger_court_sync():
         return jsonify({'error': 'Unauthorized'}), 403
 
     from database import db
-    db.create_all()
 
-    from services.court_scraper import seed_district_from_json
-    from services.supreme_court_seeder import seed_supreme_court_roster
+    try:
+        # Force table creation — cheap (~2ms) even when tables already
+        # exist, and removes "does not exist" as a possible cause if
+        # Render's DB was ever provisioned before SupremeCourtRoster existed.
+        db.create_all()
 
-    source = request.args.get('source', 'local')
-    district_keys = ['delhi_rohini', 'delhi_rohini_nw']
-    seeded = {}
+        from services.court_scraper import seed_district_from_json
+        from services.supreme_court_seeder import seed_supreme_court_roster
 
-    if source == 'live':
-        from services.court_scraper import (
-            scrape_and_upsert_roster,
-            scrape_vc_links_from_pdf,
-            sync_judges_on_leave,
-            DISTRICT_PDF_URLS,
-        )
-        for d_key in district_keys:
-            try:
-                # Tight per-request timeouts (vs. the CLI's generous 15/25s)
-                # so a hanging dcourts.gov.in connection surfaces as a quick
-                # Timeout exception here rather than the worker just sitting
-                # there — the whole reason this route no longer scrapes live
-                # by default.
-                if not scrape_and_upsert_roster(d_key, timeout=5):
-                    raise RuntimeError('live roster scrape returned failure')
-                scrape_vc_links_from_pdf(DISTRICT_PDF_URLS[d_key], d_key, timeout=5)
-                sync_judges_on_leave(d_key, timeout=5)
-                seeded[d_key] = JudicialOfficer.query.filter_by(district_key=d_key).count()
-            except Exception as e:
-                db.session.rollback()
-                print(f"Live sync failed for {d_key} ({e}); falling back to local JSON.")
+        source = request.args.get('source', 'local')
+        district_keys = ['delhi_rohini', 'delhi_rohini_nw']
+        seeded = {}
+
+        if source == 'live':
+            from services.court_scraper import (
+                scrape_and_upsert_roster,
+                scrape_vc_links_from_pdf,
+                sync_judges_on_leave,
+                DISTRICT_PDF_URLS,
+            )
+            for d_key in district_keys:
+                try:
+                    # Tight per-request timeouts (vs. the CLI's generous
+                    # 15/25s) so a hanging dcourts.gov.in connection surfaces
+                    # as a quick Timeout exception here rather than the
+                    # worker just sitting there — the whole reason this
+                    # route no longer scrapes live by default.
+                    if not scrape_and_upsert_roster(d_key, timeout=5):
+                        raise RuntimeError('live roster scrape returned failure')
+                    scrape_vc_links_from_pdf(DISTRICT_PDF_URLS[d_key], d_key, timeout=5)
+                    sync_judges_on_leave(d_key, timeout=5)
+                    seeded[d_key] = JudicialOfficer.query.filter_by(district_key=d_key).count()
+                except Exception as e:
+                    db.session.rollback()
+                    print(f"Live sync failed for {d_key} ({e}); falling back to local JSON.")
+                    seeded[d_key] = seed_district_from_json(d_key, _load_district_json(d_key))
+        else:
+            for d_key in district_keys:
                 seeded[d_key] = seed_district_from_json(d_key, _load_district_json(d_key))
-    else:
-        for d_key in district_keys:
-            seeded[d_key] = seed_district_from_json(d_key, _load_district_json(d_key))
 
-    seeded['supreme_court'] = seed_supreme_court_roster(db, SupremeCourtRoster)
+        seeded['supreme_court'] = seed_supreme_court_roster(db, SupremeCourtRoster)
 
-    return jsonify({'status': 'complete', 'seeded': seeded}), 200
+        return jsonify({'status': 'complete', 'seeded': seeded}), 200
+
+    except Exception as e:
+        # Expose the fatal error to the browser instead of a blind 500 page,
+        # so an active production failure can actually be diagnosed from
+        # this token-gated endpoint's own response — this is a deliberate,
+        # temporary diagnostic measure, not something to leave in place
+        # permanently once the underlying crash is found and fixed (a full
+        # traceback in a response body is real information disclosure to
+        # anyone holding ADMIN_SYNC_TOKEN, even though this route already
+        # requires it for anything else too).
+        db.session.rollback()
+        print(f"trigger_court_sync fatal error: {e}\n{traceback.format_exc()}")
+        return jsonify({
+            'status': 'fatal_error',
+            'error_message': str(e),
+            'traceback': traceback.format_exc(),
+        }), 200
 
 
 @court_bp.route('/api/courts/judges', methods=['GET', 'OPTIONS'])
