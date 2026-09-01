@@ -1031,6 +1031,18 @@ export default function CourtResources() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  // ── direct popup — same WAF-avoidance reasoning as openDirectLink above,
+  // but sized like openInAppBrowser's popup so the e-Services buttons keep
+  // the same "in-app floating window" feel instead of a bare new tab.
+  // sci.gov.in's WAF was redirecting /api/proxy's fetches of these three
+  // specific deep links back to its own homepage — bypassing the proxy
+  // entirely for just these three avoids that without touching the Cause
+  // List / Calendar buttons, which still work fine through it.
+  const openDirectPopup = (url) => {
+    if (!url) return;
+    window.open(url, 'SC_Portal', 'width=1200,height=800,scrollbars=yes,noopener,noreferrer');
+  };
+
   // Toast helper
   const triggerToast = (msg) => {
     setToastMessage(msg);
@@ -1544,7 +1556,7 @@ export default function CourtResources() {
                       <button
                         className="btn-accent"
                         style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
-                        onClick={() => openInAppBrowser('https://sci.gov.in/case-status-case-no/')}
+                        onClick={() => openDirectPopup('https://www.sci.gov.in/case-status-case-no/')}
                       >
                         🔍 Case Status ↗
                       </button>
@@ -1556,7 +1568,7 @@ export default function CourtResources() {
                       <button
                         className="btn-accent"
                         style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
-                        onClick={() => openInAppBrowser('https://sci.gov.in/daily-order-case-no/')}
+                        onClick={() => openDirectPopup('https://www.sci.gov.in/daily-order-case-no/')}
                       >
                         📋 Daily Orders ↗
                       </button>
@@ -1568,7 +1580,7 @@ export default function CourtResources() {
                       <button
                         className="btn-accent"
                         style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
-                        onClick={() => openInAppBrowser('https://sci.gov.in/judgements-case-no/')}
+                        onClick={() => openDirectPopup('https://www.sci.gov.in/judgements-case-no/')}
                       >
                         ⚖️ Judgements ↗
                       </button>
