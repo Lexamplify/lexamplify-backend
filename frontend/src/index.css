@@ -2252,33 +2252,38 @@ textarea:focus,
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 550;
   border-radius: 6px;
-  padding: 3px 8px;
-  height: 28px;
-  line-height: 20px;
+  padding: 4px 8px;
+  height: 32px;
   cursor: pointer;
   font-family: inherit;
   flex-shrink: 0;
   box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  appearance: auto;
+  -webkit-appearance: auto;
+  outline: none;
+  vertical-align: middle;
 }
 
 .toolbar-select-font {
-  min-width: 125px;
-  max-width: 155px;
+  min-width: 155px;
+  width: auto;
 }
 
 .toolbar-select-size {
-  min-width: 82px;
-  max-width: 95px;
+  min-width: 110px;
+  width: auto;
 }
 
 .toolbar-select option {
   background: #111827;
   color: #F8FAFC;
-  font-size: 12px;
-  padding: 4px;
+  font-size: 12.5px;
+  padding: 6px 10px;
 }
 
 .toolbar-select:hover {
@@ -2316,25 +2321,25 @@ textarea:focus,
 }
 
 :root[data-theme="light"] .toolbar-select {
-  background: #FFFFFF !important;
-  border-color: #CBD5E1 !important;
+  background-color: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
   color: #0F172A !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
 }
 
 :root[data-theme="light"] .toolbar-select option {
-  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
   color: #0F172A !important;
 }
 
 :root[data-theme="light"] .toolbar-select:hover {
-  background: #F8FAFC !important;
+  background-color: #F8FAFC !important;
   border-color: #94A3B8 !important;
 }
 
 :root[data-theme="light"] .toolbar-select:focus {
   border-color: #2563EB !important;
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.2) !important;
 }
 
 :root[data-theme="light"] .toolbar-divider {

@@ -376,49 +376,52 @@ const styles = `
 
   /* Font family / size dropdowns */
   .toolbar-select {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid var(--border-dark-subtle);
-    color: var(--text-dark-primary);
-    font-size: 12px;
-    font-weight: 500;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    font-weight: 550;
     border-radius: 6px;
-    padding: 3px 8px;
-    height: 28px;
-    line-height: 20px;
+    padding: 4px 8px;
+    height: 32px;
     cursor: pointer;
     font-family: inherit;
-    transition: all 0.15s;
-    box-sizing: border-box;
     flex-shrink: 0;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    appearance: auto;
+    -webkit-appearance: auto;
+    outline: none;
+    vertical-align: middle;
   }
-  .toolbar-select-font { min-width: 125px; max-width: 155px; }
-  .toolbar-select-size { min-width: 82px; max-width: 95px; }
+  .toolbar-select-font { min-width: 155px; width: auto; }
+  .toolbar-select-size { min-width: 110px; width: auto; }
   .toolbar-select option {
     background: #111827;
     color: #F8FAFC;
-    font-size: 12px;
-    padding: 4px;
+    font-size: 12.5px;
+    padding: 6px 10px;
   }
-  .toolbar-select:hover { background: rgba(255,255,255,0.1); }
+  .toolbar-select:hover { background: rgba(255,255,255,0.1); border-color: var(--accent-primary); }
   .toolbar-select:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59,130,246,0.25); }
   [data-theme="light"] .toolbar-select {
-    background: #FFFFFF;
-    border: 1px solid #CBD5E1;
-    color: #0F172A;
-    font-weight: 500;
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    color: #0F172A !important;
+    font-weight: 600 !important;
   }
   [data-theme="light"] .toolbar-select option {
-    background: #FFFFFF;
-    color: #0F172A;
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
   }
   [data-theme="light"] .toolbar-select:hover {
-    background: #F8FAFC;
-    border-color: #94A3B8;
+    background-color: #F8FAFC !important;
+    border-color: #94A3B8 !important;
   }
   [data-theme="light"] .toolbar-select:focus {
-    border-color: #2563EB;
-    background: #FFFFFF;
-    box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+    border-color: #2563EB !important;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.2) !important;
   }
 
   /* ── SCAN META-BAR (Fixed/Frozen Toolbar Slot) ───────────────────── */

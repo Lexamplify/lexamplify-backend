@@ -741,28 +741,32 @@ export default function AutoDraftWorkspace() {
 
         /* ── TipTap Toolbar Font & Size Select Overrides ── */
         .toolbar-select {
-          background: rgba(255,255,255,0.06);
-          border: 1px solid var(--border-dark-subtle, rgba(255,255,255,0.12));
-          color: var(--text-dark-primary, #F8FAFC);
-          font-size: 12px;
-          font-weight: 500;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
+          font-size: 12.5px;
+          font-weight: 550;
           border-radius: 6px;
-          padding: 3px 8px;
-          height: 28px;
-          line-height: 20px;
+          padding: 4px 8px;
+          height: 32px;
           cursor: pointer;
           font-family: inherit;
-          transition: all 0.15s;
-          box-sizing: border-box;
           flex-shrink: 0;
+          box-sizing: border-box;
+          display: inline-flex;
+          align-items: center;
+          appearance: auto;
+          -webkit-appearance: auto;
+          outline: none;
+          vertical-align: middle;
         }
-        .toolbar-select-font { min-width: 125px; max-width: 155px; }
-        .toolbar-select-size { min-width: 82px; max-width: 95px; }
+        .toolbar-select-font { min-width: 155px; width: auto; }
+        .toolbar-select-size { min-width: 110px; width: auto; }
         .toolbar-select option {
           background: #111827;
           color: #F8FAFC;
-          font-size: 12px;
-          padding: 4px;
+          font-size: 12.5px;
+          padding: 6px 10px;
         }
         .toolbar-select:hover { border-color: var(--accent-primary); }
         .toolbar-select:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59,130,246,0.25); }
@@ -864,25 +868,25 @@ export default function AutoDraftWorkspace() {
         }
 
         :root[data-theme="light"] .toolbar-select {
-          background: #FFFFFF !important;
-          border-color: #CBD5E1 !important;
+          background-color: #FFFFFF !important;
+          border: 1px solid #CBD5E1 !important;
           color: #0F172A !important;
-          font-weight: 500 !important;
+          font-weight: 600 !important;
         }
 
         :root[data-theme="light"] .toolbar-select option {
-          background: #FFFFFF !important;
+          background-color: #FFFFFF !important;
           color: #0F172A !important;
         }
 
         :root[data-theme="light"] .toolbar-select:hover {
-          background: #F8FAFC !important;
+          background-color: #F8FAFC !important;
           border-color: #94A3B8 !important;
         }
 
         :root[data-theme="light"] .toolbar-select:focus {
           border-color: #2563EB !important;
-          box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+          box-shadow: 0 0 0 2px rgba(37,99,235,0.2) !important;
         }
 
         :root[data-theme="light"] .ad-document-canvas .scanner-body {
