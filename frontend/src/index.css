@@ -997,47 +997,87 @@ textarea:focus,
 /* ─────────────────────────────────────────────────────────────────────────
    SIDEBAR NAV ITEMS — icon + label with active state left-border indicator
    ───────────────────────────────────────────────────────────────────────── */
+.sidebar-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  display: block;
+}
+
+.sidebar-live-tag {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1.5px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+}
+
+.live-pulse-dot {
+  font-size: 8px;
+  line-height: 1;
+  animation: pulseLive 1.8s infinite ease-in-out;
+}
+
+@keyframes pulseLive {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.6; }
+}
+
 .sidebar-nav-item {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 9px 16px;
+  padding: 8px 14px;
   margin: 2px 8px;
   border-radius: 7px;
-  color: var(--text-muted);
+  color: #94A3B8;
   text-decoration: none;
   font-size: 13.5px;
-  font-weight: 400;
+  font-weight: 500;
   background: transparent;
   box-shadow: inset 3px 0 0 transparent;
   transition: all 0.15s ease;
   cursor: pointer;
+  position: relative;
 }
 .sidebar-nav-item:hover {
   background: rgba(255, 255, 255, 0.05) !important;
-  color: #f1f5f9 !important;
-  transform: translateX(1px);
+  color: #F8FAFC !important;
+  transform: translateX(1.5px);
 }
 .sidebar-nav-item.active {
-  background: linear-gradient(90deg, rgba(99,102,241,0.15), rgba(59,130,246,0.08)) !important;
-  color: #a5b4fc !important;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.18), rgba(37, 99, 235, 0.08)) !important;
+  color: #93C5FD !important;
   font-weight: 600;
-  box-shadow: inset 3px 0 0 #818cf8;
+  box-shadow: inset 3px 0 0 #3B82F6 !important;
 }
 .sidebar-nav-item .nav-icon {
   color: inherit;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  opacity: 0.65;
-  transition: opacity 0.15s ease;
+  justify-content: center;
+  opacity: 0.85;
+  transition: all 0.15s ease;
 }
 .sidebar-nav-item:hover .nav-icon {
-  opacity: 0.9;
+  opacity: 1;
+  color: #60A5FA;
 }
 .sidebar-nav-item.active .nav-icon {
-  opacity: 1;
-  color: #a5b4fc;
+  opacity: 1 !important;
+  color: #60A5FA !important;
 }
 .sidebar-nav-item .nav-label {
   flex: 1;
@@ -1325,20 +1365,65 @@ textarea:focus,
 
 /* ── Sidebar ── */
 :root[data-theme="light"] .sidebar {
-  background-color: var(--bg-sidebar) !important;
-  border-right: 1px solid var(--border-subtle) !important;
+  background-color: #F8FAFC !important;
+  border-right: 1px solid #E2E8F0 !important;
+}
+:root[data-theme="light"] .sidebar-header {
+  border-bottom-color: #E2E8F0 !important;
+}
+:root[data-theme="light"] .sidebar-group-title {
+  color: #475569 !important;
+  font-weight: 800 !important;
 }
 :root[data-theme="light"] .sidebar-nav-item {
-  color: #4A5568 !important;
+  color: #1E293B !important;
+  font-weight: 550 !important;
+}
+:root[data-theme="light"] .sidebar-nav-item .nav-icon {
+  color: #475569 !important;
+  opacity: 1 !important;
 }
 :root[data-theme="light"] .sidebar-nav-item:hover {
-  background: rgba(59,130,246,.08) !important;
-  color: #1A2234 !important;
+  background: #EFF6FF !important;
+  color: #1D4ED8 !important;
+  transform: translateX(1.5px);
+}
+:root[data-theme="light"] .sidebar-nav-item:hover .nav-icon {
+  color: #2563EB !important;
 }
 :root[data-theme="light"] .sidebar-nav-item.active {
-  background: rgba(59,130,246,.12) !important;
-  color: #2563EB !important;
+  background: #EFF6FF !important;
+  color: #1D4ED8 !important;
+  font-weight: 600 !important;
   box-shadow: inset 3px 0 0 #2563EB !important;
+}
+:root[data-theme="light"] .sidebar-nav-item.active .nav-icon {
+  color: #2563EB !important;
+  opacity: 1 !important;
+}
+:root[data-theme="light"] .sidebar.sidebar-collapsed .sidebar-nav-item.active {
+  background: #EFF6FF !important;
+}
+:root[data-theme="light"] .sidebar-live-tag {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #047857 !important;
+  border: 1px solid rgba(16, 185, 129, 0.4) !important;
+  font-weight: 800 !important;
+}
+:root[data-theme="light"] .sidebar-bottom-btn {
+  background: #EFF6FF !important;
+  border: 1px solid #BFDBFE !important;
+  color: #1D4ED8 !important;
+}
+:root[data-theme="light"] .sidebar-bottom-link button {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #334155 !important;
+}
+:root[data-theme="light"] .sidebar-bottom-link button:hover {
+  background: #FEF2F2 !important;
+  border-color: #FCA5A5 !important;
+  color: #DC2626 !important;
 }
 
 /* ── Topbar ── */
@@ -2168,19 +2253,32 @@ textarea:focus,
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   font-size: 12px;
+  font-weight: 500;
   border-radius: 6px;
   padding: 3px 8px;
   height: 28px;
-  min-width: 85px;
-  max-width: 130px;
+  line-height: 20px;
   cursor: pointer;
   font-family: inherit;
   flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.toolbar-select-font {
+  min-width: 125px;
+  max-width: 155px;
 }
 
 .toolbar-select-size {
-  min-width: 60px;
-  max-width: 75px;
+  min-width: 82px;
+  max-width: 95px;
+}
+
+.toolbar-select option {
+  background: #111827;
+  color: #F8FAFC;
+  font-size: 12px;
+  padding: 4px;
 }
 
 .toolbar-select:hover {
@@ -2190,6 +2288,7 @@ textarea:focus,
 .toolbar-select:focus {
   outline: none;
   border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.25);
 }
 
 /* Light Theme Overrides for Rich Text Toolbar */
@@ -2217,9 +2316,25 @@ textarea:focus,
 }
 
 :root[data-theme="light"] .toolbar-select {
-  background: #F8FAFC !important;
+  background: #FFFFFF !important;
   border-color: #CBD5E1 !important;
-  color: #1A2234 !important;
+  color: #0F172A !important;
+  font-weight: 500 !important;
+}
+
+:root[data-theme="light"] .toolbar-select option {
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+:root[data-theme="light"] .toolbar-select:hover {
+  background: #F8FAFC !important;
+  border-color: #94A3B8 !important;
+}
+
+:root[data-theme="light"] .toolbar-select:focus {
+  border-color: #2563EB !important;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
 }
 
 :root[data-theme="light"] .toolbar-divider {

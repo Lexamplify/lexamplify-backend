@@ -376,33 +376,49 @@ const styles = `
 
   /* Font family / size dropdowns */
   .toolbar-select {
-    background: rgba(255,255,255,0.04);
+    background: rgba(255,255,255,0.06);
     border: 1px solid var(--border-dark-subtle);
     color: var(--text-dark-primary);
     font-size: 12px;
+    font-weight: 500;
     border-radius: 6px;
-    padding: 3px 6px;
+    padding: 3px 8px;
     height: 28px;
-    max-width: 128px;
+    line-height: 20px;
     cursor: pointer;
     font-family: inherit;
     transition: all 0.15s;
+    box-sizing: border-box;
+    flex-shrink: 0;
   }
-  .toolbar-select-size { max-width: 68px; }
-  .toolbar-select:hover { background: rgba(255,255,255,0.08); }
-  .toolbar-select:focus { outline: none; border-color: var(--accent-primary); }
+  .toolbar-select-font { min-width: 125px; max-width: 155px; }
+  .toolbar-select-size { min-width: 82px; max-width: 95px; }
+  .toolbar-select option {
+    background: #111827;
+    color: #F8FAFC;
+    font-size: 12px;
+    padding: 4px;
+  }
+  .toolbar-select:hover { background: rgba(255,255,255,0.1); }
+  .toolbar-select:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59,130,246,0.25); }
   [data-theme="light"] .toolbar-select {
-    background: #F8FAFC;
+    background: #FFFFFF;
     border: 1px solid #CBD5E1;
+    color: #0F172A;
+    font-weight: 500;
+  }
+  [data-theme="light"] .toolbar-select option {
+    background: #FFFFFF;
     color: #0F172A;
   }
   [data-theme="light"] .toolbar-select:hover {
-    background: #F1F5F9;
+    background: #F8FAFC;
     border-color: #94A3B8;
   }
   [data-theme="light"] .toolbar-select:focus {
     border-color: #2563EB;
     background: #FFFFFF;
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
   }
 
   /* ── SCAN META-BAR (Fixed/Frozen Toolbar Slot) ───────────────────── */

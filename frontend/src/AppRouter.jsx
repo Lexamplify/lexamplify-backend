@@ -179,31 +179,26 @@ const NAVIGATION_GROUPS = [
 
 // ── SIDEBAR NAV ITEM ───────────────────────────────────────────────────────────
 const NavItem = ({ item, isActive, isCollapsed, onClick }) => {
-  const activeStyle = isActive
-    ? { borderLeft: '2px solid #3B82F6', background: 'rgba(59, 130, 246, 0.1)', color: '#60A5FA', fontWeight: 500 }
-    : { borderLeft: '2px solid transparent', color: 'var(--text-muted)' };
-
   return (
     <Link
       to={item.path}
       onClick={onClick}
       className={`sidebar-nav-item navItem${isActive ? ' active' : ''}${isCollapsed ? ' collapsed' : ''}`}
       data-tooltip={item.name}
-      style={{ ...activeStyle, display: 'flex', alignItems: 'center', padding: '8px 12px 8px 14px', textDecoration: 'none', transition: 'all 0.2s', marginBottom: '4px', position: 'relative' }}
     >
-      <span className="nav-icon" style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7 }}>
+      <span className="nav-icon">
         {item.icon}
       </span>
       
       {!isCollapsed && (
-        <span className="nav-label" style={{ marginLeft: '12px', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+        <span className="nav-label">
           {item.name}
         </span>
       )}
 
       {!isCollapsed && item.badge?.type === 'live' && (
-        <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#34D399', fontWeight: 'bold', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
-          ● Live
+        <span className="sidebar-live-tag">
+          <span className="live-pulse-dot">●</span> Live
         </span>
       )}
     </Link>
@@ -342,7 +337,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       <div className={`sidebar-overlay ${isSidebarOpen ? 'visible' : ''}`} onClick={closeSidebar} />
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className={`sidebar bg-[#0B0F17] opacity-100 sticky top-0 z-50 h-screen ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed collapsed' : ''}`}>
+      <aside className={`sidebar opacity-100 sticky top-0 z-50 h-screen ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed collapsed' : ''}`}>
 
         {/* Logo / brand header */}
         <div
@@ -388,7 +383,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             <div key={group.title} style={{ marginBottom: gIdx === NAVIGATION_GROUPS.length - 1 ? 0 : '16px' }}>
               {!isIconOnly && (
                 <div style={{ padding: '0 24px', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.9px' }}>
+                  <span className="sidebar-group-title">
                     {group.title}
                   </span>
                 </div>
@@ -412,7 +407,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           {!isIconOnly && sidebarCases.length > 0 && (
             <div style={{ marginTop: '20px' }}>
               <div style={{ margin: '0 0 6px', padding: '0 24px' }}>
-                <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.9px' }}>
+                <span className="sidebar-group-title">
                   Tracked Cases
                 </span>
               </div>
@@ -425,19 +420,10 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                     onClick={closeSidebar}
                     className={`sidebar-nav-item navItem${params.caseId === String(c.id) ? ' active' : ''}${isIconOnly ? ' collapsed' : ''}`}
                     data-tooltip={caseName}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '7px 16px', margin: '1px 8px', borderRadius: '6px',
-                      color: params.caseId === String(c.id) ? 'var(--accent-primary)' : 'var(--text-muted)',
-                      textDecoration: 'none', fontSize: '12.5px',
-                      background: params.caseId === String(c.id) ? 'rgba(59,130,246,0.08)' : 'transparent',
-                      transition: 'all 0.15s',
-                      position: 'relative',
-                    }}
                   >
-                    <span style={{ flexShrink: 0, opacity: 0.65 }}>{Icons.folder()}</span>
+                    <span className="nav-icon">{Icons.folder()}</span>
                     {!isIconOnly && (
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span className="nav-label">
                         {caseName}
                       </span>
                     )}

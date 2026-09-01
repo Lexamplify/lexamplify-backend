@@ -19,8 +19,8 @@ import { CommentHighlight } from '../tiptap/commentHighlightMark.js';
 import { rawTextToHtml, sanitizeHtml } from '../tiptap/textToHtml.js';
 import { inlineEditSelection } from '../services/api.js';
 
-const FONT_FAMILIES = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Garamond', 'Trebuchet MS'];
-const FONT_SIZES = ['10pt', '11pt', '12pt', '14pt', '16pt', '18pt', '24pt', '36pt'];
+const FONT_FAMILIES = ['Georgia', 'Times New Roman', 'Arial', 'Calibri', 'Garamond', 'Courier New', 'Trebuchet MS', 'Verdana'];
+const FONT_SIZES = ['9pt', '10pt', '11pt', '12pt', '13pt', '14pt', '16pt', '18pt', '20pt', '24pt', '36pt'];
 
 function generateCommentId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -92,7 +92,7 @@ function ContractEditorToolbar({ editor }) {
   return (
     <div className="rich-text-toolbar">
       <select
-        className="toolbar-select"
+        className="toolbar-select toolbar-select-font"
         title="Font Family"
         value={currentFontFamily}
         onMouseDown={(e) => e.stopPropagation()}
@@ -103,7 +103,7 @@ function ContractEditorToolbar({ editor }) {
           else chain.unsetFontFamily().run();
         }}
       >
-        <option value="">Font</option>
+        <option value="">Font: Georgia</option>
         {FONT_FAMILIES.map((f) => (
           <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
         ))}
@@ -120,7 +120,7 @@ function ContractEditorToolbar({ editor }) {
           else chain.unsetFontSize().run();
         }}
       >
-        <option value="">Size</option>
+        <option value="">Size: 12pt</option>
         {FONT_SIZES.map((s) => (
           <option key={s} value={s}>{s}</option>
         ))}
