@@ -1,7 +1,7 @@
 """
 routes/auth_routes.py
 Blueprint: /api/auth
-  POST /api/auth/signup            — legacy SQLAlchemy path (server-rendered templates only, untouched)
+  POST /api/auth/signup            — legacy alias, same User-model path as /register (server-rendered templates only)
   POST /api/auth/register          — create account, issues HttpOnly cookie session
   POST /api/auth/login             — verify credentials, issues HttpOnly cookie session
   POST /api/auth/logout            — clears cookie session
@@ -9,6 +9,15 @@ Blueprint: /api/auth
   GET  /api/auth/me                — current session identity (cookie-derived), for zero-friction reload
   POST /api/auth/forgot-password   — rate-limited, always returns a generic response (anti-enumeration)
   POST /api/auth/reset-password    — consumes a signed reset token, sets a new password
+
+All five persist through the real SQLAlchemy `User` model (see models/user.py),
+which reaches whatever DATABASE_URL is configured — Neon Postgres in
+production. This used to NOT be true: register/login/me/forgot-password/
+reset-password each read and wrote a private raw-sqlite3 file
+(lex_assistant.db) directly, completely bypassing `db`/`User` — the actual
+root cause of registrations never appearing in the Neon `users` table (the
+code was never trying to reach it). services/legacy_user_migration.py
+carries over anyone who registered through that old path.
 
 JWTs live ONLY in HttpOnly cookies — never in a JSON response body, never
 in localStorage. CSRF double-submit is enforced by Flask-JWT-Extended's
@@ -19,7 +28,7 @@ echo its value back in the X-CSRF-TOKEN header or Flask-JWT-Extended
 rejects it — a cookie alone (which a CSRF attacker's cross-site form can
 trigger the browser into sending automatically) is never sufficient.
 """
-import sqlite3
+import os
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import (
@@ -39,8 +48,6 @@ from utils.mailer import send_email
 from utils.tokens import generate_reset_token, verify_reset_token
 
 auth_bp = Blueprint("auth", __name__)
-
-DB_PATH = "lex_assistant.db"
 
 
 @auth_bp.route("/signup", methods=["POST"])
@@ -74,28 +81,6 @@ def signup():
         return jsonify({"error": f"Server error: {str(e)}", "code": "INTERNAL_ERROR"}), 500
 
 
-def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _ensure_users_table(conn):
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
-        )
-    ''')
-    for col, col_type in (("name", "TEXT"), ("phone", "TEXT"), ("created_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
-                           ("reset_token_hash", "TEXT"), ("reset_token_expires", "TEXT")):
-        try:
-            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
-        except sqlite3.OperationalError:
-            pass
-
-
 def _issue_session_response(payload, user_id, status=200):
     """Builds the JSON body first, then attaches HttpOnly access+refresh
     JWT cookies to it — the token itself never appears in `payload`."""
@@ -109,7 +94,6 @@ def _issue_session_response(payload, user_id, status=200):
 
 @auth_bp.route('/register', methods=['POST'])
 def register_user():
-    conn = None
     try:
         data = request.get_json(silent=True) or {}
         email = (data.get('email') or '').strip().lower()
@@ -122,36 +106,36 @@ def register_user():
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters."}), 400
 
-        conn = _get_db()
-        _ensure_users_table(conn)
+        if User.query.filter_by(email=email).first():
+            return jsonify({"error": "An account with this email already exists."}), 400
 
-        existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-        if existing:
-            return jsonify({"error": "An account with this email already exists."}), 409
-
-        hashed_password = generate_password_hash(password)
-        cur = conn.execute(
-            "INSERT INTO users (email, password, name, phone) VALUES (?, ?, ?, ?)",
-            (email, hashed_password, name, phone),
+        user = User(
+            email=email,
+            password=generate_password_hash(password),
+            name=name,
+            phone=phone or None,
         )
-        conn.commit()
-        user_id = cur.lastrowid
+        try:
+            db.session.add(user)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"[register] commit failed: {e}")
+            return jsonify({"error": f"Registration failed: {e}", "code": "INTERNAL_ERROR"}), 500
 
         return _issue_session_response(
-            {"message": "Account created.", "user": {"id": user_id, "email": email, "name": name, "phone": phone}},
-            user_id, status=201,
+            {"message": "Account created.", "user": {"id": user.id, "email": user.email, "name": user.name, "phone": user.phone}},
+            user.id, status=201,
         )
     except Exception as e:
+        db.session.rollback()
+        print(f"[register] error: {e}")
         return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
-    finally:
-        if conn:
-            conn.close()
 
 
 @auth_bp.route('/login', methods=['POST'])
 @limiter.limit("10/minute")
 def login_user():
-    conn = None
     try:
         data = request.get_json(silent=True) or {}
         email = (data.get('email') or data.get('username') or '').strip().lower()
@@ -160,28 +144,21 @@ def login_user():
         if not email or not password:
             return jsonify({"error": "Missing credentials"}), 400
 
-        conn = _get_db()
-        _ensure_users_table(conn)
-
-        user = conn.execute(
-            "SELECT id, password, name FROM users WHERE email = ?", (email,)
-        ).fetchone()
+        user = User.query.filter_by(email=email).first()
 
         # No auto-creation on login — an unrecognized email is a straight
         # 401, same message as a wrong password, so a brute-forcer can't
         # use this endpoint to enumerate which emails have accounts.
-        if not user or not check_password_hash(user['password'], password):
+        if not user or not check_password_hash(user.password, password):
             return jsonify({"error": "Invalid email or password."}), 401
 
         return _issue_session_response(
-            {"user": {"id": user['id'], "email": email, "name": user['name']}},
-            user['id'],
+            {"user": {"id": user.id, "email": user.email, "name": user.name}},
+            user.id,
         )
     except Exception as e:
+        print(f"[login] error: {e}")
         return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
-    finally:
-        if conn:
-            conn.close()
 
 
 @auth_bp.route('/logout', methods=['POST'])
@@ -207,19 +184,13 @@ def current_user():
     """Cookie-derived identity check — lets the frontend confirm an
     existing session on page load without ever touching localStorage."""
     user_id = get_jwt_identity()
-    conn = None
     try:
-        conn = _get_db()
-        _ensure_users_table(conn)
-        user = conn.execute("SELECT id, email, name FROM users WHERE id = ?", (user_id,)).fetchone()
+        user = User.query.get(int(user_id))
         if not user:
             return jsonify({"error": "Session user not found."}), 404
-        return jsonify({"user": {"id": user['id'], "email": user['email'], "name": user['name']}}), 200
+        return jsonify({"user": {"id": user.id, "email": user.email, "name": user.name}}), 200
     except Exception as e:
         return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
-    finally:
-        if conn:
-            conn.close()
 
 
 @auth_bp.route('/forgot-password', methods=['POST'])
@@ -227,7 +198,6 @@ def current_user():
 def forgot_password():
     GENERIC_MESSAGE = {"message": "If an account exists for that email, a reset link has been sent."}
     is_dev = os.getenv('FLASK_ENV') != 'production'
-    conn = None
     try:
         data = request.get_json(silent=True) or {}
         email = (data.get('email') or '').strip().lower()
@@ -236,9 +206,7 @@ def forgot_password():
             # in a way that would distinguish "no such field" from "no such user".
             return jsonify(GENERIC_MESSAGE), 200
 
-        conn = _get_db()
-        _ensure_users_table(conn)
-        user = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        user = User.query.filter_by(email=email).first()
 
         mail_sent = True
         if user:
@@ -273,15 +241,11 @@ def forgot_password():
         # must not become a third distinguishable response an enumeration
         # attack could key off.
         return jsonify(GENERIC_MESSAGE), 200
-    finally:
-        if conn:
-            conn.close()
 
 
 @auth_bp.route('/reset-password', methods=['POST'])
 @limiter.limit("5/hour")
 def reset_password():
-    conn = None
     try:
         data = request.get_json(silent=True) or {}
         token = data.get('token') or ''
@@ -296,20 +260,14 @@ def reset_password():
         if not email:
             return jsonify({"error": "This reset link is invalid or has expired."}), 400
 
-        conn = _get_db()
-        _ensure_users_table(conn)
-        user = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        user = User.query.filter_by(email=email).first()
         if not user:
             return jsonify({"error": "This reset link is invalid or has expired."}), 400
 
-        conn.execute(
-            "UPDATE users SET password = ? WHERE id = ?",
-            (generate_password_hash(new_password), user['id']),
-        )
-        conn.commit()
+        user.password = generate_password_hash(new_password)
+        db.session.commit()
         return jsonify({"message": "Password updated. You can now sign in."}), 200
     except Exception as e:
+        db.session.rollback()
+        print(f"[reset_password] error: {e}")
         return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
-    finally:
-        if conn:
-            conn.close()

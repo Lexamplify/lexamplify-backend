@@ -2913,8 +2913,32 @@ def create_app():
         from models.document import Document
         from models.court_models import JudicialOfficer, SupremeCourtRoster
         sqlalchemy_db.create_all()
-        _db_kind = 'Neon PostgreSQL' if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql+psycopg2://') else 'SQLite'
+        _is_postgres = app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql+psycopg2://')
+        _db_kind = 'Neon PostgreSQL' if _is_postgres else 'SQLite'
         app.logger.info(f"Database schema verified and initialized on {_db_kind}.")
+
+        # create_all() only creates NEW tables — it never ALTERs an existing
+        # one, so a `users` table that predates the `phone` column (true of
+        # both the local instance/database.db and, presumably, the Neon
+        # table this ticket is about) needs it added explicitly. Postgres
+        # supports ADD COLUMN IF NOT EXISTS; SQLite's parser rejects that
+        # syntax outright (confirmed), so it gets the plain form instead,
+        # relying on the try/except to no-op on a second run.
+        try:
+            with sqlalchemy_db.engine.connect() as conn:
+                if _is_postgres:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);"))
+                else:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN phone VARCHAR(20);"))
+                conn.commit()
+        except Exception as e:
+            app.logger.warning(f"users.phone column check passed or not needed: {e}")
+
+        # One-time (idempotent) carry-over of anyone who registered through
+        # the old raw-sqlite auth path in routes/auth_routes.py before it
+        # was switched to this table — see services/legacy_user_migration.py.
+        from services.legacy_user_migration import migrate_legacy_sqlite_users
+        migrate_legacy_sqlite_users(sqlalchemy_db, User)
 
     # --- START DATABASE BUILDER ---
     import sqlite3
