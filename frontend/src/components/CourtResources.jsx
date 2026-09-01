@@ -1530,6 +1530,51 @@ export default function CourtResources() {
                     📅 Sitting Calendar ↗
                   </button>
                 </div>
+
+                {/* Official e-Services — grouped into one card rather than
+                    three separate ones, to avoid stacking a 5th sidebar
+                    card and pushing the column into scroll territory. */}
+                <div style={{ backgroundColor: 'var(--bg-dark-card)', border: '1px solid var(--border-dark-subtle)', borderRadius: '10px', padding: '18px' }}>
+                  <h4 style={{ fontSize: '14px', marginBottom: '10px', color: 'var(--text-dark-primary)' }}>Official e-Services</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div>
+                      <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '6px', lineHeight: '1.4' }}>
+                        Check real-time status by Diary or Case number.
+                      </p>
+                      <button
+                        className="btn-accent"
+                        style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
+                        onClick={() => openInAppBrowser('https://sci.gov.in/case-status-case-no/')}
+                      >
+                        🔍 Case Status ↗
+                      </button>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '6px', lineHeight: '1.4' }}>
+                        Access official daily proceedings and ROP.
+                      </p>
+                      <button
+                        className="btn-accent"
+                        style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
+                        onClick={() => openInAppBrowser('https://sci.gov.in/daily-order-case-no/')}
+                      >
+                        📋 Daily Orders ↗
+                      </button>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '6px', lineHeight: '1.4' }}>
+                        Search and download final orders.
+                      </p>
+                      <button
+                        className="btn-accent"
+                        style={{ width: '100%', fontSize: '13px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
+                        onClick={() => openInAppBrowser('https://sci.gov.in/judgements-case-no/')}
+                      >
+                        ⚖️ Judgements ↗
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
