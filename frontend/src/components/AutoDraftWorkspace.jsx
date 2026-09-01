@@ -7,9 +7,17 @@ import { fetchDocuments } from '../services/api.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
+const DRAFT_STAGES = [
+  { title: 'Statutory Interpretation', desc: 'Analyzing instructions and Indian legal framework bounds' },
+  { title: 'Statutory Alignment', desc: 'Cross-referencing Indian Contract Act, 1872 & landmark case law' },
+  { title: 'Operative Clause Synthesis', desc: 'Drafting structured, multi-tier terms, remedies & obligations' },
+  { title: 'Execution Finalization', desc: 'Formatting numbered clauses, statutory indents & signature blocks' },
+];
+
 export default function AutoDraftWorkspace() {
   const navigate = useNavigate();
   const isMountedRef = useRef(true);
+  const promptTextareaRef = useRef(null);
 
   // Shared contract state lifted from store
   const {
@@ -26,7 +34,8 @@ export default function AutoDraftWorkspace() {
 
   // Local synthesis studio state
   const [drafting, setDrafting] = useState(false);
-  const [draftStatus, setDraftStatus] = useState('');
+  const [draftStep, setDraftStep] = useState(0);
+  const [draftProgress, setDraftProgress] = useState(0);
   const [draftError, setDraftError] = useState('');
   const [vaultDocs, setVaultDocs] = useState([]);
   const [selectedContextMode, setSelectedContextMode] = useState('active_contract');
@@ -52,34 +61,45 @@ export default function AutoDraftWorkspace() {
     };
   }, []);
 
-  // Cycling in-flight status messages during AI reasoning
+  // Smooth multi-stage animation & progress tracker during synthesis
   useEffect(() => {
-    if (!drafting) return;
-    const phases = [
-      'Interpreting drafting instructions & statutory bounds…',
-      'Cross-referencing Indian Contract Act & Supreme Court precedents…',
-      'Synthesizing structured, multi-tier legal provisions…',
-      'Refining clause numbering, indents & statutory enforceability…',
-    ];
-    let i = 0;
-    setDraftStatus(phases[0]);
-    const id = setInterval(() => {
-      i = (i + 1) % phases.length;
-      setDraftStatus(phases[i]);
-    }, 1600);
-    return () => clearInterval(id);
+    if (!drafting) {
+      setDraftStep(0);
+      setDraftProgress(0);
+      return;
+    }
+
+    setDraftStep(0);
+    setDraftProgress(12);
+
+    const stepInterval = setInterval(() => {
+      setDraftStep((prev) => (prev < DRAFT_STAGES.length - 1 ? prev + 1 : prev));
+    }, 2400);
+
+    const progressInterval = setInterval(() => {
+      setDraftProgress((prev) => {
+        if (prev >= 94) return prev;
+        const inc = Math.max(1, Math.floor((96 - prev) * 0.12));
+        return Math.min(94, prev + inc);
+      });
+    }, 350);
+
+    return () => {
+      clearInterval(stepInterval);
+      clearInterval(progressInterval);
+    };
   }, [drafting]);
 
   const handleSynthesize = async (e) => {
     if (e) e.preventDefault();
     if (!autoDraftPrompt.trim()) {
       setDraftError('Please enter drafting instructions before synthesizing.');
+      if (promptTextareaRef.current) promptTextareaRef.current.focus();
       return;
     }
 
     setDrafting(true);
     setDraftError('');
-    setDraftStatus('Initializing Groq Llama3 Indian Legal Reasoning Engine…');
 
     try {
       let contextValue = null;
@@ -101,8 +121,11 @@ export default function AutoDraftWorkspace() {
       const data = await response.json();
 
       if (!isMountedRef.current) return;
-      setDrafting(false);
-      setDraftStatus('');
+      setDraftProgress(100);
+      setTimeout(() => {
+        if (!isMountedRef.current) return;
+        setDrafting(false);
+      }, 400);
 
       if (response.ok && (data.draft || data.clause || data.content)) {
         const generated = (data.draft || data.clause || data.content).replace(/^"|"$/g, '').trim();
@@ -114,7 +137,6 @@ export default function AutoDraftWorkspace() {
     } catch (err) {
       if (!isMountedRef.current) return;
       setDrafting(false);
-      setDraftStatus('');
       setDraftError('Network timeout in the AI legal reasoning engine. Please retry.');
     }
   };
@@ -263,7 +285,7 @@ export default function AutoDraftWorkspace() {
         /* Workspace Grid */
         .ad-workspace-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
+          grid-template-columns: minmax(0, 1.25fr) minmax(370px, 0.75fr);
           gap: 24px;
           align-items: start;
         }
@@ -280,7 +302,7 @@ export default function AutoDraftWorkspace() {
           border-radius: 16px;
           border: 1px solid var(--border-subtle);
           padding: 24px;
-          min-height: 680px;
+          min-height: 720px;
           display: flex;
           flex-direction: column;
           box-shadow: 0 16px 40px rgba(0,0,0,0.15);
@@ -366,8 +388,13 @@ export default function AutoDraftWorkspace() {
           box-shadow: 0 8px 24px rgba(0,0,0,0.1);
         }
 
+        .ad-card-highlight {
+          border-color: rgba(59,130,246,0.3);
+          background: linear-gradient(180deg, var(--bg-panel), rgba(59,130,246,0.03));
+        }
+
         .ad-card-title {
-          font-size: 12px;
+          font-size: 12.5px;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.08em;
@@ -381,14 +408,17 @@ export default function AutoDraftWorkspace() {
         .ad-precedent-grid {
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 9px;
+          max-height: 480px;
+          overflow-y: auto;
+          padding-right: 2px;
         }
 
         .ad-precedent-card {
           display: flex;
           flex-direction: column;
           text-align: left;
-          padding: 12px 14px;
+          padding: 11px 13px;
           border-radius: 10px;
           background: var(--bg-card);
           border: 1px solid var(--border-subtle);
@@ -402,19 +432,20 @@ export default function AutoDraftWorkspace() {
         }
 
         .ad-precedent-title {
-          font-size: 13px;
+          font-size: 12.5px;
           font-weight: 700;
           color: var(--text-primary);
         }
 
         .ad-precedent-desc {
-          font-size: 11.5px;
+          font-size: 11px;
           color: var(--text-muted);
           line-height: 1.4;
+          margin-top: 3px;
         }
 
         .ad-precedent-badge {
-          font-size: 10px;
+          font-size: 9.5px;
           font-weight: 700;
           background: rgba(59,130,246,0.12);
           color: var(--accent-primary);
@@ -429,7 +460,7 @@ export default function AutoDraftWorkspace() {
           background: var(--bg-card);
           border: 1px solid var(--border-subtle);
           color: var(--text-primary);
-          padding: 4px 10px;
+          padding: 5px 10px;
           border-radius: 14px;
           cursor: pointer;
           transition: all 0.15s;
@@ -440,48 +471,262 @@ export default function AutoDraftWorkspace() {
           border-color: var(--accent-primary);
         }
 
-        /* TipTap Document Canvas Styling */
-        .ad-document-canvas .scanner-body .ProseMirror {
-          min-height: 480px;
-          padding: 24px;
-          background: var(--bg-card);
-          border-radius: 12px;
+        /* ── ELEGANT AI SYNTHESIS SUITE ANIMATION ── */
+        .ad-synthesis-suite {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 48px 24px;
+          flex: 1;
+          text-align: center;
+        }
+
+        .ad-orbit-wrapper {
+          position: relative;
+          width: 90px;
+          height: 90px;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .ad-orbit-pulse {
+          position: absolute;
+          inset: -8px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(59,130,246,0.25) 0%, rgba(59,130,246,0) 70%);
+          animation: orbGlow 2.4s ease-in-out infinite alternate;
+        }
+
+        .ad-orbit-ring-outer {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          border: 2px dashed rgba(59,130,246,0.4);
+          animation: spin 10s linear infinite;
+        }
+
+        .ad-orbit-ring-inner {
+          position: absolute;
+          inset: 10px;
+          border-radius: 50%;
+          border: 2.5px solid transparent;
+          border-top-color: #3B82F6;
+          border-right-color: #8B5CF6;
+          animation: spin 1.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+        }
+
+        .ad-orbit-core {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #2563EB, #7C3AED);
+          color: #FFFFFF;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 18px rgba(37,99,235,0.4);
+          position: relative;
+          z-index: 2;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes orbGlow {
+          0% { transform: scale(0.9); opacity: 0.4; }
+          100% { transform: scale(1.15); opacity: 0.9; }
+        }
+
+        .ad-synthesis-heading {
+          font-size: 16px;
+          font-weight: 750;
+          color: var(--text-primary);
+          margin-bottom: 6px;
+          letter-spacing: -0.01em;
+        }
+
+        .ad-synthesis-subtext {
+          font-size: 12.5px;
+          color: var(--text-muted);
+          max-width: 460px;
+          line-height: 1.5;
+          margin-bottom: 24px;
+        }
+
+        /* Progress Laser Bar */
+        .ad-progress-container {
+          width: 100%;
+          max-width: 440px;
+          margin-bottom: 28px;
+        }
+
+        .ad-progress-track {
+          width: 100%;
+          height: 6px;
+          background: rgba(255,255,255,0.06);
           border: 1px solid var(--border-subtle);
-          font-size: 14px;
-          line-height: 1.75;
-          color: var(--text-primary);
-          outline: none;
+          border-radius: 10px;
+          overflow: hidden;
+          position: relative;
         }
 
-        .ad-document-canvas .scanner-body .ProseMirror h3 {
-          font-size: 1.25rem;
+        .ad-progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #2563EB, #3B82F6, #8B5CF6);
+          border-radius: 10px;
+          transition: width 0.35s ease;
+          position: relative;
+        }
+
+        .ad-progress-fill::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+          animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+
+        .ad-progress-meta {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 8px;
+          font-size: 11.5px;
+          font-weight: 600;
+        }
+
+        .ad-stage-name {
+          color: var(--accent-primary, #3B82F6);
+        }
+
+        .ad-stage-pct {
+          color: var(--text-muted);
+          font-variant-numeric: tabular-nums;
+        }
+
+        /* 4-Step Interactive Pipeline Tracker */
+        .ad-pipeline-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+          width: 100%;
+          max-width: 520px;
+          text-align: left;
+        }
+
+        .ad-step-card {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          opacity: 0.5;
+          transition: all 0.25s ease;
+        }
+
+        .ad-step-card.active {
+          opacity: 1;
+          border-color: var(--accent-primary);
+          background: rgba(59,130,246,0.08);
+          box-shadow: 0 4px 14px rgba(59,130,246,0.12);
+        }
+
+        .ad-step-card.done {
+          opacity: 0.9;
+          border-color: rgba(16,185,129,0.4);
+          background: rgba(16,185,129,0.06);
+        }
+
+        .ad-step-badge {
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 10px;
+          font-weight: 700;
+          background: var(--bg-panel);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-muted);
+          flex-shrink: 0;
+        }
+
+        .ad-step-card.active .ad-step-badge {
+          background: #3B82F6;
+          color: #FFFFFF;
+          border-color: #3B82F6;
+          box-shadow: 0 0 8px rgba(59,130,246,0.6);
+        }
+
+        .ad-step-card.done .ad-step-badge {
+          background: #10B981;
+          color: #FFFFFF;
+          border-color: #10B981;
+        }
+
+        .ad-step-info {
+          min-width: 0;
+        }
+
+        .ad-step-title {
+          font-size: 11.5px;
           font-weight: 700;
           color: var(--text-primary);
-          border-bottom: 1px solid var(--border-subtle);
-          padding-bottom: 6px;
-          margin-top: 1.6rem;
-          margin-bottom: 1rem;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
-        .ad-document-canvas .scanner-body .ProseMirror p {
-          margin-bottom: 1.2rem;
-          text-align: justify;
-          color: var(--text-primary);
+        .ad-step-desc {
+          font-size: 10px;
+          color: var(--text-muted);
+          line-height: 1.35;
+          margin-top: 2px;
         }
 
-        .ad-document-canvas .scanner-body .ProseMirror strong {
-          color: var(--accent-primary);
-          font-weight: 700;
+        /* ── TipTap Toolbar Font & Size Select Overrides ── */
+        .toolbar-select {
+          background: rgba(255,255,255,0.06);
+          border: 1px solid var(--border-dark-subtle, rgba(255,255,255,0.12));
+          color: var(--text-dark-primary, #F8FAFC);
+          font-size: 12px;
+          font-weight: 500;
+          border-radius: 6px;
+          padding: 3px 8px;
+          height: 28px;
+          line-height: 20px;
+          cursor: pointer;
+          font-family: inherit;
+          transition: all 0.15s;
+          box-sizing: border-box;
+          flex-shrink: 0;
         }
-
-        .ad-loading-pulse {
-          animation: pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        .toolbar-select-font { min-width: 125px; max-width: 155px; }
+        .toolbar-select-size { min-width: 82px; max-width: 95px; }
+        .toolbar-select option {
+          background: #111827;
+          color: #F8FAFC;
+          font-size: 12px;
+          padding: 4px;
         }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
+        .toolbar-select:hover { border-color: var(--accent-primary); }
+        .toolbar-select:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59,130,246,0.25); }
 
         /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
         :root[data-theme="light"] .ad-header-card {
@@ -504,6 +749,11 @@ export default function AutoDraftWorkspace() {
           background: #FFFFFF !important;
           border-color: #CBD5E1 !important;
           box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+        }
+
+        :root[data-theme="light"] .ad-card-highlight {
+          border-color: #93C5FD !important;
+          background: #FFFFFF !important;
         }
 
         :root[data-theme="light"] .ad-card-title {
@@ -555,41 +805,52 @@ export default function AutoDraftWorkspace() {
           border-color: #3B82F6 !important;
         }
 
+        :root[data-theme="light"] .ad-progress-track {
+          background: #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-step-card {
+          background: #F8FAFC !important;
+          border-color: #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-step-card.active {
+          background: #EFF6FF !important;
+          border-color: #2563EB !important;
+        }
+
+        :root[data-theme="light"] .ad-step-card.done {
+          background: #F0FDF4 !important;
+          border-color: #86EFAC !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          color: #0F172A !important;
+          font-weight: 500 !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select option {
+          background: #FFFFFF !important;
+          color: #0F172A !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select:hover {
+          background: #F8FAFC !important;
+          border-color: #94A3B8 !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select:focus {
+          border-color: #2563EB !important;
+          box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+        }
+
         :root[data-theme="light"] textarea,
         :root[data-theme="light"] select {
           background: #FFFFFF !important;
           border-color: #CBD5E1 !important;
           color: #0F172A !important;
-        }
-
-        :root[data-theme="light"] .ad-document-canvas .scanner-body {
-          background: #F8FAFC !important;
-          border: 1px solid #CBD5E1 !important;
-          border-radius: 12px !important;
-        }
-
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror {
-          background: #FFFFFF !important;
-          color: #0F172A !important;
-          border: none !important;
-        }
-
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror p {
-          color: #1E293B !important;
-        }
-
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h1,
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h2,
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h3,
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h4 {
-          color: #0F172A !important;
-          border-bottom-color: #E2E8F0 !important;
-        }
-
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror strong,
-        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror b {
-          color: #1D4ED8 !important;
-          font-weight: 700 !important;
         }
 
         :root[data-theme="light"] .ad-metric-pill {
@@ -613,53 +874,17 @@ export default function AutoDraftWorkspace() {
           }
           .ad-sovereign-badge, .ad-active-contract-status {
             position: static !important;
-            top: auto !important;
-            right: auto !important;
-            transform: none !important;
             margin: 8px 0 0 0 !important;
             width: 100% !important;
           }
-          .ad-header-desc {
-            width: 100% !important;
+          .ad-pipeline-grid {
+            grid-template-columns: 1fr !important;
           }
           .ad-draft-scope-grid {
             display: flex !important;
             flex-direction: column !important;
             width: 100% !important;
             gap: 8px !important;
-          }
-          .ad-draft-scope-grid button {
-            width: 100% !important;
-            min-height: 44px !important;
-            padding: 10px 14px !important;
-            text-align: center !important;
-            white-space: normal !important;
-            justify-content: center !important;
-          }
-          .ad-precedent-header {
-            display: flex !important;
-            flex-wrap: wrap !important;
-            justify-content: space-between !important;
-            align-items: flex-start !important;
-            gap: 6px !important;
-          }
-          .ad-precedent-title {
-            font-size: 13px !important;
-            line-height: 1.4 !important;
-            flex: 1 1 auto !important;
-            max-width: calc(100% - 100px) !important;
-          }
-          .ad-precedent-badge {
-            flex-shrink: 0 !important;
-            font-size: 10px !important;
-            padding: 2px 6px !important;
-          }
-          .ad-modifiers-row {
-            flex-wrap: wrap !important;
-            gap: 6px !important;
-          }
-          .ad-chip-btn {
-            min-height: 32px !important;
           }
           .ad-synthesize-btn {
             width: 100% !important;
@@ -683,7 +908,7 @@ export default function AutoDraftWorkspace() {
             <h1 className="ad-title-gradient">Auto-Draft Studio</h1>
             <span className="ad-sovereign-badge">Sovereign Legal Engine · Indian Law</span>
           </div>
-          <p className="ad-header-desc" style={{ fontSize: '12.5px', margin: '4px 0 0' }}>
+          <p className="ad-header-desc" style={{ fontSize: '12.5px', margin: '4px 0 0', color: 'var(--text-muted)' }}>
             Synthesize execution-ready Indian legal agreements, clauses, and precedents with AI statutory reasoning
           </p>
         </div>
@@ -730,9 +955,9 @@ export default function AutoDraftWorkspace() {
         {/* LEFT COLUMN — Live Editor & Document Canvas */}
         <div className="ad-canvas-panel">
           <div className="ad-canvas-header" style={{ gap: '12px', flexWrap: 'nowrap' }}>
-            {/* Left: Title & Truncated Stats */}
+            {/* Left: Title & Stats */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 750, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
                 Synthesized Document
               </h3>
               {autoDraftText && (
@@ -773,18 +998,55 @@ export default function AutoDraftWorkspace() {
           {/* Editor Canvas / In-Flight Reasoning State / Standby Hero */}
           <div className="ad-document-canvas" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             {drafting ? (
-              <div style={{ padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', flex: 1, textAlign: 'center' }}>
-                <div style={{ position: 'relative', width: '48px', height: '48px' }}>
-                  <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid #3B82F6', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-                  <div style={{ position: 'absolute', inset: '8px', borderRadius: '50%', border: '3px solid #8B5CF6', borderBottomColor: 'transparent', animation: 'spin 1.2s linear infinite reverse' }} />
+              <div className="ad-synthesis-suite">
+                {/* Glowing Orbit Radar Rings */}
+                <div className="ad-orbit-wrapper">
+                  <div className="ad-orbit-pulse" />
+                  <div className="ad-orbit-ring-outer" />
+                  <div className="ad-orbit-ring-inner" />
+                  <div className="ad-orbit-core">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </svg>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#3B82F6', marginBottom: '6px' }} className="ad-loading-pulse">
-                    {draftStatus || 'Synthesizing clause…'}
+
+                {/* Status Heading & Active Stage Description */}
+                <div className="ad-synthesis-heading">
+                  Synthesizing Execution-Ready Legal Agreement
+                </div>
+                <div className="ad-synthesis-subtext">
+                  {DRAFT_STAGES[draftStep]?.desc || 'Cross-referencing Indian Contract Act, statutory enforceability parameters, and precedents…'}
+                </div>
+
+                {/* Smooth Progress Laser Bar */}
+                <div className="ad-progress-container">
+                  <div className="ad-progress-track">
+                    <div className="ad-progress-fill" style={{ width: `${draftProgress}%` }} />
                   </div>
-                  <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', maxWidth: '420px', lineHeight: 1.6 }}>
-                    Cross-referencing Indian Contract Act, statutory enforceability guidelines, and Supreme Court precedent parameters…
+                  <div className="ad-progress-meta">
+                    <span className="ad-stage-name">{DRAFT_STAGES[draftStep]?.title}</span>
+                    <span className="ad-stage-pct">{Math.round(draftProgress)}% Completed</span>
                   </div>
+                </div>
+
+                {/* 4-Step Interactive Pipeline Tracker */}
+                <div className="ad-pipeline-grid">
+                  {DRAFT_STAGES.map((stg, sIdx) => {
+                    const isDone = sIdx < draftStep;
+                    const isCurrent = sIdx === draftStep;
+                    return (
+                      <div key={stg.title} className={`ad-step-card ${isDone ? 'done' : isCurrent ? 'active' : ''}`}>
+                        <div className="ad-step-badge">
+                          {isDone ? '✓' : `0${sIdx + 1}`}
+                        </div>
+                        <div className="ad-step-info">
+                          <div className="ad-step-title">{stg.title}</div>
+                          <div className="ad-step-desc">{stg.desc}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : draftError ? (
@@ -812,17 +1074,110 @@ export default function AutoDraftWorkspace() {
                 </div>
                 <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>Enterprise Auto-Draft Canvas Ready</div>
                 <div style={{ fontSize: '13px', maxWidth: '420px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
-                  Select an Indian Playbook Precedent from the right console or enter custom legal drafting instructions to synthesize structured, execution-ready contract clauses.
+                  Enter drafting instructions in the top right console or select an Indian Playbook Precedent to synthesize structured, execution-ready contract clauses.
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* RIGHT COLUMN — Synthesis Control Console */}
+        {/* RIGHT COLUMN — Synthesis Control Console (Instructions at the TOP!) */}
         <div className="ad-controls-panel">
 
-          {/* Card 1: Playbook Precedents */}
+          {/* CARD 1 (TOP): AI Synthesis Instructions & Engine */}
+          <div className="ad-card ad-card-highlight">
+            <div className="ad-card-title">
+              <span>✍️</span> Custom Drafting Instructions
+            </div>
+
+            <form onSubmit={handleSynthesize} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <textarea
+                  ref={promptTextareaRef}
+                  required
+                  rows={4}
+                  placeholder="e.g. Synthesize a complete Non-Disclosure & Non-Circumvention Agreement under the Indian Contract Act, 1872 with 3-year survival, confidential definitions, mutual indemnity, and New Delhi arbitration..."
+                  value={autoDraftPrompt}
+                  onChange={(e) => setAutoDraftPrompt(e.target.value)}
+                  style={{
+                    width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: '10px',
+                    background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-primary)', fontSize: '13.5px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5,
+                  }}
+                />
+              </div>
+
+              {/* Quick Modifier Chips */}
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Quick Provision Insert Modifiers:
+                </div>
+                <div className="ad-modifiers-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include 30-day written cure period before escalation.')}>
+                    + 30-Day Cure
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Cap aggregate liability at 100% of fees paid.')}>
+                    + 100% Fee Cap
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Seat of arbitration shall be New Delhi under Arbitration Act 1996.')}>
+                    + New Delhi Seat
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include Section 27 Indian Contract Act exception for trade secrets.')}>
+                    + Sec 27 Carve-out
+                  </button>
+                </div>
+              </div>
+
+              {/* Synthesis Depth & Context Controls */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px', marginTop: '2px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Reference Context
+                  </label>
+                  <select
+                    value={selectedContextMode}
+                    onChange={(e) => setSelectedContextMode(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '12px' }}
+                  >
+                    <option value="active_contract">Active Contract ({rawText.length} chars)</option>
+                    <option value="none">No Context (Standalone)</option>
+                    {vaultDocs.length > 0 && (
+                      <optgroup label="Vault Documents">
+                        {vaultDocs.map((doc) => (
+                          <option key={doc.id} value={doc.id}>{doc.filename}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Scope Depth
+                  </label>
+                  <select
+                    value={draftDepth}
+                    onChange={(e) => setDraftDepth(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '12px' }}
+                  >
+                    <option value="comprehensive">Comprehensive</option>
+                    <option value="standard">Standard Clause</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={drafting}
+                className="ad-action-btn ad-btn-primary ad-synthesize-btn"
+                style={{ width: '100%', padding: '13px', fontSize: '14px', fontWeight: 700, borderRadius: '10px', justifyContent: 'center', marginTop: '4px' }}
+              >
+                {drafting ? 'Synthesizing Legal Clause…' : '⚡ Synthesize Enterprise Clause'}
+              </button>
+            </form>
+          </div>
+
+          {/* CARD 2 (BOTTOM): Indian Playbook Precedent Inserts */}
           <div className="ad-card">
             <div className="ad-card-title">
               <span>📜</span> Indian Playbook Precedent Inserts
@@ -832,9 +1187,15 @@ export default function AutoDraftWorkspace() {
                 <div
                   key={label}
                   className="ad-precedent-card"
-                  onClick={() => setAutoDraftPrompt(prompt)}
+                  onClick={() => {
+                    setAutoDraftPrompt(prompt);
+                    if (promptTextareaRef.current) {
+                      promptTextareaRef.current.focus();
+                      promptTextareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }}
                 >
-                  <div className="ad-precedent-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <div className="ad-precedent-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                     <span className="ad-precedent-title">{label}</span>
                     <span className="ad-precedent-badge">
                       {badge}
@@ -846,122 +1207,6 @@ export default function AutoDraftWorkspace() {
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Card 2: Context & Depth Engine */}
-          <div className="ad-card">
-            <div className="ad-card-title">
-              <span>⚙️</span> Synthesis Depth &amp; Reference Context
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
-                  Reference Context Mode
-                </label>
-                <select
-                  value={selectedContextMode}
-                  onChange={(e) => setSelectedContextMode(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '13px' }}
-                >
-                  <option value="active_contract">Active Loaded Contract ({rawText.length} chars)</option>
-                  <option value="none">No Context (Standalone Clause)</option>
-                  {vaultDocs.length > 0 && (
-                    <optgroup label="Vault Documents">
-                      {vaultDocs.map((doc) => (
-                        <option key={doc.id} value={doc.id}>{doc.filename}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                  Draft Scope &amp; Legal Detail Depth
-                </label>
-                <div className="ad-draft-scope-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setDraftDepth('comprehensive')}
-                    style={{
-                      padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-                      background: draftDepth === 'comprehensive' ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
-                      border: draftDepth === 'comprehensive' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                      color: draftDepth === 'comprehensive' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer',
-                    }}
-                  >
-                    Comprehensive (Recitals &amp; Remedies)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDraftDepth('standard')}
-                    style={{
-                      padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-                      background: draftDepth === 'standard' ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
-                      border: draftDepth === 'standard' ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                      color: draftDepth === 'standard' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer',
-                    }}
-                  >
-                    Standard Clause Only
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: AI Synthesis Prompt Engine */}
-          <div className="ad-card">
-            <div className="ad-card-title">
-              <span>✍️</span> Custom Drafting Instructions
-            </div>
-
-            <form onSubmit={handleSynthesize} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <textarea
-                  required
-                  rows={5}
-                  placeholder="e.g. Synthesize a non-compete clause limited to 2 years within India under Section 27 of the Indian Contract Act, including a 30-day cure period and New Delhi arbitration..."
-                  value={autoDraftPrompt}
-                  onChange={(e) => setAutoDraftPrompt(e.target.value)}
-                  style={{
-                    width: '100%', boxSizing: 'border-box', padding: '14px', borderRadius: '10px',
-                    background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-primary)', fontSize: '13.5px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5,
-                  }}
-                />
-              </div>
-
-              {/* Quick Modifier Chips */}
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
-                  Quick Provision Insert Modifiers:
-                </div>
-                <div className="ad-modifiers-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include 30-day written cure period before escalation.')}>
-                    + 30-Day Cure
-                  </button>
-                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Cap aggregate liability at 100% of fees paid.')}>
-                    + 100% Fee Cap
-                  </button>
-                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Seat of arbitration shall be New Delhi under ICA Rules.')}>
-                    + New Delhi Seat
-                  </button>
-                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include Section 27 Indian Contract Act exception for trade secrets.')}>
-                    + Sec 27 Carve-out
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={drafting}
-                className="ad-action-btn ad-btn-primary ad-synthesize-btn"
-                style={{ width: '100%', padding: '14px', fontSize: '14.5px', fontWeight: 700, borderRadius: '10px', justifyContent: 'center' }}
-              >
-                {drafting ? 'Synthesizing Legal Clause…' : '⚡ Synthesize Enterprise Clause'}
-              </button>
-            </form>
           </div>
 
         </div>
