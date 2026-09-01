@@ -4,6 +4,12 @@ export const useContractStore = create((set, get) => ({
   rawText: '',
   setRawText: (text) => set({ rawText: text }),
 
+  // Rich HTML mirror of rawText, kept only so the editor can rehydrate its
+  // formatting (bold, lists, headings) across an unmount/remount without
+  // relying on getLogicalText's plain-text extraction to reconstruct it.
+  rawHtml: '',
+  setRawHtml: (html) => set({ rawHtml: html }),
+
   contractFile: null,
   setContractFile: (file) => set({ contractFile: file }),
 
@@ -36,6 +42,7 @@ export const useContractStore = create((set, get) => ({
   clearContract: () =>
     set({
       rawText: '',
+      rawHtml: '',
       contractFile: null,
       clauses: [],
       summary: '',

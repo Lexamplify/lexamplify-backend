@@ -16,7 +16,7 @@ import { RiskDecoration, updateRiskDecorations } from '../tiptap/riskDecorationE
 import { AiInsertion, AiDeletion, TrackChangesCommands } from '../tiptap/trackChangesMarks.js';
 import { InlineCitation } from '../tiptap/InlineCitationNode.js';
 import { CommentHighlight } from '../tiptap/commentHighlightMark.js';
-import { rawTextToHtml } from '../tiptap/textToHtml.js';
+import { rawTextToHtml, sanitizeHtml } from '../tiptap/textToHtml.js';
 import { inlineEditSelection } from '../services/api.js';
 
 const FONT_FAMILIES = ['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Garamond', 'Trebuchet MS'];
@@ -35,7 +35,17 @@ function generateCommentId() {
 // which would double-count an unresolved suggestion's old + new text.
 function getLogicalText(editor) {
   let text = '';
-  editor.state.doc.descendants((node) => {
+  editor.state.doc.descendants((node, pos) => {
+    // Every text-bearing block (paragraph, heading — including a list
+    // item's own paragraph) starts here. Insert a separator BEFORE it so
+    // block boundaries survive the walk — without this, a document with
+    // multiple paragraphs/list items collapses into one unbroken string,
+    // which then can't be reconstructed into paragraphs when this text is
+    // fed back through rawTextToHtml() on the editor's next mount.
+    if (node.isTextblock && text && !text.endsWith('\n')) {
+      const parent = editor.state.doc.resolve(pos).parent;
+      text += parent.type.name === 'listItem' ? '\n' : '\n\n';
+    }
     if (!node.isText) return;
     const isDeleted = node.marks.some((m) => m.type.name === 'aiDeletion');
     if (!isDeleted) text += node.text;
@@ -353,7 +363,7 @@ function SelectionBubbleMenu({ editor, onAction }) {
 }
 
 function ContractTiptapEditor({
-  documentKey, initialRawText, clauses, scanStrategy, onRiskClick, onTextChange, onEditorReady, editable = true,
+  documentKey, initialRawText, initialHtml, clauses, scanStrategy, onRiskClick, onTextChange, onHtmlChange, onEditorReady, editable = true,
   onCommentRequest, onHighlightClick, toolbarPortalTarget,
 }) {
   // Callback props are read through refs inside extension options so the
@@ -366,6 +376,8 @@ function ContractTiptapEditor({
   useEffect(() => { onRiskClickRef.current = onRiskClick; }, [onRiskClick]);
   const onTextChangeRef = useRef(onTextChange);
   useEffect(() => { onTextChangeRef.current = onTextChange; }, [onTextChange]);
+  const onHtmlChangeRef = useRef(onHtmlChange);
+  useEffect(() => { onHtmlChangeRef.current = onHtmlChange; }, [onHtmlChange]);
   const onHighlightClickRef = useRef(onHighlightClick);
   useEffect(() => { onHighlightClickRef.current = onHighlightClick; }, [onHighlightClick]);
   const debounceTimerRef = useRef(null);
@@ -407,7 +419,14 @@ function ContractTiptapEditor({
         InlineCitation,
         CommentHighlight.configure({ multicolor: true }),
       ],
-      content: rawTextToHtml(initialRawText),
+      // A previously-saved rawHtml takes priority over reconstructing HTML
+      // from plain rawText — it's the actual formatted document, not a
+      // markdown-guess reconstruction of one. Sanitized here because this
+      // is the editor's initial `content:` option, which ProseMirror's DOM
+      // parser reads directly; insertContent() calls elsewhere in this file
+      // are already safe because they parse against the editor's schema at
+      // call time, but this string is handed in before that schema exists.
+      content: initialHtml ? sanitizeHtml(initialHtml) : rawTextToHtml(initialRawText),
       editable,
       onUpdate: ({ editor: ed }) => {
         // Debounced — onUpdate fires per keystroke/transaction, and syncing
@@ -418,6 +437,7 @@ function ContractTiptapEditor({
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = setTimeout(() => {
           onTextChangeRef.current?.(getLogicalText(ed));
+          onHtmlChangeRef.current?.(ed.getHTML());
         }, 400);
       },
       // Bidirectional scrolling (editor → card): whenever the cursor lands

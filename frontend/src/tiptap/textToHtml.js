@@ -20,7 +20,7 @@ export function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-function sanitizeHtml(html) {
+export function sanitizeHtml(html) {
   if (typeof window !== 'undefined' && DOMPurify && typeof DOMPurify.sanitize === 'function') {
     return DOMPurify.sanitize(html);
   }

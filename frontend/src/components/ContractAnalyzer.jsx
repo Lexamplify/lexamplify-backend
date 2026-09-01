@@ -2281,6 +2281,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const {
     rawText,
     setRawText,
+    rawHtml,
+    setRawHtml,
     contractFile,
     setContractFile,
     clauses: flaggedClauses,
@@ -2334,7 +2336,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setCitations(result.citations || []);
       setIsAnalyzed(true);
       setIsAnalyzing(false);
-      if (result.raw_text) setRawText(result.raw_text);
+      if (result.raw_text) { setRawText(result.raw_text); setRawHtml(''); }
     };
 
     const onError = (err) => {
@@ -2468,6 +2470,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
     const content = cleanExtractedText(incoming.file_content);
     setRawText(content);
+    setRawHtml('');
     (async () => {
       setClauses([]);
       setSummary('');
@@ -2506,6 +2509,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     });
     const plainText = cleanExtractedText(container.textContent.replace(/\n{3,}/g, '\n\n').trim());
     setRawText(plainText);
+    setRawHtml('');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Quick Draft Studio fast-track: land straight in the split-pane editor
@@ -2534,6 +2538,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
         if (saved) {
           const s = JSON.parse(saved);
           if (typeof s.rawText === 'string') setRawText(s.rawText);
+          if (typeof s.rawHtml === 'string') setRawHtml(s.rawHtml);
           if (typeof s.ruleBookText === 'string') setRuleBookText(s.ruleBookText);
           if (Array.isArray(s.clauses) && s.clauses.length > 0) {
             setClauses(s.clauses);
@@ -2550,10 +2555,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
     if (!hydratedRef.current) return;
     try {
       sessionStorage.setItem('lexapp_contract_session', JSON.stringify({
-        rawText, ruleBookText, clauses, summary, isAnalyzed,
+        rawText, rawHtml, ruleBookText, clauses, summary, isAnalyzed,
       }));
     } catch (_) { /* quota / serialization — ignore */ }
-  }, [rawText, ruleBookText, clauses, summary, isAnalyzed]);
+  }, [rawText, rawHtml, ruleBookText, clauses, summary, isAnalyzed]);
 
   // Flips AFTER the rehydration effect above on the very first commit, and
   // only takes effect (for the persistence effect's guard) on the NEXT
@@ -2867,6 +2872,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       if (incoming && incoming.trim()) {
         const cleaned = cleanExtractedText(incoming);
         setRawText(cleaned);
+        setRawHtml('');
         handleTextAnalyze(cleaned);
       } else {
         handleTextAnalyze();
@@ -2902,7 +2908,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }));
 
     setClauses(mapped);
-    if (data.raw_text) setRawText(data.raw_text);
+    if (data.raw_text) { setRawText(data.raw_text); setRawHtml(''); }
     setSummary(data.summary || 'Summary generated successfully.');
     setCitations(data.citations || []);
     setIsAnalyzed(true);
@@ -3244,6 +3250,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const performReset = () => {
     setIsAnalyzed(false);
     setRawText('');
+    setRawHtml('');
     setClauses([]);
     setSummary('');
     setAppendedClauses([]);
@@ -3620,7 +3627,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                 {quickDraftMode && !isAnalyzed && (
                   <button
-                    onClick={() => { setQuickDraftMode(false); setRawText(''); }}
+                    onClick={() => { setQuickDraftMode(false); setRawText(''); setRawHtml(''); }}
                     title="Exit Quick Draft Studio and return to upload"
                     style={{
                       display: 'flex', alignItems: 'center', gap: '6px',
@@ -3790,7 +3797,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               placeholder="Paste the raw text of your contract here…"
                               value={rawText}
                               readOnly={isAnalyzing}
-                              onChange={(e) => setRawText(e.target.value)}
+                              onChange={(e) => { setRawText(e.target.value); setRawHtml(''); }}
                               style={{ marginBottom: 0 }}
                             />
                           </div>
@@ -3902,10 +3909,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       <ContractTiptapEditor
                         documentKey={documentVersion}
                         initialRawText={rawText}
+                        initialHtml={rawHtml}
                         clauses={clauses}
                         scanStrategy={scanStrategy}
                         onRiskClick={inspectRisk}
                         onTextChange={setRawText}
+                        onHtmlChange={setRawHtml}
                         onEditorReady={(ed) => { editorApiRef.current = ed; }}
                         editable={!isAnalyzing}
                         onCommentRequest={handleCommentRequest}
