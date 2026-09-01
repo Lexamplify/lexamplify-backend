@@ -6,6 +6,17 @@ import LexLogoMark from './LexLogoMark';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
+// Render (backend) and Neon (Postgres) both cold-start from idle — a sub-30s
+// abort was firing "slow to respond" errors on requests that would have
+// succeeded a few seconds later. 35s covers a worst-case double cold-start
+// (Render waking up, then its first query waking Neon) with headroom.
+const AUTH_REQUEST_TIMEOUT_MS = 35000;
+// After this long still waiting, swap the button label so a slow cold-start
+// reads as "working" rather than "hung" — tuned to fire well before a fast
+// warm request would ever reach it, so it's invisible on the common path.
+const SLOW_CONNECTION_THRESHOLD_MS = 4000;
+const WAKING_UP_MESSAGE = 'Authentication server is waking up. Please wait a few seconds and try again.';
+
 const loginStyles = `
   /* ── Root layout ── */
   .lx-login {
@@ -618,6 +629,10 @@ export default function LoginPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // True once an in-flight login/register request has taken longer than
+  // SLOW_CONNECTION_THRESHOLD_MS — swaps the button's label to something
+  // that reads as "still working" during a Render/Neon cold start.
+  const [slowConnection, setSlowConnection] = useState(false);
 
   // Forgot-password modal has two modes: 'request' (enter email) and
   // 'confirm' (set a new password) — 'confirm' opens automatically when
@@ -739,15 +754,22 @@ export default function LoginPage() {
     if (!phone.trim()) return setError('Phone number is required.');
     if (!password) return setError('Password is required.');
     if (password.length < 8) return setError('Password must be at least 8 characters.');
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setSlowConnection(false);
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
+    const slowTimer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_THRESHOLD_MS);
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ name: name.trim(), email: email.trim(), phone: phone.trim(), password }),
       });
       // Same HTML-error-page guard as handleLogin above.
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status === 504) {
+          throw new Error(WAKING_UP_MESSAGE);
+        }
         throw new Error(
           data.error ||
           (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Registration failed.')
@@ -758,16 +780,27 @@ export default function LoginPage() {
       // back to /login would re-render the form instead of the guard redirecting.
       await refreshSession();
       navigate('/dashboard', { replace: true });
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        setError(WAKING_UP_MESSAGE);
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      clearTimeout(abortTimer);
+      clearTimeout(slowTimer);
+      setLoading(false);
+      setSlowConnection(false);
+    }
   };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) return setError('Email and password are required.');
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setSlowConnection(false);
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 6000);
+    const tid = setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
+    const slowTimer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_THRESHOLD_MS);
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -781,20 +814,37 @@ export default function LoginPage() {
       // handleResetConfirm below.
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        // 401/400 are a real "wrong credentials" answer from a server that
+        // responded fine — must never be shown as a cold-start/timeout
+        // issue. 504 is Render's own edge timing out waiting on the
+        // backend, which in practice means the same thing an AbortError
+        // does here (a cold start taking too long), so it gets the same
+        // "waking up" message rather than a generic server-error one.
+        if (res.status === 401 || res.status === 400) {
+          throw new Error(data.error || data.message || 'Invalid email or password.');
+        }
+        if (res.status === 504) {
+          throw new Error(WAKING_UP_MESSAGE);
+        }
         throw new Error(
           data.error || data.message ||
-          (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Invalid credentials.')
+          (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Invalid email or password.')
         );
       }
       await refreshSession();
       navigate('/dashboard', { replace: true });
     } catch (err) {
       if (err.name === 'AbortError') {
-        setError('Authentication server is slow to respond (possibly waking from sleep). Please try again in a moment.');
+        setError(WAKING_UP_MESSAGE);
       } else {
         setError(err.message);
       }
-    } finally { clearTimeout(tid); setLoading(false); }
+    } finally {
+      clearTimeout(tid);
+      clearTimeout(slowTimer);
+      setLoading(false);
+      setSlowConnection(false);
+    }
   };
 
   const isSignIn = tab === 'signin';
@@ -1051,7 +1101,7 @@ export default function LoginPage() {
                 disabled={loading}
               >
                 {loading ? (
-                  <><span className="lx-spinner" /> Authenticating…</>
+                  <><span className="lx-spinner" /> {slowConnection ? 'Connecting to secure database…' : 'Authenticating…'}</>
                 ) : (
                   <>Sign In
                     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
@@ -1068,7 +1118,7 @@ export default function LoginPage() {
                 disabled={loading}
               >
                 {loading ? (
-                  <><span className="lx-spinner" /> Creating account…</>
+                  <><span className="lx-spinner" /> {slowConnection ? 'Connecting to secure database…' : 'Creating account…'}</>
                 ) : 'Create Advocate Account'}
               </button>
             )}

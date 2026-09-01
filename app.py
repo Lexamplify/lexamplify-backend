@@ -534,10 +534,16 @@ def create_app():
                                      # connections; a dead one is detected and
                                      # replaced instead of surfacing as an error.
             'pool_recycle': 300,     # recycle before PgBouncer's own idle timeout
-            'pool_size': 10,
-            'max_overflow': 20,
+            # Kept small deliberately: Neon's pooled connection string sits in
+            # front of PgBouncer (transaction-pooling mode), which itself caps
+            # concurrent server connections tightly — a large Flask-side pool
+            # just queues up connections PgBouncer will reject anyway. 3+2=5
+            # max concurrent connections from this process is enough for a
+            # low-traffic admin/auth path without starving the shared pooler.
+            'pool_size': 3,
+            'max_overflow': 2,
             'connect_args': {
-                'connect_timeout': 10,
+                'connect_timeout': 15,  # generous enough to ride out a Neon cold start
                 'sslmode': 'require',
             },
         }
@@ -546,6 +552,7 @@ def create_app():
         # one) — none of the Postgres engine options above are meaningful
         # here, so SQLALCHEMY_ENGINE_OPTIONS is simply left unset.
         app.config['SQLALCHEMY_DATABASE_URI'] = _raw_db_url
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
 
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
