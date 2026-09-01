@@ -126,6 +126,141 @@ const HIGH_COURT_LINKS = {
     caseStatus:   'https://digi-courts.aphc.ap.gov.in/csis_ap/',
     displayBoard: 'https://aphc.gov.in/Hcdbs/displayboard.jsp',
   },
+
+  // ── The 14 High Courts below have no legacy state-slug (see
+  // LEGACY_STATE_KEY_BY_COURT_ID's comment) so they're keyed directly by
+  // their modern /api/courts/high-courts id instead — hcLinks below checks
+  // both. Every URL was opened live and its content verified (not just
+  // guessed from a URL pattern) before being added here; where a court's
+  // own site had no distinct page for a category (an in-page widget with no
+  // separate URL, or only an APK download for "Display Board"), that key is
+  // omitted entirely rather than pointing at something that isn't really it
+  // — the UI already renders "Not Available" for a missing key.
+  chhattisgarh: {
+    mainWebsite:  'https://highcourt.cg.gov.in/',
+    causeList:    'https://highcourt.cg.gov.in/clists/index.php',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://highcourt.cg.gov.in/judicial/case_status.php',
+    displayBoard: 'https://highcourt.cg.gov.in/hcbspcourtview/court1.php',
+  },
+  gauhati: {
+    mainWebsite:  'https://ghconline.gov.in/',
+    causeList:    'https://ghconline.gov.in/index.php/consolidated-cause-list/',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://ghcservices.assam.gov.in/casestatus/',
+    displayBoard: 'https://ghcservices.assam.gov.in/ghc_display/case_display',
+  },
+  himachal: {
+    mainWebsite:  'https://highcourt.hp.gov.in/',
+    causeList:    'https://highcourt.hp.gov.in/causelist/netbd.php',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    // Case Status is an in-page AJAX widget (data-view="casesearch") with no
+    // distinct URL of its own — confirmed by clicking it and seeing the URL
+    // never change, so the homepage genuinely is where it lives.
+    caseStatus:   'https://highcourt.hp.gov.in/',
+    displayBoard: 'https://highcourt.hp.gov.in/websitedisplay/hcscreen.php',
+  },
+  jk_ladakh: {
+    mainWebsite:  'https://jkhighcourt.nic.in/',
+    causeList:    'https://jkhighcourt.nic.in/causelistj.php',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://jkhighcourt.nic.in/jk_hc_case_search_1.php',
+    displayBoard: 'http://jkhc.gov.in/dis',
+  },
+  jharkhand: {
+    mainWebsite:  'https://jharkhandhighcourt.nic.in/',
+    causeList:    'https://jharkhandhighcourt.nic.in/entire-cause-list.php',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://hcservices.ecourts.gov.in/ecourtindiaHC/index_highcourt.php?state_cd=7&dist_cd=1&stateNm=Jharkhand',
+    // displayBoard omitted: the site's own "Display Board" nav item links
+    // straight back to "/" (confirmed via its actual href) — not a real
+    // distinct destination.
+  },
+  mp: {
+    mainWebsite:  'https://mphc.gov.in/',
+    causeList:    'https://mphc.gov.in/causelist',
+    eFiling:      'https://portal.mphc.gov.in/efiling',
+    caseStatus:   'https://mphc.gov.in/case-status',
+    displayBoard: 'https://mphc.gov.in/display-board',
+  },
+  manipur: {
+    mainWebsite:  'https://hcmimphal.nic.in/',
+    causeList:    'https://hcmimphal.nic.in/causelist.html',
+    eFiling:      'https://hcmimphal.nic.in/efiling_3/index.html',
+    caseStatus:   'https://hcservices.ecourts.gov.in/ecourtindiaHC/index_highcourt.php?state_cd=25&dist_cd=1&stateNm=Manipur',
+    displayBoard: 'https://displayboard.hcmdigital.in/',
+  },
+  meghalaya: {
+    mainWebsite:  'https://meghalayahighcourt.nic.in/',
+    causeList:    'https://meghalayahighcourt.nic.in/causelist',
+    eFiling:      'https://meghalayahighcourt.nic.in/efiling-services',
+    caseStatus:   'https://meghalayahighcourt.nic.in/case-status',
+    displayBoard: 'https://meghalayahighcourt.nic.in/dboard',
+  },
+  orissa: {
+    mainWebsite:  'https://www.orissahighcourt.nic.in/',
+    causeList:    'https://www.orissahighcourt.nic.in/cause-list/',
+    eFiling:      'https://www.orissahighcourt.nic.in/e-filing/',
+    caseStatus:   'https://hcservices.ecourts.gov.in/ecourtindiaHC/index_highcourt.php?state_cd=11&dist_cd=1&stateNm=Odisha',
+    displayBoard: 'http://www.ohcdb.in/',
+  },
+  patna: {
+    mainWebsite:  'https://patnahighcourt.gov.in/',
+    causeList:    'https://patnahighcourt.gov.in/causelist/home',
+    eFiling:      'https://patnahighcourt.gov.in/efiling',
+    caseStatus:   'https://patnahighcourt.gov.in/casesearch/advance',
+    displayBoard: 'https://patnahighcourt.gov.in/online_display_board',
+  },
+  punjab_haryana: {
+    mainWebsite:  'https://new.phhc.gov.in/',
+    causeList:    'https://new.phhc.gov.in/cause/cause-list',
+    eFiling:      'https://filing.ecourts.gov.in/pdedev/',
+    caseStatus:   'https://new.phhc.gov.in/case-status/case-no',
+    displayBoard: 'https://new.phhc.gov.in/display-board',
+  },
+  sikkim: {
+    mainWebsite:  'https://hcs.gov.in/',
+    causeList:    'https://hcs.gov.in/hcs/cause-list',
+    eFiling:      'https://hcs.gov.in/hcs/efiling',
+    caseStatus:   'https://hcs.gov.in/hcs/hcourt/hg_case_search',
+    displayBoard: 'https://hcs.gov.in/hcs/hcourt/displayboard',
+  },
+  tripura: {
+    mainWebsite:  'https://thc.nic.in/',
+    causeList:    'https://hcservices.ecourts.gov.in/ecourtindiaHC/cases/highcourt_causelist.php?state_cd=20&dist_cd=1&court_code=1&stateNm=Tripura',
+    eFiling:      'https://thc.nic.in/efiling.html',
+    caseStatus:   'https://thc.nic.in/cstatus.html',
+    // displayBoard omitted: the only "Display Board" link on their site is
+    // an Android APK download (apks/displayboard.apk), not a web page.
+  },
+  uttarakhand: {
+    mainWebsite:  'https://highcourtofuttarakhand.gov.in/',
+    causeList:    'https://ehcr.uk.gov.in/uk_causelist/view_causelist.php',
+    eFiling:      'https://highcourtofuttarakhand.gov.in/efilling/',
+    caseStatus:   'https://hcservices.ecourts.gov.in/ecourtindiaHC/index_highcourt.php?state_cd=15&dist_cd=1&stateNm=Uttarakhand',
+    displayBoard: 'https://ehcr.uk.gov.in/displayboard.php',
+  },
+};
+
+// Display names for the 14 court ids above — HIGH_COURT_LINKS-only ids never
+// get an hcData.hc from fetchCourtData (no legacy mapping exists for them),
+// so the "Selected: X" banner needs its own name source independent of that
+// backend payload. Matches the /api/courts/high-courts list's own names.
+const COURT_NAME_BY_ID = {
+  chhattisgarh: 'Chhattisgarh High Court',
+  gauhati: 'Gauhati High Court',
+  himachal: 'Himachal Pradesh High Court',
+  jk_ladakh: 'High Court of J&K and Ladakh',
+  jharkhand: 'Jharkhand High Court',
+  mp: 'Madhya Pradesh High Court',
+  manipur: 'Manipur High Court',
+  meghalaya: 'Meghalaya High Court',
+  orissa: 'Orissa High Court',
+  patna: 'Patna High Court',
+  punjab_haryana: 'Punjab & Haryana High Court',
+  sikkim: 'Sikkim High Court',
+  tripura: 'Tripura High Court',
+  uttarakhand: 'Uttarakhand High Court',
 };
 
 // The full 25-court /api/courts/high-courts list uses court-name ids
@@ -1382,7 +1517,13 @@ export default function CourtResources() {
   };
 
   const activeLegacyStateKey = LEGACY_STATE_KEY_BY_COURT_ID[activeCourtId] || null;
-  const hcLinks = activeLegacyStateKey ? (HIGH_COURT_LINKS[activeLegacyStateKey] || {}) : {};
+  // Legacy-keyed courts (fetchCourtData-backed) first; the 14 link-only
+  // courts fall back to their own modern court id directly.
+  const hcLinks = (activeLegacyStateKey && HIGH_COURT_LINKS[activeLegacyStateKey])
+    || HIGH_COURT_LINKS[activeCourtId]
+    || {};
+  const hasAnyHcLink = Object.keys(hcLinks).length > 0;
+  const activeCourtDisplayName = hcData.hc?.name || COURT_NAME_BY_ID[activeCourtId] || null;
 
   const formatIPDate = (dateStr) => {
     if (!dateStr) return '—';
@@ -1618,17 +1759,17 @@ export default function CourtResources() {
             ) : (
               <div>
                 {/* SUB TAB: Overview */}
-                {hcSubTab === 'overview' && !hcData.hc && (
+                {hcSubTab === 'overview' && !hasAnyHcLink && (
                   <div style={{ padding: '20px', backgroundColor: 'var(--bg-dark-card)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-dark-muted)' }}>
                     Portal links and judges roster for this court haven't been added to the directory yet.
                   </div>
                 )}
-                {hcSubTab === 'overview' && hcData.hc && (
+                {hcSubTab === 'overview' && hasAnyHcLink && (
                   <div>
                     <div style={{ padding: '12px 16px', background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.15)', borderRadius: '8px', marginBottom: '24px', fontSize: '13.5px' }}>
-                      🔗 Selected: <strong>{hcData.hc.name}</strong>. Access official legal modules directly via the secure virtual sandbox browser.
+                      🔗 Selected: <strong>{activeCourtDisplayName}</strong>. Access official legal modules directly via the secure virtual sandbox browser.
                     </div>
-                    
+
                     <div className="grid-container">
                       <div
                         className="premium-card"
