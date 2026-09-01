@@ -261,6 +261,10 @@ const styles = `
     flex-direction: column;
     overflow: hidden;
   }
+  [data-theme="light"] .editor-column {
+    background: #F8FAFC;
+    border-right: 1px solid #E2E8F0;
+  }
 
   .editor-header-bar {
     background: var(--bg-dark-sidebar);
@@ -270,6 +274,10 @@ const styles = `
     justify-content: space-between;
     align-items: center;
     flex-shrink: 0;
+  }
+  [data-theme="light"] .editor-header-bar {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
   }
 
   .editor-tabs { display: flex; gap: 4px; }
@@ -288,45 +296,56 @@ const styles = `
   }
   .editor-tab-btn:hover { color: white; background: rgba(255,255,255,0.04); }
   .editor-tab-btn.active { color: var(--accent-primary); background: rgba(59,130,246,0.08); font-weight: 600; border-bottom-color: var(--accent-primary); border-radius: 5px 5px 0 0; }
+  [data-theme="light"] .editor-tab-btn { color: #64748B; }
+  [data-theme="light"] .editor-tab-btn:hover { color: #0F172A; background: #F1F5F9; }
+  [data-theme="light"] .editor-tab-btn.active { color: #2563EB; background: rgba(37,99,235,0.08); border-bottom-color: #2563EB; }
 
-  /* ── RICH TEXT TOOLBAR ───────────────────────────────────────────── */
-  /* Two different homes for the same toolbar:
-     - Auto-Draft's editor renders it inline, as the first child inside its
-       own .editor-scroll-area (the scrolling element) — without
-       position:sticky it would just scroll away with the document like any
-       other in-flow content. The negative margins cancel
-       .editor-scroll-area's own 24px/28px padding so the stuck toolbar
-       spans edge-to-edge; matching positive padding keeps its content
-       aligned exactly where it always was.
-     - The scanner editor's toolbar is portaled OUT of its scroll area
-       entirely, into the always-visible .scan-meta-bar header row (see
-       toolbarSlotEl/toolbarPortalTarget) — the override block right below
-       neutralizes the sticky/negative-margin rules for that case, since a
-       toolbar that's never inside a scrolling container has nothing to
-       stick to and no padding to cancel. */
+  /* ── RICH TEXT TOOLBAR (D始めて Docked / Frozen Header) ───────────── */
   .rich-text-toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 6;
-    background: var(--bg-dark-sidebar);
-    border-bottom: 1px solid var(--border-dark-subtle);
-    box-shadow: 0 6px 14px -4px rgba(0,0,0,0.28);
     display: flex;
-    gap: 2px;
-    padding: 8px 28px;
     align-items: center;
     flex-wrap: wrap;
-    margin: -24px -28px 20px;
+    gap: 4px;
+    padding: 6px 16px;
+    min-height: 40px;
+    box-sizing: border-box;
+    background: var(--bg-dark-sidebar);
+    border-bottom: 1px solid var(--border-dark-subtle);
+    width: 100%;
+    position: relative;
+    z-index: 10;
   }
   [data-theme="light"] .rich-text-toolbar {
-    box-shadow: 0 6px 14px -4px rgba(0,0,0,0.1);
+    background: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
   }
+
+  /* When inside standalone scrolling editor (e.g. Auto-Draft) */
+  .tiptap-editor-shell > .rich-text-toolbar {
+    position: sticky;
+    top: -24px;
+    z-index: 10;
+    width: calc(100% + 56px);
+    margin: -24px -28px 20px -28px;
+    padding: 8px 28px;
+    border-bottom: 1px solid var(--border-dark-subtle);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  [data-theme="light"] .tiptap-editor-shell > .rich-text-toolbar {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  /* When portaled into dedicated .scan-meta-bar below editor header */
   .scan-meta-bar .rich-text-toolbar {
     position: static;
     margin: 0;
-    padding: 6px 12px;
+    padding: 6px 14px;
     box-shadow: none;
-    border-bottom: none;
+    border: none;
+    border-radius: 0;
+    background: transparent;
   }
 
   .toolbar-btn {
@@ -334,44 +353,59 @@ const styles = `
     border: none;
     color: var(--text-dark-muted);
     padding: 4px 7px;
-    border-radius: 4px;
+    border-radius: 5px;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 28px;
-    height: 26px;
+    height: 28px;
     transition: all 0.15s;
   }
   .toolbar-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-dark-primary); }
+  .toolbar-btn.active { background: rgba(59,130,246,0.15); color: #60A5FA; }
   .toolbar-btn svg { pointer-events: none; }
+  [data-theme="light"] .toolbar-btn { color: #475569; }
+  [data-theme="light"] .toolbar-btn:hover { background: #F1F5F9; color: #0F172A; }
+  [data-theme="light"] .toolbar-btn.active { background: rgba(37,99,235,0.1); color: #2563EB; font-weight: 700; }
 
-  .toolbar-divider { width: 1px; height: 16px; background: var(--border-dark-subtle); margin: 0 4px; }
+  .toolbar-divider { width: 1px; height: 18px; background: var(--border-dark-subtle); margin: 0 4px; }
+  [data-theme="light"] .toolbar-divider { background: #E2E8F0; }
 
-  /* Font family / size dropdowns — a purpose-built class rather than
-     Tailwind-named utilities (bg-gray-800, text-sm, etc.): this project has
-     no Tailwind build step, so those class names would compile to nothing
-     and the dropdowns would render as unstyled native <select> elements. */
+  /* Font family / size dropdowns */
   .toolbar-select {
     background: rgba(255,255,255,0.04);
     border: 1px solid var(--border-dark-subtle);
     color: var(--text-dark-primary);
-    font-size: 11.5px;
-    border-radius: 5px;
+    font-size: 12px;
+    border-radius: 6px;
     padding: 3px 6px;
-    height: 26px;
+    height: 28px;
     max-width: 128px;
     cursor: pointer;
     font-family: inherit;
+    transition: all 0.15s;
   }
   .toolbar-select-size { max-width: 68px; }
   .toolbar-select:hover { background: rgba(255,255,255,0.08); }
   .toolbar-select:focus { outline: none; border-color: var(--accent-primary); }
+  [data-theme="light"] .toolbar-select {
+    background: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    color: #0F172A;
+  }
+  [data-theme="light"] .toolbar-select:hover {
+    background: #F1F5F9;
+    border-color: #94A3B8;
+  }
+  [data-theme="light"] .toolbar-select:focus {
+    border-color: #2563EB;
+    background: #FFFFFF;
+  }
 
-  /* ── SCAN META-BAR — scanner mode: toolbar portal target. Auto-Draft
-     mode: its own plain "Auto-Draft Workspace" label row. ───────────── */
+  /* ── SCAN META-BAR (Fixed/Frozen Toolbar Slot) ───────────────────── */
   .scan-meta-bar {
     background: var(--bg-dark-sidebar);
     border-bottom: 1px solid var(--border-dark-subtle);
@@ -380,11 +414,13 @@ const styles = `
     gap: 0;
     padding: 0;
     flex-shrink: 0;
-    overflow: hidden;
-    /* Matches the toolbar's own height (26px buttons + 8px top/bottom
-       padding) so this row doesn't visibly grow the instant the toolbar
-       portals in on mount — it reserves the space up front instead. */
-    min-height: 43px;
+    width: 100%;
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+  [data-theme="light"] .scan-meta-bar {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
   }
   .scan-meta-item {
     display: flex;
@@ -409,6 +445,15 @@ const styles = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  [data-theme="light"] .scan-meta-item {
+    border-right-color: #E2E8F0;
+  }
+  [data-theme="light"] .scan-meta-label {
+    color: #64748B;
+  }
+  [data-theme="light"] .scan-meta-value {
+    color: #0F172A;
   }
 
   /* ── RISK INSPECTOR TWO-COLUMN GRID ──────────────────────────────── */
@@ -559,6 +604,10 @@ const styles = `
     flex-direction: column;
     overflow: hidden;
   }
+  [data-theme="light"] .analysis-column {
+    background: #F8FAFC;
+    border-left: 1px solid #E2E8F0;
+  }
 
   .analysis-tabs-bar {
     background: var(--bg-dark-sidebar);
@@ -566,6 +615,10 @@ const styles = `
     display: flex;
     overflow-x: auto;
     flex-shrink: 0;
+  }
+  [data-theme="light"] .analysis-tabs-bar {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
   }
 
   .analysis-tab-btn {
@@ -582,6 +635,17 @@ const styles = `
   }
   .analysis-tab-btn:hover { color: white; }
   .analysis-tab-btn.active { color: #A78BFA; border-bottom-color: #8B5CF6; font-weight: 600; }
+  [data-theme="light"] .analysis-tab-btn {
+    color: #64748B;
+  }
+  [data-theme="light"] .analysis-tab-btn:hover {
+    color: #0F172A;
+  }
+  [data-theme="light"] .analysis-tab-btn.active {
+    color: #2563EB;
+    border-bottom-color: #2563EB;
+    font-weight: 700;
+  }
 
   .analysis-panel-body {
     flex: 1;
@@ -590,6 +654,9 @@ const styles = `
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  [data-theme="light"] .analysis-panel-body {
+    background: #F8FAFC;
   }
 
   /* ── UPLOAD / LANDING SCREEN ────────────────────────────────────── */
@@ -917,6 +984,21 @@ const styles = `
   .clause-risk-badge.red   { background: rgba(239,68,68,0.15);  color: #FCA5A5; }
   .clause-risk-badge.amber { background: rgba(245,158,11,0.15); color: #FCD34D; }
 
+  [data-theme="light"] .clause-list-item {
+    background: #FFFFFF;
+    border-color: #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  [data-theme="light"] .clause-list-item:hover {
+    background: #F8FAFC;
+    border-color: #CBD5E1;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  }
+  [data-theme="light"] .clause-number { color: #64748B; }
+  [data-theme="light"] .clause-text-preview { color: #1E293B; }
+  [data-theme="light"] .clause-risk-badge.red   { background: rgba(239,68,68,0.12); color: #DC2626; }
+  [data-theme="light"] .clause-risk-badge.amber { background: rgba(245,158,11,0.12); color: #D97706; }
+
   /* ── INSPECTED RISK CARD ─────────────────────────────────────────── */
   .inspected-risk-card {
     background: var(--bg-dark-card);
@@ -924,6 +1006,14 @@ const styles = `
     border-radius: 10px;
     padding: 14px;
     transition: all 0.3s ease;
+  }
+  [data-theme="light"] .inspected-risk-card {
+    background: #FFFFFF;
+    border-color: #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  [data-theme="light"] .inspected-risk-card h3 {
+    color: #0F172A !important;
   }
 
   .original-clause-box {
@@ -940,6 +1030,20 @@ const styles = `
     color: var(--text-dark-secondary);
     transition: all 0.3s ease;
   }
+  [data-theme="light"] .original-clause-box {
+    background: #F8FAFC;
+    border-color: #E2E8F0;
+    color: #1E293B;
+  }
+  [data-theme="light"] .inspected-risk-issue-box {
+    color: #1E293B !important;
+    background: rgba(245, 158, 11, 0.08) !important;
+  }
+  [data-theme="light"] .playbook-guardrail-card {
+    background: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
 
   /* ── AUTOCOMPLETE ────────────────────────────────────────────────── */
   .autocomplete-dropdown {
@@ -954,6 +1058,11 @@ const styles = `
     width: 100%;
     margin-top: 4px;
   }
+  [data-theme="light"] .autocomplete-dropdown {
+    background: #FFFFFF;
+    border-color: #E2E8F0;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  }
   .autocomplete-item {
     padding: 10px 14px;
     cursor: pointer;
@@ -963,6 +1072,14 @@ const styles = `
     color: var(--text-dark-muted);
   }
   .autocomplete-item:hover { background: rgba(59,130,246,0.1); color: white; }
+  [data-theme="light"] .autocomplete-item {
+    border-bottom-color: #E2E8F0;
+    color: #334155;
+  }
+  [data-theme="light"] .autocomplete-item:hover {
+    background: #EFF6FF;
+    color: #2563EB;
+  }
 
   /* ── CHAT ────────────────────────────────────────────────────────── */
   .chat-bubble-stream {
@@ -994,6 +1111,12 @@ const styles = `
     border-top-left-radius: 3px;
     transition: all 0.3s ease;
   }
+  [data-theme="light"] .chat-message-bubble.bot {
+    background: #FFFFFF;
+    border-color: #E2E8F0;
+    color: #1E293B;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
 
   /* ── PRECEDENTS ──────────────────────────────────────────────────── */
   .precedent-card {
@@ -1011,6 +1134,17 @@ const styles = `
     border-color: rgba(255,255,255,0.12);
   }
   .precedent-link { color: var(--link-blue); text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-flex; align-items: center; gap: 5px; transition: color 0.2s ease; }
+  [data-theme="light"] .precedent-card {
+    background: #FFFFFF;
+    border-color: #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  [data-theme="light"] .precedent-card:hover {
+    background: #F8FAFC;
+    border-color: #CBD5E1;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+  }
+  [data-theme="light"] .precedent-link { color: #2563EB; }
 
   /* ── Dual-Brain citation card: split-action footer ─────────────────── */
   .citation-action-footer { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
@@ -1026,12 +1160,24 @@ const styles = `
     text-decoration: none; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s; font-family: inherit;
   }
   .citation-btn-kanoon:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); }
+  [data-theme="light"] .citation-btn-vault {
+    background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.3); color: #2563EB;
+  }
+  [data-theme="light"] .citation-btn-kanoon {
+    background: #F1F5F9; border-color: #CBD5E1; color: #1E293B;
+  }
+  [data-theme="light"] .citation-btn-kanoon:hover {
+    background: #E2E8F0; color: #0F172A;
+  }
   .citation-not-in-vault-badge {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 2px 8px; border-radius: 10px;
     font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
     background: rgba(239,68,68,0.12); color: #F87171;
     border: 1px solid rgba(239,68,68,0.35); flex-shrink: 0; white-space: nowrap;
+  }
+  [data-theme="light"] .citation-not-in-vault-badge {
+    background: rgba(239,68,68,0.1); color: #DC2626; border-color: rgba(239,68,68,0.25);
   }
   .citation-btn-insert {
     background: rgba(139,92,246,0.15) !important;
@@ -1048,9 +1194,10 @@ const styles = `
     transition: all 0.15s !important;
     font-family: inherit !important;
   }
-  .citation-btn-insert:hover {
-    background: rgba(139,92,246,0.25) !important;
-    border-color: rgba(139,92,246,0.6) !important;
+  [data-theme="light"] .citation-btn-insert {
+    background: rgba(124, 58, 237, 0.1) !important;
+    border-color: rgba(124, 58, 237, 0.3) !important;
+    color: #6D28D9 !important;
   }
   .citation-btn-search-related {
     background: transparent !important;
@@ -1067,13 +1214,9 @@ const styles = `
     transition: all 0.15s !important;
     font-family: inherit !important;
   }
-  .citation-btn-search-related:hover:not(:disabled) {
-    background: rgba(59,130,246,0.1) !important;
-    border-color: rgba(59,130,246,0.6) !important;
-  }
-  .citation-btn-search-related:disabled {
-    opacity: 0.55 !important;
-    cursor: not-allowed !important;
+  [data-theme="light"] .citation-btn-search-related {
+    border-color: rgba(37,99,235,0.4) !important;
+    color: #2563EB !important;
   }
   .precedent-link:hover { color: var(--link-blue-hover); text-decoration: underline; }
 
@@ -1085,6 +1228,41 @@ const styles = `
     padding: 14px;
     backdrop-filter: blur(8px);
     transition: all 0.3s ease;
+  }
+  [data-theme="light"] .rec-protection-card {
+    background: #FFFFFF;
+    border-color: #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  [data-theme="light"] .rec-protection-card strong {
+    color: #0F172A !important;
+  }
+
+  /* Custom checkbox */
+  .custom-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 17px;
+    height: 17px;
+    min-width: 17px;
+    border: 1.5px solid rgba(255,255,255,0.18);
+    border-radius: 5px;
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.18s;
+  }
+  [data-theme="light"] .custom-checkbox {
+    border-color: #CBD5E1;
+    background: #F8FAFC;
+  }
+  .custom-checkbox:checked {
+    background: #8B5CF6;
+    border-color: #8B5CF6;
+  }
+  [data-theme="light"] .custom-checkbox:checked {
+    background: #2563EB;
+    border-color: #2563EB;
   }
 
   /* Custom checkbox */
@@ -1568,6 +1746,16 @@ const styles = `
     background: rgba(15, 23, 42, 0.95) !important;
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important;
   }
+  [data-theme="light"] .revision-workshop-input {
+    background: #F8FAFC !important;
+    border: 1px solid #CBD5E1 !important;
+    color: #0F172A !important;
+  }
+  [data-theme="light"] .revision-workshop-input:focus {
+    background: #FFFFFF !important;
+    border-color: #2563EB !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  }
   
   .revision-workshop-textarea {
     width: 100%;
@@ -1588,6 +1776,29 @@ const styles = `
     border-color: #10B981 !important;
     background: rgba(15, 23, 42, 0.95) !important;
     box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2) !important;
+  }
+  [data-theme="light"] .revision-workshop-textarea {
+    background: #F8FAFC !important;
+    border: 1px solid rgba(16, 185, 129, 0.4) !important;
+    color: #0F172A !important;
+  }
+  [data-theme="light"] .revision-workshop-textarea:focus {
+    background: #FFFFFF !important;
+    border-color: #10B981 !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
+  }
+  [data-theme="light"] .bg-gray-800 {
+    background-color: #F8FAFC !important;
+  }
+  [data-theme="light"] .border-gray-600 {
+    border-color: #CBD5E1 !important;
+  }
+  [data-theme="light"] .text-white {
+    color: #0F172A !important;
+  }
+  [data-theme="light"] .focus\:ring-gray-400:focus {
+    border-color: #2563EB !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
   }
   
   .revision-btn-primary {
@@ -1647,6 +1858,12 @@ const styles = `
     margin-top: 10px !important;
     box-shadow: inset 0 0 20px rgba(59, 130, 246, 0.05) !important;
   }
+  [data-theme="light"] .futuristic-scanning-container {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  }
   
   .scanner-glowing-ring {
     position: relative !important;
@@ -1666,6 +1883,10 @@ const styles = `
     border: 2px solid rgba(99, 102, 241, 0.3) !important;
     animation: pulseGlow 2s infinite ease-in-out !important;
   }
+  [data-theme="light"] .scanner-ring-pulse {
+    background: rgba(37, 99, 235, 0.08) !important;
+    border: 2px solid rgba(37, 99, 235, 0.25) !important;
+  }
   .scanner-ring-core {
     position: relative !important;
     width: 44px !important;
@@ -1677,6 +1898,14 @@ const styles = `
     align-items: center !important;
     justify-content: center !important;
     box-shadow: 0 0 15px rgba(99, 102, 241, 0.3) !important;
+  }
+  [data-theme="light"] .scanner-ring-core {
+    background: #EFF6FF !important;
+    border: 1px solid rgba(37, 99, 235, 0.3) !important;
+    box-shadow: 0 0 15px rgba(37, 99, 235, 0.18) !important;
+  }
+  [data-theme="light"] .scanner-ring-core svg {
+    stroke: #2563EB !important;
   }
   
   .scanning-laser-line {
@@ -1690,6 +1919,10 @@ const styles = `
     animation: scanLaser 4s infinite linear !important;
     z-index: 2 !important;
   }
+  [data-theme="light"] .scanning-laser-line {
+    background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.7), transparent) !important;
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.4) !important;
+  }
   
   .scanner-status-title {
     font-size: 14px !important;
@@ -1698,6 +1931,11 @@ const styles = `
     margin-bottom: 12px !important;
     text-shadow: 0 0 10px rgba(99, 102, 241, 0.3) !important;
     text-align: center !important;
+  }
+  [data-theme="light"] .scanner-status-title {
+    color: #0F172A !important;
+    text-shadow: none !important;
+    font-weight: 700 !important;
   }
   
   .scanner-progress-wrapper {
@@ -1710,11 +1948,18 @@ const styles = `
     margin-bottom: 6px !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
   }
+  [data-theme="light"] .scanner-progress-wrapper {
+    background: #E2E8F0 !important;
+    border: 1px solid #CBD5E1 !important;
+  }
   .scanner-progress-bar {
     height: 100% !important;
     background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
     border-radius: 3px !important;
     transition: width 0.3s ease !important;
+  }
+  [data-theme="light"] .scanner-progress-bar {
+    background: linear-gradient(90deg, #2563EB, #3B82F6) !important;
   }
   .scanner-progress-text {
     font-size: 11px !important;
@@ -1722,6 +1967,10 @@ const styles = `
     color: #818CF8 !important;
     margin-bottom: 20px !important;
     letter-spacing: 0.05em !important;
+  }
+  [data-theme="light"] .scanner-progress-text {
+    color: #2563EB !important;
+    font-weight: 700 !important;
   }
   
   .scanner-console-box {
@@ -1732,6 +1981,11 @@ const styles = `
     overflow: hidden !important;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
   }
+  [data-theme="light"] .scanner-console-box {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05) !important;
+  }
   .scanner-console-header {
     background: rgba(255, 255, 255, 0.03) !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -1739,6 +1993,10 @@ const styles = `
     display: flex !important;
     align-items: center !important;
     gap: 6px !important;
+  }
+  [data-theme="light"] .scanner-console-header {
+    background: #F1F5F9 !important;
+    border-bottom: 1px solid #E2E8F0 !important;
   }
   .console-dot-red, .console-dot-yellow, .console-dot-green {
     width: 6px !important;
@@ -1755,6 +2013,10 @@ const styles = `
     letter-spacing: 0.1em !important;
     margin-left: 6px !important;
   }
+  [data-theme="light"] .console-title {
+    color: #475569 !important;
+    font-weight: 800 !important;
+  }
   .scanner-console-logs {
     padding: 10px 14px !important;
     font-family: 'Courier New', Courier, monospace !important;
@@ -1765,18 +2027,59 @@ const styles = `
     overflow-y: auto !important;
     text-align: left !important;
   }
+  [data-theme="light"] .scanner-console-logs {
+    background: #F8FAFC !important;
+    color: #0F766E !important;
+  }
   .scanner-log-line {
     margin-bottom: 4px !important;
     word-break: break-all !important;
     opacity: 0.85 !important;
   }
+  [data-theme="light"] .scanner-log-line {
+    color: #0F766E !important;
+    opacity: 0.95 !important;
+  }
   .scanner-log-line.active-line {
     color: #60A5FA !important;
     opacity: 1 !important;
   }
+  [data-theme="light"] .scanner-log-line.active-line {
+    color: #2563EB !important;
+    font-weight: 600 !important;
+  }
   .log-timestamp {
     color: #475569 !important;
     margin-right: 6px !important;
+  }
+  [data-theme="light"] .log-timestamp {
+    color: #64748B !important;
+  }
+  [data-theme="light"] .console-cursor {
+    color: #2563EB !important;
+  }
+
+  /* SSE Scan status pill in document scroll area */
+  .ca-scan-progress-pill {
+    position: sticky;
+    top: 10px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(15,20,32,0.92);
+    border: 1px solid rgba(59,130,246,0.35);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 0 0 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    width: fit-content;
+    max-width: 100%;
+  }
+  [data-theme="light"] .ca-scan-progress-pill {
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
   }
   
   @keyframes pulseGlow {
@@ -3400,16 +3703,10 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   // paths (Deep Scan, Strategy Toggle, Piped Document),
                   // since all three funnel through the same jobId state +
                   // top-level useContractJobStream hook.
-                  <div style={{
-                    position: 'sticky', top: '10px', zIndex: 5,
-                    display: 'flex', alignItems: 'center', gap: '10px',
-                    background: 'rgba(15,20,32,0.92)', border: '1px solid rgba(59,130,246,0.35)',
-                    borderRadius: '10px', padding: '10px 14px', margin: '0 0 12px',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)', width: 'fit-content', maxWidth: '100%',
-                  }}>
+                  <div className="ca-scan-progress-pill">
                     <span style={{ width: '10px', height: '10px', border: '2px solid #3B82F6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
                     <span style={{ fontSize: '12.5px', color: 'var(--text-dark-primary)', fontWeight: 600 }}>{loadingText || 'Scanning...'}</span>
-                    <span style={{ fontSize: '11.5px', color: '#93C5FD', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{Math.round(scanProgress)}%</span>
+                    <span style={{ fontSize: '11.5px', color: '#3B82F6', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{Math.round(scanProgress)}%</span>
                   </div>
                 )}
                 {!rawText && !quickDraftMode ? (
@@ -3694,7 +3991,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                             <div className="inspected-risk-card" style={{ padding: '11px 13px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '7px', flexWrap: 'wrap' }}>
                                 <span className={`risk-indicator-dot ${activeClause.risk === 'RED' ? 'red' : 'amber'}`}></span>
-                                <h3 style={{ fontSize: '13px', color: 'white', margin: 0, fontWeight: '700', flex: 1 }}>
+                                <h3 style={{ fontSize: '13px', color: 'var(--text-dark-primary)', margin: 0, fontWeight: '700', flex: 1 }}>
                                   {activeClause.clauseTitle || (activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause')}
                                 </h3>
                                 {activeClause.isRuleBookViolation && (
@@ -3710,13 +4007,13 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               background: activeClause.risk === 'RED' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
                               borderLeft: `4px solid ${activeClause.risk === 'RED' ? '#EF4444' : '#F59E0B'}`,
                               fontSize: '12.5px',
-                              color: '#E2E8F0',
+                              color: 'var(--text-dark-primary)',
                               lineHeight: '1.6',
                               borderRadius: '0 8px 8px 0',
                               border: `1px solid ${activeClause.risk === 'RED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'}`,
                               borderLeftWidth: '4px'
                             }}>
-                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.risk === 'RED' ? '#FCA5A5' : '#FCD34D', display: 'block', marginBottom: '6px' }}>Indian Legal Issue</span>
+                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.risk === 'RED' ? '#EF4444' : '#D97706', display: 'block', marginBottom: '6px' }}>Indian Legal Issue</span>
                               {activeClause.issue}
                             </div>
                           </div>
@@ -3734,16 +4031,16 @@ export default function ContractAnalyzer({ setFocusMode }) {
                               gap: '6px',
                               minHeight: '60px'
                             }}>
-                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.isRuleBookViolation ? '#A78BFA' : '#94A3B8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.isRuleBookViolation ? '#8B5CF6' : 'var(--text-dark-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 0 0 6.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 0 0 6.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
                                 Playbook Guardrail
                               </span>
                               {activeClause.isRuleBookViolation && activeClause.ruleBookReference ? (
-                                <span style={{ fontSize: '12.5px', color: '#F1F5F9', lineHeight: 1.5, fontStyle: 'italic' }}>
+                                <span style={{ fontSize: '12.5px', color: 'var(--text-dark-primary)', lineHeight: 1.5, fontStyle: 'italic' }}>
                                   "{activeClause.ruleBookReference}"
                                 </span>
                               ) : (
-                                <span style={{ fontSize: '12px', color: '#64748B', fontStyle: 'italic' }}>No rule book override active for this clause.</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)', fontStyle: 'italic' }}>No rule book override active for this clause.</span>
                               )}
                             </div>
 
@@ -3940,7 +4237,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 {activeTab === 'recs' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Missing Indian Protections</h3>
+                      <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Missing Indian Protections</h3>
                       <button
                         className="btn-accent transition-all duration-300 ease-in-out"
                         style={{ fontSize: '11px', padding: '4px 10px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '5px', borderRadius: '7px' }}
@@ -3968,7 +4265,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           {missingClauses?.map((item, idx) => (
                             <div key={idx} className="rec-protection-card" style={{ marginBottom: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                <strong style={{ fontSize: '13px', color: '#F1F5F9', fontWeight: 600 }}>{item.title}</strong>
+                                <strong style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontWeight: 600 }}>{item.title}</strong>
                                 <input
                                   type="checkbox"
                                   className="custom-checkbox"
@@ -4052,7 +4349,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 {/* SUB TAB: Citations */}
                 {activeTab === 'citations' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Landmark Indian Contract Precedents</h3>
+                    <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Landmark Indian Contract Precedents</h3>
 
                     {citations.length === 0 ? (
                       <div style={{ padding: '20px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '8px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px', textAlign: 'center' }}>
@@ -4168,7 +4465,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 {/* SUB TAB: Comments */}
                 {activeTab === 'comments' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', color: 'white', margin: 0 }}>Comments</h3>
+                    <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Comments</h3>
 
                     {activeCommentDraft && (
                       <div className="revision-glass-card" data-comment-card-id={activeCommentDraft.commentId}>

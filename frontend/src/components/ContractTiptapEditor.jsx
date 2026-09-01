@@ -80,7 +80,7 @@ function ContractEditorToolbar({ editor }) {
   const currentFontSize = editor.getAttributes('textStyle').fontSize || '';
 
   return (
-    <div className="rich-text-toolbar" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', padding: '6px 12px', minHeight: '40px', boxSizing: 'border-box', border: '1px solid var(--border-subtle)', borderRadius: '8px', background: 'var(--bg-panel)' }}>
+    <div className="rich-text-toolbar">
       <select
         className="toolbar-select"
         title="Font Family"
