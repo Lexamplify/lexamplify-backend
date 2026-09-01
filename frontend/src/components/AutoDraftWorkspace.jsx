@@ -700,6 +700,45 @@ export default function AutoDraftWorkspace() {
           margin-top: 2px;
         }
 
+        /* TipTap Document Canvas Styling */
+        .ad-document-canvas .scanner-body .ProseMirror {
+          min-height: 520px;
+          padding: 28px 32px;
+          background: var(--bg-card);
+          border-radius: 12px;
+          border: 1px solid var(--border-subtle);
+          font-size: 14px;
+          line-height: 1.8;
+          color: var(--text-primary);
+          outline: none;
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror h1,
+        .ad-document-canvas .scanner-body .ProseMirror h2,
+        .ad-document-canvas .scanner-body .ProseMirror h3,
+        .ad-document-canvas .scanner-body .ProseMirror h4 {
+          font-size: 1.25rem;
+          font-weight: 750;
+          color: var(--text-primary);
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: 6px;
+          margin-top: 1.8rem;
+          margin-bottom: 1.1rem;
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror p {
+          margin-bottom: 1.25rem;
+          line-height: 1.8;
+          text-align: justify;
+          color: var(--text-primary);
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror strong,
+        .ad-document-canvas .scanner-body .ProseMirror b {
+          color: var(--accent-primary, #3B82F6);
+          font-weight: 700;
+        }
+
         /* ── TipTap Toolbar Font & Size Select Overrides ── */
         .toolbar-select {
           background: rgba(255,255,255,0.06);
@@ -844,6 +883,36 @@ export default function AutoDraftWorkspace() {
         :root[data-theme="light"] .toolbar-select:focus {
           border-color: #2563EB !important;
           box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body {
+          background: #F8FAFC !important;
+          border: 1px solid #CBD5E1 !important;
+          border-radius: 12px !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror {
+          background: #FFFFFF !important;
+          color: #0F172A !important;
+          border: none !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror p {
+          color: #1E293B !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h1,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h2,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h3,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h4 {
+          color: #0F172A !important;
+          border-bottom: 1px solid #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror strong,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror b {
+          color: #1D4ED8 !important;
+          font-weight: 700 !important;
         }
 
         :root[data-theme="light"] textarea,

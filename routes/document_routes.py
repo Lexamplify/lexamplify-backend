@@ -170,41 +170,33 @@ def auto_draft():
         "2. Format clauses into distinct numbered sub-clauses (e.g. 1.1, 1.2, 1.3) with double line breaks between paragraphs so that clauses are cleanly spaced.\n"
         "3. For sub-conditions or itemized lists, use lettered indents (e.g. (a), (b), (c)) on separate lines.\n"
         "4. Include explicit Indian statutory citations (e.g., **Indian Contract Act, 1872**, **Arbitration & Conciliation Act, 1996**, **Copyright Act, 1957**, **Specific Relief Act, 1963**, **Information Technology Act, 2000**) wherever applicable.\n"
-        "5. Depth & Details: Provide thorough, enterprise-level depth with operative obligations, notice requirements, cure periods, remedies, and governing law. Do NOT produce short 2-sentence summaries. Write a complete, execution-ready legal text without conversational fluff or preambles.\n"
-        "6. COMPLETENESS GUARANTEE: If drafting a full agreement or multi-clause schedule, write disciplined, tightly-articulated clauses (2 to 3 substantive sub-clauses each) ensuring that the agreement progresses through Scope, Consideration, Term & Termination, IP, Confidentiality, Indemnification, Dispute Resolution (Arbitration & Conciliation Act 1996), Boilerplate, and concludes with the formal Execution & Signature Block:\n\n"
-        "### IN WITNESS WHEREOF\n"
-        "The Parties hereto have executed this Agreement as of the Effective Date.\n\n"
-        "**FOR AND ON BEHALF OF [FIRST PARTY]**\nName: ____________________\nDesignation: Authorized Signatory\n\n"
-        "**FOR AND ON BEHALF OF [SECOND PARTY]**\nName: ____________________\nDesignation: Authorized Signatory\n\n"
-        "MANDATORY: Never stop mid-sentence or truncate the draft. Ensure every section and clause opened is fully concluded."
+        "5. Depth & Details: Provide thorough, enterprise-level depth with operative obligations, notice requirements, cure periods, remedies, and governing law. Do NOT produce short 2-sentence summaries. Write a complete, execution-ready legal text without conversational fluff or preambles.\n\n"
+        "MANDATORY INSTRUCTION: You must generate the complete agreement from Title, Parties, Recitals, Operative Clauses (1 through N), to Boilerplate (Severability, Notices, Jurisdiction), concluding strictly with the formal Execution & Signature Block. Never truncate, omit sections, or leave trailing markdown tokens."
     )
     if depth == 'comprehensive':
-        system_prompt += "\n7. Include comprehensive definitions, statutory indemnity scope under Section 124 of the Indian Contract Act, liability caps, and three-tier dispute escalation."
+        system_prompt += "\n6. Include full definitions, operating obligations, indemnity scope, liability caps, and dispute escalation steps."
     if context:
         system_prompt += f"\n\nREFERENCE CONTEXT:\n{context}"
     if precedent:
         system_prompt += f"\n\nPRECEDENT TO INCORPORATE:\n{precedent}"
 
     try:
+        # 4096, not 8192 — this Groq account's on_demand tier caps
+        # openai/gpt-oss-120b at an 8000 *tokens-per-minute* budget, and
+        # that budget covers the whole request (prompt + max_tokens), not
+        # just completion length. max_tokens=8192 alone already exceeds it
+        # before a single prompt token is counted, so every call failed
+        # with a 413/RateLimitError — verified live. 4096 leaves headroom
+        # for the (often several-hundred-token) system + drafting-
+        # instructions prompt while still allowing a substantial document.
         generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions}", max_tokens=4096, timeout=120)
         if not generated_text or not generated_text.strip():
             raise ValueError("LLM returned an empty draft.")
         generated_text = generated_text.strip()
-        
-        # Defensive cleanup for any trailing cutoffs
-        if not generated_text.endswith(('.', ':', '___', 'Signatory', 'Parties', 'above.')) and len(generated_text) > 200:
-            # If the LLM was cut off mid-sentence, find the last complete sentence/clause
-            last_period = max(generated_text.rfind('. '), generated_text.rfind('.\n'), generated_text.rfind('.\r\n'))
-            if last_period > len(generated_text) * 0.75:
-                generated_text = generated_text[:last_period + 1].strip()
-                if "IN WITNESS WHEREOF" not in generated_text and "Agreement" in instructions:
-                    generated_text += (
-                        "\n\n### IN WITNESS WHEREOF\n"
-                        "The Parties hereto have executed this Agreement as of the Effective Date.\n\n"
-                        "**FOR AND ON BEHALF OF [FIRST PARTY]**\nName: ____________________\nDesignation: Authorized Signatory\n\n"
-                        "**FOR AND ON BEHALF OF [SECOND PARTY]**\nName: ____________________\nDesignation: Authorized Signatory"
-                    )
-
+        # draft/clause/content are the same string under three names —
+        # different callers (old and new UI panels) read different keys
+        # for the identical generated text, so all three ship together
+        # rather than requiring each caller to agree on one key first.
         return jsonify({
             "status": "success",
             "draft": generated_text,
