@@ -654,13 +654,255 @@ ${MARKDOWN_CSS}
       display: none !important;
     }
 
-    /* 6. VIEWPORT CLEARANCE (FAB AVOIDANCE) */
-    .wr-results-page, .wr-fallback, .wr-pipeline-wrap, .wr-setup-card, .wr-results-body {
-      padding-bottom: 96px !important;
-      overflow-x: hidden !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-    }
+  /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
+  :root[data-theme="light"] .wr-pipeline-card,
+  :root[data-theme="light"] .wr-setup-card,
+  :root[data-theme="light"] .wr-fallback-card {
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.06) !important;
+  }
+  :root[data-theme="light"] .wr-pipeline-h,
+  :root[data-theme="light"] .wr-fallback-h {
+    color: #0F172A !important;
+  }
+  :root[data-theme="light"] .wr-pipeline-sub,
+  :root[data-theme="light"] .wr-fallback-p {
+    color: #475569 !important;
+  }
+  :root[data-theme="light"] .wr-stage-row.active-row {
+    background: #EFF6FF !important;
+  }
+  :root[data-theme="light"] .wr-stage-text.active {
+    color: #0F172A !important;
+    font-weight: 700 !important;
+  }
+  :root[data-theme="light"] .wr-stage-text.pending {
+    color: #64748B !important;
+  }
+  :root[data-theme="light"] .wr-stage-dot.pending {
+    background: #CBD5E1 !important;
+  }
+  :root[data-theme="light"] .wr-dropzone {
+    background: #F8FAFC !important;
+    border-color: #93C5FD !important;
+  }
+  :root[data-theme="light"] .wr-dropzone:hover {
+    background: #EFF6FF !important;
+    border-color: #3B82F6 !important;
+  }
+  :root[data-theme="light"] .wr-dropzone.drag-over {
+    background: #DBEAFE !important;
+    border-color: #2563EB !important;
+  }
+  :root[data-theme="light"] .wr-dropzone-title {
+    color: #0F172A !important;
+    font-weight: 700 !important;
+  }
+  :root[data-theme="light"] .wr-dropzone-hint {
+    color: #475569 !important;
+  }
+  :root[data-theme="light"] .wr-or-divider {
+    color: #64748B !important;
+  }
+  :root[data-theme="light"] .wr-or-divider::before,
+  :root[data-theme="light"] .wr-or-divider::after {
+    background: #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-step-row {
+    border-bottom-color: #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-step-num {
+    background: rgba(37,99,235,0.1) !important;
+    color: #1D4ED8 !important;
+    border: 1px solid rgba(37,99,235,0.25) !important;
+    font-weight: 800 !important;
+  }
+  :root[data-theme="light"] .wr-cmd-chip {
+    background: #EFF6FF !important;
+    border: 1px solid #BFDBFE !important;
+    color: #1D4ED8 !important;
+    font-weight: 600 !important;
+  }
+  :root[data-theme="light"] .wr-results-header {
+    background: #FFFFFF !important;
+    border-bottom: 1px solid #CBD5E1 !important;
+  }
+  :root[data-theme="light"] .wr-results-title {
+    color: #0F172A !important;
+  }
+  :root[data-theme="light"] .wr-results-subtitle {
+    color: #475569 !important;
+  }
+  :root[data-theme="light"] .wr-new-sim-btn {
+    background: #F8FAFC !important;
+    border-color: #CBD5E1 !important;
+    color: #334155 !important;
+  }
+  :root[data-theme="light"] .wr-new-sim-btn:hover {
+    background: #EFF6FF !important;
+    border-color: #3B82F6 !important;
+    color: #1D4ED8 !important;
+  }
+  :root[data-theme="light"] .wr-card {
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.04) !important;
+  }
+  :root[data-theme="light"] .wr-card-head {
+    background: #F8FAFC !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-card-title {
+    color: #0F172A !important;
+    font-weight: 800 !important;
+  }
+  :root[data-theme="light"] .wr-roman {
+    background: rgba(37,99,235,0.1) !important;
+    color: #1D4ED8 !important;
+    border-color: rgba(37,99,235,0.25) !important;
+  }
+  :root[data-theme="light"] .wr-issue-row {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-issue-num {
+    background: rgba(37,99,235,0.1) !important;
+    color: #1D4ED8 !important;
+    border-color: rgba(37,99,235,0.25) !important;
+  }
+  :root[data-theme="light"] .wr-issue-text {
+    color: #1E293B !important;
+    font-weight: 500 !important;
+  }
+  :root[data-theme="light"] .wr-cit-card {
+    background: #F8FAFC !important;
+    border: 1px solid #CBD5E1 !important;
+    border-left: 3px solid #2563EB !important;
+  }
+  :root[data-theme="light"] .wr-cit-card:hover {
+    background: #EFF6FF !important;
+    border-color: #2563EB !important;
+    box-shadow: 0 4px 16px rgba(37,99,235,0.1) !important;
+  }
+  :root[data-theme="light"] .wr-cit-title {
+    color: #1D4ED8 !important;
+    font-weight: 700 !important;
+  }
+  :root[data-theme="light"] .wr-cit-snippet {
+    color: #334155 !important;
+  }
+  :root[data-theme="light"] .wr-cit-index {
+    color: #64748B !important;
+  }
+  :root[data-theme="light"] .wr-argument-doc {
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+  }
+  :root[data-theme="light"] .wr-argument-text {
+    color: #0F172A !important;
+  }
+  :root[data-theme="light"] .wr-threat-card {
+    border: 1px solid #CBD5E1 !important;
+    border-left: 3px solid #EF4444 !important;
+    background: #FFFFFF !important;
+  }
+  :root[data-theme="light"] .wr-threat-trigger {
+    background: #FFF5F5 !important;
+  }
+  :root[data-theme="light"] .wr-threat-trigger:hover {
+    background: #FEE2E2 !important;
+  }
+  :root[data-theme="light"] .wr-threat-q {
+    color: #0F172A !important;
+  }
+  :root[data-theme="light"] .wr-threat-tag {
+    color: #DC2626 !important;
+    font-weight: 800 !important;
+  }
+  :root[data-theme="light"] .wr-rebuttal-inner {
+    background: #FFFFFF !important;
+    border-top: 1px solid #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-rebuttal-body {
+    background: #F0FDF4 !important;
+    border-left: 3px solid #10B981 !important;
+    color: #065F46 !important;
+    font-weight: 500 !important;
+  }
+  :root[data-theme="light"] .wr-use-rebuttal-btn {
+    background: #ECFDF5 !important;
+    border-color: #86EFAC !important;
+    color: #059669 !important;
+  }
+  :root[data-theme="light"] .wr-use-rebuttal-btn:hover {
+    background: #D1FAE5 !important;
+    color: #047857 !important;
+  }
+  :root[data-theme="light"] .wr-chat-outer {
+    border: 1px solid #CBD5E1 !important;
+    background: #FFFFFF !important;
+  }
+  :root[data-theme="light"] .wr-tone-bar {
+    background: #F8FAFC !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-tone-label {
+    color: #475569 !important;
+  }
+  :root[data-theme="light"] .wr-tone-btn {
+    color: #475569 !important;
+    border-color: #CBD5E1 !important;
+  }
+  :root[data-theme="light"] .wr-tone-btn:hover {
+    color: #0F172A !important;
+    border-color: #94A3B8 !important;
+  }
+  :root[data-theme="light"] .wr-chat-messages {
+    background: #F8FAFC !important;
+  }
+  :root[data-theme="light"] .wr-bubble.bot {
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    color: #1E293B !important;
+  }
+  :root[data-theme="light"] .wr-bubble.user {
+    background: #2563EB !important;
+    color: #FFFFFF !important;
+  }
+  :root[data-theme="light"] .wr-bubble.typing {
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    color: #64748B !important;
+  }
+  :root[data-theme="light"] .wr-qr-pill {
+    background: #EFF6FF !important;
+    border-color: #93C5FD !important;
+    color: #1D4ED8 !important;
+    font-weight: 600 !important;
+  }
+  :root[data-theme="light"] .wr-qr-pill:hover:not(:disabled) {
+    background: #DBEAFE !important;
+    border-color: #3B82F6 !important;
+    color: #1D4ED8 !important;
+  }
+  :root[data-theme="light"] .wr-chat-input-row {
+    background: #FFFFFF !important;
+    border-top: 1px solid #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-chat-input {
+    color: #0F172A !important;
+  }
+  :root[data-theme="light"] .wr-chat-input::placeholder {
+    color: #94A3B8 !important;
+  }
+  :root[data-theme="light"] .wr-save-bar {
+    background: #F8FAFC !important;
+    border-top: 1px solid #E2E8F0 !important;
+  }
+  :root[data-theme="light"] .wr-save-hint {
+    color: #475569 !important;
+  }
   }
 `;
 
@@ -1129,8 +1371,8 @@ export default function WarRoomView() {
           <div className="wr-setup-card">
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div style={{ fontSize: '42px', marginBottom: '12px', filter: 'drop-shadow(0 4px 12px rgba(59,130,246,0.3))' }}>⚖️</div>
-              <h2 style={{ fontSize: '21px', fontWeight: '700', color: 'white', margin: '0 0 8px' }}>Virtual Courtroom — Ready</h2>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
+              <h2 className="wr-setup-title" style={{ fontSize: '21px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 8px' }}>Virtual Courtroom — Ready</h2>
+              <p className="wr-setup-desc" style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
                 Upload a document directly or trigger via the LexAmplify.
               </p>
             </div>
@@ -1152,7 +1394,7 @@ export default function WarRoomView() {
               ) : (
                 <>
                   <span className="wr-dropzone-icon">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(59,130,246,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="17 8 12 3 7 8" />
                       <line x1="12" y1="3" x2="12" y2="15" />
@@ -1176,8 +1418,8 @@ export default function WarRoomView() {
                 <div key={s.num} className="wr-step-row">
                   <span className="wr-step-num">{s.num}</span>
                   <div>
-                    <div style={{ fontSize: '13.5px', fontWeight: '600', color: 'white', marginBottom: '3px' }}>{s.title}</div>
-                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{s.desc}</div>
+                    <div className="wr-step-title" style={{ fontSize: '13.5px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '3px' }}>{s.title}</div>
+                    <div className="wr-step-desc" style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{s.desc}</div>
                     {s.chip && <div className="wr-cmd-chip">{s.chip}</div>}
                   </div>
                 </div>
@@ -1196,10 +1438,9 @@ export default function WarRoomView() {
                 Open LexAmplify
               </button>
               <button
-                style={{ padding: '10px 22px', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '7px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' }}
+                className="btn-secondary"
+                style={{ padding: '10px 22px', border: '1px solid var(--border-subtle)', borderRadius: '7px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' }}
                 onClick={() => navigate('/vault')}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(59,130,246,0.35)'; e.currentTarget.style.color = 'white'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
               >
                 Go to Case Vault
               </button>
