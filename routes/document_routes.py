@@ -189,7 +189,19 @@ def auto_draft():
         # with a 413/RateLimitError — verified live. 4096 leaves headroom
         # for the (often several-hundred-token) system + drafting-
         # instructions prompt while still allowing a substantial document.
-        generated_text = ask_groq(system_prompt, f"Drafting instructions: {instructions}", max_tokens=4096, timeout=120)
+        #
+        # A full 20+ clause enterprise agreement with a signature block can
+        # still exceed 4096 tokens on its own, which used to show up as the
+        # draft cutting off mid-clause with no error (finish_reason=="length"
+        # isn't a failure, so the old single-call version returned the
+        # truncated text as if it were complete). max_continuations resumes
+        # generation with additional calls at the SAME safe max_tokens
+        # ceiling instead of raising it, so the per-request TPM budget above
+        # is never exceeded.
+        generated_text = ask_groq(
+            system_prompt, f"Drafting instructions: {instructions}",
+            max_tokens=4096, timeout=120, max_continuations=2,
+        )
         if not generated_text or not generated_text.strip():
             raise ValueError("LLM returned an empty draft.")
         generated_text = generated_text.strip()

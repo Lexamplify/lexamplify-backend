@@ -29,11 +29,24 @@ litellm.set_verbose = False
 _THINK_BLOCK_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
 
 
-def ask_groq(system_prompt: str, user_msg: str, **kwargs) -> str:
+def ask_groq(system_prompt: str, user_msg: str, max_continuations: int = 0, **kwargs) -> str:
     """
     LLM Gateway Router.
     Attempts the primary model first. If it hits a Token Limit or Rate Limit,
     it automatically routes to the fallbacks without crashing.
+
+    max_continuations: off by default. When > 0, a response that stops
+    because it hit max_tokens (finish_reason == "length") is automatically
+    resumed with up to this many follow-up completions, each picking up
+    exactly where the last one left off, and the pieces are concatenated.
+    This exists instead of just raising max_tokens because this account's
+    Groq on_demand tier caps groq/openai/gpt-oss-120b at an 8000
+    tokens-per-minute budget that covers prompt + max_tokens together —
+    verified live (see auto_draft() in routes/document_routes.py). A single
+    request with max_tokens=8192 blows that budget before generation even
+    starts. Chaining several requests at the existing safe max_tokens
+    ceiling reaches the same total output without ever exceeding the
+    per-request budget.
     """
     messages = [
         {"role": "system", "content": system_prompt},
@@ -41,16 +54,33 @@ def ask_groq(system_prompt: str, user_msg: str, **kwargs) -> str:
     ]
 
     try:
-        response = completion(
-            model="groq/openai/gpt-oss-120b",
-            messages=messages,
-            fallbacks=["groq/openai/gpt-oss-20b", "groq/qwen/qwen3.6-27b"],
-            num_retries=2,
-            drop_params=True,
-            **kwargs
-        )
-        content = response.choices[0].message.content or ''
-        return _THINK_BLOCK_RE.sub('', content).strip()
+        full_content = ''
+        remaining = max_continuations
+        while True:
+            response = completion(
+                model="groq/openai/gpt-oss-120b",
+                messages=messages,
+                fallbacks=["groq/openai/gpt-oss-20b", "groq/qwen/qwen3.6-27b"],
+                num_retries=2,
+                drop_params=True,
+                **kwargs
+            )
+            choice = response.choices[0]
+            piece = _THINK_BLOCK_RE.sub('', choice.message.content or '').strip()
+            full_content += piece
+            if choice.finish_reason != 'length' or remaining <= 0:
+                break
+            remaining -= 1
+            # Feed the partial output back as assistant history so the
+            # model resumes the same document instead of restarting it.
+            messages.append({"role": "assistant", "content": choice.message.content or ''})
+            messages.append({
+                "role": "user",
+                "content": "Continue exactly where you left off. Do not repeat any earlier "
+                           "text, do not restart, and do not add a preamble — resume the "
+                           "document from the next character.",
+            })
+        return full_content
     except Exception as e:
         print(f"LLM Gateway Exhausted all fallbacks. Error: {str(e)}")
         raise e

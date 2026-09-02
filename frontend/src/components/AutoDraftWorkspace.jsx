@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import DraftsModal from './DraftsModal.jsx';
 import { useContractStore } from '../store/useContractStore.js';
-import { fetchDocuments } from '../services/api.js';
+import { fetchDocuments, extractContractText } from '../services/api.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -18,6 +18,7 @@ export default function AutoDraftWorkspace() {
   const navigate = useNavigate();
   const isMountedRef = useRef(true);
   const promptTextareaRef = useRef(null);
+  const draftUploadInputRef = useRef(null);
 
   // Shared contract state lifted from store
   const {
@@ -43,6 +44,8 @@ export default function AutoDraftWorkspace() {
   const [copied, setCopied] = useState(false);
   const [appended, setAppended] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [uploadingDraft, setUploadingDraft] = useState(false);
+  const [draftUploadError, setDraftUploadError] = useState('');
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -109,15 +112,29 @@ export default function AutoDraftWorkspace() {
         contextValue = selectedContextMode;
       }
 
-      const response = await fetch(`${API_BASE}/api/documents/draft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: autoDraftPrompt.trim(),
-          context: contextValue,
-          depth: draftDepth,
-        }),
-      });
+      // Backend now resumes truncated drafts with up to 2 follow-up LLM
+      // calls (see ask_groq's max_continuations in utils/ai_helper.py) so a
+      // full 20+ clause agreement can take noticeably longer than a single
+      // completion. 150s gives that room without waiting forever on a
+      // genuine hang — comfortably above the 90s floor this needs at minimum.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 150000);
+
+      let response;
+      try {
+        response = await fetch(`${API_BASE}/api/documents/draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: autoDraftPrompt.trim(),
+            context: contextValue,
+            depth: draftDepth,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const data = await response.json();
 
       if (!isMountedRef.current) return;
@@ -137,7 +154,58 @@ export default function AutoDraftWorkspace() {
     } catch (err) {
       if (!isMountedRef.current) return;
       setDrafting(false);
-      setDraftError('Network timeout in the AI legal reasoning engine. Please retry.');
+      setDraftError(
+        err?.name === 'AbortError'
+          ? 'The AI reasoning engine took too long to respond (150s). Please retry — a shorter or more focused instruction may complete faster.'
+          : 'Network timeout in the AI legal reasoning engine. Please retry.'
+      );
+    }
+  };
+
+  const handleUploadDraft = async (files) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const extension = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'docx', 'txt'].includes(extension)) {
+      setDraftUploadError('Invalid format. Please upload a PDF, DOCX, or TXT file.');
+      return;
+    }
+    if (file.size > 104857600) {
+      setDraftUploadError('File exceeds 100MB. Please upload a smaller draft.');
+      return;
+    }
+
+    setUploadingDraft(true);
+    setDraftUploadError('');
+    try {
+      let extracted;
+      if (extension === 'txt') {
+        extracted = await file.text();
+      } else {
+        // Reuses the same /api/contract/extract-text route the Contract
+        // Analyzer upload already relies on (PyMuPDF/pdfplumber/PyPDF2 for
+        // PDF, python-docx for DOCX) — no new backend parsing needed.
+        const res = await extractContractText(file);
+        if (res?.error) throw new Error(res.message || 'Failed to extract document text.');
+        extracted = typeof res === 'string' ? res : (res?.text || '');
+      }
+
+      if (!extracted || !extracted.trim()) {
+        throw new Error('No readable text found in the uploaded file.');
+      }
+
+      // Same clause-numbering fixup ContractAnalyzer.jsx applies to its own
+      // extracted text ("1.1" mis-split across a sentence boundary by PDF
+      // extraction) — kept local since it's a one-line regex, not worth a
+      // shared util for.
+      const cleaned = extracted.replace(/(\w+)\.(\d+)\./g, '$1. $2.');
+      setAutoDraftText(cleaned);
+      setAutoDraftVersion((v) => v + 1);
+    } catch (err) {
+      setDraftUploadError(err?.message || 'Failed to read the uploaded draft.');
+    } finally {
+      setUploadingDraft(false);
+      if (draftUploadInputRef.current) draftUploadInputRef.current.value = '';
     }
   };
 
@@ -1239,14 +1307,38 @@ export default function AutoDraftWorkspace() {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={drafting}
-                className="ad-action-btn ad-btn-primary ad-synthesize-btn"
-                style={{ width: '100%', padding: '13px', fontSize: '14px', fontWeight: 700, borderRadius: '10px', justifyContent: 'center', marginTop: '4px' }}
-              >
-                {drafting ? 'Synthesizing Legal Clause…' : '⚡ Synthesize Enterprise Clause'}
-              </button>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                <button
+                  type="submit"
+                  disabled={drafting}
+                  className="ad-action-btn ad-btn-primary ad-synthesize-btn"
+                  style={{ flex: 1, padding: '13px', fontSize: '14px', fontWeight: 700, borderRadius: '10px', justifyContent: 'center' }}
+                >
+                  {drafting ? 'Synthesizing Legal Clause…' : '⚡ Synthesize Enterprise Clause'}
+                </button>
+                <button
+                  type="button"
+                  disabled={uploadingDraft}
+                  onClick={() => draftUploadInputRef.current?.click()}
+                  className="ad-action-btn ad-btn-secondary"
+                  title="Upload an existing draft (PDF, DOCX, or TXT) directly into the editor"
+                  style={{ padding: '13px 16px', fontSize: '13px', fontWeight: 600, borderRadius: '10px', justifyContent: 'center', flexShrink: 0 }}
+                >
+                  {uploadingDraft ? '…' : '📤 Upload Draft'}
+                </button>
+                <input
+                  type="file"
+                  ref={draftUploadInputRef}
+                  style={{ display: 'none' }}
+                  accept=".pdf,.docx,.txt"
+                  onChange={(e) => handleUploadDraft(e.target.files)}
+                />
+              </div>
+              {draftUploadError && (
+                <div style={{ fontSize: '11.5px', color: '#EF4444', marginTop: '-4px' }}>
+                  {draftUploadError}
+                </div>
+              )}
             </form>
           </div>
 
