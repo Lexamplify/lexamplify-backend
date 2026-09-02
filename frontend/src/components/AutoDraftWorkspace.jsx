@@ -112,16 +112,17 @@ export default function AutoDraftWorkspace() {
         contextValue = selectedContextMode;
       }
 
-      // Backend now resumes truncated drafts with up to 2 follow-up LLM
-      // calls (see ask_groq's max_continuations in utils/ai_helper.py) so a
-      // full agreement can take noticeably longer than a single completion
-      // (up to 5 calls now — see max_continuations=4 in document_routes.py).
-      // 240s gives that room without waiting forever on a genuine hang —
-      // comfortably above the 90s floor this needs at minimum; in practice
-      // Groq's inference speed means even a 5-call chain rarely takes more
-      // than a few seconds per call.
+      // Backend now resumes truncated drafts with up to 4 follow-up LLM
+      // calls (max_continuations in document_routes.py) AND retries any
+      // individual call that hits Groq's account-wide rolling rate limit,
+      // sleeping for however long Groq's own error says to wait (verified
+      // live up to ~32s for one retry) before trying again. A large
+      // reference-context draft can legitimately need several such waits
+      // across its call chain. 300s gives real room for that without
+      // waiting forever on a genuine hang — comfortably above the 90s
+      // floor this needs at minimum.
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 240000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       let response;
       try {
@@ -159,7 +160,7 @@ export default function AutoDraftWorkspace() {
       setDrafting(false);
       setDraftError(
         err?.name === 'AbortError'
-          ? 'The AI reasoning engine took too long to respond (240s). Please retry — a shorter or more focused instruction may complete faster.'
+          ? 'The AI reasoning engine took too long to respond (300s). Please retry — a shorter or more focused instruction may complete faster.'
           : 'Network timeout in the AI legal reasoning engine. Please retry.'
       );
     }

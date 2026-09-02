@@ -34,7 +34,41 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
         import fitz
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         try:
-            text = "\n".join(page.get_text() for page in doc)
+            # page.get_text() (plain "text" mode) puts a \n at every ORIGINAL
+            # PRINT LINE, not at paragraph boundaries — a sentence that wrapped
+            # across two print lines in the PDF becomes two separate lines
+            # here. Fed through rawTextToHtml() on the frontend (which treats
+            # a single \n as a soft <br> and needs a blank line for a new
+            # <p>), that reproduces the PDF's print-line wrapping as random
+            # mid-sentence breaks instead of real paragraphs — confirmed live
+            # against a real PDF upload showing exactly this collapsed/
+            # misaligned text in the Auto-Draft editor.
+            #
+            # get_text("blocks") instead: each block is one logical
+            # paragraph/heading/list-item as PyMuPDF's own layout analysis
+            # groups it. Flatten each block's internal line-wraps into a
+            # single flowing line (they're print-line wraps, not real
+            # breaks), join blocks with a blank line so the frontend
+            # reconstructs real paragraphs, and drop two kinds of pure
+            # layout noise that otherwise leak into the text: page-number
+            # footers/headers (a block that's just digits) and standalone
+            # bullet-glyph blocks (some PDF exporters place a list's bullet
+            # characters in their own block, separate from the item text).
+            paragraphs = []
+            for page in doc:
+                blocks = page.get_text("blocks")
+                blocks.sort(key=lambda b: (round(b[1], 1), b[0]))
+                for b in blocks:
+                    block_text = b[4].strip()
+                    if not block_text:
+                        continue
+                    if re.fullmatch(r'\d{1,4}', block_text):
+                        continue
+                    if re.fullmatch(r'[•\-\*\s]+', block_text):
+                        continue
+                    flowed = re.sub(r'\s*\n\s*', ' ', block_text).strip()
+                    paragraphs.append(flowed)
+            text = "\n\n".join(paragraphs)
         finally:
             doc.close()
     elif filetype == "docx":
