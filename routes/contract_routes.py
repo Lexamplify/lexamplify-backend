@@ -481,7 +481,7 @@ def stream_job(job_id):
 EXTRACTION_TIMEOUT_SECONDS = 10
 
 
-@contract_bp.route("/extract-text", methods=["POST"])
+@contract_bp.route("/extract-text", methods=["POST", "OPTIONS"])
 def extract_text():
     """
     Extract raw text from a PDF or DOCX upload without running analysis.
@@ -495,6 +495,20 @@ def extract_text():
     Python cannot forcibly kill the still-running worker thread, but the
     HTTP response — and the frontend's stuck spinner — is unblocked either way.
     """
+    if request.method == "OPTIONS":
+        # This route was declared POST-only, so it had no explicit OPTIONS
+        # handling — unlike routes/document_routes.py's auto_draft()/
+        # inline_edit(), which both handle OPTIONS explicitly for exactly
+        # this reason. On the deployed api.<domain> split (a different
+        # origin from the frontend), the browser's CORS preflight for this
+        # route came back without app.py's global add_cors_headers() hook
+        # ever running on it, so the actual POST never fired — confirmed
+        # live via a browser console CORS error on Auto-Draft Studio's
+        # upload feature. Same fix as those two routes: short-circuit here
+        # so the global after_request hook gets a response to attach the
+        # Access-Control-Allow-* headers to.
+        return jsonify({}), 200
+
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
     from werkzeug.utils import secure_filename
 

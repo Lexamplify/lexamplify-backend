@@ -162,19 +162,33 @@ def auto_draft():
 
     depth = str(data.get('depth') or 'comprehensive').strip()
 
+    # Concise/placeholder-driven, NOT prose-heavy — the earlier "thorough,
+    # enterprise-level depth... do NOT produce short summaries" wording
+    # pushed the model to invent fictional company names, addresses, and
+    # percentages and write multi-sentence sub-clauses, which is why real
+    # 25-30 clause agreements were running out of the safe max_tokens
+    # budget before reaching Signatures (verified: a "complete" 20-clause
+    # test draft alone ran ~2,600 words). A lawyer-facing template tool
+    # should hand back the same shape a firm actually hands a client to
+    # fill in — bracketed placeholders, one-to-a-few sentences per
+    # sub-clause — which is also what a plain ChatGPT-style draft of the
+    # same request naturally produces. Terser output both matches what
+    # users expect AND fits the token budget in one pass far more often,
+    # with the continuation loop below as a safety net rather than the
+    # primary mechanism for reaching the end.
     system_prompt = (
         "You are a Senior Indian Legal Advocate & Corporate Law Partner. "
-        "Synthesize a highly detailed, comprehensive, enterprise-grade legal clause or agreement draft based strictly on Indian Law.\n\n"
+        "Synthesize a complete, professionally structured legal clause or agreement draft based strictly on Indian Law, in the style of a fillable legal template — the same kind of draft a law firm hands a client to complete per-deal, not a finished contract with invented facts.\n\n"
         "FORMATTING & STRUCTURE REQUIREMENTS:\n"
-        "1. Use Markdown formatting: Use level-3 headings (### 1. Title of Clause) for main headings.\n"
-        "2. Format clauses into distinct numbered sub-clauses (e.g. 1.1, 1.2, 1.3) with double line breaks between paragraphs so that clauses are cleanly spaced.\n"
+        "1. Use Markdown formatting: level-3 headings (### 1. TITLE OF CLAUSE) for each numbered clause, numbered sequentially through the entire document.\n"
+        "2. Format clauses into numbered sub-clauses (e.g. 1.1, 1.2, 1.3) with double line breaks between paragraphs.\n"
         "3. For sub-conditions or itemized lists, use lettered indents (e.g. (a), (b), (c)) on separate lines.\n"
         "4. Include explicit Indian statutory citations (e.g., **Indian Contract Act, 1872**, **Arbitration & Conciliation Act, 1996**, **Copyright Act, 1957**, **Specific Relief Act, 1963**, **Information Technology Act, 2000**) wherever applicable.\n"
-        "5. Depth & Details: Provide thorough, enterprise-level depth with operative obligations, notice requirements, cure periods, remedies, and governing law. Do NOT produce short 2-sentence summaries. Write a complete, execution-ready legal text without conversational fluff or preambles.\n\n"
-        "MANDATORY INSTRUCTION: You must generate the complete agreement from Title, Parties, Recitals, Operative Clauses (1 through N), to Boilerplate (Severability, Notices, Jurisdiction), concluding strictly with the formal Execution & Signature Block. Never truncate, omit sections, or leave trailing markdown tokens."
+        "5. CONCISENESS IS MANDATORY: each sub-clause is 1-3 sentences stating the operative rule plainly, like a template, not an essay. Do NOT invent specific company names, addresses, amounts, dates, percentages, or cities — use bracketed placeholders instead (e.g. [Client/Company Legal Name], [Amount], [Number] days, [City, State/Country]) exactly as a fillable template leaves them for the parties to complete.\n\n"
+        "MANDATORY INSTRUCTION: Generate the COMPLETE agreement from Title, Parties, and Recitals through every relevant operative and boilerplate clause (definitions, scope, responsibilities of each party, fees, term, confidentiality, IP, representations & warranties, acceptance, termination, limitation of liability, indemnification, independent contractor status, non-solicitation, data protection, force majeure, dispute resolution, governing law, notices, assignment, subcontracting, entire agreement, amendments, severability, waiver, counterparts, survival — as applicable to the instructions), concluding strictly with a formal Signatures block for both parties. Never truncate, omit sections, or leave trailing markdown tokens — a shorter COMPLETE document is always better than a longer, truncated one."
     )
     if depth == 'comprehensive':
-        system_prompt += "\n6. Include full definitions, operating obligations, indemnity scope, liability caps, and dispute escalation steps."
+        system_prompt += "\n6. 'Comprehensive' means covering the full clause checklist above, not writing longer prose per clause — keep every clause template-concise even at this depth."
     if context:
         system_prompt += f"\n\nREFERENCE CONTEXT:\n{context}"
     if precedent:
@@ -190,17 +204,20 @@ def auto_draft():
         # for the (often several-hundred-token) system + drafting-
         # instructions prompt while still allowing a substantial document.
         #
-        # A full 20+ clause enterprise agreement with a signature block can
-        # still exceed 4096 tokens on its own, which used to show up as the
-        # draft cutting off mid-clause with no error (finish_reason=="length"
-        # isn't a failure, so the old single-call version returned the
-        # truncated text as if it were complete). max_continuations resumes
-        # generation with additional calls at the SAME safe max_tokens
-        # ceiling instead of raising it, so the per-request TPM budget above
-        # is never exceeded.
+        # A 25-30 clause agreement can still exceed 4096 tokens even at the
+        # concise, placeholder-driven length the prompt above now asks for,
+        # which used to show up as the draft cutting off mid-clause with no
+        # error (finish_reason=="length" isn't a failure, so the old
+        # single-call version returned the truncated text as if it were
+        # complete). max_continuations resumes generation with additional
+        # calls at the SAME safe max_tokens ceiling instead of raising it,
+        # so the per-request TPM budget above is never exceeded. 4 (5 calls
+        # total, ~20K tokens of headroom) rather than 2 — the prompt change
+        # should make most drafts finish in one or two calls now, but this
+        # is the safety net for the rest, not the primary fix.
         generated_text = ask_groq(
             system_prompt, f"Drafting instructions: {instructions}",
-            max_tokens=4096, timeout=120, max_continuations=2,
+            max_tokens=4096, timeout=120, max_continuations=4,
         )
         if not generated_text or not generated_text.strip():
             raise ValueError("LLM returned an empty draft.")

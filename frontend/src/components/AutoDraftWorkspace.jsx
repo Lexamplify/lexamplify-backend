@@ -114,11 +114,14 @@ export default function AutoDraftWorkspace() {
 
       // Backend now resumes truncated drafts with up to 2 follow-up LLM
       // calls (see ask_groq's max_continuations in utils/ai_helper.py) so a
-      // full 20+ clause agreement can take noticeably longer than a single
-      // completion. 150s gives that room without waiting forever on a
-      // genuine hang — comfortably above the 90s floor this needs at minimum.
+      // full agreement can take noticeably longer than a single completion
+      // (up to 5 calls now — see max_continuations=4 in document_routes.py).
+      // 240s gives that room without waiting forever on a genuine hang —
+      // comfortably above the 90s floor this needs at minimum; in practice
+      // Groq's inference speed means even a 5-call chain rarely takes more
+      // than a few seconds per call.
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 150000);
+      const timeoutId = setTimeout(() => controller.abort(), 240000);
 
       let response;
       try {
@@ -156,7 +159,7 @@ export default function AutoDraftWorkspace() {
       setDrafting(false);
       setDraftError(
         err?.name === 'AbortError'
-          ? 'The AI reasoning engine took too long to respond (150s). Please retry — a shorter or more focused instruction may complete faster.'
+          ? 'The AI reasoning engine took too long to respond (240s). Please retry — a shorter or more focused instruction may complete faster.'
           : 'Network timeout in the AI legal reasoning engine. Please retry.'
       );
     }
