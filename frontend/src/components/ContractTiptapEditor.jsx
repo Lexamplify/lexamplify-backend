@@ -92,7 +92,7 @@ function ContractEditorToolbar({ editor }) {
   return (
     <div className="rich-text-toolbar">
       <select
-        className="toolbar-select toolbar-select-font"
+        className="toolbar-select toolbar-select-font lx-input"
         title="Font Family"
         value={currentFontFamily}
         onMouseDown={(e) => e.stopPropagation()}
@@ -109,7 +109,7 @@ function ContractEditorToolbar({ editor }) {
         ))}
       </select>
       <select
-        className="toolbar-select toolbar-select-size"
+        className="toolbar-select toolbar-select-size lx-input"
         title="Font Size"
         value={currentFontSize}
         onMouseDown={(e) => e.stopPropagation()}
