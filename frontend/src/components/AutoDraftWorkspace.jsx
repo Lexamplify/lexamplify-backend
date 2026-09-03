@@ -26,6 +26,8 @@ export default function AutoDraftWorkspace() {
     setRawText,
     autoDraftText,
     setAutoDraftText,
+    autoDraftHtml,
+    setAutoDraftHtml,
     autoDraftPrompt,
     setAutoDraftPrompt,
     autoDraftVersion,
@@ -151,6 +153,7 @@ export default function AutoDraftWorkspace() {
       if (response.ok && (data.draft || data.clause || data.content)) {
         const generated = (data.draft || data.clause || data.content).replace(/^"|"$/g, '').trim();
         setAutoDraftText(generated);
+        setAutoDraftHtml('');
         setAutoDraftVersion((v) => v + 1);
       } else {
         setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
@@ -204,6 +207,7 @@ export default function AutoDraftWorkspace() {
       // shared util for.
       const cleaned = extracted.replace(/(\w+)\.(\d+)\./g, '$1. $2.');
       setAutoDraftText(cleaned);
+      setAutoDraftHtml('');
       setAutoDraftVersion((v) => v + 1);
     } catch (err) {
       setDraftUploadError(err?.message || 'Failed to read the uploaded draft.');
@@ -1128,7 +1132,7 @@ export default function AutoDraftWorkspace() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setAutoDraftText('')}
+                  onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); }}
                   style={{
                     padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'rgba(239,68,68,0.1)',
                     border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', cursor: 'pointer', fontWeight: 600,
@@ -1206,7 +1210,9 @@ export default function AutoDraftWorkspace() {
               <ContractTiptapEditor
                 documentKey={autoDraftVersion}
                 initialRawText={autoDraftText}
+                initialHtml={autoDraftHtml}
                 onTextChange={setAutoDraftText}
+                onHtmlChange={setAutoDraftHtml}
                 clauses={[]}
               />
             ) : (

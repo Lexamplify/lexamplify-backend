@@ -25,6 +25,18 @@ export const useContractStore = create((set, get) => ({
   autoDraftText: '',
   setAutoDraftText: (text) => set({ autoDraftText: text }),
 
+  // Same purpose as rawHtml above, for the Auto-Draft Studio editor —
+  // without it, editing the synthesized document (or even just the
+  // debounced onUpdate sync that runs while the AI-generated markdown is
+  // first parsed) overwrites autoDraftText with getLogicalText's plain-text
+  // extraction, which has no ###/** markdown syntax left in it. Navigating
+  // away and back then remounts ContractTiptapEditor from that already-
+  // stripped text, and rawTextToHtml() has nothing left to reconstruct
+  // headings/bold from — confirmed live as the exact "formatting collapses
+  // on navigation" bug reported for Auto-Draft Studio.
+  autoDraftHtml: '',
+  setAutoDraftHtml: (html) => set({ autoDraftHtml: html }),
+
   autoDraftPrompt: '',
   setAutoDraftPrompt: (prompt) => set({ autoDraftPrompt: prompt }),
 
@@ -48,6 +60,7 @@ export const useContractStore = create((set, get) => ({
       summary: '',
       ruleBookText: '',
       autoDraftText: '',
+      autoDraftHtml: '',
       autoDraftPrompt: '',
       autoDraftVersion: 0,
       isDraftsModalOpen: false,
