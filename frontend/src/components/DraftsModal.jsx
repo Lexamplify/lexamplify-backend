@@ -39,14 +39,18 @@ export default function DraftsModal({ isOpen, onClose }) {
     setLoading(false);
   };
 
+  // Pre-fetches on mount rather than waiting for the modal to open — this
+  // component is already mounted (just not rendering) on both
+  // ContractAnalyzer and AutoDraftWorkspace the whole time either page is
+  // open, so by the time someone actually clicks "Saved Drafts" the list
+  // has usually already loaded, and the button-to-modal transition shows
+  // real data instead of a loading flash.
   useEffect(() => {
-    if (showModal) {
-      fetchSavedDrafts();
-    }
+    fetchSavedDrafts();
     const handleUpdate = () => fetchSavedDrafts();
     window.addEventListener('lexamplify-drafts-updated', handleUpdate);
     return () => window.removeEventListener('lexamplify-drafts-updated', handleUpdate);
-  }, [showModal]);
+  }, []);
 
   if (!showModal) return null;
 
@@ -95,7 +99,23 @@ export default function DraftsModal({ isOpen, onClose }) {
 
         <div style={{ maxHeight: '420px', overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted, #94A3B8)', fontSize: '13.5px' }}>Loading saved drafts...</div>
+            <>
+              <style>{`
+                @keyframes drafts-skeleton-shimmer {
+                  0% { background-position: 200% 0; }
+                  100% { background-position: -200% 0; }
+                }
+                .drafts-skeleton-row {
+                  height: 58px;
+                  border-radius: 10px;
+                  background: linear-gradient(90deg, var(--bg-card, rgba(255,255,255,0.03)) 25%, rgba(255,255,255,0.08) 50%, var(--bg-card, rgba(255,255,255,0.03)) 75%);
+                  background-size: 200% 100%;
+                  animation: drafts-skeleton-shimmer 1.4s ease-in-out infinite;
+                  border: 1px solid var(--border-subtle, #1E293B);
+                }
+              `}</style>
+              {[0, 1, 2].map((i) => <div key={i} className="drafts-skeleton-row" />)}
+            </>
           ) : savedDrafts.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted, #94A3B8)', fontSize: '13.5px' }}>
               No saved session drafts pending review. When you click "New" in Contract Analyzer, active sessions are saved here automatically.

@@ -4,6 +4,7 @@ import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import DraftsModal from './DraftsModal.jsx';
 import { useContractStore } from '../store/useContractStore.js';
 import { fetchDocuments, extractContractText } from '../services/api.js';
+import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -24,6 +25,9 @@ export default function AutoDraftWorkspace() {
   const {
     rawText,
     setRawText,
+    setRawHtml,
+    setClauses,
+    setSummary,
     autoDraftText,
     setAutoDraftText,
     autoDraftHtml,
@@ -48,6 +52,8 @@ export default function AutoDraftWorkspace() {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [uploadingDraft, setUploadingDraft] = useState(false);
   const [draftUploadError, setDraftUploadError] = useState('');
+  const [showVariablesPanel, setShowVariablesPanel] = useState(false);
+  const [extractedVariables, setExtractedVariables] = useState([]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -207,7 +213,11 @@ export default function AutoDraftWorkspace() {
       // shared util for.
       const cleaned = extracted.replace(/(\w+)\.(\d+)\./g, '$1. $2.');
       setAutoDraftText(cleaned);
-      setAutoDraftHtml('');
+      // A plain extracted template has no markdown of its own (no ### or
+      // **), so rawTextToHtml's generic pass would just render flat <p>
+      // tags with no visual structure. smartFormatUploadedText detects
+      // clause headings and highlights [bracketed] placeholders instead.
+      setAutoDraftHtml(smartFormatUploadedText(cleaned));
       setAutoDraftVersion((v) => v + 1);
     } catch (err) {
       setDraftUploadError(err?.message || 'Failed to read the uploaded draft.');
@@ -223,6 +233,31 @@ export default function AutoDraftWorkspace() {
     setRawText(rawText + separator + autoDraftText);
     setAppended(true);
     setTimeout(() => setAppended(false), 2500);
+  };
+
+  // Distinct from Append above: this REPLACES whatever's currently loaded
+  // in Contract Analyzer with the Auto-Draft document and jumps straight
+  // there for a full risk scan, rather than merging into what's already
+  // there. rawText/rawHtml are the same Zustand store fields Contract
+  // Analyzer itself reads to hydrate its editor (confirmed by tracing its
+  // own code, not guessed) — a shared reactive store, not a one-time
+  // hydration key, so setting it here before navigating is sufficient; no
+  // localStorage or route-state handoff needed. clauses/summary are reset
+  // so a previous document's risk flags don't linger against this new text.
+  const handlePushToAnalyzer = () => {
+    if (!autoDraftText.trim()) return;
+    setRawText(autoDraftText);
+    setRawHtml(autoDraftHtml);
+    setClauses([]);
+    setSummary('');
+    navigate('/contract-analyzer');
+  };
+
+  const handleExtractVariables = () => {
+    const matches = Array.from(autoDraftText.matchAll(/\[([^\]\n]{1,80})\]/g)).map((m) => m[1]);
+    const unique = Array.from(new Set(matches));
+    setExtractedVariables(unique);
+    setShowVariablesPanel(true);
   };
 
   const handleCopyDraft = () => {
@@ -776,6 +811,58 @@ export default function AutoDraftWorkspace() {
           margin-top: 2px;
         }
 
+        .ad-document-canvas {
+          position: relative;
+        }
+
+        /* Non-blocking upload overlay — shown while parsing an uploaded
+           draft, without hiding or unmounting the editor underneath. */
+        .ad-upload-overlay {
+          position: absolute;
+          inset: 0;
+          z-index: 5;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--bg-dark-card, rgba(15,23,42,0.7));
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.2s ease;
+          border-radius: 12px;
+        }
+        .ad-upload-overlay.visible {
+          opacity: 1;
+          pointer-events: auto;
+        }
+        .ad-upload-spinner {
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          border: 3px solid rgba(255,255,255,0.25);
+          border-top-color: #3B82F6;
+          animation: spin 0.8s linear infinite;
+        }
+
+        .ad-variables-panel {
+          margin-top: 12px;
+          padding: 14px 16px;
+          border-radius: 10px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+        }
+        .ad-variable-chip {
+          display: inline-flex;
+          align-items: center;
+          font-size: 11.5px;
+          font-weight: 600;
+          background: rgba(59,130,246,0.14);
+          color: #1D4ED8;
+          border: 1px solid rgba(59,130,246,0.3);
+          border-radius: 5px;
+          padding: 3px 8px;
+          margin: 0 6px 6px 0;
+        }
+
         /* TipTap Document Canvas Styling */
         .ad-document-canvas .scanner-body .ProseMirror {
           min-height: 520px;
@@ -1130,9 +1217,21 @@ export default function AutoDraftWorkspace() {
                     {appended ? '✓ Appended!' : '➕ Append'}
                   </button>
                 )}
+                <button type="button" onClick={handleExtractVariables} className="ad-action-btn ad-btn-secondary" style={{ padding: '6px 12px' }}>
+                  🔎 Extract Variables
+                </button>
                 <button
                   type="button"
-                  onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); }}
+                  onClick={handlePushToAnalyzer}
+                  className="ad-action-btn ad-btn-secondary"
+                  title="Load this document into Contract Analyzer and open it there"
+                  style={{ padding: '6px 12px' }}
+                >
+                  🔍 Push to Analyzer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); setShowVariablesPanel(false); }}
                   style={{
                     padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'rgba(239,68,68,0.1)',
                     border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', cursor: 'pointer', fontWeight: 600,
@@ -1144,8 +1243,37 @@ export default function AutoDraftWorkspace() {
             )}
           </div>
 
+          {showVariablesPanel && (
+            <div className="ad-variables-panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {extractedVariables.length > 0
+                    ? `${extractedVariables.length} placeholder${extractedVariables.length === 1 ? '' : 's'} found`
+                    : 'No bracketed placeholders found'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowVariablesPanel(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}
+                >
+                  ✕
+                </button>
+              </div>
+              {extractedVariables.length > 0 && (
+                <div>
+                  {extractedVariables.map((v) => (
+                    <span key={v} className="ad-variable-chip">[{v}]</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Editor Canvas / In-Flight Reasoning State / Standby Hero */}
           <div className="ad-document-canvas" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div className={`ad-upload-overlay${uploadingDraft ? ' visible' : ''}`}>
+              <div className="ad-upload-spinner" />
+            </div>
             {drafting ? (
               <div className="ad-synthesis-suite">
                 {/* Glowing Orbit Radar Rings */}
