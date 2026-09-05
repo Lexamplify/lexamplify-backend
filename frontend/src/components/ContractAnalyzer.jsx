@@ -13,6 +13,7 @@ import {
 } from '../services/api';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import { findClauseRange } from '../tiptap/positionMapping.js';
+import { flashClauseRange } from '../tiptap/clauseFlashExtension.js';
 import { useCitationStore } from '../tiptap/citationStore.js';
 import { useContractStore } from '../store/useContractStore.js';
 import useContractJobStream from '../hooks/useContractJobStream.js';
@@ -880,6 +881,20 @@ const styles = `
   [data-theme="light"] .risk-mark.amber-mark { background-color: rgba(245,158,11,0.11); border-left-color: #D97706; color: #78350F !important; }
   [data-theme="light"] .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.2); }
   [data-theme="light"] .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.2); }
+
+  /* ── CLAUSE FLASH (risk-card click "look here" highlight) ─────────
+     A second, temporary decoration layered on top of whatever risk-mark
+     tint is already on this text — not a replacement for it. Two-stage
+     removal (see flashClauseRange in clauseFlashExtension.js) so .fading
+     actually has a "before" background to transition away from. */
+  .clause-flash-highlight {
+    background-color: rgba(253, 224, 71, 0.45);
+    border-radius: 3px;
+  }
+  .clause-flash-highlight.fading {
+    background-color: rgba(253, 224, 71, 0);
+    transition: background-color 1.5s ease-out;
+  }
 
   /* ── TIPTAP EDITOR INTEGRATION ───────────────────────────────────── */
   /* .scanner-body is now the OUTER wrapper EditorContent renders — the
@@ -2350,7 +2365,18 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
     const onSuccess = (result) => {
       setSummary(result.summary || "");
-      setFlaggedClauses(result.clauses || result.risks || []);
+      // Array.isArray, not just truthiness (result.clauses || result.risks
+      // || []) — a truthy NON-array response shape (e.g. an error object
+      // the job stream forwards unchanged) would otherwise sail past that
+      // fallback chain and poison `clauses` with something activeClause's
+      // plain `.find()` call below then crashes the whole render tree on.
+      // Reproduced live: "TypeError: clauses.find is not a function"
+      // unmounting the entire app with no error boundary at the time.
+      setFlaggedClauses(
+        Array.isArray(result.clauses) ? result.clauses
+          : Array.isArray(result.risks) ? result.risks
+            : []
+      );
       setMissingClauses(result.missing_clauses || result.missing || []);
       setCitations(result.citations || []);
       setIsAnalyzed(true);
@@ -2639,7 +2665,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
   }, [activeClauseId]);
 
   // Autocomplete Suggestions based on inspected clause
-  const activeClause = clauses.find(c => c.id === activeClauseId);
+  // Array.isArray guard: `clauses` is shared Zustand state, not local —
+  // a bad value written to it from any consumer (or a dev-only HMR/
+  // Fast-Refresh edge case) crashes this at RENDER TIME, unmounting the
+  // whole app, since this runs unconditionally on every render.
+  const activeClause = Array.isArray(clauses) ? clauses.find(c => c.id === activeClauseId) : undefined;
   const dynamicIntents = activeClause ? getDynamicIntents(activeClause.text, activeClause.risk) : [];
 
   // Tab switch helper with fade animations
@@ -2973,7 +3003,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setActiveClauseId(id);
     switchTab('risks');
     setIntent('');
-    const clause = clauses.find(c => c.id === id);
+    const clause = Array.isArray(clauses) ? clauses.find(c => c.id === id) : undefined;
     setRewrittenText(clause?.suggestedRewrite || '');
 
     // Point the cursor at the clause's exact text in the live editor —
@@ -2984,9 +3014,25 @@ export default function ContractAnalyzer({ setFocusMode }) {
     // clause's position from wherever it was at scan time.
     const editor = editorApiRef.current;
     if (editor && clause?.text) {
-      const range = findClauseRange(editor.state.doc, clause.text);
-      if (range) {
-        editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).scrollIntoView().run();
+      try {
+        const range = findClauseRange(editor.state.doc, clause.text);
+        if (range) {
+          editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).run();
+          // ProseMirror's own scrollIntoView command has no smooth/center
+          // option — resolve the actual DOM node for the position instead
+          // so the browser's native scrollIntoView can do a real smooth,
+          // centered scroll, then layer a temporary flash on top of
+          // whatever persistent red/amber risk tint is already there so
+          // the specific clause that was clicked is unambiguous.
+          const domInfo = editor.view.domAtPos(range.from);
+          const node = domInfo?.node;
+          const el = node && (node.nodeType === 1 ? node : node.parentElement);
+          const target = el?.closest('p, h1, h2, h3, h4, li') || el;
+          target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          flashClauseRange(editor, range.from, range.to);
+        }
+      } catch (err) {
+        console.error('[inspectRisk] failed to locate/scroll to clause:', err);
       }
     }
   };
@@ -3031,16 +3077,30 @@ export default function ContractAnalyzer({ setFocusMode }) {
     const editor = editorApiRef.current;
     if (!editor) return;
 
-    const range = findClauseRange(editor.state.doc, activeClause.text);
-    if (!range) {
-      alert('Could not locate this clause in the live document — it may already have been edited. Re-select it from the list and try again.');
-      return;
+    // Wrapped end-to-end: insertSuggestion dispatches a raw ProseMirror
+    // transaction (tr.addMark / tr.insert / dispatch) with no validation of
+    // its own, straight from this onClick handler. A bad range (e.g. `to`
+    // landing on a block boundary rather than inside a textblock, which
+    // findClauseRange's flattened-index math can produce for a clause that
+    // spans a paragraph split) throws a RangeError synchronously — and
+    // with no error boundary above this component at the time, that
+    // unmounts the whole React tree to a blank page. Confirmed as the
+    // actual crash mechanism by tracing the call chain, not guessed.
+    try {
+      const range = findClauseRange(editor.state.doc, activeClause.text);
+      if (!range) {
+        alert('Could not locate this clause in the live document — it may already have been edited. Re-select it from the list and try again.');
+        return;
+      }
+
+      const ok = editor.commands.insertSuggestion(range.from, range.to, rewrittenText.trim(), activeClause.id);
+      if (!ok) return;
+
+      setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: true } : c)));
+    } catch (err) {
+      console.error('[applyRevision] failed to apply rewrite:', err);
+      alert('Could not apply this rewrite — the document may have changed since this suggestion was generated. Please retry.');
     }
-
-    const ok = editor.commands.insertSuggestion(range.from, range.to, rewrittenText.trim(), activeClause.id);
-    if (!ok) return;
-
-    setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: true } : c)));
   };
 
   // Accept: the ai-deletion-marked original text is removed, the
@@ -3048,28 +3108,33 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const acceptActiveSuggestion = () => {
     if (!activeClause) return;
     const editor = editorApiRef.current;
-    if (!editor || !editor.commands.acceptSuggestion(activeClause.id)) return;
+    try {
+      if (!editor || !editor.commands.acceptSuggestion(activeClause.id)) return;
 
-    const finalText = rewrittenText.trim();
-    setClauses(prev => prev.map(c => (c.id === activeClause.id ? {
-      ...c,
-      isRevised: true,
-      isNewlyRevised: true,
-      isPendingSuggestion: false,
-      revisedText: finalText,
-      text: finalText,
-      risk: 'GREEN',
-      issue: 'Approved AI Revision.',
-    } : c)));
+      const finalText = rewrittenText.trim();
+      setClauses(prev => prev.map(c => (c.id === activeClause.id ? {
+        ...c,
+        isRevised: true,
+        isNewlyRevised: true,
+        isPendingSuggestion: false,
+        revisedText: finalText,
+        text: finalText,
+        risk: 'GREEN',
+        issue: 'Approved AI Revision.',
+      } : c)));
 
-    // Clear the visual fade animation class after 1.5s so it runs exactly once
-    setTimeout(() => {
-      setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isNewlyRevised: false } : c)));
-    }, 1500);
+      // Clear the visual fade animation class after 1.5s so it runs exactly once
+      setTimeout(() => {
+        setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isNewlyRevised: false } : c)));
+      }, 1500);
 
-    setActiveClauseId(null);
-    setRewrittenText('');
-    setIntent('');
+      setActiveClauseId(null);
+      setRewrittenText('');
+      setIntent('');
+    } catch (err) {
+      console.error('[acceptActiveSuggestion] failed:', err);
+      alert('Could not accept this revision. Please retry.');
+    }
   };
 
   // Reject: the ai-insertion-marked new text is discarded, the
@@ -3078,10 +3143,15 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const rejectActiveSuggestion = () => {
     if (!activeClause) return;
     const editor = editorApiRef.current;
-    if (!editor || !editor.commands.rejectSuggestion(activeClause.id)) return;
+    try {
+      if (!editor || !editor.commands.rejectSuggestion(activeClause.id)) return;
 
-    setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: false } : c)));
-    setRewrittenText('');
+      setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: false } : c)));
+      setRewrittenText('');
+    } catch (err) {
+      console.error('[rejectActiveSuggestion] failed:', err);
+      alert('Could not reject this revision. Please retry.');
+    }
   };
 
   // Registers the precedent's metadata in the citation Zustand store (read

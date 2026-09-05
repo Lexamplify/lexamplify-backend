@@ -8,6 +8,7 @@ import CaseVault from './components/CaseVault';
 import DocumentViewer from './components/DocumentViewer';
 import CourtResources from './components/CourtResources';
 import ContractAnalyzer from './components/ContractAnalyzer';
+import ErrorBoundary from './components/ErrorBoundary';
 import AutoDraftWorkspace from './components/AutoDraftWorkspace';
 import { useContractStore } from './store/useContractStore';
 import DraftsModal from './components/DraftsModal.jsx';
@@ -1488,7 +1489,7 @@ function AppRouterContent() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
-        <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
+        <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
         <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AutoDraftWorkspace /></Layout>} />
         <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
         <Route path="/conflict-engine" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ConflictEngine /></Layout>} />
@@ -1499,7 +1500,7 @@ function AppRouterContent() {
         <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />
         <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FormTemplateLibrary /></Layout>} />
         <Route path="/firm-library/draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms showSaveBar /></Layout>} />
-        <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ContractAnalyzer setFocusMode={setFocusMode} /></Layout>} />
+        <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
       </Routes>
     </BrowserRouter>

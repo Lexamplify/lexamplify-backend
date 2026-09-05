@@ -13,6 +13,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle, FontSize } from '@tiptap/extension-text-style';
 import FontFamily from '@tiptap/extension-font-family';
 import { RiskDecoration, updateRiskDecorations } from '../tiptap/riskDecorationExtension.js';
+import { ClauseFlash } from '../tiptap/clauseFlashExtension.js';
 import { AiInsertion, AiDeletion, TrackChangesCommands } from '../tiptap/trackChangesMarks.js';
 import { InlineCitation } from '../tiptap/InlineCitationNode.js';
 import { CommentHighlight } from '../tiptap/commentHighlightMark.js';
@@ -418,6 +419,7 @@ function ContractTiptapEditor({
         TrackChangesCommands,
         InlineCitation,
         CommentHighlight.configure({ multicolor: true }),
+        ClauseFlash,
       ],
       // A previously-saved rawHtml takes priority over reconstructing HTML
       // from plain rawText — it's the actual formatted document, not a
