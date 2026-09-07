@@ -64,13 +64,40 @@ def check_case_in_vault(title, case_id):
         print(f"[check_case_in_vault] Error: {e}")
     return False, None
 
+_KANOON_DOC_ID_RE = re.compile(r'/doc(?:fragment)?/(\d+)/')
+
+
+def _word_boundary_excerpt(snippet, start=50, end=130):
+    """Same 50:130 window, but nudged outward to the nearest whitespace on
+    both sides instead of hard-cutting mid-word ("...AssistMed..." ->
+    "tMed" at a bare snippet[50:130]) — a query that starts/ends mid-word
+    is guaranteed to mismatch Kanoon's tokenized search, on top of already
+    being a rough, non-title excerpt to begin with."""
+    if start >= len(snippet):
+        return snippet.strip()
+    end = min(end, len(snippet))
+    while start > 0 and not snippet[start - 1].isspace():
+        start -= 1
+    while end < len(snippet) and not snippet[end].isspace():
+        end += 1
+    return snippet[start:end].strip()
+
+
 def fetch_kanoon_case_title(snippet):
+    """Returns {"title": str, "url": str|None} — url is the exact document
+    permalink when the search below actually found a matching result,
+    None otherwise (caller falls back to a query-based redirect link at
+    click time in that case). Previously this only kept the TITLE text and
+    threw away the very search result that titled it, forcing the frontend
+    to blindly re-run an independent search later and hope it turns up the
+    same document — confirmed live as the concrete cause of citations
+    landing on a bare Kanoon search page instead of the actual judgment."""
     if not snippet or len(snippet) < 60:
-        return None
-    excerpt = snippet[50:130].strip()
+        return {"title": None, "url": None}
+    excerpt = _word_boundary_excerpt(snippet)
     if not excerpt:
-        return None
-    
+        return {"title": None, "url": None}
+
     # Clean up quote
     excerpt = excerpt.replace('"', '').replace("'", "").strip()
     # NOT wrapped in quotes: an exact-phrase search almost never matches —
@@ -85,7 +112,7 @@ def fetch_kanoon_case_title(snippet):
 
     zenrows_key = os.getenv("ZENROWS_API_KEY")
     target_url = f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(query)}"
-    
+
     try:
         if zenrows_key:
             resp = requests.get(
@@ -109,15 +136,17 @@ def fetch_kanoon_case_title(snippet):
         soup = BeautifulSoup(resp.text, 'html.parser')
         result_titles = soup.find_all(class_='result_title')
         if result_titles:
-            a_tag = result_titles[0].find('a')
+            a_tag = result_titles[0].find('a', href=True)
             if a_tag:
                 raw_text = a_tag.get_text(strip=True)
                 # Clean up typical Kanoon title format like "Kesavananda ... vs State Of Kerala And Anr on 24 April, 1973"
                 cleaned_title = re.sub(r'\s+on\s+\d+\s+\w+,\s+\d{4}', '', raw_text, flags=re.IGNORECASE)
-                return cleaned_title
+                doc_match = _KANOON_DOC_ID_RE.search(a_tag.get('href', ''))
+                url = f"https://indiankanoon.org/doc/{doc_match.group(1)}/" if doc_match else None
+                return {"title": cleaned_title, "url": url}
     except Exception as e:
         print(f"[fetch_kanoon_case_title] Error fetching title from Kanoon: {e}")
-    return None
+    return {"title": None, "url": None}
 
 
 @shared_task(bind=True)
@@ -235,6 +264,13 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                     continue
                 seen_cases.add(case_id)
                 title = metadata.get('title') or metadata.get('case_name') or metadata.get('doc_title') or case_id
+                # Captured only when fetch_kanoon_case_title below actually
+                # resolves a search result — lets the frontend link straight
+                # to that exact document instead of re-searching Kanoon at
+                # click time with an independently-derived (and sometimes
+                # word-mangled) query that can turn up a different result,
+                # or none at all.
+                kanoon_url = None
                 if title == case_id:
                     snippet = metadata.get('text', '') or ''
                     extracted = python_extract_case_name(snippet)
@@ -242,14 +278,15 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                         title = extracted
                     else:
                         resolved = fetch_kanoon_case_title(snippet)
-                        if resolved:
-                            title = resolved
+                        if resolved.get('title'):
+                            title = resolved['title']
+                            kanoon_url = resolved.get('url')
                         elif title.endswith('.pdf'):
                             title = title[:-4].replace('_', ' ')
-                
+
                 # Check database for in_vault
                 in_vault, vault_id = check_case_in_vault(title, case_id)
-                
+
                 citations.append({
                     "case_id": case_id,
                     "title": title,
@@ -257,6 +294,7 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                     "snippet": (metadata.get('text', '') or '')[:200],
                     "in_vault": in_vault,
                     "vault_id": vault_id,
+                    "kanoon_url": kanoon_url,
                 })
                 if len(citations) >= 3:
                     break

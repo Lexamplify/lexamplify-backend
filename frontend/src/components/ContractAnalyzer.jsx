@@ -73,6 +73,20 @@ function extractCaseName(text) {
 // char) trailing language/court code, so that shape is what this detects.
 const RAW_ID_TOKENS_PATTERN = /^\d+(?:\s+\d+)*(?:\s+[A-Za-z]{1,3})?$/;
 
+// Nudges a substring(start,end) window outward to the nearest whitespace
+// on both sides instead of hard-cutting mid-word (e.g. "...AssistMed..."
+// producing "tMed\ncontract can be..." at a bare substring(50,130)) —
+// confirmed live as a cause of /api/kanoon-redirect falling back to a bare
+// search page: a query that starts or ends mid-word can't match Kanoon's
+// tokenized search even when the right document is indexed.
+function wordBoundaryExcerpt(text, start, end) {
+  if (start >= text.length) return text.trim();
+  end = Math.min(end, text.length);
+  while (start > 0 && !/\s/.test(text[start - 1])) start -= 1;
+  while (end < text.length && !/\s/.test(text[end])) end += 1;
+  return text.substring(start, end).trim();
+}
+
 function resolveCitationDisplay(citation) {
   const rawTitle = citation.title || citation.case_title || '';
   const isRawId = /^[0-9_]+$/.test(rawTitle) || RAW_ID_TOKENS_PATTERN.test(rawTitle.trim());
@@ -122,7 +136,7 @@ function resolveCitationDisplay(citation) {
   // documents why: "trust Kanoon's own ranking instead" of forcing an
   // exact match that real judgments essentially never satisfy.
   const displayTitle = isRawId ? `Judgment Record: ${rawTitle.replace(/_/g, '-')}` : rawTitle;
-  const snippetExcerpt = citation.snippet ? citation.snippet.substring(50, 130).trim() : '';
+  const snippetExcerpt = citation.snippet ? wordBoundaryExcerpt(citation.snippet, 50, 130) : '';
   const kanoonQuery = snippetExcerpt || rawTitle;
   return { rawTitle, isRawId, displayTitle, kanoonQuery };
 }
@@ -2372,10 +2386,22 @@ export default function ContractAnalyzer({ setFocusMode }) {
       // plain `.find()` call below then crashes the whole render tree on.
       // Reproduced live: "TypeError: clauses.find is not a function"
       // unmounting the entire app with no error boundary at the time.
+      const rawJobClauses = Array.isArray(result.clauses) ? result.clauses
+        : Array.isArray(result.risks) ? result.risks
+          : [];
+      // The job-stream result's raw clause objects have no `id` field at
+      // all (confirmed live: every clause came through as `id: undefined`)
+      // — unlike loadAnalysisResults()'s synchronous-analyze path below,
+      // which already normalizes this. Without a real per-clause id, EVERY
+      // risk card's onClick passes the same `undefined`, so
+      // clauses.find(c => c.id === activeClauseId) always resolves to
+      // whichever clause happens to be first in the array — reproduced
+      // live as "clicking any risk card always opens the first clause."
       setFlaggedClauses(
-        Array.isArray(result.clauses) ? result.clauses
-          : Array.isArray(result.risks) ? result.risks
-            : []
+        rawJobClauses.map((c, idx) => ({
+          ...c,
+          id: c.id != null ? String(c.id) : `job-${idx}`,
+        }))
       );
       setMissingClauses(result.missing_clauses || result.missing || []);
       setCitations(result.citations || []);
@@ -3174,7 +3200,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
       caseName: displayTitle,
       summary: prec.snippet,
       shortLabel: displayTitle.length > 28 ? `${displayTitle.slice(0, 28)}…` : displayTitle,
-      url: prec.in_vault ? null : `/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`,
+      url: prec.in_vault ? null : (prec.kanoon_url || `/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`),
     });
     editor.chain().focus().insertContent({ type: 'inlineCitation', attrs: { citationId } }).run();
   };
@@ -3654,7 +3680,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                   Export
                 </button>
-                 <button
+                <button
                   onClick={handleNewSession}
                   style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; }}
@@ -3776,7 +3802,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                     style={{ fontSize: '12px', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-                    {isAnalyzing ? 'Scanning…' : 'Run Deep Scan'}
+                    {isAnalyzing ? 'Scanning…' : 'Analyze'}
                   </button>
                 )}
               </div>
@@ -3806,242 +3832,242 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   </div>
                 )}
                 {!rawText && !quickDraftMode ? (
-                    // No document yet, and the user hasn't explicitly opted
-                    // into a blank drafting canvas either — show the
-                    // dropzone/paste UI INSIDE this same left panel instead
-                    // of behind a separate top-level screen. quickDraftMode
-                    // skips straight past this to the (empty) editor below
-                    // instead — its whole purpose is an INSTANT blank
-                    // canvas, not another detour through the dropzone; that
-                    // was the original "blank editor" complaint's actual
-                    // fix (the editor was always reachable via
-                    // quickDraftMode, it just had nothing in it and no
-                    // visible way back to upload a real document, which is
-                    // solved by this panel always having both paths live).
-                    <div className="upload-layout-container" style={{ margin: '20px auto' }}>
-                      {/* ── HERO ── */}
-                      <div className="upload-hero">
-                        <div className="upload-icon-ring">⚖️</div>
-                        <h2 style={{ fontSize: '20px', color: 'var(--text-dark-primary)', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Senior Counsel Workspace</h2>
-                        <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
-                          Upload or paste a contract below. Optionally define your firm's non-negotiable rules to enforce them as absolute overrides during analysis.
-                        </p>
-                      </div>
+                  // No document yet, and the user hasn't explicitly opted
+                  // into a blank drafting canvas either — show the
+                  // dropzone/paste UI INSIDE this same left panel instead
+                  // of behind a separate top-level screen. quickDraftMode
+                  // skips straight past this to the (empty) editor below
+                  // instead — its whole purpose is an INSTANT blank
+                  // canvas, not another detour through the dropzone; that
+                  // was the original "blank editor" complaint's actual
+                  // fix (the editor was always reachable via
+                  // quickDraftMode, it just had nothing in it and no
+                  // visible way back to upload a real document, which is
+                  // solved by this panel always having both paths live).
+                  <div className="upload-layout-container" style={{ margin: '20px auto' }}>
+                    {/* ── HERO ── */}
+                    <div className="upload-hero">
+                      <div className="upload-icon-ring">⚖️</div>
+                      <h2 style={{ fontSize: '20px', color: 'var(--text-dark-primary)', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Senior Counsel Workspace</h2>
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
+                        Upload or paste a contract below. Optionally define your firm's non-negotiable rules to enforce them as absolute overrides during analysis.
+                      </p>
+                    </div>
 
-                      {/* ── SPLIT GRID ── */}
-                      <div className="upload-split-grid">
+                    {/* ── SPLIT GRID ── */}
+                    <div className="upload-split-grid">
 
-                        {/* LEFT COLUMN — Contract Subject */}
-                        <div className="upload-col-card">
-                          <div className="upload-col-label">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                            Contract Document
-                          </div>
-
-                          {/* Contract drop zone (extraction shows a layout-wide skeleton at panel level) */}
-                          <div
-                            className="drag-drop-zone transition-all duration-300 ease-in-out"
-                            onClick={() => fileInputRef.current?.click()}
-                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); }}
-                          >
-                            <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
-                            {contractUploadLoading ? (
-                              <>
-                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                                <h3 style={{ fontSize: '13px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>{contractFile?.name || 'Extracting text'}</h3>
-                                <span className="uploading-pulse" style={{ fontSize: '11px', color: 'rgba(99,102,241,0.9)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', padding: '3px 10px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#818CF8', animation: 'branding-pulse 1s infinite alternate' }} />
-                                  Extracting…
-                                </span>
-                              </>
-                            ) : contractFile ? (
-                              <>
-                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-                                <h3 style={{ fontSize: '13px', color: '#34D399', marginBottom: '4px' }}>{contractFile.name}</h3>
-                                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Ready to analyze — text extracted below</p>
-                              </>
-                            ) : (
-                              <>
-                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></svg>
-                                <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop your contract here</h3>
-                                <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
-                                <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Supports large scanned files (up to 100MB)</span>
-                              </>
-                            )}
-                          </div>
-
-                          {/* Contract divider */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
-                            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or paste text</span>
-                            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                          </div>
-
-                          <div className="ca-textarea-wrap">
-                            <textarea
-                              key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
-                              className="input-textarea"
-                              placeholder="Paste the raw text of your contract here…"
-                              value={rawText}
-                              readOnly={isAnalyzing}
-                              onChange={(e) => { setRawText(e.target.value); setRawHtml(''); }}
-                              style={{ marginBottom: 0 }}
-                            />
-                          </div>
+                      {/* LEFT COLUMN — Contract Subject */}
+                      <div className="upload-col-card">
+                        <div className="upload-col-label">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                          Contract Document
                         </div>
 
-                        {/* RIGHT COLUMN — Rule Book Strategy */}
-                        <div className="upload-col-card">
-                          <div className="upload-col-label upload-col-label--rulebook">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
-                            Custom Rule Book &amp; Directives
-                            <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '10px', color: 'var(--text-dark-muted)' }}>(Optional)</span>
-                            {ruleBookText.trim() && (
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block', marginLeft: 'auto', flexShrink: 0 }} />
-                            )}
-                          </div>
-
-                          <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 14px', lineHeight: 1.55 }}>
-                            Upload or type your firm's non-negotiable rules. The AI will enforce these as{' '}
-                            <strong style={{ color: '#A78BFA' }}>absolute overrides</strong>{' '}
-                            and flag any violation with a <strong style={{ color: '#A78BFA' }}>Rule Book</strong> badge.
-                          </p>
-
-                          {/* Rule Book drop zone */}
-                          {ruleBookUploadLoading ? (
-                            <div className="drag-drop-zone drag-drop-zone--rulebook drag-drop-zone--loading" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                              <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2.5px solid rgba(139,92,246,0.2)', borderTopColor: '#8B5CF6', animation: 'spin 0.9s linear infinite' }} />
-                              <span style={{ fontSize: '12.5px', color: 'rgba(139,92,246,0.8)' }}>Extracting text…</span>
-                            </div>
+                        {/* Contract drop zone (extraction shows a layout-wide skeleton at panel level) */}
+                        <div
+                          className="drag-drop-zone transition-all duration-300 ease-in-out"
+                          onClick={() => fileInputRef.current?.click()}
+                          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                          onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
+                          onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); }}
+                        >
+                          <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
+                          {contractUploadLoading ? (
+                            <>
+                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                              <h3 style={{ fontSize: '13px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>{contractFile?.name || 'Extracting text'}</h3>
+                              <span className="uploading-pulse" style={{ fontSize: '11px', color: 'rgba(99,102,241,0.9)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', padding: '3px 10px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#818CF8', animation: 'branding-pulse 1s infinite alternate' }} />
+                                Extracting…
+                              </span>
+                            </>
+                          ) : contractFile ? (
+                            <>
+                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+                              <h3 style={{ fontSize: '13px', color: '#34D399', marginBottom: '4px' }}>{contractFile.name}</h3>
+                              <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Ready to analyze — text extracted below</p>
+                            </>
                           ) : (
-                            <div
-                              className="drag-drop-zone drag-drop-zone--rulebook transition-all duration-300 ease-in-out"
-                              onClick={() => ruleBookFileInputRef.current?.click()}
-                              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                              onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                              onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleRuleBookFileUpload(e.dataTransfer.files); }}
-                            >
-                              <input type="file" ref={ruleBookFileInputRef} multiple style={{ display: 'none' }} onChange={(e) => handleRuleBookFileUpload(e.target.files)} accept=".pdf,.docx" />
-                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
-                              {ruleBookFile ? (
-                                <>
-                                  <h3 style={{ fontSize: '13px', color: '#A78BFA', marginBottom: '4px' }}>{ruleBookFile.name}</h3>
-                                  <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Text extracted — click to replace</p>
-                                </>
-                              ) : (
-                                <>
-                                  <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop Rule Books here</h3>
-                                  <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — select multiple to combine</p>
-                                </>
-                              )}
-                              <span style={{ fontSize: '11px', color: 'rgba(139,92,246,0.8)', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Extracts text automatically</span>
-                            </div>
+                            <>
+                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></svg>
+                              <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop your contract here</h3>
+                              <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
+                              <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Supports large scanned files (up to 100MB)</span>
+                            </>
                           )}
+                        </div>
 
-                          {/* Rule Book divider */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
-                            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                            <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or type directives</span>
-                            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                          </div>
+                        {/* Contract divider */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
+                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or paste text</span>
+                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                        </div>
 
+                        <div className="ca-textarea-wrap">
                           <textarea
+                            key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
                             className="input-textarea"
-                            placeholder={"Examples:\n• No arbitration clauses — all disputes must go to Delhi High Court.\n• Liability cap must not exceed 3× contract value.\n• Payment terms must not exceed Net-30.\n• Indemnification must always be mutual, never one-sided."}
-                            value={ruleBookText}
-                            onChange={(e) => setRuleBookText(e.target.value)}
-                            style={{ marginBottom: 0, borderColor: ruleBookText.trim() ? 'rgba(139,92,246,0.35)' : undefined, fontSize: '12.5px', resize: 'vertical' }}
+                            placeholder="Paste the raw text of your contract here…"
+                            value={rawText}
+                            readOnly={isAnalyzing}
+                            onChange={(e) => { setRawText(e.target.value); setRawHtml(''); }}
+                            style={{ marginBottom: 0 }}
                           />
                         </div>
                       </div>
 
-                      {/* ── FAST-TRACK BAR — two distinct visual paths ── */}
-                      <div className="upload-analyze-bar">
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                          <button
-                            className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
-                            onClick={handleTextAnalyze}
-                            title="Full AI risk scan — runs as a background job, streams live progress"
-                            style={{ flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                          >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-                            Deep Scan
-                          </button>
-                          <button
-                            onClick={() => setQuickDraftMode(true)}
-                            title="Skip the AI scan — open a blank drafting workspace instantly"
-                            style={{
-                              flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                              background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)',
-                              borderRadius: '8px', color: '#C4B5FD', cursor: 'pointer',
-                              transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.18)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; }}
-                          >
-                            ⚡ Quick Draft Studio
-                          </button>
+                      {/* RIGHT COLUMN — Rule Book Strategy */}
+                      <div className="upload-col-card">
+                        <div className="upload-col-label upload-col-label--rulebook">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
+                          Custom Rule Book &amp; Directives
+                          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '10px', color: 'var(--text-dark-muted)' }}>(Optional)</span>
+                          {ruleBookText.trim() && (
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block', marginLeft: 'auto', flexShrink: 0 }} />
+                          )}
                         </div>
-                        {ruleBookText.trim() && (
-                          <p style={{ margin: '10px 0 0', textAlign: 'center', fontSize: '11.5px', color: 'rgba(167,139,250,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block' }} />
-                            Rule Book active — {ruleBookText.trim().length} chars of directives will be enforced
-                          </p>
+
+                        <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 14px', lineHeight: 1.55 }}>
+                          Upload or type your firm's non-negotiable rules. The AI will enforce these as{' '}
+                          <strong style={{ color: '#A78BFA' }}>absolute overrides</strong>{' '}
+                          and flag any violation with a <strong style={{ color: '#A78BFA' }}>Rule Book</strong> badge.
+                        </p>
+
+                        {/* Rule Book drop zone */}
+                        {ruleBookUploadLoading ? (
+                          <div className="drag-drop-zone drag-drop-zone--rulebook drag-drop-zone--loading" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2.5px solid rgba(139,92,246,0.2)', borderTopColor: '#8B5CF6', animation: 'spin 0.9s linear infinite' }} />
+                            <span style={{ fontSize: '12.5px', color: 'rgba(139,92,246,0.8)' }}>Extracting text…</span>
+                          </div>
+                        ) : (
+                          <div
+                            className="drag-drop-zone drag-drop-zone--rulebook transition-all duration-300 ease-in-out"
+                            onClick={() => ruleBookFileInputRef.current?.click()}
+                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
+                            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleRuleBookFileUpload(e.dataTransfer.files); }}
+                          >
+                            <input type="file" ref={ruleBookFileInputRef} multiple style={{ display: 'none' }} onChange={(e) => handleRuleBookFileUpload(e.target.files)} accept=".pdf,.docx" />
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
+                            {ruleBookFile ? (
+                              <>
+                                <h3 style={{ fontSize: '13px', color: '#A78BFA', marginBottom: '4px' }}>{ruleBookFile.name}</h3>
+                                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Text extracted — click to replace</p>
+                              </>
+                            ) : (
+                              <>
+                                <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop Rule Books here</h3>
+                                <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — select multiple to combine</p>
+                              </>
+                            )}
+                            <span style={{ fontSize: '11px', color: 'rgba(139,92,246,0.8)', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Extracts text automatically</span>
+                          </div>
                         )}
+
+                        {/* Rule Book divider */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
+                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or type directives</span>
+                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
+                        </div>
+
+                        <textarea
+                          className="input-textarea"
+                          placeholder={"Examples:\n• No arbitration clauses — all disputes must go to Delhi High Court.\n• Liability cap must not exceed 3× contract value.\n• Payment terms must not exceed Net-30.\n• Indemnification must always be mutual, never one-sided."}
+                          value={ruleBookText}
+                          onChange={(e) => setRuleBookText(e.target.value)}
+                          style={{ marginBottom: 0, borderColor: ruleBookText.trim() ? 'rgba(139,92,246,0.35)' : undefined, fontSize: '12.5px', resize: 'vertical' }}
+                        />
                       </div>
                     </div>
-                  ) : (
-                    <>
-                      <ContractTiptapEditor
-                        documentKey={documentVersion}
-                        initialRawText={rawText}
-                        initialHtml={rawHtml}
-                        clauses={clauses}
-                        scanStrategy={scanStrategy}
-                        onRiskClick={inspectRisk}
-                        onTextChange={setRawText}
-                        onHtmlChange={setRawHtml}
-                        onEditorReady={(ed) => { editorApiRef.current = ed; }}
-                        editable={!isAnalyzing}
-                        onCommentRequest={handleCommentRequest}
-                        onHighlightClick={handleHighlightClick}
-                        toolbarPortalTarget={toolbarSlotEl}
-                      />
-                      {appendedClauses.length > 0 && (
-                        <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
-                          {appendedClauses.map((ac, idx) => (
-                            <div key={idx} className="appended-clause-wrapper">
-                              <hr className="extension-divider" />
-                              <blockquote className={ac.isNewlyAppended ? "newly-appended-blockquote" : "extension-blockquote"}>
-                                <strong className="extension-title" style={{ userSelect: 'none' }}>
-                                  Added Missing Clause: {ac.title}
-                                </strong>
-                                <div
-                                  className="extension-body"
-                                  contentEditable
-                                  suppressContentEditableWarning
-                                  onBlur={(e) => {
-                                    const text = e.target.innerText || e.target.textContent || '';
-                                    setAppendedClauses(prev => prev.map((item, i) => {
-                                      if (i === idx) {
-                                        return { ...item, clause: text.trim() };
-                                      }
-                                      return item;
-                                    }));
-                                  }}
-                                >
-                                  {ac.clause}
-                                </div>
-                              </blockquote>
-                            </div>
-                          ))}
-                        </div>
+
+                    {/* ── FAST-TRACK BAR — two distinct visual paths ── */}
+                    <div className="upload-analyze-bar">
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
+                          onClick={handleTextAnalyze}
+                          title="Full AI risk scan — runs as a background job, streams live progress"
+                          style={{ flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                          Analyze
+                        </button>
+                        <button
+                          onClick={() => setQuickDraftMode(true)}
+                          title="Skip the AI scan — open a blank drafting workspace instantly"
+                          style={{
+                            flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                            background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)',
+                            borderRadius: '8px', color: '#C4B5FD', cursor: 'pointer',
+                            transition: 'all 0.2s',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.18)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; }}
+                        >
+                          ⚡ Quick Draft Studio
+                        </button>
+                      </div>
+                      {ruleBookText.trim() && (
+                        <p style={{ margin: '10px 0 0', textAlign: 'center', fontSize: '11.5px', color: 'rgba(167,139,250,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block' }} />
+                          Rule Book active — {ruleBookText.trim().length} chars of directives will be enforced
+                        </p>
                       )}
-                    </>
-                  )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <ContractTiptapEditor
+                      documentKey={documentVersion}
+                      initialRawText={rawText}
+                      initialHtml={rawHtml}
+                      clauses={clauses}
+                      scanStrategy={scanStrategy}
+                      onRiskClick={inspectRisk}
+                      onTextChange={setRawText}
+                      onHtmlChange={setRawHtml}
+                      onEditorReady={(ed) => { editorApiRef.current = ed; }}
+                      editable={!isAnalyzing}
+                      onCommentRequest={handleCommentRequest}
+                      onHighlightClick={handleHighlightClick}
+                      toolbarPortalTarget={toolbarSlotEl}
+                    />
+                    {appendedClauses.length > 0 && (
+                      <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
+                        {appendedClauses.map((ac, idx) => (
+                          <div key={idx} className="appended-clause-wrapper">
+                            <hr className="extension-divider" />
+                            <blockquote className={ac.isNewlyAppended ? "newly-appended-blockquote" : "extension-blockquote"}>
+                              <strong className="extension-title" style={{ userSelect: 'none' }}>
+                                Added Missing Clause: {ac.title}
+                              </strong>
+                              <div
+                                className="extension-body"
+                                contentEditable
+                                suppressContentEditableWarning
+                                onBlur={(e) => {
+                                  const text = e.target.innerText || e.target.textContent || '';
+                                  setAppendedClauses(prev => prev.map((item, i) => {
+                                    if (i === idx) {
+                                      return { ...item, clause: text.trim() };
+                                    }
+                                    return item;
+                                  }));
+                                }}
+                              >
+                                {ac.clause}
+                              </div>
+                            </blockquote>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 
@@ -4451,7 +4477,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
                     {citations.length === 0 ? (
                       <div style={{ padding: '20px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '8px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px', textAlign: 'center' }}>
-                        No case law citations found for this document. Run a deep scan to generate semantic precedents.
+                        No case law citations found for this document. Run Analyze to generate semantic precedents.
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
@@ -4491,7 +4517,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                       </button>
                                     ) : (
                                       <a
-                                        href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
+                                        href={prec.kanoon_url || `${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="citation-btn-kanoon"
@@ -4537,7 +4563,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                               )}
                                               <a
                                                 className="citation-btn-kanoon"
-                                                href={`${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedKanoonQuery)}`}
+                                                href={related.kanoon_url || `${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedKanoonQuery)}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 style={{ fontSize: '10.5px', padding: '4px 10px' }}
