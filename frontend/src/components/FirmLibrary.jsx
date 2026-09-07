@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
 import { renderWithCitations } from './CitationLink';
 import useLibraryHeadnoteStream from '../hooks/useLibraryHeadnoteStream.js';
+import { uploadDocument } from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
@@ -213,6 +214,15 @@ const flStyles = `
   /* Empty state */
   .fl-empty { padding: 56px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .fl-empty-icon { font-size: 32px; }
+  /* Empty-state drag-and-drop upload zone */
+  .fl-empty-dropzone {
+    margin: 12px; border: 2px dashed var(--border-dark-subtle, var(--border-subtle)); border-radius: 14px;
+    cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .fl-empty-dropzone:hover { border-color: var(--accent-primary); background: rgba(59,130,246,0.04); }
+  .fl-empty-dropzone.dragover { border-color: var(--accent-primary); background: rgba(59,130,246,0.09); }
+  .fl-empty-dropzone.uploading { cursor: default; }
+  .fl-empty-cta { cursor: pointer; }
   /* Add entry modal */
   .fl-modal-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
@@ -1131,6 +1141,11 @@ export default function FirmLibrary() {
   const [toast, setToast] = useState('');
   const [newEntry, setNewEntry] = useState({ title: '', category: 'Template', author: '', description: '', tags: '' });
 
+  // ── Empty-state drag-and-drop upload ────────────────────────────────────────
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const emptyStateFileInputRef = useRef(null);
+
   // ── Internal / External library mode ────────────────────────────────────────
   const [libraryMode, setLibraryMode] = useState('internal'); // 'internal' | 'external'
   const [extQuery, setExtQuery] = useState('');
@@ -1423,9 +1438,12 @@ export default function FirmLibrary() {
   const wsEntry = wsLastEntryRef.current;
 
   // ── Effects ─────────────────────────────────────────────────────────────────
-  useEffect(() => {
+  // Pulled out of the mount-only effect below so the post-upload refresh
+  // (handleFilesUpload) can reuse the exact same fetch instead of hand-
+  // rolling a second copy that could drift from it.
+  const loadInternalFiles = useCallback(() => {
     setLoading(true);
-    fetch(`${API_BASE}/api/firm-library`)
+    return fetch(`${API_BASE}/api/firm-library`)
       .then(r => r.json())
       .then(data => {
         setInternalFiles(data);
@@ -1436,6 +1454,10 @@ export default function FirmLibrary() {
         setLoading(false);
       });
   }, []);
+
+  useEffect(() => {
+    loadInternalFiles();
+  }, [loadInternalFiles]);
 
   useEffect(() => {
     if (!menuRow) return;
@@ -1794,6 +1816,41 @@ export default function FirmLibrary() {
     showToast('Injected into Case Vault workspace');
   };
 
+  // ── Empty-state drag-and-drop / click-to-browse upload ──────────────────────
+  // Reuses the same /api/documents/upload pipeline every other upload surface
+  // in the app already calls (extracts text, writes into case_vault) — the
+  // exact table GET /api/firm-library reads from — instead of inventing a
+  // second, Firm-Library-only ingestion path. Accepts multiple files (a drag
+  // can carry several) and uploads them one at a time so one bad file's
+  // error doesn't take the rest down with it.
+  const handleFilesUpload = async (fileList) => {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (files.length === 0) return;
+    setIsUploadingFile(true);
+    let successCount = 0;
+    let firstError = null;
+    for (const file of files) {
+      const result = await uploadDocument(file);
+      if (result?.error) {
+        firstError = result.message || `Failed to upload "${file.name}".`;
+      } else {
+        successCount += 1;
+      }
+    }
+    setIsUploadingFile(false);
+    if (successCount > 0) {
+      await loadInternalFiles();
+      showToast(
+        successCount === 1
+          ? '1 document uploaded to Firm Library'
+          : `${successCount} documents uploaded to Firm Library`
+      );
+    }
+    if (firstError) {
+      showToast(firstError);
+    }
+  };
+
   // ── Add new entry ─────────────────────────────────────────────────────────────
   const EMPTY_FORM = { title: '', category: 'Template', author: '', description: '', tags: '' };
   const handleAddEntry = (e) => {
@@ -2142,13 +2199,60 @@ export default function FirmLibrary() {
                   ) : filteredFiles.length === 0 ? (
                     <tr>
                       <td colSpan="7">
-                        <div className="fl-empty">
-                          <div className="fl-empty-icon">📂</div>
-                          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No entries found</div>
-                          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                            {searchQuery ? `No results for "${searchQuery}"` : 'Add the first entry to get started'}
+                        {searchQuery || catFilter !== 'All' ? (
+                          <div className="fl-empty">
+                            <div className="fl-empty-icon">📂</div>
+                            <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No entries found</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                              No results for {searchQuery ? `"${searchQuery}"` : `category "${catFilter}"`}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <>
+                            <input
+                              ref={emptyStateFileInputRef}
+                              type="file"
+                              accept=".pdf,.docx,.txt"
+                              multiple
+                              style={{ display: 'none' }}
+                              onChange={e => { handleFilesUpload(e.target.files); e.target.value = ''; }}
+                            />
+                            <div
+                              className={`fl-empty fl-empty-dropzone${isDragOver ? ' dragover' : ''}${isUploadingFile ? ' uploading' : ''}`}
+                              onClick={() => !isUploadingFile && emptyStateFileInputRef.current?.click()}
+                              onDragOver={e => { e.preventDefault(); if (!isUploadingFile) setIsDragOver(true); }}
+                              onDragLeave={e => { e.preventDefault(); setIsDragOver(false); }}
+                              onDrop={e => {
+                                e.preventDefault();
+                                setIsDragOver(false);
+                                if (!isUploadingFile) handleFilesUpload(e.dataTransfer.files);
+                              }}
+                            >
+                              <div className="fl-empty-icon">{isUploadingFile ? '⏳' : '📂'}</div>
+                              <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>
+                                {isUploadingFile ? 'Uploading…' : 'No entries found'}
+                              </div>
+                              <div style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '360px' }}>
+                                {isUploadingFile
+                                  ? 'Extracting text and indexing your document.'
+                                  : 'Drag & drop a PDF, DOCX, or TXT file here, or use the button below.'}
+                              </div>
+                              {!isUploadingFile && (
+                                <button
+                                  type="button"
+                                  className="btn-accent fl-empty-cta"
+                                  onClick={e => { e.stopPropagation(); emptyStateFileInputRef.current?.click(); }}
+                                  style={{ padding: '10px 22px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7, marginTop: '6px' }}
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                                  </svg>
+                                  Upload / Create Entry
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ) : displayedFiles.map(entry => {
