@@ -766,6 +766,120 @@ STRICT RULES — NO HALLUCINATION:
     return jsonify({"fields": fields}), 200
 
 
+# ── Letterhead export ───────────────────────────────────────────────────────
+# No firm-branding/workspace-settings table or asset directory exists
+# anywhere in this codebase (checked: no "letterhead"/"branding" schema,
+# no static template directory) — this is a hardcoded mock registry to
+# unblock the Letterhead Template selector in Auto-Draft Studio / Legal
+# Forms until a real firm-settings feature exists to back it. 'none' keeps
+# export_form_docx's original plain output byte-for-byte unchanged for any
+# caller that doesn't pass `letterhead` at all.
+LETTERHEAD_TEMPLATES = {
+    'none': {
+        'label': 'No Letterhead (Plain)',
+    },
+    'standard_firm': {
+        'label': 'Standard Firm Letterhead (Mock)',
+        'firm_name': 'LEXAMPLIFY & ASSOCIATES',
+        'tagline': 'Advocates & Solicitors  ·  New Delhi, India',
+        'footer_text': 'Strictly Private & Confidential  ·  Page ',
+    },
+}
+
+
+@contract_bp.route("/letterhead-templates", methods=["GET"])
+def get_letterhead_templates():
+    return jsonify([
+        {'id': key, 'label': tpl['label']} for key, tpl in LETTERHEAD_TEMPLATES.items()
+    ]), 200
+
+
+def _add_bottom_border(paragraph):
+    """Draws the classic letterhead rule line under the firm name/tagline —
+    python-docx has no high-level paragraph-border API, so this is the
+    standard direct-OOXML idiom for it (a <w:pBdr><w:bottom> element on the
+    paragraph's properties)."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    pPr = paragraph._p.get_or_add_pPr()
+    pBdr = OxmlElement('w:pBdr')
+    bottom = OxmlElement('w:bottom')
+    bottom.set(qn('w:val'), 'single')
+    bottom.set(qn('w:sz'), '6')
+    bottom.set(qn('w:space'), '4')
+    bottom.set(qn('w:color'), '999999')
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+
+def _add_page_number_field(paragraph):
+    """Inserts a real Word PAGE field (not literal text) so the footer's
+    page number is computed by Word itself per-page — the concrete way a
+    generated .docx keeps native pagination rather than baking in a
+    single guessed page count."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    run = paragraph.add_run()
+    fld_begin = OxmlElement('w:fldChar')
+    fld_begin.set(qn('w:fldCharType'), 'begin')
+    instr = OxmlElement('w:instrText')
+    instr.set(qn('xml:space'), 'preserve')
+    instr.text = 'PAGE'
+    fld_end = OxmlElement('w:fldChar')
+    fld_end.set(qn('w:fldCharType'), 'end')
+    run._r.append(fld_begin)
+    run._r.append(instr)
+    run._r.append(fld_end)
+
+
+def _apply_letterhead(doc, letterhead_key):
+    """Injects the chosen letterhead into the document's native header/
+    footer parts (not the body) — content placed there is repeated by Word
+    on every page and stays correctly positioned through native pagination,
+    which body-text could not do on its own."""
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    template = LETTERHEAD_TEMPLATES.get(letterhead_key)
+    if not template or letterhead_key == 'none' or not template.get('firm_name'):
+        return
+
+    section = doc.sections[0]
+
+    header = section.header
+    header.is_linked_to_previous = False
+    name_para = header.paragraphs[0]
+    name_para.text = ''
+    name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    name_run = name_para.add_run(template['firm_name'])
+    name_run.bold = True
+    name_run.font.size = Pt(14)
+
+    rule_para = name_para
+    if template.get('tagline'):
+        tagline_para = header.add_paragraph()
+        tagline_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        tagline_run = tagline_para.add_run(template['tagline'])
+        tagline_run.font.size = Pt(9)
+        tagline_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+        rule_para = tagline_para
+    _add_bottom_border(rule_para)
+
+    if template.get('footer_text'):
+        footer = section.footer
+        footer.is_linked_to_previous = False
+        footer_para = footer.paragraphs[0]
+        footer_para.text = ''
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        footer_run = footer_para.add_run(template['footer_text'])
+        footer_run.font.size = Pt(8)
+        footer_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+        _add_page_number_field(footer_para)
+        page_num_run = footer_para.runs[-1]
+        page_num_run.font.size = Pt(8)
+        page_num_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+
+
 @contract_bp.route("/export-form-docx", methods=["POST"])
 def export_form_docx():
     """Legal Forms Library DOCX export.
@@ -778,6 +892,12 @@ def export_form_docx():
     endpoint achieves the same end result (margins, bold, lists preserved)
     server-side with python-docx, which this codebase already uses
     successfully for DOCX export elsewhere in this same file.
+
+    `letterhead` is optional and defaults to 'none' — an omitted or
+    unrecognized key produces the exact same plain output this endpoint
+    always has, so Legal Forms' existing caller (which never sends this
+    field) is unaffected; Auto-Draft Studio's export modal is the first
+    caller to pass a real value. See LETTERHEAD_TEMPLATES above.
     """
     from docx import Document
     from docx.shared import Inches
@@ -789,6 +909,7 @@ def export_form_docx():
     data = request.get_json(silent=True) or {}
     html = data.get("html", "")
     title = data.get("title", "Legal Document")
+    letterhead = data.get("letterhead", "none")
 
     if not html.strip():
         return jsonify({"error": True, "message": "No document content provided."}), 400
@@ -800,6 +921,7 @@ def export_form_docx():
         section.bottom_margin = Inches(1)
         section.left_margin = Inches(1)
         section.right_margin = Inches(1)
+        _apply_letterhead(doc, letterhead)
 
         def add_runs(paragraph, node, bold=False):
             """Recursively walk inline children, tracking bold state so a

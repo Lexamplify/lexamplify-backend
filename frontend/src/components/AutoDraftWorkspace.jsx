@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import DraftsModal from './DraftsModal.jsx';
@@ -55,6 +56,13 @@ export default function AutoDraftWorkspace() {
   const [showVariablesPanel, setShowVariablesPanel] = useState(false);
   const [extractedVariables, setExtractedVariables] = useState([]);
 
+  // ── Letterhead export ────────────────────────────────────────────────────
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [letterheadOptions, setLetterheadOptions] = useState([{ id: 'none', label: 'No Letterhead (Plain)' }]);
+  const [selectedLetterhead, setSelectedLetterhead] = useState('none');
+  const [exportingDocx, setExportingDocx] = useState(false);
+  const [exportError, setExportError] = useState('');
+
   useEffect(() => {
     isMountedRef.current = true;
     const loadVault = async () => {
@@ -70,6 +78,17 @@ export default function AutoDraftWorkspace() {
     return () => {
       isMountedRef.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/contract/letterhead-templates`)
+      .then((r) => r.json())
+      .then((list) => {
+        if (isMountedRef.current && Array.isArray(list) && list.length > 0) {
+          setLetterheadOptions(list);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Smooth multi-stage animation & progress tracker during synthesis
@@ -300,6 +319,51 @@ export default function AutoDraftWorkspace() {
     setTimeout(() => setSavedSuccess(false), 2500);
   };
 
+  // Reuses the exact fetch->blob->anchor-click download pattern already
+  // proven working for Legal Forms' DOCX export (LegalForms.jsx) against
+  // this same /api/contract/export-form-docx endpoint — the letterhead
+  // param is new, but the transport mechanics are unchanged and known-good.
+  const handleExportDocx = async () => {
+    if (!autoDraftText.trim()) return;
+    setExportingDocx(true);
+    setExportError('');
+    try {
+      const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
+      const title = titleMatch || 'Auto-Draft Studio Document';
+      // autoDraftHtml is kept live by ContractTiptapEditor's onHtmlChange,
+      // but stays '' for the brief window right after a fresh synthesis
+      // before the editor has mounted and synced once — fall back to a
+      // plain paragraph-per-line conversion so Export never sends empty
+      // HTML that the backend would reject as "no document content".
+      const html = autoDraftHtml.trim()
+        || autoDraftText.split('\n').filter((l) => l.trim()).map((l) => `<p>${l.trim()}</p>`).join('');
+
+      const res = await fetch(`${API_BASE}/api/contract/export-form-docx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html, title, letterhead: selectedLetterhead }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Export failed (HTTP ${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title.replace(/[^a-z0-9]+/gi, '_')}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setShowExportModal(false);
+    } catch (err) {
+      setExportError(err.message || 'DOCX export failed.');
+    } finally {
+      setExportingDocx(false);
+    }
+  };
+
   const handleAddModifier = (modifierText) => {
     const currentPrompt = autoDraftPrompt;
     if (currentPrompt.includes(modifierText)) return;
@@ -482,6 +546,29 @@ export default function AutoDraftWorkspace() {
         }
         .ad-btn-purple:hover {
           background: rgba(139,92,246,0.25);
+        }
+
+        /* Export-with-letterhead modal */
+        .ad-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+          z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px;
+        }
+        .ad-modal {
+          background: var(--bg-panel, var(--bg-card)); border: 1px solid var(--border-subtle);
+          border-radius: 14px; width: 100%; max-width: 440px; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        }
+        .ad-modal-header {
+          padding: 18px 20px; border-bottom: 1px solid var(--border-subtle);
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .ad-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+        .ad-modal-footer {
+          padding: 14px 20px; border-top: 1px solid var(--border-subtle);
+          display: flex; gap: 10px; justify-content: flex-end;
+        }
+        .ad-modal-select {
+          width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+          background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary);
         }
 
         /* Right Control Panel */
@@ -1231,6 +1318,15 @@ export default function AutoDraftWorkspace() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => { setExportError(''); setShowExportModal(true); }}
+                  className="ad-action-btn ad-btn-secondary"
+                  title="Download as a .docx file, optionally on a firm letterhead"
+                  style={{ padding: '6px 12px' }}
+                >
+                  🖨️ Export
+                </button>
+                <button
+                  type="button"
                   onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); setShowVariablesPanel(false); }}
                   style={{
                     padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'rgba(239,68,68,0.1)',
@@ -1517,6 +1613,74 @@ export default function AutoDraftWorkspace() {
       </div>
 
       <DraftsModal />
+
+      {/* Portaled straight to document.body — AppRouter.jsx's page-transition
+          wrapper (.page-enter) applies a CSS transform to every route's
+          root, and a transformed ancestor becomes the containing block for
+          any position:fixed descendant, so without the portal this overlay
+          would resolve "fixed" relative to that in-flow page wrapper
+          instead of the viewport. Same bug/fix already documented and
+          applied for FirmLibrary.jsx's document viewer modal. */}
+      {showExportModal && createPortal(
+        <div className="ad-modal-overlay" onClick={() => !exportingDocx && setShowExportModal(false)}>
+          <div className="ad-modal" onClick={(ev) => ev.stopPropagation()}>
+            <div className="ad-modal-header">
+              <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Export Document</span>
+              <button
+                onClick={() => setShowExportModal(false)}
+                disabled={exportingDocx}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+            <div className="ad-modal-body">
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                  Letterhead Template
+                </label>
+                <select
+                  className="ad-modal-select"
+                  value={selectedLetterhead}
+                  onChange={(e) => setSelectedLetterhead(e.target.value)}
+                  disabled={exportingDocx}
+                >
+                  {letterheadOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: '8px 0 0', lineHeight: 1.5 }}>
+                  The document downloads as a native .docx file with the selected firm header, footer, and margins applied.
+                </p>
+              </div>
+              {exportError && (
+                <div style={{ fontSize: '12px', color: '#EF4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: '8px', padding: '10px 12px' }}>
+                  {exportError}
+                </div>
+              )}
+            </div>
+            <div className="ad-modal-footer">
+              <button
+                type="button"
+                className="ad-action-btn ad-btn-secondary"
+                onClick={() => setShowExportModal(false)}
+                disabled={exportingDocx}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ad-action-btn ad-btn-primary"
+                onClick={handleExportDocx}
+                disabled={exportingDocx}
+              >
+                {exportingDocx ? 'Exporting…' : '⬇ Download .docx'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
