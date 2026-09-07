@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   extractContractText,
@@ -9,7 +10,9 @@ import {
   fetchContractRecommendations,
   chatWithContract,
   exportContract,
-  fetchDocuments
+  fetchDocuments,
+  fetchDocumentDetails,
+  analyzeConflicts
 } from '../services/api';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import { findClauseRange } from '../tiptap/positionMapping.js';
@@ -1046,6 +1049,63 @@ const styles = `
   [data-theme="light"] .clause-text-preview { color: #1E293B; }
   [data-theme="light"] .clause-risk-badge.red   { background: rgba(239,68,68,0.12); color: #DC2626; }
   [data-theme="light"] .clause-risk-badge.amber { background: rgba(245,158,11,0.12); color: #D97706; }
+
+  /* ── CONFLICTS TAB ────────────────────────────────────────────────── */
+  .conflict-ref-select {
+    width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+    background: var(--bg-dark-card); border: 1px solid var(--border-dark-subtle); color: var(--text-dark-primary);
+  }
+  [data-theme="light"] .conflict-ref-select { background: #FFFFFF; border-color: #E2E8F0; color: #0F172A; }
+
+  .conflict-dropzone {
+    border: 2px dashed var(--border-dark-subtle); border-radius: 10px; padding: 16px;
+    text-align: center; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
+    font-size: 12px; color: var(--text-dark-muted);
+  }
+  .conflict-dropzone:hover, .conflict-dropzone.dragover {
+    border-color: var(--accent-primary, #8B5CF6); background: rgba(139,92,246,0.06);
+  }
+  [data-theme="light"] .conflict-dropzone { border-color: #CBD5E1; color: #64748B; }
+
+  .conflict-card {
+    background: var(--bg-dark-card); border: 1px solid var(--border-dark-subtle); border-radius: 10px;
+    padding: 12px 14px; cursor: pointer; transition: all 0.2s ease;
+  }
+  .conflict-card:hover { border-color: rgba(139,92,246,0.4); transform: translateY(-1px); }
+  .conflict-card.critical { border-left: 4px solid #EF4444; }
+  .conflict-card.major    { border-left: 4px solid #F59E0B; }
+  .conflict-card.minor    { border-left: 4px solid #3B82F6; }
+  [data-theme="light"] .conflict-card { background: #FFFFFF; border-color: #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+
+  .conflict-severity-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.03em; }
+  .conflict-severity-badge.critical { background: rgba(239,68,68,0.15);  color: #FCA5A5; }
+  .conflict-severity-badge.major    { background: rgba(245,158,11,0.15); color: #FCD34D; }
+  .conflict-severity-badge.minor    { background: rgba(59,130,246,0.15); color: #93C5FD; }
+  [data-theme="light"] .conflict-severity-badge.critical { background: rgba(239,68,68,0.12);  color: #DC2626; }
+  [data-theme="light"] .conflict-severity-badge.major    { background: rgba(245,158,11,0.12); color: #D97706; }
+  [data-theme="light"] .conflict-severity-badge.minor    { background: rgba(59,130,246,0.12); color: #2563EB; }
+
+  .conflict-modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    z-index: 1300; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .conflict-modal {
+    background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle); border-radius: 14px;
+    width: 100%; max-width: 860px; max-height: 85vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+  }
+  [data-theme="light"] .conflict-modal { background: #FFFFFF; border-color: #E2E8F0; }
+  .conflict-modal-header {
+    padding: 18px 22px; border-bottom: 1px solid var(--border-dark-subtle);
+    display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0;
+    background: inherit; z-index: 1;
+  }
+  .conflict-modal-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+  .conflict-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .conflict-compare-grid { grid-template-columns: 1fr; } }
+  .conflict-compare-col {
+    background: var(--bg-dark-card); border: 1px solid var(--border-dark-subtle); border-radius: 8px; padding: 12px;
+  }
+  [data-theme="light"] .conflict-compare-col { background: #F8FAFC; border-color: #E2E8F0; }
 
   /* ── INSPECTED RISK CARD ─────────────────────────────────────────── */
   .inspected-risk-card {
@@ -2449,6 +2509,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // tears down the live editor/cursor/undo history.
   const [documentVersion, setDocumentVersion] = useState(0);
   const editorApiRef = useRef(null);
+  const conflictFileInputRef = useRef(null);
   // Portal target for the scanner editor's toolbar (see ContractTiptapEditor's
   // toolbarPortalTarget prop below) — a callback ref via useState, not a
   // plain useRef, because the slot <div> doesn't exist in the DOM on the
@@ -2472,6 +2533,20 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const recommendations = missingClauses;
   const setRecommendations = setMissingClauses;
   const [loadingRecs, setLoadingRecs] = useState(false);
+
+  // Conflicts tab states — cross-document comparison against a Firm
+  // Library reference (or an ad-hoc uploaded file), reusing the existing
+  // /api/conflict/analyze engine ConflictEngine.jsx's standalone page
+  // already calls, instead of a second bespoke analysis pipeline.
+  const [conflictLibraryDocs, setConflictLibraryDocs] = useState([]);
+  const [loadingConflictLibrary, setLoadingConflictLibrary] = useState(false);
+  const [selectedConflictDocId, setSelectedConflictDocId] = useState('');
+  const [conflictUploadFile, setConflictUploadFile] = useState(null);
+  const [conflictDragOver, setConflictDragOver] = useState(false);
+  const [isRunningConflictCheck, setIsRunningConflictCheck] = useState(false);
+  const [conflictResults, setConflictResults] = useState(null);
+  const [conflictError, setConflictError] = useState('');
+  const [activeConflictCard, setActiveConflictCard] = useState(null);
 
   // Appended clause extensions
   const [appendedClauses, setAppendedClauses] = useState([]);
@@ -3061,6 +3136,120 @@ export default function ContractAnalyzer({ setFocusMode }) {
         console.error('[inspectRisk] failed to locate/scroll to clause:', err);
       }
     }
+  };
+
+  // ── Conflicts tab ────────────────────────────────────────────────────
+  // Firm Library list is fetched lazily on first tab open (same pattern as
+  // Missing's fetchMissingProtections), not on every mount of the analyzer.
+  const loadConflictLibraryDocs = async () => {
+    setLoadingConflictLibrary(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/firm-library`);
+      const data = await res.json();
+      setConflictLibraryDocs(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('[Conflicts] Failed to load Firm Library documents:', err);
+    } finally {
+      setLoadingConflictLibrary(false);
+    }
+  };
+
+  // Same find -> select -> smooth-scroll -> flash sequence inspectRisk uses
+  // for a risk clause, reused here so clicking a conflict card's "Active
+  // Contract" side behaves identically. findClauseRange re-searches the
+  // CURRENT document, so this still resolves correctly even if the text
+  // has shifted position since the conflict scan ran.
+  const scrollToClauseInEditor = (text) => {
+    const editor = editorApiRef.current;
+    if (!editor || !text) return;
+    try {
+      const range = findClauseRange(editor.state.doc, text);
+      if (range) {
+        editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).run();
+        const domInfo = editor.view.domAtPos(range.from);
+        const node = domInfo?.node;
+        const el = node && (node.nodeType === 1 ? node : node.parentElement);
+        const target = el?.closest('p, h1, h2, h3, h4, li') || el;
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        flashClauseRange(editor, range.from, range.to);
+      }
+    } catch (err) {
+      console.error('[Conflicts] failed to locate/scroll to clause:', err);
+    }
+  };
+
+  const REFERENCE_LABEL = 'Active Contract';
+
+  const handleRunConflictCheck = async () => {
+    setConflictError('');
+    if (!rawText.trim()) {
+      setConflictError('No active contract text loaded to compare.');
+      return;
+    }
+    if (!conflictUploadFile && !selectedConflictDocId) {
+      setConflictError('Select a Firm Library document or upload a file to compare against.');
+      return;
+    }
+
+    setIsRunningConflictCheck(true);
+    setConflictResults(null);
+    setActiveConflictCard(null);
+
+    try {
+      let referenceText = '';
+      let referenceLabel = '';
+
+      if (conflictUploadFile) {
+        referenceLabel = conflictUploadFile.name.replace(/\.[^.]+$/, '');
+        const extracted = await extractContractText(conflictUploadFile);
+        if (extracted?.error) throw new Error(extracted.message || 'Failed to extract text from the uploaded file.');
+        referenceText = extracted?.text || '';
+      } else {
+        const doc = conflictLibraryDocs.find(d => String(d.id) === String(selectedConflictDocId));
+        referenceLabel = doc?.title || 'Reference Document';
+        // Firm Library's list endpoint truncates content to a 4000-char
+        // preview — the full untruncated text lives behind the same
+        // case_vault id via /api/documents/<id> (get_document_details in
+        // routes/document_routes.py), which every Firm Library entry is
+        // guaranteed to have a row for.
+        const details = await fetchDocumentDetails(selectedConflictDocId);
+        if (details?.error) throw new Error(details.message || 'Failed to load the selected reference document.');
+        referenceText = details?.text || '';
+      }
+
+      if (!referenceText.trim()) {
+        throw new Error('The reference document has no readable text to compare.');
+      }
+
+      const formData = new FormData();
+      formData.append('doc1', new Blob([rawText], { type: 'text/plain' }), 'active-contract.txt');
+      formData.append('label1', REFERENCE_LABEL);
+      formData.append('doc2', new Blob([referenceText], { type: 'text/plain' }), 'reference-document.txt');
+      formData.append('label2', referenceLabel);
+
+      const res = await analyzeConflicts(formData);
+      if (!isMountedRef.current) return;
+      if (res.error) throw new Error(res.message || 'Conflict analysis failed.');
+      setConflictResults(res);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setConflictError(err.message || 'Conflict analysis failed.');
+    } finally {
+      if (isMountedRef.current) setIsRunningConflictCheck(false);
+    }
+  };
+
+  const openConflictDetail = (conflict) => {
+    setActiveConflictCard(conflict);
+    // doc_a is always the active contract, doc_b always the reference —
+    // a positional guarantee from analyze_conflicts's own document
+    // ordering (doc1/label1 is always appended first), NOT something the
+    // LLM's chosen doc_a_name can be trusted to echo back verbatim.
+    // Confirmed live: doc1 was sent labeled "Active Contract" but the
+    // model renamed it "SERVICE AGREEMENT" in doc_a_name after reading the
+    // text itself, so matching on the name string silently picked the
+    // wrong side's excerpt.
+    scrollToClauseInEditor(conflict.doc_a_excerpt);
   };
 
   useEffect(() => {
@@ -4089,6 +4278,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
                 <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'comments' ? 'active' : ''}`} onClick={() => switchTab('comments')}>
                   Comments {comments.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{comments.length}</span>}
                 </button>
+                <button
+                  className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'conflicts' ? 'active' : ''}`}
+                  onClick={() => { switchTab('conflicts'); if (conflictLibraryDocs.length === 0) loadConflictLibraryDocs(); }}
+                >
+                  Conflicts {conflictResults?.conflicts?.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCA5A5', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{conflictResults.conflicts.length}</span>}
+                </button>
               </div>
 
               <div ref={analysisPanelBodyRef} className={`analysis-panel-body transition-opacity duration-300 ${tabOpacity}`}>
@@ -4701,6 +4896,111 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   </div>
                 )}
 
+                {/* SUB TAB: Conflicts */}
+                {activeTab === 'conflicts' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Cross-Document Conflict Check</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
+                      Compare the active contract against a Firm Library precedent — or an uploaded reference file — to surface contradicting clauses.
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
+                        Reference Document
+                      </span>
+                      <select
+                        className="conflict-ref-select"
+                        value={selectedConflictDocId}
+                        onChange={(e) => { setSelectedConflictDocId(e.target.value); setConflictUploadFile(null); }}
+                        disabled={loadingConflictLibrary || isRunningConflictCheck}
+                      >
+                        <option value="">{loadingConflictLibrary ? 'Loading Firm Library…' : 'Select from Firm Library…'}</option>
+                        {conflictLibraryDocs.map(doc => (
+                          <option key={doc.id} value={doc.id}>{doc.title}</option>
+                        ))}
+                      </select>
+
+                      <input
+                        ref={conflictFileInputRef}
+                        type="file"
+                        accept=".pdf,.docx"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) { setConflictUploadFile(file); setSelectedConflictDocId(''); }
+                          e.target.value = '';
+                        }}
+                      />
+                      <div
+                        className={`conflict-dropzone${conflictDragOver ? ' dragover' : ''}`}
+                        onClick={() => !isRunningConflictCheck && conflictFileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); if (!isRunningConflictCheck) setConflictDragOver(true); }}
+                        onDragLeave={(e) => { e.preventDefault(); setConflictDragOver(false); }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setConflictDragOver(false);
+                          if (isRunningConflictCheck) return;
+                          const file = e.dataTransfer.files?.[0];
+                          if (file && /\.(pdf|docx)$/i.test(file.name)) {
+                            setConflictUploadFile(file);
+                            setSelectedConflictDocId('');
+                          }
+                        }}
+                      >
+                        {conflictUploadFile
+                          ? `📄 ${conflictUploadFile.name} — click or drop to replace`
+                          : 'or drop a PDF/DOCX here to compare against a file not yet in the library'}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn-accent"
+                        onClick={handleRunConflictCheck}
+                        disabled={isRunningConflictCheck || (!conflictUploadFile && !selectedConflictDocId)}
+                        style={{ padding: '10px 16px', fontSize: '13px', fontWeight: 600 }}
+                      >
+                        {isRunningConflictCheck ? 'Scanning for conflicts…' : '⚖️ Run Conflict Check'}
+                      </button>
+                    </div>
+
+                    {conflictError && (
+                      <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.08)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', fontSize: '12.5px' }}>
+                        {conflictError}
+                      </div>
+                    )}
+
+                    {conflictResults && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {conflictResults.summary && (
+                          <p style={{ fontSize: '12.5px', color: 'var(--text-dark-secondary)', lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>
+                            {conflictResults.summary}
+                          </p>
+                        )}
+                        {(conflictResults.conflicts || []).length === 0 ? (
+                          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
+                            No conflicts found between the two documents.
+                          </div>
+                        ) : (
+                          conflictResults.conflicts.map((c, i) => {
+                            const sev = (c.severity || 'minor').toLowerCase();
+                            return (
+                              <div key={i} className={`conflict-card ${sev}`} onClick={() => openConflictDetail(c)}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+                                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>{c.title || 'Untitled Conflict'}</span>
+                                  <span className={`conflict-severity-badge ${sev}`}>{c.severity || 'Minor'}</span>
+                                </div>
+                                <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
+                                  {c.legal_explanation}
+                                </p>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </div>
             </div>
 
@@ -4875,6 +5175,76 @@ export default function ContractAnalyzer({ setFocusMode }) {
             ×
           </button>
         </div>
+      )}
+
+      {/* Conflict comparison modal — portaled straight to document.body.
+          AppRouter.jsx's page-transition wrapper (.page-enter) leaves a
+          permanent (non-zero fill-mode) CSS transform on every route's
+          root, which becomes the containing block for any position:fixed
+          descendant — without the portal this would resolve "fixed"
+          relative to that in-flow page wrapper instead of the viewport.
+          Same bug/fix already applied for FirmLibrary.jsx's document
+          viewer and AutoDraftWorkspace.jsx's export modal. */}
+      {activeConflictCard && createPortal(
+        <div className="conflict-modal-overlay" onClick={() => setActiveConflictCard(null)}>
+          <div className="conflict-modal" onClick={(ev) => ev.stopPropagation()}>
+            <div className="conflict-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-dark-primary)' }}>
+                  {activeConflictCard.title || 'Conflict Detail'}
+                </span>
+                <span className={`conflict-severity-badge ${(activeConflictCard.severity || 'minor').toLowerCase()}`}>
+                  {activeConflictCard.severity || 'Minor'}
+                </span>
+              </div>
+              <button
+                onClick={() => setActiveConflictCard(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+            <div className="conflict-modal-body">
+              <div className="conflict-compare-grid">
+                <div className="conflict-compare-col">
+                  <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
+                    {activeConflictCard.doc_a_name || 'Document A'}
+                  </span>
+                  <div className="original-clause-box" style={{ fontSize: '12.5px', marginTop: '6px' }}>
+                    {activeConflictCard.doc_a_excerpt}
+                  </div>
+                </div>
+                <div className="conflict-compare-col">
+                  <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
+                    {activeConflictCard.doc_b_name || 'Document B'}
+                  </span>
+                  <div className="original-clause-box" style={{ fontSize: '12.5px', marginTop: '6px' }}>
+                    {activeConflictCard.doc_b_excerpt}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
+                  Indian Legal Rationale
+                </span>
+                <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.6, margin: '6px 0 0' }}>
+                  {activeConflictCard.legal_explanation}
+                </p>
+              </div>
+              {activeConflictCard.recommended_resolution && (
+                <div>
+                  <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
+                    Recommended Resolution
+                  </span>
+                  <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.6, margin: '6px 0 0' }}>
+                    {activeConflictCard.recommended_resolution}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );
