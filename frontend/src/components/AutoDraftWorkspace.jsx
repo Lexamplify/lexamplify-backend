@@ -14,7 +14,15 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 // back out when reading userLetterheads.
 const NONE_LETTERHEAD = { id: 'none', label: 'No Letterhead (Plain)' };
 const LETTERHEAD_STORAGE_KEY = 'userLetterheads';
-const CREATE_LETTERHEAD_SENTINEL = '__create__';
+const CREATE_LETTERHEAD_SENTINEL = 'create_custom';
+const AUTO_DETECT_SENTINEL = 'auto_detect';
+// Firm branding lives at the very top (cover page/header) or the very
+// end (signature block) of a document, never the middle — slicing to
+// just those two windows before sending to the LLM keeps a long draft
+// well under Groq's per-request TPM budget (see utils/ai_helper.py)
+// instead of shipping the whole document for a detail that's never
+// actually buried in its body text.
+const LETTERHEAD_SLICE_CHARS = 3000;
 
 const DRAFT_STAGES = [
   { title: 'Statutory Interpretation', desc: 'Analyzing instructions and Indian legal framework bounds' },
@@ -94,6 +102,8 @@ export default function AutoDraftWorkspace() {
   const [exportingDocx, setExportingDocx] = useState(false);
   const [exportError, setExportError] = useState('');
   const [exportedSuccess, setExportedSuccess] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [toast, setToast] = useState('');
   const exportMenuRef = useRef(null);
 
   useEffect(() => {
@@ -114,8 +124,12 @@ export default function AutoDraftWorkspace() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showExportMenu]);
 
-  const letterheadOptions = [NONE_LETTERHEAD, ...savedLetterheads, { id: CREATE_LETTERHEAD_SENTINEL, label: '+ Create Custom Letterhead' }];
   const activeLetterhead = savedLetterheads.find((l) => l.id === selectedLetterheadId) || null;
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
 
   const handleLetterheadSelectChange = (e) => {
     const val = e.target.value;
@@ -128,8 +142,76 @@ export default function AutoDraftWorkspace() {
       setShowLetterheadModal(true);
       return;
     }
+    if (val === AUTO_DETECT_SENTINEL) {
+      // Same non-adopted-sentinel treatment — this is an action, not a
+      // real letterhead selection, so the <select> stays put and
+      // handleAutoDetectLetterhead below is the one that actually calls
+      // setSelectedLetterheadId once it has a real result.
+      handleAutoDetectLetterhead();
+      return;
+    }
     setSelectedLetterheadId(val);
     setExportError('');
+  };
+
+  // AI-assisted letterhead detection — reads the drafted document itself
+  // (rather than making the lawyer type in a firm's details it can
+  // already see on the page) and asks the backend's LLM gateway to pull
+  // out {firmName, tagline, address, contact}, if any firm is actually
+  // named in the text.
+  const handleAutoDetectLetterhead = async () => {
+    if (!autoDraftText.trim() || isExtracting) return;
+    setIsExtracting(true);
+    setExportError('');
+    try {
+      const head = autoDraftText.slice(0, LETTERHEAD_SLICE_CHARS);
+      const tail = autoDraftText.length > LETTERHEAD_SLICE_CHARS
+        ? autoDraftText.slice(-LETTERHEAD_SLICE_CHARS)
+        : '';
+      const sliced = tail ? `${head}\n...\n${tail}` : head;
+
+      const res = await fetch(`${API_BASE}/api/contract/extract-letterhead`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: sliced }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.firmName) {
+        showToast('No firm details detected. Please create a custom letterhead.');
+        return;
+      }
+
+      const firmName = String(data.firmName).trim();
+      // Dedupe by firm name (case-insensitive) rather than blindly
+      // appending — re-running Auto-Detect on the same draft, or on a
+      // second draft from the same firm, would otherwise pile up
+      // identical entries in localStorage every time.
+      const existing = savedLetterheads.find(
+        (l) => (l.firmName || '').trim().toLowerCase() === firmName.toLowerCase()
+      );
+      if (existing) {
+        setSelectedLetterheadId(existing.id);
+        showToast(`Using saved letterhead "${existing.firmName}".`);
+        return;
+      }
+
+      const entry = {
+        id: `lh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        label: firmName,
+        firmName,
+        tagline: data.tagline || '',
+        address: data.address || '',
+        contact: data.contact || '',
+      };
+      setSavedLetterheads((prev) => [...prev, entry]);
+      setSelectedLetterheadId(entry.id);
+      showToast(`Detected letterhead: "${firmName}".`);
+    } catch (err) {
+      showToast('Letterhead detection failed. Please create a custom letterhead.');
+    } finally {
+      setIsExtracting(false);
+    }
   };
 
   const handleSaveLetterhead = () => {
@@ -795,6 +877,20 @@ export default function AutoDraftWorkspace() {
           width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 13px;
           background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary);
           box-sizing: border-box;
+        }
+
+        /* Letterhead auto-detect toast */
+        .ad-toast {
+          position: fixed; bottom: 24px; right: 24px; z-index: 1300;
+          max-width: 340px;
+          background: var(--bg-panel, var(--bg-card)); border: 1px solid rgba(139,92,246,0.4); color: var(--text-primary);
+          padding: 11px 18px; border-radius: 9px; font-size: 13px; font-weight: 600;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+          animation: ad-toast-in 0.25s ease;
+        }
+        @keyframes ad-toast-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         /* Print-only letterhead — invisible on screen, drawn only when
@@ -1636,12 +1732,19 @@ export default function AutoDraftWorkspace() {
                 className="ad-letterhead-select"
                 value={selectedLetterheadId}
                 onChange={handleLetterheadSelectChange}
-                disabled={exportingDocx}
+                disabled={exportingDocx || isExtracting}
                 title="Choose which firm letterhead to apply to the exported document"
               >
-                {letterheadOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>{opt.label}</option>
-                ))}
+                <option value="none">No Letterhead (Plain)</option>
+                <option value={AUTO_DETECT_SENTINEL}>✨ Auto-Detect from Draft</option>
+                {savedLetterheads.length > 0 && (
+                  <optgroup label="Saved Letterheads">
+                    {savedLetterheads.map((lh) => (
+                      <option key={lh.id} value={lh.id}>{lh.label || lh.firmName}</option>
+                    ))}
+                  </optgroup>
+                )}
+                <option value={CREATE_LETTERHEAD_SENTINEL}>+ Create Custom Letterhead...</option>
               </select>
 
               <div className="ad-export-menu-wrap" ref={exportMenuRef}>
@@ -1649,10 +1752,10 @@ export default function AutoDraftWorkspace() {
                   type="button"
                   className="ad-action-btn ad-btn-primary"
                   onClick={() => setShowExportMenu((v) => !v)}
-                  disabled={exportingDocx}
+                  disabled={exportingDocx || isExtracting}
                   style={{ padding: '7px 14px' }}
                 >
-                  {exportingDocx ? 'Exporting…' : exportedSuccess ? '✓ Downloaded!' : '⬇ Export ▾'}
+                  {isExtracting ? 'Extracting Firm Data…' : exportingDocx ? 'Exporting…' : exportedSuccess ? '✓ Downloaded!' : '⬇ Export ▾'}
                 </button>
                 {showExportMenu && (
                   <div className="ad-export-menu">
@@ -2022,6 +2125,14 @@ export default function AutoDraftWorkspace() {
             </div>
           </div>
         </div>,
+        document.body
+      )}
+
+      {/* Also portaled — a plain fixed-position div here would resolve
+          relative to .page-enter's transformed box like everything else
+          in this file, not the true viewport corner. */}
+      {toast && createPortal(
+        <div className="ad-toast">{toast}</div>,
         document.body
       )}
     </div>

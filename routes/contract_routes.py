@@ -872,6 +872,67 @@ def _apply_letterhead(doc, letterhead_data):
         page_num_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
 
 
+@contract_bp.route("/extract-letterhead", methods=["POST"])
+def extract_letterhead():
+    """AI-assisted letterhead detection for Auto-Draft Studio's
+    "✨ Auto-Detect from Draft" option. The frontend already trims the
+    document to its head+tail before calling this (firm branding lives
+    in a cover page/header or a signature block, never the middle) — this
+    route just asks the LLM to pull {firmName, tagline, address, contact}
+    out of whatever text it's given, reusing this codebase's existing
+    ask_groq gateway (fallback models + TPM-aware rate-limit retry, same
+    as every other LLM call in this file) and extract_json_from_llm_response
+    (already strips ```json fences and falls back to a regex extraction —
+    see its docstring — so there's no need to hand-roll that here)."""
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": True, "message": "No document text provided."}), 400
+
+    system_prompt = (
+        "Extract the drafting law firm's details from the provided document text "
+        "(typically found in headers, cover pages, or signature blocks). Return "
+        "strictly valid JSON with keys: firmName, tagline (or empty string), "
+        "address, contact. "
+        "firmName is ONLY the firm's proper name (e.g. \"Sharma & Associates\") — "
+        "never include a professional descriptor or court/bar registration line "
+        "in it. tagline is that descriptor line, if present (e.g. \"Advocates & "
+        "Solicitors, High Court of Karnataka\"), kept separate from firmName. "
+        "Return null values if no firm is found. Do not include markdown "
+        "formatting."
+    )
+
+    try:
+        raw = ask_groq(system_prompt, text, response_format={"type": "json_object"})
+    except Exception as e:
+        return jsonify({"error": True, "message": f"Letterhead extraction failed: {e}"}), 502
+
+    parsed = extract_json_from_llm_response(raw) if raw else None
+    if not isinstance(parsed, dict):
+        return jsonify({
+            "error": True,
+            "message": "AI returned an unparseable response.",
+            "code": "LLM_JSON_PARSE_ERROR",
+        }), 502
+
+    def _clean(val):
+        return str(val).strip() if val else ''
+
+    firm_name = _clean(parsed.get('firmName'))
+    if not firm_name:
+        # A real "nothing found" result, not a failure — 200 with every
+        # field empty so the frontend can tell this apart from a genuine
+        # network/LLM error and show its "no firm details detected" toast.
+        return jsonify({"firmName": None, "tagline": None, "address": None, "contact": None}), 200
+
+    return jsonify({
+        "firmName": firm_name,
+        "tagline": _clean(parsed.get('tagline')),
+        "address": _clean(parsed.get('address')),
+        "contact": _clean(parsed.get('contact')),
+    }), 200
+
+
 @contract_bp.route("/export-form-docx", methods=["POST"])
 def export_form_docx():
     """Legal Forms Library DOCX export.
