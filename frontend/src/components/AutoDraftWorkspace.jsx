@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import DraftsModal from './DraftsModal.jsx';
@@ -57,11 +56,16 @@ export default function AutoDraftWorkspace() {
   const [extractedVariables, setExtractedVariables] = useState([]);
 
   // ── Letterhead export ────────────────────────────────────────────────────
-  const [showExportModal, setShowExportModal] = useState(false);
+  // Previously lived behind a generic "Export" button that opened a modal
+  // containing the letterhead picker — confirmed with the founder that this
+  // buried the one thing lawyers actually asked for (drafting on the firm's
+  // letterhead) behind a click that didn't read as "letterhead" at all. Now
+  // an always-visible bar under the toolbar, no modal, no extra click.
   const [letterheadOptions, setLetterheadOptions] = useState([{ id: 'none', label: 'No Letterhead (Plain)' }]);
   const [selectedLetterhead, setSelectedLetterhead] = useState('none');
   const [exportingDocx, setExportingDocx] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [exportedSuccess, setExportedSuccess] = useState(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -327,6 +331,7 @@ export default function AutoDraftWorkspace() {
     if (!autoDraftText.trim()) return;
     setExportingDocx(true);
     setExportError('');
+    setExportedSuccess(false);
     try {
       const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
       const title = titleMatch || 'Auto-Draft Studio Document';
@@ -356,7 +361,8 @@ export default function AutoDraftWorkspace() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setShowExportModal(false);
+      setExportedSuccess(true);
+      setTimeout(() => setExportedSuccess(false), 2500);
     } catch (err) {
       setExportError(err.message || 'DOCX export failed.');
     } finally {
@@ -486,11 +492,29 @@ export default function AutoDraftWorkspace() {
 
         .ad-canvas-header {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
+          flex-direction: column;
+          gap: 12px;
           padding-bottom: 16px;
           border-bottom: 1px solid var(--border-subtle);
-          margin-bottom: 20px;
+          margin-bottom: 16px;
+        }
+
+        .ad-canvas-header-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        /* Wraps onto a second line instead of overlapping the title —
+           at anything less than a very wide viewport, 6 action buttons
+           plus the title never actually fit on one row. */
+        .ad-toolbar-row {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
         }
 
         .ad-metric-pill {
@@ -548,27 +572,39 @@ export default function AutoDraftWorkspace() {
           background: rgba(139,92,246,0.25);
         }
 
-        /* Export-with-letterhead modal */
-        .ad-modal-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
-          z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px;
+        /* Letterhead & export bar — permanently visible (no modal) so the
+           letterhead option is actually discoverable, not a click away. */
+        .ad-letterhead-bar {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 10px;
+          padding: 12px 14px;
+          margin-bottom: 20px;
+          border-radius: 10px;
+          background: rgba(139,92,246,0.07);
+          border: 1px solid rgba(139,92,246,0.2);
         }
-        .ad-modal {
-          background: var(--bg-panel, var(--bg-card)); border: 1px solid var(--border-subtle);
-          border-radius: 14px; width: 100%; max-width: 440px; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        .ad-letterhead-label {
+          font-size: 12.5px;
+          font-weight: 700;
+          color: var(--text-primary);
+          white-space: nowrap;
         }
-        .ad-modal-header {
-          padding: 18px 20px; border-bottom: 1px solid var(--border-subtle);
-          display: flex; align-items: center; justify-content: space-between;
+        .ad-letterhead-select {
+          flex: 1 1 200px;
+          min-width: 180px;
+          padding: 7px 10px;
+          border-radius: 7px;
+          font-size: 12.5px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
         }
-        .ad-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-        .ad-modal-footer {
-          padding: 14px 20px; border-top: 1px solid var(--border-subtle);
-          display: flex; gap: 10px; justify-content: flex-end;
-        }
-        .ad-modal-select {
-          width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 13px;
-          background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary);
+        .ad-letterhead-error {
+          flex-basis: 100%;
+          font-size: 12px;
+          color: #EF4444;
         }
 
         /* Right Control Panel */
@@ -1277,22 +1313,27 @@ export default function AutoDraftWorkspace() {
 
         {/* LEFT COLUMN — Live Editor & Document Canvas */}
         <div className="ad-canvas-panel">
-          <div className="ad-canvas-header" style={{ gap: '12px', flexWrap: 'nowrap' }}>
-            {/* Left: Title & Stats */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 750, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
-                Synthesized Document
-              </h3>
-              {autoDraftText && (
-                <span className="ad-metric-pill" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  ⚡ {wordCount} words · {charCount} chars
-                </span>
-              )}
+          <div className="ad-canvas-header">
+            {/* Title row */}
+            <div className="ad-canvas-header-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 750, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
+                  Synthesized Document
+                </h3>
+                {autoDraftText && (
+                  <span className="ad-metric-pill" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    ⚡ {wordCount} words · {charCount} chars
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Right: Action Buttons Group */}
+            {/* Action toolbar — wraps onto its own line(s) instead of
+                squeezing into the title row and overlapping it, which is
+                what a hard nowrap here used to do at anything less than a
+                very wide viewport. */}
             {autoDraftText && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <div className="ad-toolbar-row">
                 <button type="button" onClick={handleCopyDraft} className="ad-action-btn ad-btn-secondary" style={{ padding: '6px 12px' }}>
                   {copied ? '✓ Copied!' : '📋 Copy'}
                 </button>
@@ -1318,15 +1359,6 @@ export default function AutoDraftWorkspace() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setExportError(''); setShowExportModal(true); }}
-                  className="ad-action-btn ad-btn-secondary"
-                  title="Download as a .docx file, optionally on a firm letterhead"
-                  style={{ padding: '6px 12px' }}
-                >
-                  🖨️ Export
-                </button>
-                <button
-                  type="button"
                   onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); setShowVariablesPanel(false); }}
                   style={{
                     padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'rgba(239,68,68,0.1)',
@@ -1338,6 +1370,38 @@ export default function AutoDraftWorkspace() {
               </div>
             )}
           </div>
+
+          {/* Letterhead & export — a founder-requested feature that used to
+              live behind a generically-labeled "Export" button opening a
+              modal, which meant it wasn't actually discoverable as "the
+              letterhead option." Now a permanently visible strip: pick the
+              letterhead, hit download, no modal in between. */}
+          {autoDraftText && (
+            <div className="ad-letterhead-bar">
+              <span className="ad-letterhead-label">🖨️ Draft on Letterhead</span>
+              <select
+                className="ad-letterhead-select"
+                value={selectedLetterhead}
+                onChange={(e) => { setSelectedLetterhead(e.target.value); setExportError(''); }}
+                disabled={exportingDocx}
+                title="Choose which firm letterhead to apply to the exported .docx"
+              >
+                {letterheadOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="ad-action-btn ad-btn-primary"
+                onClick={handleExportDocx}
+                disabled={exportingDocx}
+                style={{ padding: '7px 14px' }}
+              >
+                {exportingDocx ? 'Exporting…' : exportedSuccess ? '✓ Downloaded!' : '⬇ Export .docx'}
+              </button>
+              {exportError && <span className="ad-letterhead-error">{exportError}</span>}
+            </div>
+          )}
 
           {showVariablesPanel && (
             <div className="ad-variables-panel">
@@ -1613,74 +1677,6 @@ export default function AutoDraftWorkspace() {
       </div>
 
       <DraftsModal />
-
-      {/* Portaled straight to document.body — AppRouter.jsx's page-transition
-          wrapper (.page-enter) applies a CSS transform to every route's
-          root, and a transformed ancestor becomes the containing block for
-          any position:fixed descendant, so without the portal this overlay
-          would resolve "fixed" relative to that in-flow page wrapper
-          instead of the viewport. Same bug/fix already documented and
-          applied for FirmLibrary.jsx's document viewer modal. */}
-      {showExportModal && createPortal(
-        <div className="ad-modal-overlay" onClick={() => !exportingDocx && setShowExportModal(false)}>
-          <div className="ad-modal" onClick={(ev) => ev.stopPropagation()}>
-            <div className="ad-modal-header">
-              <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Export Document</span>
-              <button
-                onClick={() => setShowExportModal(false)}
-                disabled={exportingDocx}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}
-              >
-                &times;
-              </button>
-            </div>
-            <div className="ad-modal-body">
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                  Letterhead Template
-                </label>
-                <select
-                  className="ad-modal-select"
-                  value={selectedLetterhead}
-                  onChange={(e) => setSelectedLetterhead(e.target.value)}
-                  disabled={exportingDocx}
-                >
-                  {letterheadOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id}>{opt.label}</option>
-                  ))}
-                </select>
-                <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: '8px 0 0', lineHeight: 1.5 }}>
-                  The document downloads as a native .docx file with the selected firm header, footer, and margins applied.
-                </p>
-              </div>
-              {exportError && (
-                <div style={{ fontSize: '12px', color: '#EF4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: '8px', padding: '10px 12px' }}>
-                  {exportError}
-                </div>
-              )}
-            </div>
-            <div className="ad-modal-footer">
-              <button
-                type="button"
-                className="ad-action-btn ad-btn-secondary"
-                onClick={() => setShowExportModal(false)}
-                disabled={exportingDocx}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="ad-action-btn ad-btn-primary"
-                onClick={handleExportDocx}
-                disabled={exportingDocx}
-              >
-                {exportingDocx ? 'Exporting…' : '⬇ Download .docx'}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   );
 }
