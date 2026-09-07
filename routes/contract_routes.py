@@ -767,33 +767,6 @@ STRICT RULES — NO HALLUCINATION:
 
 
 # ── Letterhead export ───────────────────────────────────────────────────────
-# No firm-branding/workspace-settings table or asset directory exists
-# anywhere in this codebase (checked: no "letterhead"/"branding" schema,
-# no static template directory) — this is a hardcoded mock registry to
-# unblock the Letterhead Template selector in Auto-Draft Studio / Legal
-# Forms until a real firm-settings feature exists to back it. 'none' keeps
-# export_form_docx's original plain output byte-for-byte unchanged for any
-# caller that doesn't pass `letterhead` at all.
-LETTERHEAD_TEMPLATES = {
-    'none': {
-        'label': 'No Letterhead (Plain)',
-    },
-    'standard_firm': {
-        'label': 'Standard Firm Letterhead (Mock)',
-        'firm_name': 'LEXAMPLIFY & ASSOCIATES',
-        'tagline': 'Advocates & Solicitors  ·  New Delhi, India',
-        'footer_text': 'Strictly Private & Confidential  ·  Page ',
-    },
-}
-
-
-@contract_bp.route("/letterhead-templates", methods=["GET"])
-def get_letterhead_templates():
-    return jsonify([
-        {'id': key, 'label': tpl['label']} for key, tpl in LETTERHEAD_TEMPLATES.items()
-    ]), 200
-
-
 def _add_bottom_border(paragraph):
     """Draws the classic letterhead rule line under the firm name/tagline —
     python-docx has no high-level paragraph-border API, so this is the
@@ -832,17 +805,31 @@ def _add_page_number_field(paragraph):
     run._r.append(fld_end)
 
 
-def _apply_letterhead(doc, letterhead_key):
-    """Injects the chosen letterhead into the document's native header/
-    footer parts (not the body) — content placed there is repeated by Word
-    on every page and stays correctly positioned through native pagination,
-    which body-text could not do on its own."""
+def _apply_letterhead(doc, letterhead_data):
+    """Injects a user-supplied letterhead into the document's native
+    header/footer parts (not the body) — content placed there is repeated
+    by Word on every page and stays correctly positioned through native
+    pagination, which body-text could not do on its own.
+
+    `letterhead_data` is an arbitrary dict the client sends straight from
+    its own locally-persisted letterhead list ({firmName, tagline,
+    address, contact}) — there is no firm-branding table backing this
+    server-side (checked: no such schema anywhere in this codebase), so
+    the server has no registry of its own to look up; it only formats
+    whatever the client already resolved. `None`/no `firmName` means "no
+    letterhead", handled by simply not touching the header/footer at all.
+    """
     from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-    template = LETTERHEAD_TEMPLATES.get(letterhead_key)
-    if not template or letterhead_key == 'none' or not template.get('firm_name'):
+    if not letterhead_data or not isinstance(letterhead_data, dict):
         return
+    firm_name = (letterhead_data.get('firmName') or '').strip()
+    if not firm_name:
+        return
+    tagline = (letterhead_data.get('tagline') or '').strip()
+    address = (letterhead_data.get('address') or '').strip()
+    contact = (letterhead_data.get('contact') or '').strip()
 
     section = doc.sections[0]
 
@@ -851,27 +838,32 @@ def _apply_letterhead(doc, letterhead_key):
     name_para = header.paragraphs[0]
     name_para.text = ''
     name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    name_run = name_para.add_run(template['firm_name'])
+    name_run = name_para.add_run(firm_name)
     name_run.bold = True
     name_run.font.size = Pt(14)
 
     rule_para = name_para
-    if template.get('tagline'):
+    if tagline:
         tagline_para = header.add_paragraph()
         tagline_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        tagline_run = tagline_para.add_run(template['tagline'])
+        tagline_run = tagline_para.add_run(tagline)
         tagline_run.font.size = Pt(9)
         tagline_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
         rule_para = tagline_para
     _add_bottom_border(rule_para)
 
-    if template.get('footer_text'):
+    # Footer: whichever of address/contact were actually given, joined —
+    # a lawyer filling only one of the two still gets a sensible footer
+    # rather than a stray separator.
+    footer_line = '  ·  '.join(x for x in (address, contact) if x)
+    if footer_line:
+        footer_line += '  ·  Page '
         footer = section.footer
         footer.is_linked_to_previous = False
         footer_para = footer.paragraphs[0]
         footer_para.text = ''
         footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer_run = footer_para.add_run(template['footer_text'])
+        footer_run = footer_para.add_run(footer_line)
         footer_run.font.size = Pt(8)
         footer_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
         _add_page_number_field(footer_para)
@@ -893,11 +885,10 @@ def export_form_docx():
     server-side with python-docx, which this codebase already uses
     successfully for DOCX export elsewhere in this same file.
 
-    `letterhead` is optional and defaults to 'none' — an omitted or
-    unrecognized key produces the exact same plain output this endpoint
-    always has, so Legal Forms' existing caller (which never sends this
-    field) is unaffected; Auto-Draft Studio's export modal is the first
-    caller to pass a real value. See LETTERHEAD_TEMPLATES above.
+    `letterhead_data` is optional — an omitted value, or one with no
+    `firmName`, produces the exact same plain output this endpoint always
+    has, so Legal Forms' existing caller (which never sends this field)
+    is unaffected. See _apply_letterhead above for the accepted shape.
     """
     from docx import Document
     from docx.shared import Inches
@@ -909,7 +900,11 @@ def export_form_docx():
     data = request.get_json(silent=True) or {}
     html = data.get("html", "")
     title = data.get("title", "Legal Document")
-    letterhead = data.get("letterhead", "none")
+    # {firmName, tagline, address, contact} from the client's own locally-
+    # persisted letterhead list, or None/omitted for a plain export —
+    # see _apply_letterhead's docstring for why this is client-supplied
+    # rather than looked up server-side.
+    letterhead_data = data.get("letterhead_data")
 
     if not html.strip():
         return jsonify({"error": True, "message": "No document content provided."}), 400
@@ -921,7 +916,7 @@ def export_form_docx():
         section.bottom_margin = Inches(1)
         section.left_margin = Inches(1)
         section.right_margin = Inches(1)
-        _apply_letterhead(doc, letterhead)
+        _apply_letterhead(doc, letterhead_data)
 
         def add_runs(paragraph, node, bold=False):
             """Recursively walk inline children, tracking bold state so a

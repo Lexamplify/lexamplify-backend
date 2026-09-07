@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import DraftsModal from './DraftsModal.jsx';
@@ -7,6 +8,13 @@ import { fetchDocuments, extractContractText } from '../services/api.js';
 import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+// Always-present first option — not itself stored in localStorage, so
+// there's nothing to accidentally corrupt/delete and no need to filter it
+// back out when reading userLetterheads.
+const NONE_LETTERHEAD = { id: 'none', label: 'No Letterhead (Plain)' };
+const LETTERHEAD_STORAGE_KEY = 'userLetterheads';
+const CREATE_LETTERHEAD_SENTINEL = '__create__';
 
 const DRAFT_STAGES = [
   { title: 'Statutory Interpretation', desc: 'Analyzing instructions and Indian legal framework bounds' },
@@ -61,11 +69,92 @@ export default function AutoDraftWorkspace() {
   // buried the one thing lawyers actually asked for (drafting on the firm's
   // letterhead) behind a click that didn't read as "letterhead" at all. Now
   // an always-visible bar under the toolbar, no modal, no extra click.
-  const [letterheadOptions, setLetterheadOptions] = useState([{ id: 'none', label: 'No Letterhead (Plain)' }]);
-  const [selectedLetterhead, setSelectedLetterhead] = useState('none');
+  //
+  // No firm-branding/settings table exists anywhere in this codebase (the
+  // backend confirmed this last cycle), and building one is out of scope
+  // here — user-defined letterheads are persisted client-side in
+  // localStorage instead, and their full data is sent with each export
+  // rather than a server-side lookup key.
+  const [savedLetterheads, setSavedLetterheads] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(LETTERHEAD_STORAGE_KEY) || '[]');
+      return Array.isArray(stored) ? stored : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedLetterheadId, setSelectedLetterheadId] = useState('none');
+  const [showLetterheadModal, setShowLetterheadModal] = useState(false);
+  const [newLetterheadFirmName, setNewLetterheadFirmName] = useState('');
+  const [newLetterheadTagline, setNewLetterheadTagline] = useState('');
+  const [newLetterheadAddress, setNewLetterheadAddress] = useState('');
+  const [newLetterheadContact, setNewLetterheadContact] = useState('');
+  const [letterheadFormError, setLetterheadFormError] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [exportingDocx, setExportingDocx] = useState(false);
   const [exportError, setExportError] = useState('');
   const [exportedSuccess, setExportedSuccess] = useState(false);
+  const exportMenuRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LETTERHEAD_STORAGE_KEY, JSON.stringify(savedLetterheads));
+    } catch {}
+  }, [savedLetterheads]);
+
+  // Close the export format menu on any outside click.
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handler = (e) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportMenu]);
+
+  const letterheadOptions = [NONE_LETTERHEAD, ...savedLetterheads, { id: CREATE_LETTERHEAD_SENTINEL, label: '+ Create Custom Letterhead' }];
+  const activeLetterhead = savedLetterheads.find((l) => l.id === selectedLetterheadId) || null;
+
+  const handleLetterheadSelectChange = (e) => {
+    const val = e.target.value;
+    if (val === CREATE_LETTERHEAD_SENTINEL) {
+      // Controlled <select> deliberately NOT updated to this sentinel —
+      // it stays on whatever was actually selected before, so the
+      // dropdown visually snaps back once the modal closes instead of
+      // showing "+ Create Custom Letterhead" as if it were a real choice.
+      setLetterheadFormError('');
+      setShowLetterheadModal(true);
+      return;
+    }
+    setSelectedLetterheadId(val);
+    setExportError('');
+  };
+
+  const handleSaveLetterhead = () => {
+    const firmName = newLetterheadFirmName.trim();
+    if (!firmName) {
+      setLetterheadFormError('Firm name is required.');
+      return;
+    }
+    const entry = {
+      id: `lh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      label: firmName,
+      firmName,
+      tagline: newLetterheadTagline.trim(),
+      address: newLetterheadAddress.trim(),
+      contact: newLetterheadContact.trim(),
+    };
+    setSavedLetterheads((prev) => [...prev, entry]);
+    setSelectedLetterheadId(entry.id);
+    setShowLetterheadModal(false);
+    setNewLetterheadFirmName('');
+    setNewLetterheadTagline('');
+    setNewLetterheadAddress('');
+    setNewLetterheadContact('');
+    setLetterheadFormError('');
+  };
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -82,17 +171,6 @@ export default function AutoDraftWorkspace() {
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
-
-  useEffect(() => {
-    fetch(`${API_BASE}/api/contract/letterhead-templates`)
-      .then((r) => r.json())
-      .then((list) => {
-        if (isMountedRef.current && Array.isArray(list) && list.length > 0) {
-          setLetterheadOptions(list);
-        }
-      })
-      .catch(() => {});
   }, []);
 
   // Smooth multi-stage animation & progress tracker during synthesis
@@ -327,14 +405,29 @@ export default function AutoDraftWorkspace() {
   // proven working for Legal Forms' DOCX export (LegalForms.jsx) against
   // this same /api/contract/export-form-docx endpoint — the letterhead
   // param is new, but the transport mechanics are unchanged and known-good.
+  const getExportTitle = () => {
+    const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
+    return titleMatch || 'Auto-Draft Studio Document';
+  };
+
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportDocx = async () => {
     if (!autoDraftText.trim()) return;
     setExportingDocx(true);
     setExportError('');
     setExportedSuccess(false);
     try {
-      const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
-      const title = titleMatch || 'Auto-Draft Studio Document';
+      const title = getExportTitle();
       // autoDraftHtml is kept live by ContractTiptapEditor's onHtmlChange,
       // but stays '' for the brief window right after a fresh synthesis
       // before the editor has mounted and synced once — fall back to a
@@ -346,21 +439,17 @@ export default function AutoDraftWorkspace() {
       const res = await fetch(`${API_BASE}/api/contract/export-form-docx`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html, title, letterhead: selectedLetterhead }),
+        // activeLetterhead is null for "No Letterhead" — the backend
+        // treats a missing/empty firmName as "skip the header/footer
+        // entirely", so this doesn't need its own special-casing here.
+        body: JSON.stringify({ html, title, letterhead_data: activeLetterhead }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || `Export failed (HTTP ${res.status})`);
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${title.replace(/[^a-z0-9]+/gi, '_')}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${title.replace(/[^a-z0-9]+/gi, '_')}.docx`);
       setExportedSuccess(true);
       setTimeout(() => setExportedSuccess(false), 2500);
     } catch (err) {
@@ -368,6 +457,40 @@ export default function AutoDraftWorkspace() {
     } finally {
       setExportingDocx(false);
     }
+  };
+
+  // Client-side, no backend round-trip — autoDraftText is already the
+  // plain-text mirror ContractTiptapEditor keeps in sync via
+  // onTextChange, so there's no HTML to parse here at all.
+  const handleExportTxt = () => {
+    if (!autoDraftText.trim()) return;
+    setExportError('');
+    const title = getExportTitle();
+    const letterheadBlock = activeLetterhead
+      ? [activeLetterhead.firmName, activeLetterhead.tagline, activeLetterhead.address, activeLetterhead.contact]
+          .filter(Boolean)
+          .join('\n') + `\n${'-'.repeat(48)}\n\n`
+      : '';
+    const blob = new Blob([letterheadBlock + autoDraftText], { type: 'text/plain;charset=utf-8' });
+    downloadBlob(blob, `${title.replace(/[^a-z0-9]+/gi, '_')}.txt`);
+    setExportedSuccess(true);
+    setTimeout(() => setExportedSuccess(false), 2500);
+  };
+
+  // Native browser print -> "Save as PDF", zero backend rendering engine
+  // involved (no wkhtmltopdf/cairo dependency to keep alive in
+  // production). print-only-letterhead and the @media print rules below
+  // do the actual layout work; this just triggers the dialog and sets
+  // document.title so the browser's own "Save as PDF" suggests a sane
+  // filename instead of the page's normal title.
+  const handleExportPdf = () => {
+    if (!autoDraftText.trim()) return;
+    setExportError('');
+    const title = getExportTitle();
+    const originalTitle = document.title;
+    document.title = title;
+    window.print();
+    setTimeout(() => { document.title = originalTitle; }, 1000);
   };
 
   const handleAddModifier = (modifierText) => {
@@ -605,6 +728,118 @@ export default function AutoDraftWorkspace() {
           flex-basis: 100%;
           font-size: 12px;
           color: #EF4444;
+        }
+
+        /* Multi-format export split-button */
+        .ad-export-menu-wrap {
+          position: relative;
+          display: inline-flex;
+        }
+        .ad-export-menu {
+          position: absolute;
+          top: calc(100% + 6px);
+          right: 0;
+          z-index: 40;
+          background: var(--bg-panel, var(--bg-card));
+          border: 1px solid var(--border-subtle);
+          border-radius: 10px;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+          display: flex;
+          flex-direction: column;
+          min-width: 180px;
+          padding: 6px;
+          gap: 2px;
+        }
+        .ad-export-menu-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 6px;
+          font-size: 12.5px;
+          font-weight: 500;
+          color: var(--text-primary);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          text-align: left;
+          width: 100%;
+        }
+        .ad-export-menu-item:hover {
+          background: var(--accent-muted, rgba(59,130,246,0.08));
+        }
+
+        /* Create-letterhead modal */
+        .ad-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+          z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px;
+        }
+        .ad-modal {
+          background: var(--bg-panel, var(--bg-card)); border: 1px solid var(--border-subtle);
+          border-radius: 14px; width: 100%; max-width: 440px; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        }
+        .ad-modal-header {
+          padding: 18px 20px; border-bottom: 1px solid var(--border-subtle);
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .ad-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+        .ad-modal-footer {
+          padding: 14px 20px; border-top: 1px solid var(--border-subtle);
+          display: flex; gap: 10px; justify-content: flex-end;
+        }
+        .ad-modal-label {
+          font-size: 12px; font-weight: 600; color: var(--text-muted);
+          display: block; margin-bottom: 6px;
+        }
+        .ad-modal-input {
+          width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+          background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary);
+          box-sizing: border-box;
+        }
+
+        /* Print-only letterhead — invisible on screen, drawn only when
+           window.print() (the PDF export path) is active. */
+        .print-only-letterhead { display: none; }
+
+        @media print {
+          /* Hide everything except the letterhead + the actual document
+             body: global app chrome (rendered by AppRouter's Layout, not
+             this component, but this <style> tag is a plain unscoped
+             global style like the rest of this file's CSS), this page's
+             own hero header / toolbar / letterhead controls / right
+             panel, and the editor's own formatting toolbar. */
+          .sidebar, .topbar,
+          .ad-header-card, .ad-canvas-header, .ad-letterhead-bar,
+          .ad-controls-panel, .ad-variables-panel,
+          .rich-text-toolbar {
+            display: none !important;
+          }
+          .ad-workspace-grid { display: block !important; }
+          .ad-canvas-panel {
+            box-shadow: none !important;
+            border: none !important;
+            padding: 0 !important;
+            min-height: 0 !important;
+          }
+          .tiptap-editor-shell, .scanner-body {
+            border: none !important;
+            box-shadow: none !important;
+            background: #fff !important;
+            color: #000 !important;
+          }
+          body, html { background: #fff !important; }
+
+          .print-only-letterhead {
+            display: block;
+            text-align: center;
+            font-family: Georgia, 'Times New Roman', serif;
+            padding-bottom: 14px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #333;
+          }
+          .print-lh-firm { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; color: #000; }
+          .print-lh-tagline { font-size: 12px; color: #333; margin-top: 4px; }
+          .print-lh-contact { font-size: 10.5px; color: #444; margin-top: 6px; }
         }
 
         /* Right Control Panel */
@@ -1313,6 +1548,24 @@ export default function AutoDraftWorkspace() {
 
         {/* LEFT COLUMN — Live Editor & Document Canvas */}
         <div className="ad-canvas-panel">
+          {/* Invisible on screen, shown only under @media print (see
+              styles below) — the PDF export path is window.print() with
+              no backend rendering engine, so this is the only place the
+              letterhead is actually drawn for a PDF. */}
+          <div className="print-only-letterhead">
+            {activeLetterhead && (
+              <>
+                <div className="print-lh-firm">{activeLetterhead.firmName}</div>
+                {activeLetterhead.tagline && <div className="print-lh-tagline">{activeLetterhead.tagline}</div>}
+                {(activeLetterhead.address || activeLetterhead.contact) && (
+                  <div className="print-lh-contact">
+                    {[activeLetterhead.address, activeLetterhead.contact].filter(Boolean).join('   ·   ')}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="ad-canvas-header">
             {/* Title row */}
             <div className="ad-canvas-header-top">
@@ -1381,24 +1634,41 @@ export default function AutoDraftWorkspace() {
               <span className="ad-letterhead-label">🖨️ Draft on Letterhead</span>
               <select
                 className="ad-letterhead-select"
-                value={selectedLetterhead}
-                onChange={(e) => { setSelectedLetterhead(e.target.value); setExportError(''); }}
+                value={selectedLetterheadId}
+                onChange={handleLetterheadSelectChange}
                 disabled={exportingDocx}
-                title="Choose which firm letterhead to apply to the exported .docx"
+                title="Choose which firm letterhead to apply to the exported document"
               >
                 {letterheadOptions.map((opt) => (
                   <option key={opt.id} value={opt.id}>{opt.label}</option>
                 ))}
               </select>
-              <button
-                type="button"
-                className="ad-action-btn ad-btn-primary"
-                onClick={handleExportDocx}
-                disabled={exportingDocx}
-                style={{ padding: '7px 14px' }}
-              >
-                {exportingDocx ? 'Exporting…' : exportedSuccess ? '✓ Downloaded!' : '⬇ Export .docx'}
-              </button>
+
+              <div className="ad-export-menu-wrap" ref={exportMenuRef}>
+                <button
+                  type="button"
+                  className="ad-action-btn ad-btn-primary"
+                  onClick={() => setShowExportMenu((v) => !v)}
+                  disabled={exportingDocx}
+                  style={{ padding: '7px 14px' }}
+                >
+                  {exportingDocx ? 'Exporting…' : exportedSuccess ? '✓ Downloaded!' : '⬇ Export ▾'}
+                </button>
+                {showExportMenu && (
+                  <div className="ad-export-menu">
+                    <button type="button" className="ad-export-menu-item" onClick={() => { setShowExportMenu(false); handleExportDocx(); }}>
+                      📄 Export as .docx
+                    </button>
+                    <button type="button" className="ad-export-menu-item" onClick={() => { setShowExportMenu(false); handleExportPdf(); }}>
+                      🖨️ Export as .pdf
+                    </button>
+                    <button type="button" className="ad-export-menu-item" onClick={() => { setShowExportMenu(false); handleExportTxt(); }}>
+                      📝 Export as .txt
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {exportError && <span className="ad-letterhead-error">{exportError}</span>}
             </div>
           )}
@@ -1677,6 +1947,83 @@ export default function AutoDraftWorkspace() {
       </div>
 
       <DraftsModal />
+
+      {/* Portaled straight to document.body — AppRouter.jsx's page-transition
+          wrapper (.page-enter) applies a CSS transform to every route's
+          root, and a transformed ancestor becomes the containing block for
+          any position:fixed descendant, so without the portal this overlay
+          would resolve "fixed" relative to that in-flow page wrapper
+          instead of the viewport. Same bug/fix already applied to
+          FirmLibrary's document viewer and (previously) this component's
+          own export modal. */}
+      {showLetterheadModal && createPortal(
+        <div className="ad-modal-overlay" onClick={() => setShowLetterheadModal(false)}>
+          <div className="ad-modal" onClick={(ev) => ev.stopPropagation()}>
+            <div className="ad-modal-header">
+              <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Create Custom Letterhead</span>
+              <button
+                onClick={() => setShowLetterheadModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+            <div className="ad-modal-body">
+              <div>
+                <label className="ad-modal-label">Firm Name *</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadFirmName}
+                  onChange={(e) => setNewLetterheadFirmName(e.target.value)}
+                  placeholder="e.g. Sharma & Associates"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="ad-modal-label">Tagline</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadTagline}
+                  onChange={(e) => setNewLetterheadTagline(e.target.value)}
+                  placeholder="e.g. Advocates & Solicitors, Mumbai"
+                />
+              </div>
+              <div>
+                <label className="ad-modal-label">Address</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadAddress}
+                  onChange={(e) => setNewLetterheadAddress(e.target.value)}
+                  placeholder="e.g. 4th Floor, Nariman Point, Mumbai 400021"
+                />
+              </div>
+              <div>
+                <label className="ad-modal-label">Contact (Email / Phone)</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadContact}
+                  onChange={(e) => setNewLetterheadContact(e.target.value)}
+                  placeholder="e.g. contact@firm.com · +91 98765 43210"
+                />
+              </div>
+              {letterheadFormError && (
+                <div style={{ fontSize: '12px', color: '#EF4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: '8px', padding: '10px 12px' }}>
+                  {letterheadFormError}
+                </div>
+              )}
+            </div>
+            <div className="ad-modal-footer">
+              <button type="button" className="ad-action-btn ad-btn-secondary" onClick={() => setShowLetterheadModal(false)}>
+                Cancel
+              </button>
+              <button type="button" className="ad-action-btn ad-btn-primary" onClick={handleSaveLetterhead}>
+                Save Letterhead
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
