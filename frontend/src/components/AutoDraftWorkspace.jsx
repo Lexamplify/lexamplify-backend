@@ -9,10 +9,6 @@ import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// Always-present first option — not itself stored in localStorage, so
-// there's nothing to accidentally corrupt/delete and no need to filter it
-// back out when reading userLetterheads.
-const NONE_LETTERHEAD = { id: 'none', label: 'No Letterhead (Plain)' };
 const LETTERHEAD_STORAGE_KEY = 'userLetterheads';
 const CREATE_LETTERHEAD_SENTINEL = 'create_custom';
 const AUTO_DETECT_SENTINEL = 'auto_detect';
@@ -23,6 +19,11 @@ const AUTO_DETECT_SENTINEL = 'auto_detect';
 // instead of shipping the whole document for a detail that's never
 // actually buried in its body text.
 const LETTERHEAD_SLICE_CHARS = 3000;
+// Mirrors the backend's own defense-in-depth check (routes/contract_routes.py's
+// _BRACKET_PLACEHOLDER_RE) — belt and suspenders in case a future backend
+// change ever lets a raw "[Party A]"-shaped placeholder back through
+// unfiltered; the frontend shouldn't silently accept that as a real firm.
+const BRACKET_PLACEHOLDER_RE = /^\s*\[.*\]\s*$/;
 
 const DRAFT_STAGES = [
   { title: 'Statutory Interpretation', desc: 'Analyzing instructions and Indian legal framework bounds' },
@@ -98,6 +99,11 @@ export default function AutoDraftWorkspace() {
   const [newLetterheadAddress, setNewLetterheadAddress] = useState('');
   const [newLetterheadContact, setNewLetterheadContact] = useState('');
   const [letterheadFormError, setLetterheadFormError] = useState('');
+  // Contextual guidance shown above the creation form when Auto-Detect
+  // comes back empty/placeholder-only — opening the modal WITH an
+  // explanation instead of a dead-end toast the lawyer has to separately
+  // notice and then go find "+ Add / Manage Letterheads..." themselves.
+  const [letterheadModalNotice, setLetterheadModalNotice] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exportingDocx, setExportingDocx] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -131,22 +137,37 @@ export default function AutoDraftWorkspace() {
     setTimeout(() => setToast(''), 3000);
   };
 
+  const closeLetterheadModal = () => {
+    setShowLetterheadModal(false);
+    setLetterheadModalNotice('');
+    setLetterheadFormError('');
+  };
+
+  const openLetterheadModalWithNotice = (notice) => {
+    setLetterheadFormError('');
+    setLetterheadModalNotice(notice);
+    setShowLetterheadModal(true);
+  };
+
   const handleLetterheadSelectChange = (e) => {
-    const val = e.target.value;
+    const selectEl = e.target;
+    const val = selectEl.value;
+    // Cached before either branch below runs anything async — both
+    // auto_detect and create_custom are actions, not real selections.
+    const cachedActiveId = selectedLetterheadId;
+
     if (val === CREATE_LETTERHEAD_SENTINEL) {
-      // Controlled <select> deliberately NOT updated to this sentinel —
-      // it stays on whatever was actually selected before, so the
-      // dropdown visually snaps back once the modal closes instead of
-      // showing "+ Create Custom Letterhead" as if it were a real choice.
-      setLetterheadFormError('');
-      setShowLetterheadModal(true);
+      // The controlled `value` prop already resets this <select> to
+      // cachedActiveId on the next render, but forcing the DOM value back
+      // synchronously too means a second click on the same action option
+      // is guaranteed to still register as a real change event even if
+      // some other render doesn't land in between.
+      selectEl.value = cachedActiveId;
+      openLetterheadModalWithNotice('');
       return;
     }
     if (val === AUTO_DETECT_SENTINEL) {
-      // Same non-adopted-sentinel treatment — this is an action, not a
-      // real letterhead selection, so the <select> stays put and
-      // handleAutoDetectLetterhead below is the one that actually calls
-      // setSelectedLetterheadId once it has a real result.
+      selectEl.value = cachedActiveId;
       handleAutoDetectLetterhead();
       return;
     }
@@ -157,12 +178,13 @@ export default function AutoDraftWorkspace() {
   // AI-assisted letterhead detection — reads the drafted document itself
   // (rather than making the lawyer type in a firm's details it can
   // already see on the page) and asks the backend's LLM gateway to pull
-  // out {firmName, tagline, address, contact}, if any firm is actually
-  // named in the text.
+  // out {firmName, tagline, address, contact}, if any firm — or, failing
+  // that, the primary corporate party — is actually named in the text.
   const handleAutoDetectLetterhead = async () => {
     if (!autoDraftText.trim() || isExtracting) return;
     setIsExtracting(true);
     setExportError('');
+    const NOTHING_FOUND_NOTICE = 'No explicit firm details found in this draft. Enter your firm or chamber details below to create this letterhead.';
     try {
       const head = autoDraftText.slice(0, LETTERHEAD_SLICE_CHARS);
       const tail = autoDraftText.length > LETTERHEAD_SLICE_CHARS
@@ -177,12 +199,19 @@ export default function AutoDraftWorkspace() {
       });
       const data = await res.json().catch(() => ({}));
 
-      if (!res.ok || !data.firmName) {
-        showToast('No firm details detected. Please create a custom letterhead.');
+      const rawFirmName = data.firmName ? String(data.firmName).trim() : '';
+      const isPlaceholder = BRACKET_PLACEHOLDER_RE.test(rawFirmName);
+
+      if (!res.ok || !rawFirmName || isPlaceholder) {
+        // Adaptive fallback: open the creation modal directly, with a
+        // contextual notice, instead of a dead-end toast the lawyer would
+        // have to separately notice and then go find "+ Add / Manage
+        // Letterheads..." themselves to actually act on.
+        openLetterheadModalWithNotice(NOTHING_FOUND_NOTICE);
         return;
       }
 
-      const firmName = String(data.firmName).trim();
+      const firmName = rawFirmName;
       // Dedupe by firm name (case-insensitive) rather than blindly
       // appending — re-running Auto-Detect on the same draft, or on a
       // second draft from the same firm, would otherwise pile up
@@ -197,8 +226,12 @@ export default function AutoDraftWorkspace() {
       }
 
       const entry = {
-        id: `lh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        label: firmName,
+        id: `lh-${Date.now()}`,
+        // "name" is the list/dropdown label only — marks this entry as
+        // machine-detected there. "firmName" stays the clean extracted
+        // value, since that's what actually gets printed on the exported
+        // letterhead itself; it must never carry the "(Auto-Detected)" suffix.
+        name: `${firmName} (Auto-Detected)`,
         firmName,
         tagline: data.tagline || '',
         address: data.address || '',
@@ -208,7 +241,7 @@ export default function AutoDraftWorkspace() {
       setSelectedLetterheadId(entry.id);
       showToast(`Detected letterhead: "${firmName}".`);
     } catch (err) {
-      showToast('Letterhead detection failed. Please create a custom letterhead.');
+      openLetterheadModalWithNotice(NOTHING_FOUND_NOTICE);
     } finally {
       setIsExtracting(false);
     }
@@ -221,8 +254,8 @@ export default function AutoDraftWorkspace() {
       return;
     }
     const entry = {
-      id: `lh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      label: firmName,
+      id: `lh-${Date.now()}`,
+      name: firmName,
       firmName,
       tagline: newLetterheadTagline.trim(),
       address: newLetterheadAddress.trim(),
@@ -230,12 +263,20 @@ export default function AutoDraftWorkspace() {
     };
     setSavedLetterheads((prev) => [...prev, entry]);
     setSelectedLetterheadId(entry.id);
-    setShowLetterheadModal(false);
     setNewLetterheadFirmName('');
     setNewLetterheadTagline('');
     setNewLetterheadAddress('');
     setNewLetterheadContact('');
-    setLetterheadFormError('');
+    closeLetterheadModal();
+  };
+
+  const handleDeleteLetterhead = (id) => {
+    setSavedLetterheads((prev) => prev.filter((l) => l.id !== id));
+    // Deleting the currently-active letterhead falls back to plain —
+    // activeLetterhead's own .find() would already resolve to null for a
+    // dangling id, but resetting the <select> explicitly avoids leaving
+    // it visually pointed at an option that no longer exists.
+    setSelectedLetterheadId((prev) => (prev === id ? 'none' : prev));
   };
 
   useEffect(() => {
@@ -878,6 +919,41 @@ export default function AutoDraftWorkspace() {
           background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary);
           box-sizing: border-box;
         }
+
+        /* Adaptive-fallback notice shown when Auto-Detect found nothing */
+        .ad-letterhead-notice {
+          font-size: 12.5px; line-height: 1.5; color: var(--text-primary);
+          background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.28);
+          border-radius: 8px; padding: 10px 12px;
+        }
+
+        /* Manage / delete saved letterheads, inside the same modal */
+        .ad-letterhead-manage {
+          border-top: 1px solid var(--border-subtle); padding-top: 14px; margin-top: 2px;
+          display: flex; flex-direction: column; gap: 8px;
+        }
+        .ad-letterhead-manage-title {
+          font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+          color: var(--text-muted);
+        }
+        .ad-letterhead-manage-list {
+          display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto;
+        }
+        .ad-letterhead-manage-row {
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          padding: 7px 10px; border-radius: 7px;
+          background: var(--bg-card); border: 1px solid var(--border-subtle);
+        }
+        .ad-letterhead-manage-name {
+          font-size: 12.5px; color: var(--text-primary);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .ad-letterhead-delete-btn {
+          font-size: 11.5px; font-weight: 600; color: #EF4444;
+          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+          border-radius: 6px; padding: 4px 10px; cursor: pointer; flex-shrink: 0;
+        }
+        .ad-letterhead-delete-btn:hover { background: rgba(239,68,68,0.16); }
 
         /* Letterhead auto-detect toast */
         .ad-toast {
@@ -1740,11 +1816,11 @@ export default function AutoDraftWorkspace() {
                 {savedLetterheads.length > 0 && (
                   <optgroup label="Saved Letterheads">
                     {savedLetterheads.map((lh) => (
-                      <option key={lh.id} value={lh.id}>{lh.label || lh.firmName}</option>
+                      <option key={lh.id} value={lh.id}>{lh.name || lh.firmName}</option>
                     ))}
                   </optgroup>
                 )}
-                <option value={CREATE_LETTERHEAD_SENTINEL}>+ Create Custom Letterhead...</option>
+                <option value={CREATE_LETTERHEAD_SENTINEL}>+ Add / Manage Letterheads...</option>
               </select>
 
               <div className="ad-export-menu-wrap" ref={exportMenuRef}>
@@ -2060,18 +2136,21 @@ export default function AutoDraftWorkspace() {
           FirmLibrary's document viewer and (previously) this component's
           own export modal. */}
       {showLetterheadModal && createPortal(
-        <div className="ad-modal-overlay" onClick={() => setShowLetterheadModal(false)}>
+        <div className="ad-modal-overlay" onClick={closeLetterheadModal}>
           <div className="ad-modal" onClick={(ev) => ev.stopPropagation()}>
             <div className="ad-modal-header">
-              <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Create Custom Letterhead</span>
+              <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Add / Manage Letterheads</span>
               <button
-                onClick={() => setShowLetterheadModal(false)}
+                onClick={closeLetterheadModal}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}
               >
                 &times;
               </button>
             </div>
             <div className="ad-modal-body">
+              {letterheadModalNotice && (
+                <div className="ad-letterhead-notice">{letterheadModalNotice}</div>
+              )}
               <div>
                 <label className="ad-modal-label">Firm Name *</label>
                 <input
@@ -2114,9 +2193,31 @@ export default function AutoDraftWorkspace() {
                   {letterheadFormError}
                 </div>
               )}
+
+              {/* Native <select> can't render a clickable delete button per
+                  option, so multi-letterhead management lives here instead. */}
+              {savedLetterheads.length > 0 && (
+                <div className="ad-letterhead-manage">
+                  <div className="ad-letterhead-manage-title">Manage Saved Letterheads</div>
+                  <div className="ad-letterhead-manage-list">
+                    {savedLetterheads.map((lh) => (
+                      <div key={lh.id} className="ad-letterhead-manage-row">
+                        <span className="ad-letterhead-manage-name">{lh.name || lh.firmName}</span>
+                        <button
+                          type="button"
+                          className="ad-letterhead-delete-btn"
+                          onClick={() => handleDeleteLetterhead(lh.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="ad-modal-footer">
-              <button type="button" className="ad-action-btn ad-btn-secondary" onClick={() => setShowLetterheadModal(false)}>
+              <button type="button" className="ad-action-btn ad-btn-secondary" onClick={closeLetterheadModal}>
                 Cancel
               </button>
               <button type="button" className="ad-action-btn ad-btn-primary" onClick={handleSaveLetterhead}>

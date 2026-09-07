@@ -872,6 +872,9 @@ def _apply_letterhead(doc, letterhead_data):
         page_num_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
 
 
+_BRACKET_PLACEHOLDER_RE = re.compile(r'^\s*\[.*\]\s*$')
+
+
 @contract_bp.route("/extract-letterhead", methods=["POST"])
 def extract_letterhead():
     """AI-assisted letterhead detection for Auto-Draft Studio's
@@ -883,23 +886,27 @@ def extract_letterhead():
     ask_groq gateway (fallback models + TPM-aware rate-limit retry, same
     as every other LLM call in this file) and extract_json_from_llm_response
     (already strips ```json fences and falls back to a regex extraction —
-    see its docstring — so there's no need to hand-roll that here)."""
+    see its docstring — so there's no need to hand-roll that here). Zero
+    hardcoded firm profiles — every field is whatever the LLM actually
+    found in the given text, or None."""
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     if not text:
         return jsonify({"error": True, "message": "No document text provided."}), 400
 
     system_prompt = (
-        "Extract the drafting law firm's details from the provided document text "
-        "(typically found in headers, cover pages, or signature blocks). Return "
-        "strictly valid JSON with keys: firmName, tagline (or empty string), "
-        "address, contact. "
-        "firmName is ONLY the firm's proper name (e.g. \"Sharma & Associates\") — "
-        "never include a professional descriptor or court/bar registration line "
-        "in it. tagline is that descriptor line, if present (e.g. \"Advocates & "
-        "Solicitors, High Court of Karnataka\"), kept separate from firmName. "
-        "Return null values if no firm is found. Do not include markdown "
-        "formatting."
+        "Extract the drafting law firm or chamber's details from the provided "
+        "document text (typically found in headers, cover pages, or signature "
+        "blocks). If no explicit law firm or chamber is identified, extract the "
+        "primary corporate party or service provider's details instead. Return "
+        "strictly valid JSON with keys: firmName, tagline, address, contact. "
+        "firmName is ONLY the firm/chamber/party's proper name (e.g. \"Sharma & "
+        "Associates\") — never include a professional descriptor or court/bar "
+        "registration line in it. tagline is that descriptor line, if present "
+        "(e.g. \"Advocates & Solicitors, High Court of Karnataka\"), kept "
+        "separate from firmName. If an extracted field is a bracketed "
+        "placeholder (e.g. \"[Party A]\", \"[Company Name]\") or genuinely not "
+        "found, set its value to null. Do not include markdown formatting."
     )
 
     try:
@@ -916,13 +923,19 @@ def extract_letterhead():
         }), 502
 
     def _clean(val):
-        return str(val).strip() if val else ''
+        # Defense in depth on top of the prompt's own instruction — a
+        # bracketed placeholder the model missed (e.g. it filled firmName
+        # with "[Party A]" instead of null) is treated exactly like "not
+        # found" rather than trusted as real firm data.
+        s = str(val).strip() if val else ''
+        return '' if _BRACKET_PLACEHOLDER_RE.match(s) else s
 
     firm_name = _clean(parsed.get('firmName'))
     if not firm_name:
         # A real "nothing found" result, not a failure — 200 with every
         # field empty so the frontend can tell this apart from a genuine
-        # network/LLM error and show its "no firm details detected" toast.
+        # network/LLM error and route to its adaptive fallback (opening
+        # the creation modal with guidance) instead of a dead-end toast.
         return jsonify({"firmName": None, "tagline": None, "address": None, "contact": None}), 200
 
     return jsonify({
