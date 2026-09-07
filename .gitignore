@@ -32,6 +32,7 @@ static/uploads/
 # ── SESSION / VAULT DATA (may contain sensitive case data) ───────
 case_vault.json
 vc_vault_data.json
+saved_drafts_data.json
 
 # ── FRONTEND BUILD ARTIFACTS & DEPENDENCIES ──────────────────────
 frontend/node_modules/
