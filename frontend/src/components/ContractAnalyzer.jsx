@@ -1067,6 +1067,27 @@ const styles = `
   }
   [data-theme="light"] .conflict-dropzone { border-color: #CBD5E1; color: #64748B; }
 
+  .conflict-file-chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .conflict-file-chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500;
+    padding: 4px 6px 4px 10px; border-radius: 20px;
+    background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.25); color: var(--text-dark-primary);
+    max-width: 220px;
+  }
+  .conflict-file-chip-remove {
+    background: transparent; border: none; color: var(--text-dark-muted); cursor: pointer;
+    font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: 50%; flex-shrink: 0;
+  }
+  .conflict-file-chip-remove:hover { background: rgba(239,68,68,0.15); color: #FCA5A5; }
+  [data-theme="light"] .conflict-file-chip { background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.2); color: #0F172A; }
+
+  .conflict-ref-badge {
+    display: inline-block; font-size: 10px; font-weight: 600; color: var(--text-dark-muted);
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border-dark-subtle);
+    border-radius: 6px; padding: 2px 7px; margin-bottom: 6px;
+  }
+  [data-theme="light"] .conflict-ref-badge { background: #F1F5F9; border-color: #E2E8F0; color: #475569; }
+
   .conflict-card {
     background: var(--bg-dark-card); border: 1px solid var(--border-dark-subtle); border-radius: 10px;
     padding: 12px 14px; cursor: pointer; transition: all 0.2s ease;
@@ -2535,13 +2556,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [loadingRecs, setLoadingRecs] = useState(false);
 
   // Conflicts tab states — cross-document comparison against a Firm
-  // Library reference (or an ad-hoc uploaded file), reusing the existing
+  // Library reference (or ad-hoc uploaded files), reusing the existing
   // /api/conflict/analyze engine ConflictEngine.jsx's standalone page
   // already calls, instead of a second bespoke analysis pipeline.
   const [conflictLibraryDocs, setConflictLibraryDocs] = useState([]);
   const [loadingConflictLibrary, setLoadingConflictLibrary] = useState(false);
   const [selectedConflictDocId, setSelectedConflictDocId] = useState('');
-  const [conflictUploadFile, setConflictUploadFile] = useState(null);
+  // Array, not a single file — analyze_conflicts already accepts
+  // unlimited doc1..docN slots in ONE request (see handleRunConflictCheck),
+  // so comparing against several reference files is still exactly one
+  // Groq call, not one per file.
+  const [conflictUploadFiles, setConflictUploadFiles] = useState([]);
   const [conflictDragOver, setConflictDragOver] = useState(false);
   const [isRunningConflictCheck, setIsRunningConflictCheck] = useState(false);
   const [conflictResults, setConflictResults] = useState(null);
@@ -3158,10 +3183,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
   // for a risk clause, reused here so clicking a conflict card's "Active
   // Contract" side behaves identically. findClauseRange re-searches the
   // CURRENT document, so this still resolves correctly even if the text
-  // has shifted position since the conflict scan ran.
+  // has shifted position since the conflict scan ran. Returns whether it
+  // actually found something — callers use that to try a second excerpt
+  // (or fall back to copy-to-clipboard) instead of failing silently.
   const scrollToClauseInEditor = (text) => {
     const editor = editorApiRef.current;
-    if (!editor || !text) return;
+    if (!editor || !text) return false;
     try {
       const range = findClauseRange(editor.state.doc, text);
       if (range) {
@@ -3172,10 +3199,12 @@ export default function ContractAnalyzer({ setFocusMode }) {
         const target = el?.closest('p, h1, h2, h3, h4, li') || el;
         target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         flashClauseRange(editor, range.from, range.to);
+        return true;
       }
     } catch (err) {
       console.error('[Conflicts] failed to locate/scroll to clause:', err);
     }
+    return false;
   };
 
   const REFERENCE_LABEL = 'Active Contract';
@@ -3186,8 +3215,8 @@ export default function ContractAnalyzer({ setFocusMode }) {
       setConflictError('No active contract text loaded to compare.');
       return;
     }
-    if (!conflictUploadFile && !selectedConflictDocId) {
-      setConflictError('Select a Firm Library document or upload a file to compare against.');
+    if (conflictUploadFiles.length === 0 && !selectedConflictDocId) {
+      setConflictError('Select a Firm Library document or upload at least one file to compare against.');
       return;
     }
 
@@ -3196,17 +3225,32 @@ export default function ContractAnalyzer({ setFocusMode }) {
     setActiveConflictCard(null);
 
     try {
-      let referenceText = '';
-      let referenceLabel = '';
+      // {label, text} per reference document. Text EXTRACTION is plain
+      // PDF/DOCX parsing (routes/contract_routes.py's /extract-text) with
+      // no LLM involved at all, so running it in parallel across files is
+      // safe — the ONLY call that touches Groq is the single
+      // analyzeConflicts() request built below, which already carries
+      // every reference as its own doc2..docN slot. analyze_conflicts
+      // batches unlimited documents into one completion (see
+      // routes/conflict_routes.py), so N reference files still means
+      // exactly one LLM request, never N of them.
+      let references = [];
 
-      if (conflictUploadFile) {
-        referenceLabel = conflictUploadFile.name.replace(/\.[^.]+$/, '');
-        const extracted = await extractContractText(conflictUploadFile);
-        if (extracted?.error) throw new Error(extracted.message || 'Failed to extract text from the uploaded file.');
-        referenceText = extracted?.text || '';
+      if (conflictUploadFiles.length > 0) {
+        const extractedList = await Promise.all(
+          conflictUploadFiles.map(async (file) => {
+            const label = file.name.replace(/\.[^.]+$/, '');
+            const extracted = await extractContractText(file);
+            if (extracted?.error) {
+              throw new Error(extracted.message || `Failed to extract text from "${file.name}".`);
+            }
+            return { label, text: extracted?.text || '' };
+          })
+        );
+        references = extractedList.filter((r) => r.text.trim());
       } else {
         const doc = conflictLibraryDocs.find(d => String(d.id) === String(selectedConflictDocId));
-        referenceLabel = doc?.title || 'Reference Document';
+        const referenceLabel = doc?.title || 'Reference Document';
         // Firm Library's list endpoint truncates content to a 4000-char
         // preview — the full untruncated text lives behind the same
         // case_vault id via /api/documents/<id> (get_document_details in
@@ -3214,23 +3258,48 @@ export default function ContractAnalyzer({ setFocusMode }) {
         // guaranteed to have a row for.
         const details = await fetchDocumentDetails(selectedConflictDocId);
         if (details?.error) throw new Error(details.message || 'Failed to load the selected reference document.');
-        referenceText = details?.text || '';
+        if (details?.text?.trim()) {
+          references = [{ label: referenceLabel, text: details.text }];
+        }
       }
 
-      if (!referenceText.trim()) {
-        throw new Error('The reference document has no readable text to compare.');
+      if (references.length === 0) {
+        throw new Error('None of the reference documents had readable text to compare.');
       }
 
       const formData = new FormData();
       formData.append('doc1', new Blob([rawText], { type: 'text/plain' }), 'active-contract.txt');
       formData.append('label1', REFERENCE_LABEL);
-      formData.append('doc2', new Blob([referenceText], { type: 'text/plain' }), 'reference-document.txt');
-      formData.append('label2', referenceLabel);
+      references.forEach((ref, idx) => {
+        const slot = idx + 2;
+        formData.append(`doc${slot}`, new Blob([ref.text], { type: 'text/plain' }), `reference-${slot}.txt`);
+        formData.append(`label${slot}`, ref.label);
+      });
 
       const res = await analyzeConflicts(formData);
       if (!isMountedRef.current) return;
       if (res.error) throw new Error(res.message || 'Conflict analysis failed.');
-      setConflictResults(res);
+
+      // doc_a/doc_b positional-vs-"Active Contract" guarantee only held
+      // when there were exactly 2 documents (see openConflictDetail) —
+      // with N references in play, tag each conflict up front with which
+      // side is genuinely the reference document (by CONTENT presence in
+      // the live editor, not by name — the LLM doesn't reliably echo
+      // REFERENCE_LABEL back verbatim, confirmed live previously), so
+      // every card can show which file actually triggered it without
+      // re-deriving this on every render.
+      const editor = editorApiRef.current;
+      const enrichedConflicts = (res.conflicts || []).map((c) => {
+        let referenceDocName = c.doc_b_name || c.doc_a_name || 'Reference';
+        if (editor) {
+          try {
+            const aIsActive = c.doc_a_excerpt && !!findClauseRange(editor.state.doc, c.doc_a_excerpt);
+            referenceDocName = aIsActive ? (c.doc_b_name || 'Reference') : (c.doc_a_name || 'Reference');
+          } catch {}
+        }
+        return { ...c, _referenceDocName: referenceDocName };
+      });
+      setConflictResults({ ...res, conflicts: enrichedConflicts });
     } catch (err) {
       if (!isMountedRef.current) return;
       setConflictError(err.message || 'Conflict analysis failed.');
@@ -3241,15 +3310,74 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   const openConflictDetail = (conflict) => {
     setActiveConflictCard(conflict);
-    // doc_a is always the active contract, doc_b always the reference —
-    // a positional guarantee from analyze_conflicts's own document
-    // ordering (doc1/label1 is always appended first), NOT something the
-    // LLM's chosen doc_a_name can be trusted to echo back verbatim.
-    // Confirmed live: doc1 was sent labeled "Active Contract" but the
-    // model renamed it "SERVICE AGREEMENT" in doc_a_name after reading the
-    // text itself, so matching on the name string silently picked the
-    // wrong side's excerpt.
-    scrollToClauseInEditor(conflict.doc_a_excerpt);
+    // Try doc_a's excerpt first, then doc_b's — with N>2 documents in
+    // play a given conflict's two sides could be any pairing, not
+    // necessarily "active contract vs one reference", so whichever
+    // excerpt the live editor's OWN text actually contains is the one
+    // worth scrolling to (findClauseRange re-searches the CURRENT
+    // document either way, so this still resolves correctly even after
+    // edits since the scan ran).
+    if (!scrollToClauseInEditor(conflict.doc_a_excerpt)) {
+      scrollToClauseInEditor(conflict.doc_b_excerpt);
+    }
+  };
+
+  // Copies the AI's suggested harmonized clause to the clipboard —
+  // standalone secondary action, and also the shared fallback path
+  // handleApplyConflictResolution below reaches for when it can't safely
+  // locate the clause to edit in place.
+  const handleCopyConflictResolution = () => {
+    const resolution = (activeConflictCard?.recommended_resolution || '').trim();
+    if (!resolution) return;
+    navigator.clipboard.writeText(resolution).catch(() => {});
+    setUploadToast({ message: '✓ Resolution copied to clipboard.', type: 'success' });
+  };
+
+  // Replaces the conflicting clause in the LIVE document with the AI's
+  // recommended resolution — a direct edit, not a pending track-changes
+  // suggestion (unlike applyRevision's risk-rewrite flow): conflict
+  // resolutions have no clause id in the Risks list to hang an
+  // accept/reject affordance off of, so "apply" here means applied.
+  const handleApplyConflictResolution = () => {
+    if (!activeConflictCard) return;
+    const resolution = (activeConflictCard.recommended_resolution || '').trim();
+    if (!resolution) return;
+
+    const editor = editorApiRef.current;
+    const candidates = [activeConflictCard.doc_a_excerpt, activeConflictCard.doc_b_excerpt].filter(Boolean);
+
+    let range = null;
+    if (editor) {
+      for (const candidate of candidates) {
+        try {
+          range = findClauseRange(editor.state.doc, candidate);
+        } catch (err) {
+          range = null;
+        }
+        if (range) break;
+      }
+    }
+
+    if (!editor || !range) {
+      // CRITICAL FAILSAFE: the LLM-quoted excerpt is frequently truncated
+      // or lightly reworded from the document's actual text — an exact
+      // (or whitespace-normalized — see findClauseRange) match failing
+      // must never crash or silently no-op; fall back to copying the
+      // resolution text so the lawyer can paste it in by hand instead.
+      navigator.clipboard.writeText(resolution).catch(() => {});
+      setUploadToast({ message: 'Could not auto-locate clause. Resolution copied to clipboard instead.' });
+      return;
+    }
+
+    try {
+      editor.chain().focus().insertContentAt({ from: range.from, to: range.to }, resolution).run();
+      setActiveConflictCard(null);
+      setUploadToast({ message: '✓ Resolution applied to the document.', type: 'success' });
+    } catch (err) {
+      console.error('[handleApplyConflictResolution] failed to apply resolution:', err);
+      navigator.clipboard.writeText(resolution).catch(() => {});
+      setUploadToast({ message: 'Could not apply resolution to the document. Resolution copied to clipboard instead.' });
+    }
   };
 
   useEffect(() => {
@@ -4901,7 +5029,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Cross-Document Conflict Check</h3>
                     <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
-                      Compare the active contract against a Firm Library precedent — or an uploaded reference file — to surface contradicting clauses.
+                      Compare the active contract against a Firm Library precedent — or one or more uploaded reference files — to surface contradicting clauses.
                     </p>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -4911,7 +5039,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                       <select
                         className="conflict-ref-select"
                         value={selectedConflictDocId}
-                        onChange={(e) => { setSelectedConflictDocId(e.target.value); setConflictUploadFile(null); }}
+                        onChange={(e) => { setSelectedConflictDocId(e.target.value); setConflictUploadFiles([]); }}
                         disabled={loadingConflictLibrary || isRunningConflictCheck}
                       >
                         <option value="">{loadingConflictLibrary ? 'Loading Firm Library…' : 'Select from Firm Library…'}</option>
@@ -4924,10 +5052,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         ref={conflictFileInputRef}
                         type="file"
                         accept=".pdf,.docx"
+                        multiple
                         style={{ display: 'none' }}
                         onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) { setConflictUploadFile(file); setSelectedConflictDocId(''); }
+                          const newFiles = Array.from(e.target.files || []);
+                          if (newFiles.length) {
+                            setConflictUploadFiles((prev) => {
+                              const existingNames = new Set(prev.map((f) => f.name));
+                              return [...prev, ...newFiles.filter((f) => !existingNames.has(f.name))];
+                            });
+                            setSelectedConflictDocId('');
+                          }
                           e.target.value = '';
                         }}
                       />
@@ -4940,23 +5075,48 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           e.preventDefault();
                           setConflictDragOver(false);
                           if (isRunningConflictCheck) return;
-                          const file = e.dataTransfer.files?.[0];
-                          if (file && /\.(pdf|docx)$/i.test(file.name)) {
-                            setConflictUploadFile(file);
+                          const dropped = Array.from(e.dataTransfer.files || []).filter((f) => /\.(pdf|docx)$/i.test(f.name));
+                          if (dropped.length) {
+                            setConflictUploadFiles((prev) => {
+                              const existingNames = new Set(prev.map((f) => f.name));
+                              return [...prev, ...dropped.filter((f) => !existingNames.has(f.name))];
+                            });
                             setSelectedConflictDocId('');
                           }
                         }}
                       >
-                        {conflictUploadFile
-                          ? `📄 ${conflictUploadFile.name} — click or drop to replace`
-                          : 'or drop a PDF/DOCX here to compare against a file not yet in the library'}
+                        {conflictUploadFiles.length > 0
+                          ? `📄 ${conflictUploadFiles.length} file${conflictUploadFiles.length > 1 ? 's' : ''} selected — click or drop to add more`
+                          : 'or drop PDF/DOCX files here to compare against files not yet in the library'}
                       </div>
+
+                      {conflictUploadFiles.length > 0 && (
+                        <div className="conflict-file-chip-list">
+                          {conflictUploadFiles.map((file, idx) => (
+                            <span key={`${file.name}-${idx}`} className="conflict-file-chip">
+                              📄 {file.name}
+                              <button
+                                type="button"
+                                className="conflict-file-chip-remove"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConflictUploadFiles((prev) => prev.filter((_, i) => i !== idx));
+                                }}
+                                disabled={isRunningConflictCheck}
+                                aria-label={`Remove ${file.name}`}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       <button
                         type="button"
                         className="btn-accent"
                         onClick={handleRunConflictCheck}
-                        disabled={isRunningConflictCheck || (!conflictUploadFile && !selectedConflictDocId)}
+                        disabled={isRunningConflictCheck || (conflictUploadFiles.length === 0 && !selectedConflictDocId)}
                         style={{ padding: '10px 16px', fontSize: '13px', fontWeight: 600 }}
                       >
                         {isRunningConflictCheck ? 'Scanning for conflicts…' : '⚖️ Run Conflict Check'}
@@ -4980,8 +5140,15 @@ export default function ContractAnalyzer({ setFocusMode }) {
                           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
                             No conflicts found between the two documents.
                           </div>
-                        ) : (
-                          conflictResults.conflicts.map((c, i) => {
+                        ) : (() => {
+                          // Only worth labeling each card once the RESULTS actually span
+                          // more than one distinct reference document — derived from the
+                          // results themselves (not the current uploader selection, which
+                          // can already have moved on to a different set of files by the
+                          // time these results are being read).
+                          const distinctRefs = new Set(conflictResults.conflicts.map((c) => c._referenceDocName).filter(Boolean));
+                          const showRefBadge = distinctRefs.size > 1;
+                          return conflictResults.conflicts.map((c, i) => {
                             const sev = (c.severity || 'minor').toLowerCase();
                             return (
                               <div key={i} className={`conflict-card ${sev}`} onClick={() => openConflictDetail(c)}>
@@ -4989,13 +5156,16 @@ export default function ContractAnalyzer({ setFocusMode }) {
                                   <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>{c.title || 'Untitled Conflict'}</span>
                                   <span className={`conflict-severity-badge ${sev}`}>{c.severity || 'Minor'}</span>
                                 </div>
+                                {showRefBadge && c._referenceDocName && (
+                                  <span className="conflict-ref-badge">vs. {c._referenceDocName}</span>
+                                )}
                                 <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
                                   {c.legal_explanation}
                                 </p>
                               </div>
                             );
-                          })
-                        )}
+                          });
+                        })()}
                       </div>
                     )}
                   </div>
@@ -5152,29 +5322,50 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
       {/* Upload/extraction failure toast — surfaces the specific backend
           message (timeout, OCR-required blank scan, corrupt file, etc.)
-          instead of the old blocking alert(). */}
-      {uploadToast && (
-        <div
-          style={{
-            position: 'fixed', bottom: '28px', left: '50%', transform: 'translateX(-50%)',
-            zIndex: 3000, display: 'flex', alignItems: 'center', gap: '10px',
-            padding: '13px 20px', borderRadius: '11px', fontSize: '13.5px', fontWeight: 500,
-            background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#FCA5A5',
-            boxShadow: '0 16px 48px rgba(0,0,0,0.4)', maxWidth: '460px',
-          }}
-        >
-          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          <span>{uploadToast.message}</span>
-          <button
-            onClick={() => setUploadToast(null)}
-            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', marginLeft: 'auto', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}
-            aria-label="Dismiss"
-          >
-            ×
-          </button>
-        </div>
+          instead of the old blocking alert() — also now reused for the
+          conflict-resolution apply/copy actions' success + failsafe
+          messages, so `type` can style it success-green as well as the
+          original error-red. Portaled straight to document.body: this
+          component's whole return is inside AppRouter.jsx's
+          page-transition wrapper (.page-enter), which applies a CSS
+          transform to every route's root and becomes the containing
+          block for any position:fixed descendant — without the portal
+          this resolves "fixed" relative to that in-flow page wrapper
+          (often far below the actual viewport) instead of the true
+          screen edge. Same bug/fix already applied to the conflict modal
+          below and to FirmLibrary/AutoDraftWorkspace's own modals. */}
+      {uploadToast && createPortal(
+        (() => {
+          const isSuccess = uploadToast.type === 'success';
+          return (
+            <div
+              style={{
+                position: 'fixed', bottom: '28px', left: '50%', transform: 'translateX(-50%)',
+                zIndex: 3000, display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '13px 20px', borderRadius: '11px', fontSize: '13.5px', fontWeight: 500,
+                background: isSuccess ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+                border: `1px solid ${isSuccess ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                color: isSuccess ? '#6EE7B7' : '#FCA5A5',
+                boxShadow: '0 16px 48px rgba(0,0,0,0.4)', maxWidth: '460px',
+              }}
+            >
+              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                {isSuccess
+                  ? <polyline points="20 6 9 17 4 12" />
+                  : <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>}
+              </svg>
+              <span>{uploadToast.message}</span>
+              <button
+                onClick={() => setUploadToast(null)}
+                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', marginLeft: 'auto', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })(),
+        document.body
       )}
 
       {/* Conflict comparison modal — portaled straight to document.body.
@@ -5239,6 +5430,26 @@ export default function ContractAnalyzer({ setFocusMode }) {
                   <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.6, margin: '6px 0 0' }}>
                     {activeConflictCard.recommended_resolution}
                   </p>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn-accent"
+                      onClick={handleApplyConflictResolution}
+                      style={{ padding: '8px 14px', fontSize: '12.5px', fontWeight: 600 }}
+                    >
+                      ✨ Apply Resolution to Document
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyConflictResolution}
+                      style={{
+                        padding: '8px 14px', fontSize: '12.5px', fontWeight: 600, borderRadius: '8px', cursor: 'pointer',
+                        background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)',
+                      }}
+                    >
+                      Copy to Clipboard
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
