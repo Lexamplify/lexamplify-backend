@@ -1010,9 +1010,21 @@ function FolderCard({ folder, docCount, subFolderCount, onClick, onRename, onDel
 export default function VaultView({ targetFolderId = null }) {
   const [activeTab, setActiveTab] = useState('vault');
 
-  // Mounted guard — prevents "setState after unmount" from async continuations
+  // Mounted guard — prevents "setState after unmount" from async continuations.
+  // Must reassert `true` at the top of the effect body, not just rely on the
+  // initial useRef(true): React 18 StrictMode double-invokes this effect in
+  // development (mount -> cleanup -> mount again) on the SAME ref instance,
+  // so a cleanup-only version leaves isMountedRef.current permanently false
+  // after that very first render — every subsequent `if (!isMountedRef.current)
+  // return;` guard then silently no-ops for the rest of the component's real
+  // lifetime, including the one that clears loadingDocs. Confirmed live as
+  // the exact cause of the vault's infinite "Loading vault…" spinner: the
+  // /api/vault/documents fetch was completing with real 200 OK data, but its
+  // `finally` block's setLoadingDocs(false) never ran because the guard above
+  // it always returned early.
   const isMountedRef = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
 
