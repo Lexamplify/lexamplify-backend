@@ -10,6 +10,7 @@ import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 const LETTERHEAD_STORAGE_KEY = 'userLetterheads';
+const SCRATCHPAD_STORAGE_KEY = 'autodraft_active_scratchpad';
 const CREATE_LETTERHEAD_SENTINEL = 'create_custom';
 const AUTO_DETECT_SENTINEL = 'auto_detect';
 // Firm branding lives at the very top (cover page/header) or the very
@@ -112,11 +113,62 @@ export default function AutoDraftWorkspace() {
   const [toast, setToast] = useState('');
   const exportMenuRef = useRef(null);
 
+  // Guards the sessionStorage scratchpad sync below against the mount-order
+  // race: autoDraftHtml starts as '' on every fresh mount (a hard reload
+  // resets the whole in-memory Zustand store), and a naive effect syncing
+  // on every change would fire with that empty value BEFORE the rehydration
+  // effect below has had a chance to read anything back — silently wiping
+  // out whatever was saved from the previous session. Nothing is allowed to
+  // write until rehydration has explicitly run once.
+  const isRehydrated = useRef(false);
+
   useEffect(() => {
     try {
       localStorage.setItem(LETTERHEAD_STORAGE_KEY, JSON.stringify(savedLetterheads));
     } catch {}
   }, [savedLetterheads]);
+
+  // Mount-only rehydration. Only restores from sessionStorage when the
+  // in-memory canvas is still empty — if autoDraftText already has content
+  // (e.g. the user navigated to another route and back within the same SPA
+  // session, so the Zustand store never reset), that live content is
+  // authoritative and a possibly-older sessionStorage snapshot must not
+  // clobber it. autoDraftText (not just autoDraftHtml) has to come back too
+  // — the canvas below only mounts <ContractTiptapEditor> at all when
+  // autoDraftText is non-empty, so restoring the HTML alone would leave the
+  // rehydrated content sitting in the store with the placeholder still on
+  // screen.
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem(SCRATCHPAD_STORAGE_KEY);
+      if (cached && !autoDraftText.trim()) {
+        const scratch = document.createElement('div');
+        scratch.innerHTML = cached;
+        const plainText = scratch.textContent || '';
+        if (plainText.trim()) {
+          setAutoDraftText(plainText);
+          setAutoDraftHtml(cached);
+        }
+      }
+    } catch {}
+    // Marked rehydrated either way — a brand-new session with nothing cached
+    // still needs to start persisting from here on, not stay permanently
+    // disabled just because there was nothing to restore this time.
+    isRehydrated.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounced sync: every edit lands in sessionStorage a moment after typing
+  // settles, not on every keystroke.
+  useEffect(() => {
+    if (!isRehydrated.current || !autoDraftHtml.trim()) return;
+    const timer = setTimeout(() => {
+      try {
+        sessionStorage.setItem(SCRATCHPAD_STORAGE_KEY, autoDraftHtml);
+      } catch {}
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [autoDraftHtml]);
 
   // Close the export format menu on any outside click.
   useEffect(() => {
@@ -385,6 +437,11 @@ export default function AutoDraftWorkspace() {
         setAutoDraftText(generated);
         setAutoDraftHtml('');
         setAutoDraftVersion((v) => v + 1);
+        // A freshly synthesized draft replaces the canvas wholesale — drop
+        // the old scratchpad snapshot so a stale one can't rehydrate over
+        // this new draft if the component remounts before the debounced
+        // sync above has had a chance to save it.
+        try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
       } else {
         setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
       }
@@ -442,6 +499,9 @@ export default function AutoDraftWorkspace() {
       // tags with no visual structure. smartFormatUploadedText detects
       // clause headings and highlights [bracketed] placeholders instead.
       setAutoDraftHtml(smartFormatUploadedText(cleaned));
+      // An uploaded file is a brand-new template loaded onto the canvas —
+      // same reasoning as the post-synthesis cleanup above.
+      try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
       setAutoDraftVersion((v) => v + 1);
     } catch (err) {
       setDraftUploadError(err?.message || 'Failed to read the uploaded draft.');
@@ -1784,7 +1844,12 @@ export default function AutoDraftWorkspace() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); setShowVariablesPanel(false); }}
+                  onClick={() => {
+                    setAutoDraftText('');
+                    setAutoDraftHtml('');
+                    setShowVariablesPanel(false);
+                    try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
+                  }}
                   style={{
                     padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'rgba(239,68,68,0.1)',
                     border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', cursor: 'pointer', fontWeight: 600,
