@@ -2562,13 +2562,17 @@ export default function ContractAnalyzer({ setFocusMode }) {
   const [conflictLibraryDocs, setConflictLibraryDocs] = useState([]);
   const [loadingConflictLibrary, setLoadingConflictLibrary] = useState(false);
   const [selectedConflictDocId, setSelectedConflictDocId] = useState('');
-  // Array, not a single file — analyze_conflicts already accepts
-  // unlimited doc1..docN slots in ONE request (see handleRunConflictCheck),
-  // so comparing against several reference files is still exactly one
-  // Groq call, not one per file.
+  // Array, not a single file — handleRunConflictCheck analyzes each
+  // reference file against the active contract in its OWN sequential
+  // /api/conflict/analyze call (one doc1+doc2 pair per request) rather than
+  // batching every file into one large request: a bulk multi-document
+  // payload risks a 502 from the gateway if the combined LLM completion
+  // takes too long, whereas N small sequential calls each stay fast and
+  // let results render incrementally as each file finishes.
   const [conflictUploadFiles, setConflictUploadFiles] = useState([]);
   const [conflictDragOver, setConflictDragOver] = useState(false);
   const [isRunningConflictCheck, setIsRunningConflictCheck] = useState(false);
+  const [conflictProgress, setConflictProgress] = useState({ current: 0, total: 0 });
   const [conflictResults, setConflictResults] = useState(null);
   const [conflictError, setConflictError] = useState('');
   const [activeConflictCard, setActiveConflictCard] = useState(null);
@@ -3209,6 +3213,30 @@ export default function ContractAnalyzer({ setFocusMode }) {
 
   const REFERENCE_LABEL = 'Active Contract';
 
+  // Analyzes ONE reference document against the active contract (a single
+  // doc1+doc2 /api/conflict/analyze call) and appends its conflicts to the
+  // running results — kept to a single pair per request specifically so a
+  // slow/large reference file can't stretch one completion long enough to
+  // trip the gateway's 502 timeout, and so each file's results can render
+  // the moment that file's own call resolves instead of waiting on the rest
+  // of the batch.
+  const runConflictCheckForReference = async (label, text, displayName) => {
+    const formData = new FormData();
+    formData.append('doc1', new Blob([rawText], { type: 'text/plain' }), 'active-contract.txt');
+    formData.append('label1', REFERENCE_LABEL);
+    formData.append('doc2', new Blob([text], { type: 'text/plain' }), 'reference.txt');
+    formData.append('label2', label);
+
+    const res = await analyzeConflicts(formData);
+    if (res.error) throw new Error(res.message || `Conflict analysis failed for "${displayName}".`);
+
+    const tagged = (res.conflicts || []).map((c) => ({ ...c, _referenceDocName: displayName }));
+    if (tagged.length && isMountedRef.current) {
+      setConflictResults((prev) => ({ ...(prev || {}), conflicts: [...(prev?.conflicts || []), ...tagged] }));
+    }
+    return res;
+  };
+
   const handleRunConflictCheck = async () => {
     setConflictError('');
     if (!rawText.trim()) {
@@ -3221,33 +3249,46 @@ export default function ContractAnalyzer({ setFocusMode }) {
     }
 
     setIsRunningConflictCheck(true);
-    setConflictResults(null);
+    setConflictResults({ conflicts: [] });
     setActiveConflictCard(null);
 
     try {
-      // {label, text} per reference document. Text EXTRACTION is plain
-      // PDF/DOCX parsing (routes/contract_routes.py's /extract-text) with
-      // no LLM involved at all, so running it in parallel across files is
-      // safe — the ONLY call that touches Groq is the single
-      // analyzeConflicts() request built below, which already carries
-      // every reference as its own doc2..docN slot. analyze_conflicts
-      // batches unlimited documents into one completion (see
-      // routes/conflict_routes.py), so N reference files still means
-      // exactly one LLM request, never N of them.
-      let references = [];
-
       if (conflictUploadFiles.length > 0) {
-        const extractedList = await Promise.all(
-          conflictUploadFiles.map(async (file) => {
-            const label = file.name.replace(/\.[^.]+$/, '');
+        setConflictProgress({ current: 0, total: conflictUploadFiles.length });
+        let singleRes = null;
+        let successCount = 0;
+        let index = 0;
+        for (const file of conflictUploadFiles) {
+          index += 1;
+          setConflictProgress({ current: index, total: conflictUploadFiles.length });
+          try {
             const extracted = await extractContractText(file);
-            if (extracted?.error) {
-              throw new Error(extracted.message || `Failed to extract text from "${file.name}".`);
-            }
-            return { label, text: extracted?.text || '' };
-          })
-        );
-        references = extractedList.filter((r) => r.text.trim());
+            if (extracted?.error) throw new Error(extracted.message || `Failed to extract text from "${file.name}".`);
+            const text = extracted?.text || '';
+            if (!text.trim()) throw new Error(`"${file.name}" had no readable text.`);
+            singleRes = await runConflictCheckForReference(file.name.replace(/\.[^.]+$/, ''), text, file.name);
+            successCount += 1;
+          } catch (err) {
+            if (!isMountedRef.current) return;
+            setUploadToast({ message: `Failed to analyze ${file.name}. Skipping...` });
+            continue;
+          }
+        }
+        if (!isMountedRef.current) return;
+        if (successCount === 0) {
+          // Every file in the batch failed — leaving conflictResults at its
+          // empty initial state would misleadingly render as "No conflicts
+          // found" instead of surfacing that the scan never actually ran.
+          throw new Error('Could not analyze any of the selected files. See notifications above for details.');
+        }
+        // A per-file summary only reads sensibly when there was exactly one
+        // reference file — with several, each call's summary describes just
+        // its own file, so stitching them together would misrepresent the
+        // batch as a whole; the conflict cards themselves stay accurate
+        // either way since each is tagged with its own source file.
+        if (conflictUploadFiles.length === 1 && singleRes?.summary) {
+          setConflictResults((prev) => ({ ...(prev || {}), summary: singleRes.summary }));
+        }
       } else {
         const doc = conflictLibraryDocs.find(d => String(d.id) === String(selectedConflictDocId));
         const referenceLabel = doc?.title || 'Reference Document';
@@ -3258,53 +3299,20 @@ export default function ContractAnalyzer({ setFocusMode }) {
         // guaranteed to have a row for.
         const details = await fetchDocumentDetails(selectedConflictDocId);
         if (details?.error) throw new Error(details.message || 'Failed to load the selected reference document.');
-        if (details?.text?.trim()) {
-          references = [{ label: referenceLabel, text: details.text }];
+        if (!details?.text?.trim()) throw new Error('The selected reference document had no readable text.');
+        const res = await runConflictCheckForReference(referenceLabel, details.text, referenceLabel);
+        if (isMountedRef.current && res.summary) {
+          setConflictResults((prev) => ({ ...(prev || {}), summary: res.summary }));
         }
       }
-
-      if (references.length === 0) {
-        throw new Error('None of the reference documents had readable text to compare.');
-      }
-
-      const formData = new FormData();
-      formData.append('doc1', new Blob([rawText], { type: 'text/plain' }), 'active-contract.txt');
-      formData.append('label1', REFERENCE_LABEL);
-      references.forEach((ref, idx) => {
-        const slot = idx + 2;
-        formData.append(`doc${slot}`, new Blob([ref.text], { type: 'text/plain' }), `reference-${slot}.txt`);
-        formData.append(`label${slot}`, ref.label);
-      });
-
-      const res = await analyzeConflicts(formData);
-      if (!isMountedRef.current) return;
-      if (res.error) throw new Error(res.message || 'Conflict analysis failed.');
-
-      // doc_a/doc_b positional-vs-"Active Contract" guarantee only held
-      // when there were exactly 2 documents (see openConflictDetail) —
-      // with N references in play, tag each conflict up front with which
-      // side is genuinely the reference document (by CONTENT presence in
-      // the live editor, not by name — the LLM doesn't reliably echo
-      // REFERENCE_LABEL back verbatim, confirmed live previously), so
-      // every card can show which file actually triggered it without
-      // re-deriving this on every render.
-      const editor = editorApiRef.current;
-      const enrichedConflicts = (res.conflicts || []).map((c) => {
-        let referenceDocName = c.doc_b_name || c.doc_a_name || 'Reference';
-        if (editor) {
-          try {
-            const aIsActive = c.doc_a_excerpt && !!findClauseRange(editor.state.doc, c.doc_a_excerpt);
-            referenceDocName = aIsActive ? (c.doc_b_name || 'Reference') : (c.doc_a_name || 'Reference');
-          } catch {}
-        }
-        return { ...c, _referenceDocName: referenceDocName };
-      });
-      setConflictResults({ ...res, conflicts: enrichedConflicts });
     } catch (err) {
       if (!isMountedRef.current) return;
       setConflictError(err.message || 'Conflict analysis failed.');
     } finally {
-      if (isMountedRef.current) setIsRunningConflictCheck(false);
+      if (isMountedRef.current) {
+        setIsRunningConflictCheck(false);
+        setConflictProgress({ current: 0, total: 0 });
+      }
     }
   };
 
@@ -5119,7 +5127,11 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         disabled={isRunningConflictCheck || (conflictUploadFiles.length === 0 && !selectedConflictDocId)}
                         style={{ padding: '10px 16px', fontSize: '13px', fontWeight: 600 }}
                       >
-                        {isRunningConflictCheck ? 'Scanning for conflicts…' : '⚖️ Run Conflict Check'}
+                        {isRunningConflictCheck
+                          ? (conflictProgress.total > 1
+                              ? `Scanning file ${conflictProgress.current} of ${conflictProgress.total}...`
+                              : 'Scanning for conflicts…')
+                          : '⚖️ Run Conflict Check'}
                       </button>
                     </div>
 
@@ -5138,7 +5150,7 @@ export default function ContractAnalyzer({ setFocusMode }) {
                         )}
                         {(conflictResults.conflicts || []).length === 0 ? (
                           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                            No conflicts found between the two documents.
+                            {isRunningConflictCheck ? 'Scanning…' : 'No conflicts found between the two documents.'}
                           </div>
                         ) : (() => {
                           // Only worth labeling each card once the RESULTS actually span
