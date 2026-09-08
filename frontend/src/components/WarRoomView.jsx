@@ -978,8 +978,16 @@ export default function WarRoomView() {
   const stageTimers = useRef([]);
   const fileInputRef = useRef(null);
 
+  // Same StrictMode-fragile pattern as VaultView.jsx's DEFECT-03 — must
+  // reassert `true` at the top of the effect body, or a dev-mode double-
+  // invoke leaves this permanently false and every `if (!isMountedRef.current)
+  // return;` guard below (including the one in handleManualUpload, right
+  // after the upload succeeds) silently no-ops for good. Confirmed live: the
+  // Virtual Courtroom upload POSTs a real 201 CREATED, but the simulation
+  // never starts because that guard was eating the rest of the function.
   const isMountedRef = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
 
