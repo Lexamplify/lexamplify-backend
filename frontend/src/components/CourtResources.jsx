@@ -1152,7 +1152,7 @@ export default function CourtResources() {
     if (!targetUrl) return;
     const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://lexamplify-backend.onrender.com';
     const proxyUrl = `${apiBase}/api/proxy?target_url=${encodeURIComponent(targetUrl)}`;
-    const windowFeatures = 'width=1024,height=768,left=150,top=80,resizable=yes,scrollbars=yes,status=no,toolbar=no';
+    const windowFeatures = 'width=1024,height=768,left=150,top=80,resizable=yes,scrollbars=yes,status=no,toolbar=no,noopener,noreferrer';
     const popup = window.open(proxyUrl, 'LexAISecureBrowser', windowFeatures);
     if (!popup || popup.closed || typeof popup.closed === 'undefined') {
       alert('⚠️ Your browser blocked the secure LexAI secure window pop-up. Please allow pop-ups in your browser address bar.');
@@ -2351,7 +2351,7 @@ export default function CourtResources() {
             </div>
 
             <div className="grid-container" style={{ marginBottom: '28px' }}>
-              <div className="premium-card" onClick={() => window.open('https://www.nesl.co.in', '_blank')}>
+              <div className="premium-card" onClick={() => window.open('https://www.nesl.co.in', '_blank', 'noopener,noreferrer')}>
                 <div className="card-top">
                   <span className="card-badge">Stamping &amp; e-Sign</span>
                   <span style={{ fontSize: '18px' }}>🏦</span>
@@ -2361,7 +2361,7 @@ export default function CourtResources() {
                 <div className="card-action-text">nesl.co.in ↗</div>
               </div>
 
-              <div className="premium-card" onClick={() => window.open('https://www.leegality.com', '_blank')}>
+              <div className="premium-card" onClick={() => window.open('https://www.leegality.com', '_blank', 'noopener,noreferrer')}>
                 <div className="card-top">
                   <span className="card-badge">Commercial</span>
                   <span style={{ fontSize: '18px' }}>✍️</span>
@@ -2371,7 +2371,7 @@ export default function CourtResources() {
                 <div className="card-action-text">leegality.com ↗</div>
               </div>
 
-              <div className="premium-card" onClick={() => window.open('https://www.signdesk.com', '_blank')}>
+              <div className="premium-card" onClick={() => window.open('https://www.signdesk.com', '_blank', 'noopener,noreferrer')}>
                 <div className="card-top">
                   <span className="card-badge">Stamping</span>
                   <span style={{ fontSize: '18px' }}>📝</span>
@@ -2381,7 +2381,7 @@ export default function CourtResources() {
                 <div className="card-action-text">signdesk.com ↗</div>
               </div>
 
-              <div className="premium-card" onClick={() => window.open('https://www.digio.in', '_blank')}>
+              <div className="premium-card" onClick={() => window.open('https://www.digio.in', '_blank', 'noopener,noreferrer')}>
                 <div className="card-top">
                   <span className="card-badge">KYC Gateway</span>
                   <span style={{ fontSize: '18px' }}>🔐</span>
