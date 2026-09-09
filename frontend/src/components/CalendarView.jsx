@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import { loginWithGoogle, logoutFromGoogle, fetchGoogleEvents, pushToGoogleCalendar } from '../utils/googleCalendar';
+import { loginWithGoogle, logoutFromGoogle, fetchGoogleEvents, pushToGoogleCalendar, ensureGisLoaded } from '../utils/googleCalendar';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
@@ -390,6 +390,11 @@ export default function CalendarView() {
 
   useEffect(() => {
     loadEvents();
+    // Preload the GIS script well ahead of any click — requestAccessToken()
+    // needs to run synchronously off the click's user gesture, and starting
+    // the script load only when the button is clicked crosses an async
+    // boundary that can make the browser refuse the OAuth popup.
+    ensureGisLoaded().catch(() => {});
     return () => clearTimeout(hideTimerRef.current);
   }, []);
 

@@ -13,7 +13,14 @@ const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/eve
 
 let gisLoadPromise = null;
 
-function ensureGisLoaded() {
+// Exported so callers (CalendarView) can kick this off on mount, well before
+// any click — requestAccessToken() must run synchronously off the click's
+// user-gesture, and awaiting a script that's still loading crosses an async
+// boundary that can make Chrome's popup blocker refuse the popup ("Failed to
+// open popup window") even though the click was genuine. Preloading means
+// the fast path below (already loaded) resolves on a microtask, not a
+// script-load event, so it doesn't break the gesture chain.
+export function ensureGisLoaded() {
   if (window.google?.accounts?.oauth2) return Promise.resolve();
   if (gisLoadPromise) return gisLoadPromise;
 
@@ -39,8 +46,17 @@ function ensureGisLoaded() {
 // with the access token. Rejects if the user closes the consent popup or
 // Google returns an error.
 export async function loginWithGoogle() {
-  await ensureGisLoaded();
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  // Fail loudly with an unambiguous message here rather than letting GIS
+  // reject deep inside its own popup with a generic "Missing required
+  // parameter: client_id" — that error is indistinguishable from a stale
+  // build/CDN cache still serving an old bundle from before this env var
+  // was set, which is what actually caused it in practice.
+  if (!clientId) {
+    throw new Error('Google Calendar is not configured: VITE_GOOGLE_CLIENT_ID is empty in this build. Set it and rebuild/redeploy — if it was just added, also check the deployed site isn\'t serving a stale cached index.html from before the rebuild.');
+  }
+
+  await ensureGisLoaded();
 
   return new Promise((resolve, reject) => {
     const client = window.google.accounts.oauth2.initTokenClient({
