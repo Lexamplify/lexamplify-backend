@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@react-oauth/google": "^0.13.5",
     "@tiptap/core": "^3.29.1",
     "@tiptap/extension-font-family": "^3.29.2",
     "@tiptap/extension-highlight": "^3.29.1",

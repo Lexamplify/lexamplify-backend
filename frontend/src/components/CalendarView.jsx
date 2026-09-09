@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
+import { loginWithGoogle, logoutFromGoogle, fetchGoogleEvents, pushToGoogleCalendar } from '../utils/googleCalendar';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
@@ -11,6 +12,20 @@ function getEventAccent(type) {
   if (t === 'appearance' || t.includes('hearing'))
     return { border: '#2563EB', bg: 'rgba(37,99,235,0.10)', text: '#93C5FD' };
   return { border: '#475569', bg: 'rgba(71,85,105,0.10)', text: '#94A3B8' };
+}
+
+const GOOGLE_BLUE = '#4285F4';
+
+// ── Small inline Google "G" glyph — flags source:'google' events in the grid ──
+function GoogleGlyph({ size = 9 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" style={{ flexShrink: 0 }}>
+      <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
+      <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
+      <path fill="#FBBC05" d="M11.69 28.18A13.98 13.98 0 0 1 10.94 24c0-1.45.25-2.86.7-4.18v-5.7H4.34A21.96 21.96 0 0 0 2 24c0 3.55.85 6.91 2.34 9.88z" />
+      <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
+    </svg>
+  );
 }
 
 const calendarStyles = `
@@ -306,6 +321,14 @@ export default function CalendarView() {
   const [newLocation, setNewLocation]         = useState('');
   const [newOpposingCounsel, setNewOpposingCounsel] = useState('');
   const [modalSaving, setModalSaving]         = useState(false);
+  const [syncToGoogle, setSyncToGoogle]       = useState(false);
+
+  // Google Calendar sync state — token lives in memory only (never
+  // localStorage), since it's a live credential with calendar-write access.
+  const [googleToken, setGoogleToken]         = useState(null);
+  const [googleEvents, setGoogleEvents]       = useState([]);
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [googleError, setGoogleError]         = useState(null);
 
   // Tooltip state
   const [tooltip, setTooltip]               = useState(null);
@@ -370,6 +393,52 @@ export default function CalendarView() {
     return () => clearTimeout(hideTimerRef.current);
   }, []);
 
+  // ── Google Calendar connect / disconnect ──────────────────────────────────
+  const handleGoogleConnect = async () => {
+    setGoogleConnecting(true);
+    setGoogleError(null);
+    try {
+      const token = await loginWithGoogle();
+      setGoogleToken(token);
+    } catch (err) {
+      setGoogleError(err.message || 'Google sign-in failed.');
+    } finally {
+      setGoogleConnecting(false);
+    }
+  };
+
+  const handleGoogleDisconnect = () => {
+    logoutFromGoogle(googleToken);
+    setGoogleToken(null);
+    setGoogleEvents([]);
+    setSyncToGoogle(false);
+  };
+
+  // ── Fetch Google events for the visible month whenever it changes ────────
+  // Kept in its own state (not merged into `events`) and re-fetched only on
+  // [googleToken, currentMonth] — neither of which this effect writes to —
+  // so there's no effect-writes-its-own-dependency infinite-loop risk.
+  useEffect(() => {
+    // No need to clear googleEvents here when disconnected — the only path
+    // that clears googleToken (handleGoogleDisconnect) already clears
+    // googleEvents itself, and it starts empty on mount.
+    if (!googleToken) return;
+    let cancelled = false;
+    const y = currentMonth.getFullYear(), m = currentMonth.getMonth();
+    const timeMin = new Date(y, m, 1).toISOString();
+    const timeMax = new Date(y, m + 1, 0, 23, 59, 59).toISOString();
+
+    fetchGoogleEvents(googleToken, timeMin, timeMax)
+      .then(evts => { if (!cancelled) setGoogleEvents(evts); })
+      .catch(err => { if (!cancelled) { setGoogleEvents([]); setGoogleError(err.message || 'Failed to fetch Google events.'); } });
+
+    return () => { cancelled = true; };
+  }, [googleToken, currentMonth]);
+
+  // Merged view for rendering — internal + Google events, recomputed only
+  // when either source array actually changes.
+  const allEvents = useMemo(() => [...events, ...googleEvents], [events, googleEvents]);
+
   // ── Date helpers ───────────────────────────────────────────────────────────
   const getDaysInMonth = (date) => {
     const year = date.getFullYear(), month = date.getMonth();
@@ -387,7 +456,7 @@ export default function CalendarView() {
     const y = currentMonth.getFullYear();
     const m = String(currentMonth.getMonth() + 1).padStart(2, '0');
     const d = String(day).padStart(2, '0');
-    return events.filter(e => e.event_date === `${y}-${m}-${d}`);
+    return allEvents.filter(e => e.event_date === `${y}-${m}-${d}`);
   };
 
   const handlePrevMonth = () => {
@@ -407,7 +476,7 @@ export default function CalendarView() {
   const closeModal = () => {
     setIsModalOpen(false);
     setNewTitle(''); setNewType('task'); setNewCaseId('');
-    setNewLocation(''); setNewOpposingCounsel('');
+    setNewLocation(''); setNewOpposingCounsel(''); setSyncToGoogle(false);
   };
 
   const handleAddEventSubmit = async (e) => {
@@ -418,17 +487,35 @@ export default function CalendarView() {
       const y = selectedDate.getFullYear();
       const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
       const d = String(selectedDate.getDate()).padStart(2, '0');
+      const eventDate = `${y}-${m}-${d}`;
+
+      let googleEventId = null;
+      if (syncToGoogle && googleToken) {
+        try {
+          googleEventId = await pushToGoogleCalendar(googleToken, {
+            title: newTitle.trim(),
+            event_date: eventDate,
+            location: newLocation.trim(),
+          });
+        } catch {
+          // A Google API hiccup shouldn't lose the user's internal event —
+          // it still gets saved below, just without a google_event_id.
+          setGoogleError('Saved locally, but the Google Calendar push failed.');
+        }
+      }
+
       await fetch(`${API_BASE}/api/calendar/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           events: [{
-            event_date: `${y}-${m}-${d}`,
+            event_date: eventDate,
             event_type: newType,
             title: newTitle.trim(),
             related_case_id: newCaseId.trim(),
             location: newLocation.trim(),
             opposing_counsel: newOpposingCounsel.trim(),
+            google_event_id: googleEventId,
           }],
         }),
       });
@@ -451,7 +538,7 @@ export default function CalendarView() {
     const y = selectedDate.getFullYear();
     const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
     const d = String(selectedDate.getDate()).padStart(2, '0');
-    return events.filter(e => e.event_date === `${y}-${m}-${d}`);
+    return allEvents.filter(e => e.event_date === `${y}-${m}-${d}`);
   })() : [];
 
   // Conflict: user is adding a high-priority type to a day that already has one
@@ -483,14 +570,43 @@ export default function CalendarView() {
             Tickler Engine tracking deadlines, appearances, and scheduled legal events.
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-dark-panel, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', padding: '6px 14px', borderRadius: '8px' }}>
-          <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center' }}>◀</button>
-          <span style={{ fontSize: '15px', fontWeight: '600', minWidth: '130px', textAlign: 'center', userSelect: 'none' }}>
-            {monthName} {currentMonth.getFullYear()}
-          </span>
-          <button onClick={handleNextMonth} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center' }}>▶</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          {googleToken ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(66,133,244,0.08)', border: '1px solid rgba(66,133,244,0.3)', padding: '6px 12px', borderRadius: '8px' }}>
+              <GoogleGlyph size={13} />
+              <span style={{ fontSize: '12.5px', fontWeight: '600', color: '#93C5FD' }}>Google Calendar Synced</span>
+              <button
+                onClick={handleGoogleDisconnect}
+                title="Disconnect Google Calendar"
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted, #8F9CAE)', cursor: 'pointer', fontSize: '12px', padding: '0 0 0 4px' }}
+              >✕</button>
+            </div>
+          ) : (
+            <button
+              onClick={handleGoogleConnect}
+              disabled={googleConnecting}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-dark-panel, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', padding: '7px 14px', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '12.5px', fontWeight: '600', cursor: googleConnecting ? 'not-allowed' : 'pointer', opacity: googleConnecting ? 0.65 : 1 }}
+            >
+              <GoogleGlyph size={13} />
+              {googleConnecting ? 'Connecting…' : 'Sync Google Calendar'}
+            </button>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-dark-panel, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', padding: '6px 14px', borderRadius: '8px' }}>
+            <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center' }}>◀</button>
+            <span style={{ fontSize: '15px', fontWeight: '600', minWidth: '130px', textAlign: 'center', userSelect: 'none' }}>
+              {monthName} {currentMonth.getFullYear()}
+            </span>
+            <button onClick={handleNextMonth} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center' }}>▶</button>
+          </div>
         </div>
       </div>
+
+      {googleError && (
+        <div style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+          <span>⚠️ {googleError}</span>
+          <button onClick={() => setGoogleError(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '13px' }}>✕</button>
+        </div>
+      )}
 
       {/* Loading */}
       {loading && (
@@ -549,6 +665,7 @@ export default function CalendarView() {
                   {/* Event pills */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', width: '100%', marginTop: '6px' }}>
                     {dayEvents.slice(0, 3).map(ev => {
+                      const isGoogle = ev.source === 'google';
                       const acc = getEventAccent(ev.event_type);
                       return (
                         <div
@@ -556,10 +673,11 @@ export default function CalendarView() {
                           style={{
                             fontSize: '9px', fontWeight: '600', color: acc.text,
                             backgroundColor: acc.bg,
-                            borderLeft: `2.5px solid ${acc.border}`,
+                            borderLeft: `2.5px solid ${isGoogle ? GOOGLE_BLUE : acc.border}`,
                             padding: '2px 5px', borderRadius: '2px',
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                             cursor: 'default',
+                            display: 'flex', alignItems: 'center', gap: '4px',
                           }}
                           onMouseEnter={e => {
                             e.stopPropagation();
@@ -567,7 +685,8 @@ export default function CalendarView() {
                           }}
                           onMouseLeave={e => { e.stopPropagation(); startHide(); }}
                         >
-                          {ev.title}
+                          {isGoogle && <GoogleGlyph size={8} />}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.title}</span>
                         </div>
                       );
                     })}
@@ -628,17 +747,22 @@ export default function CalendarView() {
                   </div>
                 ) : (
                   selectedDayEvents.map(ev => {
+                    const isGoogle = ev.source === 'google';
                     const acc = getEventAccent(ev.event_type);
+                    const borderColor = isGoogle ? GOOGLE_BLUE : acc.border;
                     return (
                       <div
                         key={ev.id}
                         className="dag-event-card"
-                        style={{ background: acc.bg, border: `1px solid ${acc.border}44`, borderLeft: `3px solid ${acc.border}` }}
+                        style={{ background: acc.bg, border: `1px solid ${borderColor}44`, borderLeft: `3px solid ${borderColor}` }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: ev.location || ev.opposing_counsel ? '7px' : 0 }}>
-                          <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#E2E8F0', lineHeight: 1.35 }}>{ev.title}</div>
+                          <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#E2E8F0', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {isGoogle && <GoogleGlyph size={11} />}
+                            {ev.title}
+                          </div>
                           <div style={{ fontSize: '9px', fontWeight: '700', textTransform: 'uppercase', color: acc.text, background: `${acc.border}20`, padding: '2px 6px', borderRadius: '3px', flexShrink: 0, letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
-                            {(ev.event_type || 'event').replace(/_/g, ' ')}
+                            {isGoogle ? 'google' : (ev.event_type || 'event').replace(/_/g, ' ')}
                           </div>
                         </div>
                         {ev.location && (
@@ -729,6 +853,14 @@ export default function CalendarView() {
                     <label className="cal-label">Opposing Counsel</label>
                     <input type="text" className="cal-input" placeholder="e.g. Adv. Rajesh Kumar, Singh & Co." value={newOpposingCounsel} onChange={e => setNewOpposingCounsel(e.target.value)} />
                   </div>
+
+                  {googleToken && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--text-dark-primary, #fff)', cursor: 'pointer', userSelect: 'none' }}>
+                      <input type="checkbox" checked={syncToGoogle} onChange={e => setSyncToGoogle(e.target.checked)} style={{ width: '14px', height: '14px', accentColor: GOOGLE_BLUE, cursor: 'pointer' }} />
+                      <GoogleGlyph size={12} />
+                      Sync to Google Calendar
+                    </label>
+                  )}
 
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '9px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
                     {[['drop_dead', 'Deadline'], ['appearance', 'Hearing'], ['task', 'Task']].map(([t, lbl]) => {

@@ -2834,10 +2834,11 @@ def create_app():
                 related_case_id = event.get('related_case_id')
                 location = event.get('location', '')
                 opposing_counsel = event.get('opposing_counsel', '')
+                google_event_id = event.get('google_event_id')
                 c.execute('''
-                    INSERT INTO calendar_events (event_date, event_type, title, related_case_id, location, opposing_counsel)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (event_date, event_type, title, related_case_id, location, opposing_counsel))
+                    INSERT INTO calendar_events (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id))
             
             conn.commit()
             return jsonify({"success": True, "message": "Events successfully saved."}), 200
@@ -2972,7 +2973,7 @@ def create_app():
             )
         ''')
         # Migrate existing DB if new columns are missing
-        for _col in ('location', 'opposing_counsel'):
+        for _col in ('location', 'opposing_counsel', 'google_event_id'):
             try:
                 conn.execute(f'ALTER TABLE calendar_events ADD COLUMN {_col} TEXT')
             except Exception:
