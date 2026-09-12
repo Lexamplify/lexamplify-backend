@@ -12,6 +12,15 @@ export const MARKDOWN_CSS = `
   .md-dot    { color: #3B82F6; flex-shrink: 0; margin-top: 2px; }
   .md-num    { display: flex; gap: 9px; margin: 4px 0; align-items: flex-start; }
   .md-num-n  { color: #3B82F6; flex-shrink: 0; font-weight: 700; min-width: 20px; }
+
+  /* The rules above are dark-background defaults (near-white text) with no
+     light-theme counterpart — on a light surface .md-b in particular renders
+     near-invisible (#F1F5F9 text on white). */
+  :root[data-theme="light"] .md-h3   { color: #1e293b !important; }
+  :root[data-theme="light"] .md-h4   { color: #64748b !important; }
+  :root[data-theme="light"] .md-b    { color: #0f172a !important; }
+  :root[data-theme="light"] .md-i    { color: #334155 !important; }
+  :root[data-theme="light"] .md-code { background: rgba(59,130,246,0.08) !important; color: #1d4ed8 !important; }
 `;
 
 export const renderMarkdown = (raw) => {

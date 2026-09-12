@@ -2605,6 +2605,11 @@ def create_app():
                         "You MUST cite the provided web search cases to back up your claims if they are relevant.\n\n"
                         f"Facts and Issues:\n{stage1_text}\n\n"
                         f"Live Web Search Cases Retrieved:\n{json.dumps(tavily_results, indent=2)}\n\n"
+                        "For any specific fact not given above (party names, dates, monetary amounts, "
+                        "case/appeal numbers, court name, etc.), insert a placeholder in square brackets "
+                        "describing what belongs there, e.g. [Appellant's Name], [Rs. Amount], [Date]. "
+                        "Do NOT use dotted lines, underscores, or blank spaces as placeholders — always "
+                        "use the bracketed form so it renders as a fillable field.\n"
                         "Provide only the drafted opening argument text. Do not include conversational text or markdown code blocks."
                     )
                     

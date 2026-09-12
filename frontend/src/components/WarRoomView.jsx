@@ -119,7 +119,12 @@ const parsePrecedentData = (c, i) => {
 
 // ── Pleading AST & Inline Blanks Engine ──────────────────────────────────────
 
-const BLANK_REGEX = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\])/g;
+// Dot-leader runs (".......", ". . . . .") are a real legal-document
+// fill-in-the-blank convention the AI sometimes falls back to despite the
+// prompt now asking for bracketed placeholders — caught here as a fallback
+// so any that slip through still render as a fillable input instead of a
+// wall of literal dots.
+const BLANK_REGEX = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\]|(?:\.\s?){4,})/g;
 
 // Splits a line into blank vs. plain-text runs first, then re-tokenizes each
 // plain run for **bold**/*italic*/`code` markers while carrying the open
@@ -1484,6 +1489,26 @@ ${MARKDOWN_CSS}
   }
 
   /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
+  :root[data-theme="light"] .wr-pipeline-card {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 24px 64px rgba(15,23,42,0.12) !important;
+  }
+  :root[data-theme="light"] .wr-pipeline-h {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-pipeline-sub {
+    color: #64748b !important;
+  }
+  :root[data-theme="light"] .wr-stage-text.pending {
+    color: #94a3b8 !important;
+  }
+  :root[data-theme="light"] .wr-stage-text.active {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-stage-dot.pending {
+    background: #cbd5e1 !important;
+  }
   :root[data-theme="light"] .wr-results-page {
     background: #f8fafc !important;
   }
