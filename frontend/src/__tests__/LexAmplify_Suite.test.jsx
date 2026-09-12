@@ -219,11 +219,11 @@ describe('Virtual Courtroom / War Room', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Virtual Courtroom — Ready/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Virtual Courtroom War Room/i)).toBeInTheDocument();
     expect(screen.getByText(/Drop your case document here/i)).toBeInTheDocument();
   });
 
-  it('dispatches the LexAmplify toggle event when "Open LexAmplify" is clicked', async () => {
+  it('dispatches the LexAmplify toggle event when "Open Command Assistant" is clicked', async () => {
     render(
       <MemoryRouter>
         <WarRoomView />
@@ -233,8 +233,8 @@ describe('Virtual Courtroom / War Room', () => {
     const listener = vi.fn();
     window.addEventListener('toggle-rag-palette', listener);
 
-    const openLexAmplifyBtn = await screen.findByRole('button', { name: /Open LexAmplify/i });
-    await userEvent.click(openLexAmplifyBtn);
+    const openCommandBtn = await screen.findByRole('button', { name: /Open Command Assistant/i });
+    await userEvent.click(openCommandBtn);
 
     expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener('toggle-rag-palette', listener);
