@@ -8,8 +8,9 @@ export function ThemeProvider({ children }) {
   });
 
   useEffect(() => {
-    // Apply data-theme attribute to <html> element for CSS variable mapping
+    // Apply data-theme attribute and dark class to <html> element for CSS variable mapping and Tailwind
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('lexai_theme', theme);
   }, [theme]);
 

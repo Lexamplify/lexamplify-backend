@@ -870,6 +870,7 @@ ${MARKDOWN_CSS}
     .desktop-only-shortcut, .wr-shortcut-pill, .wr-kbd {
       display: none !important;
     }
+  }
 
   /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
   :root[data-theme="light"] .wr-pipeline-card,
@@ -1189,7 +1190,6 @@ ${MARKDOWN_CSS}
   }
   :root[data-theme="light"] .wr-intake-btn-secondary:hover {
     background: #f8fafc !important;
-  }
   }
 `;
 
