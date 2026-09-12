@@ -946,6 +946,22 @@ ${MARKDOWN_CSS}
     color: #93c5fd;
     text-decoration: underline;
   }
+  .wr-precedent-readmore {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #f59e0b;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    width: fit-content;
+    margin-top: -4px;
+    transition: color 0.15s ease;
+  }
+  .wr-precedent-readmore:hover {
+    color: #fbbf24;
+    text-decoration: underline;
+  }
 
   /* ── STAGE III: LEGAL FOLIO PLEADING WORKBENCH ───────────────────── */
   .wr-folio-workbench {
@@ -1608,6 +1624,12 @@ ${MARKDOWN_CSS}
   :root[data-theme="light"] .wr-precedent-link {
     color: #2563eb !important;
   }
+  :root[data-theme="light"] .wr-precedent-readmore {
+    color: #b45309 !important;
+  }
+  :root[data-theme="light"] .wr-precedent-readmore:hover {
+    color: #92400e !important;
+  }
   :root[data-theme="light"] .wr-folio-toolbar {
     background: #ffffff !important;
     border: 1px solid #e2e8f0 !important;
@@ -2067,10 +2089,18 @@ function PleadingFolio({
 
 // ── Sub-component: Precedent Report Card ────────────────────────────────────
 
+const PRECEDENT_RATIO_TRUNCATE_LEN = 240;
+
 function PrecedentReportCard({ citation, index }) {
   const { cleanTitle, citationTag, ratio, url } = useMemo(() => {
     return parsePrecedentData(citation, index);
   }, [citation, index]);
+
+  const [expanded, setExpanded] = useState(false);
+  const isLong = ratio.length > PRECEDENT_RATIO_TRUNCATE_LEN;
+  const displayRatio = isLong && !expanded
+    ? ratio.slice(0, PRECEDENT_RATIO_TRUNCATE_LEN).replace(/\s+\S*$/, '') + '…'
+    : ratio;
 
   return (
     <div className="wr-precedent-card">
@@ -2079,8 +2109,17 @@ function PrecedentReportCard({ citation, index }) {
         <div className="wr-precedent-title">*{cleanTitle}*</div>
       </div>
       <div className="wr-precedent-ratio">
-        "{ratio}"
+        "{displayRatio}"
       </div>
+      {isLong && (
+        <button
+          type="button"
+          className="wr-precedent-readmore"
+          onClick={() => setExpanded(prev => !prev)}
+        >
+          {expanded ? '▲ Show less' : '▼ Read more'}
+        </button>
+      )}
       <a className="wr-precedent-link" href={url} target="_blank" rel="noopener noreferrer">
         Source Record ↗
       </a>
