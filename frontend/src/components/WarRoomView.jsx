@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { uploadDocument } from '../services/api';
 import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
@@ -17,7 +17,6 @@ const parseIssues = (text) => {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const numbered = lines.filter(l => /^\d+[\.\):]/.test(l));
   if (numbered.length >= 2) return numbered.map(l => l.replace(/^\d+[\.\):]\s*/, ''));
-  // Fallback: split bullet lines or return as single block
   const bullets = lines.filter(l => /^[-•*]/.test(l));
   if (bullets.length >= 2) return bullets.map(l => l.replace(/^[-•*]\s*/, ''));
   return lines.filter(l => l.length > 20);
@@ -35,7 +34,6 @@ const parseRobotResponse = (raw) => {
 
   let rebuttals = [];
   try {
-    // Extract first JSON array found (handles any trailing whitespace/newlines)
     const arrayMatch = rebuttalRaw.match(/\[[\s\S]*\]/);
     if (arrayMatch) {
       const parsed = JSON.parse(arrayMatch[0]);
@@ -46,7 +44,6 @@ const parseRobotResponse = (raw) => {
       }
     }
   } catch {
-    // Fallback: treat each non-empty line after the delimiter as a rebuttal
     rebuttals = rebuttalRaw
       .split('\n')
       .map(l => l.replace(/^[-*•\d.)\s]+/, '').trim())
@@ -56,7 +53,229 @@ const parseRobotResponse = (raw) => {
   return { mainText, rebuttals };
 };
 
-// ── Pipeline stages ──────────────────────────────────────────────────────────
+// ── Dynamic Metadata Parsers ────────────────────────────────────────────────
+
+const parseMatterTitle = (simulationData, docSource) => {
+  if (docSource) {
+    const clean = docSource.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+    return clean.length > 65 ? clean.substring(0, 62) + '…' : clean;
+  }
+  const issues = (simulationData?.extracted_issues || '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (issues.length > 0) {
+    const first = issues[0].replace(/^(\d+[\.\):]|[-•*])\s*/, '');
+    if (first.length > 5) {
+      return first.length > 65 ? first.substring(0, 62) + '…' : first;
+    }
+  }
+  return 'Appellate Dispute & Defense Strategy';
+};
+
+const parseGoverningLaw = (extractedIssues, openingArgument) => {
+  const combined = `${extractedIssues || ''} ${openingArgument || ''}`.toLowerCase();
+  if (combined.includes('arbitrat') || combined.includes('section 34') || combined.includes('section 9') || combined.includes('award')) {
+    return 'Arbitration & Conciliation Act, 1996 · §§ 9, 34';
+  }
+  if (combined.includes('insolven') || combined.includes('ibc') || combined.includes('nclt') || combined.includes('cirp')) {
+    return 'Insolvency & Bankruptcy Code, 2016 · §§ 7, 9';
+  }
+  if (combined.includes('cheque') || combined.includes('138') || combined.includes('negotiable')) {
+    return 'Negotiable Instruments Act, 1881 · § 138';
+  }
+  if (combined.includes('specific relief') || combined.includes('injunction') || combined.includes('sra')) {
+    return 'Specific Relief Act, 1963 · CPC, 1908';
+  }
+  if (combined.includes('contract') || combined.includes('frustration') || combined.includes('breach') || combined.includes('damages')) {
+    return 'Indian Contract Act, 1872 · §§ 73, 56';
+  }
+  if (combined.includes('article 226') || combined.includes('article 32') || combined.includes('article 136') || combined.includes('writ')) {
+    return 'Constitution of India · Arts. 136, 226';
+  }
+  return 'Indian Contract Act, 1872 · CPC, 1908';
+};
+
+const parsePrecedentData = (c, i) => {
+  const rawTitle = c.title || `Case Citation #${i + 1}`;
+  let cleanTitle = rawTitle;
+  let citationTag = 'Supreme Court of India · Landmark Record';
+
+  const kanoonMatch = rawTitle.match(/^(.*?)\s+on\s+(\d{1,2}\s+[A-Za-z]+,\s+\d{4})/i);
+  if (kanoonMatch) {
+    cleanTitle = kanoonMatch[1].replace(/\s+vs\s+/i, ' v. ').replace(/\s+versus\s+/i, ' v. ').trim();
+    citationTag = `Supreme Court of India · ${kanoonMatch[2]}`;
+  } else {
+    cleanTitle = cleanTitle.replace(/\s+vs\s+/i, ' v. ').replace(/\s+versus\s+/i, ' v. ');
+  }
+
+  let ratio = c.snippet || 'Refer to full Indian Kanoon authority record for comprehensive legal principles and statutory ratio decidendi.';
+  ratio = ratio.replace(/^["']|["']$/g, '').trim();
+
+  return {
+    cleanTitle,
+    citationTag,
+    ratio,
+    url: c.url || `https://indiankanoon.org/search/?formInput=${encodeURIComponent(cleanTitle)}`,
+  };
+};
+
+// ── Pleading AST & Inline Blanks Engine ──────────────────────────────────────
+
+const BLANK_REGEX = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\])/g;
+
+const parseInlineSegments = (text, blankCounterRef, blanksList) => {
+  const segments = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = BLANK_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({
+        type: 'text',
+        content: text.slice(lastIndex, match.index),
+      });
+    }
+    const raw = match[0];
+    const id = `blank_${blankCounterRef.count++}`;
+    let label = raw;
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      label = raw.slice(1, -1).trim();
+    } else if (/Rs\./i.test(raw)) {
+      label = 'Rs. Amount';
+    } else {
+      label = 'Fill value';
+    }
+    const blankObj = { id, raw, label };
+    blanksList.push(blankObj);
+    segments.push({
+      type: 'blank',
+      ...blankObj,
+    });
+    lastIndex = match.index + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({
+      type: 'text',
+      content: text.slice(lastIndex),
+    });
+  }
+
+  return segments;
+};
+
+const parsePleadingDocument = (rawText) => {
+  if (!rawText) return { blocks: [], blanksList: [] };
+
+  const lines = rawText.split('\n');
+  const blocks = [];
+  const blanksList = [];
+  const blankCounter = { count: 0 };
+
+  let currentParagraph = [];
+
+  const flushParagraph = () => {
+    if (currentParagraph.length > 0) {
+      const fullParaText = currentParagraph.join(' ').trim();
+      if (fullParaText) {
+        const segments = parseInlineSegments(fullParaText, blankCounter, blanksList);
+        blocks.push({ type: 'p', segments });
+      }
+      currentParagraph = [];
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (!line) {
+      flushParagraph();
+      continue;
+    }
+
+    if (/^---$|^\*\*\*$|^___$/.test(line)) {
+      flushParagraph();
+      blocks.push({ type: 'hr' });
+      continue;
+    }
+
+    const h4Match = line.match(/^####\s+(.+)$/);
+    if (h4Match) {
+      flushParagraph();
+      blocks.push({ type: 'h4', segments: parseInlineSegments(h4Match[1], blankCounter, blanksList) });
+      continue;
+    }
+
+    const h3Match = line.match(/^###\s+(.+)$/);
+    if (h3Match) {
+      flushParagraph();
+      blocks.push({ type: 'h3', segments: parseInlineSegments(h3Match[1], blankCounter, blanksList) });
+      continue;
+    }
+
+    const h2Match = line.match(/^##\s+(.+)$/);
+    if (h2Match) {
+      flushParagraph();
+      blocks.push({ type: 'h2', segments: parseInlineSegments(h2Match[1], blankCounter, blanksList) });
+      continue;
+    }
+
+    const h1Match = line.match(/^#\s+(.+)$/);
+    if (h1Match) {
+      flushParagraph();
+      blocks.push({ type: 'h1', segments: parseInlineSegments(h1Match[1], blankCounter, blanksList) });
+      continue;
+    }
+
+    const quoteMatch = line.match(/^>\s*(.+)$/);
+    if (quoteMatch) {
+      flushParagraph();
+      blocks.push({ type: 'quote', segments: parseInlineSegments(quoteMatch[1], blankCounter, blanksList) });
+      continue;
+    }
+
+    const numMatch = line.match(/^(\d+)[\.\)]\s+(.+)$/);
+    if (numMatch) {
+      flushParagraph();
+      blocks.push({
+        type: 'num-item',
+        num: numMatch[1],
+        segments: parseInlineSegments(numMatch[2], blankCounter, blanksList),
+      });
+      continue;
+    }
+
+    const bulletMatch = line.match(/^[-•*]\s+(.+)$/);
+    if (bulletMatch) {
+      flushParagraph();
+      blocks.push({
+        type: 'bullet-item',
+        segments: parseInlineSegments(bulletMatch[1], blankCounter, blanksList),
+      });
+      continue;
+    }
+
+    currentParagraph.push(line);
+  }
+
+  flushParagraph();
+
+  return { blocks, blanksList };
+};
+
+const compilePleadingText = (rawText, formBlanks, blanksList) => {
+  if (!rawText) return '';
+  let compiled = rawText;
+  if (!blanksList || blanksList.length === 0) return compiled;
+
+  blanksList.forEach((b) => {
+    const val = formBlanks[b.id]?.trim();
+    if (val) {
+      compiled = compiled.replace(b.raw, val);
+    }
+  });
+  return compiled;
+};
+
+// ── Pipeline Stages ─────────────────────────────────────────────────────────
 
 const PIPELINE_STAGES = [
   { num: 1, label: 'Extracting legal issues & case facts...' },
@@ -66,13 +285,12 @@ const PIPELINE_STAGES = [
   { num: 5, label: 'Compiling full simulation package...' },
 ];
 
-const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
-
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const WAR_ROOM_STYLES = `
 ${MARKDOWN_CSS}
-  /* ── VIRTUAL COURTROOM INGESTION HUB / INTAKE CARD ──────────────── */
+
+  /* ── VIRTUAL COURTROOM INTAKE CARD ─────────────────────────────── */
   .wr-intake-wrap {
     min-height: calc(100vh - 64px);
     width: 100%;
@@ -85,7 +303,7 @@ ${MARKDOWN_CSS}
     overflow-y: auto;
   }
   .wr-intake-container {
-    max-width: 672px; /* max-w-2xl */
+    max-width: 672px;
     width: 100%;
     margin: auto;
     display: flex;
@@ -94,9 +312,9 @@ ${MARKDOWN_CSS}
   }
   .wr-intake-card {
     width: 100%;
-    background: #0f172a; /* dark:bg-slate-900 */
-    border: 1px solid #1e293b; /* dark:border-slate-800 */
-    border-radius: 16px; /* rounded-2xl */
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
     padding: 36px 40px;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
     display: flex;
@@ -108,9 +326,9 @@ ${MARKDOWN_CSS}
     width: 48px;
     height: 48px;
     border-radius: 12px;
-    background: rgba(30, 58, 138, 0.6); /* dark:bg-blue-950/60 */
-    border: 1px solid #1e40af; /* dark:border-blue-800 */
-    color: #60a5fa; /* dark:text-blue-400 */
+    background: rgba(30, 58, 138, 0.6);
+    border: 1px solid #1e40af;
+    color: #60a5fa;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -127,14 +345,14 @@ ${MARKDOWN_CSS}
   }
   .wr-intake-subtitle {
     font-size: 14px;
-    color: #94a3b8; /* text-slate-400 */
+    color: #94a3b8;
     text-align: center;
     margin: 0 0 24px;
     line-height: 1.5;
   }
   .wr-intake-dropzone {
-    border: 2px dashed #334155; /* dark:border-slate-700 */
-    background: rgba(2, 6, 23, 0.4); /* dark:bg-slate-950/40 */
+    border: 2px dashed #334155;
+    background: rgba(2, 6, 23, 0.4);
     border-radius: 12px;
     padding: 30px 20px;
     text-align: center;
@@ -146,8 +364,8 @@ ${MARKDOWN_CSS}
     gap: 8px;
   }
   .wr-intake-dropzone:hover {
-    border-color: #60a5fa; /* dark:hover:border-blue-400 */
-    background: rgba(30, 58, 138, 0.2); /* dark:hover:bg-blue-950/20 */
+    border-color: #60a5fa;
+    background: rgba(30, 58, 138, 0.2);
   }
   .wr-intake-dropzone.drag-over {
     border-color: #3b82f6;
@@ -161,11 +379,11 @@ ${MARKDOWN_CSS}
   .wr-intake-dropzone-primary {
     font-size: 14px;
     font-weight: 600;
-    color: #f1f5f9; /* dark:text-slate-100 */
+    color: #f1f5f9;
   }
   .wr-intake-dropzone-secondary {
     font-size: 12px;
-    color: #94a3b8; /* dark:text-slate-400 */
+    color: #94a3b8;
     margin-top: 2px;
   }
   .wr-intake-divider {
@@ -173,7 +391,7 @@ ${MARKDOWN_CSS}
     align-items: center;
     gap: 12px;
     margin: 22px 0 18px;
-    color: #64748b; /* dark:text-slate-500 */
+    color: #64748b;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -184,7 +402,7 @@ ${MARKDOWN_CSS}
     content: '';
     flex: 1;
     height: 1px;
-    background: #1e293b; /* dark:border-slate-800 */
+    background: #1e293b;
   }
   .wr-intake-steps {
     display: flex;
@@ -201,9 +419,9 @@ ${MARKDOWN_CSS}
     width: 24px;
     height: 24px;
     border-radius: 6px;
-    background: rgba(30, 58, 138, 0.8); /* dark:bg-blue-950/80 */
-    border: 1px solid #1e40af; /* dark:border-blue-800 */
-    color: #60a5fa; /* dark:text-blue-400 */
+    background: rgba(30, 58, 138, 0.8);
+    border: 1px solid #1e40af;
+    color: #60a5fa;
     font-size: 11px;
     font-weight: 700;
     font-family: monospace;
@@ -216,18 +434,18 @@ ${MARKDOWN_CSS}
   .wr-intake-step-title {
     font-size: 12px;
     font-weight: 600;
-    color: #e2e8f0; /* dark:text-slate-200 */
+    color: #e2e8f0;
   }
   .wr-intake-step-desc {
     font-size: 12px;
-    color: #94a3b8; /* dark:text-slate-400 */
+    color: #94a3b8;
     line-height: 1.4;
   }
   .wr-intake-chip {
     display: inline-block;
-    background: #020617; /* dark:bg-slate-950 */
-    border: 1px solid #1e293b; /* dark:border-slate-800 */
-    color: #93c5fd; /* dark:text-blue-300 */
+    background: #020617;
+    border: 1px solid #1e293b;
+    color: #93c5fd;
     font-family: monospace;
     font-size: 11px;
     padding: 2px 8px;
@@ -271,9 +489,9 @@ ${MARKDOWN_CSS}
     transform: scale(0.98);
   }
   .wr-intake-btn-secondary {
-    background: #1e293b; /* dark:bg-slate-800 */
-    color: #e2e8f0; /* dark:text-slate-200 */
-    border: 1px solid #334155; /* dark:border-slate-700 */
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
     font-size: 14px;
     font-weight: 500;
     padding: 10px 16px;
@@ -286,7 +504,7 @@ ${MARKDOWN_CSS}
     transition: all 0.15s ease;
   }
   .wr-intake-btn-secondary:hover {
-    background: rgba(51, 65, 85, 0.8); /* dark:hover:bg-slate-700/80 */
+    background: rgba(51, 65, 85, 0.8);
   }
 
   /* ── PIPELINE LOADING ──────────────────────────────────────────── */
@@ -313,8 +531,8 @@ ${MARKDOWN_CSS}
     animation: wr-float 2.6s ease-in-out infinite;
   }
   @keyframes wr-float {
-    0%,100% { transform: translateY(0);    filter: drop-shadow(0 4px 16px rgba(59,130,246,0.3)); }
-    50%      { transform: translateY(-7px); filter: drop-shadow(0 12px 28px rgba(59,130,246,0.55)); }
+    0%,100% { transform: translateY(0); filter: drop-shadow(0 4px 16px rgba(59,130,246,0.3)); }
+    50% { transform: translateY(-7px); filter: drop-shadow(0 12px 28px rgba(59,130,246,0.55)); }
   }
   .wr-pipeline-h { font-size: 20px; font-weight: 700; color: white; text-align: center; margin: 0 0 6px; }
   .wr-pipeline-sub { font-size: 13px; color: var(--text-muted, #8F9CAE); text-align: center; margin: 0 0 28px; line-height: 1.5; }
@@ -328,805 +546,1200 @@ ${MARKDOWN_CSS}
     width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
     transition: background 0.4s, box-shadow 0.4s;
   }
-  .wr-stage-dot.done    { background: #10B981; box-shadow: 0 0 6px rgba(16,185,129,0.6); }
-  .wr-stage-dot.active  { background: #3B82F6; box-shadow: 0 0 9px rgba(59,130,246,0.7); animation: wr-dot-pulse 1.4s ease-in-out infinite; }
+  .wr-stage-dot.done { background: #10B981; box-shadow: 0 0 6px rgba(16,185,129,0.6); }
+  .wr-stage-dot.active { background: #3B82F6; box-shadow: 0 0 9px rgba(59,130,246,0.7); animation: wr-dot-pulse 1.4s ease-in-out infinite; }
   .wr-stage-dot.pending { background: var(--border-subtle, #2C3241); }
   @keyframes wr-dot-pulse {
     0%,100% { opacity: 1; transform: scale(1); }
-    50%      { opacity: 0.45; transform: scale(0.75); }
+    50% { opacity: 0.45; transform: scale(0.75); }
   }
   .wr-stage-text { font-size: 12.5px; }
-  .wr-stage-text.done    { color: #10B981; }
-  .wr-stage-text.active  { color: white; font-weight: 600; }
+  .wr-stage-text.done { color: #10B981; }
+  .wr-stage-text.active { color: white; font-weight: 600; }
   .wr-stage-text.pending { color: var(--text-muted, #8F9CAE); }
 
-  /* ── RESULTS PAGE ──────────────────────────────────────────────── */
+  /* ── ENTERPRISE WAR ROOM PAGE CONTAINER ────────────────────────── */
   .wr-results-page {
-    height: calc(100vh - 64px);
+    min-height: calc(100vh - 64px);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
     font-family: var(--font-sans);
     opacity: 0;
     transform: translateY(10px);
-    transition: opacity 0.5s cubic-bezier(0.16,1,0.3,1),
-                transform 0.5s cubic-bezier(0.16,1,0.3,1);
+    transition: opacity 0.5s cubic-bezier(0.16,1,0.3,1), transform 0.5s cubic-bezier(0.16,1,0.3,1);
+    background: var(--bg-app, #0b0f19);
   }
   .wr-results-page.wr-mounted { opacity: 1; transform: translateY(0); }
 
-  /* ── RESULTS HEADER ────────────────────────────────────────────── */
-  .wr-results-header {
+  /* ── DYNAMIC MATTER HEADER ─────────────────────────────────────── */
+  .wr-matter-header {
+    background: #0f172a;
+    border-bottom: 1px solid #1e293b;
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
     flex-shrink: 0;
-    background: var(--bg-panel, #171c26);
-    border-bottom: 1px solid var(--border-subtle, #2C3241);
-    padding: 14px 28px;
+    position: relative;
+    z-index: 25;
+  }
+  .wr-matter-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .wr-matter-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .wr-matter-title {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: var(--font-serif, Georgia, serif);
+    color: #ffffff;
+    margin: 0;
+    letter-spacing: -0.015em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 540px;
+  }
+  .wr-matter-meta-pills {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .wr-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .wr-meta-pill.strategy {
+    background: rgba(37, 99, 235, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .wr-meta-pill.forum {
+    background: rgba(148, 163, 184, 0.1);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    color: #cbd5e1;
+  }
+  .wr-meta-pill.law {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fcd34d;
+    font-family: monospace;
+    font-size: 11px;
+  }
+  .wr-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .wr-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 9px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: all 0.15s ease;
+  }
+  .wr-header-btn.primary {
+    background: #2563eb;
+    color: #ffffff;
+    border: 1px solid #3b82f6;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .wr-header-btn.primary:hover {
+    background: #1d4ed8;
+  }
+  .wr-header-btn.secondary {
+    background: #1e293b;
+    color: #cbd5e1;
+    border: 1px solid #334155;
+  }
+  .wr-header-btn.secondary:hover {
+    background: #334155;
+    color: #ffffff;
+  }
+  .wr-header-btn.danger {
+    background: transparent;
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .wr-header-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #fca5a5;
+  }
+
+  /* ── STICKY STAGE NAVIGATOR ────────────────────────────────────── */
+  .wr-stage-navigator {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid #1e293b;
+    padding: 8px 28px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
   }
-  .wr-results-title {
-    font-size: 18px; font-weight: 700; color: white; margin: 0 0 2px;
-    font-family: var(--font-serif, Georgia, serif);
+  .wr-nav-track {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
-  .wr-results-subtitle { font-size: 12px; color: var(--text-muted, #8F9CAE); margin: 0; }
-  .wr-header-badges { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .wr-badge-strategy {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 4px 11px; border-radius: 20px; font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    background: rgba(59,130,246,0.1); color: #93C5FD;
-    border: 1px solid rgba(59,130,246,0.25);
+  .wr-nav-track::-webkit-scrollbar { display: none; }
+  .wr-nav-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
   }
-  .wr-badge-done {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 4px 11px; border-radius: 20px; font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    background: rgba(16,185,129,0.1); color: #10B981;
-    border: 1px solid rgba(16,185,129,0.25);
+  .wr-nav-item:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.04);
   }
-  .wr-badge-dot { width: 5px; height: 5px; border-radius: 50%; background: #10B981; box-shadow: 0 0 5px rgba(16,185,129,0.8); }
-  .wr-new-sim-btn {
-    padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
-    background: transparent; color: var(--text-muted, #8F9CAE);
-    border: 1px solid var(--border-subtle, #2C3241);
-    cursor: pointer; transition: all 0.15s; font-family: var(--font-sans);
+  .wr-nav-item.active {
+    color: #60a5fa;
+    background: rgba(37, 99, 235, 0.14);
+    border-color: rgba(59, 130, 246, 0.35);
   }
-  .wr-new-sim-btn:hover { border-color: rgba(59,130,246,0.35); color: white; }
+  .wr-nav-roman {
+    font-size: 10.5px;
+    font-weight: 800;
+    opacity: 0.85;
+  }
+  .wr-nav-progress {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #34d399;
+    flex-shrink: 0;
+  }
+  .wr-nav-progress.complete {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: #10b981;
+    color: #6ee7b7;
+  }
 
-  /* ── SCROLLABLE BODY ───────────────────────────────────────────── */
+  /* ── SCROLLABLE RESULTS BODY ───────────────────────────────────── */
   .wr-results-body {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 24px 28px 36px;
+    padding: 28px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-subtle) transparent;
-  }
-  .wr-results-body::-webkit-scrollbar { width: 5px; }
-  .wr-results-body::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 3px; }
-
-  /* ── ANIMATED SECTION WRAPPER ──────────────────────────────────── */
-  .wr-section {
-    opacity: 0;
-    transform: translateY(18px);
-    pointer-events: none;
-    transition: opacity 0.55s cubic-bezier(0.16,1,0.3,1),
-                transform 0.55s cubic-bezier(0.16,1,0.3,1);
-  }
-  .wr-section.wr-revealed {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
+    gap: 32px;
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
   }
 
-  /* ── SHARED SECTION CARD ───────────────────────────────────────── */
-  .wr-card {
-    background: var(--bg-panel, #171c26);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 12px;
-    overflow: hidden;
+  /* ── SECTION SHELL ─────────────────────────────────────────────── */
+  .wr-section-container {
+    scroll-margin-top: 64px;
   }
-  .wr-card-head {
-    display: flex; align-items: center; gap: 10px;
-    padding: 13px 20px;
-    border-bottom: 1px solid var(--border-subtle, #2C3241);
-    background: rgba(255,255,255,0.015);
+  .wr-section-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
   }
-  .wr-roman {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 26px; height: 26px; border-radius: 6px;
-    background: rgba(59,130,246,0.1);
-    border: 1px solid rgba(59,130,246,0.2);
-    font-size: 10px; font-weight: 800; color: #3B82F6; flex-shrink: 0;
-    letter-spacing: 0.3px;
+  .wr-section-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(37, 99, 235, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #60a5fa;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
   }
-  .wr-card-title {
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.9px; color: var(--text-muted, #8F9CAE); margin: 0;
+  .wr-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.01em;
+    margin: 0;
   }
-  .wr-card-body { padding: 20px; }
+  .wr-section-desc {
+    font-size: 12.5px;
+    color: #94a3b8;
+    margin-left: auto;
+  }
 
-  /* ── SECTION I — ISSUES ────────────────────────────────────────── */
-  .wr-issues-list { display: flex; flex-direction: column; gap: 10px; }
-  .wr-issue-row {
-    display: flex; align-items: flex-start; gap: 12px;
-    background: rgba(255,255,255,0.02);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 8px; padding: 12px 14px;
-  }
-  .wr-issue-num {
-    min-width: 22px; height: 22px; border-radius: 50%;
-    background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.2);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-weight: 800; color: #3B82F6;
-    flex-shrink: 0; margin-top: 1px;
-  }
-  .wr-issue-text { font-size: 13.5px; color: white; line-height: 1.6; }
-
-  /* ── SECTION II — CITATIONS ────────────────────────────────────── */
-  .wr-cit-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* ── STAGE I: EXTRACTED ISSUES ─────────────────────────────────── */
+  .wr-issues-grid {
+    display: flex;
+    flex-direction: column;
     gap: 12px;
   }
-  .wr-cit-card {
-    display: block; text-decoration: none;
-    background: rgba(59,130,246,0.03);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-left: 3px solid #3B82F6;
-    border-radius: 8px; padding: 14px 16px;
-    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  .wr-issue-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   }
-  .wr-cit-card:hover {
-    background: rgba(59,130,246,0.08);
-    box-shadow: 0 4px 20px rgba(59,130,246,0.14);
-    border-color: #3B82F6;
+  .wr-issue-idx {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: rgba(37, 99, 235, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
   }
-  .wr-cit-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .wr-kanoon-badge {
-    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-    padding: 2px 7px; border-radius: 10px;
-    background: rgba(245,158,11,0.12); color: #F59E0B;
-    border: 1px solid rgba(245,158,11,0.25);
-  }
-  .wr-cit-index { font-size: 10px; color: var(--text-muted, #8F9CAE); font-weight: 700; }
-  .wr-cit-title { font-size: 13px; font-weight: 600; color: #3B82F6; line-height: 1.4; margin-bottom: 6px; }
-  .wr-cit-snippet {
-    font-size: 11.5px; color: var(--text-muted, #8F9CAE); line-height: 1.55; margin-bottom: 10px;
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  .wr-cit-link { font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.2px; }
-  .wr-cit-link:hover { color: #3B82F6; }
-  .wr-no-cit {
-    font-size: 13px; color: var(--text-muted, #8F9CAE); font-style: italic; padding: 8px 0;
+  .wr-issue-content {
+    font-size: 14px;
+    color: #e2e8f0;
+    line-height: 1.6;
+    font-weight: 500;
   }
 
-  /* ── SECTION III — OPENING ARGUMENT ───────────────────────────── */
-  .wr-argument-doc {
-    background: rgba(255,255,255,0.015);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 8px; padding: 28px 32px;
+  /* ── STAGE II: LAW-REPORT PRECEDENT CARDS ───────────────────────── */
+  .wr-precedents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
   }
-  .wr-argument-text {
-    font-family: var(--font-serif, Georgia, 'Times New Roman', serif);
-    font-size: 15px; line-height: 1.9;
-    color: var(--text-primary, white);
-    white-space: pre-wrap;
+  .wr-precedent-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 14px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   }
-  [data-theme="light"] .wr-argument-text { color: #1a1a2e; }
+  .wr-precedent-card:hover {
+    border-color: rgba(245, 158, 11, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(245, 158, 11, 0.08);
+  }
+  .wr-precedent-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .wr-precedent-title {
+    font-size: 15px;
+    font-weight: 700;
+    font-family: var(--font-serif, Georgia, serif);
+    font-style: italic;
+    color: #f1f5f9;
+    line-height: 1.45;
+  }
+  .wr-precedent-auth-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    padding: 2px 8px;
+    border-radius: 5px;
+    width: fit-content;
+  }
+  .wr-precedent-ratio {
+    font-size: 12.5px;
+    color: #94a3b8;
+    line-height: 1.6;
+    background: rgba(2, 6, 23, 0.4);
+    border-left: 3px solid #f59e0b;
+    padding: 10px 12px;
+    border-radius: 0 8px 8px 0;
+    flex: 1;
+  }
+  .wr-precedent-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #60a5fa;
+    text-decoration: none;
+    margin-top: 4px;
+    width: fit-content;
+    transition: color 0.15s ease;
+  }
+  .wr-precedent-link:hover {
+    color: #93c5fd;
+    text-decoration: underline;
+  }
 
-  /* ── SECTION IV — RED TEAM ─────────────────────────────────────── */
-  .wr-threats-list { display: flex; flex-direction: column; gap: 12px; }
+  /* ── STAGE III: LEGAL FOLIO PLEADING WORKBENCH ───────────────────── */
+  .wr-folio-workbench {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .wr-folio-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 10px 18px;
+  }
+  .wr-folio-tools-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .wr-folio-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #93c5fd;
+    background: rgba(37, 99, 235, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    padding: 3px 8px;
+    border-radius: 6px;
+    text-transform: uppercase;
+  }
+  .wr-folio-tools-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .wr-folio-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: all 0.15s ease;
+    border: 1px solid #334155;
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+  .wr-folio-btn:hover {
+    background: #334155;
+    color: #ffffff;
+  }
+  .wr-folio-btn.copied {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: #10b981;
+    color: #34d399;
+  }
+  .wr-folio-sheet {
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    padding: 48px 56px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+    font-family: var(--font-serif, Georgia, serif);
+    color: #f1f5f9;
+    line-height: 1.85;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+  .wr-folio-h1 {
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #ffffff;
+    margin: 0 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px double #334155;
+  }
+  .wr-folio-h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 28px 0 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .wr-folio-h3 {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #93c5fd;
+    margin: 20px 0 8px;
+  }
+  .wr-folio-h4 {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #cbd5e1;
+    margin: 16px 0 6px;
+  }
+  .wr-folio-p {
+    margin: 0 0 16px;
+    text-align: justify;
+  }
+  .wr-folio-quote {
+    margin: 18px 0;
+    padding: 12px 20px;
+    background: rgba(2, 6, 23, 0.5);
+    border-left: 3px solid #3b82f6;
+    font-style: italic;
+    color: #cbd5e1;
+    border-radius: 0 8px 8px 0;
+  }
+  .wr-folio-num {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 8px 0;
+    text-align: justify;
+  }
+  .wr-folio-num-idx {
+    font-weight: 700;
+    color: #60a5fa;
+    min-width: 24px;
+    flex-shrink: 0;
+  }
+  .wr-folio-bullet {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 6px 0;
+    text-align: justify;
+  }
+  .wr-folio-bullet-dot {
+    color: #60a5fa;
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .wr-folio-hr {
+    border: none;
+    border-top: 1px solid #334155;
+    margin: 32px 0;
+  }
+  .wr-folio-bold {
+    font-weight: 700;
+    color: #ffffff;
+  }
+  .wr-folio-italic {
+    font-style: italic;
+    color: #e2e8f0;
+  }
+  .wr-folio-code {
+    font-family: monospace;
+    font-size: 13px;
+    background: rgba(2, 6, 23, 0.6);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #93c5fd;
+  }
+  .wr-inline-blank {
+    display: inline-block;
+    min-width: 90px;
+    padding: 2px 8px;
+    margin: 0 4px;
+    border: none;
+    border-bottom: 2px dashed #f59e0b;
+    background: rgba(245, 158, 11, 0.12);
+    color: #fef08a;
+    font-size: 13.5px;
+    font-family: var(--font-sans);
+    border-radius: 4px 4px 0 0;
+    outline: none;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+  }
+  .wr-inline-blank:focus {
+    border-bottom: 2px solid #3b82f6;
+    background: rgba(59, 130, 246, 0.2);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+  }
+  .wr-raw-editor {
+    width: 100%;
+    min-height: 480px;
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 24px;
+    color: #e2e8f0;
+    font-family: monospace;
+    font-size: 13.5px;
+    line-height: 1.7;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+  }
+
+  /* ── STAGE IV & V: MERGED SPLIT-PANE SIMULATION ROOM ────────────── */
+  .wr-sim-split-room {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    gap: 24px;
+    align-items: start;
+  }
+  .wr-opposition-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
   .wr-threat-card {
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-left: 3px solid rgba(239,68,68,0.75);
-    border-radius: 9px; overflow: hidden;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-left: 4px solid #ef4444;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.18s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   }
-  .wr-threat-card:hover { border-left-color: #EF4444; }
+  .wr-threat-card:hover {
+    border-color: #334155;
+    border-left-color: #f87171;
+  }
   .wr-threat-trigger {
-    display: flex; align-items: flex-start;
-    justify-content: space-between; gap: 12px;
-    padding: 14px 18px; cursor: pointer; user-select: none;
-    background: rgba(239,68,68,0.025);
-    transition: background 0.15s;
+    padding: 14px 16px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    background: rgba(239, 68, 68, 0.02);
   }
-  .wr-threat-trigger:hover { background: rgba(239,68,68,0.05); }
+  .wr-threat-header-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
   .wr-threat-tag {
-    font-size: 10px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 0.8px; color: rgba(239,68,68,0.9); margin-bottom: 5px;
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #f87171;
   }
-  .wr-threat-q { font-size: 14px; font-weight: 600; color: white; line-height: 1.5; }
+  .wr-threat-addressed-badge {
+    font-size: 10px;
+    font-weight: 700;
+    color: #34d399;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .wr-threat-q {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #f1f5f9;
+    line-height: 1.5;
+  }
   .wr-chevron {
-    color: var(--text-muted, #8F9CAE); flex-shrink: 0; margin-top: 3px;
-    transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+    color: #94a3b8;
+    flex-shrink: 0;
+    margin-top: 3px;
+    transition: transform 0.2s ease;
   }
   .wr-chevron.open { transform: rotate(180deg); }
   .wr-rebuttal-panel {
-    max-height: 0; overflow: hidden;
-    transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .wr-rebuttal-panel.open { max-height: 600px; }
+  .wr-rebuttal-panel.open {
+    max-height: 700px;
+  }
   .wr-rebuttal-inner {
-    padding: 0 18px 16px;
-    border-top: 1px solid var(--border-subtle, #2C3241);
+    padding: 12px 16px 16px;
+    border-top: 1px solid #1e293b;
+    background: rgba(16, 185, 129, 0.02);
   }
   .wr-rebuttal-label {
-    font-size: 10px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 0.8px; color: #10B981; margin: 14px 0 8px;
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #34d399;
+    margin-bottom: 6px;
   }
   .wr-rebuttal-body {
-    font-size: 13px; color: #D1D5DB; line-height: 1.65;
-    background: rgba(16,185,129,0.04);
-    border-left: 2px solid #10B981;
-    padding: 10px 14px; border-radius: 0 6px 6px 0;
+    font-size: 13px;
+    color: #e2e8f0;
+    line-height: 1.6;
+    background: rgba(16, 185, 129, 0.06);
+    border-left: 2px solid #10b981;
+    padding: 10px 12px;
+    border-radius: 0 6px 6px 0;
   }
-  .wr-use-rebuttal-btn {
-    margin-top: 12px; display: inline-flex; align-items: center; gap: 7px;
-    padding: 8px 16px; border-radius: 8px; cursor: pointer;
-    font-size: 12px; font-weight: 700; font-family: var(--font-sans);
-    letter-spacing: 0.3px;
-    border: 1px solid rgba(16,185,129,0.4);
-    background: rgba(16,185,129,0.08); color: #6EE7B7;
-    transition: all 0.18s ease;
+  .wr-use-rebuttal-action-btn {
+    margin-top: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: var(--font-sans);
+    border: none;
+    background: #059669;
+    color: #ffffff;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   }
-  .wr-use-rebuttal-btn:hover {
-    background: rgba(16,185,129,0.18);
-    border-color: #10B981;
+  .wr-use-rebuttal-action-btn:hover {
+    background: #10b981;
     transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(16,185,129,0.15);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
   }
-  .wr-use-rebuttal-btn:active { transform: translateY(0); }
 
-  /* ── SECTION V — CHAT ──────────────────────────────────────────── */
-  .wr-chat-outer { border: 1px solid var(--border-subtle, #2C3241); border-radius: 12px; overflow: hidden; }
-  .wr-tone-bar {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 12px 16px;
-    background: rgba(255,255,255,0.015);
-    border-bottom: 1px solid var(--border-subtle, #2C3241);
+  /* ── STAGE V: CHAT WORKSTATION ──────────────────────────────────── */
+  .wr-chat-pane {
+    position: sticky;
+    top: 64px;
+    display: flex;
+    flex-direction: column;
   }
-  .wr-tone-label {
-    font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.6px; color: var(--text-muted, #8F9CAE); flex-shrink: 0;
+  .wr-chat-outer {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .wr-tone-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 16px;
+    background: #020617;
+    border-bottom: 1px solid #1e293b;
+    flex-wrap: wrap;
+  }
+  .wr-tone-toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .wr-tone-btn {
-    padding: 5px 14px; border-radius: 20px; font-size: 11.5px; font-weight: 600;
-    cursor: pointer; transition: all 0.15s;
-    border: 1px solid var(--border-subtle, #2C3241);
-    background: transparent; color: var(--text-muted, #8F9CAE);
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid #334155;
+    background: transparent;
+    color: #94a3b8;
     font-family: var(--font-sans);
   }
-  .wr-tone-btn:hover { color: white; }
+  .wr-tone-btn:hover { color: #ffffff; }
   .wr-tone-btn.tone-agg {
-    background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: #FCA5A5;
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
   }
   .wr-tone-btn.tone-def {
-    background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); color: #6EE7B7;
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #6ee7b7;
+  }
+  .wr-persona-status {
+    font-size: 11px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .wr-persona-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #3b82f6;
+    box-shadow: 0 0 6px #3b82f6;
   }
   .wr-chat-messages {
-    min-height: 320px; max-height: 540px; overflow-y: auto;
-    padding: 18px 16px; display: flex; flex-direction: column; gap: 12px;
-    background: rgba(255,255,255,0.01);
-    scrollbar-width: thin; scrollbar-color: var(--border-subtle) transparent;
+    height: 400px;
+    overflow-y: auto;
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: rgba(2, 6, 23, 0.3);
+    scrollbar-width: thin;
+    scrollbar-color: #334155 transparent;
   }
-  .wr-chat-messages::-webkit-scrollbar { width: 4px; }
-  .wr-chat-messages::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
+  .wr-chat-messages::-webkit-scrollbar { width: 5px; }
+  .wr-chat-messages::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
   .wr-bubble {
-    max-width: 86%; padding: 13px 17px; border-radius: 14px;
-    font-size: 14.5px; line-height: 1.72; letter-spacing: 0.01em;
+    max-width: 88%;
+    padding: 13px 17px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.65;
   }
   .wr-bubble.user {
-    align-self: flex-end; background: #2563EB; color: #EFF6FF;
+    align-self: flex-end;
+    background: #2563eb;
+    color: #ffffff;
     border-bottom-right-radius: 4px;
-    box-shadow: 0 2px 12px rgba(37,99,235,0.25);
+    box-shadow: 0 2px 12px rgba(37, 99, 235, 0.25);
   }
   .wr-bubble.bot {
     align-self: flex-start;
-    background: rgba(255,255,255,0.045);
-    border: 1px solid rgba(255,255,255,0.09);
-    color: #CBD5E1; border-bottom-left-radius: 4px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    border-bottom-left-radius: 4px;
   }
   .wr-bubble.typing {
     align-self: flex-start;
-    background: rgba(255,255,255,0.035);
-    border: 1px solid rgba(255,255,255,0.07);
-    color: var(--text-muted, #8F9CAE);
-    border-bottom-left-radius: 4px; font-style: italic;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    border-bottom-left-radius: 4px;
+    font-style: italic;
     animation: wr-blink 1.1s ease-in-out infinite;
   }
   @keyframes wr-blink {
     0%,100% { opacity: 1; } 50% { opacity: 0.45; }
   }
-
-  /* ── Quick-Reply Rebuttal Pills ────────────────────────────────────── */
   .wr-quick-replies {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    align-self: flex-start; max-width: 90%;
-    padding: 2px 0 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-self: flex-start;
+    max-width: 95%;
   }
   .wr-qr-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 15px; border-radius: 22px;
-    font-size: 12.5px; font-weight: 600; font-family: var(--font-sans);
-    letter-spacing: 0.02em; cursor: pointer; text-align: left;
-    border: 1px solid rgba(59,130,246,0.28);
-    background: rgba(59,130,246,0.07); color: #93C5FD;
-    transition: all 0.17s cubic-bezier(0.4,0,0.2,1);
-    line-height: 1.45;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 13px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    background: rgba(59, 130, 246, 0.08);
+    color: #93c5fd;
+    transition: all 0.15s ease;
+    line-height: 1.4;
   }
   .wr-qr-pill:hover:not(:disabled) {
-    background: rgba(59,130,246,0.16);
-    border-color: rgba(59,130,246,0.55);
-    color: #BFDBFE;
+    background: rgba(59, 130, 246, 0.18);
+    border-color: #3b82f6;
+    color: #bfdbfe;
     transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(59,130,246,0.18);
   }
-  .wr-qr-pill:active:not(:disabled) { transform: translateY(0); }
-  .wr-qr-pill:disabled { opacity: 0.35; cursor: not-allowed; }
-  .wr-qr-arrow { font-size: 10px; opacity: 0.7; }
   .wr-chat-input-row {
-    display: flex; border-top: 1px solid var(--border-subtle, #2C3241);
-    background: rgba(255,255,255,0.02);
+    display: flex;
+    border-top: 1px solid #1e293b;
+    background: #0f172a;
   }
   .wr-chat-input {
-    flex: 1; background: transparent; border: none; outline: none;
-    color: white; font-size: 13.5px; font-family: var(--font-sans);
-    padding: 13px 16px;
-  }
-  .wr-chat-input::placeholder { color: var(--text-muted, #8F9CAE); }
-  .wr-send-btn {
-    background: #3B82F6; border: none; padding: 0 20px;
-    cursor: pointer; color: white; font-size: 13px; font-weight: 600;
-    font-family: var(--font-sans); transition: background 0.15s;
-    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
-  }
-  .wr-send-btn:hover:not(:disabled) { background: #2563EB; }
-  .wr-send-btn:disabled { background: rgba(59,130,246,0.3); cursor: not-allowed; }
-  .wr-save-bar {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; flex-wrap: wrap;
-    padding: 14px 20px;
-    border-top: 1px solid var(--border-subtle, #2C3241);
-    background: rgba(255,255,255,0.015);
-  }
-  .wr-save-hint { font-size: 12px; color: var(--text-muted, #8F9CAE); line-height: 1.5; }
-  .wr-save-btn {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 9px 18px; border-radius: 8px;
-    font-size: 12.5px; font-weight: 700; cursor: pointer;
-    transition: all 0.18s; flex-shrink: 0;
-    border: 1px solid rgba(16,185,129,0.3);
-    background: rgba(16,185,129,0.08); color: #6EE7B7;
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #ffffff;
+    font-size: 13.5px;
     font-family: var(--font-sans);
+    padding: 14px 16px;
   }
-  .wr-save-btn:hover:not(:disabled) { background: rgba(16,185,129,0.15); box-shadow: 0 4px 16px rgba(16,185,129,0.15); }
-  .wr-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .wr-save-btn.saved { background: rgba(16,185,129,0.18); border-color: #10B981; color: #10B981; }
-
-  /* ── EMPTY STATE ───────────────────────────────────────────────── */
-  .wr-fallback {
-    display: flex; align-items: center; justify-content: center;
-    height: calc(100vh - 64px);
+  .wr-chat-input::placeholder { color: #64748b; }
+  .wr-send-btn {
+    background: #2563eb;
+    border: none;
+    padding: 0 20px;
+    cursor: pointer;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    transition: background 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
-  .wr-fallback-card {
-    background: var(--bg-panel, #171c26); border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 12px; padding: 44px 48px; text-align: center;
-    max-width: 520px; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  .wr-send-btn:hover:not(:disabled) { background: #1d4ed8; }
+  .wr-send-btn:disabled { background: rgba(37, 99, 235, 0.35); cursor: not-allowed; }
+  .wr-save-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 18px;
+    border-top: 1px solid #1e293b;
+    background: #020617;
   }
-  .wr-fallback-icon { font-size: 44px; margin-bottom: 18px; display: block; }
-  .wr-fallback-h { font-size: 20px; font-weight: 700; color: white; margin: 0 0 12px; }
-  .wr-fallback-p { font-size: 13.5px; color: var(--text-muted, #8F9CAE); line-height: 1.65; margin: 0 0 24px; }
-  .wr-setup-card {
-    background: var(--bg-panel, #171c26); border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 14px; padding: 40px 44px; max-width: 620px; width: 100%;
-    box-shadow: 0 16px 48px rgba(0,0,0,0.35);
+  .wr-save-hint {
+    font-size: 12px;
+    color: #94a3b8;
   }
-  .wr-step-row {
-    display: flex; gap: 16px; align-items: flex-start; padding: 14px 0;
-    border-bottom: 1px solid var(--border-subtle, #2C3241);
+  .wr-save-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 15px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: rgba(16, 185, 129, 0.1);
+    color: #34d399;
+    font-family: var(--font-sans);
+    transition: all 0.15s ease;
   }
-  .wr-step-row:last-child { border-bottom: none; }
-  .wr-step-num {
-    font-size: 11px; font-weight: 800; color: #3B82F6;
-    background: rgba(59,130,246,0.1); border-radius: 6px; padding: 4px 7px;
-    flex-shrink: 0; font-family: var(--font-sans); letter-spacing: 0.5px;
+  .wr-save-btn:hover:not(:disabled) {
+    background: rgba(16, 185, 129, 0.2);
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
   }
-  .wr-cmd-chip {
-    display: inline-block; background: rgba(59,130,246,0.08);
-    border: 1px solid rgba(59,130,246,0.2); border-radius: 5px;
-    padding: 3px 9px; font-size: 12px; font-family: monospace;
-    color: #3B82F6; margin-top: 6px;
-  }
-
-  /* ── MANUAL UPLOAD DROPZONE ────────────────────────────────────── */
-  .wr-or-divider {
-    display: flex; align-items: center; gap: 12px; margin: 18px 0 14px;
-    color: rgba(139,148,162,0.55); font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.6px;
-  }
-  .wr-or-divider::before, .wr-or-divider::after {
-    content: ''; flex: 1; height: 1px; background: rgba(44,50,65,0.8);
-  }
-  .wr-dropzone {
-    border: 2px dashed rgba(59,130,246,0.28); border-radius: 12px;
-    padding: 26px 20px; text-align: center; cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
-    background: rgba(59,130,246,0.02);
-  }
-  .wr-dropzone:hover { border-color: rgba(59,130,246,0.55); background: rgba(59,130,246,0.06); }
-  .wr-dropzone.drag-over {
-    border-color: #3B82F6; background: rgba(59,130,246,0.1);
-    transform: scale(1.015);
-    box-shadow: 0 0 0 4px rgba(59,130,246,0.08);
-  }
-  .wr-dropzone-uploading { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.05); cursor: default; }
-  .wr-dropzone-icon { font-size: 26px; margin-bottom: 8px; display: block; }
-  .wr-dropzone-title { font-size: 13px; font-weight: 600; color: white; margin-bottom: 4px; }
-  .wr-dropzone-hint  { font-size: 11.5px; color: rgba(139,148,162,0.65); }
-  .wr-upload-error {
-    background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.2);
-    border-radius: 8px; padding: 9px 14px; font-size: 12px;
-    color: #FCA5A5; margin-top: 10px; text-align: center;
-  }
-  .wr-upload-spinner {
-    width: 22px; height: 22px;
-    border: 2px solid rgba(59,130,246,0.2); border-top-color: #3B82F6;
-    border-radius: 50%; animation: spin 0.75s linear infinite;
-    margin: 0 auto 10px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
-  @media (max-width: 768px) {
-    /* 1. WORKSPACE SPLIT-PANE & GRID STACKING */
-    .wr-results-page, .wr-results-body {
-      display: flex !important;
-      flex-direction: column !important;
-      width: 100% !important;
-      height: auto !important;
-      min-height: 0 !important;
-    }
-    .wr-results-body {
-      padding: 12px 14px 96px 14px !important;
-    }
-    
-    /* 2. HEADER FLOW & STRATEGY BADGES SCROLL */
-    .wr-results-header {
-      position: relative !important;
-      top: auto !important;
-      width: 100% !important;
-      margin-bottom: 14px !important;
-      z-index: 10 !important;
-      flex-direction: column !important;
-      align-items: flex-start !important;
-      padding: 12px 14px !important;
-      box-sizing: border-box !important;
-      height: auto !important;
-    }
-    .wr-header-badges {
-      display: flex !important;
-      flex-wrap: nowrap !important;
-      overflow-x: auto !important;
-      overflow-y: hidden !important;
-      -webkit-overflow-scrolling: touch !important;
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
-      gap: 6px !important;
-      width: 100% !important;
-      padding: 2px 0 6px 0 !important;
-      box-sizing: border-box !important;
-    }
-    .wr-header-badges::-webkit-scrollbar { display: none !important; }
-    .wr-header-badges > * { flex-shrink: 0 !important; }
-
-    /* 3. FULL-WIDTH ARGUMENT & CITATION CARDS */
-    .wr-cit-grid {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 12px !important;
-    }
-    .wr-issue-row, .wr-cit-card, .wr-threat-card, .wr-chat-msg, .wr-pipeline-card, .wr-setup-card {
-      margin: 8px 0 !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      box-sizing: border-box !important;
-    }
-    .wr-card-body, .wr-cit-card, .wr-threat-card {
-      padding: 12px 14px !important;
-    }
-    .wr-cit-title, .wr-cit-snippet, .wr-issue-text, .wr-chat-msg {
-      font-size: 14px !important;
-      line-height: 1.55 !important;
-      overflow-wrap: break-word !important;
-      word-break: break-word !important;
-      white-space: normal !important;
-    }
-
-    /* 4. REBUTTAL ACCORDIONS & TOUCH-FRIENDLY SUGGESTION CHIPS */
-    .wr-quick-replies button, .wr-qr-pill {
-      display: block !important;
-      width: 100% !important;
-      text-align: left !important;
-      padding: 12px 14px !important;
-      margin-bottom: 8px !important;
-      border-radius: 8px !important;
-      font-size: 13px !important;
-      line-height: 1.4 !important;
-      box-sizing: border-box !important;
-      min-height: 44px !important;
-    }
-    .wr-qr-arrow {
-      display: none !important;
-    }
-    .wr-use-rebuttal-btn, .wr-chat-form input, .wr-chat-form button, .wr-chat-submit {
-      min-height: 44px !important;
-    }
-
-    /* 5. EMPTY STATE TOUCH REFACTOR */
-    .desktop-only-shortcut, .wr-shortcut-pill, .wr-kbd {
-      display: none !important;
-    }
+  .wr-save-btn.saved {
+    background: rgba(16, 185, 129, 0.25);
+    border-color: #10b981;
+    color: #10b981;
   }
 
   /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
-  :root[data-theme="light"] .wr-pipeline-card,
-  :root[data-theme="light"] .wr-setup-card,
-  :root[data-theme="light"] .wr-fallback-card {
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    box-shadow: 0 16px 48px rgba(0,0,0,0.06) !important;
+  :root[data-theme="light"] .wr-results-page {
+    background: #f8fafc !important;
   }
-  :root[data-theme="light"] .wr-pipeline-h,
-  :root[data-theme="light"] .wr-fallback-h {
-    color: #0F172A !important;
+  :root[data-theme="light"] .wr-matter-header {
+    background: #ffffff !important;
+    border-bottom: 1px solid #e2e8f0 !important;
   }
-  :root[data-theme="light"] .wr-pipeline-sub,
-  :root[data-theme="light"] .wr-fallback-p {
+  :root[data-theme="light"] .wr-matter-title {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-meta-pill.strategy {
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
+    color: #1d4ed8 !important;
+  }
+  :root[data-theme="light"] .wr-meta-pill.forum {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
     color: #475569 !important;
   }
-  :root[data-theme="light"] .wr-stage-row.active-row {
-    background: #EFF6FF !important;
+  :root[data-theme="light"] .wr-meta-pill.law {
+    background: #fffbeb !important;
+    border-color: #fde68a !important;
+    color: #b45309 !important;
   }
-  :root[data-theme="light"] .wr-stage-text.active {
-    color: #0F172A !important;
-    font-weight: 700 !important;
-  }
-  :root[data-theme="light"] .wr-stage-text.pending {
-    color: #64748B !important;
-  }
-  :root[data-theme="light"] .wr-stage-dot.pending {
-    background: #CBD5E1 !important;
-  }
-  :root[data-theme="light"] .wr-dropzone {
-    background: #F8FAFC !important;
-    border-color: #93C5FD !important;
-  }
-  :root[data-theme="light"] .wr-dropzone:hover {
-    background: #EFF6FF !important;
-    border-color: #3B82F6 !important;
-  }
-  :root[data-theme="light"] .wr-dropzone.drag-over {
-    background: #DBEAFE !important;
-    border-color: #2563EB !important;
-  }
-  :root[data-theme="light"] .wr-dropzone-title {
-    color: #0F172A !important;
-    font-weight: 700 !important;
-  }
-  :root[data-theme="light"] .wr-dropzone-hint {
-    color: #475569 !important;
-  }
-  :root[data-theme="light"] .wr-or-divider {
-    color: #64748B !important;
-  }
-  :root[data-theme="light"] .wr-or-divider::before,
-  :root[data-theme="light"] .wr-or-divider::after {
-    background: #E2E8F0 !important;
-  }
-  :root[data-theme="light"] .wr-step-row {
-    border-bottom-color: #E2E8F0 !important;
-  }
-  :root[data-theme="light"] .wr-step-num {
-    background: rgba(37,99,235,0.1) !important;
-    color: #1D4ED8 !important;
-    border: 1px solid rgba(37,99,235,0.25) !important;
-    font-weight: 800 !important;
-  }
-  :root[data-theme="light"] .wr-cmd-chip {
-    background: #EFF6FF !important;
-    border: 1px solid #BFDBFE !important;
-    color: #1D4ED8 !important;
-    font-weight: 600 !important;
-  }
-  :root[data-theme="light"] .wr-results-header {
-    background: #FFFFFF !important;
-    border-bottom: 1px solid #CBD5E1 !important;
-  }
-  :root[data-theme="light"] .wr-results-title {
-    color: #0F172A !important;
-  }
-  :root[data-theme="light"] .wr-results-subtitle {
-    color: #475569 !important;
-  }
-  :root[data-theme="light"] .wr-new-sim-btn {
-    background: #F8FAFC !important;
-    border-color: #CBD5E1 !important;
+  :root[data-theme="light"] .wr-header-btn.secondary {
+    background: #ffffff !important;
     color: #334155 !important;
+    border-color: #cbd5e1 !important;
   }
-  :root[data-theme="light"] .wr-new-sim-btn:hover {
-    background: #EFF6FF !important;
-    border-color: #3B82F6 !important;
-    color: #1D4ED8 !important;
+  :root[data-theme="light"] .wr-header-btn.secondary:hover {
+    background: #f1f5f9 !important;
   }
-  :root[data-theme="light"] .wr-card {
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.04) !important;
+  :root[data-theme="light"] .wr-stage-navigator {
+    background: rgba(255, 255, 255, 0.92) !important;
+    border-bottom: 1px solid #e2e8f0 !important;
   }
-  :root[data-theme="light"] .wr-card-head {
-    background: #F8FAFC !important;
-    border-bottom: 1px solid #E2E8F0 !important;
+  :root[data-theme="light"] .wr-nav-item {
+    color: #64748b !important;
   }
-  :root[data-theme="light"] .wr-card-title {
-    color: #0F172A !important;
-    font-weight: 800 !important;
+  :root[data-theme="light"] .wr-nav-item:hover {
+    color: #0f172a !important;
+    background: #f1f5f9 !important;
   }
-  :root[data-theme="light"] .wr-roman {
-    background: rgba(37,99,235,0.1) !important;
-    color: #1D4ED8 !important;
-    border-color: rgba(37,99,235,0.25) !important;
+  :root[data-theme="light"] .wr-nav-item.active {
+    color: #1d4ed8 !important;
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
   }
-  :root[data-theme="light"] .wr-issue-row {
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
-  }
-  :root[data-theme="light"] .wr-issue-num {
-    background: rgba(37,99,235,0.1) !important;
-    color: #1D4ED8 !important;
-    border-color: rgba(37,99,235,0.25) !important;
-  }
-  :root[data-theme="light"] .wr-issue-text {
-    color: #1E293B !important;
-    font-weight: 500 !important;
-  }
-  :root[data-theme="light"] .wr-cit-card {
-    background: #F8FAFC !important;
-    border: 1px solid #CBD5E1 !important;
-    border-left: 3px solid #2563EB !important;
-  }
-  :root[data-theme="light"] .wr-cit-card:hover {
-    background: #EFF6FF !important;
-    border-color: #2563EB !important;
-    box-shadow: 0 4px 16px rgba(37,99,235,0.1) !important;
-  }
-  :root[data-theme="light"] .wr-cit-title {
-    color: #1D4ED8 !important;
-    font-weight: 700 !important;
-  }
-  :root[data-theme="light"] .wr-cit-snippet {
-    color: #334155 !important;
-  }
-  :root[data-theme="light"] .wr-cit-index {
-    color: #64748B !important;
-  }
-  :root[data-theme="light"] .wr-argument-doc {
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-  }
-  :root[data-theme="light"] .wr-argument-text {
-    color: #0F172A !important;
-  }
-  :root[data-theme="light"] .wr-threat-card {
-    border: 1px solid #CBD5E1 !important;
-    border-left: 3px solid #EF4444 !important;
-    background: #FFFFFF !important;
-  }
-  :root[data-theme="light"] .wr-threat-trigger {
-    background: #FFF5F5 !important;
-  }
-  :root[data-theme="light"] .wr-threat-trigger:hover {
-    background: #FEE2E2 !important;
-  }
-  :root[data-theme="light"] .wr-threat-q {
-    color: #0F172A !important;
-  }
-  :root[data-theme="light"] .wr-threat-tag {
-    color: #DC2626 !important;
-    font-weight: 800 !important;
-  }
-  :root[data-theme="light"] .wr-rebuttal-inner {
-    background: #FFFFFF !important;
-    border-top: 1px solid #E2E8F0 !important;
-  }
-  :root[data-theme="light"] .wr-rebuttal-body {
-    background: #F0FDF4 !important;
-    border-left: 3px solid #10B981 !important;
-    color: #065F46 !important;
-    font-weight: 500 !important;
-  }
-  :root[data-theme="light"] .wr-use-rebuttal-btn {
-    background: #ECFDF5 !important;
-    border-color: #86EFAC !important;
+  :root[data-theme="light"] .wr-nav-progress {
+    background: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
     color: #059669 !important;
   }
-  :root[data-theme="light"] .wr-use-rebuttal-btn:hover {
-    background: #D1FAE5 !important;
-    color: #047857 !important;
+  :root[data-theme="light"] .wr-section-title {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-section-badge {
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
+    color: #1d4ed8 !important;
+  }
+  :root[data-theme="light"] .wr-section-desc {
+    color: #64748b !important;
+  }
+  :root[data-theme="light"] .wr-issue-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+  }
+  :root[data-theme="light"] .wr-issue-idx {
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
+    color: #1d4ed8 !important;
+  }
+  :root[data-theme="light"] .wr-issue-content {
+    color: #1e293b !important;
+  }
+  :root[data-theme="light"] .wr-precedent-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
+  }
+  :root[data-theme="light"] .wr-precedent-title {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-precedent-auth-tag {
+    background: #fffbeb !important;
+    border-color: #fde68a !important;
+    color: #b45309 !important;
+  }
+  :root[data-theme="light"] .wr-precedent-ratio {
+    background: #f8fafc !important;
+    border-left: 3px solid #d97706 !important;
+    color: #334155 !important;
+  }
+  :root[data-theme="light"] .wr-precedent-link {
+    color: #2563eb !important;
+  }
+  :root[data-theme="light"] .wr-folio-toolbar {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+  }
+  :root[data-theme="light"] .wr-folio-badge {
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
+    color: #1d4ed8 !important;
+  }
+  :root[data-theme="light"] .wr-folio-btn {
+    background: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #334155 !important;
+  }
+  :root[data-theme="light"] .wr-folio-btn:hover {
+    background: #f1f5f9 !important;
+  }
+  :root[data-theme="light"] .wr-folio-sheet {
+    background: #fcfbf8 !important;
+    border: 1px solid #d6d3d1 !important;
+    color: #1c1917 !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06) !important;
+  }
+  :root[data-theme="light"] .wr-folio-h1 {
+    color: #0f172a !important;
+    border-bottom: 2px double #cbd5e1 !important;
+  }
+  :root[data-theme="light"] .wr-folio-h2 {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-folio-h3 {
+    color: #1d4ed8 !important;
+  }
+  :root[data-theme="light"] .wr-folio-h4 {
+    color: #334155 !important;
+  }
+  :root[data-theme="light"] .wr-folio-quote {
+    background: #f1f5f9 !important;
+    border-left: 3px solid #2563eb !important;
+    color: #334155 !important;
+  }
+  :root[data-theme="light"] .wr-folio-bold {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-folio-italic {
+    color: #334155 !important;
+  }
+  :root[data-theme="light"] .wr-folio-code {
+    background: #f1f5f9 !important;
+    color: #1d4ed8 !important;
+  }
+  :root[data-theme="light"] .wr-inline-blank {
+    background: rgba(245, 158, 11, 0.15) !important;
+    border-bottom: 2px dashed #d97706 !important;
+    color: #78350f !important;
+  }
+  :root[data-theme="light"] .wr-inline-blank:focus {
+    background: #eff6ff !important;
+    border-bottom: 2px solid #2563eb !important;
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-raw-editor {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-threat-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-left: 4px solid #dc2626 !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+  }
+  :root[data-theme="light"] .wr-threat-trigger {
+    background: #fff5f5 !important;
+  }
+  :root[data-theme="light"] .wr-threat-tag {
+    color: #b91c1c !important;
+  }
+  :root[data-theme="light"] .wr-threat-q {
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-rebuttal-inner {
+    border-top: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+  }
+  :root[data-theme="light"] .wr-rebuttal-label {
+    color: #059669 !important;
+  }
+  :root[data-theme="light"] .wr-rebuttal-body {
+    background: #f0fdf4 !important;
+    border-left: 2px solid #10b981 !important;
+    color: #065f46 !important;
   }
   :root[data-theme="light"] .wr-chat-outer {
-    border: 1px solid #CBD5E1 !important;
-    background: #FFFFFF !important;
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
   }
   :root[data-theme="light"] .wr-tone-bar {
-    background: #F8FAFC !important;
-    border-bottom: 1px solid #E2E8F0 !important;
-  }
-  :root[data-theme="light"] .wr-tone-label {
-    color: #475569 !important;
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e2e8f0 !important;
   }
   :root[data-theme="light"] .wr-tone-btn {
-    color: #475569 !important;
-    border-color: #CBD5E1 !important;
+    border-color: #cbd5e1 !important;
+    color: #64748b !important;
   }
   :root[data-theme="light"] .wr-tone-btn:hover {
-    color: #0F172A !important;
-    border-color: #94A3B8 !important;
+    color: #0f172a !important;
+  }
+  :root[data-theme="light"] .wr-tone-btn.tone-agg {
+    background: #fee2e2 !important;
+    border-color: #fca5a5 !important;
+    color: #b91c1c !important;
+  }
+  :root[data-theme="light"] .wr-tone-btn.tone-def {
+    background: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+    color: #047857 !important;
   }
   :root[data-theme="light"] .wr-chat-messages {
-    background: #F8FAFC !important;
+    background: #f8fafc !important;
   }
   :root[data-theme="light"] .wr-bubble.bot {
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    color: #1E293B !important;
-  }
-  :root[data-theme="light"] .wr-bubble.user {
-    background: #2563EB !important;
-    color: #FFFFFF !important;
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #1e293b !important;
   }
   :root[data-theme="light"] .wr-bubble.typing {
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    color: #64748B !important;
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #64748b !important;
   }
   :root[data-theme="light"] .wr-qr-pill {
-    background: #EFF6FF !important;
-    border-color: #93C5FD !important;
-    color: #1D4ED8 !important;
-    font-weight: 600 !important;
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
+    color: #1d4ed8 !important;
   }
   :root[data-theme="light"] .wr-qr-pill:hover:not(:disabled) {
-    background: #DBEAFE !important;
-    border-color: #3B82F6 !important;
-    color: #1D4ED8 !important;
+    background: #dbeafe !important;
+    border-color: #3b82f6 !important;
+    color: #1d4ed8 !important;
   }
   :root[data-theme="light"] .wr-chat-input-row {
-    background: #FFFFFF !important;
-    border-top: 1px solid #E2E8F0 !important;
+    background: #ffffff !important;
+    border-top: 1px solid #e2e8f0 !important;
   }
   :root[data-theme="light"] .wr-chat-input {
-    color: #0F172A !important;
+    color: #0f172a !important;
   }
   :root[data-theme="light"] .wr-chat-input::placeholder {
-    color: #94A3B8 !important;
+    color: #94a3b8 !important;
   }
   :root[data-theme="light"] .wr-save-bar {
-    background: #F8FAFC !important;
-    border-top: 1px solid #E2E8F0 !important;
+    background: #f8fafc !important;
+    border-top: 1px solid #e2e8f0 !important;
   }
   :root[data-theme="light"] .wr-save-hint {
-    color: #475569 !important;
+    color: #64748b !important;
+  }
+  :root[data-theme="light"] .wr-save-btn {
+    background: #ecfdf5 !important;
+    border-color: #a7f3d0 !important;
+    color: #059669 !important;
+  }
+  :root[data-theme="light"] .wr-save-btn:hover:not(:disabled) {
+    background: #d1fae5 !important;
   }
 
-  /* ── LIGHT THEME COMPLETE INTAKE OVERRIDES ── */
+  /* ── LIGHT THEME INTAKE OVERRIDES ── */
   :root[data-theme="light"] .wr-intake-card {
     background: #ffffff !important;
     border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
   }
   :root[data-theme="light"] .wr-intake-badge {
     background: #eff6ff !important;
@@ -1141,11 +1754,15 @@ ${MARKDOWN_CSS}
   }
   :root[data-theme="light"] .wr-intake-dropzone {
     border-color: #cbd5e1 !important;
-    background: rgba(248, 250, 252, 0.7) !important;
+    background: rgba(248, 250, 252, 0.8) !important;
   }
   :root[data-theme="light"] .wr-intake-dropzone:hover {
     border-color: #3b82f6 !important;
-    background: rgba(239, 246, 255, 0.3) !important;
+    background: rgba(239, 246, 255, 0.4) !important;
+  }
+  :root[data-theme="light"] .wr-intake-dropzone.drag-over {
+    border-color: #2563eb !important;
+    background: #dbeafe !important;
   }
   :root[data-theme="light"] .wr-intake-dropzone-primary {
     color: #1e293b !important;
@@ -1180,9 +1797,6 @@ ${MARKDOWN_CSS}
     background: #2563eb !important;
     color: #ffffff !important;
   }
-  :root[data-theme="light"] .wr-intake-btn-primary:hover {
-    background: #3b82f6 !important;
-  }
   :root[data-theme="light"] .wr-intake-btn-secondary {
     background: #ffffff !important;
     color: #334155 !important;
@@ -1191,36 +1805,289 @@ ${MARKDOWN_CSS}
   :root[data-theme="light"] .wr-intake-btn-secondary:hover {
     background: #f8fafc !important;
   }
+
+  /* ── RESPONSIVE RULES ──────────────────────────────────────────── */
+  @media (max-width: 1024px) {
+    .wr-sim-split-room {
+      grid-template-columns: 1fr;
+    }
+    .wr-chat-pane {
+      position: static;
+    }
+    .wr-folio-sheet {
+      padding: 32px 24px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .wr-matter-header {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 14px 16px;
+    }
+    .wr-matter-title {
+      max-width: 100%;
+      font-size: 17px;
+    }
+    .wr-header-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    .wr-results-body {
+      padding: 14px 12px;
+    }
+    .wr-precedents-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ── PRINT MEDIA OPTIMIZATIONS ─────────────────────────────────── */
+  @media print {
+    .sidebar,
+    .topbar,
+    .wr-stage-navigator,
+    .wr-chat-pane,
+    .wr-folio-toolbar,
+    .wr-header-actions,
+    .wr-intake-wrap,
+    .wr-pipeline-wrap,
+    .wr-opposition-pane,
+    .wr-save-bar,
+    button {
+      display: none !important;
+    }
+    .app-container,
+    .workspace-container,
+    .main-content,
+    .wr-results-page,
+    .wr-results-body {
+      height: auto !important;
+      overflow: visible !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: #ffffff !important;
+      color: #000000 !important;
+    }
+    .wr-folio-sheet {
+      box-shadow: none !important;
+      border: none !important;
+      padding: 0 !important;
+      max-width: 100% !important;
+      color: #000000 !important;
+      background: #ffffff !important;
+    }
+    .wr-inline-blank {
+      border-bottom: 1px solid #000000 !important;
+      background: transparent !important;
+      color: #000000 !important;
+    }
+  }
 `;
 
-// ── Sub-component: ThreatCard ────────────────────────────────────────────────
+// ── Sub-component: Inline Blank Input ───────────────────────────────────────
 
-function ThreatCard({ threat, index, expanded, onToggle, onUseRebuttal }) {
+function InlineBlankInput({ blank, value, onChange }) {
+  const displayVal = value || '';
+  const widthChars = Math.max(8, (displayVal || blank.label).length + 3);
+  const widthPx = Math.min(260, Math.max(90, widthChars * 8.5));
+
+  return (
+    <input
+      type="text"
+      className="wr-inline-blank"
+      placeholder={blank.label}
+      value={displayVal}
+      onChange={(e) => onChange(blank.id, e.target.value)}
+      title={`Placeholder: ${blank.label}`}
+      style={{ width: `${widthPx}px` }}
+    />
+  );
+}
+
+// ── Sub-component: Styled Text Renderer ─────────────────────────────────────
+
+function renderStyledInline(content) {
+  if (!content) return null;
+  const parts = content.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={idx} className="wr-folio-bold">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={idx} className="wr-folio-italic">{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={idx} className="wr-folio-code">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+function renderSegments(segments, formBlanks, onBlankChange) {
+  if (!segments) return null;
+  return segments.map((seg, i) => {
+    if (seg.type === 'blank') {
+      return (
+        <InlineBlankInput
+          key={seg.id}
+          blank={seg}
+          value={formBlanks[seg.id]}
+          onChange={onBlankChange}
+        />
+      );
+    }
+    return <React.Fragment key={i}>{renderStyledInline(seg.content)}</React.Fragment>;
+  });
+}
+
+// ── Sub-component: PleadingFolio ────────────────────────────────────────────
+
+function PleadingFolio({
+  rawArgumentText,
+  formBlanks,
+  onBlankChange,
+  onCopyComplete,
+  copied,
+  showRaw,
+  onToggleRaw,
+  onDownloadBrief,
+  onPrintBrief,
+}) {
+  const { blocks, blanksList } = useMemo(() => {
+    return parsePleadingDocument(rawArgumentText);
+  }, [rawArgumentText]);
+
+  return (
+    <div className="wr-folio-workbench">
+      <div className="wr-folio-toolbar">
+        <div className="wr-folio-tools-left">
+          <span className="wr-folio-badge">Legal Folio Workbench</span>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            {blanksList.length} Fillable Placeholder{blanksList.length !== 1 ? 's' : ''} Active
+          </span>
+        </div>
+        <div className="wr-folio-tools-right">
+          <button className="wr-folio-btn" type="button" onClick={onToggleRaw} title="Toggle between formatted legal document and raw markdown text">
+            {showRaw ? '📄 View Formatted Document' : '📝 Raw Markdown'}
+          </button>
+          <button className={`wr-folio-btn${copied ? ' copied' : ''}`} type="button" onClick={() => onCopyComplete(blanksList)} title="Copy compiled pleading with all filled blanks to clipboard">
+            {copied ? '✓ Copied Pleading!' : '📋 Copy Complete Pleading'}
+          </button>
+          <button className="wr-folio-btn" type="button" onClick={() => onDownloadBrief(blanksList)} title="Download complete brief as Markdown file">
+            ⬇ Export Brief
+          </button>
+          <button className="wr-folio-btn" type="button" onClick={onPrintBrief} title="Print structured legal brief">
+            🖨 Print
+          </button>
+        </div>
+      </div>
+
+      {showRaw ? (
+        <textarea
+          className="wr-raw-editor"
+          value={compilePleadingText(rawArgumentText, formBlanks, blanksList)}
+          readOnly
+        />
+      ) : (
+        <div className="wr-folio-sheet">
+          <h1 className="wr-folio-h1">IN THE SUPREME COURT OF INDIA</h1>
+          <div style={{ textAlign: 'center', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', marginBottom: '24px' }}>
+            APPELLATE JURISDICTION · SPECIAL LEAVE PETITION / CIVIL APPEAL
+          </div>
+
+          {blocks.map((b, idx) => {
+            if (b.type === 'hr') return <hr key={idx} className="wr-folio-hr" />;
+            if (b.type === 'h1') return <h2 key={idx} className="wr-folio-h1">{renderSegments(b.segments, formBlanks, onBlankChange)}</h2>;
+            if (b.type === 'h2') return <h2 key={idx} className="wr-folio-h2">{renderSegments(b.segments, formBlanks, onBlankChange)}</h2>;
+            if (b.type === 'h3') return <h3 key={idx} className="wr-folio-h3">{renderSegments(b.segments, formBlanks, onBlankChange)}</h3>;
+            if (b.type === 'h4') return <h4 key={idx} className="wr-folio-h4">{renderSegments(b.segments, formBlanks, onBlankChange)}</h4>;
+            if (b.type === 'quote') return <blockquote key={idx} className="wr-folio-quote">{renderSegments(b.segments, formBlanks, onBlankChange)}</blockquote>;
+            if (b.type === 'num-item') {
+              return (
+                <div key={idx} className="wr-folio-num">
+                  <span className="wr-folio-num-idx">{b.num}.</span>
+                  <div>{renderSegments(b.segments, formBlanks, onBlankChange)}</div>
+                </div>
+              );
+            }
+            if (b.type === 'bullet-item') {
+              return (
+                <div key={idx} className="wr-folio-bullet">
+                  <span className="wr-folio-bullet-dot">▪</span>
+                  <div>{renderSegments(b.segments, formBlanks, onBlankChange)}</div>
+                </div>
+              );
+            }
+            return (
+              <p key={idx} className="wr-folio-p">
+                {renderSegments(b.segments, formBlanks, onBlankChange)}
+              </p>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sub-component: Precedent Report Card ────────────────────────────────────
+
+function PrecedentReportCard({ citation, index }) {
+  const { cleanTitle, citationTag, ratio, url } = useMemo(() => {
+    return parsePrecedentData(citation, index);
+  }, [citation, index]);
+
+  return (
+    <div className="wr-precedent-card">
+      <div className="wr-precedent-head">
+        <span className="wr-precedent-auth-tag">🏛 {citationTag}</span>
+        <div className="wr-precedent-title">*{cleanTitle}*</div>
+      </div>
+      <div className="wr-precedent-ratio">
+        "{ratio}"
+      </div>
+      <a className="wr-precedent-link" href={url} target="_blank" rel="noopener noreferrer">
+        Source Record ↗
+      </a>
+    </div>
+  );
+}
+
+// ── Sub-component: Opposition Challenge Card ────────────────────────────────
+
+function OppositionChallengeCard({ threat, index, expanded, isAddressed, onToggle, onUseInChat }) {
   return (
     <div className="wr-threat-card">
       <div className="wr-threat-trigger" onClick={onToggle}>
-        <div>
-          <div className="wr-threat-tag">Opponent Q{index + 1}</div>
+        <div style={{ minWidth: 0 }}>
+          <div className="wr-threat-header-row">
+            <span className="wr-threat-tag">Opposition Challenge {String(index + 1).padStart(2, '0')}</span>
+            {isAddressed && <span className="wr-threat-addressed-badge">✓ Addressed</span>}
+          </div>
           <div className="wr-threat-q">{renderParagraphs(threat.question)}</div>
         </div>
         <svg className={`wr-chevron${expanded ? ' open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </div>
+
       <div className={`wr-rebuttal-panel${expanded ? ' open' : ''}`}>
         {threat.suggested_rebuttal && (
           <div className="wr-rebuttal-inner">
-            <div className="wr-rebuttal-label">Your Rebuttal</div>
+            <div className="wr-rebuttal-label">Strategic Rebuttal Argument</div>
             <div className="wr-rebuttal-body">{renderParagraphs(threat.suggested_rebuttal)}</div>
             <button
-              className="wr-use-rebuttal-btn"
+              className="wr-use-rebuttal-action-btn"
               type="button"
-              onClick={(e) => { e.stopPropagation(); onUseRebuttal?.(threat.suggested_rebuttal); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onUseInChat(threat.suggested_rebuttal, index);
+              }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
-              Use this Rebuttal
+              Use in Chat →
             </button>
           </div>
         )}
@@ -1229,189 +2096,136 @@ function ThreatCard({ threat, index, expanded, onToggle, onUseRebuttal }) {
   );
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+// ── Sub-component: Sticky Stage Navigator ───────────────────────────────────
+
+function StageNavigator({ activeStage, onSelectStage, addressedCount, totalChallenges }) {
+  const STAGES = [
+    { id: 'wr-stage-issues', roman: 'I', label: 'Facts & Issues' },
+    { id: 'wr-stage-precedents', roman: 'II', label: 'Precedents' },
+    { id: 'wr-stage-pleading', roman: 'III', label: 'Pleading Draft' },
+    { id: 'wr-stage-simulation', roman: 'IV & V', label: 'Simulation Room' },
+  ];
+
+  const isAllComplete = totalChallenges > 0 && addressedCount >= totalChallenges;
+
+  return (
+    <div className="wr-stage-navigator">
+      <div className="wr-nav-track">
+        {STAGES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`wr-nav-item${activeStage === s.id ? ' active' : ''}`}
+            onClick={() => onSelectStage(s.id)}
+          >
+            <span className="wr-nav-roman">{s.roman}.</span>
+            <span>{s.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className={`wr-nav-progress${isAllComplete ? ' complete' : ''}`}>
+        {isAllComplete ? (
+          <>✓ All {totalChallenges} Rebuttals Addressed</>
+        ) : (
+          <>🛡️ {addressedCount}/{totalChallenges} Rebuttals Addressed</>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-component: Dynamic Matter Header ─────────────────────────────────────
+
+function DynamicMatterHeader({ simulationData, docSource, onResetSimulation, onPrintBrief }) {
+  const matterTitle = useMemo(() => parseMatterTitle(simulationData, docSource), [simulationData, docSource]);
+  const governingLaw = useMemo(() => parseGoverningLaw(simulationData?.extracted_issues, simulationData?.opening_argument), [simulationData]);
+
+  return (
+    <div className="wr-matter-header">
+      <div className="wr-matter-info">
+        <div className="wr-matter-title-row">
+          <h1 className="wr-matter-title" title={matterTitle}>{matterTitle}</h1>
+        </div>
+        <div className="wr-matter-meta-pills">
+          <span className="wr-meta-pill strategy">
+            {simulationData?.client_side || 'Appellant'} Strategy
+          </span>
+          <span className="wr-meta-pill forum">
+            🏛 Supreme Court of India · Civil Appellate
+          </span>
+          <span className="wr-meta-pill law" title="Governing Legal Regime">
+            ⚖ {governingLaw}
+          </span>
+        </div>
+      </div>
+
+      <div className="wr-header-actions">
+        <button className="wr-header-btn secondary" type="button" onClick={onPrintBrief} title="Print structured legal brief">
+          🖨 Print Brief
+        </button>
+        <button className="wr-header-btn danger" type="button" onClick={onResetSimulation} title="Clear current simulation and start new matter">
+          ↺ Reset Matter
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component: WarRoomView ─────────────────────────────────────────────
 
 export default function WarRoomView() {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Mount fade-in
+  // Lifecycle & Animation
   const [isMounted, setIsMounted] = useState(false);
-
-  // Pipeline lifecycle
   const [isSimulating, setIsSimulating] = useState(false);
   const [currentStage, setCurrentStage] = useState(0);
   const [simError, setSimError] = useState(null);
   const [simulationData, setSimulationData] = useState(null);
+  const [docSource, setDocSource] = useState('');
 
-  // Section progressive reveal — Set of section numbers (1–5)
-  const [revealedSections, setRevealedSections] = useState(new Set());
-
-  // Section IV: collapsible threats (first open by default)
+  // Interactive State
+  const [activeStageId, setActiveStageId] = useState('wr-stage-issues');
   const [expandedThreats, setExpandedThreats] = useState(new Set([0]));
+  const [addressedChallenges, setAddressedChallenges] = useState(new Set());
+  const [formBlanks, setFormBlanks] = useState({});
+  const [showRawMarkdown, setShowRawMarkdown] = useState(false);
+  const [copiedPleading, setCopiedPleading] = useState(false);
 
-  // Section V: chat
+  // Chat State
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [strategyTone, setStrategyTone] = useState('aggressive');
   const [savingSession, setSavingSession] = useState(false);
   const [savedSession, setSavedSession] = useState(false);
-  const [docSource, setDocSource] = useState('');
 
+  // Manual Upload State
+  const [uploadState, setUploadState] = useState('idle');
+  const [uploadError, setUploadError] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // Refs
   const chatEndRef = useRef(null);
-  const chatSectionRef = useRef(null);
-  const stageTimers = useRef([]);
+  const chatInputRef = useRef(null);
   const fileInputRef = useRef(null);
-
-  // Same StrictMode-fragile pattern as VaultView.jsx's DEFECT-03 — must
-  // reassert `true` at the top of the effect body, or a dev-mode double-
-  // invoke leaves this permanently false and every `if (!isMountedRef.current)
-  // return;` guard below (including the one in handleManualUpload, right
-  // after the upload succeeds) silently no-ops for good. Confirmed live: the
-  // Virtual Courtroom upload POSTs a real 201 CREATED, but the simulation
-  // never starts because that guard was eating the rest of the function.
+  const stageTimers = useRef([]);
   const isMountedRef = useRef(true);
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
-
-  // Manual upload state (Task 3)
-  const [uploadState, setUploadState] = useState('idle'); // 'idle' | 'uploading' | 'error'
-  const [uploadError, setUploadError] = useState('');
-  const [isDragOver, setIsDragOver] = useState(false);
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
 
   const clearStageTimers = () => {
     stageTimers.current.forEach(clearTimeout);
     stageTimers.current = [];
   };
 
-  const progressiveReveal = (data) => {
-    // Seed Section V chat with an opening message
-    const excerpt = (data.extracted_issues || '').split('\n')[0] || 'this matter';
-    const qCount = data.red_team?.opposing_counter_questions?.length || 3;
-    setChatMessages([{
-      role: 'bot',
-      text: `⚖️ Opposing counsel standing by. I have reviewed your opening argument on "${excerpt.substring(0, 100).trim()}…" I have ${qCount} primary challenges prepared. State your position.`,
-    }]);
-
-    // Reveal sections 1–5 at 480ms stagger
-    [1, 2, 3, 4, 5].forEach((sec, i) => {
-      const t = setTimeout(() => {
-        if (!isMountedRef.current) return;
-        setRevealedSections(prev => new Set([...prev, sec]));
-      }, i * 480 + 120);
-      stageTimers.current.push(t);
-    });
-  };
-
-  const runSimulation = async (docContent, clientSide = 'Appellant', docRef = '') => {
-    setDocSource(docRef);
-    setIsSimulating(true);
-    setCurrentStage(1);
-    setSimulationData(null);
-    setRevealedSections(new Set());
-    setChatMessages([]);
-    setSavedSession(false);
-    setSimError(null);
-
-    // Advance stage indicator while API runs (each stage ≈7s)
-    PIPELINE_STAGES.slice(1).forEach((stage, i) => {
-      const t = setTimeout(() => setCurrentStage(stage.num), (i + 1) * 7000);
-      stageTimers.current.push(t);
-    });
-
-    try {
-      const res = await fetch(`${API_BASE}/api/ai/simulate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          document_content: docContent,
-          client_side: clientSide,
-          document_reference: docRef,
-        }),
-      });
-      const data = await res.json();
-      if (!isMountedRef.current) return;
-      clearStageTimers();
-
-      if (data.error) {
-        setSimError(data.error);
-      } else {
-        sessionStorage.setItem('wr_active_session', JSON.stringify(data.simulationData));
-        setSimulationData(data.simulationData);
-        setCurrentStage(5);
-        progressiveReveal(data.simulationData);
-      }
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      clearStageTimers();
-      setSimError(err.message || 'Simulation failed. Check backend status.');
-    } finally {
-      if (!isMountedRef.current) return;
-      setIsSimulating(false);
-    }
-  };
-
-  // ── Mount effect ─────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setIsMounted(true));
-
-    const docData = location.state?.documentData;
-    const pending = location.state?.pendingSimulation;
-    const existing = location.state?.simulationData;
-
-    const fileContent = docData?.file_content || '';
-    const docRef = docData?.document_reference || '';
-
-    if (fileContent || docRef) {
-      // Immediately wipe the router state so a browser refresh doesn't re-fire the API
-      window.history.replaceState({}, document.title);
-      runSimulation(fileContent, 'Appellant', docRef);
-    } else if (pending?.documentContext) {
-      window.history.replaceState({}, document.title);
-      runSimulation(pending.documentContext, pending.clientSide || 'Appellant');
-    } else if (existing) {
-      window.history.replaceState({}, document.title);
-      setSimulationData(existing);
-      progressiveReveal(existing);
-    } else {
-      // Restore from tab-scoped session cache — no animation, instant reveal
-      const cached = sessionStorage.getItem('wr_active_session');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setSimulationData(parsed);
-          setRevealedSections(new Set([1, 2, 3, 4, 5]));
-          const excerpt = (parsed.extracted_issues || '').split('\n')[0] || 'this matter';
-          const qCount = parsed.red_team?.opposing_counter_questions?.length || 3;
-          setChatMessages([{
-            role: 'bot',
-            text: `⚖️ Session restored. I have reviewed your argument on "${excerpt.substring(0, 100).trim()}…" ${qCount} challenges remain active. State your position.`,
-            rebuttals: [],
-          }]);
-        } catch {
-          sessionStorage.removeItem('wr_active_session');
-        }
-      }
-    }
-
-    return () => { cancelAnimationFrame(raf); clearStageTimers(); };
-  }, []);
-
-  // Auto-scroll chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
-
-  // ── Shared chat submitter (used by manual input AND "Use this Rebuttal") ──
+  // ── Chat Submitter ────────────────────────────────────────────────────────
 
   const submitToChat = async (text) => {
     if (!text.trim() || chatLoading) return;
@@ -1448,8 +2262,6 @@ export default function WarRoomView() {
     setChatLoading(false);
   };
 
-  // ── Section V: manual chat submit ────────────────────────────────────────
-
   const handleChatSubmit = async (e) => {
     e?.preventDefault();
     if (!chatInput.trim() || chatLoading) return;
@@ -1458,61 +2270,68 @@ export default function WarRoomView() {
     await submitToChat(query);
   };
 
-  // ── Section IV → V: fire rebuttal directly into the chat loop ────────────
+  // ── Two-Way State Binding: Opposition Challenge → Chat ────────────────────
 
-  const handleUseRebuttal = (rebuttalText) => {
-    if (!rebuttalText || chatLoading) return;
-    chatSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    submitToChat(rebuttalText);
+  const handleUseInChat = (rebuttalText, index) => {
+    if (!rebuttalText) return;
+    setChatInput(rebuttalText);
+    setAddressedChallenges(prev => new Set([...prev, index]));
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+      chatInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
   };
 
-  // ── Manual file upload → simulation (Task 3) ─────────────────────────────
+  // ── Stage III Actions ─────────────────────────────────────────────────────
 
-  const handleManualUpload = async (file) => {
-    if (!file) return;
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (!['pdf', 'txt', 'docx'].includes(ext)) {
-      setUploadError('Unsupported file. Please upload a PDF, TXT, or DOCX file.');
-      return;
+  const handleBlankChange = useCallback((blankId, value) => {
+    setFormBlanks(prev => ({ ...prev, [blankId]: value }));
+  }, []);
+
+  const handleCopyCompletePleading = (blanksList) => {
+    const raw = simulationData?.opening_argument || '';
+    const compiled = compilePleadingText(raw, formBlanks, blanksList);
+    if (compiled) {
+      navigator.clipboard.writeText(compiled);
+      setCopiedPleading(true);
+      setTimeout(() => setCopiedPleading(false), 2500);
     }
-    setUploadState('uploading');
-    setUploadError('');
-    try {
-      // Upload → index chunks into the RAG pipeline (same flow as Case Vault)
-      await uploadDocument(file, null, 'War Room Upload');
-      if (!isMountedRef.current) return;
-      // Trigger simulation; backend Pass 2 vault lookup finds the chunks by filename
-      const refName = file.name.replace(/\.[^.]+$/, '');
+  };
+
+  const handleDownloadBrief = (blanksList) => {
+    const raw = simulationData?.opening_argument || '';
+    const compiled = compilePleadingText(raw, formBlanks, blanksList);
+    const blob = new Blob([compiled], { type: 'text/markdown;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Litigation_Pleading_${(docSource || 'Matter').replace(/[^a-zA-Z0-9]/g, '_')}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrintBrief = () => {
+    window.print();
+  };
+
+  const handleResetSimulation = () => {
+    if (window.confirm('Reset the current simulation session and return to matter intake?')) {
+      sessionStorage.removeItem('wr_active_session');
+      clearStageTimers();
+      setSimulationData(null);
+      setIsSimulating(false);
+      setSimError(null);
+      setChatMessages([]);
+      setFormBlanks({});
+      setAddressedChallenges(new Set());
+      setSavedSession(false);
       setUploadState('idle');
-      runSimulation('', 'Appellant', refName);
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      setUploadState('error');
-      setUploadError(err?.message || 'Upload failed. Check your connection and try again.');
+      setUploadError('');
+      navigate('/war-room', { replace: true });
     }
   };
 
-  const onDropzoneClick = () => {
-    if (uploadState === 'uploading') return;
-    fileInputRef.current?.click();
-  };
-
-  const onFileInputChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) handleManualUpload(file);
-    e.target.value = '';
-  };
-
-  const onDragOver = (e) => { e.preventDefault(); setIsDragOver(true); };
-  const onDragLeave = () => setIsDragOver(false);
-  const onDrop = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleManualUpload(file);
-  };
-
-  // ── Save full session to vault ────────────────────────────────────────────
+  // ── Save Session to Vault ─────────────────────────────────────────────────
 
   const handleSaveSession = async () => {
     if (!simulationData) return;
@@ -1564,7 +2383,7 @@ export default function WarRoomView() {
           content: sessionText,
         }),
       });
-    } catch { /* silent — UI feedback via setSavedSession */ }
+    } catch { /* silent */ }
     if (!isMountedRef.current) return;
     setSavingSession(false);
     setSavedSession(true);
@@ -1574,7 +2393,159 @@ export default function WarRoomView() {
     }, 3500);
   };
 
-  // ── Toggle threat card ────────────────────────────────────────────────────
+  // ── Pipeline Runner ───────────────────────────────────────────────────────
+
+  const runSimulation = async (docContent, clientSide = 'Appellant', docRef = '') => {
+    setDocSource(docRef);
+    setIsSimulating(true);
+    setCurrentStage(1);
+    setSimulationData(null);
+    setChatMessages([]);
+    setFormBlanks({});
+    setAddressedChallenges(new Set());
+    setSavedSession(false);
+    setSimError(null);
+
+    PIPELINE_STAGES.slice(1).forEach((stage, i) => {
+      const t = setTimeout(() => setCurrentStage(stage.num), (i + 1) * 7000);
+      stageTimers.current.push(t);
+    });
+
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/simulate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_content: docContent,
+          client_side: clientSide,
+          document_reference: docRef,
+        }),
+      });
+      const data = await res.json();
+      if (!isMountedRef.current) return;
+      clearStageTimers();
+
+      if (data.error) {
+        setSimError(data.error);
+      } else {
+        sessionStorage.setItem('wr_active_session', JSON.stringify(data.simulationData));
+        setSimulationData(data.simulationData);
+        setCurrentStage(5);
+
+        const excerpt = (data.simulationData.extracted_issues || '').split('\n')[0] || 'this matter';
+        const qCount = data.simulationData.red_team?.opposing_counter_questions?.length || 3;
+        setChatMessages([{
+          role: 'bot',
+          text: `⚖️ **Opposing counsel standing by.** I have reviewed your opening argument on *"${excerpt.substring(0, 100).trim()}…"*\n\nI have **${qCount} primary opposition challenges** prepared. Review the attack queue on the left or state your initial position.`,
+        }]);
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      clearStageTimers();
+      setSimError(err.message || 'Simulation failed. Check backend status.');
+    } finally {
+      if (!isMountedRef.current) return;
+      setIsSimulating(false);
+    }
+  };
+
+  // ── Mount & Session Restore ───────────────────────────────────────────────
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setIsMounted(true));
+
+    const docData = location.state?.documentData;
+    const pending = location.state?.pendingSimulation;
+    const existing = location.state?.simulationData;
+
+    const fileContent = docData?.file_content || '';
+    const docRef = docData?.document_reference || '';
+
+    if (fileContent || docRef) {
+      window.history.replaceState({}, document.title);
+      runSimulation(fileContent, 'Appellant', docRef);
+    } else if (pending?.documentContext) {
+      window.history.replaceState({}, document.title);
+      runSimulation(pending.documentContext, pending.clientSide || 'Appellant');
+    } else if (existing) {
+      window.history.replaceState({}, document.title);
+      setSimulationData(existing);
+      const excerpt = (existing.extracted_issues || '').split('\n')[0] || 'this matter';
+      const qCount = existing.red_team?.opposing_counter_questions?.length || 3;
+      setChatMessages([{
+        role: 'bot',
+        text: `⚖️ **Opposing counsel active.** ${qCount} challenges ready on *"${excerpt.substring(0, 100).trim()}…"*. State your position.`,
+      }]);
+    } else {
+      const cached = sessionStorage.getItem('wr_active_session');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setSimulationData(parsed);
+          const excerpt = (parsed.extracted_issues || '').split('\n')[0] || 'this matter';
+          const qCount = parsed.red_team?.opposing_counter_questions?.length || 3;
+          setChatMessages([{
+            role: 'bot',
+            text: `⚖️ **Session restored.** ${qCount} challenges active. State your position.`,
+          }]);
+        } catch {
+          sessionStorage.removeItem('wr_active_session');
+        }
+      }
+    }
+
+    return () => { cancelAnimationFrame(raf); clearStageTimers(); };
+  }, []);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Manual file upload
+  const handleManualUpload = async (file) => {
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'txt', 'docx'].includes(ext)) {
+      setUploadError('Unsupported file. Please upload a PDF, TXT, or DOCX file.');
+      return;
+    }
+    setUploadState('uploading');
+    setUploadError('');
+    try {
+      await uploadDocument(file, null, 'War Room Upload');
+      if (!isMountedRef.current) return;
+      const refName = file.name.replace(/\.[^.]+$/, '');
+      setUploadState('idle');
+      runSimulation('', 'Appellant', refName);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setUploadState('error');
+      setUploadError(err?.message || 'Upload failed. Check your connection and try again.');
+    }
+  };
+
+  const onDropzoneClick = () => {
+    if (uploadState === 'uploading') return;
+    fileInputRef.current?.click();
+  };
+
+  const onFileInputChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) handleManualUpload(file);
+    e.target.value = '';
+  };
+
+  const onDragOver = (e) => { e.preventDefault(); setIsDragOver(true); };
+  const onDragLeave = () => setIsDragOver(false);
+  const onDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleManualUpload(file);
+  };
 
   const toggleThreat = (i) => {
     setExpandedThreats(prev => {
@@ -1585,9 +2556,15 @@ export default function WarRoomView() {
     });
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // ── RENDER: Loading ──────────────────────────────────────────────────────────
-  // ────────────────────────────────────────────────────────────────────────────
+  const scrollToStage = (stageId) => {
+    setActiveStageId(stageId);
+    const el = document.getElementById(stageId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  // ── RENDER: Loading Pipeline ──────────────────────────────────────────────
 
   if (isSimulating) {
     return (
@@ -1617,22 +2594,22 @@ export default function WarRoomView() {
     );
   }
 
-  // ── RENDER: Error ─────────────────────────────────────────────────────────
+  // ── RENDER: Error Fallback ────────────────────────────────────────────────
 
   if (simError) {
     return (
       <>
         <style>{WAR_ROOM_STYLES}</style>
-        <div className="wr-fallback">
-          <div className="wr-fallback-card">
-            <span className="wr-fallback-icon">🚨</span>
-            <h2 className="wr-fallback-h">Simulation Failed</h2>
-            <p className="wr-fallback-p">{simError}</p>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button className="btn-accent" onClick={() => { setSimError(null); navigate('/war-room', { replace: true }); }} style={{ padding: '10px 22px' }}>
-                Reset
+        <div className="wr-intake-wrap">
+          <div className="wr-intake-card" style={{ maxWidth: '540px', textAlign: 'center' }}>
+            <span style={{ fontSize: '42px', display: 'block', marginBottom: '16px' }}>🚨</span>
+            <h2 className="wr-intake-title">Simulation Encountered an Error</h2>
+            <p className="wr-intake-subtitle">{simError}</p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button className="wr-intake-btn-primary" onClick={() => { setSimError(null); navigate('/war-room', { replace: true }); }}>
+                Try Again
               </button>
-              <button className="btn-accent" onClick={() => navigate('/dashboard')} style={{ padding: '10px 22px', background: 'transparent', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+              <button className="wr-intake-btn-secondary" onClick={() => navigate('/dashboard')}>
                 Dashboard
               </button>
             </div>
@@ -1642,13 +2619,12 @@ export default function WarRoomView() {
     );
   }
 
-  // ── RENDER: Empty / Standby ───────────────────────────────────────────────
+  // ── RENDER: Ingestion / Intake Card ───────────────────────────────────────
 
   if (!simulationData) {
     return (
       <>
         <style>{WAR_ROOM_STYLES}</style>
-        {/* Hidden file input — triggered by dropzone click */}
         <input
           ref={fileInputRef}
           type="file"
@@ -1661,7 +2637,6 @@ export default function WarRoomView() {
           <div className="wr-intake-container">
             <div className="wr-intake-card">
 
-              {/* ── Icon & Visual Badge ── */}
               <div className="wr-intake-badge">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
@@ -1672,13 +2647,11 @@ export default function WarRoomView() {
                 </svg>
               </div>
 
-              {/* ── Typography ── */}
               <h1 className="wr-intake-title">Virtual Courtroom — Ready</h1>
               <p className="wr-intake-subtitle">
                 Upload a case brief directly or trigger via LexAmplify Assistant.
               </p>
 
-              {/* ── Interactive Upload Dropzone ── */}
               <div
                 className={`wr-intake-dropzone${isDragOver ? ' drag-over' : ''}${uploadState === 'uploading' ? ' wr-dropzone-uploading' : ''}`}
                 onClick={onDropzoneClick}
@@ -1688,7 +2661,7 @@ export default function WarRoomView() {
               >
                 {uploadState === 'uploading' ? (
                   <>
-                    <div className="wr-upload-spinner" />
+                    <div style={{ width: '22px', height: '22px', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3B82F6', borderRadius: '50%', animation: 'spin 0.75s linear infinite', margin: '0 auto 10px' }} />
                     <div className="wr-intake-dropzone-primary">Uploading & indexing document…</div>
                     <div className="wr-intake-dropzone-secondary">Pipeline will start automatically once processing completes</div>
                   </>
@@ -1712,13 +2685,13 @@ export default function WarRoomView() {
               </div>
 
               {uploadState === 'error' && (
-                <div className="wr-upload-error">{uploadError}</div>
+                <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '9px 14px', fontSize: '12px', color: '#FCA5A5', marginTop: '10px', textAlign: 'center' }}>
+                  {uploadError}
+                </div>
               )}
 
-              {/* ── Divider ── */}
               <div className="wr-intake-divider">OR ACTIVATE VIA COMMAND ASSISTANT</div>
 
-              {/* ── Workflow Steps ── */}
               <div className="wr-intake-steps">
                 <div className="wr-intake-step-row">
                   <span className="wr-intake-step-num">01</span>
@@ -1748,7 +2721,6 @@ export default function WarRoomView() {
                 </div>
               </div>
 
-              {/* ── Action Buttons ── */}
               <div className="wr-intake-actions">
                 <button
                   className="wr-intake-btn-primary"
@@ -1765,7 +2737,7 @@ export default function WarRoomView() {
                   type="button"
                   onClick={() => navigate('/vault')}
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                   </svg>
@@ -1781,14 +2753,12 @@ export default function WarRoomView() {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // ── RENDER: Full 5-Section Results Dashboard ─────────────────────────────────
+  // ── RENDER: ENTERPRISE LITIGATION WAR ROOM WORKBENCH ─────────────────────────
   // ────────────────────────────────────────────────────────────────────────────
 
   const issues = parseIssues(simulationData.extracted_issues);
   const citations = simulationData.live_citations ?? [];
   const questions = simulationData.red_team?.opposing_counter_questions ?? [];
-
-  const sectionRevealed = (n) => revealedSections.has(n);
 
   return (
     <>
@@ -1796,270 +2766,258 @@ export default function WarRoomView() {
 
       <div className={`wr-results-page${isMounted ? ' wr-mounted' : ''}`}>
 
-        {/* ── HEADER ── */}
-        <div className="wr-results-header">
-          <div>
-            <h1 className="wr-results-title">Litigation War Room</h1>
-            <p className="wr-results-subtitle">5-Stage Agentic Pipeline · Indian Law · Active Session</p>
-          </div>
-          <div className="wr-header-badges">
-            <span className="wr-badge-strategy">
-              {simulationData.client_side || 'Appellant'} Strategy
-            </span>
-            <span className="wr-badge-done">
-              <span className="wr-badge-dot" />
-              Pipeline Complete
-            </span>
-            <button className="wr-new-sim-btn" onClick={() => {
-              sessionStorage.removeItem('wr_active_session');
-              clearStageTimers();
-              setSimulationData(null);
-              setIsSimulating(false);
-              setSimError(null);
-              setRevealedSections(new Set());
-              setChatMessages([]);
-              setSavedSession(false);
-              setUploadState('idle');
-              setUploadError('');
-              navigate('/war-room', { replace: true });
-            }}>
-              New Simulation
-            </button>
-          </div>
-        </div>
+        {/* ── 1. DYNAMIC MATTER HEADER (No Badge Theater) ── */}
+        <DynamicMatterHeader
+          simulationData={simulationData}
+          docSource={docSource}
+          onResetSimulation={handleResetSimulation}
+          onPrintBrief={handlePrintBrief}
+        />
 
-        {/* ── SCROLLABLE BODY ── */}
+        {/* ── 2. STICKY STAGE NAVIGATOR ── */}
+        <StageNavigator
+          activeStage={activeStageId}
+          onSelectStage={scrollToStage}
+          addressedCount={addressedChallenges.size}
+          totalChallenges={questions.length}
+        />
+
+        {/* ── 3. MAIN WORKBENCH BODY ── */}
         <div className="wr-results-body">
 
-          {/* ───────── SECTION I — Extracted Issues ───────── */}
-          <div className={`wr-section${sectionRevealed(1) ? ' wr-revealed' : ''}`}>
-            <div className="wr-card">
-              <div className="wr-card-head">
-                <span className="wr-roman">I</span>
-                <h3 className="wr-card-title">Extracted Legal Issues &amp; Core Facts</h3>
-              </div>
-              <div className="wr-card-body">
-                {issues.length > 0 ? (
-                  <div className="wr-issues-list">
-                    {issues.map((issue, i) => (
-                      <div key={i} className="wr-issue-row">
-                        <span className="wr-issue-num">{i + 1}</span>
-                        <span className="wr-issue-text">{issue}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '13.5px', color: 'var(--text-primary)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
-                    {simulationData.extracted_issues || 'No issues extracted.'}
-                  </div>
-                )}
-              </div>
+          {/* ───────── STAGE I: FACTS & CORE LEGAL ISSUES ───────── */}
+          <section id="wr-stage-issues" className="wr-section-container">
+            <div className="wr-section-head">
+              <span className="wr-section-badge">I</span>
+              <h2 className="wr-section-title">Extracted Legal Issues &amp; Core Facts</h2>
+              <span className="wr-section-desc">{issues.length} Key Legal Questions Identified</span>
             </div>
-          </div>
 
-          {/* ───────── SECTION II — Live Citations ───────── */}
-          <div className={`wr-section${sectionRevealed(2) ? ' wr-revealed' : ''}`}>
-            <div className="wr-card">
-              <div className="wr-card-head">
-                <span className="wr-roman">II</span>
-                <h3 className="wr-card-title">Live Supreme Court Citations &amp; Precedents</h3>
-              </div>
-              <div className="wr-card-body">
-                {citations.length > 0 ? (
-                  <div className="wr-cit-grid">
-                    {citations.map((c, i) => (
-                      <a
-                        key={i}
-                        className="wr-cit-card"
-                        href={c.url || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <div className="wr-cit-meta">
-                          <span className="wr-kanoon-badge">Indian Kanoon</span>
-                          <span className="wr-cit-index">Cite {i + 1}</span>
-                        </div>
-                        <div className="wr-cit-title">{c.title || 'Case Citation'}</div>
-                        {c.snippet && <div className="wr-cit-snippet">{c.snippet}</div>}
-                        <span className="wr-cit-link">Source Link →</span>
-                      </a>
-                    ))}
+            <div className="wr-issues-grid">
+              {issues.length > 0 ? (
+                issues.map((issue, i) => (
+                  <div key={i} className="wr-issue-card">
+                    <span className="wr-issue-idx">{String(i + 1).padStart(2, '0')}</span>
+                    <div className="wr-issue-content">{issue}</div>
                   </div>
-                ) : (
-                  <p className="wr-no-cit">No live citations retrieved — Tavily search returned no results for this matter.</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ───────── SECTION III — Opening Argument ───────── */}
-          <div className={`wr-section${sectionRevealed(3) ? ' wr-revealed' : ''}`}>
-            <div className="wr-card" style={{ borderLeft: '3px solid var(--accent-primary, #3B82F6)' }}>
-              <div className="wr-card-head">
-                <span className="wr-roman">III</span>
-                <h3 className="wr-card-title">Drafted Opening Argument</h3>
-                <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' }}>
-                  {simulationData.client_side || 'Appellant'} Position
-                </span>
-              </div>
-              <div className="wr-card-body">
-                <div className="wr-argument-doc">
-                  <div className="wr-argument-text">
-                    {simulationData.opening_argument || 'Argument drafting in progress…'}
+                ))
+              ) : (
+                <div className="wr-issue-card">
+                  <div className="wr-issue-content">
+                    {simulationData.extracted_issues || 'No specific legal issues extracted.'}
                   </div>
                 </div>
-              </div>
+              )}
             </div>
-          </div>
+          </section>
 
-          {/* ───────── SECTION IV — Red Team / Opposing Counsel ───────── */}
-          <div className={`wr-section${sectionRevealed(4) ? ' wr-revealed' : ''}`}>
-            <div className="wr-card">
-              <div className="wr-card-head">
-                <span className="wr-roman" style={{ background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.25)', color: '#FCA5A5' }}>IV</span>
-                <h3 className="wr-card-title">Opposing Counsel Simulation — Red Team</h3>
-                <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#FCA5A5', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' }}>
-                  {questions.length} Challenge{questions.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className="wr-card-body">
-                {questions.length > 0 ? (
-                  <div className="wr-threats-list">
-                    {questions.map((threat, i) => (
-                      <ThreatCard
-                        key={i}
-                        threat={threat}
-                        index={i}
-                        expanded={expandedThreats.has(i)}
-                        onToggle={() => toggleThreat(i)}
-                        onUseRebuttal={handleUseRebuttal}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    No opposing threats detected for this strategy.
-                  </p>
-                )}
-              </div>
+          {/* ───────── STAGE II: REFINED PRECEDENT CITATION CARDS ───────── */}
+          <section id="wr-stage-precedents" className="wr-section-container">
+            <div className="wr-section-head">
+              <span className="wr-section-badge">II</span>
+              <h2 className="wr-section-title">Precedents &amp; Authority Reports</h2>
+              <span className="wr-section-desc">{citations.length} Authorities Cited</span>
             </div>
-          </div>
 
-          {/* ───────── SECTION V — Continuous Simulation Chat ───────── */}
-          <div ref={chatSectionRef} className={`wr-section${sectionRevealed(5) ? ' wr-revealed' : ''}`}>
-            <div className="wr-card">
-              <div className="wr-card-head">
-                <span className="wr-roman">V</span>
-                <h3 className="wr-card-title">Continuous Simulation Chat</h3>
+            {citations.length > 0 ? (
+              <div className="wr-precedents-grid">
+                {citations.map((c, i) => (
+                  <PrecedentReportCard key={i} citation={c} index={i} />
+                ))}
               </div>
-              <div className="wr-chat-outer" style={{ border: 'none', borderRadius: 0 }}>
+            ) : (
+              <div className="wr-issue-card" style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
+                No live citations retrieved for this matter query.
+              </div>
+            )}
+          </section>
 
-                {/* Tone switcher */}
-                <div className="wr-tone-bar">
-                  <span className="wr-tone-label">Legal Strategy Tone:</span>
-                  <button
-                    className={`wr-tone-btn${strategyTone === 'aggressive' ? ' tone-agg' : ''}`}
-                    onClick={() => setStrategyTone('aggressive')}
-                  >
-                    ⚔️ Aggressive (Counter-Attack)
-                  </button>
-                  <button
-                    className={`wr-tone-btn${strategyTone === 'defensive' ? ' tone-def' : ''}`}
-                    onClick={() => setStrategyTone('defensive')}
-                  >
-                    🛡️ Defensive (Shield / Mitigate)
-                  </button>
-                </div>
+          {/* ───────── STAGE III: PLEADING WORKBENCH & INLINE EDITING ───────── */}
+          <section id="wr-stage-pleading" className="wr-section-container">
+            <div className="wr-section-head">
+              <span className="wr-section-badge">III</span>
+              <h2 className="wr-section-title">Drafted Opening Argument &amp; Legal Pleading</h2>
+              <span className="wr-section-desc">Interactive Legal Folio</span>
+            </div>
 
-                {/* Messages */}
-                <div className="wr-chat-messages">
-                  {chatMessages.map((m, i) => (
-                    <React.Fragment key={i}>
-                      <div className={`wr-bubble ${m.role}`}>
-                        {m.role === 'bot' ? (
-                          <div
-                            className="md-body"
-                            dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
-                          />
-                        ) : (
-                          m.text
-                        )}
-                      </div>
-                      {m.role === 'bot' && m.rebuttals?.length > 0 && (
-                        <div className="wr-quick-replies">
-                          {m.rebuttals.map((r, j) => (
-                            <button
-                              key={j}
-                              className="wr-qr-pill"
-                              disabled={chatLoading}
-                              onClick={() => submitToChat(r)}
-                            >
-                              <span className="wr-qr-arrow">↳</span>
-                              {r}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                  {chatLoading && (
-                    <div className="wr-bubble typing">Opposing counsel preparing cross-examination…</div>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
+            <PleadingFolio
+              rawArgumentText={simulationData.opening_argument}
+              formBlanks={formBlanks}
+              onBlankChange={handleBlankChange}
+              onCopyComplete={handleCopyCompletePleading}
+              copied={copiedPleading}
+              showRaw={showRawMarkdown}
+              onToggleRaw={() => setShowRawMarkdown(prev => !prev)}
+              onDownloadBrief={handleDownloadBrief}
+              onPrintBrief={handlePrintBrief}
+            />
+          </section>
 
-                {/* Input bar */}
-                <form className="wr-chat-input-row" onSubmit={handleChatSubmit}>
-                  <input
-                    className="wr-chat-input"
-                    type="text"
-                    placeholder="State your argument or respond to opposition…"
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    disabled={chatLoading}
-                  />
-                  <button className="wr-send-btn" type="submit" disabled={chatLoading || !chatInput.trim()}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
-                    Send
-                  </button>
-                </form>
+          {/* ───────── STAGE IV & V: MERGED SPLIT-PANE SIMULATION ROOM ───────── */}
+          <section id="wr-stage-simulation" className="wr-section-container">
+            <div className="wr-section-head">
+              <span className="wr-section-badge">IV &amp; V</span>
+              <h2 className="wr-section-title">Litigation Simulation Room</h2>
+              <span className="wr-section-desc">Split-Pane Adversarial Interrogation &amp; Live Trial</span>
+            </div>
 
-                {/* Save session footer */}
-                <div className="wr-save-bar">
-                  <span className="wr-save-hint">
-                    Save the complete simulation — issues, argument, red-team analysis, and chat — to your Case Vault.
+            <div className="wr-sim-split-room">
+
+              {/* LEFT PANE: Opposition Attack Queue (Stage IV) */}
+              <div className="wr-opposition-pane">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#f87171' }}>
+                    Opposition Counsel Attack Queue ({questions.length})
                   </span>
-                  <button
-                    className={`wr-save-btn${savedSession ? ' saved' : ''}`}
-                    onClick={handleSaveSession}
-                    disabled={savingSession || savedSession}
-                  >
-                    {savingSession ? (
-                      <>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 0.9s linear infinite' }}>
-                          <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.73-8.56" />
-                        </svg>
-                        Saving…
-                      </>
-                    ) : savedSession ? (
-                      <>✓ Saved to Vault</>
-                    ) : (
-                      <>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
-                        </svg>
-                        Save Full Session to Case Vault
-                      </>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Click "Use in Chat →" to counter
+                  </span>
+                </div>
+
+                {questions.length > 0 ? (
+                  questions.map((threat, i) => (
+                    <OppositionChallengeCard
+                      key={i}
+                      threat={threat}
+                      index={i}
+                      expanded={expandedThreats.has(i)}
+                      isAddressed={addressedChallenges.has(i)}
+                      onToggle={() => toggleThreat(i)}
+                      onUseInChat={handleUseInChat}
+                    />
+                  ))
+                ) : (
+                  <div className="wr-threat-card" style={{ padding: '20px', textAlign: 'center', fontStyle: 'italic', color: 'var(--text-muted)' }}>
+                    No opposition challenges detected.
+                  </div>
+                )}
+              </div>
+
+              {/* RIGHT PANE: Continuous Simulation Chat (Stage V) */}
+              <div className="wr-chat-pane">
+                <div className="wr-chat-outer">
+
+                  {/* Top Strategy & Persona Bar */}
+                  <div className="wr-tone-bar">
+                    <div className="wr-tone-toggle-group">
+                      <button
+                        className={`wr-tone-btn${strategyTone === 'aggressive' ? ' tone-agg' : ''}`}
+                        onClick={() => setStrategyTone('aggressive')}
+                        type="button"
+                      >
+                        ⚔️ Aggressive (Counter-Attack)
+                      </button>
+                      <button
+                        className={`wr-tone-btn${strategyTone === 'defensive' ? ' tone-def' : ''}`}
+                        onClick={() => setStrategyTone('defensive')}
+                        type="button"
+                      >
+                        🛡️ Defensive (Shield / Mitigate)
+                      </button>
+                    </div>
+
+                    <div className="wr-persona-status">
+                      <span className="wr-persona-dot" />
+                      <span>Opposing Counsel Active</span>
+                    </div>
+                  </div>
+
+                  {/* Messages Scroll Area */}
+                  <div className="wr-chat-messages">
+                    {chatMessages.map((m, i) => (
+                      <React.Fragment key={i}>
+                        <div className={`wr-bubble ${m.role}`}>
+                          {m.role === 'bot' ? (
+                            <div
+                              className="md-body"
+                              dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
+                            />
+                          ) : (
+                            m.text
+                          )}
+                        </div>
+                        {m.role === 'bot' && m.rebuttals?.length > 0 && (
+                          <div className="wr-quick-replies">
+                            {m.rebuttals.map((r, j) => (
+                              <button
+                                key={j}
+                                className="wr-qr-pill"
+                                disabled={chatLoading}
+                                onClick={() => submitToChat(r)}
+                                type="button"
+                              >
+                                <span>↳</span>
+                                <span>{r}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {chatLoading && (
+                      <div className="wr-bubble typing">Opposing counsel preparing cross-examination…</div>
                     )}
-                  </button>
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Chat Input Bar */}
+                  <form className="wr-chat-input-row" onSubmit={handleChatSubmit}>
+                    <input
+                      ref={chatInputRef}
+                      className="wr-chat-input"
+                      type="text"
+                      placeholder="State your argument or respond to opposition…"
+                      value={chatInput}
+                      onChange={e => setChatInput(e.target.value)}
+                      disabled={chatLoading}
+                    />
+                    <button className="wr-send-btn" type="submit" disabled={chatLoading || !chatInput.trim()}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                      Send
+                    </button>
+                  </form>
+
+                  {/* Save Session Footer */}
+                  <div className="wr-save-bar">
+                    <span className="wr-save-hint">
+                      Save full simulation package to your Case Vault.
+                    </span>
+                    <button
+                      className={`wr-save-btn${savedSession ? ' saved' : ''}`}
+                      onClick={handleSaveSession}
+                      disabled={savingSession || savedSession}
+                      type="button"
+                    >
+                      {savingSession ? (
+                        <>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 0.9s linear infinite' }}>
+                            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.73-8.56" />
+                          </svg>
+                          Saving…
+                        </>
+                      ) : savedSession ? (
+                        <>✓ Saved to Vault</>
+                      ) : (
+                        <>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
+                          </svg>
+                          Save to Case Vault
+                        </>
+                      )}
+                    </button>
+                  </div>
+
                 </div>
               </div>
+
             </div>
-          </div>
+          </section>
 
         </div>{/* end wr-results-body */}
+
       </div>{/* end wr-results-page */}
     </>
   );
