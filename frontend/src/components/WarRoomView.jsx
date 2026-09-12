@@ -15,8 +15,8 @@ const renderParagraphs = (text) => {
 const parseIssues = (text) => {
   if (!text) return [];
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const numbered = lines.filter(l => /^\d+[\.\):]/.test(l));
-  if (numbered.length >= 2) return numbered.map(l => l.replace(/^\d+[\.\):]\s*/, ''));
+  const numbered = lines.filter(l => /^\d+[.):]/.test(l));
+  if (numbered.length >= 2) return numbered.map(l => l.replace(/^\d+[.):]\s*/, ''));
   const bullets = lines.filter(l => /^[-•*]/.test(l));
   if (bullets.length >= 2) return bullets.map(l => l.replace(/^[-•*]\s*/, ''));
   return lines.filter(l => l.length > 20);
@@ -62,7 +62,7 @@ const parseMatterTitle = (simulationData, docSource) => {
   }
   const issues = (simulationData?.extracted_issues || '').split('\n').map(l => l.trim()).filter(Boolean);
   if (issues.length > 0) {
-    const first = issues[0].replace(/^(\d+[\.\):]|[-•*])\s*/, '');
+    const first = issues[0].replace(/^(\d+[.):]|[-•*])\s*/, '');
     if (first.length > 5) {
       return first.length > 65 ? first.substring(0, 62) + '…' : first;
     }
@@ -121,43 +121,59 @@ const parsePrecedentData = (c, i) => {
 
 const BLANK_REGEX = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\])/g;
 
+// Splits a line into blank vs. plain-text runs first, then re-tokenizes each
+// plain run for **bold**/*italic*/`code` markers while carrying the open
+// style state (bold/italic/code) across blank boundaries. Legal pleadings
+// routinely bold a whole phrase that contains a fillable blank — e.g.
+// "**IN THE HIGH COURT OF ___________**" — and styling each side of the
+// blank independently (the original approach) can never detect that as one
+// bold run, since neither half contains a matching closing marker; the
+// literal ** characters leaked into the rendered document as a result.
 const parseInlineSegments = (text, blankCounterRef, blanksList) => {
-  const segments = [];
+  const rawParts = [];
   let lastIndex = 0;
   let match;
-
-  while ((match = BLANK_REGEX.exec(text)) !== null) {
+  const blankRe = new RegExp(BLANK_REGEX.source, 'g');
+  while ((match = blankRe.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      segments.push({
-        type: 'text',
-        content: text.slice(lastIndex, match.index),
-      });
+      rawParts.push({ kind: 'text', raw: text.slice(lastIndex, match.index) });
     }
-    const raw = match[0];
-    const id = `blank_${blankCounterRef.count++}`;
-    let label = raw;
-    if (raw.startsWith('[') && raw.endsWith(']')) {
-      label = raw.slice(1, -1).trim();
-    } else if (/Rs\./i.test(raw)) {
-      label = 'Rs. Amount';
-    } else {
-      label = 'Fill value';
-    }
-    const blankObj = { id, raw, label };
-    blanksList.push(blankObj);
-    segments.push({
-      type: 'blank',
-      ...blankObj,
-    });
-    lastIndex = match.index + raw.length;
+    rawParts.push({ kind: 'blank', raw: match[0] });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    rawParts.push({ kind: 'text', raw: text.slice(lastIndex) });
   }
 
-  if (lastIndex < text.length) {
-    segments.push({
-      type: 'text',
-      content: text.slice(lastIndex),
+  const segments = [];
+  let bold = false, italic = false, code = false;
+
+  rawParts.forEach((part) => {
+    if (part.kind === 'blank') {
+      const raw = part.raw;
+      const id = `blank_${blankCounterRef.count++}`;
+      let label;
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        label = raw.slice(1, -1).trim();
+      } else if (/Rs\./i.test(raw)) {
+        label = 'Rs. Amount';
+      } else {
+        label = 'Fill value';
+      }
+      const blankObj = { id, raw, label };
+      blanksList.push(blankObj);
+      segments.push({ type: 'blank', ...blankObj });
+      return;
+    }
+
+    part.raw.split(/(\*\*|\*|`)/).forEach((tok) => {
+      if (!tok) return;
+      if (tok === '**') { bold = !bold; return; }
+      if (tok === '*') { italic = !italic; return; }
+      if (tok === '`') { code = !code; return; }
+      segments.push({ type: 'text', content: tok, bold, italic, code });
     });
-  }
+  });
 
   return segments;
 };
@@ -232,7 +248,7 @@ const parsePleadingDocument = (rawText) => {
       continue;
     }
 
-    const numMatch = line.match(/^(\d+)[\.\)]\s+(.+)$/);
+    const numMatch = line.match(/^(\d+)[.)]\s+(.+)$/);
     if (numMatch) {
       flushParagraph();
       blocks.push({
@@ -1905,22 +1921,16 @@ function InlineBlankInput({ blank, value, onChange }) {
 }
 
 // ── Sub-component: Styled Text Renderer ─────────────────────────────────────
+// Applies the bold/italic/code flags parseInlineSegments computed per
+// segment — these already correctly span across inline blanks, so no
+// re-parsing of ** / * / ` markers happens at render time.
 
-function renderStyledInline(content) {
-  if (!content) return null;
-  const parts = content.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={idx} className="wr-folio-bold">{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={idx} className="wr-folio-italic">{part.slice(1, -1)}</em>;
-    }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={idx} className="wr-folio-code">{part.slice(1, -1)}</code>;
-    }
-    return part;
-  });
+function renderStyledText(content, { bold, italic, code }) {
+  let node = content;
+  if (code) node = <code className="wr-folio-code">{node}</code>;
+  if (italic) node = <em className="wr-folio-italic">{node}</em>;
+  if (bold) node = <strong className="wr-folio-bold">{node}</strong>;
+  return node;
 }
 
 function renderSegments(segments, formBlanks, onBlankChange) {
@@ -1936,7 +1946,7 @@ function renderSegments(segments, formBlanks, onBlankChange) {
         />
       );
     }
-    return <React.Fragment key={i}>{renderStyledInline(seg.content)}</React.Fragment>;
+    return <React.Fragment key={i}>{renderStyledText(seg.content, seg)}</React.Fragment>;
   });
 }
 
@@ -2446,8 +2456,9 @@ export default function WarRoomView() {
       clearStageTimers();
       setSimError(err.message || 'Simulation failed. Check backend status.');
     } finally {
-      if (!isMountedRef.current) return;
-      setIsSimulating(false);
+      if (isMountedRef.current) {
+        setIsSimulating(false);
+      }
     }
   };
 
@@ -2488,7 +2499,7 @@ export default function WarRoomView() {
           const qCount = parsed.red_team?.opposing_counter_questions?.length || 3;
           setChatMessages([{
             role: 'bot',
-            text: `⚖️ **Session restored.** ${qCount} challenges active. State your position.`,
+            text: `⚖️ **Session restored.** ${qCount} challenges active on *"${excerpt.substring(0, 100).trim()}…"*. State your position.`,
           }]);
         } catch {
           sessionStorage.removeItem('wr_active_session');
@@ -2503,6 +2514,43 @@ export default function WarRoomView() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  // Scroll-spy: keep the sticky stage navigator's active indicator in sync
+  // with manual scrolling too, not just explicit nav clicks. Recomputes
+  // directly from each section's current position on every scroll tick,
+  // rather than relying on IntersectionObserver's changed-entries model —
+  // that approach only fires for sections whose intersection status just
+  // flipped, so a large instant scroll (or the app's actual scroll owner
+  // being an inner <main>, not the window) can skip re-evaluating a
+  // section that should now be active, leaving the indicator stuck.
+  useEffect(() => {
+    if (!simulationData) return;
+    const ids = ['wr-stage-issues', 'wr-stage-precedents', 'wr-stage-pleading', 'wr-stage-simulation'];
+    const DETECTION_LINE = 120; // px from viewport top, just under the sticky nav
+
+    const computeActive = () => {
+      const sections = ids
+        .map(id => document.getElementById(id))
+        .filter(Boolean)
+        .map(el => ({ id: el.id, top: el.getBoundingClientRect().top }));
+      if (sections.length === 0) return;
+
+      let current = sections[0];
+      for (const s of sections) {
+        if (s.top <= DETECTION_LINE) current = s;
+      }
+      setActiveStageId(prev => (prev === current.id ? prev : current.id));
+    };
+
+    computeActive();
+    const scroller = document.querySelector('main') || window;
+    scroller.addEventListener('scroll', computeActive, { passive: true });
+    window.addEventListener('resize', computeActive);
+    return () => {
+      scroller.removeEventListener('scroll', computeActive);
+      window.removeEventListener('resize', computeActive);
+    };
+  }, [simulationData]);
 
   // Manual file upload
   const handleManualUpload = async (file) => {
