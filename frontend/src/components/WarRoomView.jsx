@@ -1,16 +1,14 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { uploadDocument } from '../services/api';
-import { renderMarkdown, MARKDOWN_CSS } from '../utils/markdownUtils';
+import { MARKDOWN_CSS } from '../utils/markdownUtils';
+import MatterHeader from './warroom/MatterHeader.jsx';
+import StageRail from './warroom/StageRail.jsx';
+import PrecedentEntry from './warroom/PrecedentEntry.jsx';
+import PleadingDocument from './warroom/PleadingDocument.jsx';
+import SimulationRoom from './warroom/SimulationRoom.jsx';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-const renderParagraphs = (text) => {
-  if (!text) return null;
-  return text.split('\n').map((line, i, arr) => (
-    <React.Fragment key={i}>{line}{i < arr.length - 1 && <br />}</React.Fragment>
-  ));
-};
 
 const parseIssues = (text) => {
   if (!text) return [];
@@ -96,12 +94,12 @@ const parseGoverningLaw = (extractedIssues, openingArgument) => {
 const parsePrecedentData = (c, i) => {
   const rawTitle = c.title || `Case Citation #${i + 1}`;
   let cleanTitle = rawTitle;
-  let citationTag = 'Supreme Court of India · Landmark Record';
+  let citationTag = 'Indian Kanoon · undated';
 
-  const kanoonMatch = rawTitle.match(/^(.*?)\s+on\s+(\d{1,2}\s+[A-Za-z]+,\s+\d{4})/i);
+  const kanoonMatch = rawTitle.match(/^(.*?)\s+on\s+(?:\d{1,2}\s+[A-Za-z]+,\s+)?(\d{4})/i);
   if (kanoonMatch) {
     cleanTitle = kanoonMatch[1].replace(/\s+vs\s+/i, ' v. ').replace(/\s+versus\s+/i, ' v. ').trim();
-    citationTag = `Supreme Court of India · ${kanoonMatch[2]}`;
+    citationTag = `Indian Kanoon · ${kanoonMatch[2]}`;
   } else {
     cleanTitle = cleanTitle.replace(/\s+vs\s+/i, ' v. ').replace(/\s+versus\s+/i, ' v. ');
   }
@@ -117,185 +115,6 @@ const parsePrecedentData = (c, i) => {
   };
 };
 
-// ── Pleading AST & Inline Blanks Engine ──────────────────────────────────────
-
-// Dot-leader runs (".......", ". . . . .") are a real legal-document
-// fill-in-the-blank convention the AI sometimes falls back to despite the
-// prompt now asking for bracketed placeholders — caught here as a fallback
-// so any that slip through still render as a fillable input instead of a
-// wall of literal dots.
-const BLANK_REGEX = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\]|(?:\.\s?){4,})/g;
-
-// Splits a line into blank vs. plain-text runs first, then re-tokenizes each
-// plain run for **bold**/*italic*/`code` markers while carrying the open
-// style state (bold/italic/code) across blank boundaries. Legal pleadings
-// routinely bold a whole phrase that contains a fillable blank — e.g.
-// "**IN THE HIGH COURT OF ___________**" — and styling each side of the
-// blank independently (the original approach) can never detect that as one
-// bold run, since neither half contains a matching closing marker; the
-// literal ** characters leaked into the rendered document as a result.
-const parseInlineSegments = (text, blankCounterRef, blanksList) => {
-  const rawParts = [];
-  let lastIndex = 0;
-  let match;
-  const blankRe = new RegExp(BLANK_REGEX.source, 'g');
-  while ((match = blankRe.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      rawParts.push({ kind: 'text', raw: text.slice(lastIndex, match.index) });
-    }
-    rawParts.push({ kind: 'blank', raw: match[0] });
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    rawParts.push({ kind: 'text', raw: text.slice(lastIndex) });
-  }
-
-  const segments = [];
-  let bold = false, italic = false, code = false;
-
-  rawParts.forEach((part) => {
-    if (part.kind === 'blank') {
-      const raw = part.raw;
-      const id = `blank_${blankCounterRef.count++}`;
-      let label;
-      if (raw.startsWith('[') && raw.endsWith(']')) {
-        label = raw.slice(1, -1).trim();
-      } else if (/Rs\./i.test(raw)) {
-        label = 'Rs. Amount';
-      } else {
-        label = 'Fill value';
-      }
-      const blankObj = { id, raw, label };
-      blanksList.push(blankObj);
-      segments.push({ type: 'blank', ...blankObj });
-      return;
-    }
-
-    part.raw.split(/(\*\*|\*|`)/).forEach((tok) => {
-      if (!tok) return;
-      if (tok === '**') { bold = !bold; return; }
-      if (tok === '*') { italic = !italic; return; }
-      if (tok === '`') { code = !code; return; }
-      segments.push({ type: 'text', content: tok, bold, italic, code });
-    });
-  });
-
-  return segments;
-};
-
-const parsePleadingDocument = (rawText) => {
-  if (!rawText) return { blocks: [], blanksList: [] };
-
-  const lines = rawText.split('\n');
-  const blocks = [];
-  const blanksList = [];
-  const blankCounter = { count: 0 };
-
-  let currentParagraph = [];
-
-  const flushParagraph = () => {
-    if (currentParagraph.length > 0) {
-      const fullParaText = currentParagraph.join(' ').trim();
-      if (fullParaText) {
-        const segments = parseInlineSegments(fullParaText, blankCounter, blanksList);
-        blocks.push({ type: 'p', segments });
-      }
-      currentParagraph = [];
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    if (!line) {
-      flushParagraph();
-      continue;
-    }
-
-    if (/^---$|^\*\*\*$|^___$/.test(line)) {
-      flushParagraph();
-      blocks.push({ type: 'hr' });
-      continue;
-    }
-
-    const h4Match = line.match(/^####\s+(.+)$/);
-    if (h4Match) {
-      flushParagraph();
-      blocks.push({ type: 'h4', segments: parseInlineSegments(h4Match[1], blankCounter, blanksList) });
-      continue;
-    }
-
-    const h3Match = line.match(/^###\s+(.+)$/);
-    if (h3Match) {
-      flushParagraph();
-      blocks.push({ type: 'h3', segments: parseInlineSegments(h3Match[1], blankCounter, blanksList) });
-      continue;
-    }
-
-    const h2Match = line.match(/^##\s+(.+)$/);
-    if (h2Match) {
-      flushParagraph();
-      blocks.push({ type: 'h2', segments: parseInlineSegments(h2Match[1], blankCounter, blanksList) });
-      continue;
-    }
-
-    const h1Match = line.match(/^#\s+(.+)$/);
-    if (h1Match) {
-      flushParagraph();
-      blocks.push({ type: 'h1', segments: parseInlineSegments(h1Match[1], blankCounter, blanksList) });
-      continue;
-    }
-
-    const quoteMatch = line.match(/^>\s*(.+)$/);
-    if (quoteMatch) {
-      flushParagraph();
-      blocks.push({ type: 'quote', segments: parseInlineSegments(quoteMatch[1], blankCounter, blanksList) });
-      continue;
-    }
-
-    const numMatch = line.match(/^(\d+)[.)]\s+(.+)$/);
-    if (numMatch) {
-      flushParagraph();
-      blocks.push({
-        type: 'num-item',
-        num: numMatch[1],
-        segments: parseInlineSegments(numMatch[2], blankCounter, blanksList),
-      });
-      continue;
-    }
-
-    const bulletMatch = line.match(/^[-•*]\s+(.+)$/);
-    if (bulletMatch) {
-      flushParagraph();
-      blocks.push({
-        type: 'bullet-item',
-        segments: parseInlineSegments(bulletMatch[1], blankCounter, blanksList),
-      });
-      continue;
-    }
-
-    currentParagraph.push(line);
-  }
-
-  flushParagraph();
-
-  return { blocks, blanksList };
-};
-
-const compilePleadingText = (rawText, formBlanks, blanksList) => {
-  if (!rawText) return '';
-  let compiled = rawText;
-  if (!blanksList || blanksList.length === 0) return compiled;
-
-  blanksList.forEach((b) => {
-    const val = formBlanks[b.id]?.trim();
-    if (val) {
-      compiled = compiled.replace(b.raw, val);
-    }
-  });
-  return compiled;
-};
-
 // ── Pipeline Stages ─────────────────────────────────────────────────────────
 
 const PIPELINE_STAGES = [
@@ -308,1953 +127,321 @@ const PIPELINE_STAGES = [
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 
-const WAR_ROOM_STYLES = `
+const VC_STYLES = `
 ${MARKDOWN_CSS}
 
-  /* ── VIRTUAL COURTROOM INTAKE CARD ─────────────────────────────── */
+  /* ── DESIGN TOKENS (scoped — this page ignores the app's global light/dark
+     toggle by design, since parchment/paper is a fixed physical-document
+     metaphor with no natural dark twin) ─────────────────────────────── */
+  .vc-root {
+    --ink:#16213E; --ink-2:#2A3655;
+    --parchment:#F5F0E4; --paper:#FFFDF8;
+    --oxblood:#7B1E27; --oxblood-soft:#F4E5E3; --oxblood-line:#E3C6C2;
+    --brass:#93672A; --brass-soft:#F1E7D3;
+    --pine:#1F4D3D; --pine-soft:#E2EDE7;
+    --text:#2A2723; --text-muted:#736C60;
+    --line:#E1D8C4; --line-soft:#EDE6D6;
+    --font-serif:'Source Serif 4', Georgia, serif;
+    --font-sans:'IBM Plex Sans', sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+
+    background: var(--parchment);
+    color: var(--text);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    min-height: calc(100vh - 64px);
+  }
+  .vc-root *{ box-sizing: border-box; }
+  .vc-root ::selection{ background: var(--brass-soft); }
+  .vc-root a{ color: inherit; }
+  @media (prefers-reduced-motion: reduce) {
+    .vc-root *{ animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  /* ── VIRTUAL COURTROOM INTAKE CARD (re-skinned, JSX/behavior untouched) ── */
   .wr-intake-wrap {
     min-height: calc(100vh - 64px);
     width: 100%;
     padding: 32px 16px 48px;
-    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     overflow-y: auto;
   }
-  .wr-intake-container {
-    max-width: 672px;
-    width: 100%;
-    margin: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+  .wr-intake-container { max-width: 672px; width: 100%; margin: auto; display: flex; flex-direction: column; align-items: center; }
   .wr-intake-card {
     width: 100%;
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 16px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 4px;
     padding: 36px 40px;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-    transition: all 0.2s ease;
+    box-shadow: 0 14px 30px -20px rgba(22,33,62,.25);
+    display: flex; flex-direction: column;
   }
   .wr-intake-badge {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    background: rgba(30, 58, 138, 0.6);
-    border: 1px solid #1e40af;
-    color: #60a5fa;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 48px; height: 48px; border-radius: 10px;
+    background: var(--brass-soft); border: 1px solid var(--line);
+    color: var(--brass);
+    display: flex; align-items: center; justify-content: center;
     margin: 0 auto 16px;
   }
-  .wr-intake-title {
-    font-size: 24px;
-    font-weight: 700;
-    font-family: var(--font-serif, Georgia, serif);
-    color: #ffffff;
-    text-align: center;
-    letter-spacing: -0.025em;
-    margin: 0 0 6px;
-  }
-  .wr-intake-subtitle {
-    font-size: 14px;
-    color: #94a3b8;
-    text-align: center;
-    margin: 0 0 24px;
-    line-height: 1.5;
-  }
+  .wr-intake-title { font-size: 24px; font-weight: 600; font-family: var(--font-serif); color: var(--ink) !important; text-align: center; margin: 0 0 6px; }
+  .wr-intake-subtitle { font-size: 14px; color: var(--text-muted); text-align: center; margin: 0 0 24px; line-height: 1.5; }
   .wr-intake-dropzone {
-    border: 2px dashed #334155;
-    background: rgba(2, 6, 23, 0.4);
-    border-radius: 12px;
-    padding: 30px 20px;
-    text-align: center;
-    cursor: pointer;
+    border: 2px dashed var(--line); background: var(--parchment);
+    border-radius: 10px; padding: 30px 20px; text-align: center; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
     transition: all 0.2s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
   }
-  .wr-intake-dropzone:hover {
-    border-color: #60a5fa;
-    background: rgba(30, 58, 138, 0.2);
-  }
-  .wr-intake-dropzone.drag-over {
-    border-color: #3b82f6;
-    background: rgba(30, 58, 138, 0.3);
-    transform: scale(1.01);
-  }
-  .wr-intake-dropzone-icon {
-    color: #3b82f6;
-    margin-bottom: 2px;
-  }
-  .wr-intake-dropzone-primary {
-    font-size: 14px;
-    font-weight: 600;
-    color: #f1f5f9;
-  }
-  .wr-intake-dropzone-secondary {
-    font-size: 12px;
-    color: #94a3b8;
-    margin-top: 2px;
-  }
+  .wr-intake-dropzone:hover { border-color: var(--brass); background: var(--brass-soft); }
+  .wr-intake-dropzone.drag-over { border-color: var(--brass); background: var(--brass-soft); transform: scale(1.01); }
+  .wr-intake-dropzone-icon { color: var(--brass); margin-bottom: 2px; }
+  .wr-intake-dropzone-primary { font-size: 14px; font-weight: 600; color: var(--ink); }
+  .wr-intake-dropzone-secondary { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
   .wr-intake-divider {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 22px 0 18px;
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    display: flex; align-items: center; gap: 12px; margin: 22px 0 18px;
+    color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
   }
-  .wr-intake-divider::before,
-  .wr-intake-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: #1e293b;
-  }
-  .wr-intake-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 24px;
-  }
-  .wr-intake-step-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-  }
+  .wr-intake-divider::before, .wr-intake-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .wr-intake-steps { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+  .wr-intake-step-row { display: flex; align-items: flex-start; gap: 12px; }
   .wr-intake-step-num {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    background: rgba(30, 58, 138, 0.8);
-    border: 1px solid #1e40af;
-    color: #60a5fa;
-    font-size: 11px;
-    font-weight: 700;
-    font-family: monospace;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 1px;
+    width: 24px; height: 24px; border-radius: 6px;
+    background: var(--brass-soft); border: 1px solid var(--line); color: var(--brass);
+    font-size: 11px; font-weight: 700; font-family: var(--font-mono);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
   }
-  .wr-intake-step-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: #e2e8f0;
-  }
-  .wr-intake-step-desc {
-    font-size: 12px;
-    color: #94a3b8;
-    line-height: 1.4;
-  }
+  .wr-intake-step-title { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .wr-intake-step-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
   .wr-intake-chip {
-    display: inline-block;
-    background: #020617;
-    border: 1px solid #1e293b;
-    color: #93c5fd;
-    font-family: monospace;
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-top: 4px;
-    cursor: pointer;
-    transition: all 0.15s ease;
+    display: inline-block; background: var(--parchment); border: 1px solid var(--line); color: var(--ink-2);
+    font-family: var(--font-mono); font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-top: 4px; cursor: pointer;
   }
-  .wr-intake-chip:hover {
-    border-color: #3b82f6;
-    color: #bfdbfe;
-  }
-  .wr-intake-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
+  .wr-intake-chip:hover { border-color: var(--brass); color: var(--brass); }
+  .wr-intake-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .wr-intake-btn-primary {
-    flex: 1;
-    min-width: 180px;
-    background: #2563eb;
-    color: #ffffff;
-    font-size: 14px;
-    font-weight: 500;
-    padding: 10px 16px;
-    border-radius: 12px;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    transition: all 0.15s ease;
+    flex: 1; min-width: 180px; background: var(--pine); color: #EAF3EE;
+    font-size: 14px; font-weight: 500; padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
   }
-  .wr-intake-btn-primary:hover {
-    background: #3b82f6;
-  }
-  .wr-intake-btn-primary:active {
-    transform: scale(0.98);
-  }
+  .wr-intake-btn-primary:hover { background: #25604C; }
+  .wr-intake-btn-primary:active { transform: translateY(1px); }
   .wr-intake-btn-secondary {
-    background: #1e293b;
-    color: #e2e8f0;
-    border: 1px solid #334155;
-    font-size: 14px;
-    font-weight: 500;
-    padding: 10px 16px;
-    border-radius: 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition: all 0.15s ease;
+    background: transparent; color: var(--ink); border: 1px solid var(--line);
+    font-size: 14px; font-weight: 500; padding: 10px 16px; border-radius: 8px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
   }
-  .wr-intake-btn-secondary:hover {
-    background: rgba(51, 65, 85, 0.8);
-  }
+  .wr-intake-btn-secondary:hover { background: var(--line-soft); }
 
-  /* ── PIPELINE LOADING ──────────────────────────────────────────── */
-  .wr-pipeline-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: calc(100vh - 64px);
-  }
+  /* ── PIPELINE LOADING (re-skinned, JSX/behavior untouched) ── */
+  .wr-pipeline-wrap { display: flex; align-items: center; justify-content: center; height: calc(100vh - 64px); }
   .wr-pipeline-card {
-    background: var(--bg-panel, #171c26);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 16px;
-    padding: 44px 48px;
-    max-width: 500px;
-    width: 100%;
-    box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+    background: var(--paper); border: 1px solid var(--line); border-radius: 4px;
+    padding: 44px 48px; max-width: 500px; width: 100%;
+    box-shadow: 0 14px 30px -20px rgba(22,33,62,.25);
   }
-  .wr-pipeline-gavel {
-    font-size: 46px;
-    display: block;
-    text-align: center;
-    margin-bottom: 20px;
-    animation: wr-float 2.6s ease-in-out infinite;
-  }
+  .wr-pipeline-gavel { font-size: 46px; display: block; text-align: center; margin-bottom: 20px; animation: wr-float 2.6s ease-in-out infinite; }
   @keyframes wr-float {
-    0%,100% { transform: translateY(0); filter: drop-shadow(0 4px 16px rgba(59,130,246,0.3)); }
-    50% { transform: translateY(-7px); filter: drop-shadow(0 12px 28px rgba(59,130,246,0.55)); }
+    0%,100% { transform: translateY(0); filter: drop-shadow(0 4px 16px rgba(147,103,42,0.3)); }
+    50% { transform: translateY(-7px); filter: drop-shadow(0 12px 28px rgba(147,103,42,0.4)); }
   }
-  .wr-pipeline-h { font-size: 20px; font-weight: 700; color: white; text-align: center; margin: 0 0 6px; }
-  .wr-pipeline-sub { font-size: 13px; color: var(--text-muted, #8F9CAE); text-align: center; margin: 0 0 28px; line-height: 1.5; }
-  .wr-stage-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 9px 12px; border-radius: 8px;
-    transition: background 0.3s;
-  }
-  .wr-stage-row.active-row { background: rgba(59,130,246,0.06); }
-  .wr-stage-dot {
-    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
-    transition: background 0.4s, box-shadow 0.4s;
-  }
-  .wr-stage-dot.done { background: #10B981; box-shadow: 0 0 6px rgba(16,185,129,0.6); }
-  .wr-stage-dot.active { background: #3B82F6; box-shadow: 0 0 9px rgba(59,130,246,0.7); animation: wr-dot-pulse 1.4s ease-in-out infinite; }
-  .wr-stage-dot.pending { background: var(--border-subtle, #2C3241); }
-  @keyframes wr-dot-pulse {
-    0%,100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.45; transform: scale(0.75); }
-  }
-  .wr-stage-text { font-size: 12.5px; }
-  .wr-stage-text.done { color: #10B981; }
-  .wr-stage-text.active { color: white; font-weight: 600; }
-  .wr-stage-text.pending { color: var(--text-muted, #8F9CAE); }
+  .wr-pipeline-h { font-size: 20px; font-weight: 600; font-family: var(--font-serif); color: var(--ink) !important; text-align: center; margin: 0 0 6px; }
+  .wr-pipeline-sub { font-size: 13px; color: var(--text-muted); text-align: center; margin: 0 0 28px; line-height: 1.5; }
+  .wr-stage-row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; transition: background 0.3s; }
+  .wr-stage-row.active-row { background: var(--brass-soft); }
+  .wr-stage-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; transition: background 0.4s; }
+  .wr-stage-dot.done { background: var(--pine); }
+  .wr-stage-dot.active { background: var(--brass); animation: wr-dot-pulse 1.4s ease-in-out infinite; }
+  .wr-stage-dot.pending { background: var(--line); }
+  @keyframes wr-dot-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.75); } }
+  .wr-stage-text { font-size: 12.5px; color: var(--text); }
+  .wr-stage-text.done { color: var(--pine); }
+  .wr-stage-text.active { color: var(--ink); font-weight: 600; }
+  .wr-stage-text.pending { color: var(--text-muted); }
 
-  /* ── ENTERPRISE WAR ROOM PAGE CONTAINER ────────────────────────── */
-  .wr-results-page {
-    min-height: calc(100vh - 64px);
-    display: flex;
-    flex-direction: column;
-    font-family: var(--font-sans);
-    opacity: 0;
-    transform: translateY(10px);
-    transition: opacity 0.5s cubic-bezier(0.16,1,0.3,1), transform 0.5s cubic-bezier(0.16,1,0.3,1);
-    background: var(--bg-app, #0b0f19);
+  /* ── TOPBAR ─────────────────────────────────────────────────────── */
+  .vc-topbar {
+    background: var(--ink); color: #EFEAE0;
+    padding: 20px 32px; display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 24px; flex-wrap: wrap;
   }
-  .wr-results-page.wr-mounted { opacity: 1; transform: translateY(0); }
+  .vc-case-id { font-family: var(--font-mono); font-size: 12px; letter-spacing: .02em; color: #B9AF9A; margin: 0 0 6px; }
+  .vc-case-title { font-family: var(--font-serif); font-size: 26px; font-weight: 600; margin: 0 0 4px; color: #fff !important; }
+  .vc-case-sub { font-size: 13px; color: #B9AF9A; margin: 0; }
+  .vc-topbar-actions { display: flex; align-items: center; gap: 10px; padding-top: 2px; }
+  .vc-btn {
+    font-family: var(--font-sans); font-size: 13px; font-weight: 500; border-radius: 8px;
+    padding: 9px 14px; border: 1px solid transparent; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; transition: transform .08s ease, background .15s ease;
+  }
+  .vc-btn:active { transform: translateY(1px); }
+  .vc-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .vc-btn-outline-light { background: transparent; border-color: #5B6690; color: #EFEAE0; }
+  .vc-btn-outline-light:hover { background: #1F2C4F; }
+  .vc-btn-pine { background: var(--pine); color: #EAF3EE; }
+  .vc-btn-pine:hover { background: #25604C; }
 
-  /* ── DYNAMIC MATTER HEADER ─────────────────────────────────────── */
-  .wr-matter-header {
-    background: #0f172a;
-    border-bottom: 1px solid #1e293b;
-    padding: 16px 28px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    flex-shrink: 0;
-    position: relative;
-    z-index: 25;
+  .vc-progress { display: flex; gap: 6px; margin-top: 14px; max-width: 520px; }
+  .vc-progress-seg { flex: 1; height: 4px; border-radius: 3px; background: #2A3655; position: relative; overflow: hidden; }
+  .vc-progress-seg.done { background: #B9AF9A; }
+  .vc-progress-seg.active { background: #B9AF9A; opacity: 0.55; }
+  .vc-progress-labels { display: flex; gap: 6px; max-width: 520px; margin-top: 6px; font-size: 10.5px; color: #8D8570; }
+  .vc-progress-labels span { flex: 1; }
+
+  /* ── WORKSPACE / STAGE RAIL ─────────────────────────────────────── */
+  .vc-workspace { display: flex; align-items: flex-start; max-width: 1360px; margin: 0 auto; }
+  .vc-stage-rail {
+    position: sticky; top: 0; align-self: flex-start; width: 236px; flex-shrink: 0;
+    padding: 36px 12px 40px 32px; height: calc(100vh - 64px); overflow-y: auto;
   }
-  .wr-matter-info {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
+  .vc-rail-item { display: flex; gap: 12px; padding: 12px 8px; border-radius: 8px; cursor: pointer; color: var(--text-muted); position: relative; }
+  .vc-rail-item:hover { background: var(--line-soft); }
+  .vc-rail-track { display: flex; flex-direction: column; align-items: center; width: 22px; flex-shrink: 0; }
+  .vc-rail-dot {
+    width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); background: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); flex-shrink: 0;
   }
-  .wr-matter-title-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .wr-matter-title {
-    font-size: 20px;
-    font-weight: 700;
-    font-family: var(--font-serif, Georgia, serif);
-    color: #ffffff;
-    margin: 0;
-    letter-spacing: -0.015em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 540px;
-  }
-  .wr-matter-meta-pills {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .wr-meta-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-  }
-  .wr-meta-pill.strategy {
-    background: rgba(37, 99, 235, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    color: #93c5fd;
-    text-transform: uppercase;
-    font-weight: 700;
-  }
-  .wr-meta-pill.forum {
-    background: rgba(148, 163, 184, 0.1);
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    color: #cbd5e1;
-  }
-  .wr-meta-pill.law {
-    background: rgba(245, 158, 11, 0.12);
-    border: 1px solid rgba(245, 158, 11, 0.25);
-    color: #fcd34d;
-    font-family: monospace;
-    font-size: 11px;
-  }
-  .wr-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-  .wr-header-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    border-radius: 9px;
-    font-size: 12.5px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-sans);
-    transition: all 0.15s ease;
-  }
-  .wr-header-btn.primary {
-    background: #2563eb;
-    color: #ffffff;
-    border: 1px solid #3b82f6;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  }
-  .wr-header-btn.primary:hover {
-    background: #1d4ed8;
-  }
-  .wr-header-btn.secondary {
-    background: #1e293b;
-    color: #cbd5e1;
-    border: 1px solid #334155;
-  }
-  .wr-header-btn.secondary:hover {
-    background: #334155;
-    color: #ffffff;
-  }
-  .wr-header-btn.danger {
-    background: transparent;
-    color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.3);
-  }
-  .wr-header-btn.danger:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: #ef4444;
-    color: #fca5a5;
+  .vc-rail-connector { width: 2px; flex: 1; background: var(--line); margin: 2px 0; min-height: 22px; }
+  .vc-rail-item.is-done .vc-rail-dot { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .vc-rail-item.is-done .vc-rail-connector { background: var(--ink-2); }
+  .vc-rail-item.is-active .vc-rail-dot { background: var(--brass); border-color: var(--brass); color: #fff; }
+  .vc-rail-item.is-active .vc-rail-label { color: var(--ink); }
+  .vc-rail-item.is-active { background: var(--brass-soft); }
+  .vc-rail-label { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .vc-rail-status { font-size: 11.5px; color: var(--text-muted); }
+
+  /* ── MAIN CONTENT COLUMN ────────────────────────────────────────── */
+  .vc-content { flex: 1; min-width: 0; padding: 40px 48px 120px 40px; }
+  .vc-stage { max-width: 760px; margin-bottom: 64px; scroll-margin-top: 24px; }
+  .vc-stage-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .vc-stage-head h2 { font-family: var(--font-serif); font-size: 22px; font-weight: 600; margin: 0; color: var(--ink) !important; }
+  .vc-stage-head .vc-num { font-family: var(--font-mono); font-size: 14px; color: var(--brass); }
+  .vc-stage-note { font-size: 13px; color: var(--text-muted); margin: 0 0 20px; }
+
+  /* Stage 1: facts brief card */
+  .vc-brief-card {
+    background: var(--paper); border-left: 3px solid var(--brass); padding: 18px 22px;
+    font-family: var(--font-serif); font-size: 16.5px; line-height: 1.6; color: var(--text);
   }
 
-  /* ── STICKY STAGE NAVIGATOR ────────────────────────────────────── */
-  .wr-stage-navigator {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: rgba(15, 23, 42, 0.88);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid #1e293b;
-    padding: 8px 28px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-  .wr-nav-track {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .wr-nav-track::-webkit-scrollbar { display: none; }
-  .wr-nav-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 6px 14px;
-    border-radius: 8px;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: #94a3b8;
-    background: transparent;
-    border: 1px solid transparent;
-    cursor: pointer;
-    transition: all 0.18s ease;
-    white-space: nowrap;
-  }
-  .wr-nav-item:hover {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.04);
-  }
-  .wr-nav-item.active {
-    color: #60a5fa;
-    background: rgba(37, 99, 235, 0.14);
-    border-color: rgba(59, 130, 246, 0.35);
-  }
-  .wr-nav-roman {
-    font-size: 10.5px;
-    font-weight: 800;
-    opacity: 0.85;
-  }
-  .wr-nav-progress {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    background: rgba(16, 185, 129, 0.1);
-    border: 1px solid rgba(16, 185, 129, 0.25);
-    color: #34d399;
-    flex-shrink: 0;
-  }
-  .wr-nav-progress.complete {
-    background: rgba(16, 185, 129, 0.2);
-    border-color: #10b981;
-    color: #6ee7b7;
-  }
+  /* Stage 2: precedent entries */
+  .vc-precedents { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .vc-precedent { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+  .vc-precedent-meta { font-size: 11.5px; color: var(--brass); font-weight: 600; margin-bottom: 6px; letter-spacing: .01em; }
+  .vc-precedent h3 { font-family: var(--font-serif); font-style: italic; font-weight: 600; font-size: 16px; margin: 0 0 6px; color: var(--ink) !important; }
+  .vc-precedent p { font-size: 13.5px; color: var(--text-muted); margin: 0 0 10px; line-height: 1.55; }
+  .vc-precedent-link { font-size: 12.5px; font-weight: 500; color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+  .vc-precedent-more { font-size: 12.5px; font-weight: 600; color: var(--brass); text-decoration: underline; cursor: pointer; }
 
-  /* ── SCROLLABLE RESULTS BODY ───────────────────────────────────── */
-  .wr-results-body {
-    flex: 1;
-    padding: 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 32px;
-    max-width: 1400px;
-    width: 100%;
-    margin: 0 auto;
-    box-sizing: border-box;
+  /* Stage 3: pleading document */
+  .vc-doc-toolbar { display: flex; gap: 8px; margin-bottom: 14px; }
+  .vc-tool-btn {
+    font-size: 12.5px; font-weight: 500; color: var(--ink-2); background: var(--paper);
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; cursor: pointer;
   }
+  .vc-tool-btn:hover:not(:disabled) { border-color: var(--brass); color: var(--brass); }
+  .vc-tool-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .vc-doc-error { color: var(--oxblood); font-size: 12.5px; margin-bottom: 10px; }
+  .vc-paper {
+    background: var(--paper); border: 1px solid var(--line);
+    box-shadow: 0 1px 0 var(--line-soft), 0 14px 30px -20px rgba(22,33,62,.25);
+    padding: 44px 48px; font-family: var(--font-serif); font-size: 15.5px; line-height: 1.75; color: var(--text);
+  }
+  .vc-paper h1, .vc-paper h2, .vc-paper h3 { font-weight: 600; color: var(--ink) !important; }
+  .vc-paper h1 { font-size: 18px; margin: 0 0 4px; }
+  .vc-paper h2 { font-size: 16px; margin: 24px 0 10px; }
+  .vc-paper h3 { font-size: 14.5px; margin: 20px 0 8px; }
+  .vc-paper p { margin: 0 0 14px; text-align: justify; }
+  .vc-paper strong { color: var(--ink); }
+  .vc-paper hr { margin: 18px 0; border: none; border-top: 1px solid var(--line); }
+  .vc-paper ol, .vc-paper ul { padding-left: 22px; margin: 0 0 14px; }
+  .vc-paper li { margin: 4px 0; text-align: justify; }
+  .blank {
+    display: inline-block; min-width: 60px; border: none; border-bottom: 1.5px dashed var(--brass);
+    color: var(--brass); background: var(--brass-soft); padding: 0 4px; border-radius: 2px;
+    cursor: text; outline: none; font-family: var(--font-sans); font-size: 0.92em;
+  }
+  .blank::placeholder { color: var(--brass); opacity: .75; }
+  .blank:focus { background: #fff; border-bottom-style: solid; }
 
-  /* ── SECTION SHELL ─────────────────────────────────────────────── */
-  .wr-section-container {
-    scroll-margin-top: 64px;
+  /* Stage 4+5: Simulation Room */
+  .vc-sim-grid { display: grid; grid-template-columns: minmax(0,380px) minmax(0,1fr); gap: 22px; margin-top: 20px; align-items: start; }
+  .vc-queue-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .vc-queue-panel-head { padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; justify-content: space-between; }
+  .vc-challenge { border-bottom: 1px solid var(--line-soft); }
+  .vc-challenge:last-child { border-bottom: none; }
+  .vc-challenge summary { list-style: none; cursor: pointer; padding: 14px 18px; display: flex; gap: 10px; align-items: flex-start; }
+  .vc-challenge summary::-webkit-details-marker { display: none; }
+  .vc-chal-status {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--oxblood-line);
+    margin-top: 2px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--oxblood);
   }
-  .wr-section-head {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-  .wr-section-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    background: rgba(37, 99, 235, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    color: #60a5fa;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-  }
-  .wr-section-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: #ffffff;
-    letter-spacing: -0.01em;
-    margin: 0;
-  }
-  .wr-section-desc {
-    font-size: 12.5px;
-    color: #94a3b8;
-    margin-left: auto;
-  }
+  .vc-challenge.answered .vc-chal-status { background: var(--pine); border-color: var(--pine); color: #fff; }
+  .vc-chal-body { flex: 1; min-width: 0; }
+  .vc-chal-tag { display: inline-block; font-size: 10px; font-weight: 600; color: var(--text-muted); border: 1px solid var(--line); padding: 1px 7px; border-radius: 10px; margin-bottom: 5px; }
+  .vc-chal-q { font-size: 13.5px; color: var(--text); line-height: 1.45; }
+  .vc-chal-expand { padding: 0 18px 16px 46px; }
+  .vc-rebuttal-box { background: var(--pine-soft); border-left: 3px solid var(--pine); padding: 12px 14px; font-size: 13px; line-height: 1.5; color: #1B3F32; margin-bottom: 10px; }
+  .vc-use-btn { font-size: 12px; font-weight: 600; color: #fff; background: var(--pine); border: none; border-radius: 7px; padding: 7px 12px; cursor: pointer; }
+  .vc-use-btn:hover { background: #25604C; }
+  .vc-use-btn.used { background: var(--text-muted); cursor: default; }
 
-  /* ── STAGE I: EXTRACTED ISSUES ─────────────────────────────────── */
-  .wr-issues-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  .vc-chat-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; height: 640px; }
+  .vc-chat-head { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .vc-tone-toggle { display: flex; background: var(--line-soft); border-radius: 20px; padding: 3px; gap: 2px; }
+  .vc-tone-btn { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 16px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 5px; }
+  .vc-tone-btn.on.aggr { background: var(--oxblood); color: #fff; }
+  .vc-tone-btn.on.def { background: var(--ink-2); color: #fff; }
+  .vc-chat-thread { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .vc-msg { max-width: 78%; padding: 11px 14px; border-radius: 12px; font-size: 13.5px; line-height: 1.5; }
+  .vc-msg-opp { align-self: flex-start; background: var(--oxblood-soft); color: #4A1116; border-bottom-left-radius: 3px; }
+  .vc-msg-you { align-self: flex-end; background: var(--pine-soft); color: #173226; border-bottom-right-radius: 3px; }
+  .vc-msg-role { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .65; margin-bottom: 4px; }
+  .vc-msg .md-b { color: inherit; font-weight: 700; }
+  .vc-msg .md-h3, .vc-msg .md-h4 { color: inherit; }
+  .vc-msg .md-i { color: inherit; }
+  .vc-msg .md-code { background: rgba(0,0,0,0.08); color: inherit; }
+  .vc-typing { font-style: italic; opacity: 0.75; }
+  .vc-quick-replies { display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-start; max-width: 95%; }
+  .vc-qr-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; cursor: pointer; text-align: left;
+    border: 1px solid var(--line); background: var(--paper); color: var(--ink-2);
   }
-  .wr-issue-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    padding: 16px 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  .vc-qr-pill:hover:not(:disabled) { border-color: var(--brass); color: var(--brass); }
+  .vc-chat-input-row { border-top: 1px solid var(--line); padding: 12px 14px; display: flex; gap: 8px; }
+  .vc-chat-input-row textarea {
+    flex: 1; resize: none; border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px;
+    font-family: inherit; font-size: 13.5px; min-height: 38px; max-height: 90px;
   }
-  .wr-issue-idx {
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    background: rgba(37, 99, 235, 0.2);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    color: #93c5fd;
-    font-size: 11px;
-    font-weight: 700;
-    font-family: monospace;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-  .wr-issue-content {
-    font-size: 14px;
-    color: #e2e8f0;
-    line-height: 1.6;
-    font-weight: 500;
-  }
+  .vc-chat-input-row textarea:focus { outline: none; border-color: var(--brass); }
+  .vc-send-btn { background: var(--ink); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .vc-send-btn:hover:not(:disabled) { background: var(--ink-2); }
+  .vc-send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-  /* ── STAGE II: LAW-REPORT PRECEDENT CARDS ───────────────────────── */
-  .wr-precedents-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-    gap: 16px;
-  }
-  .wr-precedent-card {
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 14px;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  }
-  .wr-precedent-card:hover {
-    border-color: rgba(245, 158, 11, 0.4);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(245, 158, 11, 0.08);
-  }
-  .wr-precedent-head {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .wr-precedent-title {
-    font-size: 15px;
-    font-weight: 700;
-    font-family: var(--font-serif, Georgia, serif);
-    font-style: italic;
-    color: #f1f5f9;
-    line-height: 1.45;
-  }
-  .wr-precedent-auth-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.25);
-    padding: 2px 8px;
-    border-radius: 5px;
-    width: fit-content;
-  }
-  .wr-precedent-ratio {
-    font-size: 12.5px;
-    color: #94a3b8;
-    line-height: 1.6;
-    background: rgba(2, 6, 23, 0.4);
-    border-left: 3px solid #f59e0b;
-    padding: 10px 12px;
-    border-radius: 0 8px 8px 0;
-    flex: 1;
-  }
-  .wr-precedent-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #60a5fa;
-    text-decoration: none;
-    margin-top: 4px;
-    width: fit-content;
-    transition: color 0.15s ease;
-  }
-  .wr-precedent-link:hover {
-    color: #93c5fd;
-    text-decoration: underline;
-  }
-  .wr-precedent-readmore {
-    font-size: 11.5px;
-    font-weight: 700;
-    color: #f59e0b;
-    background: transparent;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    width: fit-content;
-    margin-top: -4px;
-    transition: color 0.15s ease;
-  }
-  .wr-precedent-readmore:hover {
-    color: #fbbf24;
-    text-decoration: underline;
-  }
-
-  /* ── STAGE III: LEGAL FOLIO PLEADING WORKBENCH ───────────────────── */
-  .wr-folio-workbench {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .wr-folio-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    padding: 10px 18px;
-  }
-  .wr-folio-tools-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .wr-folio-badge {
-    font-size: 11px;
-    font-weight: 700;
-    color: #93c5fd;
-    background: rgba(37, 99, 235, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    padding: 3px 8px;
-    border-radius: 6px;
-    text-transform: uppercase;
-  }
-  .wr-folio-tools-right {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .wr-folio-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-sans);
-    transition: all 0.15s ease;
-    border: 1px solid #334155;
-    background: #1e293b;
-    color: #e2e8f0;
-  }
-  .wr-folio-btn:hover {
-    background: #334155;
-    color: #ffffff;
-  }
-  .wr-folio-btn.copied {
-    background: rgba(16, 185, 129, 0.2);
-    border-color: #10b981;
-    color: #34d399;
-  }
-  .wr-folio-sheet {
-    max-width: 900px;
-    width: 100%;
-    margin: 0 auto;
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 16px;
-    padding: 48px 56px;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
-    font-family: var(--font-serif, Georgia, serif);
-    color: #f1f5f9;
-    line-height: 1.85;
-    font-size: 15px;
-    box-sizing: border-box;
-  }
-  .wr-folio-h1 {
-    font-size: 20px;
-    font-weight: 700;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #ffffff;
-    margin: 0 0 24px;
-    padding-bottom: 12px;
-    border-bottom: 2px double #334155;
-  }
-  .wr-folio-h2 {
-    font-size: 16px;
-    font-weight: 700;
-    color: #ffffff;
-    margin: 28px 0 12px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-  }
-  .wr-folio-h3 {
-    font-size: 14.5px;
-    font-weight: 700;
-    color: #93c5fd;
-    margin: 20px 0 8px;
-  }
-  .wr-folio-h4 {
-    font-size: 13.5px;
-    font-weight: 700;
-    color: #cbd5e1;
-    margin: 16px 0 6px;
-  }
-  .wr-folio-p {
-    margin: 0 0 16px;
-    text-align: justify;
-  }
-  .wr-folio-quote {
-    margin: 18px 0;
-    padding: 12px 20px;
-    background: rgba(2, 6, 23, 0.5);
-    border-left: 3px solid #3b82f6;
-    font-style: italic;
-    color: #cbd5e1;
-    border-radius: 0 8px 8px 0;
-  }
-  .wr-folio-num {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    margin: 8px 0;
-    text-align: justify;
-  }
-  .wr-folio-num-idx {
-    font-weight: 700;
-    color: #60a5fa;
-    min-width: 24px;
-    flex-shrink: 0;
-  }
-  .wr-folio-bullet {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    margin: 6px 0;
-    text-align: justify;
-  }
-  .wr-folio-bullet-dot {
-    color: #60a5fa;
-    font-size: 12px;
-    flex-shrink: 0;
-    margin-top: 4px;
-  }
-  .wr-folio-hr {
-    border: none;
-    border-top: 1px solid #334155;
-    margin: 32px 0;
-  }
-  .wr-folio-bold {
-    font-weight: 700;
-    color: #ffffff;
-  }
-  .wr-folio-italic {
-    font-style: italic;
-    color: #e2e8f0;
-  }
-  .wr-folio-code {
-    font-family: monospace;
-    font-size: 13px;
-    background: rgba(2, 6, 23, 0.6);
-    padding: 2px 6px;
-    border-radius: 4px;
-    color: #93c5fd;
-  }
-  .wr-inline-blank {
-    display: inline-block;
-    min-width: 90px;
-    padding: 2px 8px;
-    margin: 0 4px;
-    border: none;
-    border-bottom: 2px dashed #f59e0b;
-    background: rgba(245, 158, 11, 0.12);
-    color: #fef08a;
-    font-size: 13.5px;
-    font-family: var(--font-sans);
-    border-radius: 4px 4px 0 0;
-    outline: none;
-    transition: all 0.15s ease;
-    box-sizing: border-box;
-  }
-  .wr-inline-blank:focus {
-    border-bottom: 2px solid #3b82f6;
-    background: rgba(59, 130, 246, 0.2);
-    color: #ffffff;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
-  }
-  .wr-raw-editor {
-    width: 100%;
-    min-height: 480px;
-    background: #020617;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    padding: 24px;
-    color: #e2e8f0;
-    font-family: monospace;
-    font-size: 13.5px;
-    line-height: 1.7;
-    resize: vertical;
-    outline: none;
-    box-sizing: border-box;
-  }
-
-  /* ── STAGE IV & V: MERGED SPLIT-PANE SIMULATION ROOM ────────────── */
-  .wr-sim-split-room {
-    display: grid;
-    grid-template-columns: 5fr 7fr;
-    gap: 24px;
-    align-items: start;
-  }
-  .wr-opposition-pane {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .wr-threat-card {
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-left: 4px solid #ef4444;
-    border-radius: 12px;
-    overflow: hidden;
-    transition: all 0.18s ease;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  }
-  .wr-threat-card:hover {
-    border-color: #334155;
-    border-left-color: #f87171;
-  }
-  .wr-threat-trigger {
-    padding: 14px 16px;
-    cursor: pointer;
-    user-select: none;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    background: rgba(239, 68, 68, 0.02);
-  }
-  .wr-threat-header-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-  .wr-threat-tag {
-    font-size: 10.5px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #f87171;
-  }
-  .wr-threat-addressed-badge {
-    font-size: 10px;
-    font-weight: 700;
-    color: #34d399;
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    padding: 1px 6px;
-    border-radius: 4px;
-  }
-  .wr-threat-q {
-    font-size: 13.5px;
-    font-weight: 600;
-    color: #f1f5f9;
-    line-height: 1.5;
-  }
-  .wr-chevron {
-    color: #94a3b8;
-    flex-shrink: 0;
-    margin-top: 3px;
-    transition: transform 0.2s ease;
-  }
-  .wr-chevron.open { transform: rotate(180deg); }
-  .wr-rebuttal-panel {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .wr-rebuttal-panel.open {
-    max-height: 700px;
-  }
-  .wr-rebuttal-inner {
-    padding: 12px 16px 16px;
-    border-top: 1px solid #1e293b;
-    background: rgba(16, 185, 129, 0.02);
-  }
-  .wr-rebuttal-label {
-    font-size: 10.5px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #34d399;
-    margin-bottom: 6px;
-  }
-  .wr-rebuttal-body {
-    font-size: 13px;
-    color: #e2e8f0;
-    line-height: 1.6;
-    background: rgba(16, 185, 129, 0.06);
-    border-left: 2px solid #10b981;
-    padding: 10px 12px;
-    border-radius: 0 6px 6px 0;
-  }
-  .wr-use-rebuttal-action-btn {
-    margin-top: 12px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 14px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 700;
-    font-family: var(--font-sans);
-    border: none;
-    background: #059669;
-    color: #ffffff;
-    transition: all 0.15s ease;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  }
-  .wr-use-rebuttal-action-btn:hover {
-    background: #10b981;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
-  }
-
-  /* ── STAGE V: CHAT WORKSTATION ──────────────────────────────────── */
-  .wr-chat-pane {
-    position: sticky;
-    top: 64px;
-    display: flex;
-    flex-direction: column;
-  }
-  .wr-chat-outer {
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 14px;
-    overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-  }
-  .wr-tone-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 12px 16px;
-    background: #020617;
-    border-bottom: 1px solid #1e293b;
-    flex-wrap: wrap;
-  }
-  .wr-tone-toggle-group {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .wr-tone-btn {
-    padding: 5px 12px;
-    border-radius: 20px;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    border: 1px solid #334155;
-    background: transparent;
-    color: #94a3b8;
-    font-family: var(--font-sans);
-  }
-  .wr-tone-btn:hover { color: #ffffff; }
-  .wr-tone-btn.tone-agg {
-    background: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.4);
-    color: #fca5a5;
-  }
-  .wr-tone-btn.tone-def {
-    background: rgba(16, 185, 129, 0.15);
-    border-color: rgba(16, 185, 129, 0.4);
-    color: #6ee7b7;
-  }
-  .wr-persona-status {
-    font-size: 11px;
-    color: #94a3b8;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .wr-persona-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #3b82f6;
-    box-shadow: 0 0 6px #3b82f6;
-  }
-  .wr-chat-messages {
-    height: 400px;
-    overflow-y: auto;
-    padding: 18px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    background: rgba(2, 6, 23, 0.3);
-    scrollbar-width: thin;
-    scrollbar-color: #334155 transparent;
-  }
-  .wr-chat-messages::-webkit-scrollbar { width: 5px; }
-  .wr-chat-messages::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-  .wr-bubble {
-    max-width: 88%;
-    padding: 13px 17px;
-    border-radius: 14px;
-    font-size: 14px;
-    line-height: 1.65;
-  }
-  .wr-bubble.user {
-    align-self: flex-end;
-    background: #2563eb;
-    color: #ffffff;
-    border-bottom-right-radius: 4px;
-    box-shadow: 0 2px 12px rgba(37, 99, 235, 0.25);
-  }
-  .wr-bubble.bot {
-    align-self: flex-start;
-    background: #1e293b;
-    border: 1px solid #334155;
-    color: #e2e8f0;
-    border-bottom-left-radius: 4px;
-  }
-  .wr-bubble.typing {
-    align-self: flex-start;
-    background: #1e293b;
-    border: 1px solid #334155;
-    color: #94a3b8;
-    border-bottom-left-radius: 4px;
-    font-style: italic;
-    animation: wr-blink 1.1s ease-in-out infinite;
-  }
-  @keyframes wr-blink {
-    0%,100% { opacity: 1; } 50% { opacity: 0.45; }
-  }
-  .wr-quick-replies {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-self: flex-start;
-    max-width: 95%;
-  }
-  .wr-qr-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 13px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    text-align: left;
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    background: rgba(59, 130, 246, 0.08);
-    color: #93c5fd;
-    transition: all 0.15s ease;
-    line-height: 1.4;
-  }
-  .wr-qr-pill:hover:not(:disabled) {
-    background: rgba(59, 130, 246, 0.18);
-    border-color: #3b82f6;
-    color: #bfdbfe;
-    transform: translateY(-1px);
-  }
-  .wr-chat-input-row {
-    display: flex;
-    border-top: 1px solid #1e293b;
-    background: #0f172a;
-  }
-  .wr-chat-input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: #ffffff;
-    font-size: 13.5px;
-    font-family: var(--font-sans);
-    padding: 14px 16px;
-  }
-  .wr-chat-input::placeholder { color: #64748b; }
-  .wr-send-btn {
-    background: #2563eb;
-    border: none;
-    padding: 0 20px;
-    cursor: pointer;
-    color: #ffffff;
-    font-size: 13px;
-    font-weight: 600;
-    font-family: var(--font-sans);
-    transition: background 0.15s ease;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-  .wr-send-btn:hover:not(:disabled) { background: #1d4ed8; }
-  .wr-send-btn:disabled { background: rgba(37, 99, 235, 0.35); cursor: not-allowed; }
-  .wr-save-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    padding: 12px 18px;
-    border-top: 1px solid #1e293b;
-    background: #020617;
-  }
-  .wr-save-hint {
-    font-size: 12px;
-    color: #94a3b8;
-  }
-  .wr-save-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 15px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    background: rgba(16, 185, 129, 0.1);
-    color: #34d399;
-    font-family: var(--font-sans);
-    transition: all 0.15s ease;
-  }
-  .wr-save-btn:hover:not(:disabled) {
-    background: rgba(16, 185, 129, 0.2);
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
-  }
-  .wr-save-btn.saved {
-    background: rgba(16, 185, 129, 0.25);
-    border-color: #10b981;
-    color: #10b981;
-  }
-
-  /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
-  :root[data-theme="light"] .wr-pipeline-card {
-    background: #ffffff !important;
-    border-color: #e2e8f0 !important;
-    box-shadow: 0 24px 64px rgba(15,23,42,0.12) !important;
-  }
-  :root[data-theme="light"] .wr-pipeline-h {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-pipeline-sub {
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-stage-text.pending {
-    color: #94a3b8 !important;
-  }
-  :root[data-theme="light"] .wr-stage-text.active {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-stage-dot.pending {
-    background: #cbd5e1 !important;
-  }
-  :root[data-theme="light"] .wr-results-page {
-    background: #f8fafc !important;
-  }
-  :root[data-theme="light"] .wr-matter-header {
-    background: #ffffff !important;
-    border-bottom: 1px solid #e2e8f0 !important;
-  }
-  :root[data-theme="light"] .wr-matter-title {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-meta-pill.strategy {
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-meta-pill.forum {
-    background: #f1f5f9 !important;
-    border-color: #cbd5e1 !important;
-    color: #475569 !important;
-  }
-  :root[data-theme="light"] .wr-meta-pill.law {
-    background: #fffbeb !important;
-    border-color: #fde68a !important;
-    color: #b45309 !important;
-  }
-  :root[data-theme="light"] .wr-header-btn.secondary {
-    background: #ffffff !important;
-    color: #334155 !important;
-    border-color: #cbd5e1 !important;
-  }
-  :root[data-theme="light"] .wr-header-btn.secondary:hover {
-    background: #f1f5f9 !important;
-  }
-  :root[data-theme="light"] .wr-stage-navigator {
-    background: rgba(255, 255, 255, 0.92) !important;
-    border-bottom: 1px solid #e2e8f0 !important;
-  }
-  :root[data-theme="light"] .wr-nav-item {
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-nav-item:hover {
-    color: #0f172a !important;
-    background: #f1f5f9 !important;
-  }
-  :root[data-theme="light"] .wr-nav-item.active {
-    color: #1d4ed8 !important;
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-  }
-  :root[data-theme="light"] .wr-nav-progress {
-    background: #ecfdf5 !important;
-    border-color: #a7f3d0 !important;
-    color: #059669 !important;
-  }
-  :root[data-theme="light"] .wr-section-title {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-section-badge {
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-section-desc {
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-issue-card {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
-  }
-  :root[data-theme="light"] .wr-issue-idx {
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-issue-content {
-    color: #1e293b !important;
-  }
-  :root[data-theme="light"] .wr-precedent-card {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
-  }
-  :root[data-theme="light"] .wr-precedent-title {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-precedent-auth-tag {
-    background: #fffbeb !important;
-    border-color: #fde68a !important;
-    color: #b45309 !important;
-  }
-  :root[data-theme="light"] .wr-precedent-ratio {
-    background: #f8fafc !important;
-    border-left: 3px solid #d97706 !important;
-    color: #334155 !important;
-  }
-  :root[data-theme="light"] .wr-precedent-link {
-    color: #2563eb !important;
-  }
-  :root[data-theme="light"] .wr-precedent-readmore {
-    color: #b45309 !important;
-  }
-  :root[data-theme="light"] .wr-precedent-readmore:hover {
-    color: #92400e !important;
-  }
-  :root[data-theme="light"] .wr-folio-toolbar {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-  }
-  :root[data-theme="light"] .wr-folio-badge {
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-folio-btn {
-    background: #ffffff !important;
-    border-color: #cbd5e1 !important;
-    color: #334155 !important;
-  }
-  :root[data-theme="light"] .wr-folio-btn:hover {
-    background: #f1f5f9 !important;
-  }
-  :root[data-theme="light"] .wr-folio-sheet {
-    background: #fcfbf8 !important;
-    border: 1px solid #d6d3d1 !important;
-    color: #1c1917 !important;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06) !important;
-  }
-  :root[data-theme="light"] .wr-folio-h1 {
-    color: #0f172a !important;
-    border-bottom: 2px double #cbd5e1 !important;
-  }
-  :root[data-theme="light"] .wr-folio-h2 {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-folio-h3 {
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-folio-h4 {
-    color: #334155 !important;
-  }
-  :root[data-theme="light"] .wr-folio-quote {
-    background: #f1f5f9 !important;
-    border-left: 3px solid #2563eb !important;
-    color: #334155 !important;
-  }
-  :root[data-theme="light"] .wr-folio-bold {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-folio-italic {
-    color: #334155 !important;
-  }
-  :root[data-theme="light"] .wr-folio-code {
-    background: #f1f5f9 !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-inline-blank {
-    background: rgba(245, 158, 11, 0.15) !important;
-    border-bottom: 2px dashed #d97706 !important;
-    color: #78350f !important;
-  }
-  :root[data-theme="light"] .wr-inline-blank:focus {
-    background: #eff6ff !important;
-    border-bottom: 2px solid #2563eb !important;
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-raw-editor {
-    background: #ffffff !important;
-    border: 1px solid #cbd5e1 !important;
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-threat-card {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-left: 4px solid #dc2626 !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
-  }
-  :root[data-theme="light"] .wr-threat-trigger {
-    background: #fff5f5 !important;
-  }
-  :root[data-theme="light"] .wr-threat-tag {
-    color: #b91c1c !important;
-  }
-  :root[data-theme="light"] .wr-threat-q {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-rebuttal-inner {
-    border-top: 1px solid #e2e8f0 !important;
-    background: #ffffff !important;
-  }
-  :root[data-theme="light"] .wr-rebuttal-label {
-    color: #059669 !important;
-  }
-  :root[data-theme="light"] .wr-rebuttal-body {
-    background: #f0fdf4 !important;
-    border-left: 2px solid #10b981 !important;
-    color: #065f46 !important;
-  }
-  :root[data-theme="light"] .wr-chat-outer {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
-  }
-  :root[data-theme="light"] .wr-tone-bar {
-    background: #f8fafc !important;
-    border-bottom: 1px solid #e2e8f0 !important;
-  }
-  :root[data-theme="light"] .wr-tone-btn {
-    border-color: #cbd5e1 !important;
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-tone-btn:hover {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-tone-btn.tone-agg {
-    background: #fee2e2 !important;
-    border-color: #fca5a5 !important;
-    color: #b91c1c !important;
-  }
-  :root[data-theme="light"] .wr-tone-btn.tone-def {
-    background: #ecfdf5 !important;
-    border-color: #a7f3d0 !important;
-    color: #047857 !important;
-  }
-  :root[data-theme="light"] .wr-chat-messages {
-    background: #f8fafc !important;
-  }
-  :root[data-theme="light"] .wr-bubble.bot {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #1e293b !important;
-  }
-  :root[data-theme="light"] .wr-bubble.typing {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-qr-pill {
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-qr-pill:hover:not(:disabled) {
-    background: #dbeafe !important;
-    border-color: #3b82f6 !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-chat-input-row {
-    background: #ffffff !important;
-    border-top: 1px solid #e2e8f0 !important;
-  }
-  :root[data-theme="light"] .wr-chat-input {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-chat-input::placeholder {
-    color: #94a3b8 !important;
-  }
-  :root[data-theme="light"] .wr-save-bar {
-    background: #f8fafc !important;
-    border-top: 1px solid #e2e8f0 !important;
-  }
-  :root[data-theme="light"] .wr-save-hint {
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-save-btn {
-    background: #ecfdf5 !important;
-    border-color: #a7f3d0 !important;
-    color: #059669 !important;
-  }
-  :root[data-theme="light"] .wr-save-btn:hover:not(:disabled) {
-    background: #d1fae5 !important;
-  }
-
-  /* ── LIGHT THEME INTAKE OVERRIDES ── */
-  :root[data-theme="light"] .wr-intake-card {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
-  }
-  :root[data-theme="light"] .wr-intake-badge {
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-    color: #2563eb !important;
-  }
-  :root[data-theme="light"] .wr-intake-title {
-    color: #0f172a !important;
-  }
-  :root[data-theme="light"] .wr-intake-subtitle {
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-intake-dropzone {
-    border-color: #cbd5e1 !important;
-    background: rgba(248, 250, 252, 0.8) !important;
-  }
-  :root[data-theme="light"] .wr-intake-dropzone:hover {
-    border-color: #3b82f6 !important;
-    background: rgba(239, 246, 255, 0.4) !important;
-  }
-  :root[data-theme="light"] .wr-intake-dropzone.drag-over {
-    border-color: #2563eb !important;
-    background: #dbeafe !important;
-  }
-  :root[data-theme="light"] .wr-intake-dropzone-primary {
-    color: #1e293b !important;
-  }
-  :root[data-theme="light"] .wr-intake-dropzone-secondary {
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-intake-divider {
-    color: #94a3b8 !important;
-  }
-  :root[data-theme="light"] .wr-intake-divider::before,
-  :root[data-theme="light"] .wr-intake-divider::after {
-    background: #e2e8f0 !important;
-  }
-  :root[data-theme="light"] .wr-intake-step-num {
-    background: #eff6ff !important;
-    border-color: #bfdbfe !important;
-    color: #2563eb !important;
-  }
-  :root[data-theme="light"] .wr-intake-step-title {
-    color: #1e293b !important;
-  }
-  :root[data-theme="light"] .wr-intake-step-desc {
-    color: #64748b !important;
-  }
-  :root[data-theme="light"] .wr-intake-chip {
-    background: #f1f5f9 !important;
-    border-color: #e2e8f0 !important;
-    color: #1d4ed8 !important;
-  }
-  :root[data-theme="light"] .wr-intake-btn-primary {
-    background: #2563eb !important;
-    color: #ffffff !important;
-  }
-  :root[data-theme="light"] .wr-intake-btn-secondary {
-    background: #ffffff !important;
-    color: #334155 !important;
-    border-color: #cbd5e1 !important;
-  }
-  :root[data-theme="light"] .wr-intake-btn-secondary:hover {
-    background: #f8fafc !important;
-  }
-
-  /* ── RESPONSIVE RULES ──────────────────────────────────────────── */
-  @media (max-width: 1024px) {
-    .wr-sim-split-room {
-      grid-template-columns: 1fr;
+  @media (max-width: 980px) {
+    .vc-workspace { flex-direction: column; }
+    .vc-stage-rail {
+      position: static; width: 100%; height: auto; padding: 20px 20px 8px;
+      display: flex; overflow-x: auto; gap: 4px;
     }
-    .wr-chat-pane {
-      position: static;
-    }
-    .wr-folio-sheet {
-      padding: 32px 24px;
-    }
-  }
-
-  @media (max-width: 768px) {
-    .wr-matter-header {
-      flex-direction: column;
-      align-items: flex-start;
-      padding: 14px 16px;
-    }
-    .wr-matter-title {
-      max-width: 100%;
-      font-size: 17px;
-    }
-    .wr-header-actions {
-      width: 100%;
-      justify-content: flex-start;
-    }
-    .wr-results-body {
-      padding: 14px 12px;
-    }
-    .wr-precedents-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  /* ── PRINT MEDIA OPTIMIZATIONS ─────────────────────────────────── */
-  @media print {
-    .sidebar,
-    .topbar,
-    .wr-stage-navigator,
-    .wr-chat-pane,
-    .wr-folio-toolbar,
-    .wr-header-actions,
-    .wr-intake-wrap,
-    .wr-pipeline-wrap,
-    .wr-opposition-pane,
-    .wr-save-bar,
-    button {
-      display: none !important;
-    }
-    .app-container,
-    .workspace-container,
-    .main-content,
-    .wr-results-page,
-    .wr-results-body {
-      height: auto !important;
-      overflow: visible !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      background: #ffffff !important;
-      color: #000000 !important;
-    }
-    .wr-folio-sheet {
-      box-shadow: none !important;
-      border: none !important;
-      padding: 0 !important;
-      max-width: 100% !important;
-      color: #000000 !important;
-      background: #ffffff !important;
-    }
-    .wr-inline-blank {
-      border-bottom: 1px solid #000000 !important;
-      background: transparent !important;
-      color: #000000 !important;
-    }
+    .vc-rail-item { flex-direction: column; align-items: center; text-align: center; width: 110px; flex-shrink: 0; }
+    .vc-rail-connector, .vc-rail-track { display: none; }
+    .vc-content { padding: 24px 20px 100px; }
+    .vc-sim-grid { grid-template-columns: 1fr; }
+    .vc-chat-panel { height: 480px; }
+    .vc-paper { padding: 28px 22px; }
   }
 `;
-
-// ── Sub-component: Inline Blank Input ───────────────────────────────────────
-
-function InlineBlankInput({ blank, value, onChange }) {
-  const displayVal = value || '';
-  const widthChars = Math.max(8, (displayVal || blank.label).length + 3);
-  const widthPx = Math.min(260, Math.max(90, widthChars * 8.5));
-
-  return (
-    <input
-      type="text"
-      className="wr-inline-blank"
-      placeholder={blank.label}
-      value={displayVal}
-      onChange={(e) => onChange(blank.id, e.target.value)}
-      title={`Placeholder: ${blank.label}`}
-      style={{ width: `${widthPx}px` }}
-    />
-  );
-}
-
-// ── Sub-component: Styled Text Renderer ─────────────────────────────────────
-// Applies the bold/italic/code flags parseInlineSegments computed per
-// segment — these already correctly span across inline blanks, so no
-// re-parsing of ** / * / ` markers happens at render time.
-
-function renderStyledText(content, { bold, italic, code }) {
-  let node = content;
-  if (code) node = <code className="wr-folio-code">{node}</code>;
-  if (italic) node = <em className="wr-folio-italic">{node}</em>;
-  if (bold) node = <strong className="wr-folio-bold">{node}</strong>;
-  return node;
-}
-
-function renderSegments(segments, formBlanks, onBlankChange) {
-  if (!segments) return null;
-  return segments.map((seg, i) => {
-    if (seg.type === 'blank') {
-      return (
-        <InlineBlankInput
-          key={seg.id}
-          blank={seg}
-          value={formBlanks[seg.id]}
-          onChange={onBlankChange}
-        />
-      );
-    }
-    return <React.Fragment key={i}>{renderStyledText(seg.content, seg)}</React.Fragment>;
-  });
-}
-
-// ── Sub-component: PleadingFolio ────────────────────────────────────────────
-
-function PleadingFolio({
-  rawArgumentText,
-  formBlanks,
-  onBlankChange,
-  onCopyComplete,
-  copied,
-  showRaw,
-  onToggleRaw,
-  onDownloadBrief,
-  onPrintBrief,
-}) {
-  const { blocks, blanksList } = useMemo(() => {
-    return parsePleadingDocument(rawArgumentText);
-  }, [rawArgumentText]);
-
-  return (
-    <div className="wr-folio-workbench">
-      <div className="wr-folio-toolbar">
-        <div className="wr-folio-tools-left">
-          <span className="wr-folio-badge">Legal Folio Workbench</span>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            {blanksList.length} Fillable Placeholder{blanksList.length !== 1 ? 's' : ''} Active
-          </span>
-        </div>
-        <div className="wr-folio-tools-right">
-          <button className="wr-folio-btn" type="button" onClick={onToggleRaw} title="Toggle between formatted legal document and raw markdown text">
-            {showRaw ? '📄 View Formatted Document' : '📝 Raw Markdown'}
-          </button>
-          <button className={`wr-folio-btn${copied ? ' copied' : ''}`} type="button" onClick={() => onCopyComplete(blanksList)} title="Copy compiled pleading with all filled blanks to clipboard">
-            {copied ? '✓ Copied Pleading!' : '📋 Copy Complete Pleading'}
-          </button>
-          <button className="wr-folio-btn" type="button" onClick={() => onDownloadBrief(blanksList)} title="Download complete brief as Markdown file">
-            ⬇ Export Brief
-          </button>
-          <button className="wr-folio-btn" type="button" onClick={onPrintBrief} title="Print structured legal brief">
-            🖨 Print
-          </button>
-        </div>
-      </div>
-
-      {showRaw ? (
-        <textarea
-          className="wr-raw-editor"
-          value={compilePleadingText(rawArgumentText, formBlanks, blanksList)}
-          readOnly
-        />
-      ) : (
-        <div className="wr-folio-sheet">
-          <h1 className="wr-folio-h1">IN THE SUPREME COURT OF INDIA</h1>
-          <div style={{ textAlign: 'center', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', marginBottom: '24px' }}>
-            APPELLATE JURISDICTION · SPECIAL LEAVE PETITION / CIVIL APPEAL
-          </div>
-
-          {blocks.map((b, idx) => {
-            if (b.type === 'hr') return <hr key={idx} className="wr-folio-hr" />;
-            if (b.type === 'h1') return <h2 key={idx} className="wr-folio-h1">{renderSegments(b.segments, formBlanks, onBlankChange)}</h2>;
-            if (b.type === 'h2') return <h2 key={idx} className="wr-folio-h2">{renderSegments(b.segments, formBlanks, onBlankChange)}</h2>;
-            if (b.type === 'h3') return <h3 key={idx} className="wr-folio-h3">{renderSegments(b.segments, formBlanks, onBlankChange)}</h3>;
-            if (b.type === 'h4') return <h4 key={idx} className="wr-folio-h4">{renderSegments(b.segments, formBlanks, onBlankChange)}</h4>;
-            if (b.type === 'quote') return <blockquote key={idx} className="wr-folio-quote">{renderSegments(b.segments, formBlanks, onBlankChange)}</blockquote>;
-            if (b.type === 'num-item') {
-              return (
-                <div key={idx} className="wr-folio-num">
-                  <span className="wr-folio-num-idx">{b.num}.</span>
-                  <div>{renderSegments(b.segments, formBlanks, onBlankChange)}</div>
-                </div>
-              );
-            }
-            if (b.type === 'bullet-item') {
-              return (
-                <div key={idx} className="wr-folio-bullet">
-                  <span className="wr-folio-bullet-dot">▪</span>
-                  <div>{renderSegments(b.segments, formBlanks, onBlankChange)}</div>
-                </div>
-              );
-            }
-            return (
-              <p key={idx} className="wr-folio-p">
-                {renderSegments(b.segments, formBlanks, onBlankChange)}
-              </p>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Sub-component: Precedent Report Card ────────────────────────────────────
-
-const PRECEDENT_RATIO_TRUNCATE_LEN = 240;
-
-function PrecedentReportCard({ citation, index }) {
-  const { cleanTitle, citationTag, ratio, url } = useMemo(() => {
-    return parsePrecedentData(citation, index);
-  }, [citation, index]);
-
-  const [expanded, setExpanded] = useState(false);
-  const isLong = ratio.length > PRECEDENT_RATIO_TRUNCATE_LEN;
-  const displayRatio = isLong && !expanded
-    ? ratio.slice(0, PRECEDENT_RATIO_TRUNCATE_LEN).replace(/\s+\S*$/, '') + '…'
-    : ratio;
-
-  return (
-    <div className="wr-precedent-card">
-      <div className="wr-precedent-head">
-        <span className="wr-precedent-auth-tag">🏛 {citationTag}</span>
-        <div className="wr-precedent-title">*{cleanTitle}*</div>
-      </div>
-      <div className="wr-precedent-ratio">
-        "{displayRatio}"
-      </div>
-      {isLong && (
-        <button
-          type="button"
-          className="wr-precedent-readmore"
-          onClick={() => setExpanded(prev => !prev)}
-        >
-          {expanded ? '▲ Show less' : '▼ Read more'}
-        </button>
-      )}
-      <a className="wr-precedent-link" href={url} target="_blank" rel="noopener noreferrer">
-        Source Record ↗
-      </a>
-    </div>
-  );
-}
-
-// ── Sub-component: Opposition Challenge Card ────────────────────────────────
-
-function OppositionChallengeCard({ threat, index, expanded, isAddressed, onToggle, onUseInChat }) {
-  return (
-    <div className="wr-threat-card">
-      <div className="wr-threat-trigger" onClick={onToggle}>
-        <div style={{ minWidth: 0 }}>
-          <div className="wr-threat-header-row">
-            <span className="wr-threat-tag">Opposition Challenge {String(index + 1).padStart(2, '0')}</span>
-            {isAddressed && <span className="wr-threat-addressed-badge">✓ Addressed</span>}
-          </div>
-          <div className="wr-threat-q">{renderParagraphs(threat.question)}</div>
-        </div>
-        <svg className={`wr-chevron${expanded ? ' open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </div>
-
-      <div className={`wr-rebuttal-panel${expanded ? ' open' : ''}`}>
-        {threat.suggested_rebuttal && (
-          <div className="wr-rebuttal-inner">
-            <div className="wr-rebuttal-label">Strategic Rebuttal Argument</div>
-            <div className="wr-rebuttal-body">{renderParagraphs(threat.suggested_rebuttal)}</div>
-            <button
-              className="wr-use-rebuttal-action-btn"
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUseInChat(threat.suggested_rebuttal, index);
-              }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-              Use in Chat →
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Sub-component: Sticky Stage Navigator ───────────────────────────────────
-
-function StageNavigator({ activeStage, onSelectStage, addressedCount, totalChallenges }) {
-  const STAGES = [
-    { id: 'wr-stage-issues', roman: 'I', label: 'Facts & Issues' },
-    { id: 'wr-stage-precedents', roman: 'II', label: 'Precedents' },
-    { id: 'wr-stage-pleading', roman: 'III', label: 'Pleading Draft' },
-    { id: 'wr-stage-simulation', roman: 'IV & V', label: 'Simulation Room' },
-  ];
-
-  const isAllComplete = totalChallenges > 0 && addressedCount >= totalChallenges;
-
-  return (
-    <div className="wr-stage-navigator">
-      <div className="wr-nav-track">
-        {STAGES.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={`wr-nav-item${activeStage === s.id ? ' active' : ''}`}
-            onClick={() => onSelectStage(s.id)}
-          >
-            <span className="wr-nav-roman">{s.roman}.</span>
-            <span>{s.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className={`wr-nav-progress${isAllComplete ? ' complete' : ''}`}>
-        {isAllComplete ? (
-          <>✓ All {totalChallenges} Rebuttals Addressed</>
-        ) : (
-          <>🛡️ {addressedCount}/{totalChallenges} Rebuttals Addressed</>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Sub-component: Dynamic Matter Header ─────────────────────────────────────
-
-function DynamicMatterHeader({ simulationData, docSource, onResetSimulation, onPrintBrief }) {
-  const matterTitle = useMemo(() => parseMatterTitle(simulationData, docSource), [simulationData, docSource]);
-  const governingLaw = useMemo(() => parseGoverningLaw(simulationData?.extracted_issues, simulationData?.opening_argument), [simulationData]);
-
-  return (
-    <div className="wr-matter-header">
-      <div className="wr-matter-info">
-        <div className="wr-matter-title-row">
-          <h1 className="wr-matter-title" title={matterTitle}>{matterTitle}</h1>
-        </div>
-        <div className="wr-matter-meta-pills">
-          <span className="wr-meta-pill strategy">
-            {simulationData?.client_side || 'Appellant'} Strategy
-          </span>
-          <span className="wr-meta-pill forum">
-            🏛 Supreme Court of India · Civil Appellate
-          </span>
-          <span className="wr-meta-pill law" title="Governing Legal Regime">
-            ⚖ {governingLaw}
-          </span>
-        </div>
-      </div>
-
-      <div className="wr-header-actions">
-        <button className="wr-header-btn secondary" type="button" onClick={onPrintBrief} title="Print structured legal brief">
-          🖨 Print Brief
-        </button>
-        <button className="wr-header-btn danger" type="button" onClick={onResetSimulation} title="Clear current simulation and start new matter">
-          ↺ Reset Matter
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Main Component: WarRoomView ─────────────────────────────────────────────
 
 export default function WarRoomView() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Lifecycle & Animation
-  const [isMounted, setIsMounted] = useState(false);
+  // Lifecycle
   const [isSimulating, setIsSimulating] = useState(false);
   const [currentStage, setCurrentStage] = useState(0);
   const [simError, setSimError] = useState(null);
@@ -2262,12 +449,8 @@ export default function WarRoomView() {
   const [docSource, setDocSource] = useState('');
 
   // Interactive State
-  const [activeStageId, setActiveStageId] = useState('wr-stage-issues');
-  const [expandedThreats, setExpandedThreats] = useState(new Set([0]));
+  const [activeStageId, setActiveStageId] = useState('vc-stage-facts');
   const [addressedChallenges, setAddressedChallenges] = useState(new Set());
-  const [formBlanks, setFormBlanks] = useState({});
-  const [showRawMarkdown, setShowRawMarkdown] = useState(false);
-  const [copiedPleading, setCopiedPleading] = useState(false);
 
   // Chat State
   const [chatMessages, setChatMessages] = useState([]);
@@ -2356,38 +539,6 @@ export default function WarRoomView() {
     }, 50);
   };
 
-  // ── Stage III Actions ─────────────────────────────────────────────────────
-
-  const handleBlankChange = useCallback((blankId, value) => {
-    setFormBlanks(prev => ({ ...prev, [blankId]: value }));
-  }, []);
-
-  const handleCopyCompletePleading = (blanksList) => {
-    const raw = simulationData?.opening_argument || '';
-    const compiled = compilePleadingText(raw, formBlanks, blanksList);
-    if (compiled) {
-      navigator.clipboard.writeText(compiled);
-      setCopiedPleading(true);
-      setTimeout(() => setCopiedPleading(false), 2500);
-    }
-  };
-
-  const handleDownloadBrief = (blanksList) => {
-    const raw = simulationData?.opening_argument || '';
-    const compiled = compilePleadingText(raw, formBlanks, blanksList);
-    const blob = new Blob([compiled], { type: 'text/markdown;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `Litigation_Pleading_${(docSource || 'Matter').replace(/[^a-zA-Z0-9]/g, '_')}.md`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handlePrintBrief = () => {
-    window.print();
-  };
-
   const handleResetSimulation = () => {
     if (window.confirm('Reset the current simulation session and return to matter intake?')) {
       sessionStorage.removeItem('wr_active_session');
@@ -2396,7 +547,6 @@ export default function WarRoomView() {
       setIsSimulating(false);
       setSimError(null);
       setChatMessages([]);
-      setFormBlanks({});
       setAddressedChallenges(new Set());
       setSavedSession(false);
       setUploadState('idle');
@@ -2475,7 +625,6 @@ export default function WarRoomView() {
     setCurrentStage(1);
     setSimulationData(null);
     setChatMessages([]);
-    setFormBlanks({});
     setAddressedChallenges(new Set());
     setSavedSession(false);
     setSimError(null);
@@ -2529,8 +678,6 @@ export default function WarRoomView() {
   // ── Mount & Session Restore ───────────────────────────────────────────────
 
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setIsMounted(true));
-
     const docData = location.state?.documentData;
     const pending = location.state?.pendingSimulation;
     const existing = location.state?.simulationData;
@@ -2571,7 +718,7 @@ export default function WarRoomView() {
       }
     }
 
-    return () => { cancelAnimationFrame(raf); clearStageTimers(); };
+    return () => { clearStageTimers(); };
   }, []);
 
   // Auto-scroll chat
@@ -2589,7 +736,7 @@ export default function WarRoomView() {
   // section that should now be active, leaving the indicator stuck.
   useEffect(() => {
     if (!simulationData) return;
-    const ids = ['wr-stage-issues', 'wr-stage-precedents', 'wr-stage-pleading', 'wr-stage-simulation'];
+    const ids = ['vc-stage-facts', 'vc-stage-precedents', 'vc-stage-draft', 'vc-stage-simulation'];
     const DETECTION_LINE = 120; // px from viewport top, just under the sticky nav
 
     const computeActive = () => {
@@ -2659,15 +806,6 @@ export default function WarRoomView() {
     if (file) handleManualUpload(file);
   };
 
-  const toggleThreat = (i) => {
-    setExpandedThreats(prev => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
-      return next;
-    });
-  };
-
   const scrollToStage = (stageId) => {
     setActiveStageId(stageId);
     const el = document.getElementById(stageId);
@@ -2680,8 +818,8 @@ export default function WarRoomView() {
 
   if (isSimulating) {
     return (
-      <>
-        <style>{WAR_ROOM_STYLES}</style>
+      <div className="vc-root">
+        <style>{VC_STYLES}</style>
         <div className="wr-pipeline-wrap">
           <div className="wr-pipeline-card">
             <span className="wr-pipeline-gavel">⚖️</span>
@@ -2702,7 +840,7 @@ export default function WarRoomView() {
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
@@ -2710,8 +848,8 @@ export default function WarRoomView() {
 
   if (simError) {
     return (
-      <>
-        <style>{WAR_ROOM_STYLES}</style>
+      <div className="vc-root">
+        <style>{VC_STYLES}</style>
         <div className="wr-intake-wrap">
           <div className="wr-intake-card" style={{ maxWidth: '540px', textAlign: 'center' }}>
             <span style={{ fontSize: '42px', display: 'block', marginBottom: '16px' }}>🚨</span>
@@ -2727,7 +865,7 @@ export default function WarRoomView() {
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
@@ -2735,8 +873,8 @@ export default function WarRoomView() {
 
   if (!simulationData) {
     return (
-      <>
-        <style>{WAR_ROOM_STYLES}</style>
+      <div className="vc-root">
+        <style>{VC_STYLES}</style>
         <input
           ref={fileInputRef}
           type="file"
@@ -2860,277 +998,130 @@ export default function WarRoomView() {
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // ── RENDER: ENTERPRISE LITIGATION WAR ROOM WORKBENCH ─────────────────────────
+  // ── RENDER: VIRTUAL COURTROOM RESULTS VIEW ───────────────────────────────────
   // ────────────────────────────────────────────────────────────────────────────
 
   const issues = parseIssues(simulationData.extracted_issues);
   const citations = simulationData.live_citations ?? [];
   const questions = simulationData.red_team?.opposing_counter_questions ?? [];
 
+  const matterTitle = parseMatterTitle(simulationData, docSource);
+  const governingLaw = parseGoverningLaw(simulationData.extracted_issues, simulationData.opening_argument);
+  const matterLabel = docSource ? `Ref: ${docSource}` : 'Virtual Courtroom Session';
+  const subLine = `${simulationData.client_side || 'Appellant'} strategy · governed by ${governingLaw}`;
+
+  const redTeamDone = questions.length > 0 && addressedChallenges.size >= questions.length;
+  const redTeamStarted = addressedChallenges.size > 0;
+  const chatStarted = chatMessages.length > 1;
+  const progressStages = [
+    { label: 'Facts', state: 'done' },
+    { label: 'Precedents', state: 'done' },
+    { label: 'Draft', state: 'done' },
+    { label: 'Red team', state: redTeamDone ? 'done' : redTeamStarted ? 'active' : 'pending' },
+    { label: 'Simulation', state: chatStarted ? 'active' : 'pending' },
+  ];
+
+  const railStages = [
+    { id: 'vc-stage-facts', label: 'Facts & issues', status: `${issues.length} issue${issues.length !== 1 ? 's' : ''} identified` },
+    { id: 'vc-stage-precedents', label: 'Precedents', status: `${citations.length} citation${citations.length !== 1 ? 's' : ''} found` },
+    { id: 'vc-stage-draft', label: 'Opening draft', status: 'Ready to review' },
+    { id: 'vc-stage-simulation', label: 'Simulation room', status: `${addressedChallenges.size} of ${questions.length} prepared` },
+  ];
+
   return (
-    <>
-      <style>{WAR_ROOM_STYLES}</style>
+    <div className="vc-root">
+      <style>{VC_STYLES}</style>
 
-      <div className={`wr-results-page${isMounted ? ' wr-mounted' : ''}`}>
+      <MatterHeader
+        matterLabel={matterLabel}
+        title={matterTitle}
+        subLine={subLine}
+        progressStages={progressStages}
+        onNewSimulation={handleResetSimulation}
+        onSaveToVault={handleSaveSession}
+        savingSession={savingSession}
+        savedSession={savedSession}
+      />
 
-        {/* ── 1. DYNAMIC MATTER HEADER (No Badge Theater) ── */}
-        <DynamicMatterHeader
-          simulationData={simulationData}
-          docSource={docSource}
-          onResetSimulation={handleResetSimulation}
-          onPrintBrief={handlePrintBrief}
-        />
+      <div className="vc-workspace">
+        <StageRail stages={railStages} activeId={activeStageId} onSelect={scrollToStage} />
 
-        {/* ── 2. STICKY STAGE NAVIGATOR ── */}
-        <StageNavigator
-          activeStage={activeStageId}
-          onSelectStage={scrollToStage}
-          addressedCount={addressedChallenges.size}
-          totalChallenges={questions.length}
-        />
+        <main className="vc-content">
 
-        {/* ── 3. MAIN WORKBENCH BODY ── */}
-        <div className="wr-results-body">
-
-          {/* ───────── STAGE I: FACTS & CORE LEGAL ISSUES ───────── */}
-          <section id="wr-stage-issues" className="wr-section-container">
-            <div className="wr-section-head">
-              <span className="wr-section-badge">I</span>
-              <h2 className="wr-section-title">Extracted Legal Issues &amp; Core Facts</h2>
-              <span className="wr-section-desc">{issues.length} Key Legal Questions Identified</span>
-            </div>
-
-            <div className="wr-issues-grid">
-              {issues.length > 0 ? (
-                issues.map((issue, i) => (
-                  <div key={i} className="wr-issue-card">
-                    <span className="wr-issue-idx">{String(i + 1).padStart(2, '0')}</span>
-                    <div className="wr-issue-content">{issue}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="wr-issue-card">
-                  <div className="wr-issue-content">
-                    {simulationData.extracted_issues || 'No specific legal issues extracted.'}
-                  </div>
-                </div>
-              )}
+          {/* ───────── STAGE 1: FACTS & ISSUES ───────── */}
+          <section id="vc-stage-facts" className="vc-stage">
+            <div className="vc-stage-head"><span className="vc-num">1</span><h2>Facts &amp; issues</h2></div>
+            <p className="vc-stage-note">Pulled from the case file you uploaded.</p>
+            <div className="vc-brief-card">
+              {issues.length > 0 ? issues.join(' ') : (simulationData.extracted_issues || 'No specific legal issues extracted.')}
             </div>
           </section>
 
-          {/* ───────── STAGE II: REFINED PRECEDENT CITATION CARDS ───────── */}
-          <section id="wr-stage-precedents" className="wr-section-container">
-            <div className="wr-section-head">
-              <span className="wr-section-badge">II</span>
-              <h2 className="wr-section-title">Precedents &amp; Authority Reports</h2>
-              <span className="wr-section-desc">{citations.length} Authorities Cited</span>
-            </div>
-
+          {/* ───────── STAGE 2: PRECEDENTS ───────── */}
+          <section id="vc-stage-precedents" className="vc-stage">
+            <div className="vc-stage-head"><span className="vc-num">2</span><h2>Precedents</h2></div>
+            <p className="vc-stage-note">Matched against Indian Kanoon, ranked by relevance to the facts above.</p>
             {citations.length > 0 ? (
-              <div className="wr-precedents-grid">
-                {citations.map((c, i) => (
-                  <PrecedentReportCard key={i} citation={c} index={i} />
-                ))}
+              <div className="vc-precedents">
+                {citations.map((c, i) => {
+                  const { cleanTitle, citationTag, ratio, url } = parsePrecedentData(c, i);
+                  return (
+                    <PrecedentEntry key={i} metaLine={citationTag} caseName={cleanTitle} note={ratio} url={url} />
+                  );
+                })}
               </div>
             ) : (
-              <div className="wr-issue-card" style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
+              <div className="vc-brief-card" style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
                 No live citations retrieved for this matter query.
               </div>
             )}
           </section>
 
-          {/* ───────── STAGE III: PLEADING WORKBENCH & INLINE EDITING ───────── */}
-          <section id="wr-stage-pleading" className="wr-section-container">
-            <div className="wr-section-head">
-              <span className="wr-section-badge">III</span>
-              <h2 className="wr-section-title">Drafted Opening Argument &amp; Legal Pleading</h2>
-              <span className="wr-section-desc">Interactive Legal Folio</span>
-            </div>
-
-            <PleadingFolio
+          {/* ───────── STAGE 3: OPENING DRAFT ───────── */}
+          <section id="vc-stage-draft" className="vc-stage">
+            <div className="vc-stage-head"><span className="vc-num">3</span><h2>Opening draft</h2></div>
+            <p className="vc-stage-note">Click any highlighted field to fill it in before export.</p>
+            <PleadingDocument
               rawArgumentText={simulationData.opening_argument}
-              formBlanks={formBlanks}
-              onBlankChange={handleBlankChange}
-              onCopyComplete={handleCopyCompletePleading}
-              copied={copiedPleading}
-              showRaw={showRawMarkdown}
-              onToggleRaw={() => setShowRawMarkdown(prev => !prev)}
-              onDownloadBrief={handleDownloadBrief}
-              onPrintBrief={handlePrintBrief}
+              matterTitle={matterTitle}
+              apiBase={API_BASE}
             />
           </section>
 
-          {/* ───────── STAGE IV & V: MERGED SPLIT-PANE SIMULATION ROOM ───────── */}
-          <section id="wr-stage-simulation" className="wr-section-container">
-            <div className="wr-section-head">
-              <span className="wr-section-badge">IV &amp; V</span>
-              <h2 className="wr-section-title">Litigation Simulation Room</h2>
-              <span className="wr-section-desc">Split-Pane Adversarial Interrogation &amp; Live Trial</span>
+          {/* ───────── STAGE 4+5: SIMULATION ROOM ───────── */}
+          <section id="vc-stage-simulation" className="vc-stage" style={{ maxWidth: '100%' }}>
+            <div className="vc-sim-head-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '760px' }}>
+              <div className="vc-stage-head" style={{ marginBottom: 0 }}><span className="vc-num">4</span><h2>Simulation room</h2></div>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--oxblood)', background: 'var(--oxblood-soft)', padding: '4px 10px', borderRadius: '20px' }}>
+                {addressedChallenges.size} of {questions.length} prepared
+              </span>
             </div>
+            <p className="vc-stage-note">Opposing counsel's challenges on the left. Send your rebuttal straight into the live exchange on the right.</p>
 
-            <div className="wr-sim-split-room">
-
-              {/* LEFT PANE: Opposition Attack Queue (Stage IV) */}
-              <div className="wr-opposition-pane">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#f87171' }}>
-                    Opposition Counsel Attack Queue ({questions.length})
-                  </span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Click "Use in Chat →" to counter
-                  </span>
-                </div>
-
-                {questions.length > 0 ? (
-                  questions.map((threat, i) => (
-                    <OppositionChallengeCard
-                      key={i}
-                      threat={threat}
-                      index={i}
-                      expanded={expandedThreats.has(i)}
-                      isAddressed={addressedChallenges.has(i)}
-                      onToggle={() => toggleThreat(i)}
-                      onUseInChat={handleUseInChat}
-                    />
-                  ))
-                ) : (
-                  <div className="wr-threat-card" style={{ padding: '20px', textAlign: 'center', fontStyle: 'italic', color: 'var(--text-muted)' }}>
-                    No opposition challenges detected.
-                  </div>
-                )}
-              </div>
-
-              {/* RIGHT PANE: Continuous Simulation Chat (Stage V) */}
-              <div className="wr-chat-pane">
-                <div className="wr-chat-outer">
-
-                  {/* Top Strategy & Persona Bar */}
-                  <div className="wr-tone-bar">
-                    <div className="wr-tone-toggle-group">
-                      <button
-                        className={`wr-tone-btn${strategyTone === 'aggressive' ? ' tone-agg' : ''}`}
-                        onClick={() => setStrategyTone('aggressive')}
-                        type="button"
-                      >
-                        ⚔️ Aggressive (Counter-Attack)
-                      </button>
-                      <button
-                        className={`wr-tone-btn${strategyTone === 'defensive' ? ' tone-def' : ''}`}
-                        onClick={() => setStrategyTone('defensive')}
-                        type="button"
-                      >
-                        🛡️ Defensive (Shield / Mitigate)
-                      </button>
-                    </div>
-
-                    <div className="wr-persona-status">
-                      <span className="wr-persona-dot" />
-                      <span>Opposing Counsel Active</span>
-                    </div>
-                  </div>
-
-                  {/* Messages Scroll Area */}
-                  <div className="wr-chat-messages">
-                    {chatMessages.map((m, i) => (
-                      <React.Fragment key={i}>
-                        <div className={`wr-bubble ${m.role}`}>
-                          {m.role === 'bot' ? (
-                            <div
-                              className="md-body"
-                              dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
-                            />
-                          ) : (
-                            m.text
-                          )}
-                        </div>
-                        {m.role === 'bot' && m.rebuttals?.length > 0 && (
-                          <div className="wr-quick-replies">
-                            {m.rebuttals.map((r, j) => (
-                              <button
-                                key={j}
-                                className="wr-qr-pill"
-                                disabled={chatLoading}
-                                onClick={() => submitToChat(r)}
-                                type="button"
-                              >
-                                <span>↳</span>
-                                <span>{r}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </React.Fragment>
-                    ))}
-                    {chatLoading && (
-                      <div className="wr-bubble typing">Opposing counsel preparing cross-examination…</div>
-                    )}
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  {/* Chat Input Bar */}
-                  <form className="wr-chat-input-row" onSubmit={handleChatSubmit}>
-                    <input
-                      ref={chatInputRef}
-                      className="wr-chat-input"
-                      type="text"
-                      placeholder="State your argument or respond to opposition…"
-                      value={chatInput}
-                      onChange={e => setChatInput(e.target.value)}
-                      disabled={chatLoading}
-                    />
-                    <button className="wr-send-btn" type="submit" disabled={chatLoading || !chatInput.trim()}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-                      </svg>
-                      Send
-                    </button>
-                  </form>
-
-                  {/* Save Session Footer */}
-                  <div className="wr-save-bar">
-                    <span className="wr-save-hint">
-                      Save full simulation package to your Case Vault.
-                    </span>
-                    <button
-                      className={`wr-save-btn${savedSession ? ' saved' : ''}`}
-                      onClick={handleSaveSession}
-                      disabled={savingSession || savedSession}
-                      type="button"
-                    >
-                      {savingSession ? (
-                        <>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 0.9s linear infinite' }}>
-                            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.73-8.56" />
-                          </svg>
-                          Saving…
-                        </>
-                      ) : savedSession ? (
-                        <>✓ Saved to Vault</>
-                      ) : (
-                        <>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" />
-                          </svg>
-                          Save to Case Vault
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                </div>
-              </div>
-
-            </div>
+            <SimulationRoom
+              questions={questions}
+              addressedChallenges={addressedChallenges}
+              onUseInChat={handleUseInChat}
+              chatMessages={chatMessages}
+              chatInput={chatInput}
+              setChatInput={setChatInput}
+              chatLoading={chatLoading}
+              strategyTone={strategyTone}
+              setStrategyTone={setStrategyTone}
+              onChatSubmit={handleChatSubmit}
+              onQuickReply={submitToChat}
+              chatEndRef={chatEndRef}
+              chatInputRef={chatInputRef}
+            />
           </section>
 
-        </div>{/* end wr-results-body */}
-
-      </div>{/* end wr-results-page */}
-    </>
+        </main>
+      </div>
+    </div>
   );
 }
