@@ -58,459 +58,235 @@ const parseRobotResponse = (raw) => {
 
 // ── Pipeline stages ──────────────────────────────────────────────────────────
 
-// ── Benchmark Indian Legal Scenarios ─────────────────────────────────────────
-
-const BENCHMARK_SCENARIOS = [
-  {
-    title: 'Special Leave Petition (Civil)',
-    tag: 'Commercial Dispute',
-    court: 'Supreme Court of India',
-    icon: '⚖️',
-    clientSide: 'Appellant',
-    summary: 'Arbitration clause survival post-unilateral termination and liquidated damages under ICA §§ 73–74.',
-    content: `SPECIAL LEAVE PETITION (CIVIL) NO. 4102 OF 2024
-IN THE SUPREME COURT OF INDIA
-CIVIL APPELLATE JURISDICTION
-
-BETWEEN:
-TECHNOVA INDUSTRIAL CORP. ... PETITIONER
-VERSUS
-UNION OF INDIA & ORS. ... RESPONDENTS
-
-QUESTIONS OF LAW & MATTERS OF RECORD:
-1. Whether an arbitration clause under Section 11 of the Arbitration and Conciliation Act, 1996 survives the unilateral termination of a concession agreement without mandatory cure notice.
-2. Whether statutory claims under the Insolvency and Bankruptcy Code, 2016 override contractual pre-deposit requirements in public infrastructure projects.
-3. Proper interpretation of Section 73 and Section 74 of the Indian Contract Act, 1872 regarding invocation of performance bank guarantees and liquidated damages without proof of actual legal injury.`,
-  },
-  {
-    title: 'Interim Injunction Application (Order XXXIX)',
-    tag: 'IP & Patent Litigation',
-    court: 'High Court of Delhi',
-    icon: '🛡️',
-    clientSide: 'Plaintiff',
-    summary: 'Restraining generic drug manufacturing under Section 48 Patents Act vs Section 3(d) efficacy defense.',
-    content: `IN THE HIGH COURT OF DELHI AT NEW DELHI
-I.A. NO. 8920 OF 2024 IN CS(COMM) NO. 312 OF 2024
-
-IN THE MATTER OF:
-NEXUS BIOTECH PHARMA LTD. ... PLAINTIFF
-VERSUS
-APEX GENERICS INDIA PVT. LTD. ... DEFENDANT
-
-APPLICATION UNDER ORDER XXXIX RULES 1 & 2 CPC FOR INTERIM INJUNCTION:
-1. Plaintiff seeks interlocutory injunction restraining defendant from manufacturing, marketing, and selling pharmaceutical formulations infringing Indian Patent No. IN389201 under Section 48 of the Patents Act, 1970.
-2. Establishing the tripartite test: prima facie validity of patent claims, balance of convenience, and irreparable harm to patentee.
-3. Opposing defenses of anticipation, obviousness under Section 64, and Section 3(d) therapeutic efficacy standards.`,
-  },
-  {
-    title: 'Anticipatory Bail Application (BNSS § 482)',
-    tag: 'Criminal Procedure',
-    court: 'High Court of Bombay',
-    icon: '⚡',
-    clientSide: 'Applicant',
-    summary: 'Pre-arrest protection against criminalization of contractual disputes under BNS §§ 316, 318(4).',
-    content: `IN THE HIGH COURT OF JUDICATURE AT BOMBAY
-CRIMINAL ANTICIPATORY BAIL APPLICATION NO. 1104 OF 2024
-
-IN THE MATTER OF:
-RAJESHWAR PRASAD VERMA ... APPLICANT
-VERSUS
-STATE OF MAHARASHTRA & ANR. ... RESPONDENTS
-
-APPLICATION UNDER SECTION 482 OF BHARATIYA NAGARIK SURAKSHA SANHITA, 2023 (BNSS):
-1. Applicant seeks pre-arrest protection in connection with FIR registered under Sections 316, 318(4), and 61(2) of Bharatiya Nyaya Sanhita, 2023 (BNS).
-2. Pure commercial breach of contract improperly cloaked with criminal conspiracy in direct violation of Supreme Court precedents in Lalita Kumari and Arnesh Kumar.
-3. Custodial interrogation is unwarranted; applicant has deep roots in society, undertakes to cooperate fully with the investigating agency, and will furnish solvent local sureties.`,
-  },
+const PIPELINE_STAGES = [
+  { num: 1, label: 'Extracting legal issues & case facts...' },
+  { num: 2, label: 'Searching Indian Kanoon for live precedents...' },
+  { num: 3, label: 'Drafting strategic opening argument...' },
+  { num: 4, label: 'Red-teaming with opposing counsel AI...' },
+  { num: 5, label: 'Compiling full simulation package...' },
 ];
 
-const SIMULATION_CAPABILITIES = [
-  {
-    title: 'Bench Scrutiny',
-    desc: 'Tests claims against authoritative Supreme Court and High Court precedents with judicial rigor.',
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Vulnerability Audit',
-    desc: 'Surfaces evidentiary gaps, contradictory statements, statutory limitations, and procedural bars.',
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-      </svg>
-    ),
-  },
-  {
-    title: 'Transcript & Strategy',
-    desc: 'Generates real-time rebuttal options, cross-examination counters, and courtroom argument transcripts.',
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
-      </svg>
-    ),
-  },
-];
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const WAR_ROOM_STYLES = `
 ${MARKDOWN_CSS}
-  /* ── LITIGATION WAR ROOM HUB (FULL-WIDTH 2-COLUMN HUB) ────────── */
-  .wr-hub-wrapper {
+  /* ── VIRTUAL COURTROOM INGESTION HUB / INTAKE CARD ──────────────── */
+  .wr-intake-wrap {
     min-height: calc(100vh - 64px);
     width: 100%;
-    padding: 32px 36px 64px;
+    padding: 32px 16px 48px;
     box-sizing: border-box;
-    background: transparent;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     overflow-y: auto;
   }
-  .wr-hub-container {
-    max-width: 1380px;
+  .wr-intake-container {
+    max-width: 672px; /* max-w-2xl */
     width: 100%;
+    margin: auto;
     display: flex;
     flex-direction: column;
-    gap: 28px;
-  }
-  .wr-hub-header {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .wr-hub-category {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: var(--accent-primary, #3B82F6);
-    display: flex;
     align-items: center;
-    gap: 8px;
   }
-  .wr-hub-title {
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--text-primary, #F8FAFC);
-    font-family: var(--font-serif, Georgia, serif);
-    margin: 0;
-    line-height: 1.2;
-    letter-spacing: -0.4px;
-  }
-  .wr-hub-subtitle {
-    font-size: 14px;
-    color: var(--text-muted, #94A3B8);
-    margin: 0;
-    line-height: 1.6;
-    max-width: 820px;
-  }
-
-  /* 12-Column Responsive Grid */
-  .wr-hub-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-    gap: 24px;
-    align-items: start;
+  .wr-intake-card {
     width: 100%;
-  }
-
-  @media (max-width: 1024px) {
-    .wr-hub-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  /* Card Surfaces */
-  .wr-hub-card {
-    background: var(--bg-panel, #171c26);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 14px;
-    padding: 26px 28px;
-    box-shadow: 0 12px 36px rgba(0,0,0,0.35);
+    background: #0f172a; /* dark:bg-slate-900 */
+    border: 1px solid #1e293b; /* dark:border-slate-800 */
+    border-radius: 16px; /* rounded-2xl */
+    padding: 36px 40px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    position: relative;
-    overflow: hidden;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
   }
-
-  .wr-hub-card-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .wr-hub-badge-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: rgba(59,130,246,0.1);
-    border: 1px solid rgba(59,130,246,0.25);
-    color: #60A5FA;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .wr-hub-card-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--text-primary, #F8FAFC);
-    margin: 0;
-  }
-
-  .wr-hub-card-subtitle {
-    font-size: 12.5px;
-    color: var(--text-muted, #94A3B8);
-    margin: 2px 0 0;
-  }
-
-  /* Ingestion Dropzone */
-  .wr-hub-dropzone {
-    border: 2px dashed rgba(59,130,246,0.3);
-    border-radius: 12px;
-    padding: 32px 24px;
-    text-align: center;
-    cursor: pointer;
-    background: rgba(59,130,246,0.02);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-  .wr-hub-dropzone:hover {
-    border-color: #3B82F6;
-    background: rgba(59,130,246,0.06);
-    transform: translateY(-1px);
-  }
-  .wr-hub-dropzone.drag-over {
-    border-color: #60A5FA;
-    background: rgba(59,130,246,0.12);
-    transform: scale(1.01);
-    box-shadow: 0 0 0 4px rgba(59,130,246,0.15);
-  }
-  .wr-hub-dropzone-icon {
+  .wr-intake-badge {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
-    background: rgba(59,130,246,0.1);
-    border: 1px solid rgba(59,130,246,0.25);
-    color: #3B82F6;
+    border-radius: 12px;
+    background: rgba(30, 58, 138, 0.6); /* dark:bg-blue-950/60 */
+    border: 1px solid #1e40af; /* dark:border-blue-800 */
+    color: #60a5fa; /* dark:text-blue-400 */
     display: flex;
     align-items: center;
     justify-content: center;
+    margin: 0 auto 16px;
+  }
+  .wr-intake-title {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: var(--font-serif, Georgia, serif);
+    color: #ffffff;
+    text-align: center;
+    letter-spacing: -0.025em;
+    margin: 0 0 6px;
+  }
+  .wr-intake-subtitle {
+    font-size: 14px;
+    color: #94a3b8; /* text-slate-400 */
+    text-align: center;
+    margin: 0 0 24px;
+    line-height: 1.5;
+  }
+  .wr-intake-dropzone {
+    border: 2px dashed #334155; /* dark:border-slate-700 */
+    background: rgba(2, 6, 23, 0.4); /* dark:bg-slate-950/40 */
+    border-radius: 12px;
+    padding: 30px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .wr-intake-dropzone:hover {
+    border-color: #60a5fa; /* dark:hover:border-blue-400 */
+    background: rgba(30, 58, 138, 0.2); /* dark:hover:bg-blue-950/20 */
+  }
+  .wr-intake-dropzone.drag-over {
+    border-color: #3b82f6;
+    background: rgba(30, 58, 138, 0.3);
+    transform: scale(1.01);
+  }
+  .wr-intake-dropzone-icon {
+    color: #3b82f6;
     margin-bottom: 2px;
-    transition: transform 0.2s ease;
   }
-  .wr-hub-dropzone:hover .wr-hub-dropzone-icon {
-    transform: scale(1.08);
-  }
-  .wr-hub-dropzone-primary {
+  .wr-intake-dropzone-primary {
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-primary, #F8FAFC);
+    color: #f1f5f9; /* dark:text-slate-100 */
   }
-  .wr-hub-dropzone-secondary {
+  .wr-intake-dropzone-secondary {
     font-size: 12px;
-    color: var(--text-muted, #94A3B8);
+    color: #94a3b8; /* dark:text-slate-400 */
+    margin-top: 2px;
   }
-
-  /* Command Assistant Steps */
-  .wr-hub-cmd-steps {
+  .wr-intake-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 22px 0 18px;
+    color: #64748b; /* dark:text-slate-500 */
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .wr-intake-divider::before,
+  .wr-intake-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1e293b; /* dark:border-slate-800 */
+  }
+  .wr-intake-steps {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    margin-bottom: 24px;
   }
-  .wr-hub-cmd-row {
+  .wr-intake-step-row {
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    background: rgba(255,255,255,0.015);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-radius: 9px;
-    padding: 12px 14px;
   }
-  .wr-hub-cmd-num {
-    font-size: 10.5px;
-    font-weight: 800;
-    color: #3B82F6;
-    background: rgba(59,130,246,0.1);
-    border: 1px solid rgba(59,130,246,0.25);
+  .wr-intake-step-num {
+    width: 24px;
+    height: 24px;
     border-radius: 6px;
-    padding: 3px 6px;
-    flex-shrink: 0;
-  }
-  .wr-hub-cmd-text {
-    font-size: 12.5px;
-    color: var(--text-muted, #94A3B8);
-    line-height: 1.5;
-  }
-  .wr-hub-cmd-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(59,130,246,0.08);
-    border: 1px solid rgba(59,130,246,0.22);
-    border-radius: 6px;
-    padding: 5px 10px;
-    font-size: 12px;
+    background: rgba(30, 58, 138, 0.8); /* dark:bg-blue-950/80 */
+    border: 1px solid #1e40af; /* dark:border-blue-800 */
+    color: #60a5fa; /* dark:text-blue-400 */
+    font-size: 11px;
+    font-weight: 700;
     font-family: monospace;
-    color: #60A5FA;
-    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .wr-intake-step-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #e2e8f0; /* dark:text-slate-200 */
+  }
+  .wr-intake-step-desc {
+    font-size: 12px;
+    color: #94a3b8; /* dark:text-slate-400 */
+    line-height: 1.4;
+  }
+  .wr-intake-chip {
+    display: inline-block;
+    background: #020617; /* dark:bg-slate-950 */
+    border: 1px solid #1e293b; /* dark:border-slate-800 */
+    color: #93c5fd; /* dark:text-blue-300 */
+    font-family: monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
-  .wr-hub-cmd-chip:hover {
-    background: rgba(59,130,246,0.15);
-    border-color: #3B82F6;
-    color: #93C5FD;
+  .wr-intake-chip:hover {
+    border-color: #3b82f6;
+    color: #bfdbfe;
   }
-
-  /* Actions Row */
-  .wr-hub-actions-row {
+  .wr-intake-actions {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-    margin-top: 4px;
   }
-  .wr-hub-btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 11px 22px;
-    border-radius: 8px;
-    background: #2563EB;
-    color: #FFFFFF;
-    font-size: 13.5px;
-    font-weight: 600;
+  .wr-intake-btn-primary {
+    flex: 1;
+    min-width: 180px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border-radius: 12px;
     border: none;
     cursor: pointer;
-    transition: all 0.15s ease;
-    box-shadow: 0 4px 14px rgba(37,99,235,0.25);
-  }
-  .wr-hub-btn-primary:hover {
-    background: #1D4ED8;
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(37,99,235,0.35);
-  }
-  .wr-hub-btn-secondary {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border-radius: 8px;
-    background: rgba(255,255,255,0.04);
-    color: var(--text-primary, #E2E8F0);
-    font-size: 13.5px;
-    font-weight: 550;
-    border: 1px solid var(--border-subtle, #2C3241);
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .wr-hub-btn-secondary:hover {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(59,130,246,0.4);
-    color: #FFFFFF;
-  }
-
-  /* Benchmark Demos Card */
-  .wr-benchmark-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .wr-benchmark-card {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 14px 16px;
-    border-radius: 10px;
-    background: rgba(59,130,246,0.03);
-    border: 1px solid var(--border-subtle, #2C3241);
-    border-left: 3px solid #3B82F6;
-    cursor: pointer;
-    transition: all 0.18s ease;
-    text-align: left;
-    position: relative;
-  }
-  .wr-benchmark-card:hover {
-    background: rgba(59,130,246,0.08);
-    border-color: #3B82F6;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(59,130,246,0.15);
-  }
-  .wr-benchmark-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .wr-benchmark-title {
-    font-size: 13.5px;
-    font-weight: 700;
-    color: var(--text-primary, #F8FAFC);
-  }
-  .wr-benchmark-tag {
-    font-size: 9.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 2px 7px;
-    border-radius: 10px;
-    background: rgba(59,130,246,0.12);
-    color: #93C5FD;
-    border: 1px solid rgba(59,130,246,0.25);
-    flex-shrink: 0;
-  }
-  .wr-benchmark-court {
-    font-size: 11.5px;
-    color: var(--text-muted, #94A3B8);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /* Capabilities Card */
-  .wr-cap-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .wr-cap-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-  }
-  .wr-cap-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    background: rgba(16,185,129,0.1);
-    border: 1px solid rgba(16,185,129,0.25);
-    color: #10B981;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    margin-top: 2px;
+    gap: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    transition: all 0.15s ease;
   }
-  .wr-cap-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-primary, #F8FAFC);
-    margin-bottom: 2px;
+  .wr-intake-btn-primary:hover {
+    background: #3b82f6;
   }
-  .wr-cap-desc {
-    font-size: 12px;
-    color: var(--text-muted, #94A3B8);
-    line-height: 1.5;
+  .wr-intake-btn-primary:active {
+    transform: scale(0.98);
+  }
+  .wr-intake-btn-secondary {
+    background: #1e293b; /* dark:bg-slate-800 */
+    color: #e2e8f0; /* dark:text-slate-200 */
+    border: 1px solid #334155; /* dark:border-slate-700 */
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.15s ease;
+  }
+  .wr-intake-btn-secondary:hover {
+    background: rgba(51, 65, 85, 0.8); /* dark:hover:bg-slate-700/80 */
   }
 
   /* ── PIPELINE LOADING ──────────────────────────────────────────── */
@@ -1345,114 +1121,74 @@ ${MARKDOWN_CSS}
     color: #475569 !important;
   }
 
-  /* ── LIGHT THEME HUB OVERRIDES ── */
-  :root[data-theme="light"] .wr-hub-title {
-    color: #0F172A !important;
+  /* ── LIGHT THEME COMPLETE INTAKE OVERRIDES ── */
+  :root[data-theme="light"] .wr-intake-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
   }
-  :root[data-theme="light"] .wr-hub-subtitle {
-    color: #475569 !important;
+  :root[data-theme="light"] .wr-intake-badge {
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
+    color: #2563eb !important;
   }
-  :root[data-theme="light"] .wr-hub-category {
-    color: #1D4ED8 !important;
+  :root[data-theme="light"] .wr-intake-title {
+    color: #0f172a !important;
   }
-  :root[data-theme="light"] .wr-hub-card {
-    background: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    box-shadow: 0 12px 36px rgba(0,0,0,0.05) !important;
+  :root[data-theme="light"] .wr-intake-subtitle {
+    color: #64748b !important;
   }
-  :root[data-theme="light"] .wr-hub-badge-icon {
-    background: #EFF6FF !important;
-    border-color: #BFDBFE !important;
-    color: #1D4ED8 !important;
+  :root[data-theme="light"] .wr-intake-dropzone {
+    border-color: #cbd5e1 !important;
+    background: rgba(248, 250, 252, 0.7) !important;
   }
-  :root[data-theme="light"] .wr-hub-card-title {
-    color: #0F172A !important;
+  :root[data-theme="light"] .wr-intake-dropzone:hover {
+    border-color: #3b82f6 !important;
+    background: rgba(239, 246, 255, 0.3) !important;
   }
-  :root[data-theme="light"] .wr-hub-card-subtitle {
-    color: #475569 !important;
+  :root[data-theme="light"] .wr-intake-dropzone-primary {
+    color: #1e293b !important;
   }
-  :root[data-theme="light"] .wr-hub-dropzone {
-    background: #F8FAFC !important;
-    border-color: #CBD5E1 !important;
+  :root[data-theme="light"] .wr-intake-dropzone-secondary {
+    color: #64748b !important;
   }
-  :root[data-theme="light"] .wr-hub-dropzone:hover {
-    background: #EFF6FF !important;
-    border-color: #3B82F6 !important;
+  :root[data-theme="light"] .wr-intake-divider {
+    color: #94a3b8 !important;
   }
-  :root[data-theme="light"] .wr-hub-dropzone.drag-over {
-    background: #DBEAFE !important;
-    border-color: #2563EB !important;
+  :root[data-theme="light"] .wr-intake-divider::before,
+  :root[data-theme="light"] .wr-intake-divider::after {
+    background: #e2e8f0 !important;
   }
-  :root[data-theme="light"] .wr-hub-dropzone-icon {
-    background: #EFF6FF !important;
-    border-color: #BFDBFE !important;
-    color: #1D4ED8 !important;
+  :root[data-theme="light"] .wr-intake-step-num {
+    background: #eff6ff !important;
+    border-color: #bfdbfe !important;
+    color: #2563eb !important;
   }
-  :root[data-theme="light"] .wr-hub-dropzone-primary {
-    color: #0F172A !important;
-    font-weight: 700 !important;
+  :root[data-theme="light"] .wr-intake-step-title {
+    color: #1e293b !important;
   }
-  :root[data-theme="light"] .wr-hub-dropzone-secondary {
-    color: #64748B !important;
+  :root[data-theme="light"] .wr-intake-step-desc {
+    color: #64748b !important;
   }
-  :root[data-theme="light"] .wr-hub-cmd-row {
-    background: #F8FAFC !important;
-    border-color: #E2E8F0 !important;
+  :root[data-theme="light"] .wr-intake-chip {
+    background: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #1d4ed8 !important;
   }
-  :root[data-theme="light"] .wr-hub-cmd-num {
-    background: #EFF6FF !important;
-    border-color: #BFDBFE !important;
-    color: #1D4ED8 !important;
+  :root[data-theme="light"] .wr-intake-btn-primary {
+    background: #2563eb !important;
+    color: #ffffff !important;
   }
-  :root[data-theme="light"] .wr-hub-cmd-text {
-    color: #475569 !important;
+  :root[data-theme="light"] .wr-intake-btn-primary:hover {
+    background: #3b82f6 !important;
   }
-  :root[data-theme="light"] .wr-hub-cmd-chip {
-    background: #EFF6FF !important;
-    border-color: #BFDBFE !important;
-    color: #1D4ED8 !important;
-    font-weight: 600 !important;
-  }
-  :root[data-theme="light"] .wr-hub-cmd-chip:hover {
-    background: #DBEAFE !important;
-    border-color: #3B82F6 !important;
-  }
-  :root[data-theme="light"] .wr-hub-btn-secondary {
-    background: #FFFFFF !important;
-    border-color: #CBD5E1 !important;
+  :root[data-theme="light"] .wr-intake-btn-secondary {
+    background: #ffffff !important;
     color: #334155 !important;
+    border-color: #cbd5e1 !important;
   }
-  :root[data-theme="light"] .wr-hub-btn-secondary:hover {
-    background: #F8FAFC !important;
-    border-color: #94A3B8 !important;
-    color: #0F172A !important;
-  }
-  :root[data-theme="light"] .wr-benchmark-card {
-    background: #F8FAFC !important;
-    border-color: #CBD5E1 !important;
-    border-left: 3px solid #2563EB !important;
-  }
-  :root[data-theme="light"] .wr-benchmark-card:hover {
-    background: #EFF6FF !important;
-    border-color: #2563EB !important;
-    box-shadow: 0 6px 18px rgba(37,99,235,0.12) !important;
-  }
-  :root[data-theme="light"] .wr-benchmark-title {
-    color: #0F172A !important;
-  }
-  :root[data-theme="light"] .wr-benchmark-tag {
-    background: #EFF6FF !important;
-    border-color: #BFDBFE !important;
-    color: #1D4ED8 !important;
-  }
-  :root[data-theme="light"] .wr-benchmark-court {
-    color: #475569 !important;
-  }
-  :root[data-theme="light"] .wr-cap-title {
-    color: #0F172A !important;
-  }
-  :root[data-theme="light"] .wr-cap-desc {
-    color: #475569 !important;
+  :root[data-theme="light"] .wr-intake-btn-secondary:hover {
+    background: #f8fafc !important;
   }
   }
 `;
@@ -1921,212 +1657,123 @@ export default function WarRoomView() {
           onChange={onFileInputChange}
         />
 
-        <div className="wr-hub-wrapper">
-          <div className="wr-hub-container">
+        <div className="wr-intake-wrap">
+          <div className="wr-intake-container">
+            <div className="wr-intake-card">
 
-            {/* ── HEADER BLOCK ── */}
-            <div className="wr-hub-header">
-              <div className="wr-hub-category">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              {/* ── Icon & Visual Badge ── */}
+              <div className="wr-intake-badge">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
                   <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
                   <path d="M7 21h10" />
                   <path d="M12 3v18" />
                   <path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" />
                 </svg>
-                AI Trial Prep & Moot Court Engine
               </div>
-              <h1 className="wr-hub-title">Virtual Courtroom War Room</h1>
-              <p className="wr-hub-subtitle">
-                High-fidelity litigation simulator with judicial bench interrogation, strategic rebuttal analysis, and live Indian precedent scrutiny.
+
+              {/* ── Typography ── */}
+              <h1 className="wr-intake-title">Virtual Courtroom — Ready</h1>
+              <p className="wr-intake-subtitle">
+                Upload a case brief directly or trigger via LexAmplify Assistant.
               </p>
-            </div>
 
-            {/* ── 12-COLUMN RESPONSIVE GRID ── */}
-            <div className="wr-hub-grid">
-
-              {/* LEFT COLUMN (lg:col-span-7) — Case Ingestion & Direct Launch */}
-              <div className="wr-hub-card">
-                <div className="wr-hub-card-header">
-                  <div className="wr-hub-badge-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="12" y1="18" x2="12" y2="12" />
-                      <line x1="9" y1="15" x2="15" y2="15" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className="wr-hub-card-title">Initialize Case File</h2>
-                    <p className="wr-hub-card-subtitle">Ingest primary petition, written statement, or contract</p>
-                  </div>
-                </div>
-
-                {/* Interactive Dropzone */}
-                <div
-                  className={`wr-hub-dropzone${isDragOver ? ' drag-over' : ''}${uploadState === 'uploading' ? ' wr-dropzone-uploading' : ''}`}
-                  onClick={onDropzoneClick}
-                  onDragOver={onDragOver}
-                  onDragLeave={onDragLeave}
-                  onDrop={onDrop}
-                >
-                  {uploadState === 'uploading' ? (
-                    <>
-                      <div className="wr-upload-spinner" />
-                      <div className="wr-hub-dropzone-primary">Uploading & indexing document…</div>
-                      <div className="wr-hub-dropzone-secondary">Pipeline will start automatically once processing completes</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="wr-hub-dropzone-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                      </div>
-                      <div className="wr-hub-dropzone-primary">
-                        Drop your case document here or <span style={{ color: 'var(--accent-primary, #3B82F6)', textDecoration: 'underline' }}>browse files</span>
-                      </div>
-                      <div className="wr-hub-dropzone-secondary">
-                        PDF, TXT, or DOCX · Max 25MB · Triggers 5-stage simulation instantly
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {uploadState === 'error' && (
-                  <div className="wr-upload-error">{uploadError}</div>
+              {/* ── Interactive Upload Dropzone ── */}
+              <div
+                className={`wr-intake-dropzone${isDragOver ? ' drag-over' : ''}${uploadState === 'uploading' ? ' wr-dropzone-uploading' : ''}`}
+                onClick={onDropzoneClick}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+              >
+                {uploadState === 'uploading' ? (
+                  <>
+                    <div className="wr-upload-spinner" />
+                    <div className="wr-intake-dropzone-primary">Uploading & indexing document…</div>
+                    <div className="wr-intake-dropzone-secondary">Pipeline will start automatically once processing completes</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="wr-intake-dropzone-icon">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                    </div>
+                    <div className="wr-intake-dropzone-primary">
+                      Drop your case document here
+                    </div>
+                    <div className="wr-intake-dropzone-secondary">
+                      PDF, TXT, or DOCX • Click to browse • Triggers simulation instantly
+                    </div>
+                  </>
                 )}
+              </div>
 
-                {/* Subtle Divider */}
-                <div className="wr-or-divider">Or activate via command palette</div>
+              {uploadState === 'error' && (
+                <div className="wr-upload-error">{uploadError}</div>
+              )}
 
-                {/* Command Steps */}
-                <div className="wr-hub-cmd-steps">
-                  <div className="wr-hub-cmd-row">
-                    <span className="wr-hub-cmd-num">01</span>
-                    <div className="wr-hub-cmd-text">
-                      Press <kbd style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace', color: 'var(--text-primary)' }}>Ctrl+K</kbd> or click <strong>"LexAmplify"</strong> in the sidebar to open the Assistant.
-                    </div>
-                  </div>
-                  <div className="wr-hub-cmd-row">
-                    <span className="wr-hub-cmd-num">02</span>
-                    <div style={{ flex: 1 }}>
-                      <div className="wr-hub-cmd-text">
-                        Type an argument simulation command directly:
-                      </div>
-                      <div
-                        className="wr-hub-cmd-chip"
-                        onClick={() => window.dispatchEvent(new Event('toggle-rag-palette'))}
-                        title="Click to open command assistant"
-                      >
-                        <span>⚡</span> "Simulate defense arguments for [Case Name]"
-                      </div>
+              {/* ── Divider ── */}
+              <div className="wr-intake-divider">OR ACTIVATE VIA COMMAND ASSISTANT</div>
+
+              {/* ── Workflow Steps ── */}
+              <div className="wr-intake-steps">
+                <div className="wr-intake-step-row">
+                  <span className="wr-intake-step-num">01</span>
+                  <div>
+                    <div className="wr-intake-step-title">Open the Command Assistant</div>
+                    <div className="wr-intake-step-desc">
+                      Press <kbd style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)', padding: '1px 5px', borderRadius: '4px', fontFamily: 'monospace' }}>Ctrl+K</kbd> or click "LexAmplify" in the sidebar.
                     </div>
                   </div>
                 </div>
 
-                {/* Bottom Actions Row */}
-                <div className="wr-hub-actions-row">
-                  <button
-                    className="wr-hub-btn-primary"
-                    type="button"
-                    onClick={() => window.dispatchEvent(new Event('toggle-rag-palette'))}
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                    </svg>
-                    Open Command Assistant
-                  </button>
-                  <button
-                    className="wr-hub-btn-secondary"
-                    type="button"
-                    onClick={() => navigate('/vault')}
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    Go to Case Vault
-                  </button>
+                <div className="wr-intake-step-row">
+                  <span className="wr-intake-step-num">02</span>
+                  <div>
+                    <div className="wr-intake-step-title">Trigger simulation via natural prompt</div>
+                    <div className="wr-intake-step-desc">
+                      Type an argument simulation command directly:
+                    </div>
+                    <div
+                      className="wr-intake-chip"
+                      onClick={() => window.dispatchEvent(new Event('toggle-rag-palette'))}
+                      title="Click to open command assistant"
+                    >
+                      "Simulate defense arguments for [Case Name]"
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* RIGHT COLUMN (lg:col-span-5) — Benchmark Scenarios & Pipeline Overview */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-                {/* Benchmark Demos Card */}
-                <div className="wr-hub-card">
-                  <div className="wr-hub-card-header">
-                    <div className="wr-hub-badge-icon" style={{ background: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.25)', color: '#10B981' }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="wr-hub-card-title">Benchmark Indian Law Scenarios</h3>
-                      <p className="wr-hub-card-subtitle">Quick-launch litigation models with full judicial scrutiny</p>
-                    </div>
-                  </div>
-
-                  <div className="wr-benchmark-list">
-                    {BENCHMARK_SCENARIOS.map((scen) => (
-                      <div
-                        key={scen.title}
-                        className="wr-benchmark-card"
-                        onClick={() => runSimulation(scen.content, scen.clientSide, scen.title)}
-                        title="Click to run this benchmark simulation"
-                      >
-                        <div className="wr-benchmark-header">
-                          <span className="wr-benchmark-title">{scen.title}</span>
-                          <span className="wr-benchmark-tag">{scen.tag}</span>
-                        </div>
-                        <div className="wr-benchmark-court">
-                          <span>🏛️ {scen.court}</span>
-                          <span>·</span>
-                          <span style={{ color: 'var(--accent-primary, #3B82F6)', fontWeight: 600 }}>{scen.clientSide}</span>
-                        </div>
-                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted, #94A3B8)', marginTop: '2px', lineHeight: 1.4 }}>
-                          {scen.summary}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Simulation Capabilities Card */}
-                <div className="wr-hub-card" style={{ background: 'rgba(255,255,255,0.015)' }}>
-                  <div className="wr-hub-card-header" style={{ marginBottom: '-4px' }}>
-                    <div className="wr-hub-badge-icon" style={{ background: 'rgba(139,92,246,0.1)', borderColor: 'rgba(139,92,246,0.25)', color: '#A78BFA' }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="wr-hub-card-title">Litigation Engine Architecture</h3>
-                      <p className="wr-hub-card-subtitle">Autonomous 5-stage moot court simulation suite</p>
-                    </div>
-                  </div>
-
-                  <div className="wr-cap-list">
-                    {SIMULATION_CAPABILITIES.map((cap) => (
-                      <div key={cap.title} className="wr-cap-item">
-                        <div className="wr-cap-icon">{cap.icon}</div>
-                        <div>
-                          <div className="wr-cap-title">{cap.title}</div>
-                          <div className="wr-cap-desc">{cap.desc}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
+              {/* ── Action Buttons ── */}
+              <div className="wr-intake-actions">
+                <button
+                  className="wr-intake-btn-primary"
+                  type="button"
+                  onClick={() => window.dispatchEvent(new Event('toggle-rag-palette'))}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  Open Command Assistant
+                </button>
+                <button
+                  className="wr-intake-btn-secondary"
+                  type="button"
+                  onClick={() => navigate('/vault')}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  Go to Case Vault
+                </button>
               </div>
 
             </div>
-
           </div>
         </div>
       </>

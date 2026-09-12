@@ -219,7 +219,7 @@ describe('Virtual Courtroom / War Room', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Virtual Courtroom War Room/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Virtual Courtroom — Ready/i)).toBeInTheDocument();
     expect(screen.getByText(/Drop your case document here/i)).toBeInTheDocument();
   });
 
