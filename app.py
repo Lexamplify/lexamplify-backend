@@ -2608,8 +2608,8 @@ def create_app():
                         "For any specific fact not given above (party names, dates, monetary amounts, "
                         "case/appeal numbers, court name, etc.), insert a placeholder in square brackets "
                         "describing what belongs there, e.g. [Appellant's Name], [Rs. Amount], [Date]. "
-                        "Do NOT use dotted lines, underscores, or blank spaces as placeholders — always "
-                        "use the bracketed form so it renders as a fillable field.\n"
+                        "Do NOT use dotted lines, ellipses (…), underscores, or blank spaces as "
+                        "placeholders — always use the bracketed form so it renders as a fillable field.\n"
                         "Provide only the drafted opening argument text. Do not include conversational text or markdown code blocks."
                     )
                     

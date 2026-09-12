@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { fetchTrackedCases, fetchDocuments } from './services/api';
 import CommandPalette from './components/CommandPalette';
 import CaseVault from './components/CaseVault';
@@ -22,7 +22,6 @@ import WarRoomView from './components/WarRoomView';
 import FirmLibrary from './components/FirmLibrary';
 import LegalForms from './components/LegalForms';
 import FormTemplateLibrary from './components/FormTemplateLibrary';
-import LexLogoMark from './components/LexLogoMark';
 import TEMPLATES from './data/legalTemplates.js';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
@@ -150,58 +149,229 @@ const Icons = {
   ),
 };
 
+// ── SIDEBAR-ONLY ICON SET (Slate & Rust redesign) ──────────────────────────────
+// Deliberately separate from `Icons` above: that object is also used by the
+// dashboard's stat cards and quick-actions grid, and several of those calls
+// share an icon between two different features (e.g. `Icons.gavel` covers
+// both Legal Forms and Virtual Courtroom there). Mutating it to match the
+// sidebar brief's exact paths would silently change those unrelated cards
+// too. This set exists only to back NAVIGATION_GROUPS below.
+const SidebarIcons = {
+  dashboard: () => (
+    <svg className="icon" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.4" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.4" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.4" /></svg>
+  ),
+  contract: () => (
+    <svg className="icon" viewBox="0 0 24 24"><path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M13 3v5h5" /><line x1="8" y1="13" x2="15" y2="13" /><line x1="8" y1="16" x2="15" y2="16" /><line x1="8" y1="19" x2="12" y2="19" /></svg>
+  ),
+  pencil: () => (
+    <svg className="icon" viewBox="0 0 24 24"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+  ),
+  scales: () => (
+    <svg className="icon" viewBox="0 0 24 24"><line x1="12" y1="3" x2="12" y2="8" /><line x1="5" y1="8" x2="19" y2="8" /><line x1="5" y1="8" x2="5" y2="14" /><line x1="19" y1="8" x2="19" y2="14" /><circle cx="5" cy="16" r="2.3" /><circle cx="19" cy="16" r="2.3" /><line x1="12" y1="8" x2="12" y2="20" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
+  ),
+  calendar: () => (
+    <svg className="icon" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><line x1="3.5" y1="9.5" x2="20.5" y2="9.5" /><line x1="8" y1="3" x2="8" y2="6.5" /><line x1="16" y1="3" x2="16" y2="6.5" /></svg>
+  ),
+  courthouse: () => (
+    <svg className="icon" viewBox="0 0 24 24"><path d="M3 10l9-6 9 6" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="5" y1="10" x2="5" y2="19" /><line x1="9" y1="10" x2="9" y2="19" /><line x1="15" y1="10" x2="15" y2="19" /><line x1="19" y1="10" x2="19" y2="19" /><line x1="3" y1="21" x2="21" y2="21" /></svg>
+  ),
+  lock: () => (
+    <svg className="icon" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+  ),
+  search: () => (
+    <svg className="icon" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" /><line x1="15.3" y1="15.3" x2="20" y2="20" /></svg>
+  ),
+  library: () => (
+    <svg className="icon" viewBox="0 0 24 24"><path d="M12 5.5C9.5 4.2 6.5 4.2 4 5.5V19C6.5 17.7 9.5 17.7 12 19Z" /><path d="M12 5.5C14.5 4.2 17.5 4.2 20 5.5V19C17.5 17.7 14.5 17.7 12 19Z" /></svg>
+  ),
+  forms: () => (
+    <svg className="icon" viewBox="0 0 24 24"><path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M13 3v5h5" /><path d="M8.5 13.5l1.3 1.3L12.5 12" /><line x1="8.5" y1="17.5" x2="14" y2="17.5" /></svg>
+  ),
+};
+
 const NAVIGATION_GROUPS = [
   {
-    title: "CORE WORKSPACE",
+    title: "Workspace",
     items: [
-      { name: "Dashboard Home", path: "/dashboard", icon: Icons.dashboard() },
-      { name: "Contract Analyzer", path: "/contract-analyzer", icon: Icons.contract() },
-      { name: "Auto-Draft Studio", path: "/auto-draft", icon: Icons.wand() },
+      { name: "Dashboard", path: "/dashboard", icon: SidebarIcons.dashboard() },
+      { name: "Contract Analyzer", path: "/contract-analyzer", icon: SidebarIcons.contract(), aiAssisted: true },
+      { name: "Auto-Draft Studio", path: "/auto-draft", icon: SidebarIcons.pencil(), aiAssisted: true },
     ]
   },
   {
-    title: "LITIGATION & DISPUTES",
+    title: "Litigation & disputes",
     items: [
-      { name: "Court Resources", path: "/court-resources", icon: Icons.scales(), badge: { type: "live", label: "●" } },
-      { name: "Legal Calendar", path: "/calendar", icon: Icons.calendar(), badgeKey: "urgentDeadlines" },
-      { name: "Virtual Courtroom", path: "/war-room", icon: Icons.gavel() },
+      { name: "Court Resources", path: "/court-resources", icon: SidebarIcons.scales(), badge: { type: "live", label: "●" } },
+      { name: "Legal Calendar", path: "/calendar", icon: SidebarIcons.calendar(), badgeKey: "urgentDeadlines" },
+      { name: "Virtual Courtroom", path: "/war-room", icon: SidebarIcons.courthouse(), aiAssisted: true },
     ]
   },
   {
-    title: "PRACTICE & VAULT",
+    title: "Practice & vault",
     items: [
-      { name: "Case Vault", path: "/vault", icon: Icons.lock() },
-      { name: "Conflict Engine", path: "/conflict-engine", icon: Icons.search() },
-      { name: "Firm Library", path: "/firm-library", icon: Icons.library() },
-      { name: "Legal Forms", path: "/legal-forms", icon: Icons.forms() },
+      { name: "Case Vault", path: "/vault", icon: SidebarIcons.lock() },
+      { name: "Conflict Engine", path: "/conflict-engine", icon: SidebarIcons.search() },
+      { name: "Firm Library", path: "/firm-library", icon: SidebarIcons.library() },
+      { name: "Legal Forms", path: "/legal-forms", icon: SidebarIcons.forms() },
     ]
   }
 ];
 
-// ── SIDEBAR NAV ITEM ───────────────────────────────────────────────────────────
-const NavItem = ({ item, isActive, isCollapsed, onClick }) => {
-  return (
-    <Link
-      to={item.path}
-      onClick={onClick}
-      className={`sidebar-nav-item navItem${isActive ? ' active' : ''}${isCollapsed ? ' collapsed' : ''}`}
-      data-tooltip={item.name}
-    >
-      <span className="nav-icon">
-        {item.icon}
-      </span>
-      
-      {!isCollapsed && (
-        <span className="nav-label">
-          {item.name}
-        </span>
-      )}
+// ── SIDEBAR STYLES (Slate & Rust) ───────────────────────────────────────────────
+// Scoped under .sb-root so nothing here leaks onto the rest of the app;
+// dark-mode tokens key off html[data-theme="dark"], the same attribute
+// ThemeContext already sets — no new theme mechanism introduced.
+const SIDEBAR_STYLES = `
+  .sb-root {
+    --sb-bg:#DFE1E0; --sb-paper:#EAEBE8; --sb-paper-2:#E3E4E1;
+    --sb-ink:#181B1D; --sb-ink-soft:#494E51; --sb-muted:#868C8E; --sb-muted-2:#B3B8B9; --sb-rule:#D2D5D4;
+    --sb-accent:#B24A2E; --sb-accent-soft:#EFDCD1;
+    --sb-capsule-bg:#3E4649; --sb-capsule-mono-bg:#4E585B;
+    --sb-capsule-chip:#BEC4C5; --sb-capsule-chip-hover:#F0F2F1; --sb-capsule-mono-text:#F0F2F1;
+    --sb-capsule-active-text:#FBF7EE;
+    --sb-font-serif:'Fraunces', serif; --sb-font-sans:'IBM Plex Sans', sans-serif; --sb-font-mono:'IBM Plex Mono', monospace;
+  }
+  html[data-theme="dark"] .sb-root {
+    --sb-bg:#191C1D; --sb-paper:#212527; --sb-paper-2:#2A2F31;
+    --sb-ink:#D6D9D9; --sb-ink-soft:#AAAEAE; --sb-muted:#727776; --sb-muted-2:#494E4D; --sb-rule:#333939;
+    --sb-accent:#CC6B48; --sb-accent-soft:#3B281F;
+    --sb-capsule-bg:#C6CBCA; --sb-capsule-mono-bg:#B7BDBC;
+    --sb-capsule-chip:#5D6362; --sb-capsule-chip-hover:#1D2021; --sb-capsule-mono-text:#1D2021;
+  }
 
-      {!isCollapsed && item.badge?.type === 'live' && (
-        <span className="sidebar-live-tag">
-          <span className="live-pulse-dot">●</span> Live
-        </span>
-      )}
+  .sb-wrap{ flex-shrink:0; height:100%; }
+  .sb-wrap *{ box-sizing:border-box; }
+  .sb-icon.icon, .sb-icon svg{ width:18px; height:18px; flex-shrink:0; }
+  .sb-icon svg path, .sb-icon svg line, .sb-icon svg rect, .sb-icon svg circle{ stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+
+  .sb-sidebar{ width:278px; height:100%; background:var(--sb-paper); border-right:1px solid var(--sb-rule); display:flex; flex-direction:column; transition:background .2s ease, border-color .2s ease; }
+  .sb-masthead{ padding:26px 24px 16px; border-bottom:1px solid var(--sb-rule); position:relative; }
+  .sb-firm-name{ font-family:var(--sb-font-serif); font-style:italic; font-weight:600; font-size:20px; color:var(--sb-ink); line-height:1.15; }
+  .sb-product-credit{ font-family:var(--sb-font-mono); font-size:10px; letter-spacing:.06em; color:var(--sb-muted); margin-top:5px; }
+  .sb-collapse-toggle{ position:absolute; top:26px; right:22px; background:none; border:1px solid var(--sb-rule); width:22px; height:22px; border-radius:4px; color:var(--sb-muted); font-family:var(--sb-font-mono); font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .sb-collapse-toggle:hover{ border-color:var(--sb-accent); color:var(--sb-accent); }
+  .sb-collapse-toggle:focus-visible, .sb-collapse-toggle:focus{ outline:2px solid var(--sb-accent); outline-offset:1px; }
+
+  .sb-search-line{ width:100%; padding:14px 24px 12px; border-bottom:1px solid var(--sb-rule); display:flex; align-items:baseline; gap:6px; cursor:text; background:none; border-left:none; border-right:none; border-top:none; text-align:left; font-family:inherit; }
+  .sb-search-prompt{ font-family:var(--sb-font-mono); font-size:13px; color:var(--sb-muted); }
+  .sb-search-cursor{ display:inline-block; width:7px; height:14px; background:var(--sb-ink); animation:sb-blink 1.1s steps(1) infinite; vertical-align:-2px; }
+  @keyframes sb-blink{ 50%{ opacity:0; } }
+  .sb-search-kbd{ margin-left:auto; font-family:var(--sb-font-mono); font-size:10.5px; color:var(--sb-muted-2); flex-shrink:0; }
+  .sb-search-line:focus-visible{ outline:2px solid var(--sb-accent); outline-offset:-2px; }
+
+  .sb-index{ flex:1; overflow-y:auto; padding-bottom:8px; }
+  .sb-group-label{ font-family:var(--sb-font-serif); font-style:italic; font-size:12.5px; color:var(--sb-ink-soft); padding:20px 24px 8px; }
+  .sb-entry{ display:flex; align-items:center; gap:13px; padding:9px 24px; border-bottom:1px solid var(--sb-paper-2); cursor:pointer; text-decoration:none; color:inherit; }
+  .sb-entry:hover{ background:var(--sb-paper-2); }
+  .sb-entry:hover .sb-icon{ color:var(--sb-accent); }
+  .sb-entry:hover .sb-label{ color:var(--sb-ink); }
+  .sb-entry:focus-visible{ outline:2px solid var(--sb-accent); outline-offset:-2px; }
+  .sb-entry .sb-icon{ color:var(--sb-muted-2); }
+  .sb-label{ font-size:13.5px; color:var(--sb-ink-soft); flex:1; font-family:var(--sb-font-sans); }
+  .sb-mark{ color:var(--sb-accent); font-size:12px; }
+  .sb-live-dot{ width:6px; height:6px; border-radius:50%; background:var(--sb-accent); flex-shrink:0; }
+  .sb-case-active{ background:var(--sb-paper-2); }
+  .sb-case-active .sb-label{ color:var(--sb-ink); font-weight:600; }
+
+  .sb-active{ flex-direction:column; align-items:flex-start; gap:6px; padding:16px 24px 18px 21px; border-left:3px solid var(--sb-accent); background:var(--sb-accent-soft); border-bottom:1px solid var(--sb-rule); cursor:default; }
+  .sb-active:hover{ background:var(--sb-accent-soft); }
+  .sb-active-top{ display:flex; align-items:center; gap:13px; }
+  .sb-active .sb-icon{ color:var(--sb-accent); width:26px; height:26px; }
+  .sb-active .sb-icon svg{ width:26px; height:26px; }
+  .sb-active .sb-icon svg path, .sb-active .sb-icon svg line, .sb-active .sb-icon svg rect, .sb-active .sb-icon svg circle{ stroke-width:1.4; }
+  .sb-active .sb-label{ font-family:var(--sb-font-serif); font-weight:600; font-size:17px; color:var(--sb-ink); flex:none; }
+  .sb-active-status{ font-family:var(--sb-font-mono); font-size:11px; color:var(--sb-ink-soft); padding-left:39px; }
+  .sb-footnote{ padding:10px 24px 4px; font-family:var(--sb-font-mono); font-style:italic; font-size:10.5px; color:var(--sb-muted); }
+
+  .sb-footer{ border-top:1px solid var(--sb-rule); padding:14px 24px 18px; }
+  .sb-focus-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .sb-focus-label{ font-family:var(--sb-font-serif); font-style:italic; font-size:13px; color:var(--sb-ink-soft); }
+  .sb-toggle-track{ width:30px; height:15px; border:1px solid var(--sb-muted-2); border-radius:3px; position:relative; cursor:pointer; background:transparent; padding:0; }
+  .sb-toggle-track::after{ content:""; position:absolute; top:2px; left:2px; width:9px; height:9px; background:var(--sb-muted-2); transition:transform .15s ease, background .15s ease; }
+  .sb-toggle-track.on{ border-color:var(--sb-accent); }
+  .sb-toggle-track.on::after{ transform:translateX(16px); background:var(--sb-accent); }
+  .sb-toggle-track:focus-visible{ outline:2px solid var(--sb-accent); outline-offset:2px; }
+
+  .sb-profile{ display:flex; flex-direction:column; padding-top:12px; border-top:1px solid var(--sb-rule); position:relative; }
+  .sb-profile-click{ display:flex; align-items:center; gap:10px; cursor:pointer; }
+  .sb-profile-name{ font-family:var(--sb-font-serif); font-size:13.5px; color:var(--sb-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sb-profile-role{ font-family:var(--sb-font-mono); font-size:9.5px; letter-spacing:.03em; color:var(--sb-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
+  .sb-profile-caret{ margin-left:auto; color:var(--sb-muted); font-size:11px; transition:transform .12s ease; flex-shrink:0; }
+  .sb-profile.open .sb-profile-caret{ transform:rotate(180deg); }
+  .sb-profile-menu{ position:absolute; bottom:calc(100% + 8px); left:0; right:0; background:var(--sb-paper); border:1px solid var(--sb-rule); box-shadow:0 10px 24px rgba(0,0,0,.18); display:none; z-index:5; }
+  .sb-profile.open .sb-profile-menu{ display:block; }
+  .sb-profile-menu button{ display:block; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid var(--sb-paper-2); font-family:var(--sb-font-sans); font-size:12.5px; color:var(--sb-ink-soft); padding:10px 14px; cursor:pointer; }
+  .sb-profile-menu button:last-child{ border-bottom:none; color:var(--sb-accent); }
+  .sb-profile-menu button:hover:not(:disabled){ background:var(--sb-paper-2); }
+  .sb-profile-menu button:disabled{ opacity:.5; cursor:not-allowed; }
+  .sb-profile-menu button:focus-visible{ outline:2px solid var(--sb-accent); outline-offset:-2px; }
+
+  .sb-capsule-outer{ width:96px; height:100%; display:flex; align-items:stretch; justify-content:center; padding:20px 0 20px 20px; }
+  .sb-capsule{ width:64px; background:var(--sb-capsule-bg); border-radius:32px; display:flex; flex-direction:column; align-items:center; padding:18px 0; transition:background .2s ease; }
+  .sb-capsule-mono{ width:34px; height:34px; border-radius:10px; background:var(--sb-capsule-mono-bg); color:var(--sb-capsule-mono-text); display:flex; align-items:center; justify-content:center; font-family:var(--sb-font-serif); font-style:italic; font-weight:600; font-size:15px; margin-bottom:20px; flex-shrink:0; }
+  .sb-capsule-expand{ background:none; border:none; color:var(--sb-capsule-chip); font-family:var(--sb-font-mono); font-size:12px; cursor:pointer; margin-bottom:16px; flex-shrink:0; }
+  .sb-capsule-expand:hover{ color:var(--sb-capsule-chip-hover); }
+  .sb-capsule-expand:focus-visible{ outline:2px solid var(--sb-capsule-chip-hover); }
+  .sb-capsule-list{ display:flex; flex-direction:column; gap:6px; flex:1; overflow-y:auto; align-items:center; }
+  .sb-capsule-gap{ height:10px; width:100%; flex-shrink:0; }
+  .sb-chip{ width:38px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; color:var(--sb-capsule-chip); cursor:pointer; position:relative; text-decoration:none; flex-shrink:0; }
+  .sb-chip:hover{ color:var(--sb-capsule-chip-hover); }
+  .sb-chip:focus-visible{ outline:2px solid var(--sb-capsule-chip-hover); }
+  .sb-chip svg{ width:18px; height:18px; }
+  .sb-chip svg path, .sb-chip svg line, .sb-chip svg rect, .sb-chip svg circle{ stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .sb-chip.active{ background:var(--sb-accent); color:var(--sb-capsule-active-text); width:44px; height:42px; }
+  .sb-chip.active svg{ width:21px; height:21px; }
+  .sb-ai-flag{ position:absolute; top:4px; right:4px; width:5px; height:5px; border-radius:50%; background:var(--sb-accent); }
+  .sb-capsule-avatar{ width:32px; height:32px; border-radius:50%; background:var(--sb-capsule-mono-bg); color:var(--sb-capsule-mono-text); display:flex; align-items:center; justify-content:center; font-family:var(--sb-font-mono); font-size:10.5px; font-weight:600; margin-top:16px; cursor:pointer; flex-shrink:0; }
+  .sb-capsule-avatar:focus-visible{ outline:2px solid var(--sb-capsule-chip-hover); }
+
+  .sb-wrap.collapsed .sb-sidebar{ display:none; }
+  .sb-wrap:not(.collapsed) .sb-capsule-outer{ display:none; }
+  .sb-wrap.collapsed{ width:96px; }
+
+  @media (max-width: 768px){
+    .sb-capsule-outer{ display:none !important; }
+    .sb-wrap{ width:0; }
+    .sb-sidebar{
+      display:flex !important;
+      position:fixed; left:0; top:0; height:100vh; width:278px; z-index:1000;
+      transform:translateX(-278px);
+      border-right:1px solid var(--sb-rule) !important;
+      background-color:var(--sb-paper) !important;
+      transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);
+      box-shadow:4px 0 20px rgba(0,0,0,0.5);
+    }
+    .sb-wrap.sb-mobile-open .sb-sidebar{
+      transform:translateX(0);
+      box-shadow:4px 0 28px rgba(0,0,0,0.7);
+    }
+  }
+`;
+
+// ── SIDEBAR NAV ITEM ───────────────────────────────────────────────────────────
+// Slate & Rust nav row. The active item "breaks the row rhythm" entirely
+// (larger icon, serif bold label, status line, left border, tinted
+// background) rather than just getting a background tint — the one
+// deliberately bold moment in an otherwise quiet index. `activeStatus` is
+// only ever real, on-hand data (e.g. a live tracked-case count) — omitted
+// rather than invented for items with nothing genuine to report.
+const NavItem = ({ item, isActive, activeStatus, onClick }) => {
+  if (isActive) {
+    return (
+      <Link to={item.path} onClick={onClick} className="sb-entry sb-active">
+        <div className="sb-active-top">
+          <span className="sb-icon">{item.icon}</span>
+          <span className="sb-label">{item.name}{item.aiAssisted && <span className="sb-mark"> *</span>}</span>
+        </div>
+        {activeStatus && <div className="sb-active-status">{activeStatus}</div>}
+      </Link>
+    );
+  }
+  return (
+    <Link to={item.path} onClick={onClick} className="sb-entry">
+      <span className="sb-icon">{item.icon}</span>
+      <span className="sb-label">{item.name}{item.aiAssisted && <span className="sb-mark"> *</span>}</span>
+      {item.badge?.type === 'live' && <span className="sb-live-dot" title="Live" />}
     </Link>
   );
 };
@@ -285,12 +455,27 @@ const Breadcrumbs = () => {
 const Layout = ({ children, focusMode, setFocusMode }) => {
   const params = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  // Focus mode renders the sidebar as a 64px icon-only "tactical rail" (fixed-position
-  // stealth overlay). Manual collapse also uses the icon rail.
+  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem('lexai_sidebar_collapsed') === '1');
+  useEffect(() => {
+    localStorage.setItem('lexai_sidebar_collapsed', isCollapsed ? '1' : '0');
+  }, [isCollapsed]);
+  // Focus mode and manual collapse both render the same compact capsule —
+  // building two different collapsed treatments for a distinction the
+  // brief never draws would just be extra complexity for no real gain.
   const isIconOnly = isCollapsed || focusMode;
+
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
+  useEffect(() => {
+    if (!profileOpen) return;
+    const handler = (e) => { if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false); };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [profileOpen]);
 
   // Mobile viewport tracking. On mobile the sidebar is already forced to a full-width
   // off-canvas drawer (see index.css), so the "Focus Mode" toggle — normally hidden
@@ -326,199 +511,143 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   const closeSidebar = () => setIsSidebarOpen(false);
   // Sidebar LexAmplify button opens the AI in immersive full-screen "War Room" mode
   const openAgent = () => window.dispatchEvent(new CustomEvent('toggle-rag-palette', { detail: { mode: 'fullscreen' } }));
-  const handleSignOut = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('lexai_token');
+  // useAuth().logout() is the real session teardown (POSTs /api/auth/logout,
+  // clearing the HttpOnly JWT cookie) — the old handler here only cleared
+  // localStorage keys left over from a pre-cookie auth scheme and no longer
+  // actually ended the session server-side.
+  const handleSignOut = async () => {
+    await logout();
+    navigate('/');
   };
 
   const p = location.pathname;
+  const monogram = (user?.name || 'L').trim().charAt(0).toUpperCase();
+  const avatarInitials = user?.name
+    ? user.name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+    : (user?.email || 'L')[0].toUpperCase();
 
   return (
     <div className={`app-container ${focusMode ? 'focus-mode-active' : ''}`}>
       <div className={`sidebar-overlay ${isSidebarOpen ? 'visible' : ''}`} onClick={closeSidebar} />
 
-      {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className={`sidebar opacity-100 sticky top-0 z-50 h-screen ${isSidebarOpen ? 'sidebar-open' : ''} ${isIconOnly ? 'sidebar-collapsed collapsed' : ''}`}>
+      <style>{SIDEBAR_STYLES}</style>
 
-        {/* Logo / brand header */}
-        <div
-          className={`sidebar-header ${isIconOnly ? 'collapsed' : ''}`}
-          style={{
-            padding: isIconOnly ? '14px 10px' : '18px 16px 16px',
-            borderBottom: '1px solid var(--border-subtle)',
-            flexShrink: 0,
-            cursor: isCollapsed ? 'pointer' : 'default',
-            position: 'relative',
-          }}
-          onClick={isCollapsed ? () => setIsCollapsed(false) : undefined}
-          data-tooltip={isCollapsed ? "Expand sidebar" : ""}
-        >
-          <div className="sidebar-brand" style={{ justifyContent: isIconOnly ? 'center' : 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-              <div className="sidebar-logo-mark">
-                <LexLogoMark size={34} />
-              </div>
-              {!isIconOnly && (
-                <div className="sidebar-brand-text" style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>LexAmplify</div>
-                  <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Enterprise Console</div>
-                </div>
-              )}
-            </div>
+      {/* ── SIDEBAR (Slate & Rust) ───────────────────────────────────────── */}
+      <div className={`sb-wrap sb-root${isIconOnly ? ' collapsed' : ''}${isSidebarOpen ? ' sb-mobile-open' : ''}`}>
+
+        <aside className="sb-sidebar">
+          <div className="sb-masthead">
+            <div className="sb-firm-name">LexAmplify</div>
+            <div className="sb-product-credit">ENTERPRISE CONSOLE</div>
             {!focusMode && (
-              <button
-                className={`sidebar-collapse-btn${isCollapsed ? ' merged' : ''}`}
-                onClick={(e) => { e.stopPropagation(); setIsCollapsed(c => !c); }}
-                aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                data-tooltip={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                {isCollapsed ? Icons.chevronRight(14) : Icons.chevronLeft(12)}
-              </button>
+              <button className="sb-collapse-toggle" onClick={() => setIsCollapsed(true)} aria-label="Collapse sidebar" title="Collapse sidebar">‹</button>
             )}
           </div>
-        </div>
 
-        {/* Navigation */}
-        <nav className="sidebar-nav" style={{ flex: 1, overflowY: isIconOnly ? 'visible' : 'auto', overflowX: 'visible', padding: '16px 0' }}>
-          {NAVIGATION_GROUPS.map((group, gIdx) => (
-            <div key={group.title} style={{ marginBottom: gIdx === NAVIGATION_GROUPS.length - 1 ? 0 : '16px' }}>
-              {!isIconOnly && (
-                <div style={{ padding: '0 24px', marginBottom: '8px' }}>
-                  <span className="sidebar-group-title">
-                    {group.title}
-                  </span>
-                </div>
-              )}
-              {group.items.map(item => {
-                const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
-                return (
-                  <NavItem
-                    key={item.path}
-                    item={item}
-                    isActive={isActive}
-                    isCollapsed={isIconOnly}
-                    onClick={closeSidebar}
-                  />
-                );
-              })}
-            </div>
-          ))}
-
-          {/* Live case listing from API */}
-          {!isIconOnly && sidebarCases.length > 0 && (
-            <div style={{ marginTop: '20px' }}>
-              <div style={{ margin: '0 0 6px', padding: '0 24px' }}>
-                <span className="sidebar-group-title">
-                  Tracked Cases
-                </span>
-              </div>
-              {sidebarCases.map(c => {
-                const caseName = c.case_name || c.title || `Case #${c.id}`;
-                return (
-                  <Link
-                    key={c.id}
-                    to={`/case/${c.id}`}
-                    onClick={closeSidebar}
-                    className={`sidebar-nav-item navItem${params.caseId === String(c.id) ? ' active' : ''}${isIconOnly ? ' collapsed' : ''}`}
-                    data-tooltip={caseName}
-                  >
-                    <span className="nav-icon">{Icons.folder()}</span>
-                    {!isIconOnly && (
-                      <span className="nav-label">
-                        {caseName}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </nav>
-
-        {/* Bottom Controls */}
-        <div style={{ padding: isIconOnly ? '10px 8px' : '14px 12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-          {/* LexAmplify */}
-          <button
-            onClick={openAgent}
-            data-tooltip="LexAmplify (⌘K)"
-            className={`sidebar-nav-item navItem sidebar-bottom-btn${isIconOnly ? ' collapsed' : ''}`}
-            style={{
-              width: '100%', padding: isIconOnly ? '9px' : '9px 12px',
-              background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))',
-              border: '1px solid rgba(59,130,246,0.22)', borderRadius: '8px',
-              cursor: 'pointer', fontSize: '12.5px', fontWeight: '600',
-              color: 'var(--accent-primary)',
-              display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px',
-              transition: 'all 0.2s',
-              position: 'relative',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center' }}>{Icons.chat()}</span>
-            {!isIconOnly && (
-              <>
-                <span>LexAmplify</span>
-                <span style={{ marginLeft: 'auto', fontSize: '10px', opacity: 0.6, fontFamily: 'monospace', background: 'rgba(59,130,246,0.15)', padding: '1px 5px', borderRadius: '4px' }}>⌘K</span>
-              </>
-            )}
+          <button type="button" className="sb-search-line" onClick={openAgent}>
+            <span className="sb-search-prompt">&gt; search or ask</span>
+            <span className="sb-search-cursor" />
+            <span className="sb-search-kbd">⌘K</span>
           </button>
 
-          {/* Log Out */}
-          <Link
-            to="/"
-            onClick={handleSignOut}
-            data-tooltip="Log Out"
-            className={`sidebar-nav-item navItem sidebar-bottom-link${isIconOnly ? ' collapsed' : ''}`}
-            style={{ textDecoration: 'none', display: 'block', padding: 0, margin: 0, position: 'relative' }}
-          >
-            <button
-              style={{
-                width: '100%', padding: isIconOnly ? '8px' : '8px 12px',
-                background: 'transparent', color: 'var(--text-muted)',
-                border: '1px solid var(--border-subtle)', borderRadius: '7px',
-                cursor: 'pointer', fontSize: '12.5px',
-                display: 'flex', alignItems: 'center', justifyContent: isIconOnly ? 'center' : 'flex-start', gap: '8px', transition: 'all 0.15s',
-                pointerEvents: isIconOnly ? 'none' : 'auto',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', opacity: 0.7 }}>{Icons.logout()}</span>
-              {!isIconOnly && 'Log Out'}
-            </button>
-          </Link>
+          <div className="sb-index">
+            {NAVIGATION_GROUPS.map((group) => (
+              <div key={group.title}>
+                <div className="sb-group-label">{group.title}</div>
+                {group.items.map(item => {
+                  const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
+                  let activeStatus;
+                  if (isActive && item.path === '/vault') {
+                    activeStatus = `${sidebarCases.length} tracked matter${sidebarCases.length !== 1 ? 's' : ''}`;
+                  } else if (isActive && item.badge?.type === 'live') {
+                    activeStatus = 'Live';
+                  }
+                  return (
+                    <NavItem key={item.path} item={item} isActive={isActive} activeStatus={activeStatus} onClick={closeSidebar} />
+                  );
+                })}
+              </div>
+            ))}
 
-          {/* Focus Mode toggle */}
-          <div
-            data-tooltip={focusMode ? "Exit Focus Mode (Ctrl+\\)" : "Focus Mode (Ctrl+\\)"}
-            className={`sidebar-nav-item navItem sidebar-focus-toggle${isIconOnly ? ' collapsed' : ''}`}
-            onClick={() => setFocusMode(f => !f)}
-            style={{
-              display: 'flex', alignItems: 'center',
-              justifyContent: isIconOnly ? 'center' : 'space-between',
-              padding: isIconOnly ? '8px 0' : '2px 4px',
-              fontSize: '12px', color: 'var(--text-muted)',
-              cursor: 'pointer', position: 'relative',
-              margin: isIconOnly ? '2px 0' : '0',
-            }}
-          >
-            {!isIconOnly && <span>Focus Mode</span>}
-            <div
-              style={{
-                width: '32px', height: '17px', borderRadius: '10px', cursor: 'pointer',
-                background: focusMode ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                border: '1px solid transparent', position: 'relative', transition: 'background 0.2s',
-                flexShrink: 0,
-              }}
-            >
-              <div style={{
-                position: 'absolute', top: '2px',
-                left: focusMode ? '15px' : '2px',
-                width: '11px', height: '11px', borderRadius: '50%',
-                background: 'white', transition: 'left 0.2s',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-              }} />
+            {/* Live case listing from API — real functionality the mockup
+                never anticipated, kept as a fourth dynamic group. */}
+            {sidebarCases.length > 0 && (
+              <div>
+                <div className="sb-group-label">Tracked cases</div>
+                {sidebarCases.map(c => {
+                  const caseName = c.case_name || c.title || `Case #${c.id}`;
+                  const isActive = params.caseId === String(c.id);
+                  return (
+                    <Link
+                      key={c.id}
+                      to={`/case/${c.id}`}
+                      onClick={closeSidebar}
+                      className={`sb-entry${isActive ? ' sb-case-active' : ''}`}
+                    >
+                      <span className="sb-icon">{Icons.folder(18)}</span>
+                      <span className="sb-label">{caseName}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="sb-footnote">* AI-assisted</div>
+          </div>
+
+          <div className="sb-footer">
+            <div className="sb-focus-row">
+              <span className="sb-focus-label">Focus mode</span>
+              <button
+                type="button"
+                className={`sb-toggle-track${focusMode ? ' on' : ''}`}
+                onClick={() => setFocusMode(f => !f)}
+                aria-pressed={focusMode}
+                aria-label="Toggle focus mode"
+                title={focusMode ? 'Exit Focus Mode (Ctrl+\\)' : 'Focus Mode (Ctrl+\\)'}
+              />
+            </div>
+            <div className={`sb-profile${profileOpen ? ' open' : ''}`} ref={profileRef}>
+              <div className="sb-profile-click" onClick={() => setProfileOpen(o => !o)}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="sb-profile-name">{user?.name || 'Guest'}</div>
+                  <div className="sb-profile-role">{user?.email || ''}</div>
+                </div>
+                <span className="sb-profile-caret">⌄</span>
+              </div>
+              <div className="sb-profile-menu">
+                <button type="button" disabled title="Not built yet — no account settings page exists">Account settings</button>
+                <button type="button" onClick={handleSignOut}>Log out</button>
+              </div>
             </div>
           </div>
+        </aside>
+
+        {/* ── COLLAPSED CAPSULE ────────────────────────────────────────────── */}
+        <div className="sb-capsule-outer">
+          <div className="sb-capsule">
+            <div className="sb-capsule-mono">{monogram}</div>
+            <button className="sb-capsule-expand" onClick={() => setIsCollapsed(false)} aria-label="Expand sidebar" title="Expand sidebar">›</button>
+            <div className="sb-capsule-list">
+              {NAVIGATION_GROUPS.map((group, gIdx) => (
+                <React.Fragment key={group.title}>
+                  {gIdx > 0 && <div className="sb-capsule-gap" />}
+                  {group.items.map(item => {
+                    const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
+                    return (
+                      <Link key={item.path} to={item.path} className={`sb-chip${isActive ? ' active' : ''}`} title={item.name} onClick={closeSidebar}>
+                        {item.icon}
+                        {item.aiAssisted && !isActive && <span className="sb-ai-flag" />}
+                      </Link>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+            <div className="sb-capsule-avatar" onClick={() => setIsCollapsed(false)} title={user?.name || 'Account'}>{avatarInitials}</div>
+          </div>
         </div>
-      </aside>
+      </div>
 
       {/* ── FOCUS MODE ESCAPE HATCH — centered glassmorphic pill ─────────── */}
       {focusMode && (

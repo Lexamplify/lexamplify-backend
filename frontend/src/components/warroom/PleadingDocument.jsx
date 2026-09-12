@@ -7,8 +7,12 @@ import { BlankField } from '../../tiptap/BlankFieldNode.js';
 // Same fillable-blank conventions the backend prompt now targets and the
 // old parser recognized: bracketed placeholders, Rs.-prefixed underscores,
 // bare underscore runs, and dot-leader lines as a fallback for anything
-// that still slips through un-bracketed.
-const BLANK_PATTERN = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\]|(?:\.\s?){4,})/g;
+// that still slips through un-bracketed. The ellipsis alternative exists
+// because the model has been observed substituting repeated "…" (U+2026,
+// a single glyph, not three periods) for the same blank-line convention —
+// a plain "." run doesn't match it at all, so it rendered as a literal wall
+// of ellipsis characters instead of a fillable field.
+const BLANK_PATTERN = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\]|(?:\.\s?){4,}|(?:…\s?){2,})/g;
 
 // Tags blanks on the RAW text before marked() ever sees it, not after HTML
 // conversion — a raw run of 3+ underscores is ambiguous markdown emphasis

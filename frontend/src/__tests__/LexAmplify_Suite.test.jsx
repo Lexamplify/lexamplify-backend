@@ -363,52 +363,56 @@ describe('LexAmplify AI Legal Associate', () => {
 // 11. Sidebar Focus Mode Theme-Adaptive Tooltips
 // ─────────────────────────────────────────────────────────────────────────
 
-describe('Sidebar Focus Mode Tooltips', () => {
-  it('renders data-tooltip attributes on all sidebar navigation items and bottom controls', async () => {
+describe('Sidebar (Slate & Rust)', () => {
+  it('renders all ten nav destinations with real hrefs, and the search-line command-palette trigger', async () => {
     window.history.pushState({}, '', '/dashboard');
     render(<AppRouter />);
 
-    const sidebar = document.querySelector('aside.sidebar');
+    const sidebar = document.querySelector('.sb-sidebar');
     const sidebarQueries = within(sidebar);
 
-    // Check main navigation items
-    expect(sidebarQueries.getByRole('link', { name: /Dashboard Home/i })).toHaveAttribute('data-tooltip', 'Dashboard Home');
-    expect(sidebarQueries.getByRole('link', { name: /Contract Analyzer/i })).toHaveAttribute('data-tooltip', 'Contract Analyzer');
-    expect(sidebarQueries.getByRole('link', { name: /Auto-Draft Studio/i })).toHaveAttribute('data-tooltip', 'Auto-Draft Studio');
-    expect(sidebarQueries.getByRole('link', { name: /Court Resources/i })).toHaveAttribute('data-tooltip', 'Court Resources');
-    expect(sidebarQueries.getByRole('link', { name: /Legal Calendar/i })).toHaveAttribute('data-tooltip', 'Legal Calendar');
-    expect(sidebarQueries.getByRole('link', { name: /Virtual Courtroom/i })).toHaveAttribute('data-tooltip', 'Virtual Courtroom');
-    expect(sidebarQueries.getByRole('link', { name: /Case Vault/i })).toHaveAttribute('data-tooltip', 'Case Vault');
-    expect(sidebarQueries.getByRole('link', { name: /Conflict Engine/i })).toHaveAttribute('data-tooltip', 'Conflict Engine');
-    expect(sidebarQueries.getByRole('link', { name: /Firm Library/i })).toHaveAttribute('data-tooltip', 'Firm Library');
-    expect(sidebarQueries.getByRole('link', { name: /Legal Forms/i })).toHaveAttribute('data-tooltip', 'Legal Forms');
+    const expected = [
+      ['Dashboard', '/dashboard'],
+      ['Contract Analyzer', '/contract-analyzer'],
+      ['Auto-Draft Studio', '/auto-draft'],
+      ['Court Resources', '/court-resources'],
+      ['Legal Calendar', '/calendar'],
+      ['Virtual Courtroom', '/war-room'],
+      ['Case Vault', '/vault'],
+      ['Conflict Engine', '/conflict-engine'],
+      ['Firm Library', '/firm-library'],
+      ['Legal Forms', '/legal-forms'],
+    ];
+    expected.forEach(([name, path]) => {
+      expect(sidebarQueries.getByRole('link', { name: new RegExp(name, 'i') })).toHaveAttribute('href', path);
+    });
 
-    // Check bottom controls
-    const lexAmplifyBtn = sidebarQueries.getByRole('button', { name: /LexAmplify/i });
-    expect(lexAmplifyBtn).toHaveAttribute('data-tooltip', 'LexAmplify (⌘K)');
+    // The AI-assisted asterisk marks exactly the three flagged features.
+    expect(sidebarQueries.getByText('* AI-assisted')).toBeInTheDocument();
 
-    const logoutLink = sidebarQueries.getByRole('link', { name: /Log Out/i });
-    expect(logoutLink).toHaveAttribute('data-tooltip', 'Log Out');
-
-    const focusToggle = sidebar.querySelector('.sidebar-focus-toggle');
-    expect(focusToggle).toHaveAttribute('data-tooltip', 'Focus Mode (Ctrl+\\)');
+    // Search-line replaces the old standalone "LexAmplify (⌘K)" button —
+    // same command-palette trigger, restyled as a typed prompt.
+    const listener = vi.fn();
+    window.addEventListener('toggle-rag-palette', listener);
+    await userEvent.click(sidebarQueries.getByText(/search or ask/i));
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('applies collapsed styling classes when sidebar is collapsed', async () => {
+  it('collapses into the capsule and persists that choice across a remount', async () => {
     window.history.pushState({}, '', '/dashboard');
-    render(<AppRouter />);
+    localStorage.removeItem('lexai_sidebar_collapsed');
+    const { unmount } = render(<AppRouter />);
 
     const collapseBtn = screen.getByLabelText(/Collapse sidebar/i);
     await userEvent.click(collapseBtn);
 
-    const sidebar = document.querySelector('aside.sidebar');
-    expect(sidebar).toHaveClass('sidebar-collapsed');
-    expect(sidebar).toHaveClass('collapsed');
+    const wrap = document.querySelector('.sb-wrap');
+    expect(wrap).toHaveClass('collapsed');
+    expect(document.querySelectorAll('.sb-chip').length).toBeGreaterThan(0);
+    expect(localStorage.getItem('lexai_sidebar_collapsed')).toBe('1');
 
-    const navItems = document.querySelectorAll('.sidebar-nav-item');
-    expect(navItems.length).toBeGreaterThan(0);
-    navItems.forEach(item => {
-      expect(item).toHaveAttribute('data-tooltip');
-    });
+    unmount();
+    render(<AppRouter />);
+    expect(document.querySelector('.sb-wrap')).toHaveClass('collapsed');
   });
 });
