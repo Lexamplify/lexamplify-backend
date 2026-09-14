@@ -24,6 +24,9 @@ import CalendarView from '../components/CalendarView';
 import CaseVault from '../components/CaseVault';
 import WarRoomView from '../components/WarRoomView';
 import MatterHeader from '../components/warroom/MatterHeader';
+import StageRail from '../components/warroom/StageRail';
+import PleadingDocument, { validateOpeningDraft } from '../components/warroom/PleadingDocument';
+import SimulationRoom from '../components/warroom/SimulationRoom';
 import FirmLibrary from '../components/FirmLibrary';
 import FormTemplateLibrary from '../components/FormTemplateLibrary';
 import CommandPalette from '../components/CommandPalette';
@@ -424,6 +427,160 @@ describe('Virtual Courtroom / War Room', () => {
     expect(cssText).toContain('--hero-muted:rgba(241,242,240,.62)');
     expect(cssText).toContain('--hero-rule:rgba(241,242,240,.14)');
     expect(cssText).toContain('--on-accent:#FBF7EE');
+  });
+
+  it('renders horizontal stepper inside sticky header with all 4 stages and connectors', async () => {
+    const stages = [
+      { id: 'vc-stage-facts', label: 'Facts & issues', status: '1 issue identified' },
+      { id: 'vc-stage-precedents', label: 'Precedents', status: '3 citations found' },
+      { id: 'vc-stage-draft', label: 'Opening draft', status: 'Ready to review' },
+      { id: 'vc-stage-simulation', label: 'Simulation room', status: '0 of 7 prepared' },
+    ];
+    const onSelect = vi.fn();
+
+    const { container } = render(
+      <StageRail stages={stages} activeId="vc-stage-draft" onSelect={onSelect} />
+    );
+
+    const rail = container.querySelector('.h-rail');
+    expect(rail).toBeInTheDocument();
+
+    const stageEls = container.querySelectorAll('.h-stage');
+    expect(stageEls).toHaveLength(4);
+
+    // Stage 0 & 1 should be 'done', Stage 2 should be 'active'
+    expect(stageEls[0]).toHaveClass('done');
+    expect(stageEls[1]).toHaveClass('done');
+    expect(stageEls[2]).toHaveClass('active');
+    expect(stageEls[3]).not.toHaveClass('active');
+
+    // Connectors check (3 connectors between 4 stages)
+    const connectors = container.querySelectorAll('.h-connector');
+    expect(connectors).toHaveLength(3);
+
+    // Click triggers onSelect
+    await userEvent.click(stageEls[3]);
+    expect(onSelect).toHaveBeenCalledWith('vc-stage-simulation');
+  });
+
+  it('validates opening drafts with defensive repetition rule (8+ consecutive blanks -> warning card)', () => {
+    const malformedRepetitionText = `
+      IN THE HIGH COURT OF [Court Name]
+      Civil Appeal No. [Case Number] of 2026
+      BETWEEN:
+      [Party 1] [Party 2] [Party 3] [Party 4] [Party 5] [Party 6] [Party 7] [Party 8] [Party 9] [Party 10]
+      Introduction:
+      The dispute arises out of contract.
+    `;
+
+    const result = validateOpeningDraft(malformedRepetitionText);
+    expect(result.isValid).toBe(false);
+    expect(result.reason).toContain('empty fields and no readable argument text');
+    expect(result.emptyCount).toBeGreaterThanOrEqual(8);
+  });
+
+  it('validates opening drafts with defensive structure rule (missing headings -> warning card)', () => {
+    const malformedStructureText = `
+      This is an unstructured text snippet without formal pleading sections.
+      The tenant defaulted on monthly rent payments.
+      We demand payment of all outstanding dues immediately.
+    `;
+
+    const result = validateOpeningDraft(malformedStructureText);
+    expect(result.isValid).toBe(false);
+    expect(result.reason).toContain('produced no readable argument sections');
+  });
+
+  it('renders PleadingDocument safeguard warning card when draft is malformed and supports regeneration', async () => {
+    const onRegenerate = vi.fn();
+    const malformedDraft = '[Field 1] [Field 2] [Field 3] [Field 4] [Field 5] [Field 6] [Field 7] [Field 8] [Field 9]';
+
+    const { container } = render(
+      <PleadingDocument
+        rawArgumentText={malformedDraft}
+        matterTitle="Vikram Singh v. Anita Sharma"
+        apiBase=""
+        onRegenerate={onRegenerate}
+      />
+    );
+
+    const warningCard = container.querySelector('#warningCard');
+    expect(warningCard).toBeInTheDocument();
+    expect(warningCard).toHaveClass('on');
+    expect(screen.getByText(/This section didn't generate correctly/i)).toBeInTheDocument();
+
+    const regenBtn = screen.getByRole('button', { name: /Regenerate this section/i });
+    await userEvent.click(regenBtn);
+    expect(onRegenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders well-formed PleadingDocument in editor without warning card', () => {
+    const wellFormedDraft = `
+      **IN THE HIGH COURT OF DELHI**
+      Civil Appeal No. [Appeal No] of 2026
+      
+      ### 1. Introduction
+      The Appellant seeks restitution for material breach of renovation agreement.
+      
+      ### 2. Facts
+      On [Contract Date], the parties entered into a binding contract.
+      
+      ### 3. Issues
+      Whether the Respondent is in material breach under Section 73 of the Indian Contract Act.
+      
+      ### 4. Arguments
+      The ratio in *Fateh Chand v. Balkishan Das* applies directly.
+      
+      ### 5. Prayer
+      Direct refund of advance of Rs. [Advance Amount] with interest.
+      
+      ### 6. Conclusion
+      The appeal ought to be allowed.
+    `;
+
+    const { container } = render(
+      <PleadingDocument
+        rawArgumentText={wellFormedDraft}
+        matterTitle="Vikram Singh v. Anita Sharma"
+        apiBase=""
+      />
+    );
+
+    expect(container.querySelector('#warningCard')).toBeNull();
+    const goodDoc = container.querySelector('#goodDoc');
+    expect(goodDoc).toBeInTheDocument();
+    expect(goodDoc).toHaveClass('paper-doc');
+  });
+
+  it('renders SimulationRoom with queue-scroll wrapping opponent challenges', async () => {
+    const questions = [
+      { question: 'Is the claim barred by statutory limitation?', suggested_rebuttal: 'No, filed within 3 years.' },
+      { question: 'What specific damages evidence was produced?', suggested_rebuttal: 'Receipts and bank statements produced.' },
+    ];
+    const onUseInChat = vi.fn();
+
+    const { container } = render(
+      <SimulationRoom
+        questions={questions}
+        addressedChallenges={new Set()}
+        onUseInChat={onUseInChat}
+        chatMessages={[{ role: 'bot', text: 'Opposing counsel standing by.' }]}
+        chatInput=""
+        setChatInput={vi.fn()}
+        chatLoading={false}
+        strategyTone="aggressive"
+        setStrategyTone={vi.fn()}
+        onChatSubmit={vi.fn()}
+        onQuickReply={vi.fn()}
+        chatEndRef={{ current: null }}
+        chatInputRef={{ current: null }}
+      />
+    );
+
+    const queueScroll = container.querySelector('.queue-scroll');
+    expect(queueScroll).toBeInTheDocument();
+    expect(screen.getByText('Is the claim barred by statutory limitation?')).toBeInTheDocument();
+    expect(screen.getByText('What specific damages evidence was produced?')).toBeInTheDocument();
   });
 });
 

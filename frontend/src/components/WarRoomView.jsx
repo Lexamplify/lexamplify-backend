@@ -366,6 +366,7 @@ ${MARKDOWN_CSS}
     --accent:#B24A2E; --accent-soft:#EFDCD1;
     --hero-bg:#14171A; --hero-text:#F1F2F0; --hero-muted:rgba(241,242,240,.62); --hero-rule:rgba(241,242,240,.14);
     --on-accent:#FBF7EE;
+    --warn:#8A5A2A; --warn-soft:#F1E3CE;
     --font-serif:'Fraunces', Georgia, serif;
     --font-sans:'IBM Plex Sans', sans-serif;
     --font-mono:'IBM Plex Mono', monospace;
@@ -379,6 +380,7 @@ ${MARKDOWN_CSS}
     --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
     --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
     --accent:#CC6B48; --accent-soft:#3B281F;
+    --warn:#D9A85C; --warn-soft:#332813;
     /* --hero-bg / --hero-text intentionally NOT overridden: the masthead stays a
        constant dark surface in both themes, same principle as the sidebar's
        collapsed capsule always contrasting against its canvas. */
@@ -398,6 +400,56 @@ ${MARKDOWN_CSS}
   @media (prefers-reduced-motion: reduce) {
     .vc-root * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   }
+
+  .page, .vc-page { max-width: 1160px; margin: 0 auto; width: 100%; }
+
+  /* ===== Sticky header block: horizontal stepper ===== */
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    width: 100%;
+  }
+
+  .h-rail {
+    display: flex;
+    align-items: center;
+    padding: 14px 28px;
+    max-width: 1160px;
+    margin: 0 auto;
+    width: 100%;
+    overflow-x: auto;
+  }
+  .h-stage {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .h-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    border: 2px solid var(--rule);
+    background: var(--paper);
+    color: var(--muted);
+    transition: all .15s ease;
+  }
+  .h-stage.done .h-dot { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .h-stage.active .h-dot { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .h-name { font-family: var(--font-serif); font-weight: 600; font-size: 13px; color: var(--ink); white-space: nowrap; }
+  .h-status { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  .h-connector { flex: 1; height: 2px; background: var(--rule); margin: 0 14px; min-width: 20px; }
 
   /* ===== Empty state ===== */
   .wr-intake-wrap {
@@ -540,43 +592,27 @@ ${MARKDOWN_CSS}
   .sum-label { font-size: 10.5px; color: var(--hero-muted); margin-bottom: 4px; }
   .sum-value { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--hero-text); }
 
-  /* ===== Stage workspace & Rail ===== */
-  .stage, .vc-workspace { display: flex; gap: 24px; padding: 24px 24px 0; max-width: 1360px; margin: 0 auto; }
-  .stage-rail, .vc-stage-rail {
-    position: sticky; top: 0; align-self: flex-start; width: 190px; flex-shrink: 0;
-    padding: 0; height: calc(100vh - 64px); overflow-y: auto;
-  }
-  .stage-item, .vc-rail-item { display: flex; gap: 10px; padding-bottom: 18px; position: relative; cursor: pointer; text-decoration: none; color: var(--muted); }
-  .stage-item:hover, .vc-rail-item:hover { color: var(--ink-soft); }
-  .stage-item:not(:last-child)::before, .vc-rail-connector { content: ""; position: absolute; left: 10px; top: 22px; bottom: -2px; width: 2px; background: var(--rule); }
-  .stage-dot, .vc-rail-dot {
-    width: 21px; height: 21px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-    font-family: var(--font-mono); font-size: 10px; font-weight: 600; border: 2px solid var(--rule); background: var(--paper); color: var(--muted);
-  }
-  .stage-item.done .stage-dot, .vc-rail-item.is-done .vc-rail-dot { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-  .stage-item.active .stage-dot, .vc-rail-item.is-active .vc-rail-dot { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-  .stage-name, .vc-rail-label { font-family: var(--font-serif); font-weight: 600; font-size: 13px; color: var(--ink); margin-bottom: 2px; }
-  .stage-status, .vc-rail-status { font-size: 11px; color: var(--muted); margin-top: 1px; }
-  .vc-rail-item.is-active .vc-rail-label { color: var(--ink); }
-
-  /* ===== Stage content column ===== */
-  .stage-content, .vc-content { flex: 1; min-width: 0; padding-bottom: 80px; }
-  .stage-head, .vc-stage-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
-  .stage-head .num, .vc-stage-head .num, .vc-stage-head .vc-num { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
-  .stage-head h2, .vc-stage-head h2 { font-family: var(--font-serif); font-weight: 600; font-size: 19px; margin: 0; color: var(--ink) !important; }
-  .stage-note, .vc-stage-note { font-size: 12px; color: var(--muted); margin: 0 0 14px; }
-  .vc-stage { max-width: 760px; margin-bottom: 48px; scroll-margin-top: 24px; }
+  /* ===== Stage workspace & Sections (full width) ===== */
+  .stage, .vc-workspace { display: flex; flex-direction: column; width: 100%; margin: 0 auto; }
+  .stage-rail, .vc-stage-rail { display: none; }
+  .stage-content, .vc-content { flex: 1; width: 100%; padding-bottom: 80px; }
+  .section, .vc-stage { padding: 34px 28px 0; margin-bottom: 32px; scroll-margin-top: 72px; width: 100%; }
+  .section-head, .vc-stage-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+  .section-head .num, .vc-stage-head .num, .vc-stage-head .vc-num { font-family: var(--font-mono); font-size: 13px; color: var(--accent); }
+  .section-head h2, .vc-stage-head h2 { font-family: var(--font-serif); font-weight: 600; font-size: 21px; margin: 0; color: var(--ink) !important; }
+  .section-note, .vc-stage-note { font-size: 12.5px; color: var(--muted); margin: 0 0 16px; }
 
   /* Stage 1: Facts & issues card */
   .brief-card, .vc-brief-card {
-    background: var(--paper); border-left: 3px solid var(--accent); padding: 15px 18px;
-    font-family: var(--font-serif); font-size: 14px; line-height: 1.55; color: var(--ink-soft);
+    background: var(--paper); border-left: 3px solid var(--accent); padding: 16px 20px;
+    font-family: var(--font-serif); font-size: 14.5px; line-height: 1.55; color: var(--ink-soft);
+    max-width: 780px;
   }
 
   /* Stage 2: Precedents */
-  .vc-precedents { display: grid; grid-template-columns: 1fr; gap: 12px; }
-  .precedent, .vc-precedent { background: var(--paper); border: 1px solid var(--rule); border-radius: 9px; padding: 14px 18px; margin-bottom: 12px; }
-  .precedent-meta, .vc-precedent-meta { font-family: var(--font-mono); font-size: 10px; color: var(--muted); margin-bottom: 5px; }
+  .vc-precedents { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 780px; }
+  .precedent, .vc-precedent { background: var(--paper); border: 1px solid var(--rule); border-radius: 9px; padding: 15px 19px; margin-bottom: 12px; max-width: 780px; }
+  .precedent-meta, .vc-precedent-meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-bottom: 5px; }
   .precedent h3, .vc-precedent h3 { font-family: var(--font-serif); font-style: italic; font-weight: 600; font-size: 15px; margin: 0 0 6px; color: var(--ink) !important; }
   .precedent p, .vc-precedent p { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 9px; line-height: 1.55; }
   .precedent a, .vc-precedent-link { font-size: 11.5px; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 2px; }
@@ -584,18 +620,20 @@ ${MARKDOWN_CSS}
   .vc-precedent-more { font-size: 11.5px; color: var(--accent); text-decoration: underline; cursor: pointer; }
 
   /* Stage 3: Opening draft document */
-  .doc-toolbar, .vc-doc-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .doc-toolbar, .vc-doc-toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .tool-btn, .vc-tool-btn {
-    font-size: 11.5px; font-weight: 500; color: var(--ink-soft); background: var(--paper);
+    font-size: 12px; font-weight: 500; color: var(--ink-soft); background: var(--paper);
     border: 1px solid var(--rule); border-radius: 7px; padding: 7px 12px; cursor: pointer;
     transition: all .15s ease;
   }
   .tool-btn:hover, .vc-tool-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .tool-btn:disabled, .vc-tool-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .tool-btn.demo { margin-left: auto; color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
   .vc-doc-error { color: var(--accent); font-size: 12.5px; margin-bottom: 10px; }
   .paper-doc, .vc-paper {
-    background: var(--paper); border: 1px solid var(--rule); padding: 30px 34px;
-    font-family: var(--font-serif); font-size: 14px; line-height: 1.72; color: var(--ink-soft);
+    background: var(--paper); border: 1px solid var(--rule); padding: 34px 40px;
+    font-family: var(--font-serif); font-size: 14.5px; line-height: 1.75; color: var(--ink-soft);
+    max-width: 780px;
   }
   .paper-doc b, .vc-paper strong, .vc-paper b { color: var(--ink); }
   .paper-doc h1, .vc-paper h1, .paper-doc h2, .vc-paper h2, .paper-doc h3, .vc-paper h3 { font-weight: 600; color: var(--ink) !important; }
@@ -618,11 +656,37 @@ ${MARKDOWN_CSS}
   .fill:hover, .blank:hover { border-color: var(--accent); background: var(--accent-soft); }
   .blank::placeholder { color: var(--accent); opacity: 0.85; }
   .blank:focus { background: var(--accent-soft); border-style: solid; border-color: var(--accent); }
+  .doc-heading { font-weight: 600; color: var(--ink); margin-top: 20px; }
+  .field-label { font-family: var(--font-sans); font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .party-block { border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; margin: 10px 0; background: var(--paper-2); }
+  .party-row { margin-bottom: 8px; }
+  .party-row:last-child { margin-bottom: 0; }
 
-  /* Stage 4+5: Simulation Room */
-  .sim-grid, .vc-sim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-  .queue-panel, .vc-queue-panel, .chat-panel, .vc-chat-panel { background: var(--paper); border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
-  .panel-head, .vc-queue-panel-head, .vc-chat-head { padding: 12px 16px; border-bottom: 1px solid var(--rule); font-size: 12px; font-weight: 600; color: var(--ink); display: flex; justify-content: space-between; align-items: center; }
+  /* Defensive Draft Safeguard Warning Card (§2b) */
+  .warning-card {
+    display: none;
+    background: var(--warn-soft);
+    border: 1px solid var(--warn);
+    border-radius: 10px;
+    padding: 20px 24px;
+    max-width: 780px;
+  }
+  .warning-card.on { display: block; }
+  .warn-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .warn-head .icon { color: var(--warn); width: 18px; height: 18px; flex-shrink: 0; }
+  .warn-title { font-weight: 600; color: var(--ink); font-size: 14px; }
+  .warn-body { font-size: 12.5px; color: var(--ink-soft); line-height: 1.55; margin-bottom: 14px; }
+  .warn-btn {
+    font-size: 12px; font-weight: 600; color: var(--on-accent); background: var(--accent);
+    border: none; border-radius: 7px; padding: 9px 15px; cursor: pointer; transition: opacity .15s ease;
+  }
+  .warn-btn:hover { opacity: .9; }
+
+  /* Stage 4+5: Simulation Room — Full Width (§3) */
+  .sim-grid, .vc-sim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; width: 100%; }
+  .queue-panel, .vc-queue-panel, .chat-panel, .vc-chat-panel { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+  .panel-head, .vc-queue-panel-head, .vc-chat-head { padding: 14px 18px; border-bottom: 1px solid var(--rule); font-size: 13px; font-weight: 600; color: var(--ink); display: flex; justify-content: space-between; align-items: center; }
+  .queue-scroll { max-height: 520px; overflow-y: auto; }
   .challenge, .vc-challenge { padding: 0; border-bottom: 1px solid var(--paper-2); }
   .challenge:last-child, .vc-challenge:last-child { border-bottom: none; }
   .vc-challenge summary { list-style: none; cursor: pointer; padding: 13px 16px; display: flex; gap: 10px; align-items: flex-start; }
@@ -633,22 +697,22 @@ ${MARKDOWN_CSS}
   }
   .vc-challenge.answered .vc-chal-status { background: var(--ink); border-color: var(--ink); color: var(--bg); }
   .vc-chal-body { flex: 1; min-width: 0; }
-  .chal-tag, .vc-chal-tag { display: inline-block; font-family: var(--font-mono); font-size: 9px; color: var(--muted); border: 1px solid var(--rule); padding: 2px 8px; border-radius: 20px; margin-bottom: 6px; }
-  .chal-q, .vc-chal-q { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+  .chal-tag, .vc-chal-tag { display: inline-block; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); border: 1px solid var(--rule); padding: 2px 9px; border-radius: 20px; margin-bottom: 7px; }
+  .chal-q, .vc-chal-q { font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
   .vc-chal-expand { padding: 0 16px 14px 44px; }
   .vc-rebuttal-box { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 12px 14px; font-size: 12px; line-height: 1.5; color: var(--ink-soft); margin-bottom: 10px; }
   .vc-use-btn { font-size: 11.5px; font-weight: 600; color: var(--bg); background: var(--ink); border: none; border-radius: 7px; padding: 7px 12px; cursor: pointer; transition: opacity .15s ease; }
   .vc-use-btn:hover:not(.used) { opacity: .9; }
   .vc-use-btn.used { background: var(--muted); color: var(--bg); cursor: default; }
-  .prepared-badge { font-family: var(--font-mono); font-size: 10px; color: var(--accent); background: var(--accent-soft); padding: 3px 9px; border-radius: 20px; }
+  .prepared-badge { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); background: var(--accent-soft); padding: 3px 9px; border-radius: 20px; }
   .tone-toggle, .vc-tone-toggle { display: flex; gap: 6px; }
-  .tone-btn, .vc-tone-btn { font-size: 10.5px; font-weight: 600; padding: 5px 11px; border-radius: 16px; border: 1px solid var(--rule); background: var(--paper); color: var(--muted); cursor: pointer; transition: all .15s ease; }
+  .tone-btn, .vc-tone-btn { font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 16px; border: 1px solid var(--rule); background: var(--paper); color: var(--muted); cursor: pointer; transition: all .15s ease; }
   .tone-btn.on, .vc-tone-btn.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-  .chat-thread, .vc-chat-thread { padding: 14px 16px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; max-height: 520px; }
+  .chat-thread, .vc-chat-thread { padding: 16px 18px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; max-height: 520px; min-height: 340px; }
   .vc-msg { max-width: 82%; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.55; }
   .msg-opp, .vc-msg-opp { align-self: flex-start; background: var(--accent-soft); border-radius: 10px; border-bottom-left-radius: 3px; color: var(--ink-soft); }
   .vc-msg-you { align-self: flex-end; background: var(--paper-2); border-radius: 10px; border-bottom-right-radius: 3px; color: var(--ink-soft); }
-  .msg-role, .vc-msg-role { font-size: 9px; font-weight: 600; letter-spacing: .05em; color: var(--accent); margin-bottom: 4px; text-transform: uppercase; }
+  .msg-role, .vc-msg-role { font-size: 10px; font-weight: 600; letter-spacing: .05em; color: var(--accent); margin-bottom: 5px; text-transform: uppercase; }
   .vc-msg .md-b { color: inherit; font-weight: 700; }
   .vc-msg .md-h3, .vc-msg .md-h4 { color: inherit; }
   .vc-msg .md-i { color: inherit; }
@@ -662,29 +726,23 @@ ${MARKDOWN_CSS}
     transition: all .15s ease;
   }
   .vc-qr-pill:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-  .chat-input-row, .vc-chat-input-row { border-top: 1px solid var(--rule); padding: 10px 12px; display: flex; gap: 8px; }
+  .chat-input-row, .vc-chat-input-row { border-top: 1px solid var(--rule); padding: 12px 14px; display: flex; gap: 8px; }
   .chat-input-row input, .vc-chat-input-row textarea {
-    flex: 1; border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px;
-    font-family: inherit; font-size: 12px; background: var(--bg); color: var(--ink-soft);
+    flex: 1; border: 1px solid var(--rule); border-radius: 7px; padding: 9px 12px;
+    font-family: inherit; font-size: 13px; background: var(--bg); color: var(--ink-soft);
     resize: none; min-height: 36px; max-height: 90px;
   }
   .chat-input-row input:focus, .vc-chat-input-row textarea:focus { outline: none; border-color: var(--accent); }
   .send-btn, .vc-send-btn {
     background: var(--accent); color: var(--on-accent); border: none; border-radius: 7px;
-    padding: 0 14px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: opacity .15s ease;
+    padding: 0 16px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: opacity .15s ease;
   }
   .send-btn:hover:not(:disabled), .vc-send-btn:hover:not(:disabled) { opacity: .9; }
   .send-btn:disabled, .vc-send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
   @media (max-width: 980px) {
-    .stage, .vc-workspace { flex-direction: column; }
-    .stage-rail, .vc-stage-rail {
-      position: static; width: 100%; height: auto; padding: 16px 20px 8px;
-      display: flex; overflow-x: auto; gap: 4px;
-    }
-    .stage-item, .vc-rail-item { flex-direction: column; align-items: center; text-align: center; width: 110px; flex-shrink: 0; padding-bottom: 8px; }
-    .stage-item:not(:last-child)::before, .vc-rail-connector, .vc-rail-track { display: none; }
-    .stage-content, .vc-content { padding: 20px 16px 80px; }
+    .h-rail { padding: 10px 16px; }
+    .section, .vc-stage { padding: 20px 16px 0; }
     .sim-grid, .vc-sim-grid { grid-template-columns: 1fr; }
     .paper-doc, .vc-paper { padding: 24px 18px; }
   }
@@ -1338,6 +1396,14 @@ export default function WarRoomView() {
     { id: 'vc-stage-simulation', label: 'Simulation room', status: `${addressedChallenges.size} of ${questions.length} prepared` },
   ];
 
+  const handleRegenerateDraft = () => {
+    if (lastUploadedFile.current) {
+      handleManualUpload(lastUploadedFile.current);
+    } else {
+      runSimulation(docContentCache.current || '', 'Appellant', docSource, docPages);
+    }
+  };
+
   return (
     <div className="vc-root">
       <style>{VC_STYLES}</style>
@@ -1349,42 +1415,44 @@ export default function WarRoomView() {
         onChange={onFileInputChange}
       />
 
-      <MatterHeader
-        filename={caseMeta.filename}
-        pageCount={caseMeta.pages}
-        refId={caseMeta.ref}
-        title={caseMeta.title}
-        subtitle={caseMeta.subtitle}
-        summaryColumns={caseMeta.summaryColumns}
-        isAnalyzing={isSimulating || uploadState === 'uploading'}
-        analysisError={simError || uploadError}
-        onReanalyze={onDropzoneClick}
-        onRetry={() => runSimulation(docContentCache.current || '', 'Appellant', docSource, docPages)}
-        progressStages={progressStages}
-        onNewSimulation={handleResetSimulation}
-        onSaveToVault={handleSaveSession}
-        savingSession={savingSession}
-        savedSession={savedSession}
-      />
-
-      <div className="vc-workspace">
+      <div className="sticky-header" id="stickyHeader">
         <StageRail stages={railStages} activeId={activeStageId} onSelect={scrollToStage} />
+      </div>
+
+      <div className="page vc-page">
+        <MatterHeader
+          filename={caseMeta.filename}
+          pageCount={caseMeta.pages}
+          refId={caseMeta.ref}
+          title={caseMeta.title}
+          subtitle={caseMeta.subtitle}
+          summaryColumns={caseMeta.summaryColumns}
+          isAnalyzing={isSimulating || uploadState === 'uploading'}
+          analysisError={simError || uploadError}
+          onReanalyze={onDropzoneClick}
+          onRetry={() => runSimulation(docContentCache.current || '', 'Appellant', docSource, docPages)}
+          progressStages={progressStages}
+          onNewSimulation={handleResetSimulation}
+          onSaveToVault={handleSaveSession}
+          savingSession={savingSession}
+          savedSession={savedSession}
+        />
 
         <main className="vc-content">
 
           {/* ───────── STAGE 1: FACTS & ISSUES ───────── */}
-          <section id="vc-stage-facts" className="vc-stage section">
+          <section id="vc-stage-facts" className="section vc-stage">
             <div className="section-head vc-stage-head"><span className="num vc-num">1</span><h2>Facts &amp; issues</h2></div>
-            <p className="vc-stage-note">Pulled from the case file you uploaded.</p>
+            <p className="section-note vc-stage-note">Pulled from the case file you uploaded.</p>
             <div className="brief-card vc-brief-card" id="facts">
               {caseMeta.facts || (issues.length > 0 ? issues.join(' ') : (simulationData.extracted_issues || 'No specific legal issues extracted.'))}
             </div>
           </section>
 
           {/* ───────── STAGE 2: PRECEDENTS ───────── */}
-          <section id="vc-stage-precedents" className="vc-stage">
-            <div className="vc-stage-head"><span className="vc-num">2</span><h2>Precedents</h2></div>
-            <p className="vc-stage-note">Matched against Indian Kanoon, ranked by relevance to the facts above.</p>
+          <section id="vc-stage-precedents" className="section vc-stage">
+            <div className="section-head vc-stage-head"><span className="num vc-num">2</span><h2>Precedents</h2></div>
+            <p className="section-note vc-stage-note">Matched against Indian Kanoon, ranked by relevance to the facts above.</p>
             {citations.length > 0 ? (
               <div className="vc-precedents">
                 {citations.map((c, i) => {
@@ -1395,32 +1463,36 @@ export default function WarRoomView() {
                 })}
               </div>
             ) : (
-              <div className="vc-brief-card" style={{ fontStyle: 'italic', color: 'var(--muted)' }}>
+              <div className="brief-card vc-brief-card" style={{ fontStyle: 'italic', color: 'var(--muted)' }}>
                 No live citations retrieved for this matter query.
               </div>
             )}
           </section>
 
           {/* ───────── STAGE 3: OPENING DRAFT ───────── */}
-          <section id="vc-stage-draft" className="vc-stage">
-            <div className="vc-stage-head"><span className="vc-num">3</span><h2>Opening draft</h2></div>
-            <p className="vc-stage-note">Click any highlighted field to fill it in before export.</p>
+          <section id="vc-stage-draft" className="section vc-stage">
+            <div className="section-head vc-stage-head"><span className="num vc-num">3</span><h2>Opening draft</h2></div>
+            <p className="section-note vc-stage-note">Click any highlighted field to fill it in before export.</p>
             <PleadingDocument
               rawArgumentText={simulationData.opening_argument}
               matterTitle={caseMeta.title}
               apiBase={API_BASE}
+              onRegenerate={handleRegenerateDraft}
             />
           </section>
 
           {/* ───────── STAGE 4+5: SIMULATION ROOM ───────── */}
-          <section id="vc-stage-simulation" className="vc-stage" style={{ maxWidth: '100%' }}>
-            <div className="vc-sim-head-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '760px' }}>
-              <div className="vc-stage-head" style={{ marginBottom: 0 }}><span className="vc-num">4</span><h2>Simulation room</h2></div>
+          <section id="vc-stage-simulation" className="section vc-stage" style={{ paddingBottom: '40px' }}>
+            <div className="section-head vc-stage-head" style={{ justifyContent: 'space-between', display: 'flex' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline' }}>
+                <span className="num vc-num">4</span>
+                <h2>Simulation room</h2>
+              </div>
               <span className="prepared-badge">
                 {addressedChallenges.size} of {questions.length} prepared
               </span>
             </div>
-            <p className="vc-stage-note">Opposing counsel's challenges on the left. Send your rebuttal straight into the live exchange on the right.</p>
+            <p className="section-note vc-stage-note">Opposing counsel's challenges on the left. Send your rebuttal straight into the live exchange on the right.</p>
 
             <SimulationRoom
               questions={questions}

@@ -1,33 +1,40 @@
-// Sticky left stage-rail — 4 stops (stage 4 "Red team" + stage 5 "Chat"
-// share one stop, since they're rendered as one merged Simulation Room
-// section on the page). Items before the active one show a filled/done
-// dot, the active one shows brass, everything after shows an outline —
-// driven purely by index relative to activeId, which WarRoomView keeps in
-// sync with real scroll position via IntersectionObserver-style tracking.
+import React from 'react';
+
+// Horizontal stepper — replaces the vertical ~190px rail entirely.
+// Sits directly beneath the topbar inside a shared sticky header container.
+// Shows all 4 stages: Facts & Issues, Precedents, Opening Draft, Simulation Room
+// as a single row: dot, name, status, connected by horizontal rule lines.
 export default function StageRail({ stages, activeId, onSelect }) {
   const activeIndex = stages.findIndex((s) => s.id === activeId);
 
   return (
-    <nav className="vc-stage-rail">
+    <nav className="h-rail" id="hRail" aria-label="Litigation stages">
       {stages.map((stage, i) => {
-        const state = i < activeIndex ? 'is-done' : i === activeIndex ? 'is-active' : '';
+        const isDone = i < activeIndex;
+        const isActive = i === activeIndex;
+        const stateClass = isDone ? 'done' : isActive ? 'active' : '';
+
         return (
-          <a
-            key={stage.id}
-            className={`vc-rail-item ${state}`}
-            onClick={() => onSelect(stage.id)}
-          >
-            <span className="vc-rail-track">
-              <span className="vc-rail-dot">{state === 'is-done' ? '✓' : i + 1}</span>
-              {i < stages.length - 1 && <span className="vc-rail-connector" />}
-            </span>
-            <span>
-              <span className="vc-rail-label">{stage.label}</span>
-              <span className="vc-rail-status">{stage.status}</span>
-            </span>
-          </a>
+          <React.Fragment key={stage.id}>
+            {i > 0 && <div className="h-connector" aria-hidden="true" />}
+            <div
+              className={`h-stage ${stateClass}`}
+              data-target={stage.id}
+              onClick={() => onSelect(stage.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(stage.id); }}
+            >
+              <div className="h-dot">{isDone ? '✓' : i + 1}</div>
+              <div>
+                <div className="h-name">{stage.label}</div>
+                <div className="h-status">{stage.status}</div>
+              </div>
+            </div>
+          </React.Fragment>
         );
       })}
     </nav>
   );
 }
+

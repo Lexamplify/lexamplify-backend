@@ -70,43 +70,45 @@ export default function SimulationRoom({
   chatInputRef,
 }) {
   return (
-    <div className="vc-sim-grid">
-      <div className="vc-queue-panel">
-        <div className="vc-queue-panel-head">
+    <div className="sim-grid vc-sim-grid">
+      <div className="queue-panel vc-queue-panel">
+        <div className="panel-head vc-queue-panel-head">
           <span>Opponent's challenges</span>
         </div>
-        {questions.length > 0 ? (
-          questions.map((q, i) => (
-            <ChallengeItem
-              key={i}
-              index={i}
-              question={q.question}
-              rebuttal={q.suggested_rebuttal}
-              isAddressed={addressedChallenges.has(i)}
-              onUseInChat={onUseInChat}
-            />
-          ))
-        ) : (
-          <div className="vc-chal-expand" style={{ padding: '18px', fontStyle: 'italic', color: 'var(--muted)' }}>
-            No opposition challenges detected.
-          </div>
-        )}
+        <div className="queue-scroll">
+          {questions.length > 0 ? (
+            questions.map((q, i) => (
+              <ChallengeItem
+                key={i}
+                index={i}
+                question={q.question}
+                rebuttal={q.suggested_rebuttal}
+                isAddressed={addressedChallenges.has(i)}
+                onUseInChat={onUseInChat}
+              />
+            ))
+          ) : (
+            <div className="vc-chal-expand" style={{ padding: '18px', fontStyle: 'italic', color: 'var(--muted)' }}>
+              No opposition challenges detected.
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="vc-chat-panel">
-        <div className="vc-chat-head">
-          <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--ink)' }}>Live exchange</span>
-          <div className="vc-tone-toggle">
+      <div className="chat-panel vc-chat-panel">
+        <div className="panel-head vc-chat-head">
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink)' }}>Live exchange</span>
+          <div className="tone-toggle vc-tone-toggle">
             <button
               type="button"
-              className={`vc-tone-btn${strategyTone === 'aggressive' ? ' on aggr' : ''}`}
+              className={`tone-btn vc-tone-btn${strategyTone === 'aggressive' ? ' on aggr' : ''}`}
               onClick={() => setStrategyTone('aggressive')}
             >
               ⚔ Aggressive
             </button>
             <button
               type="button"
-              className={`vc-tone-btn${strategyTone === 'defensive' ? ' on def' : ''}`}
+              className={`tone-btn vc-tone-btn${strategyTone === 'defensive' ? ' on def' : ''}`}
               onClick={() => setStrategyTone('defensive')}
             >
               🛡 Defensive
@@ -114,11 +116,11 @@ export default function SimulationRoom({
           </div>
         </div>
 
-        <div className="vc-chat-thread">
+        <div className="chat-thread vc-chat-thread">
           {chatMessages.map((m, i) => (
             <React.Fragment key={i}>
-              <div className={`vc-msg ${m.role === 'user' ? 'vc-msg-you' : 'vc-msg-opp'}`}>
-                <div className="vc-msg-role">{m.role === 'user' ? 'You' : 'Opposing counsel'}</div>
+              <div className={`vc-msg ${m.role === 'user' ? 'vc-msg-you' : 'msg-opp vc-msg-opp'}`}>
+                <div className="msg-role vc-msg-role">{m.role === 'user' ? 'You' : 'Opposing counsel'}</div>
                 {m.role === 'bot' ? (
                   <div className="md-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
                 ) : (
@@ -142,11 +144,11 @@ export default function SimulationRoom({
               )}
             </React.Fragment>
           ))}
-          {chatLoading && <div className="vc-msg vc-msg-opp vc-typing">Opposing counsel preparing cross-examination…</div>}
+          {chatLoading && <div className="vc-msg msg-opp vc-msg-opp vc-typing">Opposing counsel preparing cross-examination…</div>}
           <div ref={chatEndRef} />
         </div>
 
-        <form className="vc-chat-input-row" onSubmit={onChatSubmit}>
+        <form className="chat-input-row vc-chat-input-row" onSubmit={onChatSubmit}>
           <textarea
             ref={chatInputRef}
             placeholder="State your argument or respond to opposition…"
@@ -155,7 +157,7 @@ export default function SimulationRoom({
             disabled={chatLoading}
             rows={1}
           />
-          <button type="submit" className="vc-send-btn" disabled={chatLoading || !chatInput.trim()}>
+          <button type="submit" className="send-btn vc-send-btn" disabled={chatLoading || !chatInput.trim()}>
             Send
           </button>
         </form>
