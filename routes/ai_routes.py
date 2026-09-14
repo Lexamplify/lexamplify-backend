@@ -402,14 +402,23 @@ def run_simulation():
 
         truncated = document_content[:8000]
 
-        # Stage 1: Extract legal issues + search query
+        # Stage 1: Extract legal issues + search query + structured case metadata
         s1 = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": (
                 f"Analyze this legal document:\n\n{truncated}\n\n"
-                "Extract the top 3 core legal issues and a 5-word search query. "
-                "Return JSON with exactly these keys: "
-                "'extracted_issues' (string summarising the 3 issues) and 'search_query' (string)."
+                "Extract structured legal case metadata, issues, and a search query. "
+                "Return JSON with exactly these keys:\n"
+                "- 'ref': Case/matter number (e.g. 'VIC-2026-CT-0001' or synthesize realistic ID like 'MAT-2026-0042')\n"
+                "- 'plaintiff': Plaintiff, Petitioner, Appellant, or Complainant name\n"
+                "- 'defendant': Defendant, Respondent, or Accused name\n"
+                "- 'title': Synthesized proper case caption (e.g. 'Vikram Singh v. Anita Sharma' or 'State v. Accused'). Do NOT echo raw filename.\n"
+                "- 'subtitle': Generated one-liner matter subject + forum (e.g. 'Breach of contract — home renovation services · Civil Judge (Senior Division), Chennai')\n"
+                "- 'matter_type': e.g. 'Contract', 'Criminal', 'Property', 'Family Law', 'Arbitration', 'Insolvency / IBC', 'Constitutional'\n"
+                "- 'summary_columns': List of 3 to 5 key-value objects for salient metrics of this matter type (each with 'label' and 'value', e.g. Plaintiff, Defendant, Contract value, Advance paid, Relief sought, or Charges, Forum, etc.). Do not return blank/NA values.\n"
+                "- 'facts': A 1-paragraph synthesis of material facts and core dispute.\n"
+                "- 'extracted_issues': String summarizing top 3 core legal issues.\n"
+                "- 'search_query': A 5-word search query for Indian Kanoon precedents."
             )}],
             temperature=0.1,
             response_format={"type": "json_object"},
@@ -417,6 +426,16 @@ def run_simulation():
         s1_data = json.loads(s1.choices[0].message.content)
         extracted_issues = s1_data.get("extracted_issues", "")
         search_query = s1_data.get("search_query", "")
+        case_metadata = {
+            "ref": s1_data.get("ref", ""),
+            "plaintiff": s1_data.get("plaintiff", ""),
+            "defendant": s1_data.get("defendant", ""),
+            "title": s1_data.get("title", ""),
+            "subtitle": s1_data.get("subtitle", ""),
+            "matter_type": s1_data.get("matter_type", ""),
+            "summary_columns": s1_data.get("summary_columns", []),
+            "facts": s1_data.get("facts", ""),
+        }
 
         # Stage 2: Tavily live citations
         tavily_results = []
@@ -480,6 +499,7 @@ def run_simulation():
             "simulationData": {
                 "client_side": client_side,
                 "extracted_issues": extracted_issues,
+                "case_metadata": case_metadata,
                 "live_citations": tavily_results,
                 "opening_argument": opening_argument,
                 "red_team": red_team,

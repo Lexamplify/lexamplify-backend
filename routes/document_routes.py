@@ -37,11 +37,12 @@ DB_PATH = "lex_assistant.db"
 
 # ── 1. ROBUST TEXT EXTRACTION UTILITY ───────────────────────────────────
 
-def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
+def extract_text_and_pages(file_bytes: bytes, filename: str) -> tuple[str, int]:
     """
-    Extracts plain text from PDF, DOCX, or TXT file using fitz (PyMuPDF), pdfplumber,
-    python-docx, or PyPDF2 with cascading fallbacks.
+    Extracts plain text and page count from PDF, DOCX, or TXT file using fitz (PyMuPDF),
+    pdfplumber, python-docx, or PyPDF2 with cascading fallbacks.
     """
+    import math
     ext = filename.lower().split('.')[-1]
     
     if ext == 'pdf':
@@ -52,8 +53,9 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
             text = ""
             for page in doc:
                 text += page.get_text() + "\n"
+            page_count = len(doc)
             if text.strip():
-                return text.strip()
+                return text.strip(), max(1, page_count)
         except ImportError:
             print("[PDF Extractor] PyMuPDF (fitz) not installed. Trying pdfplumber...")
         except Exception as e:
@@ -68,8 +70,9 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n"
+                page_count = len(pdf.pages)
                 if text.strip():
-                    return text.strip()
+                    return text.strip(), max(1, page_count)
         except ImportError:
             print("[PDF Extractor] pdfplumber not installed. Trying PyPDF2...")
         except Exception as e:
@@ -82,10 +85,12 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
             text = ""
             for page in reader.pages:
                 text += (page.extract_text() or "") + "\n"
-            return text.strip()
+            page_count = len(reader.pages)
+            return text.strip(), max(1, page_count)
         except Exception as e:
             print(f"[PDF Extractor] PyPDF2 fallback failed: {e}")
-            return ""
+            page_count = max(1, len(re.findall(b'/Type\s*/Page\b', file_bytes)))
+            return "", page_count
 
     elif ext in ['docx', 'doc']:
         # Extract text and tables from DOCX
@@ -107,18 +112,31 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
                         if text and text not in content_list:
                             content_list.append(text)
                             
-            return "\n".join(content_list).strip()
+            full_text = "\n".join(content_list).strip()
+            word_count = len(full_text.split())
+            page_count = max(1, math.ceil(word_count / 450)) if word_count > 0 else 1
+            return full_text, page_count
         except Exception as e:
             print(f"[DOCX Extractor] python-docx extraction failed: {e}")
-            return ""
+            return "", 1
 
     else:
         # Plain text
         try:
-            return file_bytes.decode('utf-8', errors='ignore').strip()
+            text = file_bytes.decode('utf-8', errors='ignore').strip()
+            word_count = len(text.split())
+            page_count = max(1, math.ceil(word_count / 450)) if word_count > 0 else 1
+            return text, page_count
         except Exception as e:
             print(f"[Text Extractor] plain text decode failed: {e}")
-            return ""
+            return "", 1
+
+def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
+    """
+    Extracts plain text from PDF, DOCX, or TXT file with cascading fallbacks.
+    """
+    text, _ = extract_text_and_pages(file_bytes, filename)
+    return text
 
 # ── 2. AUTO-DRAFT (AI CLAUSE SYNTHESIS) ROUTE ──────────────────────────
 # Replaces an earlier version of this same route that used a different
@@ -312,7 +330,7 @@ def upload_document():
     try:
         # Read file bytes in memory for extraction
         file_bytes = f.read()
-        extracted_text = extract_text_from_file(file_bytes, f.filename)
+        extracted_text, page_count = extract_text_and_pages(file_bytes, f.filename)
         
         if not extracted_text.strip():
             return jsonify({"error": "Failed to extract clean text from the document. The file might be scanned/empty."}), 400
@@ -372,7 +390,9 @@ def upload_document():
                 "id": new_doc_id,
                 "filename": f.filename,
                 "summary": summary,
-                "chunks_indexed": chunks_count
+                "chunks_indexed": chunks_count,
+                "page_count": page_count,
+                "pages": f"{page_count} page{'s' if page_count != 1 else ''}"
             }
         }), 201
 

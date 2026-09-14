@@ -23,6 +23,7 @@ import ConflictEngine from '../components/ConflictEngine';
 import CalendarView from '../components/CalendarView';
 import CaseVault from '../components/CaseVault';
 import WarRoomView from '../components/WarRoomView';
+import MatterHeader from '../components/warroom/MatterHeader';
 import FirmLibrary from '../components/FirmLibrary';
 import FormTemplateLibrary from '../components/FormTemplateLibrary';
 import CommandPalette from '../components/CommandPalette';
@@ -208,7 +209,7 @@ describe('Case Vault', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// 7. Virtual Courtroom / War Room
+// 7. Virtual Courtroom / War Room — Dynamic Case Header & Summary Ledger
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('Virtual Courtroom / War Room', () => {
@@ -238,6 +239,150 @@ describe('Virtual Courtroom / War Room', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener('toggle-rag-palette', listener);
+  });
+
+  it('renders MatterHeader populated state with all required IDs and synthesized fields', () => {
+    const onReanalyze = vi.fn();
+    const onNewSimulation = vi.fn();
+    const onSaveToVault = vi.fn();
+
+    const summaryCols = [
+      { label: 'Plaintiff', value: 'Vikram Singh', id: 'plaintiff' },
+      { label: 'Defendant', value: 'Anita Sharma', id: 'defendant' },
+      { label: 'Contract value', value: '₹5,50,000', id: 'contractValue' },
+      { label: 'Advance paid', value: '₹2,00,000', id: 'advancePaid' },
+      { label: 'Relief sought', value: '₹2,50,000 + interest', id: 'reliefSought' },
+    ];
+
+    const { container } = render(
+      <MatterHeader
+        filename="Virtual_Courtroom_Test_Case.pdf"
+        pageCount="3 pages"
+        refId="VIC-2026-CT-0001"
+        title="Vikram Singh v. Anita Sharma"
+        subtitle="Breach of contract — home renovation services · Civil Judge (Senior Division), Chennai"
+        summaryColumns={summaryCols}
+        isAnalyzing={false}
+        onReanalyze={onReanalyze}
+        onNewSimulation={onNewSimulation}
+        onSaveToVault={onSaveToVault}
+      />
+    );
+
+    // Verify all element IDs from reference implementation
+    expect(container.querySelector('#hero')).toBeInTheDocument();
+    expect(container.querySelector('#filename')).toHaveTextContent('Virtual_Courtroom_Test_Case.pdf');
+    expect(container.querySelector('#pagecount')).toHaveTextContent('3 pages');
+    expect(container.querySelector('.source-check')).toHaveTextContent('✓ analyzed');
+    expect(container.querySelector('#reanalyzeBtn')).toHaveTextContent('⟳ analyze a different document');
+    expect(container.querySelector('#heroBody')).toBeInTheDocument();
+    expect(container.querySelector('#ref')).toHaveTextContent('VIC-2026-CT-0001');
+    expect(container.querySelector('#title')).toHaveTextContent('Vikram Singh v. Anita Sharma');
+    expect(container.querySelector('#subtitle')).toHaveTextContent(/Breach of contract/i);
+
+    // Verify summary ledger strip & column IDs
+    const summaryEl = container.querySelector('.summary');
+    expect(summaryEl).toBeInTheDocument();
+    expect(container.querySelector('#plaintiff')).toHaveTextContent('Vikram Singh');
+    expect(container.querySelector('#defendant')).toHaveTextContent('Anita Sharma');
+    expect(container.querySelector('#contractValue')).toHaveTextContent('₹5,50,000');
+    expect(container.querySelector('#advancePaid')).toHaveTextContent('₹2,00,000');
+    expect(container.querySelector('#reliefSought')).toHaveTextContent('₹2,50,000 + interest');
+  });
+
+  it('renders MatterHeader analyzing state with spinner and hides hero body', () => {
+    const { container } = render(
+      <MatterHeader
+        filename="Ghosh_v_Bangur_Renovation_Suit.pdf"
+        pageCount="52 pages"
+        isAnalyzing={true}
+        analyzingText="Analyzing document — extracting parties, dates, and issues…"
+      />
+    );
+
+    const hero = container.querySelector('#hero');
+    expect(hero).toHaveClass('busy');
+    expect(container.querySelector('#analyzing')).toHaveClass('on');
+    expect(container.querySelector('.analyzing-text')).toHaveTextContent(/extracting parties, dates, and issues/i);
+    expect(container.querySelector('#heroBody')).toBeNull();
+    expect(container.querySelector('.summary')).toBeNull();
+  });
+
+  it('renders MatterHeader failure error state visibly distinct from analyzing and populated', async () => {
+    const onRetry = vi.fn();
+    const onReanalyze = vi.fn();
+
+    const { container } = render(
+      <MatterHeader
+        filename="corrupted_file.pdf"
+        pageCount="40 of 52 pages"
+        analysisError="Extraction failed on page 40 of 52: corrupted byte stream"
+        onRetry={onRetry}
+        onReanalyze={onReanalyze}
+      />
+    );
+
+    expect(container.querySelector('.source-fail')).toHaveTextContent(/analysis failed/i);
+    expect(screen.getByText(/Document Analysis Error/i)).toBeInTheDocument();
+    expect(screen.getByText(/corrupted byte stream/i)).toBeInTheDocument();
+
+    const retryBtn = screen.getByRole('button', { name: /Retry analysis/i });
+    await userEvent.click(retryBtn);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports schema flexibility for non-contract matters without blank or NA fields', () => {
+    const criminalSummary = [
+      { label: 'State / Complainant', value: 'State of Maharashtra', id: 'plaintiff' },
+      { label: 'Accused', value: 'Rajesh Kumar', id: 'defendant' },
+      { label: 'Offences / Sections', value: 'IPC §§ 420, 406', id: 'offences' },
+      { label: 'Bail Status', value: 'Anticipatory (§ 438)', id: 'bailStatus' },
+      { label: 'Forum', value: 'Sessions Court, Mumbai', id: 'forum' },
+    ];
+
+    const { container } = render(
+      <MatterHeader
+        filename="State_v_Rajesh_Bail_Appeal.pdf"
+        pageCount="18 pages"
+        refId="CRA-2025-MUM-0412"
+        title="State of Maharashtra v. Rajesh Kumar"
+        subtitle="Criminal Appeal under Section 374 CrPC · Bombay High Court"
+        summaryColumns={criminalSummary}
+      />
+    );
+
+    expect(container.querySelector('#title')).toHaveTextContent('State of Maharashtra v. Rajesh Kumar');
+    expect(container.querySelector('#subtitle')).toHaveTextContent(/Criminal Appeal/i);
+    expect(container.querySelector('#plaintiff')).toHaveTextContent('State of Maharashtra');
+    expect(container.querySelector('#defendant')).toHaveTextContent('Rajesh Kumar');
+    expect(screen.getByText('IPC §§ 420, 406')).toBeInTheDocument();
+    expect(screen.getByText('Anticipatory (§ 438)')).toBeInTheDocument();
+    expect(screen.getByText('Sessions Court, Mumbai')).toBeInTheDocument();
+    expect(screen.queryByText('N/A')).toBeNull();
+  });
+
+  it('renders populated simulation in WarRoomView with dynamic header and Stage 1 facts in lockstep', async () => {
+    const mockSimulationData = {
+      client_side: 'Appellant',
+      extracted_issues: 'Material breach of renovation agreement; work not commenced despite a ₹2,00,000 advance; claim for refund, 12% interest, and ₹50,000 compensation for delay.',
+      live_citations: [{ title: 'Vikram Singh vs Anita Sharma on 12 May 2024', snippet: 'Breach of contract damages principle' }],
+      opening_argument: 'May it please the court, the appellant seeks restitution...',
+      red_team: { opposing_counter_questions: [{ question: 'Was there a time-is-of-essence clause?', suggested_rebuttal: 'Yes, Clause 4 explicitly states 60 days.' }] }
+    };
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/war-room', state: { simulationData: mockSimulationData } }]}>
+        <WarRoomView />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Vikram Singh v. Anita Sharma')).toBeInTheDocument();
+    expect(screen.getByText(/Breach of contract — home renovation services/i)).toBeInTheDocument();
+    
+    // Stage 1 facts card check
+    const factsEl = document.getElementById('facts');
+    expect(factsEl).toBeInTheDocument();
+    expect(factsEl).toHaveTextContent(/Material breach of renovation agreement/i);
   });
 });
 
