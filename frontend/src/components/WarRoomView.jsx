@@ -550,30 +550,43 @@ ${MARKDOWN_CSS}
   .wr-stage-text.done { color: var(--ink-soft); }
 
   /* ===== Populated hero & case summary strip (Constant Dark Masthead Exception §4) ===== */
-  .hero { background: var(--hero-bg); color: var(--hero-text); padding: 22px 24px 0; width: 100%; }
-  .source-row { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--hero-muted); padding: 16px 24px; background: var(--hero-bg); border-bottom: 1px solid var(--hero-rule); flex-wrap: wrap; }
-  .source-row .icon { width: 16px; height: 16px; color: var(--hero-muted); flex-shrink: 0; }
+  .hero { background: var(--hero-bg) !important; color: var(--hero-text) !important; padding: 22px 24px 0; width: 100%; }
+  .source-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--hero-muted) !important;
+    padding: 16px 24px;
+    background: var(--hero-bg) !important;
+    border-bottom: 1px solid var(--hero-rule) !important;
+    flex-wrap: wrap;
+  }
+  .source-row span, .source-row span#filename, .source-row span#pagecount { color: var(--hero-muted) !important; }
+  .source-row .icon { width: 16px; height: 16px; color: var(--hero-muted) !important; flex-shrink: 0; }
   .source-row .icon path, .source-row .icon line { stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-  .source-busy, .source-pending { color: var(--accent); }
-  .source-check { color: var(--accent); }
-  .source-fail { color: var(--accent); }
+  .source-busy, .source-pending { color: var(--accent) !important; }
+  .source-check { color: var(--accent) !important; }
+  .source-fail { color: var(--accent) !important; }
   .reanalyze-btn {
-    margin-left: auto; font-family: var(--font-sans); font-size: 11.5px; color: var(--hero-text);
-    background: transparent; border: 1px solid var(--hero-rule); border-radius: 6px; padding: 5px 11px;
+    margin-left: auto; font-family: var(--font-sans); font-size: 11.5px; color: var(--hero-text) !important;
+    background: transparent !important; border: 1px solid var(--hero-rule) !important; border-radius: 6px; padding: 5px 11px;
     cursor: pointer; transition: background .15s ease;
   }
-  .reanalyze-btn:hover { background: rgba(241,242,240,.08); }
+  .reanalyze-btn:hover { background: rgba(241,242,240,.08) !important; }
 
-  .hero-ref { font-family: var(--font-mono); font-size: 11px; color: var(--hero-muted); margin-bottom: 8px; }
+  .hero-ref { font-family: var(--font-mono); font-size: 11px; color: var(--hero-muted) !important; margin-bottom: 8px; }
+  .hero-ref span, .hero-ref #ref { color: var(--hero-muted) !important; }
   .hero-title { font-family: var(--font-serif); font-style: italic; font-weight: 600; font-size: 27px; color: var(--hero-text) !important; line-height: 1.2; margin: 0 0 4px; }
-  .hero-sub { font-size: 13px; color: var(--hero-muted); margin-top: 8px; }
+  .hero-sub { font-size: 13px; color: var(--hero-muted) !important; margin-top: 8px; }
   .hero-progress { display: flex; gap: 6px; margin-top: 18px; max-width: 460px; }
-  .hero-seg { flex: 1; height: 4px; border-radius: 3px; background: rgba(241,242,240,.55); }
-  .hero-seg.todo { background: rgba(241,242,240,.16); }
+  .hero-seg { flex: 1; height: 4px; border-radius: 3px; background: rgba(241,242,240,.55) !important; }
+  .hero-seg.todo { background: rgba(241,242,240,.16) !important; }
   .hero-actions { display: flex; gap: 10px; margin-top: 18px; padding-bottom: 20px; flex-wrap: wrap; }
-  .btn-outline { font-family: var(--font-sans); font-size: 12.5px; font-weight: 500; color: var(--hero-text); background: transparent; border: 1px solid var(--hero-rule); border-radius: 7px; padding: 9px 15px; cursor: pointer; transition: background .15s ease; }
-  .btn-outline:hover { background: rgba(241,242,240,.08); }
-  .btn-fill { font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; color: var(--on-accent); background: var(--accent); border: none; border-radius: 7px; padding: 9px 15px; cursor: pointer; transition: opacity .15s ease; }
+  .btn-outline { font-family: var(--font-sans); font-size: 12.5px; font-weight: 500; color: var(--hero-text) !important; background: transparent !important; border: 1px solid var(--hero-rule) !important; border-radius: 7px; padding: 9px 15px; cursor: pointer; transition: background .15s ease; }
+  .btn-outline:hover { background: rgba(241,242,240,.08) !important; }
+  .btn-fill { font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; color: var(--on-accent) !important; background: var(--accent) !important; border: none; border-radius: 7px; padding: 9px 15px; cursor: pointer; transition: opacity .15s ease; }
   .btn-fill:hover:not(:disabled) { opacity: .9; }
   .btn-fill:disabled { opacity: .6; cursor: not-allowed; }
 
@@ -581,16 +594,62 @@ ${MARKDOWN_CSS}
   .analyzing { display: none; align-items: center; gap: 12px; padding: 22px 0; }
   .analyzing.on { display: flex; }
   .hero.busy .hero-body { display: none; }
-  .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(241,242,240,.25); border-top-color: var(--hero-text); animation: spin .8s linear infinite; flex-shrink: 0; }
+  .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(241,242,240,.25); border-top-color: var(--hero-text) !important; animation: spin .8s linear infinite; flex-shrink: 0; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .analyzing-text { font-size: 13px; color: var(--hero-muted); }
+  .analyzing-text { font-size: 13px; color: var(--hero-muted) !important; }
 
   /* summary ledger */
-  .summary { display: flex; border-top: 1px solid var(--hero-rule); overflow-x: auto; background: var(--hero-bg); }
+  .summary { display: flex; border-top: 1px solid var(--hero-rule) !important; overflow-x: auto; background: var(--hero-bg) !important; }
   .sum-col { flex: 1; min-width: 120px; padding: 14px 24px; position: relative; }
-  .sum-col:not(:last-child)::after { content: ""; position: absolute; right: 0; top: 14px; bottom: 14px; width: 1px; background: var(--hero-rule); }
-  .sum-label { font-size: 10.5px; color: var(--hero-muted); margin-bottom: 4px; }
-  .sum-value { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--hero-text); }
+  .sum-col:not(:last-child)::after { content: ""; position: absolute; right: 0; top: 14px; bottom: 14px; width: 1px; background: var(--hero-rule) !important; }
+  .sum-label { font-size: 10.5px; color: var(--hero-muted) !important; margin-bottom: 4px; }
+  .sum-value { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--hero-text) !important; }
+
+  /* Ensure immunity from global light-mode cascading overrides */
+  :root[data-theme="light"] .hero,
+  [data-theme="light"] .hero,
+  .light .hero,
+  :root[data-theme="light"] .source-row,
+  [data-theme="light"] .source-row,
+  .light .source-row,
+  :root[data-theme="light"] .summary,
+  [data-theme="light"] .summary,
+  .light .summary {
+    background: var(--hero-bg) !important;
+  }
+
+  :root[data-theme="light"] .source-row,
+  [data-theme="light"] .source-row,
+  .light .source-row,
+  :root[data-theme="light"] .source-row span,
+  [data-theme="light"] .source-row span,
+  .light .source-row span,
+  :root[data-theme="light"] .hero-ref,
+  [data-theme="light"] .hero-ref,
+  .light .hero-ref,
+  :root[data-theme="light"] .hero-ref span,
+  [data-theme="light"] .hero-ref span,
+  .light .hero-ref span,
+  :root[data-theme="light"] .hero-sub,
+  [data-theme="light"] .hero-sub,
+  .light .hero-sub,
+  :root[data-theme="light"] .sum-label,
+  [data-theme="light"] .sum-label,
+  .light .sum-label,
+  :root[data-theme="light"] .analyzing-text,
+  [data-theme="light"] .analyzing-text,
+  .light .analyzing-text {
+    color: var(--hero-muted) !important;
+  }
+
+  :root[data-theme="light"] .sum-value,
+  [data-theme="light"] .sum-value,
+  .light .sum-value,
+  :root[data-theme="light"] .reanalyze-btn,
+  [data-theme="light"] .reanalyze-btn,
+  .light .reanalyze-btn {
+    color: var(--hero-text) !important;
+  }
 
   /* ===== Stage workspace & Sections (full width) ===== */
   .stage, .vc-workspace { display: flex; flex-direction: column; width: 100%; margin: 0 auto; }
