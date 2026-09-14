@@ -63,7 +63,7 @@ export default function MatterHeader({
 
         {analysisError ? (
           <div className="hero-error-body" style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ color: '#F87171', fontWeight: 600, fontSize: '15px' }}>
+            <div style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '15px' }}>
               ⚠ Document Analysis Error
             </div>
             <div style={{ color: 'var(--muted-2)', fontSize: '13px', lineHeight: 1.5 }}>

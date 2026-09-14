@@ -384,6 +384,47 @@ describe('Virtual Courtroom / War Room', () => {
     expect(factsEl).toBeInTheDocument();
     expect(factsEl).toHaveTextContent(/Material breach of renovation agreement/i);
   });
+
+  it('embeds Slate & Rust token system with full dark theme wiring and constant hero masthead', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <WarRoomView />
+      </MemoryRouter>
+    );
+
+    const styleEl = container.querySelector('style');
+    expect(styleEl).toBeInTheDocument();
+    const cssText = styleEl.textContent;
+
+    // Verify Light palette tokens
+    expect(cssText).toContain('--bg:#DFE1E0');
+    expect(cssText).toContain('--paper:#EAEBE8');
+    expect(cssText).toContain('--paper-2:#E3E4E1');
+    expect(cssText).toContain('--ink:#181B1D');
+    expect(cssText).toContain('--ink-soft:#494E51');
+    expect(cssText).toContain('--muted:#868C8E');
+    expect(cssText).toContain('--rule:#D2D5D4');
+    expect(cssText).toContain('--accent:#B24A2E');
+    expect(cssText).toContain('--accent-soft:#EFDCD1');
+
+    // Verify Dark palette tokens
+    expect(cssText).toContain('--bg:#191C1D');
+    expect(cssText).toContain('--paper:#212527');
+    expect(cssText).toContain('--paper-2:#2A2F31');
+    expect(cssText).toContain('--ink:#D6D9D9');
+    expect(cssText).toContain('--ink-soft:#AAAEAE');
+    expect(cssText).toContain('--muted:#727776');
+    expect(cssText).toContain('--rule:#333939');
+    expect(cssText).toContain('--accent:#CC6B48');
+    expect(cssText).toContain('--accent-soft:#3B281F');
+
+    // Verify Constant hero masthead tokens (do not flip)
+    expect(cssText).toContain('--hero-bg:#14171A');
+    expect(cssText).toContain('--hero-text:#F1F2F0');
+    expect(cssText).toContain('--hero-muted:rgba(241,242,240,.62)');
+    expect(cssText).toContain('--hero-rule:rgba(241,242,240,.14)');
+    expect(cssText).toContain('--on-accent:#FBF7EE');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────

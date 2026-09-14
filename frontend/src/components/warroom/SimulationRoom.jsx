@@ -87,7 +87,7 @@ export default function SimulationRoom({
             />
           ))
         ) : (
-          <div className="vc-chal-expand" style={{ padding: '18px', fontStyle: 'italic', color: 'var(--text-muted)' }}>
+          <div className="vc-chal-expand" style={{ padding: '18px', fontStyle: 'italic', color: 'var(--muted)' }}>
             No opposition challenges detected.
           </div>
         )}
