@@ -390,24 +390,123 @@ const SIDEBAR_STYLES = `
     }
   }
 
-  @media (max-width: 768px){
-    .sb-capsule-outer{ display:none !important; }
-    .sb-wrap{ width:0 !important; overflow:visible; }
-    .sb-sidebar{
-      display:flex !important;
-      position:fixed; left:0; top:0; height:100vh; width:278px; z-index:1000;
-      opacity:1 !important;
-      pointer-events:auto !important;
-      transform:translateX(-278px);
-      border-right:1px solid var(--sb-rule) !important;
-      background-color:var(--sb-paper) !important;
-      transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);
-      box-shadow:4px 0 20px rgba(0,0,0,0.5);
-    }
-    .sb-wrap.sb-mobile-open .sb-sidebar{
-      transform:translateX(0);
-      box-shadow:4px 0 28px rgba(0,0,0,0.7);
-    }
+  /* ── TOPBAR & BREADCRUMBS (Slate & Rust Theme Harmonization) ── */
+  .topbar {
+    height: 56px;
+    background: var(--sb-paper) !important;
+    border-bottom: 1px solid var(--sb-rule) !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px;
+    font-family: var(--sb-font-sans);
+    transition: background .15s ease, border-color .15s ease;
+  }
+  html[data-theme="dark"] .topbar,
+  :root[data-theme="dark"] .topbar {
+    background: var(--sb-paper) !important;
+    border-bottom: 1px solid var(--sb-rule) !important;
+  }
+
+  .breadcrumbs-container {
+    display: flex;
+    align-items: center;
+    font-family: var(--sb-font-sans);
+    font-size: 13px;
+    color: var(--sb-muted);
+  }
+  .crumb-item {
+    display: inline-flex;
+    align-items: center;
+  }
+  .crumb-link {
+    color: var(--sb-muted) !important;
+    text-decoration: none !important;
+    font-weight: 500;
+    transition: color .15s ease;
+  }
+  .crumb-link:hover {
+    color: var(--sb-accent) !important;
+  }
+  .crumb-sep {
+    color: var(--sb-muted-2) !important;
+    margin: 0 8px;
+    font-size: 11px;
+  }
+  .crumb-ellipsis {
+    color: var(--sb-muted) !important;
+  }
+  .crumb-current {
+    color: var(--sb-ink) !important;
+    font-weight: 600;
+  }
+  html[data-theme="dark"] .crumb-current {
+    color: var(--sb-ink) !important;
+  }
+
+  .topbar-theme-toggle {
+    background: var(--sb-bg) !important;
+    border: 1px solid var(--sb-rule) !important;
+    color: var(--sb-muted) !important;
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .topbar-theme-toggle:hover {
+    border-color: var(--sb-accent) !important;
+    color: var(--sb-accent) !important;
+    background: var(--sb-accent-soft) !important;
+  }
+  html[data-theme="dark"] .topbar-theme-toggle {
+    background: var(--sb-bg) !important;
+    border-color: var(--sb-rule) !important;
+    color: var(--sb-muted) !important;
+  }
+  html[data-theme="dark"] .topbar-theme-toggle:hover {
+    border-color: var(--sb-accent) !important;
+    color: var(--sb-accent) !important;
+    background: var(--sb-accent-soft) !important;
+  }
+
+  .topbar-tagline {
+    font-family: var(--sb-font-sans);
+    font-size: 12px;
+    color: var(--sb-muted) !important;
+    white-space: nowrap;
+    margin-left: 14px;
+    flex-shrink: 0;
+  }
+  .topbar-tagline strong {
+    color: var(--sb-ink-soft) !important;
+    font-weight: 600;
+  }
+  html[data-theme="dark"] .topbar-tagline {
+    color: var(--sb-muted) !important;
+  }
+  html[data-theme="dark"] .topbar-tagline strong {
+    color: var(--sb-ink) !important;
+  }
+
+  .hamburger-btn {
+    color: var(--sb-muted) !important;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    padding: 0;
+    transition: color .15s ease;
+  }
+  .hamburger-btn:hover {
+    color: var(--sb-accent) !important;
   }
 `;
 
@@ -486,26 +585,26 @@ const Breadcrumbs = () => {
 
   if (isSmall && items.length > 2) {
     return (
-      <div className="breadcrumbs-container" style={{ fontSize: '13px' }}>
-        <Link to={items[0].url} style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>{items[0].label}</Link>
-        <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>/</span>
-        <span style={{ color: 'var(--text-muted)' }}>...</span>
-        <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>/</span>
-        <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{items[items.length - 1].label}</span>
+      <div className="breadcrumbs-container">
+        <Link to={items[0].url} className="crumb-link">{items[0].label}</Link>
+        <span className="crumb-sep">/</span>
+        <span className="crumb-ellipsis">...</span>
+        <span className="crumb-sep">/</span>
+        <span className="crumb-current">{items[items.length - 1].label}</span>
       </div>
     );
   }
 
   return (
-    <div className="breadcrumbs-container" style={{ fontSize: '13px' }}>
+    <div className="breadcrumbs-container">
       {items.map((item, i) => {
         const isLast = i === items.length - 1;
         return (
-          <span key={item.url}>
-            {i > 0 && <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>/</span>}
+          <span key={item.url} className="crumb-item">
+            {i > 0 && <span className="crumb-sep">/</span>}
             {isLast
-              ? <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{item.label}</span>
-              : <Link to={item.url} style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>{item.label}</Link>
+              ? <span className="crumb-current">{item.label}</span>
+              : <Link to={item.url} className="crumb-link">{item.label}</Link>
             }
           </span>
         );
@@ -744,13 +843,6 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
             className="topbar-theme-toggle"
             onClick={toggleTheme}
             title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-            style={{
-              background: 'transparent', border: '1px solid var(--border-subtle)',
-              borderRadius: '7px', width: '32px', height: '32px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', color: 'var(--text-primary)', transition: 'all 0.15s',
-              marginLeft: 'auto', flexShrink: 0,
-            }}
           >
             {theme === 'dark' ? Icons.sun() : Icons.moon()}
           </button>
@@ -759,8 +851,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
               header element. On narrow phones it drops to its own full-width
               line below the hamburger/title/toggle row instead of fighting
               them for space (Bug #6); see .topbar-tagline media query. */}
-          <div className="topbar-tagline" style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: '14px', flexShrink: 0 }}>
-            Operating strictly under <strong style={{ color: 'var(--text-primary)' }}>Indian Law</strong>
+          <div className="topbar-tagline">
+            Operating strictly under <strong>Indian Law</strong>
           </div>
         </header>
 

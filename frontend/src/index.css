@@ -1428,8 +1428,8 @@ textarea:focus,
 
 /* ── Topbar ── */
 :root[data-theme="light"] .topbar {
-  background-color: var(--bg-sidebar) !important;
-  border-bottom: 1px solid var(--border-subtle) !important;
+  background-color: #EAEBE8 !important;
+  border-bottom: 1px solid #D2D5D4 !important;
 }
 
 /* ── Tables ── */
