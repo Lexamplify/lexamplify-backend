@@ -260,7 +260,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     expect(triageTab.className).not.toContain('active');
   });
 
-  it('renders Master/Detail workspace with persistent document strip, index rows, and VS clash comparison after running analysis', async () => {
+  it('renders clean initial empty dropzone with zero preloaded documents and populates on sample click', async () => {
     render(
       <MemoryRouter>
         <ConflictEngine />
@@ -270,7 +270,17 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
-    // Document strip is present with loaded chips
+    // Initial clean session: zero documents pre-loaded, empty dropzone is visible
+    expect(screen.getByText(/Drop your documents here/i)).toBeInTheDocument();
+    expect(screen.getByText(/Drag & drop multiple PDFs or DOCXs/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Vendor Service Agreement\.pdf/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Run conflict analysis/i })).not.toBeInTheDocument();
+
+    // Click Try with sample documents
+    const sampleDocsBtn = screen.getByRole('button', { name: /Try with sample documents/i });
+    await userEvent.click(sampleDocsBtn);
+
+    // Document strip is now present with loaded chips
     expect(screen.getAllByText(/Vendor Service Agreement/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/Software Development Agreement/i).length).toBeGreaterThanOrEqual(1);
     
@@ -300,6 +310,10 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
+
+    // Load sample docs
+    const sampleDocsBtn = screen.getByRole('button', { name: /Try with sample documents/i });
+    await userEvent.click(sampleDocsBtn);
 
     // Run conflict analysis
     const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
@@ -339,6 +353,10 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
+    // Load sample docs
+    const sampleDocsBtn = screen.getByRole('button', { name: /Try with sample documents/i });
+    await userEvent.click(sampleDocsBtn);
+
     // Initial state has documents and no stale banner
     expect(screen.queryByText(/Documents changed since this analysis ran/i)).not.toBeInTheDocument();
 
@@ -375,6 +393,10 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
+    // Load sample docs
+    const sampleDocsBtn = screen.getByRole('button', { name: /Try with sample documents/i });
+    await userEvent.click(sampleDocsBtn);
+
     // Run conflict analysis
     const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
     await userEvent.click(runBtn);
@@ -399,6 +421,10 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
+
+    // Load sample docs
+    const sampleDocsBtn = screen.getByRole('button', { name: /Try with sample documents/i });
+    await userEvent.click(sampleDocsBtn);
 
     // Initial run: uncached, triggers backend fetch
     const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
@@ -429,6 +455,10 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
+
+    // Load sample docs
+    const sampleDocsBtn = screen.getByRole('button', { name: /Try with sample documents/i });
+    await userEvent.click(sampleDocsBtn);
 
     const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
     await userEvent.click(runBtn);
