@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { runConflictCheck, analyzeConflicts, saveClearanceMemo, exportScheduleOfDiscrepanciesDocx } from '../services/api';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
+import { useAuth } from '../context/AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -1098,32 +1099,192 @@ const styles = `
 
   @media (max-width: 880px) {
     .ce-workspace {
+      display: flex !important;
       flex-direction: column;
     }
     .index-pane {
       width: 100%;
       position: static;
     }
+    .index-list {
+      max-height: 340px;
+    }
     .clash {
       grid-template-columns: 1fr;
+      gap: 8px;
     }
     .clash-side.left {
-      border-radius: 11px 11px 0 0;
+      border-radius: 11px;
       border-right: 1px solid var(--rule);
       border-bottom: none;
     }
     .clash-side.right {
-      border-radius: 0 0 11px 11px;
+      border-radius: 11px;
     }
     .clash-divider {
       display: none;
     }
     .clash-vs {
-      top: 0;
-      left: 50%;
+      position: static;
+      transform: none;
+      margin: -4px auto;
+      left: auto;
+      top: auto;
     }
     .triage-grid {
       grid-template-columns: 1fr;
+    }
+  }
+
+  /* ── Phone-width pass (375px / 390px): every element checked, nothing left to shrink on its own ── */
+  @media (max-width: 600px) {
+    .conflict-page {
+      padding: 0 16px 50px;
+    }
+
+    .masthead-title {
+      font-size: 21px;
+    }
+    .masthead-sub {
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .upload-zone {
+      padding: 28px 16px;
+    }
+    .uz-title {
+      font-size: 15px;
+    }
+    .uz-sub {
+      font-size: 11.5px;
+      max-width: none;
+    }
+    .uz-tags {
+      flex-wrap: wrap;
+      row-gap: 6px;
+    }
+
+    .doc-strip {
+      padding: 12px 14px;
+    }
+    .doc-chip {
+      font-size: 11.5px;
+      padding: 4px 8px;
+    }
+
+    .results-meta {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .meta-stats {
+      font-size: 11px;
+      line-height: 1.7;
+    }
+    .meta-actions {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .summary-line {
+      font-size: 13px;
+    }
+
+    .stale-banner {
+      flex-wrap: wrap;
+      font-size: 11.5px;
+    }
+
+    .export-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .export-btn {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .index-search {
+      font-size: 12.5px;
+    }
+    .index-filters {
+      width: 100%;
+      display: flex;
+      gap: 4px;
+    }
+    .index-filter {
+      flex: 1;
+      justify-content: center;
+      padding: 6px 8px;
+      text-align: center;
+      font-size: 10.5px;
+    }
+
+    .index-row {
+      padding: 12px;
+      gap: 9px;
+    }
+    .idx-title {
+      font-size: 13px;
+    }
+    .idx-pair {
+      font-size: 10px;
+    }
+    .idx-num {
+      display: block;
+      margin-bottom: 1px;
+    }
+
+    .detail-head {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .detail-title {
+      font-size: 18px;
+    }
+    .detail-badges {
+      width: 100%;
+      flex-wrap: wrap;
+      row-gap: 8px;
+    }
+    .detail-review .review-label {
+      display: inline;
+    }
+
+    .clash-side {
+      padding: 14px 16px;
+    }
+    .clash-label {
+      font-size: 10px;
+    }
+    .clash-quote {
+      font-size: 13px;
+    }
+
+    .source-panel {
+      padding: 14px 16px;
+    }
+    .source-ctx-head {
+      flex-wrap: wrap;
+      row-gap: 2px;
+    }
+    .source-ctx-text {
+      font-size: 11.5px;
+    }
+
+    .detail-section {
+      padding: 16px 0;
+    }
+    .ds-text {
+      font-size: 13px;
+      max-width: none;
+    }
+    .copy-btn {
+      width: 100%;
+      text-align: center;
     }
   }
 `;
@@ -1143,6 +1304,18 @@ export default function ConflictEngine() {
     isMountedRef.current = true;
     return () => { isMountedRef.current = false; };
   }, []);
+
+  // ── Authentication Scoping for Session Persistence ──
+  let auth = {};
+  try {
+    auth = useAuth?.() || {};
+  } catch (e) {
+    auth = {};
+  }
+  const userId = auth?.user?.id || auth?.user?.email || 'default';
+  const storageKey = `lexamplify_conflict_engine_session_${userId}`;
+  const hasLiveFilesRef = useRef(false);
+  const [showForceWarning, setShowForceWarning] = useState(false);
 
   // ── Mode Switch: database triage vs. clause master/detail workspace ──
   const [activeMode, setActiveMode] = useState('triage');
@@ -1172,6 +1345,66 @@ export default function ConflictEngine() {
   const runCounterRef = useRef(0);
   const [currentRunInfo, setCurrentRunInfo] = useState({ runNumber: 1, isFresh: true });
 
+  // ── Session Persistence: Save, Load, Clear ──
+  const saveSession = useCallback((overrides = {}) => {
+    try {
+      const sessionData = {
+        activeMode: overrides.activeMode !== undefined ? overrides.activeMode : activeMode,
+        docs: (overrides.docs !== undefined ? overrides.docs : docs).map(d => ({ id: d.id, name: d.name, size: d.size })),
+        activeConflicts: overrides.activeConflicts !== undefined ? overrides.activeConflicts : activeConflicts,
+        hasAnalyzed: overrides.hasAnalyzed !== undefined ? overrides.hasAnalyzed : hasAnalyzed,
+        savedIds: [...(overrides.savedIds !== undefined ? overrides.savedIds : savedIds)],
+        reviewedIds: [...(overrides.reviewedIds !== undefined ? overrides.reviewedIds : reviewedIds)],
+        currentFilter: overrides.currentFilter !== undefined ? overrides.currentFilter : currentFilter,
+        searchText: overrides.searchText !== undefined ? overrides.searchText : searchText,
+        summaryText: overrides.summaryText !== undefined ? overrides.summaryText : summaryText,
+        activeConflictId: overrides.activeConflictId !== undefined ? overrides.activeConflictId : activeConflictId,
+        resultsCache: overrides.resultsCache !== undefined ? overrides.resultsCache : resultsCacheRef.current,
+        runCounter: overrides.runCounter !== undefined ? overrides.runCounter : runCounterRef.current,
+      };
+      localStorage.setItem(storageKey, JSON.stringify(sessionData));
+    } catch (e) {
+      // Storage unavailable or disabled
+    }
+  }, [storageKey, activeMode, docs, activeConflicts, hasAnalyzed, savedIds, reviewedIds, currentFilter, searchText, summaryText, activeConflictId]);
+
+  const clearSession = () => {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch (e) {}
+  };
+
+  // Rehydrate session from localStorage on mount / userId change
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (!s || typeof s !== 'object') return;
+
+      if (s.activeMode) setActiveMode(s.activeMode);
+      if (Array.isArray(s.docs)) {
+        setDocs(s.docs.map(d => ({ id: d.id, name: d.name, size: d.size })));
+      }
+      if (Array.isArray(s.activeConflicts)) setActiveConflicts(s.activeConflicts);
+      if (typeof s.hasAnalyzed === 'boolean') setHasAnalyzed(s.hasAnalyzed);
+      if (Array.isArray(s.savedIds)) setSavedIds(new Set(s.savedIds));
+      if (Array.isArray(s.reviewedIds)) setReviewedIds(new Set(s.reviewedIds));
+      if (s.currentFilter) setCurrentFilter(s.currentFilter);
+      if (typeof s.searchText === 'string') setSearchText(s.searchText);
+      if (s.summaryText) setSummaryText(s.summaryText);
+      if (s.activeConflictId) setActiveConflictId(s.activeConflictId);
+      if (s.resultsCache && typeof s.resultsCache === 'object') {
+        resultsCacheRef.current = s.resultsCache;
+      }
+      if (typeof s.runCounter === 'number') {
+        runCounterRef.current = s.runCounter;
+        setCurrentRunInfo({ runNumber: s.runCounter, isFresh: false, isRestored: true });
+      }
+      hasLiveFilesRef.current = false;
+    } catch (e) {}
+  }, [storageKey]);
+
   // ── Explicit Sample Document Loader (Only loads upon user click) ──
   const handleLoadSampleDocs = () => {
     const samples = [
@@ -1180,9 +1413,12 @@ export default function ConflictEngine() {
       { id: `${Date.now()}-3`, name: 'NDA_Test_Document.pdf' }
     ];
     setDocs(samples);
+    hasLiveFilesRef.current = true;
+    setShowForceWarning(false);
     if (hasAnalyzed) {
       setIsStale(true);
     }
+    saveSession({ docs: samples, hasAnalyzed: hasAnalyzed });
   };
 
   // ── Precedent Search inside Cited Cases ──
@@ -1217,12 +1453,16 @@ export default function ConflictEngine() {
   const handleAddFiles = (fileList) => {
     const incoming = Array.from(fileList || []).filter(f => /\.(pdf|docx|txt)$/i.test(f.name));
     if (!incoming.length) return;
+    hasLiveFilesRef.current = true;
+    setShowForceWarning(false);
     setDocs(prev => {
       const existingNames = new Set(prev.map(d => d.name));
       const fresh = incoming
         .filter(f => !existingNames.has(f.name))
         .map(f => ({ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, name: f.name, rawFile: f }));
-      return [...prev, ...fresh];
+      const nextDocs = [...prev, ...fresh];
+      saveSession({ docs: nextDocs });
+      return nextDocs;
     });
     if (hasAnalyzed) {
       setIsStale(true);
@@ -1230,15 +1470,28 @@ export default function ConflictEngine() {
   };
 
   const handleRemoveDoc = (idx) => {
-    setDocs(prev => prev.filter((_, i) => i !== idx));
+    setDocs(prev => {
+      const nextDocs = prev.filter((_, i) => i !== idx);
+      saveSession({ docs: nextDocs });
+      return nextDocs;
+    });
     if (hasAnalyzed) {
       setIsStale(true);
     }
   };
 
-  // ── Real Backend Analysis: calls /api/conflict/analyze with caching & determinism ──
+  // ── Real Backend Analysis: calls /api/conflict/analyze with caching, persistence & determinism ──
   const runAnalysis = async (force = false) => {
     if (docs.length < 2 || isAnalyzing) return;
+
+    // Guard: fresh analysis needs real file content. After reload/restore, only metadata survived.
+    if (force && !hasLiveFilesRef.current) {
+      setShowForceWarning(true);
+      triggerToast('Re-upload these documents to run a genuinely fresh analysis.');
+      return;
+    }
+    setShowForceWarning(false);
+
     const key = getSessionKey(docs);
 
     // Cache hit: instant deterministic restore, no loading state or network request
@@ -1250,11 +1503,14 @@ export default function ConflictEngine() {
       setSummaryText(cached.summary);
       setCurrentRunInfo({ runNumber: cached.run, isFresh: false });
       setHasAnalyzed(true);
-      if (cached.conflicts.length > 0) {
-        setActiveConflictId(cached.conflicts[0].id);
-      } else {
-        setActiveConflictId('');
-      }
+      const activeId = cached.conflicts.length > 0 ? cached.conflicts[0].id : '';
+      setActiveConflictId(activeId);
+      saveSession({
+        activeConflicts: cached.conflicts,
+        summaryText: cached.summary,
+        hasAnalyzed: true,
+        activeConflictId: activeId,
+      });
       return;
     }
 
@@ -1319,13 +1575,23 @@ export default function ConflictEngine() {
       setCurrentRunInfo({ runNumber: thisRun, isFresh: true });
       setHasAnalyzed(true);
 
+      const activeId = normalized.length > 0 ? normalized[0].id : '';
+      setActiveConflictId(activeId);
+
+      saveSession({
+        activeConflicts: normalized,
+        summaryText: summary,
+        hasAnalyzed: true,
+        activeConflictId: activeId,
+        resultsCache: resultsCacheRef.current,
+        runCounter: thisRun,
+      });
+
       if (normalized.length > 0) {
-        setActiveConflictId(normalized[0].id);
         const crit = normalized.filter(c => c.severity === 'critical').length;
         const maj = normalized.filter(c => c.severity === 'major').length;
         triggerToast(`Analysis complete: ${normalized.length} conflicts identified (${crit} critical · ${maj} major).`);
       } else {
-        setActiveConflictId('');
         triggerToast('Analysis complete: No conflicts found across the documents.');
       }
     } catch (err) {
@@ -1347,6 +1613,9 @@ export default function ConflictEngine() {
     setIsStale(false);
     setSearchText('');
     setAnalysisError('');
+    setShowForceWarning(false);
+    hasLiveFilesRef.current = false;
+    clearSession();
   };
 
   const toggleSave = (id) => {
@@ -1354,6 +1623,7 @@ export default function ConflictEngine() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      saveSession({ savedIds: [...next] });
       return next;
     });
   };
@@ -1363,6 +1633,7 @@ export default function ConflictEngine() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      saveSession({ reviewedIds: [...next] });
       return next;
     });
   };
@@ -1611,13 +1882,19 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
         <div className="conflict-mode-tabs">
           <button
             className={`conflict-mode-tab ${activeMode === 'triage' ? 'active' : ''}`}
-            onClick={() => setActiveMode('triage')}
+            onClick={() => {
+              setActiveMode('triage');
+              saveSession({ activeMode: 'triage' });
+            }}
           >
             🔍 Triage Search
           </button>
           <button
             className={`conflict-mode-tab ${activeMode === 'cross-doc' ? 'active' : ''}`}
-            onClick={() => setActiveMode('cross-doc')}
+            onClick={() => {
+              setActiveMode('cross-doc');
+              saveSession({ activeMode: 'cross-doc' });
+            }}
           >
             📂 Cross-Document Workspace
           </button>
@@ -1797,6 +2074,13 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
               </div>
             )}
 
+            {/* Force Fresh Re-analysis Warning Banner */}
+            {showForceWarning && (
+              <div className="stale-banner" id="forceWarning" style={{ background: 'var(--major-soft)', border: '1px solid var(--major)' }}>
+                <span>⚠ Original file content isn't available after a page reload — re-upload these documents to run a genuinely fresh analysis. The result below is still your last saved one.</span>
+              </div>
+            )}
+
             {/* Summary Sentence */}
             {hasAnalyzed && !isAnalyzing && !analysisError && (
               <div className="summary-line" id="summaryLine">{summarySentence}</div>
@@ -1828,25 +2112,37 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                     id="indexSearch"
                     placeholder="Search conflicts…"
                     value={searchText}
-                    onChange={e => setSearchText(e.target.value)}
+                    onChange={e => {
+                      setSearchText(e.target.value);
+                      saveSession({ searchText: e.target.value });
+                    }}
                   />
 
                   <div className="index-filters">
                     <button
                       className={`index-filter ${currentFilter === 'all' ? 'on' : ''}`}
-                      onClick={() => setCurrentFilter('all')}
+                      onClick={() => {
+                        setCurrentFilter('all');
+                        saveSession({ currentFilter: 'all' });
+                      }}
                     >
                       All <span className="count" id="countAll">{activeConflicts.length}</span>
                     </button>
                     <button
                       className={`index-filter ${currentFilter === 'unreviewed' ? 'on' : ''}`}
-                      onClick={() => setCurrentFilter('unreviewed')}
+                      onClick={() => {
+                        setCurrentFilter('unreviewed');
+                        saveSession({ currentFilter: 'unreviewed' });
+                      }}
                     >
                       Unreviewed <span className="count" id="countUnreviewed">{unreviewedCount}</span>
                     </button>
                     <button
                       className={`index-filter ${currentFilter === 'saved' ? 'on' : ''}`}
-                      onClick={() => setCurrentFilter('saved')}
+                      onClick={() => {
+                        setCurrentFilter('saved');
+                        saveSession({ currentFilter: 'saved' });
+                      }}
                     >
                       Saved <span className="count" id="countSaved">{savedIds.size}</span>
                     </button>

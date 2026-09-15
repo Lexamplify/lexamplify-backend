@@ -477,6 +477,101 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     });
     expect(fetchSpy.mock.calls.length).toBeGreaterThan(initialFetchCount);
   });
+
+  it('persists session state across remounts and rehydrates from localStorage', async () => {
+    localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      activeMode: 'cross-doc',
+      docs: [
+        { id: '1', name: 'Vendor Service Agreement.pdf' },
+        { id: '2', name: 'Software Development Agreement.pdf' }
+      ],
+      activeConflicts: mockConflictAnalysisResponse.conflicts,
+      hasAnalyzed: true,
+      savedIds: ['1'],
+      reviewedIds: ['1'],
+      currentFilter: 'all',
+      searchText: '',
+      summaryText: 'Restored session test summary',
+      runCounter: 1
+    }));
+
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    // Rehydrated state renders cross-doc workspace directly
+    expect((await screen.findAllByText(/Vendor Service Agreement\.pdf/i)).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Inconsistent Payment Terms/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Reviewed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Saved 1/i })).toBeInTheDocument();
+  });
+
+  it('shows warning when attempting to force fresh re-analysis on restored session without live files', async () => {
+    localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      activeMode: 'cross-doc',
+      docs: [
+        { id: '1', name: 'Vendor Service Agreement.pdf' },
+        { id: '2', name: 'Software Development Agreement.pdf' }
+      ],
+      activeConflicts: mockConflictAnalysisResponse.conflicts,
+      hasAnalyzed: true,
+      savedIds: [],
+      reviewedIds: [],
+      currentFilter: 'all',
+      searchText: '',
+      summaryText: 'Restored session test summary',
+      runCounter: 1
+    }));
+
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    expect((await screen.findAllByText(/Vendor Service Agreement\.pdf/i)).length).toBeGreaterThanOrEqual(1);
+
+    const forceRerunBtn = screen.getByRole('button', { name: /Force fresh re-analysis/i });
+    await userEvent.click(forceRerunBtn);
+
+    // Warning banner is displayed explaining live files need re-upload
+    expect(screen.getByText(/Original file content isn't available after a page reload/i)).toBeInTheDocument();
+  });
+
+  it('clears persisted session when Analyze new documents is clicked', async () => {
+    localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      activeMode: 'cross-doc',
+      docs: [
+        { id: '1', name: 'Vendor Service Agreement.pdf' },
+        { id: '2', name: 'Software Development Agreement.pdf' }
+      ],
+      activeConflicts: mockConflictAnalysisResponse.conflicts,
+      hasAnalyzed: true,
+      savedIds: [],
+      reviewedIds: [],
+      currentFilter: 'all',
+      searchText: '',
+      summaryText: 'Restored session test summary',
+      runCounter: 1
+    }));
+
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    expect((await screen.findAllByText(/Vendor Service Agreement\.pdf/i)).length).toBeGreaterThanOrEqual(1);
+
+    const resetBtn = screen.getByRole('button', { name: /Analyze new documents/i });
+    await userEvent.click(resetBtn);
+
+    // Session cleared and upload dropzone restored
+    expect(screen.getByText(/Drop your documents here/i)).toBeInTheDocument();
+    expect(localStorage.getItem('lexamplify_conflict_engine_session_default')).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
