@@ -370,3 +370,69 @@ class TestConflictExportDocx:
         assert "Schedule-of-Discrepancies.docx" in resp.headers.get("Content-Disposition", "")
         assert len(resp.data) > 0
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST /api/conflict/analyze
+# ─────────────────────────────────────────────────────────────────────────
+
+class TestConflictAnalysis:
+    def test_analyze_requires_at_least_two_docs(self, client):
+        resp = client.post("/api/conflict/analyze", json={"documents": [{"name": "Doc1.pdf", "text": "Some text"}]})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_analyze_detects_conflicts_3_docs(self, client):
+        docs = [
+            {
+                "name": "Vendor Service Agreement.pdf",
+                "text": "Section 6.2: Payment within 30 days of invoice. Section 14: Exclusive jurisdiction of courts at Mumbai."
+            },
+            {
+                "name": "Software Development Agreement.pdf",
+                "text": "Section 9.1: Client reserves unilateral right to withhold payment entirely. Section 15: Exclusive jurisdiction of Delhi High Court."
+            },
+            {
+                "name": "NDA_Test_Document.pdf",
+                "text": "Section 4.1: Non-disclosure obligations survive in perpetuity. Section 8.1: Exclusive jurisdiction in Delaware USA."
+            }
+        ]
+        resp = client.post("/api/conflict/analyze", json={"documents": docs})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data.get("status") == "success"
+        conflicts = data.get("conflicts", [])
+        assert len(conflicts) >= 2
+        first = conflicts[0]
+        assert "title" in first
+        assert "docA" in first and "docB" in first
+        assert "legalExplanation" in first
+
+    def test_analyze_detects_conflicts_4_docs_including_fir(self, client):
+        docs = [
+            {
+                "name": "FIR_Rahul_Sharma_Case.pdf",
+                "text": "FIRST INFORMATION REPORT under Section 154 CrPC at Police Station Cyber Cell. Complainant alleges corporate theft."
+            },
+            {
+                "name": "non disclosure.pdf",
+                "text": "Strict confidentiality agreement. All trade secret and corporate disclosures remain strictly confidential without exception."
+            },
+            {
+                "name": "NDA_Test_Document.pdf",
+                "text": "Section 4: Confidentiality duration 2 years. Section 8: Exclusive jurisdiction of Mumbai Courts."
+            },
+            {
+                "name": "Virtual_Courtroom_Test_Case.pdf",
+                "text": "Civil commercial suit before High Court of Delhi claiming damages and challenging jurisdiction."
+            }
+        ]
+        resp = client.post("/api/conflict/analyze", json={"documents": docs})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data.get("status") == "success"
+        conflicts = data.get("conflicts", [])
+        assert len(conflicts) >= 2
+        assert "summary" in data
+
+

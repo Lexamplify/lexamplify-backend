@@ -1408,9 +1408,38 @@ export default function ConflictEngine() {
   // ── Explicit Sample Document Loader (Only loads upon user click) ──
   const handleLoadSampleDocs = () => {
     const samples = [
-      { id: `${Date.now()}-1`, name: 'Vendor Service Agreement.pdf' },
-      { id: `${Date.now()}-2`, name: 'Software Development Agreement.pdf' },
-      { id: `${Date.now()}-3`, name: 'NDA_Test_Document.pdf' }
+      {
+        id: `${Date.now()}-1`,
+        name: 'Vendor Service Agreement.pdf',
+        text: `MASTER VENDOR SERVICE AGREEMENT
+This Agreement is entered into between Client Corporation and Principal Vendor Pvt Ltd.
+
+Section 6.2 (Invoicing and Payment): The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor. Interest at 18% per annum applies to overdue payments.
+Section 8.1 (Limitation of Liability): Vendor's aggregate cumulative liability under this Agreement shall strictly not exceed the total fees paid by Client in the preceding 12 months.
+Section 11.4 (Confidentiality): The obligations of non-disclosure and secrecy under this Agreement shall survive for a period of 2 years following termination.
+Section 14.1 (Dispute Resolution & Jurisdiction): Any dispute shall be settled by sole arbitration in Mumbai under the Arbitration and Conciliation Act 1996. The Vendor explicitly waives all rights to approach any court or tribunal.`
+      },
+      {
+        id: `${Date.now()}-2`,
+        name: 'Software Development Agreement.pdf',
+        text: `SOFTWARE DEVELOPMENT & DELIVERABLE AGREEMENT
+This Agreement governs custom software development deliverables between Client Corporation and Tech Contractor LLC.
+
+Section 9.1 (Fees and Remittance): The Client reserves the unilateral right to reduce the final invoice or withhold payments entirely at their sole discretion if milestone acceptance criteria are contested.
+Section 12.3 (Indemnity & Liability): Contractor shall maintain unlimited liability for any intellectual property infringement, data breach, or confidentiality violation. No liability cap shall apply.
+Section 7.2 (Confidential Information): Confidentiality obligations shall strictly survive for 5 years following completion of all development deliverables.
+Section 15.2 (Governing Law & Jurisdiction): This Agreement is subject to the exclusive jurisdiction of the High Court of Delhi and civil courts in New Delhi.`
+      },
+      {
+        id: `${Date.now()}-3`,
+        name: 'NDA_Test_Document.pdf',
+        text: `MUTUAL NON-DISCLOSURE & PROPRIETARY INFORMATION AGREEMENT
+This Non-Disclosure Agreement protects proprietary trade secrets and technical disclosures between the Parties.
+
+Section 4.1 (Survival of Confidentiality): All non-disclosure obligations and restrictions on proprietary information shall survive indefinitely in perpetuity.
+Section 6.3 (Remedies & Injunctive Relief): Disclosing Party is entitled to immediate injunctive relief without the requirement of posting bond or proving monetary damages.
+Section 8.1 (Dispute Resolution): Any disputes arising hereunder shall be resolved exclusively in the state and federal courts located in Delaware, USA.`
+      }
     ];
     setDocs(samples);
     hasLiveFilesRef.current = true;
