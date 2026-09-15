@@ -12,7 +12,7 @@
  * fallback covers all of them without needing per-component API mocks.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
@@ -159,7 +159,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     expect(triageTab.className).toContain('active');
   });
 
-  it('switches to the Cross-Document Uploader tab on click', async () => {
+  it('switches to the Cross-Document Workspace tab on click', async () => {
     render(
       <MemoryRouter>
         <ConflictEngine />
@@ -167,7 +167,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     );
 
     await screen.findByText(/Malpractice Shield/i);
-    const crossDocTab = screen.getByRole('button', { name: /Cross-Document Uploader/i });
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
     expect(crossDocTab.className).toContain('active');
@@ -182,11 +182,12 @@ describe('Conflict Engine (Malpractice Shield)', () => {
       </MemoryRouter>
     );
 
-    const crossDocTab = screen.getByRole('button', { name: /Cross-Document Uploader/i });
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
-    // Document strip is present
-    expect(screen.getByText(/Vendor Service Agreement.pdf/i)).toBeInTheDocument();
+    // Document strip is present with loaded catalog chips
+    expect(screen.getAllByText(/Vendor Service Agreement/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Software Development Agreement/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Run conflict analysis/i)).toBeInTheDocument();
 
     // Index pane and detail pane both show the active title
@@ -195,6 +196,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
     // Reading pane shows the signature circular VS clash
     expect(screen.getByText('VS')).toBeInTheDocument();
+    expect(screen.getByText(/legal explanation/i)).toBeInTheDocument();
     expect(screen.getByText(/recommended harmonization/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Copy harmonized clause/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Export as Schedule of Discrepancies/i })).toBeInTheDocument();
@@ -207,12 +209,12 @@ describe('Conflict Engine (Malpractice Shield)', () => {
       </MemoryRouter>
     );
 
-    const crossDocTab = screen.getByRole('button', { name: /Cross-Document Uploader/i });
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
-    // Filter counters initially
-    expect(screen.getByRole('button', { name: /All 3/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Unreviewed 3/i })).toBeInTheDocument();
+    // Filter counters initially (4 active conflicts for initial 3 documents: 1, 2, 3, 9)
+    expect(screen.getByRole('button', { name: /All 4/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Unreviewed 4/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Saved 0/i })).toBeInTheDocument();
 
     // Mark active item as reviewed via reading pane
@@ -221,7 +223,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
     // Reviewed button toggles label to "Reviewed"
     expect(screen.getByText('Reviewed')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Unreviewed 2/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Unreviewed 3/i })).toBeInTheDocument();
 
     // Save active item via reading pane
     const saveBtn = screen.getByTitle('Save');
@@ -232,6 +234,56 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const savedFilter = screen.getByRole('button', { name: /Saved 1/i });
     await userEvent.click(savedFilter);
     expect(screen.getAllByText(/Inconsistent Payment Terms/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('triggers stale-state banner on document addition and recomputes on analysis re-run', async () => {
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
+    await userEvent.click(crossDocTab);
+
+    // Initial state has 3 documents and no stale banner
+    expect(screen.queryByText(/Documents changed since this analysis ran/i)).not.toBeInTheDocument();
+
+    // Click "Add document" to add 4th document (Employment Agreement)
+    const addDocBtn = screen.getByRole('button', { name: /Add document/i });
+    await userEvent.click(addDocBtn);
+
+    // Stale banner should appear and workspace dimmed
+    expect(await screen.findByText(/Documents changed since this analysis ran/i)).toBeInTheDocument();
+    const rerunBtn = screen.getByRole('button', { name: /Re-run analysis/i });
+    expect(rerunBtn).toBeInTheDocument();
+
+    // Click Re-run analysis
+    await userEvent.click(rerunBtn);
+
+    // After re-running, stale banner disappears
+    await waitFor(() => {
+      expect(screen.queryByText(/Documents changed since this analysis ran/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('filters visible conflicts using the index search input', async () => {
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
+    await userEvent.click(crossDocTab);
+
+    const searchInput = screen.getByPlaceholderText(/Search conflicts/i);
+    await userEvent.type(searchInput, 'Payment');
+
+    // Matches payment conflict
+    expect(screen.getAllByText(/Inconsistent Payment Terms/i).length).toBeGreaterThanOrEqual(1);
+    // Non-matching conflict should be hidden from index
+    expect(screen.queryByText(/Jurisdiction Inconsistency/i)).not.toBeInTheDocument();
   });
 });
 

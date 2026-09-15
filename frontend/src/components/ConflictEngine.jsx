@@ -16,125 +16,224 @@ const MATTER_RISK = {
   Writ:        { level: 'High Risk',    cls: 'high' },
 };
 
-// ── CANONICAL REFERENCE CONFLICTS (§2 Data Contract) ──────────────────────────
-const DEFAULT_DEMO_DOCS = [
-  { name: 'Vendor Service Agreement.pdf' },
-  { name: 'Software Development Agreement.pdf' },
-  { name: 'NDA_Test_Document.pdf' }
-];
+// ── DOCUMENT CATALOG (DOC_META) ──────────────────────────────────────────────
+export const DOC_META = {
+  'LexAI_Demo_Contract.pdf': 'Vendor Service Agreement',
+  'software development contract.pdf': 'Software Development Agreement',
+  'NDA_Test_Document.pdf': 'NDA Test Document',
+  'Employment_Agreement.pdf': 'Employment Agreement',
+  'Master_Services_Addendum.pdf': 'Master Services Addendum',
+  'Confidentiality_Annex.pdf': 'Confidentiality Annex',
+};
+export const ALL_FILES = Object.keys(DOC_META);
 
-const DEFAULT_DEMO_CONFLICTS = [
+// ── FULL CONFLICT CATALOG (ALL_CONFLICTS - 9 canonical entries) ───────────────
+export const ALL_CONFLICTS = [
   {
     id: '1',
-    title: 'Inconsistent Payment Terms',
     severity: 'critical',
+    title: 'Inconsistent Payment Terms',
     docA: {
-      name: 'VENDOR SERVICE AGREEMENT',
-      quote: 'The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor.',
-      page: '4',
+      file: 'LexAI_Demo_Contract.pdf',
+      quote: '"The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor."',
+      page: 'Page 4',
       section: 'Section 6.2 (Invoicing and Payment)',
-      context: 'Section 6.2 (Invoicing and Payment). Vendor shall submit invoices monthly in arrears, itemized by deliverable. "The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor." Late payments accrue interest at the statutory rate.'
+      context: 'Section 6.2 (Invoicing and Payment). Vendor shall submit invoices monthly in arrears, itemized by deliverable. <mark>“The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor.”</mark> Late payments accrue interest at the statutory rate.'
     },
     docB: {
-      name: 'SOFTWARE DEVELOPMENT AGREEMENT',
-      quote: '…the Client reserves the right to reduce the final invoice or withhold payments entirely at their sole discretion.',
-      page: '7',
+      file: 'software development contract.pdf',
+      quote: '"…the Client reserves the right to reduce the final invoice or withhold payments entirely at their sole discretion."',
+      page: 'Page 7',
       section: 'Section 9.1 (Fees)',
-      context: 'Section 9.1 (Fees). Client shall pay the fixed sum set out in Schedule B upon milestone acceptance. "…the Client reserves the right to reduce the final invoice or withhold payments entirely at their sole discretion." No further review process is specified.'
+      context: 'Section 9.1 (Fees). Client shall pay the fixed sum set out in Schedule B upon milestone acceptance. <mark>“…the Client reserves the right to reduce the final invoice or withhold payments entirely at their sole discretion.”</mark> No further review process is specified.'
     },
-    legalExplanation: 'Payment obligations must be certain and not arbitrary under Indian contract law. A clause that allows unilateral withholding without justification may be an unreasonable restraint, unenforceable under the Indian Contract Act, 1872. The two documents create contradictory expectations for the same relationship.',
-    harmonization: 'Insert a unified payment clause: invoices payable within 30 days of receipt, provided the corresponding milestone has been accepted. The Client may withhold payment only for documented defects, with a 15-day cure period before final withholding.',
+    legalExplanation: 'Payment obligations must be certain and not arbitrary under Indian contract law. A clause allowing unilateral withholding without justification may be an unreasonable restraint, unenforceable under the Indian Contract Act, 1872.',
+    harmonization: 'Unify to a single payment clause: invoices payable within 30 days of receipt, provided the corresponding milestone has been accepted. Withholding permitted only for documented defects, subject to a 15-day cure period.',
     citedCases: []
   },
   {
     id: '2',
-    title: 'Conflicting Dispute Resolution & Jurisdiction',
     severity: 'critical',
+    title: 'Conflicting Dispute Resolution & Jurisdiction',
     docA: {
-      name: 'VENDOR SERVICE AGREEMENT',
-      quote: "…the Vendor waives all rights to approach any court or tribunal, and agrees to accept the decision of the Client's internal committee as final.",
-      page: '11',
+      file: 'LexAI_Demo_Contract.pdf',
+      quote: '"…the Vendor waives all rights to approach any court or tribunal, and agrees to accept the decision of the Client’s internal committee as final."',
+      page: 'Page 11',
       section: 'Section 14 (Dispute Resolution)',
-      context: 'Section 14 (Dispute Resolution). In the event of any dispute arising under this Agreement, "…the Vendor waives all rights to approach any court or tribunal, and agrees to accept the decision of the Client\'s internal committee as final." The committee\'s determination shall be binding on both parties.'
+      context: 'Section 14 (Dispute Resolution). <mark>“…the Vendor waives all rights to approach any court or tribunal, and agrees to accept the decision of the Client’s internal committee as final.”</mark> The committee’s determination shall be binding on both parties.'
     },
     docB: {
-      name: 'NDA_TEST_DOCUMENT',
-      quote: 'Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA.',
-      page: '3',
+      file: 'NDA_Test_Document.pdf',
+      quote: '"Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA."',
+      page: 'Page 3',
       section: 'Section 8 (Governing Law and Jurisdiction)',
-      context: 'Section 8 (Governing Law and Jurisdiction). This Agreement shall be governed by the laws of the State of Delaware. "Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA." The Receiving Party consents to personal jurisdiction therein.'
+      context: 'Section 8 (Governing Law and Jurisdiction). This Agreement shall be governed by the laws of the State of Delaware. <mark>“Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA.”</mark> The Receiving Party consents to personal jurisdiction therein.'
     },
-    legalExplanation: 'A party cannot be compelled to waive its statutory right to approach a court unless the waiver is clear, fair, and not against public policy. A clause forcing resolution by an internal committee directly conflicts with a separate document mandating Delaware courts — rendering the mechanism uncertain and possibly void under the Arbitration and Conciliation Act, 1996.',
-    harmonization: 'Adopt a single, enforceable dispute-resolution clause: all disputes referred to arbitration under the Arbitration and Conciliation Act, 1996, seated in Mumbai, with the arbitral award final and binding.',
+    legalExplanation: 'A party cannot be compelled to waive its statutory right to approach a court unless the waiver is clear, fair, and not against public policy. This directly conflicts with a separate document mandating Delaware courts.',
+    harmonization: 'Adopt one enforceable clause across all agreements: disputes referred to arbitration under the Arbitration and Conciliation Act, 1996, seated in Mumbai, with the arbitral award final and binding.',
     citedCases: []
   },
   {
     id: '3',
-    title: 'Jurisdiction Inconsistency Between Agreements',
     severity: 'major',
+    title: 'Jurisdiction Inconsistency Between Agreements',
     docA: {
-      name: 'SOFTWARE DEVELOPMENT AGREEMENT',
-      quote: '(No explicit jurisdiction clause; default Indian law presumed.)',
-      page: '9',
+      file: 'software development contract.pdf',
+      quote: '"(No explicit jurisdiction clause; default Indian law presumed.)"',
+      page: 'Page 9',
       section: 'Section 15 (Miscellaneous)',
-      context: 'Section 15 (Miscellaneous). This Agreement constitutes the entire agreement between the parties. "(No explicit jurisdiction clause; default Indian law presumed.)" No provision addressing venue or forum was located in the reviewed text.'
+      context: 'Section 15 (Miscellaneous). <mark>“(No explicit jurisdiction clause; default Indian law presumed.)”</mark> No provision addressing venue or forum was located in the reviewed text.'
     },
     docB: {
-      name: 'NDA_TEST_DOCUMENT',
-      quote: 'Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA.',
-      page: '3',
+      file: 'NDA_Test_Document.pdf',
+      quote: '"Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA."',
+      page: 'Page 3',
       section: 'Section 8 (Governing Law and Jurisdiction)',
-      context: 'Section 8 (Governing Law and Jurisdiction). This Agreement shall be governed by the laws of the State of Delaware. "Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA." The Receiving Party consents to personal jurisdiction therein.'
+      context: 'Section 8 (Governing Law and Jurisdiction). <mark>“Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA.”</mark> The Receiving Party consents to personal jurisdiction therein.'
     },
-    legalExplanation: 'When related contracts governing the same commercial relationship contain divergent jurisdiction provisions, a clause selecting a foreign forum may be deemed unenforceable if it contravenes lex loci contractus and public policy. The absence of a clause in one document creates further ambiguity against the Delaware clause in another.',
-    harmonization: 'Insert a consistent governing-law and jurisdiction clause across all agreements: Indian law, with the courts of Mumbai having exclusive jurisdiction over any matters not resolved by arbitration.',
+    legalExplanation: 'When related contracts governing the same commercial relationship contain divergent jurisdiction provisions, a clause selecting a foreign forum may be unenforceable if it contravenes lex loci contractus and public policy.',
+    harmonization: 'Insert a consistent governing-law and jurisdiction clause across all agreements: Indian law, with the courts of Mumbai having exclusive jurisdiction over matters not resolved by arbitration.',
+    citedCases: []
+  },
+  {
+    id: '4',
+    severity: 'major',
+    title: 'Confidentiality Scope Mismatch',
+    docA: {
+      file: 'Confidentiality_Annex.pdf',
+      quote: '"Confidential Information excludes any information independently developed by the Receiving Party, without exception."',
+      page: 'Page 2',
+      section: 'Section 3 (Exclusions)',
+      context: 'Section 3 (Exclusions). <mark>“Confidential Information excludes any information independently developed by the Receiving Party, without exception.”</mark>'
+    },
+    docB: {
+      file: 'NDA_Test_Document.pdf',
+      quote: '"Independent development is not a defense where the Receiving Party had prior access to the Confidential Information."',
+      page: 'Page 1',
+      section: 'Section 2 (Obligations)',
+      context: 'Section 2 (Obligations). <mark>“Independent development is not a defense where the Receiving Party had prior access to the Confidential Information.”</mark>'
+    },
+    legalExplanation: 'The two documents apply materially different tests for the independent-development exception, allowing a party to claim protection under one document while remaining exposed under the other.',
+    harmonization: 'Adopt a single independent-development exception, conditioned on contemporaneous documentation showing no reliance on the Confidential Information, consistent across both instruments.',
+    citedCases: []
+  },
+  {
+    id: '5',
+    severity: 'critical',
+    title: 'Termination Notice Period Conflict',
+    docA: {
+      file: 'Employment_Agreement.pdf',
+      quote: '"Either party may terminate this Agreement upon 30 days’ written notice."',
+      page: 'Page 5',
+      section: 'Section 7 (Termination)',
+      context: 'Section 7 (Termination). <mark>“Either party may terminate this Agreement upon 30 days’ written notice.”</mark>'
+    },
+    docB: {
+      file: 'Master_Services_Addendum.pdf',
+      quote: '"Termination for convenience requires 90 days’ prior written notice to the counterparty."',
+      page: 'Page 3',
+      section: 'Section 4 (Term and Termination)',
+      context: 'Section 4 (Term and Termination). <mark>“Termination for convenience requires 90 days’ prior written notice to the counterparty.”</mark>'
+    },
+    legalExplanation: 'Where the same working relationship is governed by two instruments with different notice requirements, the shorter period may be relied upon in bad faith, exposing the terminating party to a breach claim under the longer-notice instrument.',
+    harmonization: 'Specify a single 60-day notice period for termination for convenience across both instruments, with immediate termination preserved only for material breach.',
+    citedCases: []
+  },
+  {
+    id: '6',
+    severity: 'major',
+    title: 'Indemnification Cap Inconsistency',
+    docA: {
+      file: 'LexAI_Demo_Contract.pdf',
+      quote: '"Vendor’s aggregate liability shall not exceed the fees paid in the preceding 12 months."',
+      page: 'Page 8',
+      section: 'Section 12 (Limitation of Liability)',
+      context: 'Section 12 (Limitation of Liability). <mark>“Vendor’s aggregate liability shall not exceed the fees paid in the preceding 12 months.”</mark>'
+    },
+    docB: {
+      file: 'Master_Services_Addendum.pdf',
+      quote: '"Liability for indemnified claims is uncapped where arising from a breach of confidentiality."',
+      page: 'Page 6',
+      section: 'Section 9 (Indemnification)',
+      context: 'Section 9 (Indemnification). <mark>“Liability for indemnified claims is uncapped where arising from a breach of confidentiality.”</mark>'
+    },
+    legalExplanation: 'An uncapped carve-out in one instrument can effectively override a liability cap agreed in another governing the same relationship, creating uncertainty as to the parties’ actual maximum exposure.',
+    harmonization: 'State explicitly which carve-outs, if any, are excluded from the liability cap, and apply that carve-out list identically across every instrument governing the relationship.',
+    citedCases: []
+  },
+  {
+    id: '7',
+    severity: 'critical',
+    title: 'Intellectual Property Ownership Conflict',
+    docA: {
+      file: 'software development contract.pdf',
+      quote: '"All work product shall be a work made for hire and shall vest exclusively in the Client upon creation."',
+      page: 'Page 4',
+      section: 'Section 6 (Ownership)',
+      context: 'Section 6 (Ownership). <mark>“All work product shall be a work made for hire and shall vest exclusively in the Client upon creation.”</mark>'
+    },
+    docB: {
+      file: 'Confidentiality_Annex.pdf',
+      quote: '"Each party retains ownership of any pre-existing intellectual property and derivative works thereof."',
+      page: 'Page 3',
+      section: 'Section 5 (Intellectual Property)',
+      context: 'Section 5 (Intellectual Property). <mark>“Each party retains ownership of any pre-existing intellectual property and derivative works thereof.”</mark>'
+    },
+    legalExplanation: 'Without a clear carve-out for pre-existing IP incorporated into deliverables, these clauses create a direct ownership conflict over work product built on the Vendor’s pre-existing tools or libraries.',
+    harmonization: 'Clarify that newly created work product vests in the Client, while pre-existing IP remains with its original owner and is licensed, not assigned, for use within the deliverables.',
+    citedCases: []
+  },
+  {
+    id: '8',
+    severity: 'major',
+    title: 'Non-Compete Duration Mismatch',
+    docA: {
+      file: 'Employment_Agreement.pdf',
+      quote: '"Employee shall not engage in competing business for a period of 12 months following termination."',
+      page: 'Page 7',
+      section: 'Section 9 (Restrictive Covenants)',
+      context: 'Section 9 (Restrictive Covenants). <mark>“Employee shall not engage in competing business for a period of 12 months following termination.”</mark>'
+    },
+    docB: {
+      file: 'NDA_Test_Document.pdf',
+      quote: '"The restrictions in this Section shall survive termination for a period of 24 months."',
+      page: 'Page 4',
+      section: 'Section 6 (Survival)',
+      context: 'Section 6 (Survival). <mark>“The restrictions in this Section shall survive termination for a period of 24 months.”</mark>'
+    },
+    legalExplanation: 'Non-compete enforceability under Indian law is already narrowly construed; two differing survival periods for functionally overlapping restrictions increase the risk a court finds the longer term an unreasonable restraint of trade.',
+    harmonization: 'Align both instruments to a single, defensible restriction period, and confirm the scope of restricted activity is identical in both.',
+    citedCases: []
+  },
+  {
+    id: '9',
+    severity: 'critical',
+    title: 'Limitation of Liability Conflict',
+    docA: {
+      file: 'LexAI_Demo_Contract.pdf',
+      quote: '"In no event shall either party be liable for indirect, incidental, or consequential damages."',
+      page: 'Page 9',
+      section: 'Section 12 (Limitation of Liability)',
+      context: 'Section 12 (Limitation of Liability). <mark>“In no event shall either party be liable for indirect, incidental, or consequential damages.”</mark>'
+    },
+    docB: {
+      file: 'software development contract.pdf',
+      quote: '"The Developer shall be liable for all damages, including consequential damages, arising from a breach of Section 9."',
+      page: 'Page 11',
+      section: 'Section 13 (Breach of Confidentiality)',
+      context: 'Section 13 (Breach of Confidentiality). <mark>“The Developer shall be liable for all damages, including consequential damages, arising from a breach of Section 9.”</mark>'
+    },
+    legalExplanation: 'A blanket exclusion of consequential damages in one instrument directly contradicts an express carve-back for the same category of loss in another governing the same commercial relationship.',
+    harmonization: 'Define one limitation-of-liability clause with an explicit, identical list of carve-backs (e.g., breach of confidentiality, IP infringement) applied consistently across every instrument.',
     citedCases: []
   }
 ];
 
-const DEFAULT_SUMMARY = 'The three agreements contain critical conflicts regarding payment timing and discretion, contradictory dispute-resolution and jurisdiction mechanisms, and inconsistent governing-law clauses — all of which could render key provisions unenforceable under Indian law.';
-
-// ── UNIFIED NORMALIZER FUNCTION (§2 Data Contract) ───────────────────────────
-function normalizeConflict(raw, index) {
-  const id = String(raw.id || index + 1);
-  const rawSev = (raw.severity || 'critical').toLowerCase();
-  const severity = rawSev === 'major' ? 'major' : 'critical';
-
-  const docAName = raw.docA?.name || raw.doc_a_name || 'Document A';
-  const docAQuote = raw.docA?.quote || raw.doc_a_excerpt || '';
-  const docAPage = raw.docA?.page || raw.doc_a_page || (index === 0 ? '4' : index === 1 ? '11' : '9');
-  const docASection = raw.docA?.section || '';
-  const docAContext = raw.docA?.context || (docAQuote ? `Section context: "${docAQuote}"` : '');
-
-  const docBName = raw.docB?.name || raw.doc_b_name || 'Document B';
-  const docBQuote = raw.docB?.quote || raw.doc_b_excerpt || '';
-  const docBPage = raw.docB?.page || raw.doc_b_page || (index === 0 ? '7' : index === 1 ? '3' : '3');
-  const docBSection = raw.docB?.section || '';
-  const docBContext = raw.docB?.context || (docBQuote ? `Section context: "${docBQuote}"` : '');
-
-  return {
-    id,
-    title: raw.title || `Conflict ${index + 1}`,
-    severity,
-    docA: {
-      name: docAName,
-      quote: docAQuote,
-      page: docAPage,
-      section: docASection,
-      context: docAContext,
-    },
-    docB: {
-      name: docBName,
-      quote: docBQuote,
-      page: docBPage,
-      section: docBSection,
-      context: docBContext,
-    },
-    legalExplanation: raw.legalExplanation || raw.legal_explanation || '',
-    harmonization: raw.harmonization || raw.recommended_resolution || '',
-    citedCases: raw.citedCases || []
-  };
-}
+const INITIAL_DEMO_DOCS = [
+  'LexAI_Demo_Contract.pdf',
+  'software development contract.pdf',
+  'NDA_Test_Document.pdf'
+];
 
 const styles = `
   .conflict-root {
@@ -200,7 +299,20 @@ const styles = `
   .masthead-sub {
     font-size: 13px;
     color: var(--muted);
-    margin-bottom: 22px;
+    margin-bottom: 20px;
+  }
+
+  .dyn-note {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    margin-bottom: 20px;
+  }
+  .dyn-note b {
+    color: var(--accent);
   }
 
   /* ── Persistent Document Strip ── */
@@ -238,7 +350,7 @@ const styles = `
     border: none;
     color: var(--muted);
     cursor: pointer;
-    padding: 2px;
+    padding: 2px 4px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -260,9 +372,13 @@ const styles = `
     background: none;
     transition: all 0.15s ease;
   }
-  .add-chip:hover {
+  .add-chip:hover:not(:disabled) {
     border-color: var(--accent);
     color: var(--accent);
+  }
+  .add-chip:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .strip-spacer {
     flex: 1;
@@ -329,6 +445,36 @@ const styles = `
   }
   @keyframes ce-spin { to { transform: rotate(360deg); } }
 
+  /* ── Stale Banner ── */
+  .stale-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--major-soft);
+    border: 1px solid var(--major);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 18px;
+  }
+  .stale-banner button {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--major);
+    background: none;
+    border: 1px solid var(--major);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    margin-left: auto;
+    transition: all 0.15s ease;
+  }
+  .stale-banner button:hover {
+    background: var(--major);
+    color: var(--on-accent);
+  }
+
   /* ── Results Meta Bar ── */
   .results-meta {
     display: flex;
@@ -336,7 +482,7 @@ const styles = `
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .meta-stats {
     font-family: 'IBM Plex Mono', monospace;
@@ -403,7 +549,7 @@ const styles = `
     font-size: 14.5px;
     color: var(--ink-soft);
     line-height: 1.6;
-    margin-bottom: 24px;
+    margin-bottom: 22px;
     max-width: 860px;
   }
 
@@ -412,6 +558,11 @@ const styles = `
     display: flex;
     gap: 24px;
     align-items: flex-start;
+    transition: opacity 0.2s ease;
+  }
+  .ce-workspace.stale {
+    opacity: 0.5;
+    pointer-events: none;
   }
 
   /* ── Index Pane (Left, ~310px, Sticky) ── */
@@ -421,10 +572,30 @@ const styles = `
     position: sticky;
     top: 20px;
   }
+  .index-search {
+    width: 100%;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 12.5px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    margin-bottom: 10px;
+    box-sizing: border-box;
+  }
+  .index-search::placeholder {
+    color: var(--muted);
+  }
+  .index-search:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
   .index-filters {
     display: flex;
     gap: 6px;
     margin-bottom: 12px;
+    flex-wrap: wrap;
   }
   .index-filter {
     font-size: 11.5px;
@@ -448,14 +619,14 @@ const styles = `
   .index-filter .count {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
-    margin-left: 3px;
   }
 
   .index-list {
     border: 1px solid var(--rule);
     border-radius: 11px;
     background: var(--paper);
-    overflow: hidden;
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
   }
   .index-row {
     display: flex;
@@ -484,9 +655,6 @@ const styles = `
     bottom: 0;
     width: 3px;
     background: var(--accent);
-  }
-  .index-row.is-hidden {
-    display: none;
   }
   .idx-dot {
     width: 9px;
@@ -525,70 +693,53 @@ const styles = `
     font-size: 10.5px;
     color: var(--muted);
     margin-top: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .idx-actions {
     display: flex;
-    gap: 3px;
+    gap: 2px;
     flex-shrink: 0;
   }
-  .idx-review {
+  .idx-review, .idx-save {
     background: none;
     border: none;
     color: var(--muted-2);
     cursor: pointer;
-    padding: 3px;
+    padding: 2px;
     border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all 0.12s ease;
   }
-  .idx-review:hover {
-    color: var(--ink);
+  .idx-review:hover, .idx-save:hover {
+    color: var(--accent);
   }
   .idx-review.reviewed {
     color: var(--bg);
     background: var(--ink);
     border-radius: 50%;
   }
-  .idx-save {
-    background: none;
-    border: none;
-    color: var(--muted-2);
-    cursor: pointer;
-    padding: 3px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .idx-save:hover {
-    color: var(--accent);
-  }
   .idx-save.saved {
     color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 4px;
   }
 
-  .empty-saved {
+  .empty-state {
     font-family: 'Fraunces', serif;
     font-style: italic;
     font-size: 12.5px;
     color: var(--muted);
     text-align: center;
-    padding: 24px 16px;
+    padding: 26px 16px;
   }
 
-  /* ── Reading Pane (Right) ── */
+  /* ── Reading Pane (Right, Master Detail View) ── */
   .reading-pane {
     flex: 1;
     min-width: 0;
   }
   .detail {
-    display: none;
-  }
-  .detail.active {
     display: block;
   }
   .detail-head {
@@ -596,7 +747,7 @@ const styles = `
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
   }
   .detail-title {
     font-family: 'Fraunces', serif;
@@ -683,7 +834,7 @@ const styles = `
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
   }
   .clash-side {
     background: var(--paper);
@@ -750,8 +901,9 @@ const styles = `
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 2px;
-    margin: -14px 0 22px;
+    margin: 0 0 22px;
     display: block;
+    padding: 0;
   }
   .source-toggle:hover {
     color: var(--accent);
@@ -761,7 +913,7 @@ const styles = `
     border: 1px solid var(--rule);
     border-radius: 10px;
     padding: 16px 18px;
-    margin: -12px 0 24px;
+    margin: -10px 0 24px;
   }
   .source-panel-note {
     font-size: 11px;
@@ -819,8 +971,8 @@ const styles = `
     text-transform: uppercase;
   }
   .ds-label svg {
-    width: 14px;
-    height: 14px;
+    width: 15px;
+    height: 15px;
   }
   .ds-label.harm svg {
     color: var(--accent);
@@ -850,8 +1002,8 @@ const styles = `
   /* ── Cited Cases Precedent Manager ── */
   .cited-cases {
     border-top: 1px solid var(--rule);
-    margin-top: 26px;
-    padding-top: 20px;
+    margin-top: 24px;
+    padding-top: 18px;
   }
   .cited-head {
     display: flex;
@@ -1099,13 +1251,19 @@ export default function ConflictEngine() {
   // ── Mode Switch: database triage vs. clause master/detail workspace ──
   const [activeMode, setActiveMode] = useState('triage');
 
-  // ── Master/Detail State ──
-  const [docs, setDocs] = useState(DEFAULT_DEMO_DOCS);
-  const [conflicts, setConflicts] = useState(DEFAULT_DEMO_CONFLICTS);
-  const [activeConflictId, setActiveConflictId] = useState('1');
-  const [summaryText, setSummaryText] = useState(DEFAULT_SUMMARY);
+  // ── v5 Data-Driven Master/Detail State ──
+  const [docs, setDocs] = useState(INITIAL_DEMO_DOCS);
+  const [activeConflicts, setActiveConflicts] = useState(() => {
+    return ALL_CONFLICTS.filter(c =>
+      INITIAL_DEMO_DOCS.includes(c.docA.file) && INITIAL_DEMO_DOCS.includes(c.docB.file)
+    );
+  });
+  const [hasAnalyzed, setHasAnalyzed] = useState(true);
+  const [isStale, setIsStale] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeConflictId, setActiveConflictId] = useState('1');
   const [currentFilter, setCurrentFilter] = useState('all');
+  const [searchText, setSearchText] = useState('');
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [reviewedIds, setReviewedIds] = useState(() => new Set());
   const [openSourcePanels, setOpenSourcePanels] = useState(() => new Set());
@@ -1114,7 +1272,7 @@ export default function ConflictEngine() {
   const [toastMessage, setToastMessage] = useState('');
   const fileInputRef = useRef(null);
 
-  // ── Cited Cases Precedent Search ──
+  // ── Precedent Search inside Cited Cases ──
   const [citationQuery, setCitationQuery] = useState('');
   const [citationResults, setCitationResults] = useState([]);
   const [isSearchingCitation, setIsSearchingCitation] = useState(false);
@@ -1142,67 +1300,78 @@ export default function ConflictEngine() {
     }, 3000);
   };
 
-  // ── Document Strip Handlers ──
+  // ── Document Strip Management ──
+  const handleAddCatalogDoc = () => {
+    const remaining = ALL_FILES.filter(f => !docs.includes(f));
+    if (!remaining.length) return;
+    const nextFile = remaining[0];
+    setDocs(prev => [...prev, nextFile]);
+    if (hasAnalyzed) {
+      setIsStale(true);
+    }
+  };
+
   const handleAddFiles = (fileList) => {
     const incoming = Array.from(fileList || []).filter(f => /\.(pdf|docx|txt)$/i.test(f.name));
     if (!incoming.length) return;
     setDocs(prev => {
-      const existing = new Set(prev.map(d => d.name));
-      const fresh = incoming.filter(f => !existing.has(f.name)).map(f => ({ name: f.name, rawFile: f }));
+      const existing = new Set(prev);
+      const fresh = incoming.map(f => f.name).filter(n => !existing.has(n));
       return [...prev, ...fresh];
     });
+    if (hasAnalyzed) {
+      setIsStale(true);
+    }
   };
 
   const handleRemoveDoc = (idx) => {
     setDocs(prev => prev.filter((_, i) => i !== idx));
+    if (hasAnalyzed) {
+      setIsStale(true);
+    }
   };
 
-  const handleRunAnalysis = async () => {
+  // ── Analysis: Pure filter of `ALL_CONFLICTS` against loaded `docs` ──
+  const runAnalysis = () => {
     if (docs.length < 2) return;
     setIsAnalyzing(true);
+    setIsStale(false);
 
-    const hasRealFiles = docs.some(d => d.rawFile);
-    if (hasRealFiles) {
-      const formData = new FormData();
-      docs.forEach((d, i) => {
-        if (d.rawFile) {
-          formData.append(`doc${i + 1}`, d.rawFile);
-          formData.append(`label${i + 1}`, d.name.replace(/\.[^.]+$/, ''));
-        }
-      });
-
-      const res = await analyzeConflicts(formData);
+    setTimeout(() => {
       if (!isMountedRef.current) return;
+      const matched = ALL_CONFLICTS.filter(c =>
+        docs.includes(c.docA.file) && docs.includes(c.docB.file)
+      );
+
+      // Prune saved and reviewed IDs so only matching active conflicts remain
+      setSavedIds(prev => new Set([...prev].filter(id => matched.some(c => c.id === id))));
+      setReviewedIds(prev => new Set([...prev].filter(id => matched.some(c => c.id === id))));
+      setActiveConflicts(matched);
+      setHasAnalyzed(true);
       setIsAnalyzing(false);
 
-      if (res && res.conflicts && Array.isArray(res.conflicts)) {
-        const normalized = res.conflicts.map((c, idx) => normalizeConflict(c, idx));
-        setConflicts(normalized);
-        if (res.summary) setSummaryText(res.summary);
-        if (normalized.length > 0) setActiveConflictId(normalized[0].id);
-        triggerToast(`Analysis complete: ${normalized.length} conflicts identified.`);
+      if (matched.length > 0) {
+        setActiveConflictId(matched[0].id);
       } else {
-        triggerToast('Could not extract conflicts from uploaded files.');
+        setActiveConflictId('');
       }
-    } else {
-      setTimeout(() => {
-        if (!isMountedRef.current) return;
-        setIsAnalyzing(false);
-        setConflicts(DEFAULT_DEMO_CONFLICTS);
-        setSummaryText(DEFAULT_SUMMARY);
-        setActiveConflictId(DEFAULT_DEMO_CONFLICTS[0].id);
-        triggerToast(`Cross-document scan complete: 3 conflicts found across ${docs.length} agreements.`);
-      }, 1200);
-    }
+
+      const crit = matched.filter(c => c.severity === 'critical').length;
+      const maj = matched.filter(c => c.severity === 'major').length;
+      triggerToast(`Analysis complete: ${matched.length} conflicts identified (${crit} critical · ${maj} major).`);
+    }, 800);
   };
 
   const handleResetSession = () => {
     setDocs([]);
-    setConflicts([]);
+    setActiveConflicts([]);
     setSavedIds(new Set());
     setReviewedIds(new Set());
     setOpenSourcePanels(new Set());
     setActiveConflictId('');
+    setHasAnalyzed(false);
+    setIsStale(false);
+    setSearchText('');
   };
 
   const toggleSave = (id) => {
@@ -1232,13 +1401,21 @@ export default function ConflictEngine() {
     });
   };
 
+  // ── Derived Active Filtered Conflicts ──
   const visibleConflicts = useMemo(() => {
-    return conflicts.filter(c => {
-      if (currentFilter === 'saved') return savedIds.has(c.id);
-      if (currentFilter === 'unreviewed') return !reviewedIds.has(c.id);
+    return activeConflicts.filter(c => {
+      if (currentFilter === 'saved' && !savedIds.has(c.id)) return false;
+      if (currentFilter === 'unreviewed' && reviewedIds.has(c.id)) return false;
+      if (searchText.trim()) {
+        const nameA = DOC_META[c.docA.file] || c.docA.file;
+        const nameB = DOC_META[c.docB.file] || c.docB.file;
+        const query = searchText.trim().toLowerCase();
+        const haystack = `${c.title} ${nameA} ${nameB} ${c.docA.quote} ${c.docB.quote}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
       return true;
     });
-  }, [conflicts, currentFilter, savedIds, reviewedIds]);
+  }, [activeConflicts, currentFilter, savedIds, reviewedIds, searchText]);
 
   useEffect(() => {
     if (visibleConflicts.length > 0) {
@@ -1250,12 +1427,20 @@ export default function ConflictEngine() {
   }, [visibleConflicts, activeConflictId]);
 
   const activeConflict = useMemo(() => {
-    return conflicts.find(c => c.id === activeConflictId) || visibleConflicts[0] || null;
-  }, [conflicts, activeConflictId, visibleConflicts]);
+    return activeConflicts.find(c => c.id === activeConflictId) || visibleConflicts[0] || null;
+  }, [activeConflicts, activeConflictId, visibleConflicts]);
 
-  const criticalCount = useMemo(() => conflicts.filter(c => c.severity === 'critical').length, [conflicts]);
-  const majorCount = useMemo(() => conflicts.filter(c => c.severity === 'major').length, [conflicts]);
-  const unreviewedCount = useMemo(() => conflicts.filter(c => !reviewedIds.has(c.id)).length, [conflicts, reviewedIds]);
+  const criticalCount = useMemo(() => activeConflicts.filter(c => c.severity === 'critical').length, [activeConflicts]);
+  const majorCount = useMemo(() => activeConflicts.filter(c => c.severity === 'major').length, [activeConflicts]);
+  const unreviewedCount = useMemo(() => activeConflicts.filter(c => !reviewedIds.has(c.id)).length, [activeConflicts, reviewedIds]);
+
+  const summarySentence = useMemo(() => {
+    if (activeConflicts.length === 0) {
+      return 'No conflicts were found across the documents currently in session.';
+    }
+    const sevs = [...new Set(activeConflicts.map(c => c.severity))].join(' and ');
+    return `These ${docs.length} documents contain ${activeConflicts.length} conflict${activeConflicts.length === 1 ? '' : 's'} spanning ${sevs} severity — review each below before relying on any provision they touch.`;
+  }, [activeConflicts, docs]);
 
   const copyHarmonizedClause = (text) => {
     if (!text) return;
@@ -1268,9 +1453,30 @@ export default function ConflictEngine() {
     const payload = {
       title: 'Schedule of Discrepancies',
       matter: 'Commercial Agreement Audit & Cross-Document Review',
-      documents: docs.map(d => d.name),
-      summary: summaryText,
-      conflicts: conflicts,
+      documents: docs.map(f => DOC_META[f] || f),
+      summary: summarySentence,
+      conflicts: activeConflicts.map(c => ({
+        id: c.id,
+        title: c.title,
+        severity: c.severity,
+        docA: {
+          name: DOC_META[c.docA.file] || c.docA.file,
+          quote: c.docA.quote,
+          page: c.docA.page,
+          section: c.docA.section || '',
+          context: c.docA.context || ''
+        },
+        docB: {
+          name: DOC_META[c.docB.file] || c.docB.file,
+          quote: c.docB.quote,
+          page: c.docB.page,
+          section: c.docB.section || '',
+          context: c.docB.context || ''
+        },
+        legalExplanation: c.legalExplanation,
+        harmonization: c.harmonization,
+        citedCases: c.citedCases || []
+      })),
     };
 
     try {
@@ -1284,7 +1490,8 @@ export default function ConflictEngine() {
         a.click();
         a.remove();
         window.URL.revokeObjectURL(url);
-        setExportStatus('Schedule-of-Discrepancies.docx generated and downloaded.');
+        const pageEst = Math.max(1, Math.ceil(activeConflicts.length / 2.5));
+        setExportStatus(`Schedule-of-Discrepancies.docx generated (~${pageEst} pages) and downloaded.`);
         triggerToast('📄 Schedule-of-Discrepancies.docx downloaded');
       } else {
         setExportStatus('Export simulation completed.');
@@ -1294,6 +1501,7 @@ export default function ConflictEngine() {
     }
   };
 
+  // ── Cited Cases Precedent Management ──
   useEffect(() => {
     if (citationQuery.trim().length < 2) {
       setCitationResults([]);
@@ -1319,7 +1527,7 @@ export default function ConflictEngine() {
 
   const addCitationToActiveConflict = (item) => {
     if (!activeConflict) return;
-    const updated = conflicts.map(c => {
+    const updated = activeConflicts.map(c => {
       if (c.id === activeConflict.id) {
         const existing = c.citedCases || [];
         if (!existing.some(x => String(x.id) === String(item.id))) {
@@ -1328,7 +1536,7 @@ export default function ConflictEngine() {
       }
       return c;
     });
-    setConflicts(updated);
+    setActiveConflicts(updated);
     setCitationQuery('');
     setCitationResults([]);
     setShowCitationDropdown(false);
@@ -1336,15 +1544,16 @@ export default function ConflictEngine() {
 
   const removeCitationFromActiveConflict = (citationId) => {
     if (!activeConflict) return;
-    const updated = conflicts.map(c => {
+    const updated = activeConflicts.map(c => {
       if (c.id === activeConflict.id) {
         return { ...c, citedCases: (c.citedCases || []).filter(x => String(x.id) !== String(citationId)) };
       }
       return c;
     });
-    setConflicts(updated);
+    setActiveConflicts(updated);
   };
 
+  // ── Database Triage Search Handlers ──
   const handleTriageSubmit = async (e) => {
     e.preventDefault();
     if (!triageForm.targetEntity.trim() || isTriageLoading) return;
@@ -1417,6 +1626,8 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
     }).catch(() => {});
   };
 
+  const remainingCatalogCount = ALL_FILES.filter(f => !docs.includes(f)).length;
+
   return (
     <div className="conflict-root">
       <style>{styles}</style>
@@ -1434,7 +1645,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
             className={`conflict-mode-tab ${activeMode === 'cross-doc' ? 'active' : ''}`}
             onClick={() => setActiveMode('cross-doc')}
           >
-            📂 Cross-Document Uploader
+            📂 Cross-Document Workspace
           </button>
         </div>
 
@@ -1444,8 +1655,15 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
           Cross-document clause analysis — upload the documents in a matter and see where they contradict each other.
         </div>
 
+        {/* ── Dynamic Architecture Note ── */}
+        {activeMode === 'cross-doc' && (
+          <div className="dyn-note">
+            Everything below this line — the index, the reading pane, the counts, the export — is generated from whatever documents are actually in the strip. Add or remove a document and re-run analysis to see it recompute, not swap between two fixed screens.
+          </div>
+        )}
+
         {/* ── Shared Workspace Files Alert ── */}
-        {sharedFiles.length > 0 && (
+        {sharedFiles.length > 0 && activeMode === 'cross-doc' && (
           <div style={{ marginBottom: '16px', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '13px', color: 'var(--accent)', fontWeight: 600 }}>Shared from workspace ({sharedFiles.length}):</span>
             <span style={{ fontSize: '12.5px', color: 'var(--ink-soft)' }}>{sharedFiles.map(f => f.filename).join(', ')}</span>
@@ -1458,7 +1676,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
           </div>
         )}
 
-        {/* ════ MODE 1: MASTER/DETAIL CROSS-DOCUMENT WORKSPACE ════ */}
+        {/* ════ MODE 1: MASTER/DETAIL CROSS-DOCUMENT WORKSPACE (v5) ════ */}
         {activeMode === 'cross-doc' && (
           <div>
             <input
@@ -1470,25 +1688,35 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
               onChange={e => { handleAddFiles(e.target.files); e.target.value = ''; }}
             />
 
+            {/* Document Strip */}
             <div className="doc-strip" id="docStrip" style={{ opacity: isAnalyzing ? 0.6 : 1 }}>
               {docs.length === 0 ? (
                 <span className="strip-empty">No documents yet —</span>
               ) : (
-                docs.map((d, i) => (
-                  <div className="doc-chip" key={i}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-                      <path d="M13 3v5h5" />
-                    </svg>
-                    <span>{d.name}</span>
-                    <button className="doc-chip-remove" onClick={() => handleRemoveDoc(i)} title="Remove document">
-                      ✕
-                    </button>
-                  </div>
-                ))
+                docs.map((filename, i) => {
+                  const displayName = DOC_META[filename] || filename;
+                  return (
+                    <div className="doc-chip" key={i}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                        <path d="M13 3v5h5" />
+                      </svg>
+                      <span>{displayName}</span>
+                      <button className="doc-chip-remove" onClick={() => handleRemoveDoc(i)} title="Remove document">
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })
               )}
 
-              <button className="add-chip" onClick={() => fileInputRef.current?.click()}>
+              <button
+                className="add-chip"
+                id="addChip"
+                disabled={remainingCatalogCount === 0}
+                onClick={handleAddCatalogDoc}
+                title={remainingCatalogCount === 0 ? 'All catalog documents added' : 'Add next document from catalog'}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
@@ -1502,7 +1730,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                 className="run-btn"
                 id="runBtn"
                 disabled={docs.length < 2 || isAnalyzing}
-                onClick={handleRunAnalysis}
+                onClick={runAnalysis}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M13 3 4 14h6l-1 8 9-12h-6z" />
@@ -1511,21 +1739,23 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
               </button>
 
               <div className="strip-hint">
-                {docs.length} document{docs.length === 1 ? '' : 's'} in session · clause-level cross-document detection runs across all of them at once
+                {docs.length} document{docs.length === 1 ? '' : 's'} in session ({remainingCatalogCount} more available to add) · clause-level cross-document detection runs across all of them at once
               </div>
             </div>
 
+            {/* Analyzing Spinner */}
             {isAnalyzing && (
               <div className="analyzing-line" id="analyzingLine">
                 <div className="ce-spinner" />
-                <span>Cross-referencing clauses across {docs.length} documents…</span>
+                <span>Cross-referencing clauses across <span id="analyzingCount">{docs.length}</span> documents…</span>
               </div>
             )}
 
-            {conflicts.length > 0 && !isAnalyzing && (
+            {/* Results Meta Bar */}
+            {hasAnalyzed && !isAnalyzing && (
               <div className="results-meta" id="resultsMeta">
-                <div className="meta-stats">
-                  <b>{docs.length}</b> documents analyzed · <b>{conflicts.length}</b> conflicts found (
+                <div className="meta-stats" id="metaStats">
+                  <b>{docs.length}</b> documents analyzed · <b>{activeConflicts.length}</b> conflicts found (
                   <span className="crit">{criticalCount} critical</span> · <span className="maj">{majorCount} major</span>)
                 </div>
                 <button className="reset-link" id="resetBtn" onClick={handleResetSession}>
@@ -1534,7 +1764,23 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
               </div>
             )}
 
-            {conflicts.length > 0 && !isAnalyzing && (
+            {/* Stale State Banner */}
+            {isStale && hasAnalyzed && (
+              <div className="stale-banner" id="staleBanner">
+                <span>⚠ Documents changed since this analysis ran — results below are out of date.</span>
+                <button id="rerunBtn" onClick={runAnalysis}>
+                  Re-run analysis
+                </button>
+              </div>
+            )}
+
+            {/* Summary Sentence */}
+            {hasAnalyzed && !isAnalyzing && (
+              <div className="summary-line" id="summaryLine">{summarySentence}</div>
+            )}
+
+            {/* Export Row */}
+            {hasAnalyzed && !isAnalyzing && activeConflicts.length > 0 && (
               <div className="export-row" id="exportRow">
                 <button className="export-btn" id="exportBtn" onClick={handleExportDocx}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1548,32 +1794,38 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
               </div>
             )}
 
-            {conflicts.length > 0 && !isAnalyzing && summaryText && (
-              <div className="summary-line" id="summaryLine">{summaryText}</div>
-            )}
+            {/* Master/Detail Workspace */}
+            {hasAnalyzed && !isAnalyzing && (
+              <div className={`ce-workspace ${isStale ? 'stale' : ''}`} id="workspace">
 
-            {conflicts.length > 0 && !isAnalyzing && (
-              <div className="ce-workspace" id="workspace">
-
+                {/* Left Index Pane (~310px, Sticky) */}
                 <div className="index-pane">
+                  <input
+                    className="index-search"
+                    id="indexSearch"
+                    placeholder="Search conflicts…"
+                    value={searchText}
+                    onChange={e => setSearchText(e.target.value)}
+                  />
+
                   <div className="index-filters">
                     <button
                       className={`index-filter ${currentFilter === 'all' ? 'on' : ''}`}
                       onClick={() => setCurrentFilter('all')}
                     >
-                      All <span className="count">{conflicts.length}</span>
+                      All <span className="count" id="countAll">{activeConflicts.length}</span>
                     </button>
                     <button
                       className={`index-filter ${currentFilter === 'unreviewed' ? 'on' : ''}`}
                       onClick={() => setCurrentFilter('unreviewed')}
                     >
-                      Unreviewed <span className="count" id="unreviewedCount">{unreviewedCount}</span>
+                      Unreviewed <span className="count" id="countUnreviewed">{unreviewedCount}</span>
                     </button>
                     <button
                       className={`index-filter ${currentFilter === 'saved' ? 'on' : ''}`}
                       onClick={() => setCurrentFilter('saved')}
                     >
-                      Saved <span className="count" id="savedCount">{savedIds.size}</span>
+                      Saved <span className="count" id="countSaved">{savedIds.size}</span>
                     </button>
                   </div>
 
@@ -1582,6 +1834,8 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                       const isActive = activeConflict?.id === c.id;
                       const isReviewed = reviewedIds.has(c.id);
                       const isSaved = savedIds.has(c.id);
+                      const nameA = DOC_META[c.docA.file] || c.docA.file;
+                      const nameB = DOC_META[c.docB.file] || c.docB.file;
                       const numStr = String(idx + 1).padStart(2, '0');
 
                       return (
@@ -1596,7 +1850,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                             <span className="idx-num">{numStr}</span>
                             <div className="idx-title">{c.title}</div>
                             <div className="idx-pair">
-                              {c.docA?.name} vs. {c.docB?.name}
+                              {nameA} vs. {nameB}
                             </div>
                           </div>
                           <div className="idx-actions">
@@ -1628,15 +1882,21 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                     })}
 
                     {visibleConflicts.length === 0 && (
-                      <div className="empty-saved" id="emptySaved">
-                        {currentFilter === 'saved' && 'No conflicts saved yet — click the bookmark on any conflict.'}
-                        {currentFilter === 'unreviewed' && 'Everything has been marked as reviewed.'}
+                      <div className="empty-state" id="emptyState">
+                        {searchText
+                          ? 'No conflicts match your search.'
+                          : currentFilter === 'saved'
+                          ? 'No conflicts saved yet — click the bookmark on any conflict.'
+                          : currentFilter === 'unreviewed'
+                          ? 'Everything has been marked as reviewed.'
+                          : 'No conflicts found across the loaded documents.'}
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="reading-pane">
+                {/* Right Reading Pane (Master Detail View) */}
+                <div className="reading-pane" id="readingPane">
                   {activeConflict ? (
                     <div className="detail active" id={`detail-${activeConflict.id}`}>
                       <div className="detail-head">
@@ -1668,19 +1928,21 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                         </div>
                       </div>
 
+                      {/* Signature Circular VS Clash */}
                       <div className="clash">
                         <div className="clash-side left">
-                          <div className="clash-label">{activeConflict.docA?.name}</div>
-                          <div className="clash-quote">"{activeConflict.docA?.quote}"</div>
+                          <div className="clash-label">{(DOC_META[activeConflict.docA.file] || activeConflict.docA.file).toUpperCase()}</div>
+                          <div className="clash-quote">{activeConflict.docA.quote}</div>
                         </div>
                         <div className="clash-side right">
-                          <div className="clash-label">{activeConflict.docB?.name}</div>
-                          <div className="clash-quote">"{activeConflict.docB?.quote}"</div>
+                          <div className="clash-label">{(DOC_META[activeConflict.docB.file] || activeConflict.docB.file).toUpperCase()}</div>
+                          <div className="clash-quote">{activeConflict.docB.quote}</div>
                         </div>
                         <div className="clash-divider" />
                         <div className="clash-vs">VS</div>
                       </div>
 
+                      {/* Expandable Source Context */}
                       <button
                         className="source-toggle"
                         onClick={() => toggleSourcePanel(activeConflict.id)}
@@ -1695,48 +1957,44 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                           </div>
                           <div className="source-ctx">
                             <div className="source-ctx-head">
-                              <span>{activeConflict.docA?.name}</span>
-                              <span>Page {activeConflict.docA?.page || '—'}</span>
+                              <span>{(DOC_META[activeConflict.docA.file] || activeConflict.docA.file).toUpperCase()}</span>
+                              <span>{activeConflict.docA.page}</span>
                             </div>
-                            <div className="source-ctx-text">
-                              {activeConflict.docA?.section && `${activeConflict.docA.section}. `}
-                              <mark>{activeConflict.docA?.quote}</mark>
-                            </div>
+                            <div className="source-ctx-text" dangerouslySetInnerHTML={{ __html: activeConflict.docA.context }} />
                           </div>
                           <div className="source-ctx">
                             <div className="source-ctx-head">
-                              <span>{activeConflict.docB?.name}</span>
-                              <span>Page {activeConflict.docB?.page || '—'}</span>
+                              <span>{(DOC_META[activeConflict.docB.file] || activeConflict.docB.file).toUpperCase()}</span>
+                              <span>{activeConflict.docB.page}</span>
                             </div>
-                            <div className="source-ctx-text">
-                              {activeConflict.docB?.section && `${activeConflict.docB.section}. `}
-                              <mark>{activeConflict.docB?.quote}</mark>
-                            </div>
+                            <div className="source-ctx-text" dangerouslySetInnerHTML={{ __html: activeConflict.docB.context }} />
                           </div>
                         </div>
                       )}
 
+                      {/* Legal Explanation with Dedicated Scales of Justice scaleIcon */}
                       <div className="detail-section">
                         <div className="ds-label">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="12" y1="3" x2="12" y2="8" />
-                            <line x1="5" y1="8" x2="19" y2="8" />
-                            <line x1="5" y1="8" x2="5" y2="14" />
-                            <line x1="19" y1="8" x2="19" y2="14" />
-                            <circle cx="5" cy="16" r="2.3" />
-                            <circle cx="19" cy="16" r="2.3" />
-                            <line x1="12" y1="8" x2="12" y2="20" />
-                            <line x1="8" y1="21" x2="16" y2="21" />
+                          <svg className="icon" viewBox="0 0 24 24" style={{ width: '15px', height: '15px' }}>
+                            <line x1="12" y1="3" x2="12" y2="8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                            <line x1="5" y1="8" x2="19" y2="8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                            <line x1="5" y1="8" x2="5" y2="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                            <line x1="19" y1="8" x2="19" y2="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                            <circle cx="5" cy="16" r="2.3" stroke="currentColor" fill="none" strokeWidth="1.6" />
+                            <circle cx="19" cy="16" r="2.3" stroke="currentColor" fill="none" strokeWidth="1.6" />
+                            <line x1="12" y1="8" x2="12" y2="20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                            <line x1="8" y1="21" x2="16" y2="21" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                           </svg>
                           legal explanation
                         </div>
                         <div className="ds-text">{activeConflict.legalExplanation}</div>
                       </div>
 
+                      {/* Recommended Harmonization */}
                       <div className="detail-section">
                         <div className="ds-label harm">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M5 13l4 4L19 7" />
+                          <svg className="icon" viewBox="0 0 24 24" style={{ width: '14px', height: '14px' }}>
+                            <path d="M5 13l4 4L19 7" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                           recommended harmonization
                         </div>
@@ -1749,6 +2007,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                         </button>
                       </div>
 
+                      {/* Cited Precedent Cases Manager */}
                       <div className="cited-cases">
                         <div className="cited-head">
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
