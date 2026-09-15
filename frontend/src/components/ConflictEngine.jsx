@@ -1298,6 +1298,9 @@ const getSessionKey = (docList) => {
   return (docList || []).map(d => normalizeDocName(d.name)).sort().join('|');
 };
 
+export const CACHE_VERSION = import.meta.env.VITE_BUILD_ID || 'v9.0.0';
+export const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
 export default function ConflictEngine() {
   const isMountedRef = useRef(true);
   useEffect(() => {
@@ -1349,6 +1352,7 @@ export default function ConflictEngine() {
   const saveSession = useCallback((overrides = {}) => {
     try {
       const sessionData = {
+        version: CACHE_VERSION,
         activeMode: overrides.activeMode !== undefined ? overrides.activeMode : activeMode,
         docs: (overrides.docs !== undefined ? overrides.docs : docs).map(d => ({ id: d.id, name: d.name, size: d.size })),
         activeConflicts: overrides.activeConflicts !== undefined ? overrides.activeConflicts : activeConflicts,
@@ -1382,6 +1386,12 @@ export default function ConflictEngine() {
       const s = JSON.parse(raw);
       if (!s || typeof s !== 'object') return;
 
+      // Invalidate if version mismatch or legacy unversioned data
+      if (s.version !== CACHE_VERSION) {
+        localStorage.removeItem(storageKey);
+        return;
+      }
+
       if (s.activeMode) setActiveMode(s.activeMode);
       if (Array.isArray(s.docs)) {
         setDocs(s.docs.map(d => ({ id: d.id, name: d.name, size: d.size })));
@@ -1395,7 +1405,17 @@ export default function ConflictEngine() {
       if (s.summaryText) setSummaryText(s.summaryText);
       if (s.activeConflictId) setActiveConflictId(s.activeConflictId);
       if (s.resultsCache && typeof s.resultsCache === 'object') {
-        resultsCacheRef.current = s.resultsCache;
+        const freshCache = {};
+        const now = Date.now();
+        Object.entries(s.resultsCache).forEach(([k, entry]) => {
+          if (entry && entry.timestamp) {
+            const age = now - new Date(entry.timestamp).getTime();
+            if (age >= 0 && age < CACHE_TTL_MS) {
+              freshCache[k] = entry;
+            }
+          }
+        });
+        resultsCacheRef.current = freshCache;
       }
       if (typeof s.runCounter === 'number') {
         runCounterRef.current = s.runCounter;
@@ -1523,9 +1543,11 @@ Section 8.1 (Dispute Resolution): Any disputes arising hereunder shall be resolv
 
     const key = getSessionKey(docs);
 
-    // Cache hit: instant deterministic restore, no loading state or network request
-    if (!force && resultsCacheRef.current[key]) {
-      const cached = resultsCacheRef.current[key];
+    // Cache hit: instant deterministic restore if within CACHE_TTL_MS
+    const cached = resultsCacheRef.current[key];
+    const cacheIsFresh = cached && cached.timestamp && (Date.now() - new Date(cached.timestamp).getTime() < CACHE_TTL_MS);
+
+    if (!force && cacheIsFresh) {
       setIsStale(false);
       setAnalysisError('');
       setActiveConflicts(cached.conflicts);
@@ -1594,7 +1616,7 @@ Section 8.1 (Dispute Resolution): Any disputes arising hereunder shall be resolv
         conflicts: normalized,
         summary: summary,
         run: thisRun,
-        timestamp: new Date()
+        timestamp: new Date().toISOString()
       };
 
       setSavedIds(prev => new Set([...prev].filter(id => normalized.some(c => c.id === id))));

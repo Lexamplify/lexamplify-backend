@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  define: {
+    'import.meta.env.VITE_BUILD_ID': JSON.stringify(process.env.VITE_BUILD_ID || `v9-${Date.now()}`),
+  },
   server: {
     proxy: {
       // Same-origin cookie proxying: the browser only ever talks to

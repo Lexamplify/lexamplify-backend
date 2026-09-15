@@ -19,7 +19,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import AppRouter from '../AppRouter';
 import ContractAnalyzer from '../components/ContractAnalyzer';
 import CourtResources from '../components/CourtResources';
-import ConflictEngine from '../components/ConflictEngine';
+import ConflictEngine, { CACHE_VERSION, CACHE_TTL_MS } from '../components/ConflictEngine';
 import CalendarView from '../components/CalendarView';
 import CaseVault from '../components/CaseVault';
 import WarRoomView from '../components/WarRoomView';
@@ -480,6 +480,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
   it('persists session state across remounts and rehydrates from localStorage', async () => {
     localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      version: CACHE_VERSION,
       activeMode: 'cross-doc',
       docs: [
         { id: '1', name: 'Vendor Service Agreement.pdf' },
@@ -510,6 +511,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
   it('shows warning when attempting to force fresh re-analysis on restored session without live files', async () => {
     localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      version: CACHE_VERSION,
       activeMode: 'cross-doc',
       docs: [
         { id: '1', name: 'Vendor Service Agreement.pdf' },
@@ -542,6 +544,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
   it('clears persisted session when Analyze new documents is clicked', async () => {
     localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      version: CACHE_VERSION,
       activeMode: 'cross-doc',
       docs: [
         { id: '1', name: 'Vendor Service Agreement.pdf' },
@@ -571,6 +574,90 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     // Session cleared and upload dropzone restored
     expect(screen.getByText(/Drop your documents here/i)).toBeInTheDocument();
     expect(localStorage.getItem('lexamplify_conflict_engine_session_default')).toBeNull();
+  });
+
+  it('discards stale session with mismatched/missing version string and starts with clean empty state', async () => {
+    // Seed localStorage with legacy / outdated version
+    localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      version: 'v8-old',
+      activeMode: 'cross-doc',
+      docs: [{ id: 'old-1', name: 'Old Stale File.pdf' }],
+      activeConflicts: [],
+      hasAnalyzed: true,
+      savedIds: [],
+      reviewedIds: [],
+      currentFilter: 'all',
+      searchText: '',
+      summaryText: 'Stale 0 conflicts result',
+      runCounter: 1
+    }));
+
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    // Stale session is discarded and cleaned up from storage
+    expect(screen.getByText(/Conflict Triage Intake/i)).toBeInTheDocument();
+    expect(localStorage.getItem('lexamplify_conflict_engine_session_default')).toBeNull();
+
+    // Clicking Cross-Document Workspace shows clean dropzone without the old stale file
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document Workspace/i });
+    await userEvent.click(crossDocTab);
+    expect(screen.getByText(/Drop your documents here/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Old Stale File\.pdf/i)).not.toBeInTheDocument();
+  });
+
+  it('expires cached results older than CACHE_TTL_MS and triggers fresh analysis on run', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
+    const oldTimestamp = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(); // 7 hours ago (older than 6h TTL)
+
+    localStorage.setItem('lexamplify_conflict_engine_session_default', JSON.stringify({
+      version: CACHE_VERSION,
+      activeMode: 'cross-doc',
+      docs: [
+        { id: '1', name: 'Vendor Service Agreement.pdf' },
+        { id: '2', name: 'Software Development Agreement.pdf' }
+      ],
+      activeConflicts: mockConflictAnalysisResponse.conflicts,
+      hasAnalyzed: true,
+      savedIds: [],
+      reviewedIds: [],
+      currentFilter: 'all',
+      searchText: '',
+      summaryText: 'Restored session',
+      resultsCache: {
+        'softwaredevelopmentagreement|vendorserviceagreement': {
+          conflicts: mockConflictAnalysisResponse.conflicts,
+          summary: 'Old cached summary',
+          run: 1,
+          timestamp: oldTimestamp
+        }
+      },
+      runCounter: 1
+    }));
+
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    // On mount with expired cache, reset session to upload fresh live files
+    const resetBtn = screen.getByRole('button', { name: /Analyze new documents/i });
+    await userEvent.click(resetBtn);
+
+    const sampleBtn = screen.getByRole('button', { name: /Try with sample documents →/i });
+    await userEvent.click(sampleBtn);
+
+    const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
+    const initialFetchCount = fetchSpy.mock.calls.length;
+    await userEvent.click(runBtn);
+
+    await waitFor(() => {
+      expect(fetchSpy.mock.calls.length).toBeGreaterThan(initialFetchCount);
+    });
   });
 });
 
