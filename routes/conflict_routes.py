@@ -146,7 +146,9 @@ If no conflicts or contradictions exist between the documents, respond with:
 {{"conflicts": [], "summary": "No contradictions or conflicting clauses were identified across the provided documents."}}
 """
 
-        raw = ask_groq(system_prompt, user_prompt)
+        # Legal conflict-detection is strictly analytical, not creative:
+        # temperature=0.0 eliminates sampling variance across repeated runs.
+        raw = ask_groq(system_prompt, user_prompt, temperature=0.0)
         if not raw:
             return jsonify({'error': 'AI analysis failed to generate a response. Please try again.', 'code': 'LLM_EMPTY_RESPONSE'}), 502
 

@@ -388,6 +388,65 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     // Non-matching conflict should be hidden from index
     expect(screen.queryByText(/Jurisdiction Inconsistency/i)).not.toBeInTheDocument();
   });
+
+  it('deterministically serves cached results on repeated run clicks without new network requests', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
+    await userEvent.click(crossDocTab);
+
+    // Initial run: uncached, triggers backend fetch
+    const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
+    const callsBefore = fetchSpy.mock.calls.length;
+    await userEvent.click(runBtn);
+    await screen.findAllByText(/Inconsistent Payment Terms/i);
+
+    // Fresh label displayed for run #1
+    expect(screen.getByText(/freshly analyzed just now \(run #1\)/i)).toBeInTheDocument();
+    const callsAfterFirst = fetchSpy.mock.calls.length;
+    expect(callsAfterFirst).toBeGreaterThan(callsBefore);
+
+    // Repeat run on unchanged document set: instant cache hit, zero new fetch requests
+    await userEvent.click(runBtn);
+
+    // Cached label displayed for run #1
+    expect(screen.getByText(/cached result from run #1 — unchanged since then/i)).toBeInTheDocument();
+    expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst);
+  });
+
+  it('triggers a fresh backend call only when Force fresh re-analysis is clicked', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch');
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
+    await userEvent.click(crossDocTab);
+
+    const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
+    await userEvent.click(runBtn);
+    await screen.findAllByText(/Inconsistent Payment Terms/i);
+
+    const initialFetchCount = fetchSpy.mock.calls.length;
+
+    // Click explicit Force fresh re-analysis button
+    const forceRerunBtn = screen.getByRole('button', { name: /Force fresh re-analysis/i });
+    expect(forceRerunBtn).toBeInTheDocument();
+    await userEvent.click(forceRerunBtn);
+
+    // New backend fetch is made and run number increments
+    await waitFor(() => {
+      expect(screen.getByText(/freshly analyzed just now \(run #2\)/i)).toBeInTheDocument();
+    });
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(initialFetchCount);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
