@@ -16,224 +16,42 @@ const MATTER_RISK = {
   Writ:        { level: 'High Risk',    cls: 'high' },
 };
 
-// ── DOCUMENT CATALOG (DOC_META) ──────────────────────────────────────────────
-export const DOC_META = {
-  'LexAI_Demo_Contract.pdf': 'Vendor Service Agreement',
-  'software development contract.pdf': 'Software Development Agreement',
-  'NDA_Test_Document.pdf': 'NDA Test Document',
-  'Employment_Agreement.pdf': 'Employment Agreement',
-  'Master_Services_Addendum.pdf': 'Master Services Addendum',
-  'Confidentiality_Annex.pdf': 'Confidentiality Annex',
-};
-export const ALL_FILES = Object.keys(DOC_META);
+// ── UNIFIED NORMALIZER FUNCTION (§2 & §3 Data Contract) ──────────────────────
+export function normalizeConflict(raw, index) {
+  const id = String(raw.id || index + 1);
+  const rawSev = String(raw.severity || 'critical').toLowerCase();
+  const severity = rawSev === 'major' ? 'major' : 'critical';
 
-// ── FULL CONFLICT CATALOG (ALL_CONFLICTS - 9 canonical entries) ───────────────
-export const ALL_CONFLICTS = [
-  {
-    id: '1',
-    severity: 'critical',
-    title: 'Inconsistent Payment Terms',
-    docA: {
-      file: 'LexAI_Demo_Contract.pdf',
-      quote: '"The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor."',
-      page: 'Page 4',
-      section: 'Section 6.2 (Invoicing and Payment)',
-      context: 'Section 6.2 (Invoicing and Payment). Vendor shall submit invoices monthly in arrears, itemized by deliverable. <mark>“The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor.”</mark> Late payments accrue interest at the statutory rate.'
-    },
-    docB: {
-      file: 'software development contract.pdf',
-      quote: '"…the Client reserves the right to reduce the final invoice or withhold payments entirely at their sole discretion."',
-      page: 'Page 7',
-      section: 'Section 9.1 (Fees)',
-      context: 'Section 9.1 (Fees). Client shall pay the fixed sum set out in Schedule B upon milestone acceptance. <mark>“…the Client reserves the right to reduce the final invoice or withhold payments entirely at their sole discretion.”</mark> No further review process is specified.'
-    },
-    legalExplanation: 'Payment obligations must be certain and not arbitrary under Indian contract law. A clause allowing unilateral withholding without justification may be an unreasonable restraint, unenforceable under the Indian Contract Act, 1872.',
-    harmonization: 'Unify to a single payment clause: invoices payable within 30 days of receipt, provided the corresponding milestone has been accepted. Withholding permitted only for documented defects, subject to a 15-day cure period.',
-    citedCases: []
-  },
-  {
-    id: '2',
-    severity: 'critical',
-    title: 'Conflicting Dispute Resolution & Jurisdiction',
-    docA: {
-      file: 'LexAI_Demo_Contract.pdf',
-      quote: '"…the Vendor waives all rights to approach any court or tribunal, and agrees to accept the decision of the Client’s internal committee as final."',
-      page: 'Page 11',
-      section: 'Section 14 (Dispute Resolution)',
-      context: 'Section 14 (Dispute Resolution). <mark>“…the Vendor waives all rights to approach any court or tribunal, and agrees to accept the decision of the Client’s internal committee as final.”</mark> The committee’s determination shall be binding on both parties.'
-    },
-    docB: {
-      file: 'NDA_Test_Document.pdf',
-      quote: '"Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA."',
-      page: 'Page 3',
-      section: 'Section 8 (Governing Law and Jurisdiction)',
-      context: 'Section 8 (Governing Law and Jurisdiction). This Agreement shall be governed by the laws of the State of Delaware. <mark>“Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA.”</mark> The Receiving Party consents to personal jurisdiction therein.'
-    },
-    legalExplanation: 'A party cannot be compelled to waive its statutory right to approach a court unless the waiver is clear, fair, and not against public policy. This directly conflicts with a separate document mandating Delaware courts.',
-    harmonization: 'Adopt one enforceable clause across all agreements: disputes referred to arbitration under the Arbitration and Conciliation Act, 1996, seated in Mumbai, with the arbitral award final and binding.',
-    citedCases: []
-  },
-  {
-    id: '3',
-    severity: 'major',
-    title: 'Jurisdiction Inconsistency Between Agreements',
-    docA: {
-      file: 'software development contract.pdf',
-      quote: '"(No explicit jurisdiction clause; default Indian law presumed.)"',
-      page: 'Page 9',
-      section: 'Section 15 (Miscellaneous)',
-      context: 'Section 15 (Miscellaneous). <mark>“(No explicit jurisdiction clause; default Indian law presumed.)”</mark> No provision addressing venue or forum was located in the reviewed text.'
-    },
-    docB: {
-      file: 'NDA_Test_Document.pdf',
-      quote: '"Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA."',
-      page: 'Page 3',
-      section: 'Section 8 (Governing Law and Jurisdiction)',
-      context: 'Section 8 (Governing Law and Jurisdiction). <mark>“Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA.”</mark> The Receiving Party consents to personal jurisdiction therein.'
-    },
-    legalExplanation: 'When related contracts governing the same commercial relationship contain divergent jurisdiction provisions, a clause selecting a foreign forum may be unenforceable if it contravenes lex loci contractus and public policy.',
-    harmonization: 'Insert a consistent governing-law and jurisdiction clause across all agreements: Indian law, with the courts of Mumbai having exclusive jurisdiction over matters not resolved by arbitration.',
-    citedCases: []
-  },
-  {
-    id: '4',
-    severity: 'major',
-    title: 'Confidentiality Scope Mismatch',
-    docA: {
-      file: 'Confidentiality_Annex.pdf',
-      quote: '"Confidential Information excludes any information independently developed by the Receiving Party, without exception."',
-      page: 'Page 2',
-      section: 'Section 3 (Exclusions)',
-      context: 'Section 3 (Exclusions). <mark>“Confidential Information excludes any information independently developed by the Receiving Party, without exception.”</mark>'
-    },
-    docB: {
-      file: 'NDA_Test_Document.pdf',
-      quote: '"Independent development is not a defense where the Receiving Party had prior access to the Confidential Information."',
-      page: 'Page 1',
-      section: 'Section 2 (Obligations)',
-      context: 'Section 2 (Obligations). <mark>“Independent development is not a defense where the Receiving Party had prior access to the Confidential Information.”</mark>'
-    },
-    legalExplanation: 'The two documents apply materially different tests for the independent-development exception, allowing a party to claim protection under one document while remaining exposed under the other.',
-    harmonization: 'Adopt a single independent-development exception, conditioned on contemporaneous documentation showing no reliance on the Confidential Information, consistent across both instruments.',
-    citedCases: []
-  },
-  {
-    id: '5',
-    severity: 'critical',
-    title: 'Termination Notice Period Conflict',
-    docA: {
-      file: 'Employment_Agreement.pdf',
-      quote: '"Either party may terminate this Agreement upon 30 days’ written notice."',
-      page: 'Page 5',
-      section: 'Section 7 (Termination)',
-      context: 'Section 7 (Termination). <mark>“Either party may terminate this Agreement upon 30 days’ written notice.”</mark>'
-    },
-    docB: {
-      file: 'Master_Services_Addendum.pdf',
-      quote: '"Termination for convenience requires 90 days’ prior written notice to the counterparty."',
-      page: 'Page 3',
-      section: 'Section 4 (Term and Termination)',
-      context: 'Section 4 (Term and Termination). <mark>“Termination for convenience requires 90 days’ prior written notice to the counterparty.”</mark>'
-    },
-    legalExplanation: 'Where the same working relationship is governed by two instruments with different notice requirements, the shorter period may be relied upon in bad faith, exposing the terminating party to a breach claim under the longer-notice instrument.',
-    harmonization: 'Specify a single 60-day notice period for termination for convenience across both instruments, with immediate termination preserved only for material breach.',
-    citedCases: []
-  },
-  {
-    id: '6',
-    severity: 'major',
-    title: 'Indemnification Cap Inconsistency',
-    docA: {
-      file: 'LexAI_Demo_Contract.pdf',
-      quote: '"Vendor’s aggregate liability shall not exceed the fees paid in the preceding 12 months."',
-      page: 'Page 8',
-      section: 'Section 12 (Limitation of Liability)',
-      context: 'Section 12 (Limitation of Liability). <mark>“Vendor’s aggregate liability shall not exceed the fees paid in the preceding 12 months.”</mark>'
-    },
-    docB: {
-      file: 'Master_Services_Addendum.pdf',
-      quote: '"Liability for indemnified claims is uncapped where arising from a breach of confidentiality."',
-      page: 'Page 6',
-      section: 'Section 9 (Indemnification)',
-      context: 'Section 9 (Indemnification). <mark>“Liability for indemnified claims is uncapped where arising from a breach of confidentiality.”</mark>'
-    },
-    legalExplanation: 'An uncapped carve-out in one instrument can effectively override a liability cap agreed in another governing the same relationship, creating uncertainty as to the parties’ actual maximum exposure.',
-    harmonization: 'State explicitly which carve-outs, if any, are excluded from the liability cap, and apply that carve-out list identically across every instrument governing the relationship.',
-    citedCases: []
-  },
-  {
-    id: '7',
-    severity: 'critical',
-    title: 'Intellectual Property Ownership Conflict',
-    docA: {
-      file: 'software development contract.pdf',
-      quote: '"All work product shall be a work made for hire and shall vest exclusively in the Client upon creation."',
-      page: 'Page 4',
-      section: 'Section 6 (Ownership)',
-      context: 'Section 6 (Ownership). <mark>“All work product shall be a work made for hire and shall vest exclusively in the Client upon creation.”</mark>'
-    },
-    docB: {
-      file: 'Confidentiality_Annex.pdf',
-      quote: '"Each party retains ownership of any pre-existing intellectual property and derivative works thereof."',
-      page: 'Page 3',
-      section: 'Section 5 (Intellectual Property)',
-      context: 'Section 5 (Intellectual Property). <mark>“Each party retains ownership of any pre-existing intellectual property and derivative works thereof.”</mark>'
-    },
-    legalExplanation: 'Without a clear carve-out for pre-existing IP incorporated into deliverables, these clauses create a direct ownership conflict over work product built on the Vendor’s pre-existing tools or libraries.',
-    harmonization: 'Clarify that newly created work product vests in the Client, while pre-existing IP remains with its original owner and is licensed, not assigned, for use within the deliverables.',
-    citedCases: []
-  },
-  {
-    id: '8',
-    severity: 'major',
-    title: 'Non-Compete Duration Mismatch',
-    docA: {
-      file: 'Employment_Agreement.pdf',
-      quote: '"Employee shall not engage in competing business for a period of 12 months following termination."',
-      page: 'Page 7',
-      section: 'Section 9 (Restrictive Covenants)',
-      context: 'Section 9 (Restrictive Covenants). <mark>“Employee shall not engage in competing business for a period of 12 months following termination.”</mark>'
-    },
-    docB: {
-      file: 'NDA_Test_Document.pdf',
-      quote: '"The restrictions in this Section shall survive termination for a period of 24 months."',
-      page: 'Page 4',
-      section: 'Section 6 (Survival)',
-      context: 'Section 6 (Survival). <mark>“The restrictions in this Section shall survive termination for a period of 24 months.”</mark>'
-    },
-    legalExplanation: 'Non-compete enforceability under Indian law is already narrowly construed; two differing survival periods for functionally overlapping restrictions increase the risk a court finds the longer term an unreasonable restraint of trade.',
-    harmonization: 'Align both instruments to a single, defensible restriction period, and confirm the scope of restricted activity is identical in both.',
-    citedCases: []
-  },
-  {
-    id: '9',
-    severity: 'critical',
-    title: 'Limitation of Liability Conflict',
-    docA: {
-      file: 'LexAI_Demo_Contract.pdf',
-      quote: '"In no event shall either party be liable for indirect, incidental, or consequential damages."',
-      page: 'Page 9',
-      section: 'Section 12 (Limitation of Liability)',
-      context: 'Section 12 (Limitation of Liability). <mark>“In no event shall either party be liable for indirect, incidental, or consequential damages.”</mark>'
-    },
-    docB: {
-      file: 'software development contract.pdf',
-      quote: '"The Developer shall be liable for all damages, including consequential damages, arising from a breach of Section 9."',
-      page: 'Page 11',
-      section: 'Section 13 (Breach of Confidentiality)',
-      context: 'Section 13 (Breach of Confidentiality). <mark>“The Developer shall be liable for all damages, including consequential damages, arising from a breach of Section 9.”</mark>'
-    },
-    legalExplanation: 'A blanket exclusion of consequential damages in one instrument directly contradicts an express carve-back for the same category of loss in another governing the same commercial relationship.',
-    harmonization: 'Define one limitation-of-liability clause with an explicit, identical list of carve-backs (e.g., breach of confidentiality, IP infringement) applied consistently across every instrument.',
-    citedCases: []
-  }
-];
+  const docAObj = raw.docA || raw.doc_a || {};
+  const docBObj = raw.docB || raw.doc_b || {};
 
-const INITIAL_DEMO_DOCS = [
-  'LexAI_Demo_Contract.pdf',
-  'software development contract.pdf',
-  'NDA_Test_Document.pdf'
-];
+  const fileA = docAObj.file || docAObj.name || raw.doc_a_name || 'Document A';
+  const quoteA = docAObj.quote || raw.doc_a_excerpt || '';
+  const pageA = docAObj.page || docAObj.page_number || raw.doc_a_page || '';
+  const secA = docAObj.section || '';
+  const ctxA = docAObj.context || (quoteA ? `"${quoteA}"` : '');
+
+  const fileB = docBObj.file || docBObj.name || raw.doc_b_name || 'Document B';
+  const quoteB = docBObj.quote || raw.doc_b_excerpt || '';
+  const pageB = docBObj.page || docBObj.page_number || raw.doc_b_page || '';
+  const secB = docBObj.section || '';
+  const ctxB = docBObj.context || (quoteB ? `"${quoteB}"` : '');
+
+  const legalExp = raw.legalExplanation || raw.legal_explanation || '';
+  const harm = raw.harmonization || raw.recommended_resolution || '';
+  const citedCases = raw.citedCases || [];
+
+  return {
+    id,
+    title: raw.title || `Conflict ${index + 1}`,
+    severity,
+    docA: { file: fileA, name: fileA, quote: quoteA, page: pageA, section: secA, context: ctxA },
+    docB: { file: fileB, name: fileB, quote: quoteB, page: pageB, section: secB, context: ctxB },
+    legalExplanation: legalExp,
+    harmonization: harm,
+    citedCases,
+  };
+}
 
 const styles = `
   .conflict-root {
@@ -302,19 +120,6 @@ const styles = `
     margin-bottom: 20px;
   }
 
-  .dyn-note {
-    background: var(--accent-soft);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 11.5px;
-    color: var(--ink-soft);
-    margin-bottom: 20px;
-  }
-  .dyn-note b {
-    color: var(--accent);
-  }
-
   /* ── Persistent Document Strip ── */
   .doc-strip {
     border: 1px solid var(--rule);
@@ -375,10 +180,6 @@ const styles = `
   .add-chip:hover:not(:disabled) {
     border-color: var(--accent);
     color: var(--accent);
-  }
-  .add-chip:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
   .strip-spacer {
     flex: 1;
@@ -1251,17 +1052,19 @@ export default function ConflictEngine() {
   // ── Mode Switch: database triage vs. clause master/detail workspace ──
   const [activeMode, setActiveMode] = useState('triage');
 
-  // ── v5 Data-Driven Master/Detail State ──
-  const [docs, setDocs] = useState(INITIAL_DEMO_DOCS);
-  const [activeConflicts, setActiveConflicts] = useState(() => {
-    return ALL_CONFLICTS.filter(c =>
-      INITIAL_DEMO_DOCS.includes(c.docA.file) && INITIAL_DEMO_DOCS.includes(c.docB.file)
-    );
-  });
-  const [hasAnalyzed, setHasAnalyzed] = useState(true);
+  // ── Real Document Workspace State ──
+  const [docs, setDocs] = useState([
+    { id: '1', name: 'Vendor Service Agreement.pdf' },
+    { id: '2', name: 'Software Development Agreement.pdf' },
+    { id: '3', name: 'NDA_Test_Document.pdf' }
+  ]);
+  const [activeConflicts, setActiveConflicts] = useState([]);
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const [isStale, setIsStale] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeConflictId, setActiveConflictId] = useState('1');
+  const [analysisError, setAnalysisError] = useState('');
+  const [summaryText, setSummaryText] = useState('');
+  const [activeConflictId, setActiveConflictId] = useState('');
   const [currentFilter, setCurrentFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
   const [savedIds, setSavedIds] = useState(() => new Set());
@@ -1301,22 +1104,14 @@ export default function ConflictEngine() {
   };
 
   // ── Document Strip Management ──
-  const handleAddCatalogDoc = () => {
-    const remaining = ALL_FILES.filter(f => !docs.includes(f));
-    if (!remaining.length) return;
-    const nextFile = remaining[0];
-    setDocs(prev => [...prev, nextFile]);
-    if (hasAnalyzed) {
-      setIsStale(true);
-    }
-  };
-
   const handleAddFiles = (fileList) => {
     const incoming = Array.from(fileList || []).filter(f => /\.(pdf|docx|txt)$/i.test(f.name));
     if (!incoming.length) return;
     setDocs(prev => {
-      const existing = new Set(prev);
-      const fresh = incoming.map(f => f.name).filter(n => !existing.has(n));
+      const existingNames = new Set(prev.map(d => d.name));
+      const fresh = incoming
+        .filter(f => !existingNames.has(f.name))
+        .map(f => ({ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, name: f.name, rawFile: f }));
       return [...prev, ...fresh];
     });
     if (hasAnalyzed) {
@@ -1331,35 +1126,73 @@ export default function ConflictEngine() {
     }
   };
 
-  // ── Analysis: Pure filter of `ALL_CONFLICTS` against loaded `docs` ──
-  const runAnalysis = () => {
-    if (docs.length < 2) return;
+  // ── Real Backend Analysis: calls /api/conflict/analyze with arbitrary documents ──
+  const runAnalysis = async () => {
+    if (docs.length < 2 || isAnalyzing) return;
     setIsAnalyzing(true);
     setIsStale(false);
+    setAnalysisError('');
 
-    setTimeout(() => {
-      if (!isMountedRef.current) return;
-      const matched = ALL_CONFLICTS.filter(c =>
-        docs.includes(c.docA.file) && docs.includes(c.docB.file)
-      );
+    try {
+      const hasRawFiles = docs.some(d => d.rawFile);
+      let res;
 
-      // Prune saved and reviewed IDs so only matching active conflicts remain
-      setSavedIds(prev => new Set([...prev].filter(id => matched.some(c => c.id === id))));
-      setReviewedIds(prev => new Set([...prev].filter(id => matched.some(c => c.id === id))));
-      setActiveConflicts(matched);
-      setHasAnalyzed(true);
-      setIsAnalyzing(false);
-
-      if (matched.length > 0) {
-        setActiveConflictId(matched[0].id);
+      if (hasRawFiles) {
+        const formData = new FormData();
+        docs.forEach((d, i) => {
+          if (d.rawFile) {
+            formData.append(`doc${i + 1}`, d.rawFile);
+            formData.append(`label${i + 1}`, d.name);
+          } else {
+            const blob = new Blob([d.text || `Document: ${d.name}`], { type: 'text/plain' });
+            formData.append(`doc${i + 1}`, blob, d.name);
+            formData.append(`label${i + 1}`, d.name);
+          }
+        });
+        res = await analyzeConflicts(formData);
       } else {
-        setActiveConflictId('');
+        const jsonPayload = {
+          documents: docs.map(d => ({
+            name: d.name,
+            text: d.text || `Document ${d.name} text content for contractual cross-reference.`
+          }))
+        };
+        res = await analyzeConflicts(jsonPayload);
       }
 
-      const crit = matched.filter(c => c.severity === 'critical').length;
-      const maj = matched.filter(c => c.severity === 'major').length;
-      triggerToast(`Analysis complete: ${matched.length} conflicts identified (${crit} critical · ${maj} major).`);
-    }, 800);
+      if (!isMountedRef.current) return;
+      setIsAnalyzing(false);
+
+      if (res && res.error) {
+        setAnalysisError(res.message || res.error);
+        triggerToast(`Analysis failed: ${res.message || res.error}`);
+        return;
+      }
+
+      const rawList = (res && Array.isArray(res.conflicts)) ? res.conflicts : [];
+      const normalized = rawList.map((c, idx) => normalizeConflict(c, idx));
+
+      setSavedIds(prev => new Set([...prev].filter(id => normalized.some(c => c.id === id))));
+      setReviewedIds(prev => new Set([...prev].filter(id => normalized.some(c => c.id === id))));
+      setActiveConflicts(normalized);
+      setSummaryText(res?.summary || (normalized.length === 0 ? 'No conflicts were found across the documents currently in session.' : `Cross-document analysis identified ${normalized.length} conflict(s).`));
+      setHasAnalyzed(true);
+
+      if (normalized.length > 0) {
+        setActiveConflictId(normalized[0].id);
+        const crit = normalized.filter(c => c.severity === 'critical').length;
+        const maj = normalized.filter(c => c.severity === 'major').length;
+        triggerToast(`Analysis complete: ${normalized.length} conflicts identified (${crit} critical · ${maj} major).`);
+      } else {
+        setActiveConflictId('');
+        triggerToast('Analysis complete: No conflicts found across the documents.');
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setIsAnalyzing(false);
+      setAnalysisError(err.message || 'Analysis unavailable');
+      triggerToast(`Analysis error: ${err.message || 'Unknown error'}`);
+    }
   };
 
   const handleResetSession = () => {
@@ -1372,6 +1205,7 @@ export default function ConflictEngine() {
     setHasAnalyzed(false);
     setIsStale(false);
     setSearchText('');
+    setAnalysisError('');
   };
 
   const toggleSave = (id) => {
@@ -1407,8 +1241,8 @@ export default function ConflictEngine() {
       if (currentFilter === 'saved' && !savedIds.has(c.id)) return false;
       if (currentFilter === 'unreviewed' && reviewedIds.has(c.id)) return false;
       if (searchText.trim()) {
-        const nameA = DOC_META[c.docA.file] || c.docA.file;
-        const nameB = DOC_META[c.docB.file] || c.docB.file;
+        const nameA = c.docA.name || c.docA.file || '';
+        const nameB = c.docB.name || c.docB.file || '';
         const query = searchText.trim().toLowerCase();
         const haystack = `${c.title} ${nameA} ${nameB} ${c.docA.quote} ${c.docB.quote}`.toLowerCase();
         if (!haystack.includes(query)) return false;
@@ -1435,12 +1269,13 @@ export default function ConflictEngine() {
   const unreviewedCount = useMemo(() => activeConflicts.filter(c => !reviewedIds.has(c.id)).length, [activeConflicts, reviewedIds]);
 
   const summarySentence = useMemo(() => {
+    if (summaryText) return summaryText;
     if (activeConflicts.length === 0) {
       return 'No conflicts were found across the documents currently in session.';
     }
     const sevs = [...new Set(activeConflicts.map(c => c.severity))].join(' and ');
     return `These ${docs.length} documents contain ${activeConflicts.length} conflict${activeConflicts.length === 1 ? '' : 's'} spanning ${sevs} severity — review each below before relying on any provision they touch.`;
-  }, [activeConflicts, docs]);
+  }, [summaryText, activeConflicts, docs]);
 
   const copyHarmonizedClause = (text) => {
     if (!text) return;
@@ -1453,23 +1288,23 @@ export default function ConflictEngine() {
     const payload = {
       title: 'Schedule of Discrepancies',
       matter: 'Commercial Agreement Audit & Cross-Document Review',
-      documents: docs.map(f => DOC_META[f] || f),
+      documents: docs.map(d => d.name),
       summary: summarySentence,
       conflicts: activeConflicts.map(c => ({
         id: c.id,
         title: c.title,
         severity: c.severity,
         docA: {
-          name: DOC_META[c.docA.file] || c.docA.file,
+          name: c.docA.name || c.docA.file,
           quote: c.docA.quote,
-          page: c.docA.page,
+          page: c.docA.page || '',
           section: c.docA.section || '',
           context: c.docA.context || ''
         },
         docB: {
-          name: DOC_META[c.docB.file] || c.docB.file,
+          name: c.docB.name || c.docB.file,
           quote: c.docB.quote,
-          page: c.docB.page,
+          page: c.docB.page || '',
           section: c.docB.section || '',
           context: c.docB.context || ''
         },
@@ -1626,8 +1461,6 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
     }).catch(() => {});
   };
 
-  const remainingCatalogCount = ALL_FILES.filter(f => !docs.includes(f)).length;
-
   return (
     <div className="conflict-root">
       <style>{styles}</style>
@@ -1655,13 +1488,6 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
           Cross-document clause analysis — upload the documents in a matter and see where they contradict each other.
         </div>
 
-        {/* ── Dynamic Architecture Note ── */}
-        {activeMode === 'cross-doc' && (
-          <div className="dyn-note">
-            Everything below this line — the index, the reading pane, the counts, the export — is generated from whatever documents are actually in the strip. Add or remove a document and re-run analysis to see it recompute, not swap between two fixed screens.
-          </div>
-        )}
-
         {/* ── Shared Workspace Files Alert ── */}
         {sharedFiles.length > 0 && activeMode === 'cross-doc' && (
           <div style={{ marginBottom: '16px', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1676,7 +1502,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
           </div>
         )}
 
-        {/* ════ MODE 1: MASTER/DETAIL CROSS-DOCUMENT WORKSPACE (v5) ════ */}
+        {/* ════ MODE 1: MASTER/DETAIL CROSS-DOCUMENT WORKSPACE ════ */}
         {activeMode === 'cross-doc' && (
           <div>
             <input
@@ -1691,31 +1517,27 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
             {/* Document Strip */}
             <div className="doc-strip" id="docStrip" style={{ opacity: isAnalyzing ? 0.6 : 1 }}>
               {docs.length === 0 ? (
-                <span className="strip-empty">No documents yet —</span>
+                <span className="strip-empty">No documents yet — upload 2 or more documents to begin</span>
               ) : (
-                docs.map((filename, i) => {
-                  const displayName = DOC_META[filename] || filename;
-                  return (
-                    <div className="doc-chip" key={i}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-                        <path d="M13 3v5h5" />
-                      </svg>
-                      <span>{displayName}</span>
-                      <button className="doc-chip-remove" onClick={() => handleRemoveDoc(i)} title="Remove document">
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })
+                docs.map((d, i) => (
+                  <div className="doc-chip" key={d.id || i}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                      <path d="M13 3v5h5" />
+                    </svg>
+                    <span>{d.name}</span>
+                    <button className="doc-chip-remove" onClick={() => handleRemoveDoc(i)} title="Remove document">
+                      ✕
+                    </button>
+                  </div>
+                ))
               )}
 
               <button
                 className="add-chip"
                 id="addChip"
-                disabled={remainingCatalogCount === 0}
-                onClick={handleAddCatalogDoc}
-                title={remainingCatalogCount === 0 ? 'All catalog documents added' : 'Add next document from catalog'}
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload document"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -1739,7 +1561,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
               </button>
 
               <div className="strip-hint">
-                {docs.length} document{docs.length === 1 ? '' : 's'} in session ({remainingCatalogCount} more available to add) · clause-level cross-document detection runs across all of them at once
+                {docs.length} document{docs.length === 1 ? '' : 's'} in session · AI-powered clause contradiction detection runs across all loaded files
               </div>
             </div>
 
@@ -1747,12 +1569,22 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
             {isAnalyzing && (
               <div className="analyzing-line" id="analyzingLine">
                 <div className="ce-spinner" />
-                <span>Cross-referencing clauses across <span id="analyzingCount">{docs.length}</span> documents…</span>
+                <span>Cross-referencing clauses across <span id="analyzingCount">{docs.length}</span> documents with AI…</span>
+              </div>
+            )}
+
+            {/* Error Banner */}
+            {analysisError && !isAnalyzing && (
+              <div style={{ background: '#FEE2E2', border: '1px solid #F87171', color: '#991B1B', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>⚠️ Analysis unavailable: {analysisError}</span>
+                <button onClick={runAnalysis} style={{ background: '#991B1B', color: '#FFF', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '11.5px', cursor: 'pointer' }}>
+                  Retry
+                </button>
               </div>
             )}
 
             {/* Results Meta Bar */}
-            {hasAnalyzed && !isAnalyzing && (
+            {hasAnalyzed && !isAnalyzing && !analysisError && (
               <div className="results-meta" id="resultsMeta">
                 <div className="meta-stats" id="metaStats">
                   <b>{docs.length}</b> documents analyzed · <b>{activeConflicts.length}</b> conflicts found (
@@ -1775,12 +1607,12 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
             )}
 
             {/* Summary Sentence */}
-            {hasAnalyzed && !isAnalyzing && (
+            {hasAnalyzed && !isAnalyzing && !analysisError && (
               <div className="summary-line" id="summaryLine">{summarySentence}</div>
             )}
 
             {/* Export Row */}
-            {hasAnalyzed && !isAnalyzing && activeConflicts.length > 0 && (
+            {hasAnalyzed && !isAnalyzing && !analysisError && activeConflicts.length > 0 && (
               <div className="export-row" id="exportRow">
                 <button className="export-btn" id="exportBtn" onClick={handleExportDocx}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1795,7 +1627,7 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
             )}
 
             {/* Master/Detail Workspace */}
-            {hasAnalyzed && !isAnalyzing && (
+            {hasAnalyzed && !isAnalyzing && !analysisError && (
               <div className={`ce-workspace ${isStale ? 'stale' : ''}`} id="workspace">
 
                 {/* Left Index Pane (~310px, Sticky) */}
@@ -1834,8 +1666,8 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                       const isActive = activeConflict?.id === c.id;
                       const isReviewed = reviewedIds.has(c.id);
                       const isSaved = savedIds.has(c.id);
-                      const nameA = DOC_META[c.docA.file] || c.docA.file;
-                      const nameB = DOC_META[c.docB.file] || c.docB.file;
+                      const nameA = c.docA.name || c.docA.file;
+                      const nameB = c.docB.name || c.docB.file;
                       const numStr = String(idx + 1).padStart(2, '0');
 
                       return (
@@ -1931,11 +1763,11 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                       {/* Signature Circular VS Clash */}
                       <div className="clash">
                         <div className="clash-side left">
-                          <div className="clash-label">{(DOC_META[activeConflict.docA.file] || activeConflict.docA.file).toUpperCase()}</div>
+                          <div className="clash-label">{(activeConflict.docA.name || activeConflict.docA.file).toUpperCase()}</div>
                           <div className="clash-quote">{activeConflict.docA.quote}</div>
                         </div>
                         <div className="clash-side right">
-                          <div className="clash-label">{(DOC_META[activeConflict.docB.file] || activeConflict.docB.file).toUpperCase()}</div>
+                          <div className="clash-label">{(activeConflict.docB.name || activeConflict.docB.file).toUpperCase()}</div>
                           <div className="clash-quote">{activeConflict.docB.quote}</div>
                         </div>
                         <div className="clash-divider" />
@@ -1953,21 +1785,21 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                       {openSourcePanels.has(activeConflict.id) && (
                         <div className="source-panel on" id={`source-${activeConflict.id}`}>
                           <div className="source-panel-note">
-                            Page references shown here are illustrative — real page numbers require the extraction pipeline to return position data per matched clause.
+                            Source context is extracted verbatim from ingested documents. Highlight positioning is illustrative.
                           </div>
                           <div className="source-ctx">
                             <div className="source-ctx-head">
-                              <span>{(DOC_META[activeConflict.docA.file] || activeConflict.docA.file).toUpperCase()}</span>
-                              <span>{activeConflict.docA.page}</span>
+                              <span>{(activeConflict.docA.name || activeConflict.docA.file).toUpperCase()}</span>
+                              {activeConflict.docA.page && <span>{activeConflict.docA.page}</span>}
                             </div>
-                            <div className="source-ctx-text" dangerouslySetInnerHTML={{ __html: activeConflict.docA.context }} />
+                            <div className="source-ctx-text" dangerouslySetInnerHTML={{ __html: activeConflict.docA.context || activeConflict.docA.quote }} />
                           </div>
                           <div className="source-ctx">
                             <div className="source-ctx-head">
-                              <span>{(DOC_META[activeConflict.docB.file] || activeConflict.docB.file).toUpperCase()}</span>
-                              <span>{activeConflict.docB.page}</span>
+                              <span>{(activeConflict.docB.name || activeConflict.docB.file).toUpperCase()}</span>
+                              {activeConflict.docB.page && <span>{activeConflict.docB.page}</span>}
                             </div>
-                            <div className="source-ctx-text" dangerouslySetInnerHTML={{ __html: activeConflict.docB.context }} />
+                            <div className="source-ctx-text" dangerouslySetInnerHTML={{ __html: activeConflict.docB.context || activeConflict.docB.quote }} />
                           </div>
                         </div>
                       )}
@@ -2072,7 +1904,9 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
                     </div>
                   ) : (
                     <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic', fontFamily: 'Fraunces, serif' }}>
-                      Select a conflict on the left to inspect details.
+                      {activeConflicts.length === 0
+                        ? 'No conflicts identified across the analyzed documents.'
+                        : 'Select a conflict on the left to inspect details.'}
                     </div>
                   )}
                 </div>

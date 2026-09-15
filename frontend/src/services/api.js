@@ -798,15 +798,18 @@ export const saveClearanceMemo = async (memoData) => {
 };
 
 /**
- * Runs a cross-document conflict check on uploaded files.
- * @param {FormData} formData 
+ * Runs a cross-document conflict check on uploaded files or JSON payload.
+ * @param {FormData|object} payload 
  */
-export const analyzeConflicts = async (formData) => {
+export const analyzeConflicts = async (payload) => {
   try {
+    const isFormData = typeof FormData !== 'undefined' && payload instanceof FormData;
     const response = await fetch(`${API_BASE_URL}/api/conflict/analyze`, {
       method: 'POST',
-      headers: getHeaders(true), // true for isFormData
-      body: formData,
+      headers: isFormData
+        ? getHeaders(true)
+        : { 'Content-Type': 'application/json', ...getHeaders() },
+      body: isFormData ? payload : JSON.stringify(payload),
     });
     return await handleResponse(response);
   } catch (error) {

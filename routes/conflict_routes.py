@@ -46,79 +46,190 @@ def conflict_engine():
 
 
 @conflict_bp.route('/api/conflict/analyze', methods=['POST'])
+@conflict_bp.route('/api/conflict-engine/analyze', methods=['POST'])
 def analyze_conflicts():
-  try:
-    docs = []
-    # Support unlimited documents — frontend sends doc1, doc2, doc3, ... docN
-    slot = 1
-    while True:
-        key = f'doc{slot}'
-        label_key = f'label{slot}'
-        f = request.files.get(key)
-        if f is None:
-            break  # no more slots
-        if f.filename:
-            label = request.form.get(label_key) or f.filename
-            text = extract_text(f.read(), f.filename)
-            # Per-document truncation to prevent LLM context exhaustion
-            per_doc_limit = max(1500, 7000 // max(slot, 1))
+    try:
+        from utils.ai_helper import ask_groq
+        docs = []
+
+        # 1. Check if payload is JSON
+        json_data = request.get_json(silent=True)
+        if json_data and isinstance(json_data, dict):
+            raw_docs = json_data.get('documents') or json_data.get('docs') or []
+            for d in raw_docs:
+                if isinstance(d, dict):
+                    name = d.get('name') or d.get('title') or d.get('file') or 'Document'
+                    text = d.get('text') or d.get('content') or ''
+                    if text.strip():
+                        docs.append({'name': name, 'text': text})
+
+        # 2. Check if payload is multipart/form-data
+        if not docs and request.files:
+            # Check slot pattern (doc1, doc2, ... docN)
+            slot = 1
+            while True:
+                key = f'doc{slot}'
+                label_key = f'label{slot}'
+                f = request.files.get(key)
+                if f is None:
+                    break
+                if f.filename:
+                    label = request.form.get(label_key) or f.filename
+                    text = extract_text(f.read(), f.filename)
+                    docs.append({'name': label, 'text': text})
+                slot += 1
+
+            # Also check getlist('files') or getlist('documents')
+            for f in request.files.getlist('files') + request.files.getlist('documents'):
+                if f and f.filename and not any(d['name'] == f.filename for d in docs):
+                    text = extract_text(f.read(), f.filename)
+                    docs.append({'name': f.filename, 'text': text})
+
+        if len(docs) < 2:
+            return jsonify({'error': 'Upload or provide at least 2 documents to analyze cross-document conflicts.'}), 400
+
+        # Context length control per document
+        truncated_docs = []
+        per_doc_limit = max(1500, 7000 // len(docs))
+        for d in docs:
+            text = d['text']
             if len(text) > per_doc_limit:
-                text = text[:per_doc_limit] + '\n... [truncated]'
-            docs.append({'name': label, 'text': text})
-        slot += 1
+                text = text[:per_doc_limit] + '\n... [truncated for token budget]'
+            truncated_docs.append({'name': d['name'], 'text': text})
 
-    if len(docs) < 2:
-        return jsonify({'error': 'Upload at least 2 documents to analyze conflicts.'}), 400
+        doc_sections = '\n\n'.join(
+            [f'=== Document {i+1}: {d["name"]} ===\n{d["text"]}' for i, d in enumerate(truncated_docs)]
+        )
 
-    doc_sections = '\n\n'.join(
-        [f'Document {i+1} ({d["name"]}):\n{d["text"]}' for i, d in enumerate(docs)]
-    )
+        system_prompt = (
+            "You are an expert Indian contract lawyer and legal auditor. Your role is to perform rigorous cross-document "
+            "clause analysis across multiple agreements governing a commercial, civil, or employment relationship. "
+            "Identify real legal and commercial contradictions, conflicting notice periods, conflicting jurisdiction clauses, "
+            "contradictory liability caps, inconsistent payment terms, IP ownership disputes, and confidentiality mismatches under Indian Law."
+        )
 
-    prompt = f"""You are an expert Indian contract lawyer reviewing multiple legal documents for conflicts.
+        user_prompt = f"""Review the following {len(docs)} documents for contradictions and conflicting clauses:
 
 {doc_sections}
 
-Identify ALL conflicts, contradictions, and inconsistencies between these documents.
-For each conflict found, respond ONLY in this exact JSON format (no markdown, no extra text):
+Identify ALL direct conflicts and contradictions between these documents.
+For each conflict found, respond ONLY in valid JSON matching this exact structure:
 {{
   "conflicts": [
     {{
-      "title": "conflict title",
-      "severity": "Critical",
-      "doc_a_name": "document name",
-      "doc_a_excerpt": "exact conflicting text from doc A",
-      "doc_b_name": "document name",
-      "doc_b_excerpt": "exact conflicting text from doc B",
-      "legal_explanation": "why this matters under Indian law",
-      "recommended_resolution": "AI suggested harmonized clause"
+      "id": "1",
+      "title": "Clear concise conflict title",
+      "severity": "critical",
+      "docA": {{
+        "file": "exact filename of document A",
+        "quote": "exact verbatim excerpt from document A",
+        "page": "page reference if mentioned in text, otherwise omit or empty",
+        "section": "section name/number if mentioned in text",
+        "context": "surrounding paragraph context if available"
+      }},
+      "docB": {{
+        "file": "exact filename of document B",
+        "quote": "exact verbatim excerpt from document B",
+        "page": "page reference if mentioned in text, otherwise omit or empty",
+        "section": "section name/number if mentioned in text",
+        "context": "surrounding paragraph context if available"
+      }},
+      "legalExplanation": "Substantive legal rationale explaining the commercial risk and enforceability issues under Indian contract law (Indian Contract Act 1872, Arbitration and Conciliation Act 1996, etc.)",
+      "harmonization": "Actionable recommended clause reconciliation to resolve the contradiction"
     }}
   ],
-  "summary": "overall conflict summary in 2 sentences"
+  "summary": "Overall 2-sentence executive summary of the discrepancies found across the agreements."
 }}
 
-Severity must be exactly one of: Critical, Major, Minor.
-Common conflicts: different confidentiality durations, different jurisdiction clauses, conflicting termination notice periods, contradictory payment terms, IP ownership contradictions, different governing law clauses.
-If no conflicts are found, return an empty conflicts array with a summary explaining this."""
+Severity must be either "critical" or "major".
+If no conflicts or contradictions exist between the documents, respond with:
+{{"conflicts": [], "summary": "No contradictions or conflicting clauses were identified across the provided documents."}}
+"""
 
-    raw = ask_llm(prompt)
-    if not raw:
-        return jsonify({'error': 'AI analysis failed. Try again.', 'code': 'LLM_EMPTY_RESPONSE'}), 502
+        raw = ask_groq(system_prompt, user_prompt)
+        if not raw:
+            return jsonify({'error': 'AI analysis failed to generate a response. Please try again.', 'code': 'LLM_EMPTY_RESPONSE'}), 502
 
-    result = extract_json_from_llm_response(raw)
-    if not isinstance(result, dict):
-        # A total parse failure is a real upstream-AI failure, not "zero
-        # conflicts found" — returning that as a fake 200 would silently
-        # tell the advocate their documents are clear when we simply
-        # couldn't read the AI's answer. Surface it as a 502 instead.
+        result = extract_json_from_llm_response(raw)
+        if not isinstance(result, dict) or 'conflicts' not in result:
+            return jsonify({
+                'error': 'AI returned an unparseable conflict analysis.',
+                'code': 'LLM_JSON_PARSE_ERROR',
+                'raw': raw[:1500],
+            }), 502
+
+        # Normalize conflicts for dual schema compatibility
+        normalized_conflicts = []
+        for idx, c in enumerate(result.get('conflicts', [])):
+            cid = str(c.get('id') or (idx + 1))
+            title = c.get('title') or f"Discrepancy {idx + 1}"
+            raw_sev = str(c.get('severity') or 'critical').lower()
+            severity = 'major' if 'maj' in raw_sev else 'critical'
+
+            # Extract docA
+            raw_doc_a = c.get('docA') or c.get('doc_a') or {}
+            file_a = raw_doc_a.get('file') or c.get('doc_a_name') or docs[0]['name']
+            quote_a = raw_doc_a.get('quote') or c.get('doc_a_excerpt') or ''
+            page_a = raw_doc_a.get('page') or c.get('doc_a_page') or ''
+            sec_a = raw_doc_a.get('section') or ''
+            ctx_a = raw_doc_a.get('context') or (f'"{quote_a}"' if quote_a else '')
+
+            # Extract docB
+            raw_doc_b = c.get('docB') or c.get('doc_b') or {}
+            file_b = raw_doc_b.get('file') or c.get('doc_b_name') or (docs[1]['name'] if len(docs) > 1 else docs[0]['name'])
+            quote_b = raw_doc_b.get('quote') or c.get('doc_b_excerpt') or ''
+            page_b = raw_doc_b.get('page') or c.get('doc_b_page') or ''
+            sec_b = raw_doc_b.get('section') or ''
+            ctx_b = raw_doc_b.get('context') or (f'"{quote_b}"' if quote_b else '')
+
+            legal_exp = c.get('legalExplanation') or c.get('legal_explanation') or ''
+            harm = c.get('harmonization') or c.get('recommended_resolution') or ''
+
+            normalized_conflicts.append({
+                'id': cid,
+                'title': title,
+                'severity': severity,
+                'docA': {
+                    'file': file_a,
+                    'name': file_a,
+                    'quote': quote_a,
+                    'page': page_a,
+                    'section': sec_a,
+                    'context': ctx_a,
+                },
+                'docB': {
+                    'file': file_b,
+                    'name': file_b,
+                    'quote': quote_b,
+                    'page': page_b,
+                    'section': sec_b,
+                    'context': ctx_b,
+                },
+                # Legacy keys for backward compatibility
+                'doc_a_name': file_a,
+                'doc_a_excerpt': quote_a,
+                'doc_b_name': file_b,
+                'doc_b_excerpt': quote_b,
+                'legalExplanation': legal_exp,
+                'legal_explanation': legal_exp,
+                'harmonization': harm,
+                'recommended_resolution': harm,
+                'citedCases': c.get('citedCases') or []
+            })
+
+        summary = result.get('summary') or (
+            f"Cross-document analysis identified {len(normalized_conflicts)} conflict(s) across the reviewed agreements."
+            if normalized_conflicts else "No contradictions or conflicting clauses were identified across the provided documents."
+        )
+
         return jsonify({
-            'error': 'AI returned an unparseable conflict analysis.',
-            'code': 'LLM_JSON_PARSE_ERROR',
-            'raw': raw[:2000],
-        }), 502
+            'status': 'success',
+            'conflicts': normalized_conflicts,
+            'summary': summary
+        })
 
-    return jsonify(result)
-  except Exception as e:
-    return jsonify({'error': str(e), 'code': 'INTERNAL_ERROR'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e), 'code': 'INTERNAL_ERROR'}), 500
 
 
 @conflict_bp.route('/api/conflict/check', methods=['POST'])

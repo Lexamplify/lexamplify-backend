@@ -36,10 +36,95 @@ import { AuthProvider } from '../context/AuthContext';
 // Any call not explicitly matched below falls back to an empty, successful
 // JSON response — every module here treats "no data yet" as a valid,
 // renderable state, so this keeps every test deterministic and offline.
-function mockFetch(routeHandlers = []) {
+const mockConflictAnalysisResponse = {
+  status: 'success',
+  conflicts: [
+    {
+      id: '1',
+      title: 'Inconsistent Payment Terms',
+      severity: 'critical',
+      docA: {
+        file: 'Vendor Service Agreement.pdf',
+        name: 'Vendor Service Agreement.pdf',
+        quote: 'The Client shall process all cleared payments within 30 days of receiving a valid invoice from the Vendor.',
+        page: 'Page 4',
+        section: 'Section 6.2 (Invoicing and Payment)',
+        context: 'Section 6.2 (Invoicing and Payment). Vendor shall submit invoices monthly in arrears.'
+      },
+      docB: {
+        file: 'Software Development Agreement.pdf',
+        name: 'Software Development Agreement.pdf',
+        quote: '…the Client reserves the right to reduce the final invoice or withhold payments entirely at their sole discretion.',
+        page: 'Page 7',
+        section: 'Section 9.1 (Fees)',
+        context: 'Section 9.1 (Fees). Client shall pay the fixed sum set out in Schedule B.'
+      },
+      legalExplanation: 'Payment obligations must be certain and not arbitrary under Indian contract law.',
+      harmonization: 'Unify to a single payment clause: invoices payable within 30 days of receipt.',
+      citedCases: []
+    },
+    {
+      id: '2',
+      title: 'Conflicting Dispute Resolution & Jurisdiction',
+      severity: 'critical',
+      docA: {
+        file: 'Vendor Service Agreement.pdf',
+        name: 'Vendor Service Agreement.pdf',
+        quote: '…the Vendor waives all rights to approach any court or tribunal.',
+        page: 'Page 11',
+        section: 'Section 14',
+        context: 'Section 14 (Dispute Resolution).'
+      },
+      docB: {
+        file: 'NDA_Test_Document.pdf',
+        name: 'NDA Test Document.pdf',
+        quote: 'Any disputes… resolved exclusively in the state and federal courts located in Delaware, USA.',
+        page: 'Page 3',
+        section: 'Section 8',
+        context: 'Section 8 (Governing Law).'
+      },
+      legalExplanation: 'A party cannot be compelled to waive its statutory right to approach a court.',
+      harmonization: 'Adopt one enforceable clause across all agreements: arbitration in Mumbai.',
+      citedCases: []
+    },
+    {
+      id: '3',
+      title: 'Jurisdiction Inconsistency Between Agreements',
+      severity: 'major',
+      docA: {
+        file: 'Software Development Agreement.pdf',
+        name: 'Software Development Agreement.pdf',
+        quote: '(No explicit jurisdiction clause; default Indian law presumed.)',
+        page: 'Page 9',
+        section: 'Section 15',
+        context: 'Section 15 (Miscellaneous).'
+      },
+      docB: {
+        file: 'NDA_Test_Document.pdf',
+        name: 'NDA Test Document.pdf',
+        quote: 'Any disputes… resolved exclusively in Delaware.',
+        page: 'Page 3',
+        section: 'Section 8',
+        context: 'Section 8.'
+      },
+      legalExplanation: 'When related contracts contain divergent jurisdiction provisions, foreign forum selection may be unenforceable.',
+      harmonization: 'Insert a consistent governing-law and jurisdiction clause.',
+      citedCases: []
+    }
+  ],
+  summary: 'Cross-document conflict analysis identified 3 critical and major discrepancies across the matter agreements.'
+};
+
+const DEFAULT_ROUTE_HANDLERS = [
+  ['/api/conflict/analyze', mockConflictAnalysisResponse],
+  ['/api/conflict-engine/analyze', mockConflictAnalysisResponse],
+];
+
+function mockFetch(customHandlers = []) {
+  const allHandlers = [...customHandlers, ...DEFAULT_ROUTE_HANDLERS];
   global.fetch = vi.fn((url) => {
     const urlStr = String(url);
-    for (const [pattern, response] of routeHandlers) {
+    for (const [pattern, response] of allHandlers) {
       const matches = typeof pattern === 'string' ? urlStr.includes(pattern) : pattern.test(urlStr);
       if (matches) {
         return Promise.resolve({
@@ -175,7 +260,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     expect(triageTab.className).not.toContain('active');
   });
 
-  it('renders Master/Detail workspace with persistent document strip, index rows, and VS clash comparison', async () => {
+  it('renders Master/Detail workspace with persistent document strip, index rows, and VS clash comparison after running analysis', async () => {
     render(
       <MemoryRouter>
         <ConflictEngine />
@@ -185,13 +270,17 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
-    // Document strip is present with loaded catalog chips
+    // Document strip is present with loaded chips
     expect(screen.getAllByText(/Vendor Service Agreement/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/Software Development Agreement/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/Run conflict analysis/i)).toBeInTheDocument();
+    
+    // Run conflict analysis button is present and clickable
+    const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
+    expect(runBtn).toBeInTheDocument();
+    await userEvent.click(runBtn);
 
-    // Index pane and detail pane both show the active title
-    expect(screen.getAllByText(/Inconsistent Payment Terms/i).length).toBeGreaterThanOrEqual(1);
+    // Index pane and detail pane both show the active title returned from backend
+    expect((await screen.findAllByText(/Inconsistent Payment Terms/i)).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Conflicting Dispute Resolution/i)).toBeInTheDocument();
 
     // Reading pane shows the signature circular VS clash
@@ -212,9 +301,13 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
-    // Filter counters initially (4 active conflicts for initial 3 documents: 1, 2, 3, 9)
-    expect(screen.getByRole('button', { name: /All 4/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Unreviewed 4/i })).toBeInTheDocument();
+    // Run conflict analysis
+    const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
+    await userEvent.click(runBtn);
+
+    // Filter counters initially (3 active conflicts returned by backend)
+    expect(await screen.findByRole('button', { name: /All 3/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Unreviewed 3/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Saved 0/i })).toBeInTheDocument();
 
     // Mark active item as reviewed via reading pane
@@ -223,7 +316,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
     // Reviewed button toggles label to "Reviewed"
     expect(screen.getByText('Reviewed')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Unreviewed 3/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Unreviewed 2/i })).toBeInTheDocument();
 
     // Save active item via reading pane
     const saveBtn = screen.getByTitle('Save');
@@ -236,7 +329,7 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     expect(screen.getAllByText(/Inconsistent Payment Terms/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('triggers stale-state banner on document addition and recomputes on analysis re-run', async () => {
+  it('triggers stale-state banner on document change and recomputes on analysis re-run', async () => {
     render(
       <MemoryRouter>
         <ConflictEngine />
@@ -246,14 +339,19 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
 
-    // Initial state has 3 documents and no stale banner
+    // Initial state has documents and no stale banner
     expect(screen.queryByText(/Documents changed since this analysis ran/i)).not.toBeInTheDocument();
 
-    // Click "Add document" to add 4th document (Employment Agreement)
-    const addDocBtn = screen.getByRole('button', { name: /Add document/i });
-    await userEvent.click(addDocBtn);
+    // Run initial analysis
+    const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
+    await userEvent.click(runBtn);
+    await screen.findAllByText(/Inconsistent Payment Terms/i);
 
-    // Stale banner should appear and workspace dimmed
+    // Remove first document to simulate document set change post-analysis
+    const removeBtns = screen.getAllByTitle(/Remove document/i);
+    await userEvent.click(removeBtns[0]);
+
+    // Stale banner should appear
     expect(await screen.findByText(/Documents changed since this analysis ran/i)).toBeInTheDocument();
     const rerunBtn = screen.getByRole('button', { name: /Re-run analysis/i });
     expect(rerunBtn).toBeInTheDocument();
@@ -276,6 +374,11 @@ describe('Conflict Engine (Malpractice Shield)', () => {
 
     const crossDocTab = screen.getByRole('button', { name: /Cross-Document/i });
     await userEvent.click(crossDocTab);
+
+    // Run conflict analysis
+    const runBtn = screen.getByRole('button', { name: /Run conflict analysis/i });
+    await userEvent.click(runBtn);
+    await screen.findAllByText(/Inconsistent Payment Terms/i);
 
     const searchInput = screen.getByPlaceholderText(/Search conflicts/i);
     await userEvent.type(searchInput, 'Payment');
