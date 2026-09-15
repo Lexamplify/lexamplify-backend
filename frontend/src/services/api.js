@@ -843,5 +843,29 @@ export const sendUniversalChat = async (payload) => {
   }
 };
 
-
-
+/**
+ * Generates and downloads Schedule-of-Discrepancies.docx matching the §2 Data Contract.
+ * @param {object} payload - { title, matter, documents, summary, conflicts }
+ */
+export const exportScheduleOfDiscrepanciesDocx = async (payload) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/conflict/export-docx`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getHeaders(),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`DOCX export failed with status ${response.status}`);
+    }
+    return await response.blob();
+  } catch (error) {
+    console.error('[API Service] exportScheduleOfDiscrepanciesDocx error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to generate Schedule of Discrepancies document.',
+    };
+  }
+};

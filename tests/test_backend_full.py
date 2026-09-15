@@ -323,3 +323,50 @@ class TestKanoonRedirect:
 
         assert resp.status_code == 302
         assert "indiankanoon.org/search/" in resp.headers["Location"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST /api/conflict/export-docx
+# ─────────────────────────────────────────────────────────────────────────
+
+class TestConflictExportDocx:
+    def test_export_docx_requires_non_empty_conflicts(self, client):
+        resp = client.post("/api/conflict/export-docx", json={"conflicts": []})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_export_docx_generates_valid_docx(self, client):
+        payload = {
+            "conflicts": [
+                {
+                    "id": "c1",
+                    "title": "Payment Clause Mismatch",
+                    "severity": "high",
+                    "docA": {
+                        "clause": "Net 30 payment terms upon invoice receipt.",
+                        "section": "Clause 4.1",
+                        "title": "Master Services Agreement"
+                    },
+                    "docB": {
+                        "clause": "Net 60 payment terms upon month-end.",
+                        "section": "Schedule B",
+                        "title": "Vendor Statement of Work"
+                    },
+                    "legalExplanation": "Direct commercial conflict between primary MSA and secondary SOW terms.",
+                    "harmonization": "Amend Schedule B to match MSA Net 30 standard.",
+                    "citedCases": [
+                        {"citation": "AIR 1963 SC 1144", "title": "Union of India v. A.L. Rallia Ram"}
+                    ]
+                }
+            ],
+            "docA_title": "Master Services Agreement",
+            "docB_title": "Vendor Statement of Work",
+            "reviewer": "Senior Legal Counsel"
+        }
+        resp = client.post("/api/conflict/export-docx", json=payload)
+        assert resp.status_code == 200
+        assert "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in resp.content_type
+        assert "Schedule-of-Discrepancies.docx" in resp.headers.get("Content-Disposition", "")
+        assert len(resp.data) > 0
+

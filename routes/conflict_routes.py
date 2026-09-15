@@ -329,3 +329,308 @@ def save_clearance_memo():
     except Exception as e:
         print(f"[clearance_memo] DB error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@conflict_bp.route('/api/conflict/export-docx', methods=['POST'])
+def export_discrepancies_docx():
+    """Generates Schedule-of-Discrepancies.docx from the §2 Data Contract."""
+    from flask import send_file
+    import io
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    data = request.get_json(silent=True) or {}
+    conflicts = data.get('conflicts')
+    if not conflicts or not isinstance(conflicts, list):
+        return jsonify({'error': 'No conflicts provided for export'}), 400
+
+    title = data.get('title') or 'Schedule of Discrepancies'
+    matter = data.get('matter') or 'Commercial Agreement Audit'
+    documents = data.get('documents') or []
+    summary = data.get('summary') or 'Cross-document conflict analysis identified conflicting clauses across the matter agreements.'
+
+    try:
+        doc = Document()
+        section = doc.sections[0]
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1)
+        section.right_margin = Inches(1)
+
+        # ── Color constants matching Slate & Rust palette ──
+        INK = RGBColor(0x18, 0x1B, 0x1D)
+        INK_SOFT = RGBColor(0x49, 0x4E, 0x51)
+        MUTED = RGBColor(0x86, 0x8C, 0x8E)
+        ACCENT_TERRACOTTA = RGBColor(0xB2, 0x4A, 0x2E)
+        MAJOR_GOLD = RGBColor(0x9C, 0x7A, 0x2E)
+
+        def set_cell_background(cell, fill_hex):
+            tcPr = cell._element.get_or_add_tcPr()
+            shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>')
+            tcPr.append(shd)
+
+        def set_cell_margins(cell, top=140, bottom=140, left=180, right=180):
+            tcPr = cell._element.get_or_add_tcPr()
+            tcMar = parse_xml(f'<w:tcMar {nsdecls("w")}><w:top w:w="{top}" w:type="dxa"/><w:bottom w:w="{bottom}" w:type="dxa"/><w:left w:w="{left}" w:type="dxa"/><w:right w:w="{right}" w:type="dxa"/></w:tcMar>')
+            tcPr.append(tcMar)
+
+        def set_cell_left_border(cell, color_hex="B24A2E", sz="24"):
+            tcPr = cell._element.get_or_add_tcPr()
+            tcBorders = parse_xml(f'<w:tcBorders {nsdecls("w")}><w:left w:val="single" w:sz="{sz}" w:space="0" w:color="{color_hex}"/><w:top w:val="none"/><w:right w:val="none"/><w:bottom w:val="none"/></w:tcBorders>')
+            tcPr.append(tcBorders)
+
+        def set_table_borders(table, color_hex="D2D5D4"):
+            tblPr = table._element.xpath('w:tblPr')
+            if tblPr:
+                tblBorders = parse_xml(
+                    f'<w:tblBorders {nsdecls("w")}>'
+                    f'<w:top w:val="single" w:sz="6" w:space="0" w:color="{color_hex}"/>'
+                    f'<w:left w:val="single" w:sz="6" w:space="0" w:color="{color_hex}"/>'
+                    f'<w:bottom w:val="single" w:sz="6" w:space="0" w:color="{color_hex}"/>'
+                    f'<w:right w:val="single" w:sz="6" w:space="0" w:color="{color_hex}"/>'
+                    f'<w:insideH w:val="single" w:sz="6" w:space="0" w:color="{color_hex}"/>'
+                    f'<w:insideV w:val="single" w:sz="6" w:space="0" w:color="{color_hex}"/>'
+                    f'</w:tblBorders>'
+                )
+                tblPr[0].append(tblBorders)
+
+        # ── Header & Footer ──
+        header = section.header
+        header.is_linked_to_previous = False
+        h_para = header.paragraphs[0]
+        h_para.text = ""
+        h_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        h_run = h_para.add_run("LEXAMPLIFY  ·  MALPRACTICE SHIELD  ·  CONFLICT AUDIT")
+        h_run.font.size = Pt(8.5)
+        h_run.font.color.rgb = MUTED
+        h_run.bold = True
+
+        footer = section.footer
+        footer.is_linked_to_previous = False
+        f_para = footer.paragraphs[0]
+        f_para.text = ""
+        f_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        f_run = f_para.add_run("CONFIDENTIAL & PRIVILEGED  ·  ATTORNEY WORK PRODUCT  ·  Requires independent attorney review under Indian Law")
+        f_run.font.size = Pt(8)
+        f_run.font.color.rgb = MUTED
+
+        # ── Document Title / Masthead ──
+        p_title = doc.add_paragraph()
+        p_title.paragraph_format.space_before = Pt(0)
+        p_title.paragraph_format.space_after = Pt(4)
+        r_title = p_title.add_run("SCHEDULE OF DISCREPANCIES")
+        r_title.bold = True
+        r_title.font.size = Pt(20)
+        r_title.font.color.rgb = INK
+
+        p_sub = doc.add_paragraph()
+        p_sub.paragraph_format.space_before = Pt(0)
+        p_sub.paragraph_format.space_after = Pt(16)
+        r_sub = p_sub.add_run("Cross-Document Clause Contradiction & Harmonization Audit Report")
+        r_sub.font.size = Pt(11)
+        r_sub.font.color.rgb = MUTED
+        r_sub.italic = True
+
+        # ── Memo Block Table ──
+        memo_table = doc.add_table(rows=4, cols=2)
+        memo_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        set_table_borders(memo_table, "D2D5D4")
+
+        docs_str = ", ".join(documents) if documents else "Active Session Matter Documents"
+        date_str = datetime.now().strftime("%d %B %Y")
+
+        memo_fields = [
+            ("RE", "Cross-Document Conflict Analysis & Clause Discrepancy Schedule"),
+            ("MATTER", matter),
+            ("DOCUMENTS", docs_str),
+            ("DATE", date_str),
+        ]
+
+        col_widths = [Inches(1.5), Inches(5.0)]
+        for row_idx, (label, val) in enumerate(memo_fields):
+            row = memo_table.rows[row_idx]
+            cell_lbl = row.cells[0]
+            cell_val = row.cells[1]
+
+            cell_lbl.width = col_widths[0]
+            cell_val.width = col_widths[1]
+
+            set_cell_background(cell_lbl, "EAEBE8")
+            set_cell_background(cell_val, "FAFAFA")
+            set_cell_margins(cell_lbl, 100, 100, 140, 140)
+            set_cell_margins(cell_val, 100, 100, 140, 140)
+
+            p_l = cell_lbl.paragraphs[0]
+            p_l.paragraph_format.space_before = Pt(0)
+            p_l.paragraph_format.space_after = Pt(0)
+            r_l = p_l.add_run(label)
+            r_l.bold = True
+            r_l.font.size = Pt(9.5)
+            r_l.font.color.rgb = INK_SOFT
+
+            p_v = cell_val.paragraphs[0]
+            p_v.paragraph_format.space_before = Pt(0)
+            p_v.paragraph_format.space_after = Pt(0)
+            r_v = p_v.add_run(val)
+            r_v.font.size = Pt(9.5)
+            r_v.font.color.rgb = INK
+
+        doc.add_paragraph().paragraph_format.space_after = Pt(12)
+
+        # ── Executive Summary ──
+        p_exec_h = doc.add_paragraph()
+        p_exec_h.paragraph_format.space_before = Pt(10)
+        p_exec_h.paragraph_format.space_after = Pt(4)
+        r_exec_h = p_exec_h.add_run("EXECUTIVE SUMMARY")
+        r_exec_h.bold = True
+        r_exec_h.font.size = Pt(12)
+        r_exec_h.font.color.rgb = ACCENT_TERRACOTTA
+
+        p_exec = doc.add_paragraph()
+        p_exec.paragraph_format.space_before = Pt(0)
+        p_exec.paragraph_format.space_after = Pt(16)
+        p_exec.paragraph_format.line_spacing = 1.2
+        r_exec = p_exec.add_run(summary)
+        r_exec.font.size = Pt(10)
+        r_exec.font.color.rgb = INK_SOFT
+
+        # ── Conflicts Section ──
+        for idx, c in enumerate(conflicts):
+            c_num = f"{idx + 1:02d}"
+            c_title = c.get('title') or f"Conflict {c_num}"
+            sev_raw = (c.get('severity') or 'critical').upper()
+            is_crit = 'CRIT' in sev_raw
+
+            # Canonical Data extraction from §2 Data Contract
+            doc_a = c.get('docA') or {}
+            doc_b = c.get('docB') or {}
+
+            doc_a_name = doc_a.get('name') or c.get('doc_a_name') or 'Document A'
+            doc_a_quote = doc_a.get('quote') or c.get('doc_a_excerpt') or ''
+            doc_a_page = doc_a.get('page') or ''
+
+            doc_b_name = doc_b.get('name') or c.get('doc_b_name') or 'Document B'
+            doc_b_quote = doc_b.get('quote') or c.get('doc_b_excerpt') or ''
+            doc_b_page = doc_b.get('page') or ''
+
+            legal_expl = c.get('legalExplanation') or c.get('legal_explanation') or ''
+            harmonization = c.get('harmonization') or c.get('recommended_resolution') or ''
+
+            # Conflict Title
+            p_c_head = doc.add_paragraph()
+            p_c_head.paragraph_format.space_before = Pt(16)
+            p_c_head.paragraph_format.space_after = Pt(6)
+
+            r_num = p_c_head.add_run(f"ITEM {c_num}.  {c_title.upper()}  ")
+            r_num.bold = True
+            r_num.font.size = Pt(11.5)
+            r_num.font.color.rgb = INK
+
+            r_sev = p_c_head.add_run(f"[{'CRITICAL CONFLICT' if is_crit else 'MAJOR CONFLICT'}]")
+            r_sev.bold = True
+            r_sev.font.size = Pt(10)
+            r_sev.font.color.rgb = ACCENT_TERRACOTTA if is_crit else MAJOR_GOLD
+
+            # Two-Column Clash Comparison Table
+            clash_tbl = doc.add_table(rows=2, cols=2)
+            clash_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            set_table_borders(clash_tbl, "D2D5D4")
+
+            # Row 0: Headers
+            h_row = clash_tbl.rows[0]
+            lbl_a = f"{doc_a_name.upper()}{f' (Page {doc_a_page})' if doc_a_page else ''}"
+            lbl_b = f"{doc_b_name.upper()}{f' (Page {doc_b_page})' if doc_b_page else ''}"
+
+            for col_i, (hdr_cell, lbl_text) in enumerate([(h_row.cells[0], lbl_a), (h_row.cells[1], lbl_b)]):
+                hdr_cell.width = Inches(3.25)
+                set_cell_background(hdr_cell, "EAEBE8")
+                set_cell_margins(hdr_cell, 100, 100, 140, 140)
+                p = hdr_cell.paragraphs[0]
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(0)
+                r = p.add_run(lbl_text)
+                r.bold = True
+                r.font.size = Pt(9)
+                r.font.color.rgb = INK_SOFT
+
+            # Row 1: Excerpts
+            b_row = clash_tbl.rows[1]
+            for col_i, (b_cell, quote_text) in enumerate([(b_row.cells[0], doc_a_quote), (b_row.cells[1], doc_b_quote)]):
+                b_cell.width = Inches(3.25)
+                set_cell_background(b_cell, "FFFFFF")
+                set_cell_margins(b_cell, 120, 120, 140, 140)
+                p = b_cell.paragraphs[0]
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(0)
+                p.paragraph_format.line_spacing = 1.15
+                r = p.add_run(f'"{quote_text}"' if quote_text else "—")
+                r.italic = True
+                r.font.size = Pt(9.5)
+                r.font.color.rgb = INK
+
+            # Legal Explanation Block
+            if legal_expl:
+                p_expl_lbl = doc.add_paragraph()
+                p_expl_lbl.paragraph_format.space_before = Pt(8)
+                p_expl_lbl.paragraph_format.space_after = Pt(2)
+                r_expl_lbl = p_expl_lbl.add_run("LEGAL EXPLANATION & STATUTORY IMPACT")
+                r_expl_lbl.bold = True
+                r_expl_lbl.font.size = Pt(9)
+                r_expl_lbl.font.color.rgb = MUTED
+
+                p_expl = doc.add_paragraph()
+                p_expl.paragraph_format.space_before = Pt(0)
+                p_expl.paragraph_format.space_after = Pt(8)
+                p_expl.paragraph_format.line_spacing = 1.15
+                r_expl = p_expl.add_run(legal_expl)
+                r_expl.font.size = Pt(9.5)
+                r_expl.font.color.rgb = INK_SOFT
+
+            # Recommended Harmonization Callout Box (Left Accent Rule)
+            if harmonization:
+                harm_tbl = doc.add_table(rows=1, cols=1)
+                harm_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+                harm_cell = harm_tbl.rows[0].cells[0]
+                harm_cell.width = Inches(6.5)
+                set_cell_background(harm_cell, "FBF7EE")
+                set_cell_left_border(harm_cell, "B24A2E", "24")
+                set_cell_margins(harm_cell, 120, 120, 160, 140)
+
+                p_harm_lbl = harm_cell.paragraphs[0]
+                p_harm_lbl.paragraph_format.space_before = Pt(0)
+                p_harm_lbl.paragraph_format.space_after = Pt(3)
+                r_harm_lbl = p_harm_lbl.add_run("RECOMMENDED HARMONIZATION CLAUSE")
+                r_harm_lbl.bold = True
+                r_harm_lbl.font.size = Pt(8.5)
+                r_harm_lbl.font.color.rgb = ACCENT_TERRACOTTA
+
+                p_harm = harm_cell.add_paragraph()
+                p_harm.paragraph_format.space_before = Pt(0)
+                p_harm.paragraph_format.space_after = Pt(0)
+                p_harm.paragraph_format.line_spacing = 1.15
+                r_harm = p_harm.add_run(harmonization)
+                r_harm.font.size = Pt(9.5)
+                r_harm.font.color.rgb = INK
+
+            doc.add_paragraph().paragraph_format.space_after = Pt(10)
+
+        # ── Return generated docx stream ──
+        buf = io.BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+
+        return send_file(
+            buf,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name='Schedule-of-Discrepancies.docx',
+        )
+
+    except Exception as e:
+        print(f"[export_discrepancies_docx] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+

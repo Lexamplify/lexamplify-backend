@@ -174,6 +174,65 @@ describe('Conflict Engine (Malpractice Shield)', () => {
     const triageTab = screen.getByRole('button', { name: /Triage Search/i });
     expect(triageTab.className).not.toContain('active');
   });
+
+  it('renders Master/Detail workspace with persistent document strip, index rows, and VS clash comparison', async () => {
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document Uploader/i });
+    await userEvent.click(crossDocTab);
+
+    // Document strip is present
+    expect(screen.getByText(/Vendor Service Agreement.pdf/i)).toBeInTheDocument();
+    expect(screen.getByText(/Run conflict analysis/i)).toBeInTheDocument();
+
+    // Index pane and detail pane both show the active title
+    expect(screen.getAllByText(/Inconsistent Payment Terms/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Conflicting Dispute Resolution/i)).toBeInTheDocument();
+
+    // Reading pane shows the signature circular VS clash
+    expect(screen.getByText('VS')).toBeInTheDocument();
+    expect(screen.getByText(/recommended harmonization/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy harmonized clause/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Export as Schedule of Discrepancies/i })).toBeInTheDocument();
+  });
+
+  it('independently toggles reviewed and saved states and filters correctly', async () => {
+    render(
+      <MemoryRouter>
+        <ConflictEngine />
+      </MemoryRouter>
+    );
+
+    const crossDocTab = screen.getByRole('button', { name: /Cross-Document Uploader/i });
+    await userEvent.click(crossDocTab);
+
+    // Filter counters initially
+    expect(screen.getByRole('button', { name: /All 3/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Unreviewed 3/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Saved 0/i })).toBeInTheDocument();
+
+    // Mark active item as reviewed via reading pane
+    const reviewBtn = screen.getByRole('button', { name: /Mark reviewed/i });
+    await userEvent.click(reviewBtn);
+
+    // Reviewed button toggles label to "Reviewed"
+    expect(screen.getByText('Reviewed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Unreviewed 2/i })).toBeInTheDocument();
+
+    // Save active item via reading pane
+    const saveBtn = screen.getByTitle('Save');
+    await userEvent.click(saveBtn);
+    expect(screen.getByRole('button', { name: /Saved 1/i })).toBeInTheDocument();
+
+    // Switch to Saved filter
+    const savedFilter = screen.getByRole('button', { name: /Saved 1/i });
+    await userEvent.click(savedFilter);
+    expect(screen.getAllByText(/Inconsistent Payment Terms/i).length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
