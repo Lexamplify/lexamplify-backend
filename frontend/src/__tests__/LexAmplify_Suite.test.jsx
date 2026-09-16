@@ -1074,44 +1074,60 @@ describe('Virtual Courtroom / War Room', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('Firm Library', () => {
-  const sampleEntry = {
-    id: 1,
-    title: 'Standard Mutual NDA',
-    category: 'Template',
-    author: 'Internal Vault',
-    updated: '2026-01-01',
-    tags: [],
-  };
-
-  it('renders the Firm Library with a fetched entry', async () => {
-    mockFetch([['/api/firm-library', [sampleEntry]]]);
-
+  it('renders the Firm Library with stats, filters, and entries', async () => {
     render(
       <MemoryRouter>
         <FirmLibrary />
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Firm Library/i)).toBeInTheDocument();
-    expect(await screen.findByText('Standard Mutual NDA')).toBeInTheDocument();
+    expect(await screen.findByText(/Standard Vendor Service Agreement — SaaS/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Firm Library/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Internal Firm Files/i)).toBeInTheDocument();
+    expect(screen.getByText(/External Database/i)).toBeInTheDocument();
   });
 
-  it('opens an entry workspace and switches to the Clause DNA tab', async () => {
-    mockFetch([['/api/firm-library', [sampleEntry]]]);
-
+  it('opens the slide-over detail panel on row click with validity and actions', async () => {
     render(
       <MemoryRouter>
         <FirmLibrary />
       </MemoryRouter>
     );
 
-    const entryRow = await screen.findByText('Standard Mutual NDA');
+    const entryRow = await screen.findByText(/Standard Vendor Service Agreement — SaaS/i);
     await userEvent.click(entryRow);
 
-    const dnaTab = await screen.findByRole('button', { name: /Clause DNA/i });
-    await userEvent.click(dnaTab);
+    expect(await screen.findByText(/Use as Starting Point/i)).toBeInTheDocument();
+    expect(screen.getByText(/Download Original/i)).toBeInTheDocument();
+    expect(screen.getByText(/Copy Link/i)).toBeInTheDocument();
+  });
 
-    expect(await screen.findByText(/Clause DNA Extractor/i)).toBeInTheDocument();
+  it('opens the Add to Firm Library modal on Add Entry click', async () => {
+    render(
+      <MemoryRouter>
+        <FirmLibrary />
+      </MemoryRouter>
+    );
+
+    const addBtn = screen.getByRole('button', { name: /Add Entry/i });
+    await userEvent.click(addBtn);
+
+    expect(await screen.findByText(/Add to Firm Library/i)).toBeInTheDocument();
+    expect(screen.getByText(/Attach a file \(optional\)/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/e\.g\., Standard Lease Agreement — Residential/i)).toBeInTheDocument();
+  });
+
+  it('switches to the External Database tab', async () => {
+    render(
+      <MemoryRouter>
+        <FirmLibrary />
+      </MemoryRouter>
+    );
+
+    const extTab = screen.getByRole('button', { name: /External Database/i });
+    await userEvent.click(extTab);
+
+    expect(await screen.findByPlaceholderText(/Search Acts, Judgments, and case law by name, citation, or court/i)).toBeInTheDocument();
   });
 });
 

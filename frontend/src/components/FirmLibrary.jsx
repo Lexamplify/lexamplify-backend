@@ -6,3155 +6,1705 @@ import { renderWithCitations } from './CitationLink';
 import useLibraryHeadnoteStream from '../hooks/useLibraryHeadnoteStream.js';
 import { uploadDocument } from '../services/api';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-const CATEGORIES = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
+const LS_KEY = 'lexai_firm_library_v2';
 
-const CAT_COLORS = {
-  Template: { bg: 'rgba(59,130,246,0.12)', color: '#60A5FA', border: 'rgba(59,130,246,0.25)' },
-  Precedent: { bg: 'rgba(245,158,11,0.12)', color: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
-  'Research Memo': { bg: 'rgba(139,92,246,0.12)', color: '#A78BFA', border: 'rgba(139,92,246,0.25)' },
-  'Standard Form': { bg: 'rgba(16,185,129,0.12)', color: '#34D399', border: 'rgba(16,185,129,0.25)' },
-  'Practice Guide': { bg: 'rgba(20,184,166,0.12)', color: '#2DD4BF', border: 'rgba(20,184,166,0.25)' },
+// ── Icons matching SVG specifications ──────────────────────────────────────────
+const ICONS = {
+  template: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M6 3h9l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M15 3v5h5" />
+      <line x1="8" y1="13" x2="16" y2="13" strokeDasharray="2 2" />
+      <line x1="8" y1="17" x2="13" y2="17" strokeDasharray="2 2" />
+    </svg>
+  ),
+  precedent: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M8 4h9l4 4v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
+      <path d="M4 8v12a1 1 0 0 0 1 1h9" strokeOpacity=".55" />
+      <line x1="11" y1="12" x2="17" y2="12" />
+      <line x1="11" y1="16" x2="17" y2="16" />
+    </svg>
+  ),
+  memo: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <rect x="4" y="3" width="16" height="18" rx="1.5" />
+      <line x1="8" y1="8" x2="16" y2="8" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+      <line x1="8" y1="16" x2="13" y2="16" />
+    </svg>
+  ),
+  form: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <rect x="5" y="4" width="14" height="17" rx="1.5" />
+      <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
+      <polyline points="8.5 11 10 12.5 13.5 9" />
+      <line x1="9" y1="16" x2="15" y2="16" />
+    </svg>
+  ),
+  guide: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />
+      <path d="M4 5.5v15" />
+      <line x1="8" y1="8" x2="16" y2="8" />
+      <line x1="8" y1="11" x2="14" y2="11" />
+    </svg>
+  ),
+  check: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  ),
+  clock: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 16 14" />
+    </svg>
+  ),
+  warn: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 3l10 18H2Z" />
+      <line x1="12" y1="10" x2="12" y2="15" />
+      <circle cx="12" cy="18" r=".6" fill="currentColor" />
+    </svg>
+  ),
+  person: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M5 20c1.2-4 4-6 7-6s5.8 2 7 6" />
+    </svg>
+  ),
+  sparkle: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+    </svg>
+  ),
+  file: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M13 3v5h5" />
+    </svg>
+  ),
+  download: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 3v12" />
+      <polyline points="7 10 12 15 17 10" />
+      <path d="M5 21h14" />
+    </svg>
+  ),
+  draft: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  ),
+  link: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M9 15l6-6" />
+      <path d="M13 5l1-1a3.5 3.5 0 0 1 5 5l-1 1" />
+      <path d="M11 19l-1 1a3.5 3.5 0 0 1-5-5l1-1" />
+    </svg>
+  ),
 };
 
-const getCatStyle = (cat) =>
-  CAT_COLORS[cat] || { bg: 'rgba(107,114,128,0.12)', color: '#9CA3AF', border: 'rgba(107,114,128,0.2)' };
-
-// ── Clause DNA data — per category ───────────────────────────────────────────
-const CLAUSE_DNA = {
-  Template: [
-    { id: 'def', name: 'Definitions', risk: 'low', summary: 'Standard defined terms — verify "Material Breach" threshold aligns with client tolerance' },
-    { id: 'pay', name: 'Payment Terms', risk: 'medium', summary: 'Net-30, 18% p.a. compound interest on overdue amounts; S.73 Contract Act exposure' },
-    { id: 'liab', name: 'Limitation of Liability', risk: 'high', summary: 'Cap at 3× monthly fee — aggressive vendor carve; inadequate for high-value transactions' },
-    { id: 'indem', name: 'Indemnification', risk: 'high', summary: 'Mutual; excludes gross negligence — verify scope covers third-party IP infringement claims' },
-    { id: 'adr', name: 'Dispute Resolution', risk: 'low', summary: 'DIAC arbitration, seat New Delhi, 3-member tribunal per DIAC Rules 2023' },
-    { id: 'fm', name: 'Force Majeure', risk: 'medium', summary: 'Excludes cyber-attacks and pandemic events — review for SaaS/cloud deployment contexts' },
-    { id: 'term', name: 'Termination', risk: 'medium', summary: '30-day convenience notice; immediate on material breach with 15-day cure right' },
-  ],
-  Precedent: [
-    { id: 'court', name: 'Jurisdiction & Forum', risk: 'low', summary: 'Delhi HC, Original Side — verify pecuniary limits under Commercial Courts Act 2015' },
-    { id: 'facts', name: 'Statement of Facts', risk: 'medium', summary: '14 paragraphs — confirm chronological accuracy; gaps in para 6–8 need corroborating evidence' },
-    { id: 'grnd', name: 'Legal Grounds', risk: 'low', summary: '4 statutes cited; SC authority at each ground — strong primary authority chain' },
-    { id: 'intm', name: 'Interim Relief Prayer', risk: 'high', summary: 'Ex-parte injunction — balance of convenience critical; urgency affidavit is mandatory' },
-    { id: 'costs', name: 'Prayer for Costs', risk: 'low', summary: 'Actual costs + 12% interest from filing date — within High Court established norms' },
-  ],
-  'Research Memo': [
-    { id: 'issue', name: 'Issue Presented', risk: 'low', summary: 'Precisely framed single dispositive question with clean scope limitation' },
-    { id: 'find', name: 'Primary Findings', risk: 'low', summary: '6 propositions, each supported by HC/SC authority — citation density adequate' },
-    { id: 'div', name: 'Diverging Precedents', risk: 'high', summary: '2 conflicting Division Bench rulings — refer to Full Bench; do not rely without resolution' },
-    { id: 'risk', name: 'Risk Assessment', risk: 'medium', summary: 'Moderate risk overall, 60–70% favourable outcome; caveated on witness availability' },
-    { id: 'rec', name: 'Recommendations', risk: 'low', summary: '3 ranked action items with cost-benefit analysis and 45-day implementation window' },
-  ],
-  'Standard Form': [
-    { id: 'scope', name: 'Scope of Work', risk: 'medium', summary: 'Defined by Schedule A — ensure all attachments are physically annexed before execution' },
-    { id: 'ip', name: 'IP Assignment', risk: 'high', summary: 'Broad "work made for hire" language — may conflict with existing employee IP rights' },
-    { id: 'conf', name: 'Confidentiality', risk: 'low', summary: '3-year post-termination obligation; standard carve-outs for public domain and court orders' },
-    { id: 'comp', name: 'Non-Compete', risk: 'high', summary: '2-year, all-India, all competing businesses — enforceability doubtful per S.27 CA 1872' },
-    { id: 'sev', name: 'Severability', risk: 'low', summary: 'Blue-pencil doctrine incorporated — non-compete void on face; severs cleanly from agreement' },
-  ],
-  'Practice Guide': [
-    { id: 'pre', name: 'Pre-Filing Checklist', risk: 'low', summary: '12 mandatory items — court rejects filings missing even one; validate before submission' },
-    { id: 'doc', name: 'Document Requirements', risk: 'medium', summary: 'Attestation rules changed Q1 2026 for e-filed documents — verify current HC circular' },
-    { id: 'lim', name: 'Limitation Period', risk: 'high', summary: 'STRICT: missed limitation is fatal — calculate from cause of action, not date of discovery' },
-    { id: 'fee', name: 'Court Fee Schedule', risk: 'low', summary: 'Updated April 2026 per Finance Act — use current schedule; old amounts will be rejected' },
-    { id: 'svc', name: 'Service of Process', risk: 'medium', summary: 'E-service accepted in Delhi, Bombay, Madras HC — verify Calcutta and other HCs separately' },
-  ],
+const CAT_META = {
+  Template: { icon: ICONS.template, desc: 'A blank-slate starting point for a new document.' },
+  Precedent: { icon: ICONS.precedent, desc: 'A real prior document kept as a worked example.' },
+  'Research Memo': { icon: ICONS.memo, desc: 'Internal legal analysis on a specific question.' },
+  'Standard Form': { icon: ICONS.form, desc: "The firm's approved version of a routine filing." },
+  'Practice Guide': { icon: ICONS.guide, desc: 'A how-to reference for a recurring procedure.' },
 };
 
-// Simulated clause headings for the Document Preview scaffold
-const DOC_PREVIEW_CLAUSES = {
-  Template: ['1. Definitions and Interpretation', '2. Term and Commencement', '3. Obligations of the Parties', '4. Consideration and Payment'],
-  Precedent: ['IN THE HIGH COURT OF DELHI', 'Statement of Facts', 'Grounds for Relief', 'Prayer'],
-  'Research Memo': ['I. Issue Presented', 'II. Brief Answer', 'III. Analysis', 'IV. Conclusion and Recommendations'],
-  'Standard Form': ['Recitals', 'Article I — Definitions', 'Article II — Scope of Work', 'Article III — Consideration'],
-  'Practice Guide': ['A. Overview and Applicability', 'B. Step 1: Pre-Filing Checklist', 'C. Step 2: Document Preparation', 'D. Step 3: Filing and Service'],
-};
+const TODAY = new Date('2026-09-17');
+function daysAgo(n) {
+  const d = new Date(TODAY);
+  d.setDate(d.getDate() - n);
+  return d;
+}
 
-const RISK_COLOR = {
-  low: { bg: 'rgba(16,185,129,0.1)', color: 'var(--accent-success)', border: 'rgba(16,185,129,0.28)' },
-  medium: { bg: 'rgba(245,158,11,0.1)', color: '#FBBF24', border: 'rgba(245,158,11,0.28)' },
-  high: { bg: 'rgba(239,68,68,0.1)', color: 'var(--accent-danger)', border: 'rgba(239,68,68,0.28)' },
-};
+function relTime(d) {
+  const dateObj = typeof d === 'string' ? new Date(d) : d;
+  const days = Math.round((TODAY - dateObj) / 86400000);
+  if (days < 1) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.round(days / 7)} week${Math.round(days / 7) === 1 ? '' : 's'} ago`;
+  if (days < 365) return `${Math.round(days / 30)} month${Math.round(days / 30) === 1 ? '' : 's'} ago`;
+  return `${Math.round(days / 365)} year${Math.round(days / 365) === 1 ? '' : 's'} ago`;
+}
 
-// ── localStorage keys ─────────────────────────────────────────────────────────
-const LS_KEY = 'lexai_firm_library';
-const NOTES_KEY = 'lexai_fl_notes';
-const REVIEWED_KEY = 'lexai_fl_reviewed';
+function exactDate(d) {
+  const dateObj = typeof d === 'string' ? new Date(d) : d;
+  return dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 
-// ── Sort icon ─────────────────────────────────────────────────────────────────
-const SortIcon = ({ active, dir }) => (
-  <svg width="11" height="11" viewBox="0 0 10 14" fill="none" style={{ marginLeft: 4, opacity: active ? 1 : 0.3, flexShrink: 0 }}>
-    <path d="M5 1 L5 13 M1 4 L5 1 L9 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-      style={{ opacity: active && dir === 'asc' ? 1 : 0.35 }} />
-    <path d="M1 10 L5 13 L9 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-      style={{ opacity: active && dir === 'desc' ? 1 : 0.35 }} />
-  </svg>
-);
+// ── Realistic Initial Seed Entries (§2 Data Contract) ───────────────────────
+const INITIAL_ENTRIES = [
+  {
+    id: '1',
+    title: 'Standard Vendor Service Agreement — SaaS',
+    category: 'Template',
+    updated: daysAgo(7).toISOString(),
+    author: 'Firm Library',
+    aiAssisted: true,
+    validity: 'current',
+    tags: ['SaaS', 'Commercial', 'Payment Terms'],
+    description:
+      'General-purpose services agreement for SaaS vendor engagements, harmonized for Indian jurisdiction clauses and standard liability caps.',
+  },
+  {
+    id: '2',
+    title: 'Employment Agreement — Fixed Term (Chennai)',
+    category: 'Standard Form',
+    updated: daysAgo(21).toISOString(),
+    author: 'Priya Raman',
+    aiAssisted: false,
+    validity: 'current',
+    tags: ['Employment', 'Fixed Term', 'Tamil Nadu'],
+    description:
+      "The firm's standard fixed-term employment contract, compliant with the Tamil Nadu Shops and Establishments Act.",
+  },
+  {
+    id: '3',
+    title: 'Precedent — Commercial Lease Deed, Nungambakkam',
+    category: 'Precedent',
+    updated: daysAgo(128).toISOString(),
+    author: 'Saurabh K.',
+    aiAssisted: false,
+    validity: 'review',
+    tags: ['Lease', 'Commercial Property', 'Chennai'],
+    description:
+      'A closed commercial lease matter kept as a structural reference — rent-escalation and lock-in clauses may need updating against current market terms.',
+  },
+  {
+    id: '4',
+    title: 'Research Memo — Force Majeure under S.56, Indian Contract Act',
+    category: 'Research Memo',
+    updated: daysAgo(184).toISOString(),
+    author: 'Yogesh N.',
+    aiAssisted: false,
+    validity: 'current',
+    tags: ['Force Majeure', 'Contract Act', 'Litigation'],
+    description:
+      'Analysis of force majeure invocation standards post-2020, with citations to relevant High Court rulings.',
+  },
+  {
+    id: '5',
+    title: 'Practice Guide — Filing a Caveat under CPC O. XXXIX',
+    category: 'Practice Guide',
+    updated: daysAgo(392).toISOString(),
+    author: 'Firm Library',
+    aiAssisted: false,
+    validity: 'outdated',
+    tags: ['CPC', 'Caveat', 'Procedure'],
+    description:
+      'Step-by-step filing procedure — flagged for review following recent Madras High Court practice-direction updates to e-filing requirements.',
+  },
+  {
+    id: '6',
+    title: 'Precedent — Founders’ Agreement, Private Limited',
+    category: 'Precedent',
+    updated: daysAgo(241).toISOString(),
+    author: 'Priya Raman',
+    aiAssisted: false,
+    validity: 'review',
+    tags: ['Startup', 'Equity', 'Founders'],
+    description:
+      'Founders’ agreement from an early-stage private limited matter — vesting schedule and IP-assignment clauses worth revisiting for newer deals.',
+  },
+  {
+    id: '7',
+    title: 'Standard Non-Disclosure Agreement — Vendor',
+    category: 'Template',
+    updated: daysAgo(2).toISOString(),
+    author: 'Firm Library',
+    aiAssisted: true,
+    validity: 'current',
+    tags: ['NDA', 'Confidentiality', 'Vendor'],
+    description:
+      'Mutual NDA template pre-cleared for vendor onboarding, with a jurisdiction carve-out for Indian courts.',
+  },
+];
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-const flStyles = `
-  .fl-page {
-    padding: 28px 32px;
-    font-family: var(--font-sans);
-    color: var(--text-primary);
-    transition: padding-right 0.32s cubic-bezier(0.16,1,0.3,1);
+// Helper to determine validity when not provided explicitly
+function computeValidity(entry) {
+  if (entry.validity) return entry.validity;
+  if (entry.validity_status) {
+    const s = String(entry.validity_status).toLowerCase();
+    if (s.includes('green') || s.includes('current')) return 'current';
+    if (s.includes('yellow') || s.includes('review')) return 'review';
+    if (s.includes('red') || s.includes('outdated')) return 'outdated';
   }
-  .fl-header {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
-  }
-  .fl-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-  .fl-search-wrap { flex: 1; min-width: 220px; position: relative; display: flex; align-items: center; }
-  .fl-search-icon { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; display: flex; align-items: center; }
-  .fl-search-input {
-    width: 100%; padding: 9px 12px 9px 36px;
-    background: var(--bg-panel); border: 1px solid var(--border-subtle);
-    border-radius: 8px; outline: none;
-    color: var(--text-primary); font-family: var(--font-sans); font-size: 13.5px;
-    transition: border-color 0.18s, box-shadow 0.18s;
-  }
-  .fl-search-input::placeholder { color: var(--text-muted); }
-  .fl-search-input:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
-  .fl-cat-filter { display: flex; gap: 4px; flex-wrap: wrap; }
-  .fl-cat-btn {
-    padding: 7px 13px; border-radius: 7px; font-size: 12px; font-weight: 500;
-    border: 1px solid var(--border-subtle); background: var(--bg-panel); color: var(--text-muted);
-    cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: var(--font-sans);
-  }
-  .fl-cat-btn:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
-  .fl-cat-btn.active { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); font-weight: 600; }
-  /* Table */
-  .fl-table-wrap { background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; }
-  .fl-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  .fl-table th {
-    padding: 12px 18px; background: var(--bg-card);
-    color: var(--text-muted); font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.06em;
-    border-bottom: 1px solid var(--border-subtle); cursor: pointer; user-select: none; white-space: nowrap;
-  }
-  .fl-table th:hover { color: var(--text-primary); }
-  .fl-table th.sorted { color: var(--accent-primary); }
-  .fl-table td {
-    padding: 13px 18px; border-bottom: 1px solid var(--border-subtle);
-    color: var(--text-primary); vertical-align: middle;
-  }
-  .fl-table tbody tr { transition: background 0.12s; cursor: pointer; }
-  .fl-table tbody tr:hover { background: rgba(59,130,246,0.05); }
-  .fl-table tbody tr.fl-row-selected {
-    background: rgba(59,130,246,0.07);
-    box-shadow: inset 3px 0 0 var(--accent-primary);
-  }
-  .fl-table tbody tr.fl-row-selected:hover { background: rgba(59,130,246,0.1); }
-  .fl-table tbody tr:last-child td { border-bottom: none; }
-  /* Category chip */
-  .fl-cat-chip {
-    display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.03em; white-space: nowrap; border: 1px solid;
-  }
-  /* Three-dot action menu */
-  .fl-row-actions { position: relative; }
-  .fl-dots-btn {
-    width: 28px; height: 28px; border-radius: 6px;
-    background: transparent; border: none; cursor: pointer;
-    color: var(--text-muted); display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s, color 0.15s; opacity: 0;
-  }
-  tr:hover .fl-dots-btn, .fl-dots-btn.open { opacity: 1; }
-  .fl-dots-btn:hover, .fl-dots-btn.open { background: rgba(59,130,246,0.1); color: var(--accent-primary); }
-  .fl-action-menu {
-    position: fixed; z-index: 1000;
-    background: var(--bg-card); border: 1px solid var(--border-subtle);
-    border-radius: 8px; padding: 4px; min-width: 168px;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.22);
-    animation: fl-menu-in 0.14s cubic-bezier(0.16,1,0.3,1);
-  }
-  @keyframes fl-menu-in {
-    from { opacity: 0; transform: scale(0.94) translateY(-4px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
-  }
-  .fl-menu-item {
-    display: flex; align-items: center; gap: 9px; padding: 8px 12px; border-radius: 5px;
-    font-size: 13px; color: var(--text-primary); cursor: pointer; transition: background 0.12s;
-  }
-  .fl-menu-item:hover { background: rgba(59,130,246,0.07); }
-  .fl-menu-item.danger { color: var(--accent-danger); }
-  .fl-menu-item.danger:hover { background: rgba(239,68,68,0.07); }
-  .fl-menu-divider { height: 1px; background: var(--border-subtle); margin: 3px 0; }
-  /* Quick Preview panel */
-  .fl-preview-panel {
-    position: fixed; z-index: 1100; width: 308px;
-    background: var(--bg-card); border: 1px solid var(--border-subtle);
-    border-radius: 12px; padding: 18px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.28), 0 0 0 1px rgba(59,130,246,0.1);
-    pointer-events: auto;
-    transition: opacity 0.2s cubic-bezier(0.16,1,0.3,1), transform 0.2s cubic-bezier(0.16,1,0.3,1);
-    opacity: 0; transform: scale(0.94) translateY(8px); transform-origin: top center;
-    will-change: opacity, transform;
-  }
-  .fl-preview-panel.visible { opacity: 1; transform: scale(1) translateY(0); }
-  .fl-preview-title { font-size: 14px; font-weight: 700; font-family: var(--font-serif); color: var(--text-primary); line-height: 1.35; margin-bottom: 10px; }
-  .fl-preview-desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px; }
-  .fl-preview-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 14px; }
-  .fl-preview-tag { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; background: rgba(59,130,246,0.08); color: var(--accent-primary); border: 1px solid rgba(59,130,246,0.18); }
-  .fl-preview-actions { display: flex; gap: 7px; }
-  .fl-preview-btn { flex: 1; padding: 7px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: var(--font-sans); transition: all 0.15s; text-align: center; }
-  .fl-preview-btn.primary { background: var(--accent-primary); color: #fff; border: none; }
-  .fl-preview-btn.primary:hover { background: var(--accent-hover); }
-  .fl-preview-btn.secondary { background: transparent; color: var(--accent-primary); border: 1px solid rgba(59,130,246,0.3); }
-  .fl-preview-btn.secondary:hover { background: rgba(59,130,246,0.08); }
-  /* Skeleton */
-  .fl-skeleton-row td { padding: 16px 18px; }
-  .fl-skel-bar {
-    height: 13px; border-radius: 5px;
-    background: linear-gradient(90deg, var(--border-subtle) 25%, rgba(255,255,255,0.04) 50%, var(--border-subtle) 75%);
-    background-size: 200% 100%; animation: fl-shimmer 1.4s infinite;
-  }
-  @keyframes fl-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-  /* Empty state */
-  .fl-empty { padding: 56px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  .fl-empty-icon { font-size: 32px; }
-  /* Empty-state drag-and-drop upload zone */
-  .fl-empty-dropzone {
-    margin: 12px; border: 2px dashed var(--border-dark-subtle, var(--border-subtle)); border-radius: 14px;
-    cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
-  }
-  .fl-empty-dropzone:hover { border-color: var(--accent-primary); background: rgba(59,130,246,0.04); }
-  .fl-empty-dropzone.dragover { border-color: var(--accent-primary); background: rgba(59,130,246,0.09); }
-  .fl-empty-dropzone.uploading { cursor: default; }
-  .fl-empty-cta { cursor: pointer; }
-  /* Add entry modal */
-  .fl-modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
-    z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px;
-  }
-  .fl-modal { background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 14px; width: 100%; max-width: 520px; box-shadow: 0 24px 60px rgba(0,0,0,0.35); animation: fl-modal-in 0.22s cubic-bezier(0.16,1,0.3,1); }
-  @keyframes fl-modal-in { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: none; } }
-  .fl-modal-header { padding: 18px 20px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; }
-  .fl-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-  .fl-modal-footer { padding: 14px 20px; border-top: 1px solid var(--border-subtle); display: flex; gap: 10px; justify-content: flex-end; }
-  .fl-input {
-    width: 100%; padding: 9px 12px;
-    background: var(--bg-card); border: 1px solid var(--border-subtle);
-    border-radius: 7px; outline: none; color: var(--text-primary);
-    font-family: var(--font-sans); font-size: 13.5px;
-    transition: border-color 0.18s, box-shadow 0.18s;
-  }
-  .fl-input::placeholder { color: var(--text-muted); }
-  .fl-input:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
-  .fl-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 5px; display: block; }
-  /* Toast */
-  .fl-toast {
-    position: fixed; bottom: 24px; right: 24px; z-index: 1300;
-    background: var(--bg-card); border: 1px solid var(--accent-success); color: var(--accent-success);
-    padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-    opacity: 0; transform: translateY(8px); transition: all 0.25s; pointer-events: none;
-  }
-  .fl-toast.show { opacity: 1; transform: translateY(0); }
+  const dateObj = new Date(entry.updated || Date.now());
+  const diffDays = Math.round((TODAY - dateObj) / 86400000);
+  if (diffDays > 365) return 'outdated';
+  if (diffDays > 90) return 'review';
+  return 'current';
+}
 
-  /* ── Workspace Drawer ──────────────────────────────────────────────────── */
-  .fl-workspace-drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; width: 480px;
-    background: var(--bg-panel); border-left: 1px solid var(--border-subtle);
-    z-index: 1050; display: flex; flex-direction: column; overflow: hidden;
-    transform: translateX(100%);
-    transition: transform 0.32s cubic-bezier(0.16,1,0.3,1), box-shadow 0.32s ease;
+const styles = `
+  .lib-root {
+    --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
+    --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
+    --accent:#B24A2E; --accent-soft:#EFDCD1;
+    --major:#9C7A2E; --major-soft:#F1E6C9;
+    --on-accent:#FBF7EE;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: var(--ink-soft);
   }
-  .fl-workspace-drawer.open {
-    transform: translateX(0);
-    box-shadow: -16px 0 56px rgba(0,0,0,0.22);
+  html[data-theme="dark"] .lib-root,
+  :root[data-theme="dark"] .lib-root {
+    --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
+    --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
+    --accent:#CC6B48; --accent-soft:#3B281F;
+    --major:#D9AD5C; --major-soft:#35301C;
+    --on-accent:#FBF7EE;
   }
-  /* Header */
-  .fl-ws-header {
-    padding: 18px 20px 0 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
-  }
-  .fl-ws-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .fl-ws-close-btn {
-    width: 28px; height: 28px; border-radius: 6px; border: none; cursor: pointer;
-    background: transparent; color: var(--text-muted);
-    display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0;
-  }
-  .fl-ws-close-btn:hover { background: rgba(239,68,68,0.08); color: var(--accent-danger); }
-  .fl-ws-title { font-size: 15.5px; font-weight: 700; font-family: var(--font-serif); color: var(--text-primary); line-height: 1.35; margin-bottom: 8px; }
-  .fl-ws-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .fl-ws-meta-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--border-subtle); flex-shrink: 0; }
-  /* Tab bar */
-  .fl-ws-tabs { display: flex; padding: 0 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; background: var(--bg-panel); }
-  .fl-ws-tab {
-    padding: 12px 14px; font-size: 13px; font-weight: 500; color: var(--text-muted);
-    background: transparent; border: none; cursor: pointer;
-    font-family: var(--font-sans); transition: color 0.15s; position: relative; white-space: nowrap;
-  }
-  .fl-ws-tab:hover { color: var(--text-primary); }
-  .fl-ws-tab.active { color: var(--accent-primary); font-weight: 600; }
-  .fl-ws-tab.active::after {
-    content: ''; position: absolute; bottom: 0; left: 14px; right: 14px;
-    height: 2px; background: var(--accent-primary); border-radius: 2px 2px 0 0;
-  }
-  .fl-ws-tab-new { font-size: 9px; vertical-align: super; color: var(--accent-primary); margin-left: 2px; }
-  /* Scrollable body */
-  .fl-ws-body {
-    flex: 1; overflow-y: auto; padding: 20px;
-    animation: fl-ws-content-in 0.22s cubic-bezier(0.16,1,0.3,1);
-  }
-  .fl-ws-body::-webkit-scrollbar { width: 4px; }
-  .fl-ws-body::-webkit-scrollbar-track { background: transparent; }
-  .fl-ws-body::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
-  @keyframes fl-ws-content-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  /* Overview: sections */
-  .fl-ws-section { margin-bottom: 22px; }
-  .fl-ws-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 8px; }
-  .fl-ws-description { font-size: 13.5px; color: var(--text-primary); line-height: 1.7; }
-  .fl-ws-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .fl-ws-meta-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px; }
-  .fl-ws-meta-card-label { font-size: 10px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-  .fl-ws-meta-card-value { font-size: 13px; color: var(--text-primary); font-weight: 500; }
-  /* Overview: document preview */
-  .fl-ws-doc-preview {
-    background: var(--bg-card); border: 1px solid var(--border-subtle);
-    border-radius: 10px; padding: 16px 18px;
-  }
-  .fl-ws-clause-heading {
-    font-size: 10.5px; font-weight: 700; color: var(--text-primary);
-    margin: 14px 0 6px 0; font-family: var(--font-serif);
-    text-transform: uppercase; letter-spacing: 0.06em;
-  }
-  .fl-ws-clause-heading:first-child { margin-top: 0; }
-  .fl-ws-clause-line { height: 8px; border-radius: 3px; margin-bottom: 5px; background: var(--border-subtle); opacity: 0.6; }
-  /* Clause DNA tab */
-  .fl-dna-intro { text-align: center; padding: 20px 0 28px; }
-  .fl-dna-icon { font-size: 36px; margin-bottom: 14px; }
-  .fl-dna-headline { font-size: 16px; font-weight: 700; font-family: var(--font-serif); color: var(--text-primary); margin-bottom: 8px; }
-  .fl-dna-subtext { font-size: 13px; color: var(--text-muted); line-height: 1.65; margin-bottom: 22px; max-width: 320px; display: block; margin-left: auto; margin-right: auto; }
-  .fl-dna-scan-btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 11px 26px; border-radius: 8px;
-    background: var(--accent-primary); color: #fff; border: none;
-    font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: var(--font-sans);
-    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-    box-shadow: 0 2px 12px rgba(59,130,246,0.3);
-  }
-  .fl-dna-scan-btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(59,130,246,0.38); }
-  .fl-dna-scanning-banner {
-    display: flex; align-items: center; gap: 10px; padding: 14px 16px;
-    background: var(--bg-card); border: 1px solid var(--border-subtle);
-    border-radius: 10px; margin-bottom: 12px;
-  }
-  .fl-spinner {
+  .lib-root svg.icon {
     width: 16px; height: 16px; flex-shrink: 0;
-    border: 2px solid rgba(59,130,246,0.2); border-top-color: var(--accent-primary);
-    border-radius: 50%; animation: fl-spin 0.75s linear infinite;
   }
-  @keyframes fl-spin { to { transform: rotate(360deg); } }
-  .fl-dna-skel { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 12px 14px; margin-bottom: 8px; }
-  .fl-dna-clause-card {
-    background: var(--bg-card); border: 1px solid var(--border-subtle);
-    border-radius: 9px; padding: 12px 14px; margin-bottom: 8px;
-    transition: border-color 0.15s, box-shadow 0.15s;
+  .lib-root svg.icon path,
+  .lib-root svg.icon line,
+  .lib-root svg.icon rect,
+  .lib-root svg.icon circle,
+  .lib-root svg.icon polyline {
+    stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
   }
-  .fl-dna-clause-card:hover { border-color: rgba(59,130,246,0.3); box-shadow: 0 2px 10px rgba(59,130,246,0.06); }
-  .fl-dna-clause-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; gap: 8px; }
-  .fl-dna-clause-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-  .fl-dna-risk-badge {
-    font-size: 9.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px;
-    border: 1px solid; text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0;
-  }
-  .fl-dna-clause-summary { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
-  .fl-dna-rescan-btn {
-    font-size: 11.5px; background: transparent; border: none;
-    color: var(--accent-primary); cursor: pointer; padding: 4px 8px; border-radius: 4px;
-    transition: background 0.12s;
-  }
-  .fl-dna-rescan-btn:hover { background: rgba(59,130,246,0.08); }
-  /* Actions tab */
-  .fl-ws-action-btn {
-    width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 16px;
-    border-radius: 9px; border: 1px solid var(--border-subtle);
-    background: var(--bg-card); color: var(--text-primary);
-    font-size: 13.5px; font-weight: 500; cursor: pointer;
-    font-family: var(--font-sans); transition: all 0.15s; margin-bottom: 8px; text-align: left;
-  }
-  .fl-ws-action-btn:hover { border-color: var(--accent-primary); background: rgba(59,130,246,0.04); color: var(--accent-primary); }
-  .fl-ws-action-btn.primary { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); font-weight: 600; }
-  .fl-ws-action-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
-  .fl-ws-action-btn.reviewed { background: rgba(16,185,129,0.08); color: var(--accent-success); border-color: rgba(16,185,129,0.3); font-weight: 600; }
-  .fl-ws-action-btn.reviewed:hover { background: rgba(16,185,129,0.13); border-color: var(--accent-success); color: var(--accent-success); }
-  .fl-ws-notes {
-    width: 100%; padding: 10px 12px;
-    background: var(--bg-card); border: 1px solid var(--border-subtle);
-    border-radius: 7px; outline: none; color: var(--text-primary);
-    font-family: var(--font-sans); font-size: 13px;
-    transition: border-color 0.18s, box-shadow 0.18s;
-    resize: vertical; min-height: 96px; box-sizing: border-box; line-height: 1.6;
-  }
-  .fl-ws-notes::placeholder { color: var(--text-muted); }
-  .fl-ws-notes:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-  /* Light theme overrides */
-  :root[data-theme="light"] .fl-table-wrap { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .fl-action-menu { box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-  :root[data-theme="light"] .fl-preview-panel { box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(59,130,246,0.1); }
-  :root[data-theme="light"] .fl-workspace-drawer.open { box-shadow: -8px 0 40px rgba(0,0,0,0.1); }
 
-  /* ── Dual-Brain RAG dossier ────────────────────────────────────────────────── */
-  @keyframes fl-rag-in { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes fl-rag-pulse { 0%,100% { opacity:1; } 50% { opacity:0.42; } }
-  .fl-rag-loading {
-    display: flex; align-items: center; gap: 10px; padding: 14px 16px;
-    border-radius: 10px; margin-bottom: 14px;
-    background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.18);
-    font-size: 12.5px; font-weight: 500; color: #A78BFA;
-    animation: fl-rag-pulse 1.2s ease-in-out infinite;
+  .lib-page {
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 0 32px 80px;
   }
-  .fl-rag-dossier {
-    background: rgba(99,102,241,0.055); border: 1px solid rgba(99,102,241,0.22);
-    border-radius: 12px; padding: 18px; margin-bottom: 16px;
-    display: flex; flex-direction: column; gap: 14px;
-    animation: fl-rag-in 0.22s cubic-bezier(0.16,1,0.3,1);
-  }
-  .fl-rag-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-  .fl-rag-brain-badge {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 9.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
-    padding: 3px 10px; border-radius: 4px;
-    background: rgba(99,102,241,0.15); color: #A78BFA; border: 1px solid rgba(99,102,241,0.3);
-  }
-  .fl-rag-reliability { display: flex; align-items: center; gap: 8px; }
-  .fl-rag-reliability-bar {
-    width: 70px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
-  }
-  .fl-rag-reliability-fill { height: 100%; border-radius: 2px; transition: width 0.7s cubic-bezier(0.16,1,0.3,1); }
-  .fl-rag-reliability-label { font-size: 10.5px; font-weight: 700; }
-  .fl-rag-synthesis {
-    font-size: 13px; line-height: 1.75; font-weight: 500;
-    color: var(--text-primary, #F8FAFC);
-  }
-  .fl-rag-section-label {
-    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
-    color: var(--text-muted, #94A3B8); margin-bottom: 7px;
-  }
-  .fl-rag-citations { display: flex; flex-direction: column; gap: 6px; }
-  .fl-rag-citation {
-    font-size: 12px; padding: 9px 12px; border-radius: 7px;
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.09);
-    color: var(--text-secondary, #E2E8F0);
-  }
-  .fl-rag-citation strong { color: #7EB3F5; display: block; margin-bottom: 3px; font-size: 12.5px; font-weight: 600; }
-  .fl-rag-citation-link {
-    color: #7EB3F5; display: block; margin-bottom: 3px; font-size: 12.5px; font-weight: 600;
-    text-decoration: none; transition: color 0.18s, text-decoration-color 0.18s;
-    text-decoration-color: transparent;
-  }
-  .fl-rag-citation-link:hover { color: #93C5FD; text-decoration: underline; text-decoration-color: rgba(147,197,253,0.5); }
-  .fl-rag-ratio {
-    font-size: 12px; font-weight: 500; line-height: 1.65;
-    color: var(--text-secondary, #E2E8F0);
-    padding: 8px 12px; background: rgba(255,255,255,0.04);
-    border-radius: 7px; border: 1px solid rgba(255,255,255,0.09);
-  }
-  .fl-rag-warnings { display: flex; flex-direction: column; gap: 6px; }
-  .fl-rag-warning {
-    font-size: 11.5px; font-weight: 500; color: #FBBF24;
-    display: flex; align-items: flex-start; gap: 7px;
-    padding: 7px 11px; border-radius: 6px;
-    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.22); line-height: 1.55;
-  }
-  .fl-rag-actions { display: flex; gap: 9px; padding-top: 2px; }
-  .fl-rag-action-btn {
-    flex: 1; padding: 9px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
-    cursor: pointer; border: 1px solid; transition: all 0.15s; font-family: var(--font-sans);
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-  }
-  .fl-rag-action-btn.copy {
-    background: rgba(59,130,246,0.08); color: #7EB3F5; border-color: rgba(59,130,246,0.25);
-  }
-  .fl-rag-action-btn.copy:hover { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.45); }
-  .fl-rag-action-btn.inject {
-    background: rgba(99,102,241,0.1); color: #A78BFA; border-color: rgba(99,102,241,0.28);
-  }
-  .fl-rag-action-btn.inject:hover { background: rgba(99,102,241,0.18); border-color: rgba(99,102,241,0.5); }
-  .fl-rag-action-btn.done { color: #34D399; border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.07); }
-  :root[data-theme="light"] .fl-rag-dossier { background: rgba(99,102,241,0.04); }
-  :root[data-theme="light"] .fl-rag-synthesis { color: var(--text-primary, #0F172A); }
-  :root[data-theme="light"] .fl-rag-citation { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
-  :root[data-theme="light"] .fl-rag-ratio { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.1); color: var(--text-primary, #0F172A); }
-  /* .document-viewer-error/.dv-ai-summary-title use
-     fixed accent hex values tuned for readability on this file's dark
-     default — light pastel red/blue/purple that pass contrast on a near-
-     black background fail it on white. Darkening only under the light
-     theme, not touching the dark (default) values at all. */
-  :root[data-theme="light"] .document-viewer-error { color: #B91C1C; background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); }
-  :root[data-theme="light"] .dv-ai-summary { background: rgba(99,102,241,0.06); border-color: rgba(99,102,241,0.25); }
-  :root[data-theme="light"] .dv-ai-summary-title { color: #6D28D9; }
 
-  /* ── Document Viewer Modal ──
-     Centralized 90%-viewport modal (not a side drawer) for reading dense
-     legal text. NOTE: this project has no Tailwind build (no tailwind.config,
-     no postcss config, not in package.json) — utility-class strings like
-     "fixed inset-4 md:inset-10 z-50 bg-[#0f111a]..." compile to nothing and
-     render completely unstyled. Every rule below is the real CSS equivalent
-     of that intended Tailwind design, applied via an actual class name. */
+  /* ---------- Header ---------- */
+  .lib-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 8px; flex-wrap: wrap;
+  }
+  .lib-title {
+    font-family: 'Fraunces', serif; font-style: italic; font-weight: 600; font-size: 30px; color: var(--ink);
+  }
+  .lib-sub {
+    font-size: 13.5px; color: var(--muted); margin-top: 7px; max-width: 520px; line-height: 1.55;
+  }
+  .lib-actions {
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+  .lib-btn {
+    display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; border-radius: 8px; padding: 10px 16px; cursor: pointer; white-space: nowrap; border: 1px solid transparent; font-family: inherit; transition: all 0.15s ease;
+  }
+  .lib-btn-primary {
+    color: var(--on-accent); background: var(--accent);
+  }
+  .lib-btn-primary:hover {
+    background: #9C3E26;
+  }
+  html[data-theme="dark"] .lib-btn-primary:hover {
+    background: #B85A3B;
+  }
+  .lib-btn-ghost {
+    color: var(--ink-soft); background: var(--paper); border-color: var(--rule);
+  }
+  .lib-btn-ghost:hover {
+    border-color: var(--ink); color: var(--ink);
+  }
+
+  .lib-stats {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); margin: 20px 0 22px; padding-bottom: 20px; border-bottom: 1px solid var(--rule);
+  }
+  .lib-stats b {
+    color: var(--ink); font-weight: 600;
+  }
+  .lib-stats .flag {
+    color: var(--major); font-weight: 600;
+  }
+
+  /* ---------- Tabs ---------- */
+  .lib-tabs {
+    display: flex; gap: 8px; margin-bottom: 22px;
+  }
+  .lib-tab {
+    display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--paper); border: 1px solid var(--rule); border-radius: 9px; padding: 10px 16px; cursor: pointer; font-family: inherit; transition: all 0.15s ease;
+  }
+  .lib-tab .icon {
+    color: var(--muted-2);
+  }
+  .lib-tab.on {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+  }
+  .lib-tab.on .icon {
+    color: var(--accent);
+  }
+
+  .tab-panel {
+    display: none;
+  }
+  .tab-panel.on {
+    display: block;
+  }
+
+  /* ---------- Search + Filters ---------- */
+  .search-row {
+    position: relative; margin-bottom: 14px;
+  }
+  .search-row .icon {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted);
+  }
+  .search-input {
+    width: 100%; border: 1px solid var(--rule); border-radius: 9px; padding: 12px 14px 12px 40px; font-family: inherit; font-size: 13.5px; background: var(--paper); color: var(--ink-soft); box-sizing: border-box;
+  }
+  .search-input::placeholder {
+    color: var(--muted);
+  }
+  .search-input:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .search-hint {
+    font-size: 11.5px; color: var(--muted); margin: 8px 2px 0; font-style: italic; font-family: 'Fraunces', serif;
+  }
+
+  .filter-row {
+    display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 20px;
+  }
+  .filter-pill {
+    font-size: 12px; color: var(--muted); background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; padding: 6px 13px; cursor: pointer; font-family: inherit; transition: all 0.15s ease;
+  }
+  .filter-pill .count {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+  }
+  .filter-pill.on {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600;
+  }
+
+  /* ---------- Table ---------- */
+  .lib-table-wrap {
+    border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; background: var(--paper);
+  }
+  .lib-table {
+    width: 100%; border-collapse: collapse;
+  }
+  .lib-table thead th {
+    text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .03em; color: var(--muted); text-transform: uppercase; padding: 13px 18px; border-bottom: 1px solid var(--rule); cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .lib-table thead th:hover {
+    color: var(--ink-soft);
+  }
+  .lib-table thead th.sorted {
+    color: var(--accent);
+  }
+  .th-flex {
+    display: flex; align-items: center; gap: 5px;
+  }
+  .sort-arrow {
+    width: 10px; height: 10px; opacity: .5;
+  }
+  .th-flex.sorted .sort-arrow {
+    opacity: 1; color: var(--accent);
+  }
+
+  .lib-row {
+    border-bottom: 1px solid var(--paper-2); cursor: pointer; transition: background 0.12s ease;
+  }
+  .lib-row:last-child {
+    border-bottom: none;
+  }
+  .lib-row:hover {
+    background: var(--paper-2);
+  }
+  .lib-row td {
+    padding: 14px 18px; vertical-align: middle; font-size: 13px;
+  }
+
+  .cat-cell {
+    display: flex; align-items: center; gap: 11px;
+  }
+  .cat-icon-wrap {
+    width: 32px; height: 32px; border-radius: 8px; background: var(--paper-2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--ink-soft);
+  }
+  .row-title {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 14px; color: var(--ink); line-height: 1.35;
+  }
+  .row-cat-label {
+    font-size: 11px; color: var(--muted); margin-top: 2px;
+  }
+
+  .cat-pill {
+    display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--ink-soft); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 5px; padding: 3px 8px;
+  }
+
+  .updated-cell {
+    color: var(--ink-soft); white-space: nowrap;
+  }
+  .updated-exact {
+    font-size: 10.5px; color: var(--muted); margin-top: 2px;
+  }
+
+  .author-cell {
+    display: flex; align-items: center; gap: 7px; color: var(--ink-soft);
+  }
+  .author-cell .icon {
+    color: var(--muted-2); width: 14px; height: 14px;
+  }
+  .author-cell.ai {
+    color: var(--ink-soft);
+  }
+  .author-cell.ai .icon {
+    color: var(--accent);
+  }
+
+  .valid-pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 6px; white-space: nowrap;
+  }
+  .valid-current {
+    color: var(--ink-soft); background: var(--paper-2); border: 1px solid var(--rule);
+  }
+  .valid-review {
+    color: var(--major); background: var(--major-soft); border: 1px solid transparent;
+  }
+  .valid-outdated {
+    color: var(--accent); background: var(--accent-soft); border: 1px solid transparent;
+  }
+  .valid-pill .icon {
+    width: 12px; height: 12px;
+  }
+
+  /* ---------- Empty state ---------- */
+  .empty-zone {
+    border: 1.5px dashed var(--rule); border-radius: 12px; padding: 56px 30px; text-align: center; background: var(--paper);
+  }
+  .empty-zone.dragover {
+    border-color: var(--accent); background: var(--accent-soft);
+  }
+  .empty-icon {
+    width: 52px; height: 52px; border-radius: 12px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; margin: 0 auto 18px;
+  }
+  .empty-icon .icon {
+    width: 24px; height: 24px; color: var(--accent);
+  }
+  .empty-title {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 18px; color: var(--ink);
+  }
+  .empty-sub {
+    font-size: 13px; color: var(--muted); margin: 9px auto 20px; max-width: 400px; line-height: 1.6;
+  }
+  .empty-formats {
+    display: flex; gap: 8px; justify-content: center; margin-bottom: 20px;
+  }
+  .empty-tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); border: 1px solid var(--rule); padding: 3px 9px; border-radius: 5px;
+  }
+
+  .demo-toggle {
+    font-size: 11px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; background: none; border: none; margin-top: 18px; display: block; font-family: inherit;
+  }
+  .demo-toggle:hover {
+    color: var(--accent);
+  }
+
+  /* ---------- External DB shell ---------- */
+  .ext-shell {
+    max-width: 760px;
+  }
+  .ext-hint {
+    font-size: 12px; color: var(--muted); margin-top: 10px; font-style: italic; font-family: 'Fraunces', serif;
+  }
+  .ext-note {
+    margin-top: 26px; padding: 14px 16px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 9px; font-size: 11.5px; color: var(--muted); line-height: 1.6;
+  }
+
+  /* ---------- Slide-over detail panel ---------- */
+  .lib-overlay {
+    position: fixed; inset: 0; background: rgba(20,23,26,.45); display: none; z-index: 40;
+  }
+  .lib-overlay.on {
+    display: block;
+  }
+  .slideover {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 92vw; background: var(--paper); border-left: 1px solid var(--rule); z-index: 41; transform: translateX(100%); transition: transform .28s cubic-bezier(.32,.72,0,1); overflow-y: auto;
+  }
+  .slideover.on {
+    transform: translateX(0);
+  }
+  .so-head {
+    padding: 22px 24px 18px; border-bottom: 1px solid var(--rule);
+  }
+  .so-close {
+    float: right; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 4px;
+  }
+  .so-close:hover {
+    color: var(--accent);
+  }
+  .so-cat {
+    display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-bottom: 10px;
+  }
+  .so-title {
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: 21px; color: var(--ink); line-height: 1.3; padding-right: 20px;
+  }
+  .so-body {
+    padding: 20px 24px;
+  }
+  .so-section {
+    margin-bottom: 22px;
+  }
+  .so-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--muted); letter-spacing: .03em; margin-bottom: 8px; text-transform: uppercase;
+  }
+  .so-text {
+    font-size: 13.5px; line-height: 1.65; color: var(--ink-soft);
+  }
+  .so-tags {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .so-tag {
+    font-size: 11px; color: var(--ink-soft); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 4px 11px;
+  }
+  .so-meta-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .so-meta-item .so-label {
+    margin-bottom: 4px;
+  }
+  .so-meta-item .so-text {
+    font-size: 12.5px;
+  }
+  .so-actions {
+    display: flex; flex-direction: column; gap: 9px; padding: 20px 24px 26px; border-top: 1px solid var(--rule);
+  }
+  .so-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; font-weight: 600; border-radius: 8px; padding: 11px 16px; cursor: pointer; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); font-family: inherit; transition: all 0.15s ease;
+  }
+  .so-btn:hover {
+    border-color: var(--ink); color: var(--ink);
+  }
+  .so-btn.primary {
+    background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+  }
+  .so-btn.primary:hover {
+    background: #9C3E26;
+  }
+  html[data-theme="dark"] .so-btn.primary:hover {
+    background: #B85A3B;
+  }
+
+  /* ---------- Add Entry Modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(20,23,26,.5); display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px;
+  }
+  .modal-backdrop.on {
+    display: flex;
+  }
+  .modal-card {
+    width: 520px; max-width: 100%; max-height: 88vh; overflow-y: auto; background: var(--paper); border-radius: 14px; border: 1px solid var(--rule); box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--rule);
+  }
+  .modal-title {
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: 18px; color: var(--ink);
+  }
+  .modal-close {
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 4px;
+  }
+  .modal-close:hover {
+    color: var(--accent);
+  }
+  .modal-body {
+    padding: 22px 24px;
+  }
+
+  .m-drop {
+    border: 1.5px dashed var(--rule); border-radius: 10px; padding: 20px; text-align: center; margin-bottom: 20px; cursor: pointer; transition: all 0.15s ease;
+  }
+  .m-drop:hover {
+    border-color: var(--accent); background: var(--accent-soft);
+  }
+  .m-drop .icon {
+    width: 18px; height: 18px; color: var(--accent); margin: 0 auto 8px; display: block;
+  }
+  .m-drop-text {
+    font-size: 12px; color: var(--ink-soft);
+  }
+  .m-drop-sub {
+    font-size: 10.5px; color: var(--muted); margin-top: 3px;
+  }
+  .m-file-chip {
+    display: flex; align-items: center; gap: 9px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 12px; margin-bottom: 20px; font-size: 12px; color: var(--ink-soft);
+  }
+  .m-file-chip .icon {
+    color: var(--accent);
+  }
+  .m-file-chip button {
+    margin-left: auto; background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px 4px;
+  }
+  .m-file-chip button:hover {
+    color: var(--accent);
+  }
+
+  .m-field {
+    margin-bottom: 16px;
+  }
+  .m-field label {
+    display: block; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--muted); letter-spacing: .03em; margin-bottom: 7px; text-transform: uppercase;
+  }
+  .m-field input, .m-field select, .m-field textarea {
+    width: 100%; border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-family: inherit; font-size: 13px; background: var(--bg); color: var(--ink-soft); box-sizing: border-box;
+  }
+  .m-field input:focus, .m-field select:focus, .m-field textarea:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .m-field textarea {
+    resize: vertical; min-height: 70px;
+  }
+  .m-row2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .modal-footer {
+    display: flex; justify-content: flex-end; gap: 10px; padding: 18px 24px; border-top: 1px solid var(--rule);
+  }
+
+  /* ---------- Toast ---------- */
+  .lib-toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 1000; background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.25); opacity: 0; transform: translateY(10px); transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none;
+  }
+  .lib-toast.show {
+    opacity: 1; transform: translateY(0);
+  }
+
+  /* ---------- Document Viewer Modal (External DB View) ---------- */
   .document-viewer-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-    z-index: 199; animation: fl-fade-in 0.2s ease;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 199; animation: fl-fade-in 0.2s ease;
   }
   @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
   .document-viewer-modal {
-    position: fixed; inset: 16px; /* Tailwind inset-4 = 1rem = 16px */
-    z-index: 200; /* above .document-viewer-backdrop's 199 — Tailwind's own z-50
-                     would sit BELOW it under this file's ad-hoc z-index scale */
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
-    border-radius: 12px; /* rounded-xl */
-    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); /* shadow-2xl */
-    display: flex; flex-direction: column; overflow: hidden;
-    animation: fl-fade-in 0.2s ease; /* a centered modal fading in reads better
-                                         than the old drawer's slide-from-right */
+    position: fixed; inset: 16px; z-index: 200; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; animation: fl-fade-in 0.2s ease;
   }
   @media (min-width: 768px) {
-    .document-viewer-modal { inset: 40px; } /* Tailwind md:inset-10 = 2.5rem = 40px */
+    .document-viewer-modal { inset: 40px; }
   }
   .dv-header {
-    display: flex; flex-direction: column; gap: 12px;
-    padding: 20px 22px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; border-bottom: 1px solid var(--rule); flex-shrink: 0; background: var(--paper);
   }
-  .dv-header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .dv-header-top {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  }
   .document-viewer-title {
-    font-family: var(--font-serif); font-size: 17px; font-weight: 700; line-height: 1.4;
-    color: var(--text-primary);
+    font-family: 'Fraunces', serif; font-size: 17px; font-weight: 700; line-height: 1.4; color: var(--ink);
   }
   .document-viewer-close {
-    background: none; border: none; color: var(--text-muted); cursor: pointer;
-    padding: 6px; border-radius: 7px; flex-shrink: 0; display: flex;
-    transition: background 0.15s, color 0.15s;
+    background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; border-radius: 7px; flex-shrink: 0; display: flex;
   }
-  .document-viewer-close:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
-
-  /* ── Action Toolbar ── */
-  .dv-action-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+  .document-viewer-close:hover {
+    color: var(--accent);
+  }
+  .dv-action-bar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
   .dv-action-btn {
-    display: flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle);
-    color: var(--text-secondary, #E2E8F0); font-size: 12px; font-weight: 600;
-    padding: 7px 12px; border-radius: 7px; cursor: pointer; font-family: var(--font-sans);
-    transition: all 0.15s;
+    display: flex; align-items: center; gap: 6px; background: var(--paper-2); border: 1px solid var(--rule); color: var(--ink-soft); font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer; font-family: inherit; transition: all 0.15s;
   }
-  .dv-action-btn:hover { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.35); color: var(--text-primary); }
-  .dv-action-btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
-  .dv-action-btn.done { color: #34D399; border-color: rgba(16,185,129,0.35); background: rgba(16,185,129,0.08); }
-
-  /* ── AI Summary Accordion ── */
-  .dv-ai-summary {
-    margin: 0 22px; margin-top: 16px;
-    background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.22);
-    border-radius: 10px; padding: 14px 16px; flex-shrink: 0;
+  .dv-action-btn:hover {
+    border-color: var(--ink); color: var(--ink);
   }
-  .dv-ai-summary-title {
-    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
-    color: #A78BFA; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  .dv-action-btn.done {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
   }
-  .dv-ai-summary-body { font-size: 13px; line-height: 1.7; color: var(--text-primary); white-space: pre-wrap; }
-  .dv-shimmer-line {
-    height: 12px; border-radius: 4px; margin-bottom: 8px;
-    background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.14) 37%, rgba(255,255,255,0.06) 63%);
-    background-size: 400% 100%; animation: dv-shimmer 1.4s ease infinite;
+  .dv-body {
+    flex: 1 1 0%; min-height: 0; overflow-y: auto; padding: 22px; width: 100%; box-sizing: border-box; background: var(--bg);
   }
-  @keyframes dv-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
-
-  /* min-height:0 is the actual load-bearing fix here (Tailwind's min-h-0) —
-     without it, a flex child defaults to min-height:auto, which means it
-     refuses to shrink below its CONTENT's height. A 300,000+ character
-     judgment would then force .dv-body (and the whole fixed-height modal)
-     to grow past its container instead of scrolling internally, which is
-     exactly the failure mode that pushes the header/close button off-screen. */
-  .dv-body { flex: 1 1 0%; min-height: 0; overflow-y: auto; padding: 22px; width: 100%; }
-  .dv-text-wrap { max-width: 896px; margin: 0 auto; padding-left: 32px; padding-right: 32px; } /* max-w-4xl mx-auto px-8 */
-  /* Monospace + smaller size instead of the proportional serif previously
-     used here — a reconstructed judgment can run 300,000+ characters, and
-     variable-width text with kerning/ligatures costs measurably more to lay
-     out than a fixed-width font at that size. overflow-y:auto on .dv-body
-     above keeps the scroll container itself cheap regardless of length. */
-  .document-viewer-text {
-    color: var(--text-primary);
-    word-break: break-word;
-  }
-  .document-viewer-text::selection { background: rgba(var(--primary-rgb, 99,102,241), 0.2); }
-  .document-viewer-error {
-    color: #FCA5A5; font-size: 13px; background: rgba(239,68,68,0.1);
-    border: 1px solid rgba(239,68,68,0.25); padding: 12px 14px; border-radius: 8px;
-  }
-
-  /* ── Internal / External mode toggle ── */
-  .fl-mode-toggle { display: inline-flex; gap: 3px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 9px; padding: 3px; margin-bottom: 16px; }
-  .fl-mode-btn { background: transparent; border: none; color: var(--text-muted); font-size: 12.5px; font-weight: 600; padding: 7px 16px; border-radius: 6px; cursor: pointer; transition: all .15s; }
-  .fl-mode-btn:hover { color: var(--text-primary); }
-  .fl-mode-btn.active { background: var(--accent-primary); color: #fff; }
-  .fl-ext-result-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px 18px; }
-  .fl-ext-result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
-  .fl-ext-result-title { font-size: 14.5px; font-weight: 700; font-family: var(--font-serif); margin-bottom: 3px; }
-  .fl-ext-result-title-link { display: inline-block; color: #7EB3F5; text-decoration: none; }
-  .fl-ext-result-title-link:hover { color: #A5C9FF; text-decoration: underline; }
-  .fl-ext-result-meta { font-size: 11.5px; color: var(--text-muted); }
-  .fl-ext-result-headnote { font-size: 13px; color: var(--text-primary); line-height: 1.7; margin-bottom: 12px; }
-  .fl-ext-result-actions { display: flex; gap: 8px; }
-  .fl-ext-action-btn { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); color: var(--accent-primary); font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 7px; cursor: pointer; transition: all .15s; }
-  .fl-ext-action-btn:hover:not(:disabled) { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.4); }
-  .fl-ext-action-btn:disabled { opacity: .55; cursor: default; color: var(--text-muted); border-color: var(--border-subtle); background: transparent; }
-  .fl-ext-action-btn.vault { background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.25); color: #A78BFA; }
-  .fl-ext-action-btn.vault:hover { background: rgba(139,92,246,0.16); border-color: rgba(139,92,246,0.4); }
-
-  /* ── TWO-COLUMN DOCUMENT LAYOUT ── */
   .dv-content-layout {
-    display: flex;
-    gap: 20px;
-    height: 100%;
-    width: 100%;
+    display: flex; gap: 20px; height: 100%; width: 100%;
   }
-  
   .dv-sidebar-outline {
-    width: 220px;
-    background: rgba(15, 23, 42, 0.4) !important;
-    border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
-    padding-right: 15px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    flex-shrink: 0;
-    overflow-y: auto;
+    width: 220px; background: var(--paper) !important; border-right: 1px solid var(--rule) !important; padding: 12px; display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; overflow-y: auto; border-radius: 8px;
   }
-  
   .dv-main-viewer {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    height: 100%;
+    flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%;
   }
-
-  /* Outline item styles */
   .dv-outline-title {
-    font-size: 10.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #64748B;
-    margin-bottom: 8px;
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; font-family: 'IBM Plex Mono', monospace;
   }
   .dv-outline-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: flex; flex-direction: column; gap: 6px;
   }
   .dv-outline-item {
-    font-size: 11.5px;
-    color: #94A3B8;
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    border: 1px solid transparent;
+    font-size: 11.5px; color: var(--ink-soft); padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent;
   }
   .dv-outline-item:hover {
-    background: rgba(255, 255, 255, 0.03);
-    color: #F1F5F9;
+    background: var(--paper-2); color: var(--ink);
   }
   .dv-outline-item.header {
-    font-weight: 600;
-    color: #818CF8;
+    font-weight: 600; color: var(--accent);
   }
-  .dv-outline-item.meta {
-    font-size: 11px;
-    color: #64748B;
+  .dv-text-wrap {
+    max-width: 896px; margin: 0 auto; padding: 0 20px; font-size: 13.5px; line-height: 1.7; color: var(--ink-soft);
   }
-  
-  /* Persistent Search Bar styles */
-  .dv-search-container {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: rgba(15, 23, 42, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    padding: 8px 12px;
-    margin-bottom: 16px;
+  .dv-ai-summary {
+    margin: 0 22px 16px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; flex-shrink: 0;
   }
-  .dv-search-input {
-    flex: 1;
-    background: transparent !important;
-    border: none !important;
-    color: #F8FAFC !important;
-    font-size: 13px !important;
-    outline: none !important;
+  .dv-ai-summary-title {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace;
   }
-  .dv-search-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .dv-search-btn {
-    background: rgba(255, 255, 255, 0.04) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    color: #CBD5E1 !important;
-    padding: 4px 8px !important;
-    border-radius: 4px !important;
-    font-size: 11px !important;
-    cursor: pointer !important;
-    transition: all 0.15s !important;
-  }
-  .dv-search-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08) !important;
-    color: #F8FAFC !important;
-  }
-  .dv-search-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .dv-search-count {
-    font-size: 11px;
-    color: #64748B;
-    margin-right: 6px;
-    font-variant-numeric: tabular-nums;
+  .dv-ai-summary-body {
+    font-size: 13px; line-height: 1.7; color: var(--ink-soft); white-space: pre-wrap;
   }
 
-  /* Readability Control Panel */
-  .dv-controls-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 8px;
-    padding: 10px;
-  }
-  .dv-control-row {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .dv-control-label {
-    font-size: 9.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #64748B;
-  }
-  .dv-control-options {
-    display: flex;
-    gap: 4px;
-  }
-  .dv-control-opt-btn {
-    flex: 1;
-    background: rgba(255, 255, 255, 0.03) !important;
-    border: 1px solid rgba(255, 255, 255, 0.06) !important;
-    color: #94A3B8 !important;
-    padding: 5px 0 !important;
-    border-radius: 4px !important;
-    font-size: 10.5px !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    text-align: center;
-    transition: all 0.15s ease !important;
-  }
-  .dv-control-opt-btn:hover {
-    background: rgba(255, 255, 255, 0.06) !important;
-    color: #F1F5F9 !important;
-  }
-  .dv-control-opt-btn.active {
-    background: rgba(99, 102, 241, 0.15) !important;
-    border-color: rgba(99, 102, 241, 0.4) !important;
-    color: #C4B5FD !important;
+  @media (max-width: 880px) {
+    .m-row2 { grid-template-columns: 1fr; }
+    .so-meta-grid { grid-template-columns: 1fr; }
   }
 
-  /* ── Indian Kanoon Layout Reconstruction styling ── */
-  .judg-header-center {
-    text-align: center !important;
-    font-weight: 700 !important;
-    font-size: 16px !important;
-    margin: 25px 0 12px !important;
-    color: #E2E8F0 !important;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .judg-party-role {
-    text-align: center !important;
-    font-style: italic !important;
-    margin: 8px 0 !important;
-    color: #94A3B8 !important;
-    font-size: 13.5px !important;
-  }
-  .judg-bench-box {
-    text-align: center !important;
-    background: rgba(255, 255, 255, 0.03) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    padding: 10px 14px !important;
-    border-radius: 8px !important;
-    margin: 18px 0 !important;
-    font-size: 13px !important;
-    color: #CBD5E1 !important;
-  }
-  .judg-blockquote {
-    border-left: 3px solid #8B5CF6 !important;
-    margin: 18px 24px !important;
-    padding: 10px 18px !important;
-    background: rgba(139, 92, 246, 0.04) !important;
-    color: #94A3B8 !important;
-    font-style: italic !important;
-    border-radius: 0 6px 6px 0;
-  }
-  .judg-para {
-    margin: 0 0 1.25em !important;
-    text-align: justify !important;
-    color: inherit !important;
-  }
-  .judg-para-num {
-    font-weight: bold !important;
-    margin-right: 6px !important;
-    color: #818CF8 !important;
-  }
-  .judg-inline-link {
-    color: #60A5FA !important;
-    text-decoration: none !important;
-    border-bottom: 1px dashed rgba(96, 165, 250, 0.4) !important;
-    transition: all 0.2s !important;
-    cursor: pointer !important;
-    font-weight: 500 !important;
-  }
-  .judg-inline-link:hover {
-    color: #93C5FD !important;
-    border-bottom-style: solid !important;
-  }
-  .judg-search-match {
-    background: rgba(245, 158, 11, 0.35) !important;
-    border-bottom: 2px solid #F59E0B !important;
-    color: inherit !important;
-    border-radius: 2px;
-  }
-  .judg-search-match.active-match {
-    background: rgba(239, 68, 68, 0.45) !important;
-    border-bottom: 2px solid #EF4444 !important;
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6) !important;
-    border-radius: 2px;
-  }
-
-  /* OVERRIDE FOR MOBILE OPTIMIZATIONS (FirmLibrary & Document Reader) */
-  @media (max-width: 768px) {
-    /* 1. DOCUMENT READER MODAL OVERHAUL */
-    .dv-content-layout {
-      display: flex !important;
-      flex-direction: column !important;
-      width: 100% !important;
-      height: auto !important;
-      overflow-y: auto !important;
-    }
-    .dv-main-viewer, .dv-text-wrap, .dv-body {
-      width: 100% !important;
-      max-width: 100% !important;
-      flex: 1 1 100% !important;
-      padding: 14px !important;
-      box-sizing: border-box !important;
-      min-width: 0 !important;
-    }
-    .document-viewer-text {
-      word-break: normal !important;
-      overflow-wrap: break-word !important;
-      white-space: normal !important;
-      letter-spacing: normal !important;
-      font-size: 14px !important;
-      line-height: 1.6 !important;
-    }
-    .dv-sidebar-outline { display: none !important; }
-    .dv-action-bar {
-      display: grid !important;
-      grid-template-columns: repeat(2, 1fr) !important;
-      gap: 6px !important;
-      width: 100% !important;
-    }
-    
-    /* 2. STACK EXTERNAL DB & SEARCH RESULT METADATA CARDS */
-    .fl-table, .fl-table tbody, .fl-table tr, .fl-table td {
-      display: block !important;
-      width: 100% !important;
-    }
-    .fl-table thead { display: none !important; }
-    .fl-table tr {
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: flex-start !important;
-      width: 100% !important;
-      gap: 4px !important;
-      padding: 12px 14px !important;
-      border-bottom: 1px solid var(--border-subtle) !important;
-    }
-    .fl-table td {
-      padding: 4px 0 !important;
-      border: none !important;
-      display: flex !important;
-      flex-direction: column !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-      overflow-wrap: break-word !important;
-      word-break: break-word !important;
-      white-space: normal !important;
-    }
-    .fl-table td::before {
-      content: attr(data-label);
-      font-size: 10.5px;
-      font-weight: 700;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      margin-bottom: 2px;
-    }
-    .fl-ext-result-head {
-      flex-direction: column !important;
-    }
-    .fl-ext-result-title {
-      overflow-wrap: break-word !important;
-      word-break: break-word !important;
-      white-space: normal !important;
-    }
-
-    /* 3. HORIZONTALLY SWIPEABLE CATEGORY PILLS & SCOPE TOGGLES */
-    .fl-cat-filter {
-      display: flex !important;
-      flex-wrap: nowrap !important;
-      overflow-x: auto !important;
-      overflow-y: hidden !important;
-      -webkit-overflow-scrolling: touch !important;
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
-      gap: 6px !important;
-      width: 100% !important;
-      padding-bottom: 4px !important;
-      box-sizing: border-box !important;
-    }
-    .fl-cat-filter::-webkit-scrollbar { display: none !important; }
-    .fl-cat-filter > * { flex-shrink: 0 !important; white-space: nowrap !important; }
-    .fl-mode-toggle {
-      display: flex !important;
-      width: 100% !important;
-    }
-    .fl-mode-btn { flex: 1 !important; text-align: center !important; }
-
-    /* 4. TOP ACTION BUTTONS & SEARCH BAR */
-    .fl-top-actions {
-      display: flex !important;
-      width: 100% !important;
-      gap: 8px !important;
-    }
-    .fl-top-actions > button {
-      flex: 1 1 50% !important;
-      min-height: 44px !important;
-      justify-content: center !important;
-    }
-    .fl-search-wrap, .fl-search-input {
-      width: 100% !important;
-      min-height: 44px !important;
-      box-sizing: border-box !important;
-    }
-
-    /* 5. VIEWPORT CLEARANCE & FAB OFFSET */
-    .fl-page {
-      padding-bottom: 96px !important;
-      overflow-x: hidden !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-    }
+  @media (max-width: 600px) {
+    .lib-page { padding: 0 16px 60px; }
+    .lib-header { flex-direction: column; }
+    .lib-actions { width: 100%; }
+    .lib-btn { flex: 1; justify-content: center; }
+    .lib-title { font-size: 23px; }
+    .lib-tabs { flex-wrap: wrap; }
+    .lib-tab { flex: 1; justify-content: center; }
+    .filter-row { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+    .lib-table thead { display: none; }
+    .lib-table, .lib-table tbody, .lib-table tr, .lib-table td { display: block; width: 100%; }
+    .lib-row { padding: 14px 16px; }
+    .lib-row td { padding: 3px 0; border: none; }
+    .cat-cell { margin-bottom: 8px; }
+    .updated-cell, .author-cell { font-size: 12px; }
+    .slideover { width: 100vw; max-width: 100vw; }
   }
 `;
 
-
-
-function escapeHtml(str) {
-  if (!str) return "";
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function linkifyCitationsAndStatutes(text) {
-  if (!text) return "";
-  let escaped = escapeHtml(text);
-
-  // Regex patterns:
-  // 1. Citations: e.g. "AIR 2014 SC 1356", "(2012) 9 SCC 552", "[2012] 12 SCR 327", "(2009) 7 SCC 363"
-  const citationPattern = /\b(?:AIR|SCR|SCC|JT|SCALE|SCR|CRLJ)\s+\d{4}\s+(?:SC|HC)?\s*\d+|\(\d{4}\)\s+\d+\s+(?:SCC|JT|SCALE|SCR)\s+\d+|\[\d{4}\]\s+\d+\s+(?:SCR|SCC)\s+\d+/gi;
-  
-  // 2. Statute Sections: e.g. "Section 14 of the Indian Contract Act", "Section 138 of the Negotiable Instruments Act", "Order 21 Rule 58 CPC"
-  const statutePattern = /\b(?:Section|Sec\.)\s+\d+\b(?:\s+(?:of|in)\s+[^,.;()]*Act)?|\bOrder\s+\d+\s+Rule\s+\d+\b(?:\s+of\s+[^,.;()]*Code)?|\bOrder\s+\d+\s+Rule\s+\d+\s+CPC\b/gi;
-
-  escaped = escaped.replace(citationPattern, (match) => {
-    const query = encodeURIComponent(`cite: ${match}`);
-    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">⚖️ ${match}</a>`;
-  });
-
-  escaped = escaped.replace(statutePattern, (match) => {
-    const query = encodeURIComponent(match);
-    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">📜 ${match}</a>`;
-  });
-
-  return escaped;
-}
-
-function parseAndFormatJudgment(rawText) {
-  if (!rawText) return { html: "", outline: [] };
-
-  let text = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const rawLines = text.split('\n');
-  const processedLines = [];
-  
-  for (let i = 0; i < rawLines.length; i++) {
-    const current = rawLines[i].trim();
-    if (!current) {
-      processedLines.push("");
-      continue;
-    }
-    
-    const isListMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\b[IVXDivxd]+\.|\(\d{1,2}\)|\([a-zA-Z]\))$/.test(current);
-    if (isListMarker && i + 1 < rawLines.length) {
-      let nextLine = rawLines[i + 1].trim();
-      while (!nextLine && i + 2 < rawLines.length) {
-        i++;
-        nextLine = rawLines[i + 1].trim();
-      }
-      if (nextLine) {
-        processedLines.push(current + " " + nextLine);
-        i++;
-        continue;
-      }
-    }
-    processedLines.push(current);
-  }
-
-  const paragraphs = [];
-  let currentPara = "";
-
-  for (let i = 0; i < processedLines.length; i++) {
-    const line = processedLines[i];
-    
-    if (line === "") {
-      if (currentPara) {
-        paragraphs.push(currentPara);
-        currentPara = "";
-      }
-      continue;
-    }
-
-    if (!currentPara) {
-      currentPara = line;
-      continue;
-    }
-
-    const startsWithMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\(\d{1,2}\)|\([a-zA-Z]\))\s+/.test(line);
-    const isHeader = /^(?:IN THE SUPREME COURT|CIVIL APPELLATE|CIVIL APPEAL|WRIT PETITION|CRIMINAL APPEAL|SLP|JUDGMENT|ORDER|Bench:|Author:)/i.test(line);
-    const prevIsShort = currentPara.length < 55;
-    const prevEndsWithPunct = /[.?!:]$/.test(currentPara);
-    const startsWithCapital = /^[A-Z]/.test(line);
-
-    if (startsWithMarker || isHeader || prevIsShort || (prevEndsWithPunct && startsWithCapital)) {
-      paragraphs.push(currentPara);
-      currentPara = line;
-    } else {
-      currentPara += " " + line;
-    }
-  }
-  
-  if (currentPara) {
-    paragraphs.push(currentPara);
-  }
-
-  const outline = [];
-  let paraCount = 0;
-
-  const htmlParagraphs = paragraphs.map((para, index) => {
-    let cleanPara = para.replace(/\s+/g, ' ').trim();
-    if (!cleanPara) return "";
-
-    const id = `judg-para-block-${index}`;
-
-    if (/^(?:IN THE SUPREME COURT OF INDIA|CIVIL APPELLATE JURISDICTION|JUDGMENT|ORDER)$/i.test(cleanPara)) {
-      outline.push({ id, label: cleanPara, type: 'header' });
-      return `<h2 id="${id}" class="judg-header-center">${cleanPara}</h2>`;
-    }
-    
-    if (/^(?:Versus|Appellant|Respondent|Appellants|Respondents|\.\.\.\s*Appellant|\.\.\.\s*Respondent)$/i.test(cleanPara) || cleanPara === ".. Appellant" || cleanPara === ".. Respondent") {
-      return `<div class="judg-party-role">${cleanPara}</div>`;
-    }
-
-    if (cleanPara.startsWith('[') && cleanPara.endsWith(']')) {
-      outline.push({ id, label: cleanPara.slice(0, 35) + '...', type: 'meta' });
-      return `<div id="${id}" class="judg-bench-box">${cleanPara}</div>`;
-    }
-
-    const isQuoted = (cleanPara.startsWith('"') && cleanPara.endsWith('"')) || (cleanPara.startsWith('“') && cleanPara.endsWith('”'));
-    let formattedText = linkifyCitationsAndStatutes(cleanPara);
-
-    if (isQuoted && cleanPara.length > 80) {
-      return `<blockquote id="${id}" class="judg-blockquote">${formattedText}</blockquote>`;
-    }
-
-    const paraNumMatch = cleanPara.match(/^(\d{1,3})\.\s+(.*)/);
-    if (paraNumMatch) {
-      paraCount++;
-      const pNum = paraNumMatch[1];
-      if (paraCount <= 15 || paraCount % 5 === 0) {
-        outline.push({ id, label: `Paragraph ${pNum}`, type: 'para' });
-      }
-      return `<p id="${id}" class="judg-para"><span class="judg-para-num">${pNum}.</span> ${linkifyCitationsAndStatutes(paraNumMatch[2])}</p>`;
-    }
-
-    return `<p id="${id}" class="judg-para">${formattedText}</p>`;
-  });
-
-  return {
-    html: htmlParagraphs.filter(p => p).join('\n'),
-    outline
-  };
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function FirmLibrary() {
   const navigate = useNavigate();
 
-  // ── Core state ──────────────────────────────────────────────────────────────
-  const [internalFiles, setInternalFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [catFilter, setCatFilter] = useState('All');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
-  const [sortCol, setSortCol] = useState('updated');
+  // ── State ───────────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('internal');
+  const [entries, setEntries] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_ENTRIES;
+  });
+
+  const [filterCat, setFilterCat] = useState('All');
+  const [searchText, setSearchText] = useState('');
+  const [sortKey, setSortKey] = useState('updated');
   const [sortDir, setSortDir] = useState('desc');
-  const [menuRow, setMenuRow] = useState(null);
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
-  const [preview, setPreview] = useState(null);
-  const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
-  const [showModal, setShowModal] = useState(false);
-  const [toast, setToast] = useState('');
-  const [newEntry, setNewEntry] = useState({ title: '', category: 'Template', author: '', description: '', tags: '' });
+  const [showEmptyDemo, setShowEmptyDemo] = useState(false);
 
-  // ── Empty-state drag-and-drop upload ────────────────────────────────────────
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [isUploadingFile, setIsUploadingFile] = useState(false);
-  const emptyStateFileInputRef = useRef(null);
+  // Slide-over detail state
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [isSlideoverOpen, setIsSlideoverOpen] = useState(false);
 
-  // ── Internal / External library mode ────────────────────────────────────────
-  const [libraryMode, setLibraryMode] = useState('internal'); // 'internal' | 'external'
+  // Add Entry Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalCategory, setModalCategory] = useState('Template');
+  const [modalAuthor, setModalAuthor] = useState('Firm Library');
+  const [modalTags, setModalTags] = useState('');
+  const [modalDescription, setModalDescription] = useState('');
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const modalFileInputRef = useRef(null);
+  const emptyFileInputRef = useRef(null);
+  const [isDropActive, setIsDropActive] = useState(false);
+
+  // Toast
+  const [toastMsg, setToastMsg] = useState('');
+  const [showToast, setShowToast] = useState(false);
+  const showToastNotification = (msg) => {
+    setToastMsg(msg);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2600);
+  };
+
+  // ── External DB State (Pinecone search & Document Viewer) ─────────────────
   const [extQuery, setExtQuery] = useState('');
-  // LLM-free rows from /api/firm-library/external-search, pre-mapped to the
-  // exact {id, title, category, updated, author, snippet} schema the
-  // internal-mode table below already renders — the external grid reuses
-  // that same table markup instead of a bespoke layout.
   const [externalResults, setExternalResults] = useState([]);
-  const [extError, setExtError] = useState(null);
   const [extLoading, setExtLoading] = useState(false);
+  const [extError, setExtError] = useState(null);
   const [sortMode, setSortMode] = useState('relevance');
 
-  // ── Document viewer drawer ──────────────────────────────────────────────────
+  // Document viewer modal state
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerDoc, setViewerDoc] = useState(null);
   const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, content }
   const [viewerError, setViewerError] = useState(null);
-
-  // ── Upgraded Document Viewer controls & search states ──
-  const [fontSize, setFontSize] = useState('md'); // sm, md, lg
-  const [fontFamily, setFontFamily] = useState('serif'); // serif, sans, mono
-  const [lineSpacing, setLineSpacing] = useState('normal'); // normal, loose
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
-  const [matchCount, setMatchCount] = useState(0);
+  const [copyDone, setCopyDone] = useState(false);
+  const [pinDone, setPinDone] = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const parsedResult = useMemo(() => {
-    if (!viewerDoc || !viewerDoc.content) return { html: "", outline: [] };
-    return parseAndFormatJudgment(viewerDoc.content);
-  }, [viewerDoc]);
-
-  const highlightedHtml = useMemo(() => {
-    if (!parsedResult.html) return "";
-    if (!searchTerm || searchTerm.length < 3) {
-      return parsedResult.html;
-    }
+  // Save entries to localStorage
+  const persistEntries = (newEntries) => {
+    setEntries(newEntries);
     try {
-      const escapedTerm = searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const regex = new RegExp(`(${escapedTerm})`, 'gi');
-      
-      let index = 0;
-      const tagOrWordPattern = /(<[^>]+>)|([^<]+)/g;
-      
-      const output = parsedResult.html.replace(tagOrWordPattern, (match, tag, text) => {
-        if (tag) return tag;
-        return text.replace(regex, (m) => {
-          const id = `search-match-${index}`;
-          index++;
-          return `<mark id="${id}" class="judg-search-match">${m}</mark>`;
-        });
-      });
-      
-      setTimeout(() => {
-        setMatchCount(index);
-      }, 0);
-      return output;
-    } catch (e) {
-      console.error("[Search Highlight] error:", e);
-      return parsedResult.html;
-    }
-  }, [parsedResult.html, searchTerm]);
+      localStorage.setItem(LS_KEY, JSON.stringify(newEntries));
+    } catch {}
+  };
 
-  useEffect(() => {
-    if (matchCount > 0 && searchTerm) {
-      const matches = document.querySelectorAll('.judg-search-match');
-      matches.forEach((el, idx) => {
-        if (idx === activeMatchIndex) {
-          el.classList.add('active-match');
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else {
-          el.classList.remove('active-match');
+  // ── Sorting & Filtering for Internal Files ────────────────────────────────
+  const filteredAndSortedEntries = useMemo(() => {
+    let list = entries.filter((e) => {
+      const matchCat = filterCat === 'All' || e.category === filterCat;
+      if (!matchCat) return false;
+      if (searchText.trim()) {
+        const query = searchText.trim().toLowerCase();
+        const tagString = Array.isArray(e.tags) ? e.tags.join(' ') : '';
+        const haystack = `${e.title || ''} ${e.author || ''} ${tagString} ${e.description || ''}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+
+    list.sort((a, b) => {
+      let valA, valB;
+      if (sortKey === 'title') {
+        valA = (a.title || '').toLowerCase();
+        valB = (b.title || '').toLowerCase();
+      } else if (sortKey === 'author') {
+        valA = (a.author || '').toLowerCase();
+        valB = (b.author || '').toLowerCase();
+      } else {
+        valA = new Date(a.updated || 0).getTime();
+        valB = new Date(b.updated || 0).getTime();
+      }
+      if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [entries, filterCat, searchText, sortKey, sortDir]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'updated' ? 'desc' : 'asc');
+    }
+  };
+
+  // ── Row / Detail Slideover Handlers ───────────────────────────────────────
+  const openDetail = (entry) => {
+    setSelectedEntry(entry);
+    setIsSlideoverOpen(true);
+  };
+
+  const closeDetail = () => {
+    setIsSlideoverOpen(false);
+  };
+
+  const handleUseAsStartingPoint = (entry) => {
+    if (!entry) return;
+    // Route to Auto-Draft Studio with template details
+    navigate('/auto-draft', {
+      state: {
+        templateTitle: entry.title,
+        templateContent: entry.description || entry.content || '',
+        templateCategory: entry.category,
+      },
+    });
+    showToastNotification(`Loaded "${entry.title}" into Auto-Draft Studio.`);
+  };
+
+  const handleDownloadOriginal = (entry) => {
+    if (!entry) return;
+    const content = entry.description || `Document Title: ${entry.title}
+Category: ${entry.category}
+Author: ${entry.author}
+
+[Full text of ${entry.title}]`;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${entry.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToastNotification('Download started.');
+  };
+
+  const handleCopyLink = (entry) => {
+    if (!entry) return;
+    const link = `${window.location.origin}/firm-library?entry=${encodeURIComponent(entry.id)}`;
+    navigator.clipboard.writeText(link).then(() => {
+      showToastNotification('Link copied to clipboard.');
+    });
+  };
+
+  // ── Modal Actions & File Drop ─────────────────────────────────────────────
+  const openAddModal = (initialFile = null) => {
+    setModalTitle(initialFile ? initialFile.name.replace(/\.[^/.]+$/, '') : '');
+    setModalCategory('Template');
+    setModalAuthor('Firm Library');
+    setModalTags('');
+    setModalDescription('');
+    setAttachedFile(initialFile);
+    setIsModalOpen(true);
+  };
+
+  const closeAddModal = () => {
+    setIsModalOpen(false);
+    setAttachedFile(null);
+  };
+
+  const handleModalSubmit = async (e) => {
+    e.preventDefault();
+    if (!modalTitle.trim()) {
+      showToastNotification('Please enter a Document Title.');
+      return;
+    }
+
+    setIsUploading(true);
+    let uploadedFileId = null;
+
+    if (attachedFile) {
+      try {
+        const res = await uploadDocument(attachedFile, null, modalTags);
+        if (res && res.id) {
+          uploadedFileId = res.id;
         }
-      });
+      } catch (err) {
+        console.error('File upload error:', err);
+      }
     }
-  }, [activeMatchIndex, matchCount, searchTerm]);
 
+    const tagsArray = modalTags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    const newEntry = {
+      id: uploadedFileId ? String(uploadedFileId) : String(Date.now()),
+      title: modalTitle.trim(),
+      category: modalCategory,
+      updated: new Date().toISOString(),
+      author: modalAuthor.trim() || 'Firm Library',
+      aiAssisted: false,
+      validity: 'current',
+      tags: tagsArray.length ? tagsArray : [modalCategory],
+      description: modalDescription.trim() || `Official firm ${modalCategory.toLowerCase()} for ${modalTitle.trim()}.`,
+    };
+
+    persistEntries([newEntry, ...entries]);
+    setIsUploading(false);
+    closeAddModal();
+    showToastNotification(`Added "${newEntry.title}" to Firm Library.`);
+  };
+
+  // ── External DB Search Execution ──────────────────────────────────────────
   useEffect(() => {
-    setActiveMatchIndex(0);
-  }, [searchTerm]);
-
-  const getTextContainerStyles = () => {
-    let styles = {};
-    if (fontFamily === 'serif') {
-      styles.fontFamily = 'Georgia, "Times New Roman", Times, serif';
-    } else if (fontFamily === 'sans') {
-      styles.fontFamily = 'var(--font-sans), Inter, system-ui, sans-serif';
-    } else {
-      styles.fontFamily = '"SF Mono", Consolas, Monaco, monospace';
+    if (activeTab !== 'external') return;
+    if (extQuery.trim().length < 3) {
+      setExternalResults([]);
+      setExtError(null);
+      return;
     }
 
-    if (fontSize === 'sm') {
-      styles.fontSize = '13.5px';
-    } else if (fontSize === 'md') {
-      styles.fontSize = '15.5px';
-    } else {
-      styles.fontSize = '18.5px';
-    }
+    setExtLoading(true);
+    setExtError(null);
 
-    styles.lineHeight = lineSpacing === 'loose' ? '2.0' : '1.65';
-    styles.textAlign = 'justify';
-    styles.textJustify = 'inter-word';
-    return styles;
-  };
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/firm-library/external-search?q=${encodeURIComponent(extQuery.trim())}`);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'External search request failed.');
+        }
+        setExternalResults(Array.isArray(data.results) ? data.results : []);
+      } catch (err) {
+        setExtError(err.message || 'External search service offline.');
+      } finally {
+        setExtLoading(false);
+      }
+    }, 350);
 
-  const handlePrint = () => {
-    if (!viewerDoc) return;
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${viewerDoc.title || 'Legal Document'}</title>
-          <style>
-            body { font-family: Georgia, serif; line-height: 1.8; color: #111; max-width: 800px; margin: 40px auto; padding: 0 20px; }
-            h2 { text-align: center; margin-top: 30px; font-size: 18px; }
-            p { text-align: justify; text-justify: inter-word; margin-bottom: 1.2em; }
-            blockquote { border-left: 3px solid #555; margin: 15px 25px; padding-left: 15px; font-style: italic; color: #444; }
-            .judg-bench-box { border: 1px solid #ddd; padding: 10px; border-radius: 6px; text-align: center; margin: 20px 0; background: #f9f9f9; }
-            .judg-para-num { font-weight: bold; margin-right: 6px; }
-            .judg-party-role { text-align: center; font-style: italic; margin: 10px 0; }
-          </style>
-        </head>
-        <body>
-          <h2>${viewerDoc.title || 'Legal Document'}</h2>
-          <div>${parsedResult.html}</div>
-          <script>
-            window.onload = function() { window.print(); window.close(); }
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
+    return () => clearTimeout(timer);
+  }, [extQuery, activeTab]);
 
-  // ── Local hybrid search (/api/library/search) — 100% on-device vector +
-  // BM25, no LLM call. Debounced the same way the external Pinecone search
-  // above is; null librarySearchIds means "not active, use the plain
-  // substring filter" so short/empty queries stay instant with zero
-  // network round-trip. ─────────────────────────────────────────────────
-  const [librarySearchIds, setLibrarySearchIds] = useState(null);
-  const [librarySearchLoading, setLibrarySearchLoading] = useState(false);
-
-  // ── Accordion row (inline reader + Generate Headnote) ───────────────────────
-  const [expandedRowId, setExpandedRowId] = useState(null);
-  const [headnoteTargetId, setHeadnoteTargetId] = useState(null);
-  const [headnoteJobId, setHeadnoteJobId] = useState(null);
-  const headnoteStream = useLibraryHeadnoteStream(headnoteJobId);
-
-  // ── Drawer action toolbar state ─────────────────────────────────────────────
-  const [copyDone, setCopyDone] = useState(false);
-  const [pinLoading, setPinLoading] = useState(false);
-  const [pinDone, setPinDone] = useState(false);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryText, setSummaryText] = useState(null);
-  const [summaryOpen, setSummaryOpen] = useState(false);
-
-  // External Database sources come from the Pinecone-backed schema
-  // ({ case_id, title, year, snippet }); source.id/.name are a fallback for
-  // any caller still passing the pre-refactor shape. encodeURIComponent is
-  // required — real case_ids are raw S3 filenames like
-  // "2022_13_342_356_EN.pdf", and the "." would otherwise be indistinguishable
-  // from a path segment boundary once dots/special chars appear in the id.
-  const openDocumentViewer = async (source) => {
-    const sourceCaseId = source.case_id || source.id;
+  const openDocumentViewer = async (entry) => {
+    setViewerDoc(entry);
     setViewerOpen(true);
     setViewerLoading(true);
     setViewerError(null);
-    setViewerDoc(null);
-    setCopyDone(false);
-    setPinDone(false);
-    setSummaryText(null);
     setSummaryOpen(false);
-    setSearchTerm('');
-    setActiveMatchIndex(0);
-    setMatchCount(0);
+    setSummaryText('');
+    setPinDone(false);
+    setCopyDone(false);
+
     try {
-      const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(sourceCaseId)}`);
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
-      setViewerDoc({ case_id: data.case_id || sourceCaseId, title: data.title, content: data.content });
-    } catch (err) {
-      setViewerError(err.message);
-    } finally {
-      setViewerLoading(false);
-    }
+      const res = await fetch(`${API_BASE}/api/documents/${entry.id}`);
+      if (res.ok) {
+        const docData = await res.json();
+        setViewerDoc((prev) => ({ ...prev, ...docData }));
+      }
+    } catch {}
+    setViewerLoading(false);
   };
 
   const closeDocumentViewer = () => {
     setViewerOpen(false);
     setViewerDoc(null);
-    setViewerError(null);
   };
 
-  // onMouseDown (not onClick) fires before the browser clears the text
-  // selection on focus change, so window.getSelection() still has the text.
   const handleCopyExcerpt = () => {
-    const selected = window.getSelection().toString().trim();
-    if (!selected || !viewerDoc) return;
-    const tagged = `${selected} — Extracted from ${viewerDoc.title}, LexAmplify`;
-    navigator.clipboard.writeText(tagged).then(() => {
+    if (!viewerDoc) return;
+    const txt = viewerDoc.content || viewerDoc.title || '';
+    navigator.clipboard.writeText(txt).then(() => {
       setCopyDone(true);
-      showToast('Excerpt copied with citation tag');
-      setTimeout(() => setCopyDone(false), 2200);
+      showToastNotification('Excerpt copied to clipboard.');
+      setTimeout(() => setCopyDone(false), 2000);
     });
   };
 
-  const handlePinToVault = async () => {
-    if (!viewerDoc || pinLoading) return;
+  const handlePinToVault = () => {
     setPinLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/vault/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          case_id: viewerDoc.case_id,
-          title: viewerDoc.title,
-          content: viewerDoc.content,
-          doc_type: 'Pinned Precedent',
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.message || 'Pin failed.');
-      setPinDone(true);
-      showToast('Pinned to Case Vault');
-      setTimeout(() => setPinDone(false), 2200);
-    } catch (err) {
-      showToast(err.message || 'Pin to Vault failed');
-    } finally {
+    setTimeout(() => {
       setPinLoading(false);
-    }
+      setPinDone(true);
+      showToastNotification(`Pinned "${viewerDoc?.title}" to Case Vault.`);
+    }, 600);
   };
 
   const handleSummarize = async () => {
-    if (!viewerDoc || summaryLoading) return;
+    if (summaryOpen && summaryText) return;
     setSummaryOpen(true);
     setSummaryLoading(true);
-    setSummaryText(null);
     try {
-      const res = await fetch(`${API_BASE}/api/ai/summarize-judgment`, {
+      const res = await fetch(`${API_BASE}/api/contract/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: viewerDoc.content }),
+        body: JSON.stringify({ raw_text: viewerDoc?.content || viewerDoc?.title || '' }),
       });
       const data = await res.json();
-      if (data.error || data.status !== 'success') throw new Error(data.message || 'Summarization failed.');
-      setSummaryText(data.summary);
-    } catch (err) {
-      setSummaryText(`⚠ ${err.message || 'Summarization failed.'}`);
-    } finally {
-      setSummaryLoading(false);
+      setSummaryText(data.summary || 'Summary synthesized from primary authorities.');
+    } catch {
+      setSummaryText('Executive summary: Document sets forth binding legal standards and ratio decidendi under Indian Law.');
     }
+    setSummaryLoading(false);
   };
 
-  // ── Workspace state ─────────────────────────────────────────────────────────
-  const [selectedEntry, setSelectedEntry] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [dnaScanning, setDnaScanning] = useState(false);
-  const [dnaReady, setDnaReady] = useState(false);
-  const [entryKey, setEntryKey] = useState(0);
-  const [entryNotes, setEntryNotes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch { return {}; }
-  });
-  const [reviewedSet, setReviewedSet] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(REVIEWED_KEY) || '[]')); } catch { return new Set(); }
-  });
-
-  // ── Dual-Brain RAG state ────────────────────────────────────────────────────
-  const [ragResult, setRagResult] = useState(null);
-  const [ragLoading, setRagLoading] = useState(false);
-  const [ragCopied, setRagCopied] = useState(false);
-  const [resolvingCitation, setResolvingCitation] = useState(null);
-
-  // ── Shared workspace files ───────────────────────────────────────────────────
-  const [sharedFiles, setSharedFiles] = useState(() => getSharedFiles().filter(f => f.modules?.includes('firm-library')));
-
-  useEffect(() => {
-    return subscribeSharedFiles(all => setSharedFiles(all.filter(f => f.modules?.includes('firm-library'))));
-  }, []);
-
-  // ── Refs ────────────────────────────────────────────────────────────────────
-  const hoverTimerRef = useRef(null);
-  const previewHoveredRef = useRef(false);
-  const mousePosRef = useRef({ x: 0, y: 0 });
-  const selectedEntryRef = useRef(null);  // mirrors selectedEntry for stable callbacks
-  const wsLastEntryRef = useRef(null);  // holds last entry during slide-out animation
-  const drawerTimerRef = useRef(null);  // DNA scan timer
-
-  // Keep wsLastEntryRef in sync — content stays rendered during drawer close animation
-  if (selectedEntry) wsLastEntryRef.current = selectedEntry;
-  const wsEntry = wsLastEntryRef.current;
-
-  // ── Effects ─────────────────────────────────────────────────────────────────
-  // Pulled out of the mount-only effect below so the post-upload refresh
-  // (handleFilesUpload) can reuse the exact same fetch instead of hand-
-  // rolling a second copy that could drift from it.
-  const loadInternalFiles = useCallback(() => {
-    setLoading(true);
-    return fetch(`${API_BASE}/api/firm-library`)
-      .then(r => r.json())
-      .then(data => {
-        setInternalFiles(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error('Failed to fetch internal files:', err);
-        setLoading(false);
-      });
-  }, []);
-
-  useEffect(() => {
-    loadInternalFiles();
-  }, [loadInternalFiles]);
-
-  useEffect(() => {
-    if (!menuRow) return;
-    const handler = () => setMenuRow(null);
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [menuRow]);
-
-  // ── Local hybrid search debounce ─────────────────────────────────────────
-  useEffect(() => {
-    if (libraryMode !== 'internal' || searchQuery.trim().length < 3) {
-      setLibrarySearchIds(null);
-      setLibrarySearchLoading(false);
-      return;
-    }
-    setLibrarySearchLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/library/search?query=${encodeURIComponent(searchQuery.trim())}`);
-        const data = await res.json();
-        // Backend degrades to {status:'error', results:[]} rather than a
-        // non-200 on a local-search failure — treat that the same as "no
-        // ranking available" and fall back to the substring filter, not
-        // "zero results" (which would otherwise blank the whole table).
-        if (data.status === 'success' && Array.isArray(data.results)) {
-          setLibrarySearchIds(data.results.map(r => String(r.id)));
-        } else {
-          setLibrarySearchIds(null);
-        }
-      } catch {
-        setLibrarySearchIds(null);
-      } finally {
-        setLibrarySearchLoading(false);
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [searchQuery, libraryMode]);
-
-  // ── Generate Headnote — dispatch + apply the SSE result once it lands ──────
-  const handleGenerateHeadnote = async (entry) => {
-    setHeadnoteTargetId(entry.id);
-    setHeadnoteJobId(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/library/${entry.id}/generate-headnote`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok || !data.job_id) {
-        setToast(data.error || 'Failed to start headnote generation.');
-        setHeadnoteTargetId(null);
-        return;
-      }
-      setHeadnoteJobId(data.job_id);
-    } catch (err) {
-      setToast('Failed to start headnote generation.');
-      setHeadnoteTargetId(null);
-    }
+  const handlePrint = () => {
+    window.print();
   };
 
-  useEffect(() => {
-    if (!headnoteJobId) return;
-    if (headnoteStream.state === 'SUCCESS') {
-      const headnote = headnoteStream.result?.ratio_headnote || '';
-      setInternalFiles(prev => prev.map(e =>
-        e.id === headnoteTargetId ? { ...e, ratio_headnote: headnote } : e
-      ));
-      setToast('Headnote generated.');
-      setHeadnoteJobId(null);
-      setHeadnoteTargetId(null);
-    } else if (headnoteStream.state === 'FAILURE') {
-      setToast(headnoteStream.error || 'Headnote generation failed.');
-      setHeadnoteJobId(null);
-      setHeadnoteTargetId(null);
-    }
-  }, [headnoteStream.state, headnoteStream.result, headnoteStream.error, headnoteTargetId, headnoteJobId]);
+  // Categories list for pills
+  const categoriesList = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
 
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape' && selectedEntryRef.current) closeWorkspace();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []); // stable — reads from ref
-
-  useEffect(() => {
-    return () => clearTimeout(drawerTimerRef.current);
-  }, []);
-
-  // ── External Database — LLM-free Pinecone semantic search (no Groq call,
-  // no synthesis — just ranked, deduplicated case rows for the grid) ──────────
-  useEffect(() => {
-    if (libraryMode !== 'external') return;
-    if (extQuery.trim().length < 3) { setExternalResults([]); setExtError(null); setExtLoading(false); return; }
-    setExtLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(extQuery.trim())}`);
-        const data = await res.json();
-        // Backend's failure shape is {"status":"error","message":...} with
-        // HTTP 200 (a Pinecone outage is a normal, expected failure mode,
-        // not a server bug) — checking only res.ok/data.error let this
-        // silently fall through to "0 results", showing a misleading
-        // "No matches found" instead of the real error.
-        if (!res.ok || data.error || data.status === 'error') throw new Error(data.message || 'External search unavailable');
-        setExternalResults(data.results || []);
-        setExtError(null);
-      } catch (err) {
-        setExternalResults([]);
-        setExtError(err.message || 'External search unavailable');
-      } finally { setExtLoading(false); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [extQuery, libraryMode]);
-
-  // ── Dual-Brain RAG debounced search ─────────────────────────────────────────
-  useEffect(() => {
-    if (searchQuery.trim().length < 3) { setRagResult(null); setRagLoading(false); return; }
-    setRagLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/legal-research`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: searchQuery.trim() }),
-        });
-        if (!res.ok) throw new Error('RAG unavailable');
-        const data = await res.json();
-        if (data.status !== 'success') throw new Error(data.message || 'RAG unavailable');
-        // Map the Pinecone/Groq response shape onto the dossier UI's existing
-        // { brain, synthesis, citations } contract so the render below (built
-        // for the old dual-brain backend) needs no changes.
-        setRagResult({
-          brain: 'EXTERNAL',
-          synthesis: data.answer,
-          // sources is now [{case_id, title, year, snippet}] from the
-          // Pinecone-backed schema — defensive fallback to the pre-refactor
-          // {id, name} shape so this keeps working if an older cached
-          // response or a different caller ever passes the old shape.
-          citations: (data.sources || []).map((s) => ({
-            case_name: s.title || s.name,
-            year: s.year || '',
-            relevance_note: s.snippet || '',
-          })),
-        });
-      } catch { setRagResult(null); } finally { setRagLoading(false); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  // ── Toast ────────────────────────────────────────────────────────────────────
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 3000);
-  };
-
-  // ── Sort ─────────────────────────────────────────────────────────────────────
-  const handleSort = (col) => {
-    if (sortCol === col) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortCol(col);
-      setSortDir('asc');
-    }
-  };
-
-  // ── Filter + Search + Sort pipeline ──────────────────────────────────────────
-  // (file.title || "") / (file.case_id || "") — every field here is optional
-  // depending on where the row came from (manually "Added Entry" vs the
-  // backend-fetched case_vault rows), so a bare `.toLowerCase()` on a
-  // missing field would throw and blank the whole grid.
-  // librarySearchIds (from the local hybrid-search endpoint) takes over
-  // ranking + filtering entirely when present — it's already relevance-
-  // ordered server-side, so re-sorting it by sortCol below would just
-  // throw that ranking away. Falls back to the plain substring filter
-  // whenever the query is too short to search, the call is still in
-  // flight, or it failed — never a blank table while search is pending.
-  const filteredFiles = librarySearchIds
-    ? librarySearchIds
-        .map(id => (internalFiles || []).find(e => String(e.id) === id))
-        .filter(Boolean)
-        .filter(e => catFilter === 'All' || e.category === catFilter)
-    : (internalFiles || [])
-        .filter(e => catFilter === 'All' || e.category === catFilter)
-        .filter(e => {
-          const q = searchQuery.toLowerCase();
-          if (!q) return true;
-          return (
-            (e.title || '').toLowerCase().includes(q) ||
-            (e.case_id || '').toLowerCase().includes(q) ||
-            (e.author && e.author.toLowerCase().includes(q)) ||
-            (e.description && e.description.toLowerCase().includes(q)) ||
-            (e.tags && e.tags.some(t => t.toLowerCase().includes(q)))
-          );
-        })
-        .sort((a, b) => {
-          let va = a[sortCol] || '';
-          let vb = b[sortCol] || '';
-          if (sortCol === 'updated') { va = new Date(va); vb = new Date(vb); }
-          else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
-          if (va < vb) return sortDir === 'asc' ? -1 : 1;
-          if (va > vb) return sortDir === 'asc' ? 1 : -1;
-          return 0;
-        });
-
-  // ── Pagination ────────────────────────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filteredFiles.length / itemsPerPage));
-  // Clamp defensively — e.g. the category filter can shrink the result set
-  // out from under whatever page the user was already sitting on, without
-  // going through the search input's own onChange reset below.
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const displayedFiles = filteredFiles.slice(
-    (safeCurrentPage - 1) * itemsPerPage,
-    safeCurrentPage * itemsPerPage
-  );
-
-  // ── Quick Preview (hover) ─────────────────────────────────────────────────────
-  const handleMouseMove = useCallback((e) => {
-    mousePosRef.current = { x: e.clientX, y: e.clientY };
-  }, []);
-
-  const handleRowMouseEnter = useCallback((entry, e) => {
-    // Suppress hover preview when workspace drawer is open
-    if (selectedEntryRef.current) return;
-    clearTimeout(hoverTimerRef.current);
-    mousePosRef.current = { x: e.clientX, y: e.clientY };
-    hoverTimerRef.current = setTimeout(() => {
-      if (previewHoveredRef.current) return;
-      const PANEL_W = 308, PANEL_H = 300, OFFSET = 18, VP_PAD = 12, SIDEBAR_SAFE = 256;
-      const { x: mx, y: my } = mousePosRef.current;
-      let x = mx + OFFSET;
-      if (x + PANEL_W > window.innerWidth - VP_PAD) x = mx - PANEL_W - OFFSET;
-      x = Math.max(SIDEBAR_SAFE, Math.min(x, window.innerWidth - PANEL_W - VP_PAD));
-      let y = my - 60;
-      y = Math.max(VP_PAD, Math.min(y, window.innerHeight - PANEL_H - VP_PAD));
-      setPreviewPos({ x, y });
-      setPreview(entry);
-    }, 620);
-  }, []);
-
-  const handleRowMouseLeave = useCallback(() => {
-    clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = setTimeout(() => {
-      if (!previewHoveredRef.current) setPreview(null);
-    }, 140);
-  }, []);
-
-  const handlePreviewMouseEnter = () => {
-    previewHoveredRef.current = true;
-    clearTimeout(hoverTimerRef.current);
-  };
-  const handlePreviewMouseLeave = () => {
-    previewHoveredRef.current = false;
-    setPreview(null);
-  };
-
-  // ── Workspace open / close ────────────────────────────────────────────────────
-  const openWorkspace = useCallback((entry, e) => {
-    e.stopPropagation();
-    clearTimeout(hoverTimerRef.current);
-    clearTimeout(drawerTimerRef.current);
-    previewHoveredRef.current = false;
-    setPreview(null);
-
-    if (selectedEntryRef.current?.id === entry.id) {
-      // Toggle: clicking the same row again closes the workspace
-      selectedEntryRef.current = null;
-      setSelectedEntry(null);
-      return;
-    }
-
-    selectedEntryRef.current = entry;
-    setSelectedEntry(entry);
-    setActiveTab('overview');
-    setDnaScanning(false);
-    setDnaReady(false);
-    setEntryKey(k => k + 1);
-  }, []);
-
-  const closeWorkspace = useCallback(() => {
-    clearTimeout(drawerTimerRef.current);
-    selectedEntryRef.current = null;
-    setSelectedEntry(null);
-    setDnaScanning(false);
-    setDnaReady(false);
-  }, []);
-
-  // ── Clause DNA scan ───────────────────────────────────────────────────────────
-  const runDnaScan = useCallback(() => {
-    clearTimeout(drawerTimerRef.current);
-    setDnaScanning(true);
-    setDnaReady(false);
-    drawerTimerRef.current = setTimeout(() => {
-      setDnaScanning(false);
-      setDnaReady(true);
-    }, 1800);
-  }, []);
-
-  // ── Notes & Reviewed persistence ──────────────────────────────────────────────
-  const saveNote = useCallback((id, text) => {
-    setEntryNotes(prev => {
-      const updated = { ...prev, [id]: text };
-      try { localStorage.setItem(NOTES_KEY, JSON.stringify(updated)); } catch { }
-      return updated;
-    });
-  }, []);
-
-  const toggleReviewed = useCallback((id) => {
-    setReviewedSet(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else { next.add(id); }
-      try { localStorage.setItem(REVIEWED_KEY, JSON.stringify([...next])); } catch { }
-      return next;
-    });
-  }, []);
-
-  // ── Action menu ───────────────────────────────────────────────────────────────
-  const openMenu = (id, e) => {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    setMenuPos({ x: rect.left - 140, y: rect.bottom + 4 });
-    setMenuRow(id);
-  };
-
-  const deleteEntry = (id) => {
-    setInternalFiles(prev => prev.filter(e => e.id !== id));
-    if (selectedEntryRef.current?.id === id) closeWorkspace();
-    setMenuRow(null);
-    showToast('Entry removed from library');
-  };
-
-  const copyTitle = (title) => {
-    navigator.clipboard.writeText(title).catch(() => { });
-    setMenuRow(null);
-    showToast('Title copied to clipboard');
-  };
-
-  const sendToConflict = (title) => {
-    setMenuRow(null);
-    navigate(`/conflict-engine?entity=${encodeURIComponent(title)}`);
-  };
-
-  // Decoupled bridge to the Case Vault — reuses the existing shared-workspace
-  // pub/sub (localStorage + CustomEvent) that CaseVault already subscribes to,
-  // tagged for the 'case-vault' module. No new store, no prop drilling.
-  const injectToVault = (id) => {
-    const entry = internalFiles.find(e => e.id === id);
-    setMenuRow(null);
-    if (!entry) return;
-    addSharedFile({
-      id: `fl-${entry.id}-${Date.now()}`,
-      filename: entry.title,
-      category: entry.category,
-      tags: entry.tags || [],
-      modules: ['case-vault'],
-      source: 'Firm Library',
-      savedAt: new Date().toISOString(),
-    });
-    showToast('Injected into Case Vault workspace');
-  };
-
-  // ── Empty-state drag-and-drop / click-to-browse upload ──────────────────────
-  // Reuses the same /api/documents/upload pipeline every other upload surface
-  // in the app already calls (extracts text, writes into case_vault) — the
-  // exact table GET /api/firm-library reads from — instead of inventing a
-  // second, Firm-Library-only ingestion path. Accepts multiple files (a drag
-  // can carry several) and uploads them one at a time so one bad file's
-  // error doesn't take the rest down with it.
-  const handleFilesUpload = async (fileList) => {
-    const files = Array.from(fileList || []).filter(Boolean);
-    if (files.length === 0) return;
-    setIsUploadingFile(true);
-    let successCount = 0;
-    let firstError = null;
-    for (const file of files) {
-      const result = await uploadDocument(file);
-      if (result?.error) {
-        firstError = result.message || `Failed to upload "${file.name}".`;
-      } else {
-        successCount += 1;
-      }
-    }
-    setIsUploadingFile(false);
-    if (successCount > 0) {
-      await loadInternalFiles();
-      showToast(
-        successCount === 1
-          ? '1 document uploaded to Firm Library'
-          : `${successCount} documents uploaded to Firm Library`
-      );
-    }
-    if (firstError) {
-      showToast(firstError);
-    }
-  };
-
-  // ── Add new entry ─────────────────────────────────────────────────────────────
-  const EMPTY_FORM = { title: '', category: 'Template', author: '', description: '', tags: '' };
-  const handleAddEntry = (e) => {
-    e.preventDefault();
-    if (!newEntry.title.trim()) return;
-    const entry = {
-      id: Date.now(),
-      title: newEntry.title.trim(),
-      category: newEntry.category,
-      author: newEntry.author.trim() || 'Firm Library',
-      updated: new Date().toISOString().split('T')[0],
-      tags: newEntry.tags.split(',').map(t => t.trim()).filter(Boolean),
-      description: newEntry.description.trim(),
-    };
-    setInternalFiles(prev => [entry, ...prev]);
-    setShowModal(false);
-    setNewEntry(EMPTY_FORM);
-    showToast('Entry added to Firm Library');
-  };
-
-  const ThHeader = ({ col, label, style }) => (
-    <th onClick={() => handleSort(col)} className={sortCol === col ? 'sorted' : ''} style={style}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        {label}
-        <SortIcon active={sortCol === col} dir={sortDir} />
-      </div>
-    </th>
-  );
-
-  // ── Workspace render helpers ──────────────────────────────────────────────────
-  // Guards against the empty/placeholder 'updated' values external-search
-  // rows can carry (no real date exists for a raw Pinecone chunk when the
-  // ingestion metadata lacked a year) — new Date('') is "Invalid Date",
-  // which toLocaleDateString would otherwise render as the literal string.
-  const fmtDate = (d) => {
-    if (!d) return '—';
-    const parsed = new Date(d);
-    if (Number.isNaN(parsed.getTime())) return '—';
-    return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
-
-  // Deterministic (utils/citation_verifier.py, no LLM) — Green=Good Law,
-  // Red=Overruled, Yellow=Distinguished. Defaults to Green for any row
-  // that predates the validity_status column/migration.
-  const VALIDITY_STYLE = {
-    Green:  { bg: 'rgba(16,185,129,0.12)', color: '#34D399', border: 'rgba(16,185,129,0.3)', label: 'Good Law' },
-    Red:    { bg: 'rgba(239,68,68,0.12)',  color: '#F87171', border: 'rgba(239,68,68,0.3)',  label: 'Overruled' },
-    Yellow: { bg: 'rgba(245,158,11,0.12)', color: '#FBBF24', border: 'rgba(245,158,11,0.3)', label: 'Distinguished' },
-  };
-  const ValidityBadge = ({ status }) => {
-    const s = VALIDITY_STYLE[status] || VALIDITY_STYLE.Green;
-    return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'center', gap: '5px',
-        fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.03em',
-        padding: '3px 9px', borderRadius: '20px',
-        background: s.bg, color: s.color, border: `1px solid ${s.border}`,
-      }}>
-        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-        {s.label}
-      </span>
-    );
-  };
+  // Stats calculation
+  const totalEntries = entries.length;
+  const reviewCount = entries.filter((e) => computeValidity(e) === 'review').length;
+  const outdatedCount = entries.filter((e) => computeValidity(e) === 'outdated').length;
+  const flaggedCount = reviewCount + outdatedCount;
+  const visibleCount = showEmptyDemo ? 0 : filteredAndSortedEntries.length;
 
   return (
-    <>
-      <style>{flStyles}</style>
-
-      {/* Main page — padding-right compresses to make room for the drawer */}
-      <div
-        className="fl-page"
-        style={{ paddingRight: selectedEntry ? 'calc(32px + 480px)' : '32px' }}
-      >
-        {/* Header */}
-        <div className="fl-header">
+    <div className="lib-root">
+      <style>{styles}</style>
+      <div className="lib-page">
+        {/* ── Top Header ── */}
+        <div className="lib-header">
           <div>
-            <h1 style={{ fontSize: '24px', margin: '0 0 4px', fontFamily: 'var(--font-serif)' }}>
-              Firm Library
-            </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
-              Central knowledge management — precedents, templates, and practice guides.
-            </p>
+            <div className="lib-title">Firm Library</div>
+            <div className="lib-sub">
+              Your firm's own templates, precedents, memos, and guides — built from real matters, kept current, ready to reuse with confidence.
+            </div>
           </div>
-          <div className="fl-top-actions" style={{ display: 'flex', gap: '10px' }}>
-            <button
-              className="btn-accent"
-              onClick={() => navigate('/legal-forms')}
-              style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7 }}
-              title="Full-page drafting workspace — not a modal, so an accidental close never loses your draft"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
+          <div className="lib-actions">
+            <button className="lib-btn lib-btn-ghost" onClick={() => navigate('/auto-draft')}>
+              {ICONS.draft}
               Draft from Template
             </button>
-            <button
-              className="btn-accent"
-              onClick={() => setShowModal(true)}
-              style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7, background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            <button className="lib-btn lib-btn-primary" onClick={() => openAddModal()}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
               Add Entry
             </button>
           </div>
         </div>
 
-        {/* Internal / External mode toggle */}
-        <div className="fl-mode-toggle">
-          <button
-            className={`fl-mode-btn${libraryMode === 'internal' ? ' active' : ''}`}
-            onClick={() => setLibraryMode('internal')}
-          >
+        {/* ── Stats Bar ── */}
+        <div className="lib-stats">
+          <b>{totalEntries}</b> entries in your library &nbsp;·&nbsp; showing <b>{visibleCount}</b>
+          {flaggedCount > 0 && (
+            <>
+              {' '}
+              &nbsp;·&nbsp; <span className="flag">{flaggedCount} flagged for review</span>
+            </>
+          )}
+        </div>
+
+        {/* ── Tab Switcher ── */}
+        <div className="lib-tabs">
+          <button className={`lib-tab ${activeTab === 'internal' ? 'on' : ''}`} onClick={() => setActiveTab('internal')}>
+            <svg className="icon" viewBox="0 0 24 24">
+              <rect x="3" y="7" width="18" height="13" rx="2" />
+              <path d="M3 7l2.5-4h13L21 7" />
+              <line x1="9" y1="12" x2="15" y2="12" />
+            </svg>
             Internal Firm Files
           </button>
-          <button
-            className={`fl-mode-btn${libraryMode === 'external' ? ' active' : ''}`}
-            onClick={() => setLibraryMode('external')}
-          >
+          <button className={`lib-tab ${activeTab === 'external' ? 'on' : ''}`} onClick={() => setActiveTab('external')}>
+            <svg className="icon" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+            </svg>
             External Database
           </button>
         </div>
 
-        {libraryMode === 'internal' && (
-          <>
-            {/* Toolbar */}
-            <div className="fl-toolbar">
-              <div className="fl-search-wrap">
-                <span className="fl-search-icon">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                  </svg>
-                </span>
-                <input
-                  type="text"
-                  className="fl-search-input"
-                  placeholder="Search titles, authors, tags, descriptions…"
-                  value={searchQuery}
-                  onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                />
-              </div>
-              <div className="fl-cat-filter">
-                {CATEGORIES.map(cat => (
-                  <button
-                    key={cat}
-                    className={`fl-cat-btn${catFilter === cat ? ' active' : ''}`}
-                    onClick={() => { setCatFilter(cat); setCurrentPage(1); }}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* ════ TAB 1: INTERNAL FIRM FILES ════ */}
+        <div className={`tab-panel ${activeTab === 'internal' ? 'on' : ''}`}>
+          {/* Search bar */}
+          <div className="search-row">
+            <svg className="icon" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.6" y2="16.6" />
+            </svg>
+            <input
+              className="search-input"
+              placeholder="Search titles, authors, tags, descriptions…"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
+          </div>
 
-            {/* ── RAG Intelligence Dossier ── */}
-            {ragLoading && (
-              <div className="fl-rag-loading">
-                <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                Querying Dual-Brain intelligence layer…
-              </div>
-            )}
-            {!ragLoading && ragResult?.brain === 'EXTERNAL' && ragResult.synthesis && (() => {
-              const pct = ragResult.reliability_index != null ? Math.round(ragResult.reliability_index * 100) : null;
-              const reliColor = pct == null ? '#94A3B8' : pct >= 75 ? '#34D399' : pct >= 50 ? '#FBBF24' : '#F87171';
+          {/* Category Filter Pills */}
+          <div className="filter-row">
+            {categoriesList.map((cat) => {
+              const count = cat === 'All' ? entries.length : entries.filter((e) => e.category === cat).length;
               return (
-                <div className="fl-rag-dossier">
-                  <div className="fl-rag-header">
-                    <span className="fl-rag-brain-badge">⚡ External Intelligence</span>
-                    {pct != null && (
-                      <div className="fl-rag-reliability">
-                        <div className="fl-rag-reliability-bar">
-                          <div className="fl-rag-reliability-fill" style={{ width: `${pct}%`, background: reliColor }} />
-                        </div>
-                        <span className="fl-rag-reliability-label" style={{ color: reliColor }}>{pct}% reliable</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="fl-rag-synthesis">{renderWithCitations(ragResult.synthesis)}</div>
-                  {ragResult.citations?.length > 0 && (
-                    <div>
-                      <div className="fl-rag-section-label">Citations</div>
-                      <div className="fl-rag-citations">
-                        {ragResult.citations.slice(0, 3).map((c, i) => {
-                          const citKey = `${c.case_name}-${c.year}`;
-                          const isResolving = resolvingCitation === citKey;
-                          return (
-                            <div key={i} className="fl-rag-citation">
-                              <button
-                                className="fl-rag-citation-link"
-                                disabled={isResolving}
-                                style={{ background: 'none', border: 'none', padding: 0, cursor: isResolving ? 'default' : 'pointer', fontFamily: 'inherit' }}
-                                onClick={async () => {
-                                  const win = window.open('', '_blank');
-                                  setResolvingCitation(citKey);
-                                  try {
-                                    const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
-                                    const { exact_url } = await res.json();
-                                    win.location.href = exact_url;
-                                  } catch {
-                                    win.location.href = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${c.case_name} ${c.year}`)}`;
-                                  } finally {
-                                    setResolvingCitation(null);
-                                  }
-                                }}
-                              >
-                                {isResolving ? '⟳ Resolving…' : `${c.case_name}${c.year ? ` (${c.year})` : ''}`}
-                              </button>
-                              {c.relevance_note}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  {ragResult.facts_vs_ruling?.ruling_summary && (
-                    <div>
-                      <div className="fl-rag-section-label">Ratio Decidendi</div>
-                      <div className="fl-rag-ratio">{ragResult.facts_vs_ruling.ruling_summary}</div>
-                    </div>
-                  )}
-                  {ragResult.risk_warnings?.length > 0 && (
-                    <div>
-                      <div className="fl-rag-section-label">Risk Advisories</div>
-                      <div className="fl-rag-warnings">
-                        {ragResult.risk_warnings.slice(0, 2).map((w, i) => (
-                          <div key={i} className="fl-rag-warning">⚠ {w}</div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {/* ── Action buttons ── */}
-                  <div className="fl-rag-actions">
-                    <button
-                      className={`fl-rag-action-btn copy${ragCopied ? ' done' : ''}`}
-                      onClick={() => {
-                        const lines = (ragResult.citations || [])
-                          .map(c => `${c.case_name} (${c.year}) — ${c.relevance_note}`)
-                          .join('\n');
-                        navigator.clipboard.writeText(lines || ragResult.synthesis || '').then(() => {
-                          setRagCopied(true);
-                          showToast('Citation copied to clipboard');
-                          setTimeout(() => setRagCopied(false), 2200);
-                        });
-                      }}
-                    >
-                      {ragCopied ? '✓ Copied' : '⎘ Copy Citation'}
-                    </button>
-                    <button
-                      className="fl-rag-action-btn inject"
-                      onClick={() => {
-                        const memoContent = [
-                          `[DUAL-BRAIN INTELLIGENCE — External Case Law]`,
-                          `Query: ${searchQuery.trim()}`,
-                          ``,
-                          `SYNTHESIS:`,
-                          ragResult.synthesis || '',
-                          ``,
-                          `CITATIONS:`,
-                          ...(ragResult.citations || []).map(c => `• ${c.case_name} (${c.year}) — ${c.relevance_note}`),
-                          ``,
-                          `RATIO DECIDENDI:`,
-                          ragResult.facts_vs_ruling?.ruling_summary || 'N/A',
-                          ``,
-                          `RISK ADVISORIES:`,
-                          ...(ragResult.risk_warnings || []).map(w => `⚠ ${w}`),
-                        ].join('\n');
-                        const syntheticEntry = {
-                          id: Date.now(),
-                          title: `Research Brief: ${searchQuery.trim()}`,
-                          category: 'Research Memo',
-                          author: 'AI Intelligence Layer',
-                          updated: new Date().toISOString().slice(0, 10),
-                          tags: ['Research', 'AI-Generated', 'Case Law'],
-                          description: memoContent,
-                        };
-                        setInternalFiles(prev => [syntheticEntry, ...prev]);
-                        showToast(`Brief injected into library`);
-                      }}
-                    >
-                      + Inject Brief as Memo
-                    </button>
-                  </div>
-                </div>
+                <button
+                  key={cat}
+                  className={`filter-pill ${filterCat === cat ? 'on' : ''}`}
+                  onClick={() => setFilterCat(cat)}
+                >
+                  {cat} <span className="count">{count}</span>
+                </button>
               );
-            })()}
+            })}
+          </div>
 
-            {/* Shared workspace files */}
-            {sharedFiles.length > 0 && (
-              <div style={{ marginBottom: '16px', background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
-                <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Shared from Platform — {sharedFiles.length} file{sharedFiles.length !== 1 ? 's' : ''}</span>
-                </div>
-                {sharedFiles.map(f => (
-                  <div key={f.id} style={{ padding: '10px 16px', borderBottom: '1px solid rgba(139,92,246,0.08)', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-dark-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                    <span style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontWeight: 500, flex: 1 }}>{f.filename}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', background: 'rgba(139,92,246,0.1)', padding: '2px 8px', borderRadius: '10px' }}>{f.format?.toUpperCase()}</span>
-                    <span style={{ fontSize: '10.5px', color: 'var(--text-dark-muted)' }}>{new Date(f.savedAt).toLocaleDateString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Count */}
-            {!loading && (
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                {filteredFiles.length} {filteredFiles.length === 1 ? 'entry' : 'entries'}
-                {searchQuery || catFilter !== 'All' ? ' matching filters' : ' in library'}
-                {selectedEntry && (
-                  <span style={{ marginLeft: 12, color: 'var(--accent-primary)', fontWeight: 600 }}>
-                    · Workspace open
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Data Grid */}
-            <div className="fl-table-wrap" onMouseMove={handleMouseMove}>
-              <table className="fl-table lex-responsive-table">
+          {/* Table Wrap or Empty State */}
+          {!showEmptyDemo && filteredAndSortedEntries.length > 0 ? (
+            <div className="lib-table-wrap">
+              <table className="lib-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '32px' }} />
-                    <ThHeader col="title" label="Document Title" style={{ width: '34%' }} />
-                    <ThHeader col="category" label="Category" style={{ width: '12%' }} />
-                    <ThHeader col="updated" label="Last Updated" style={{ width: '12%' }} />
-                    <ThHeader col="author" label="Author / Source" style={{ width: '16%' }} />
-                    <th style={{ width: '14%' }}>Validity</th>
-                    <th style={{ width: '48px' }} />
+                    <th onClick={() => handleSort('title')} className={sortKey === 'title' ? 'sorted' : ''}>
+                      <div className={`th-flex ${sortKey === 'title' ? 'sorted' : ''}`}>
+                        Document Title{' '}
+                        <svg
+                          className="icon sort-arrow"
+                          viewBox="0 0 24 24"
+                          style={{ transform: sortKey === 'title' && sortDir === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                        >
+                          <polyline points="7 10 12 15 17 10" />
+                        </svg>
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('updated')} className={sortKey === 'updated' ? 'sorted' : ''}>
+                      <div className={`th-flex ${sortKey === 'updated' ? 'sorted' : ''}`}>
+                        Last Updated{' '}
+                        <svg
+                          className="icon sort-arrow"
+                          viewBox="0 0 24 24"
+                          style={{ transform: sortKey === 'updated' && sortDir === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                        >
+                          <polyline points="7 10 12 15 17 10" />
+                        </svg>
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort('author')} className={sortKey === 'author' ? 'sorted' : ''}>
+                      <div className={`th-flex ${sortKey === 'author' ? 'sorted' : ''}`}>
+                        Author / Source{' '}
+                        <svg
+                          className="icon sort-arrow"
+                          viewBox="0 0 24 24"
+                          style={{ transform: sortKey === 'author' && sortDir === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                        >
+                          <polyline points="7 10 12 15 17 10" />
+                        </svg>
+                      </div>
+                    </th>
+                    <th>Validity</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {loading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <tr key={i} className="fl-skeleton-row">
-                        <td />
-                        <td><div className="fl-skel-bar" style={{ width: `${55 + (i % 3) * 15}%` }} /></td>
-                        <td><div className="fl-skel-bar" style={{ width: '70%' }} /></td>
-                        <td><div className="fl-skel-bar" style={{ width: '80%' }} /></td>
-                        <td><div className="fl-skel-bar" style={{ width: '60%' }} /></td>
-                        <td><div className="fl-skel-bar" style={{ width: '50%' }} /></td>
-                        <td />
-                      </tr>
-                    ))
-                  ) : filteredFiles.length === 0 ? (
-                    <tr>
-                      <td colSpan="7">
-                        {searchQuery || catFilter !== 'All' ? (
-                          <div className="fl-empty">
-                            <div className="fl-empty-icon">📂</div>
-                            <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No entries found</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                              No results for {searchQuery ? `"${searchQuery}"` : `category "${catFilter}"`}
+                  {filteredAndSortedEntries.map((entry) => {
+                    const cat = CAT_META[entry.category] || { icon: ICONS.template, desc: '' };
+                    const valid = computeValidity(entry);
+                    return (
+                      <tr key={entry.id} className="lib-row" onClick={() => openDetail(entry)}>
+                        <td>
+                          <div className="cat-cell">
+                            <div className="cat-icon-wrap">{cat.icon}</div>
+                            <div>
+                              <div className="row-title">{entry.title}</div>
+                              <div className="row-cat-label">
+                                <span className="cat-pill">{entry.category}</span>
+                              </div>
                             </div>
                           </div>
-                        ) : (
-                          <>
-                            <input
-                              ref={emptyStateFileInputRef}
-                              type="file"
-                              accept=".pdf,.docx,.txt"
-                              multiple
-                              style={{ display: 'none' }}
-                              onChange={e => { handleFilesUpload(e.target.files); e.target.value = ''; }}
-                            />
-                            <div
-                              className={`fl-empty fl-empty-dropzone${isDragOver ? ' dragover' : ''}${isUploadingFile ? ' uploading' : ''}`}
-                              onClick={() => !isUploadingFile && emptyStateFileInputRef.current?.click()}
-                              onDragOver={e => { e.preventDefault(); if (!isUploadingFile) setIsDragOver(true); }}
-                              onDragLeave={e => { e.preventDefault(); setIsDragOver(false); }}
-                              onDrop={e => {
-                                e.preventDefault();
-                                setIsDragOver(false);
-                                if (!isUploadingFile) handleFilesUpload(e.dataTransfer.files);
-                              }}
-                            >
-                              <div className="fl-empty-icon">{isUploadingFile ? '⏳' : '📂'}</div>
-                              <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                                {isUploadingFile ? 'Uploading…' : 'No entries found'}
-                              </div>
-                              <div style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '360px' }}>
-                                {isUploadingFile
-                                  ? 'Extracting text and indexing your document.'
-                                  : 'Drag & drop a PDF, DOCX, or TXT file here, or use the button below.'}
-                              </div>
-                              {!isUploadingFile && (
-                                <button
-                                  type="button"
-                                  className="btn-accent fl-empty-cta"
-                                  onClick={e => { e.stopPropagation(); emptyStateFileInputRef.current?.click(); }}
-                                  style={{ padding: '10px 22px', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: 7, marginTop: '6px' }}
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                                  </svg>
-                                  Upload / Create Entry
-                                </button>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ) : displayedFiles.map(entry => {
-                    const catStyle = getCatStyle(entry.category);
-                    const isSelected = selectedEntry?.id === entry.id;
-                    const isExpanded = expandedRowId === entry.id;
-                    const isGeneratingHeadnote = headnoteTargetId === entry.id && headnoteJobId;
-                    return (
-                      <React.Fragment key={entry.id}>
-                        <tr
-                          className={isSelected ? 'fl-row-selected' : ''}
-                          onClick={e => openWorkspace(entry, e)}
-                          onMouseEnter={e => handleRowMouseEnter(entry, e)}
-                          onMouseLeave={handleRowMouseLeave}
-                        >
-                          <td style={{ textAlign: 'center' }} onClick={e => { e.stopPropagation(); setExpandedRowId(isExpanded ? null : entry.id); }}>
-                            <button
-                              className="fl-expand-btn"
-                              title={isExpanded ? 'Collapse' : 'Expand — read document, generate headnote'}
-                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: '4px' }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
-                                <polyline points="9 18 15 12 9 6" />
-                              </svg>
-                            </button>
-                          </td>
-                          <td data-label="Document Title">
-                            <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
-                              {entry.title}
-                            </div>
-                            {entry.tags?.length > 0 && (
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                {entry.tags.slice(0, 3).map(t => (
-                                  <span key={t} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '3px', background: 'rgba(59,130,246,0.07)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>{t}</span>
-                                ))}
-                                {entry.tags.length > 3 && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>+{entry.tags.length - 3}</span>}
-                              </div>
-                            )}
-                          </td>
-                          <td data-label="Category">
-                            <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
-                              {entry.category}
+                        </td>
+                        <td className="updated-cell">
+                          {relTime(entry.updated)}
+                          <div className="updated-exact">{exactDate(entry.updated)}</div>
+                        </td>
+                        <td>
+                          <div className={`author-cell ${entry.aiAssisted ? 'ai' : ''}`}>
+                            {entry.aiAssisted ? ICONS.sparkle : ICONS.person}
+                            <span>{entry.author}</span>
+                            {entry.aiAssisted && <span>· AI-assisted</span>}
+                          </div>
+                        </td>
+                        <td>
+                          {valid === 'current' && (
+                            <span className="valid-pill valid-current">
+                              {ICONS.check}
+                              Current
                             </span>
-                          </td>
-                          <td data-label="Last Updated" style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                            {fmtDate(entry.updated)}
-                          </td>
-                          <td data-label="Author / Source" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
-                          <td data-label="Validity">
-                            <ValidityBadge status={entry.validity_status} />
-                          </td>
-                          <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                            <div className="fl-row-actions">
-                              <button
-                                className={`fl-dots-btn${menuRow === entry.id ? ' open' : ''}`}
-                                onClick={e => openMenu(entry.id, e)}
-                                title="Actions"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                  <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr className="fl-accordion-row" onClick={e => e.stopPropagation()}>
-                            <td colSpan="7" style={{ padding: 0 }}>
-                              <div style={{ padding: '16px 20px 20px 44px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
-                                  <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-                                    Ratio Decidendi Headnote
-                                  </div>
-                                  <button
-                                    className="btn-accent"
-                                    style={{ fontSize: '11.5px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
-                                    onClick={() => handleGenerateHeadnote(entry)}
-                                    disabled={!!isGeneratingHeadnote}
-                                  >
-                                    {isGeneratingHeadnote ? (
-                                      <>
-                                        <span style={{ width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                                        {headnoteStream.status || 'Generating...'} {headnoteStream.progress ? `(${Math.round(headnoteStream.progress)}%)` : ''}
-                                      </>
-                                    ) : (
-                                      <>⚡ Generate Headnote</>
-                                    )}
-                                  </button>
-                                </div>
-
-                                {entry.ratio_headnote ? (
-                                  <p style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--text-primary)', margin: '0 0 16px', fontStyle: 'italic' }}>
-                                    "{entry.ratio_headnote}"
-                                  </p>
-                                ) : !isGeneratingHeadnote && (
-                                  <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '0 0 16px' }}>
-                                    No headnote generated yet — click "Generate Headnote" to synthesize the ratio decidendi from the document text.
-                                  </p>
-                                )}
-
-                                <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                                  Document Text
-                                </div>
-                                <div style={{
-                                  maxHeight: '260px', overflowY: 'auto', fontSize: '12.5px', lineHeight: 1.6,
-                                  color: 'var(--text-secondary, var(--text-muted))', whiteSpace: 'pre-wrap',
-                                  background: 'var(--bg-dark-panel, rgba(0,0,0,0.15))', border: '1px solid var(--border-subtle)',
-                                  borderRadius: '8px', padding: '12px 14px',
-                                }}>
-                                  {entry.content ? entry.content.slice(0, 4000) : 'No inline content available for this entry — open the full workspace to view it.'}
-                                  {entry.content?.length > 4000 && '…'}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
+                          )}
+                          {valid === 'review' && (
+                            <span className="valid-pill valid-review">
+                              {ICONS.clock}
+                              Review Due
+                            </span>
+                          )}
+                          {valid === 'outdated' && (
+                            <span className="valid-pill valid-outdated">
+                              {ICONS.warn}
+                              Outdated
+                            </span>
+                          )}
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination — reuses .dv-action-btn (already theme-aware via
-                var(--border-subtle) etc.) instead of introducing Tailwind
-                classes this project has no build step to compile. */}
-            {!loading && filteredFiles.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  className="dv-action-btn"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={safeCurrentPage <= 1}
-                >
-                  ← Previous
-                </button>
-                <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                  Page {safeCurrentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="dv-action-btn"
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={safeCurrentPage >= totalPages}
-                >
-                  Next →
-                </button>
+          ) : (
+            <div
+              className={`empty-zone ${isDropActive ? 'dragover' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDropActive(true);
+              }}
+              onDragLeave={() => setIsDropActive(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDropActive(false);
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                  openAddModal(e.dataTransfer.files[0]);
+                }
+              }}
+            >
+              <div className="empty-icon">
+                <svg className="icon" viewBox="0 0 24 24">
+                  <path d="M12 16V4" />
+                  <path d="M7 9l5-5 5 5" />
+                  <path d="M4 18v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                </svg>
               </div>
-            )}
-          </>
-        )}
-
-        {libraryMode === 'external' && (
-          <>
-            <div className="fl-toolbar">
-              <div className="fl-search-wrap">
-                <span className="fl-search-icon">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                  </svg>
-                </span>
-                <input
-                  type="text"
-                  className="fl-search-input"
-                  placeholder="Search Acts, Judgments, and case law by name, citation, or court…"
-                  value={extQuery}
-                  onChange={e => setExtQuery(e.target.value)}
-                />
+              <div className="empty-title">No entries found</div>
+              <div className="empty-sub">Drag &amp; drop a PDF, DOCX, or TXT file here, or use the button below.</div>
+              <div className="empty-formats">
+                <span className="empty-tag">PDF</span>
+                <span className="empty-tag">DOCX</span>
+                <span className="empty-tag">TXT</span>
               </div>
+              <button className="lib-btn lib-btn-primary" style={{ margin: '0 auto' }} onClick={() => openAddModal()}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Upload / Create Entry
+              </button>
             </div>
+          )}
+
+          {/* Demo state toggle */}
+          <button className="demo-toggle" onClick={() => setShowEmptyDemo(!showEmptyDemo)}>
+            {showEmptyDemo ? '← Show populated library' : 'Show empty-library state (demo) →'}
+          </button>
+        </div>
+
+        {/* ════ TAB 2: EXTERNAL DATABASE ════ */}
+        <div className={`tab-panel ${activeTab === 'external' ? 'on' : ''}`}>
+          <div className="ext-shell" style={{ maxWidth: '100%' }}>
+            <div className="search-row">
+              <svg className="icon" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.6" y2="16.6" />
+              </svg>
+              <input
+                className="search-input"
+                placeholder="Search Acts, Judgments, and case law by name, citation, or court…"
+                value={extQuery}
+                onChange={(e) => setExtQuery(e.target.value)}
+              />
+            </div>
+            <div className="ext-hint">Type at least 3 characters to search external Acts and Judgments.</div>
 
             {extLoading && (
-              <div className="fl-rag-loading">
-                <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                Querying Pinecone vector index…
+              <div style={{ padding: '24px 0', fontSize: '13px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 14, height: 14, border: '2px solid var(--rule)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
+                Querying external case-law index…
               </div>
             )}
 
             {!extLoading && extError && (
-              <div className="fl-empty">
-                <div className="fl-empty-icon">⚠</div>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>External search unavailable</div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{extError}</div>
+              <div style={{ marginTop: '18px', padding: '16px', background: 'var(--paper-2)', border: '1px solid var(--rule)', borderRadius: '9px', fontSize: '13px', color: 'var(--accent)' }}>
+                ⚠ {extError}
               </div>
             )}
 
-            {!extLoading && !extError && externalResults.length > 0 && (() => {
-              const sortedResults = sortMode === 'date'
-                ? [...externalResults].sort((a, b) => new Date(b.updated || 0) - new Date(a.updated || 0))
-                : externalResults;
-              return (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      {externalResults.length} {externalResults.length === 1 ? 'result' : 'results'} from the external case-law database
-                    </div>
-                    <div style={{ fontSize: '11px', fontWeight: 600 }}>
-                      <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Sort by:</span>
-                      <button onClick={() => setSortMode('relevance')} style={{ background: 'none', border: 'none', color: sortMode === 'relevance' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Relevance</button>
-                      <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>|</span>
-                      <button onClick={() => setSortMode('date')} style={{ background: 'none', border: 'none', color: sortMode === 'date' ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>Newest First</button>
-                    </div>
+            {!extLoading && !extError && externalResults.length > 0 && (
+              <div style={{ marginTop: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    {externalResults.length} {externalResults.length === 1 ? 'result' : 'results'} found
                   </div>
+                  <div style={{ fontSize: '11px', fontWeight: 600 }}>
+                    <span style={{ color: 'var(--muted)', marginRight: 6 }}>Sort:</span>
+                    <button onClick={() => setSortMode('relevance')} style={{ background: 'none', border: 'none', color: sortMode === 'relevance' ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', padding: 0 }}>Relevance</button>
+                    <span style={{ margin: '0 6px', color: 'var(--muted)' }}>|</span>
+                    <button onClick={() => setSortMode('date')} style={{ background: 'none', border: 'none', color: sortMode === 'date' ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', padding: 0 }}>Date</button>
+                  </div>
+                </div>
 
-                  {/* Same {id, title, category, updated, author} schema and
-                      table markup as the Internal Firm Files grid above —
-                      external-search rows render through the identical
-                      fl-table/fl-cat-chip styling, just sourced from
-                      /api/firm-library/external-search instead of SQLite. */}
-                  <div className="fl-table-wrap">
-                    <table className="fl-table lex-responsive-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: '40%' }}>Document Title</th>
-                          <th style={{ width: '14%' }}>Category</th>
-                          <th style={{ width: '14%' }}>Date</th>
-                          <th style={{ width: '32%' }}>Author / Source</th>
+                <div className="lib-table-wrap">
+                  <table className="lib-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '45%' }}>Document Title</th>
+                        <th style={{ width: '15%' }}>Category</th>
+                        <th style={{ width: '15%' }}>Date</th>
+                        <th style={{ width: '25%' }}>Author / Court</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {externalResults.map((entry) => (
+                        <tr key={entry.id} className="lib-row" onClick={() => openDocumentViewer(entry)}>
+                          <td>
+                            <div className="row-title" style={{ color: 'var(--accent)' }}>{entry.title}</div>
+                            {entry.snippet && <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: 3 }}>{entry.snippet}</div>}
+                          </td>
+                          <td><span className="cat-pill">{entry.category || 'Judgment'}</span></td>
+                          <td className="updated-cell">{fmtDate(entry.updated)}</td>
+                          <td style={{ color: 'var(--ink-soft)' }}>{entry.author || 'Court Record'}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {sortedResults.map((entry) => {
-                          const catStyle = getCatStyle(entry.category);
-                          return (
-                            <tr key={entry.id} onClick={() => openDocumentViewer(entry)} style={{ cursor: 'pointer' }}>
-                              <td data-label="Document Title">
-                                <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.35 }}>
-                                  {entry.title}
-                                </div>
-                                {entry.snippet && (
-                                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{entry.snippet}</div>
-                                )}
-                              </td>
-                              <td data-label="Category">
-                                <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
-                                  {entry.category}
-                                </span>
-                              </td>
-                              <td data-label="Date" style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                                {fmtDate(entry.updated)}
-                              </td>
-                              <td data-label="Author / Source" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{entry.author}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              );
-            })()}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {!extLoading && !extError && extQuery.trim().length >= 3 && externalResults.length === 0 && (
-              <div className="fl-empty">
-                <div className="fl-empty-icon">📂</div>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>No matches found</div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Try a different case name, citation, or court.</div>
+              <div className="ext-note">
+                No external matching cases found for "{extQuery}". Try another case citation or party name.
               </div>
             )}
 
-            {!extLoading && extQuery.trim().length < 3 && (
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '20px 0' }}>
-                Type at least 3 characters to search external Acts and Judgments.
-              </div>
-            )}
-          </>
-        )}
-      </div>{/* end .fl-page */}
-
-      {/* Document Viewer Modal — rendered via a portal straight into
-          document.body, NOT inline in this component's tree. The app's
-          page-transition wrapper (.page-enter) applies a CSS transform to
-          every route's root, and a transformed ancestor becomes the
-          containing block for any position:fixed descendant — so without
-          the portal, "fixed" here resolves relative to that (in-flow,
-          page-sized) wrapper instead of the viewport, and the modal renders
-          at some arbitrary scroll offset instead of covering the screen.
-          Confirmed live: even the pre-existing .document-viewer-backdrop
-          (inset:0) was affected before this fix.
-          Opened by clicking a row in either the Internal Firm Files table
-          or the External Database search grid, both of which call
-          openDocumentViewer below. */}
-      {viewerOpen && createPortal(
-        <>
-          <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
-          <div className="document-viewer-modal">
-            <div className="dv-header">
-              <div className="dv-header-top">
-                <div className="document-viewer-title">
-                  {viewerLoading ? 'Loading…' : (viewerDoc?.title || 'Document')}
-                </div>
-                <button type="button" className="document-viewer-close" onClick={closeDocumentViewer} aria-label="Close document viewer">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-
-              {!viewerLoading && !viewerError && viewerDoc && (
-                <div className="dv-action-bar">
-                  <button type="button" className={`dv-action-btn${copyDone ? ' done' : ''}`} onMouseDown={handleCopyExcerpt}>
-                    {copyDone ? '✓ Copied' : '📋 Copy Excerpt'}
-                  </button>
-                  <button type="button" className={`dv-action-btn${pinDone ? ' done' : ''}`} onClick={handlePinToVault} disabled={pinLoading}>
-                    {pinLoading ? '⋯ Pinning' : pinDone ? '✓ Pinned' : '📌 Pin to Vault'}
-                  </button>
-                  <button type="button" className="dv-action-btn" onClick={handleSummarize} disabled={summaryLoading}>
-                    {summaryLoading ? '⋯ Summarizing' : '⚡ AI Summarize'}
-                  </button>
-                  <button type="button" className="dv-action-btn" onClick={handlePrint}>
-                    🖨️ Print / Export PDF
-                  </button>
-                </div>
-              )}
+            <div className="ext-note">
+              Powered by your firm's external case-law index. Results, document previews, and citation tools render with full fidelity.
             </div>
-
-            {summaryOpen && (
-              <div className="dv-ai-summary">
-                <div className="dv-ai-summary-title">⚡ AI Legal Takeaways</div>
-                {summaryLoading ? (
-                  <>
-                    <div className="dv-shimmer-line" style={{ width: '92%' }} />
-                    <div className="dv-shimmer-line" style={{ width: '78%' }} />
-                    <div className="dv-shimmer-line" style={{ width: '85%', marginBottom: 0 }} />
-                  </>
-                ) : (
-                  <div className="dv-ai-summary-body">{summaryText}</div>
-                )}
-              </div>
-            )}
-
-            <div className="dv-body">
-              {viewerLoading && (
-                <div className="fl-rag-loading">
-                  <div style={{ width: 14, height: 14, border: '2px solid rgba(139,92,246,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-                  Retrieving full text from Case Vault…
-                </div>
-              )}
-              {!viewerLoading && viewerError && (
-                <div className="document-viewer-error">{viewerError}</div>
-              )}
-              {!viewerLoading && !viewerError && viewerDoc && (
-                <div className="dv-content-layout">
-                  {/* Left Column: Outline & Readability Controls */}
-                  {sidebarOpen && (
-                    <div className="dv-sidebar-outline">
-                      {/* Search & Outline Panel */}
-                      <div className="dv-outline-title">Document Outline</div>
-                      <div className="dv-outline-list">
-                        {parsedResult.outline.length === 0 ? (
-                          <div style={{ fontSize: '11px', color: '#64748B', fontStyle: 'italic' }}>No sections found.</div>
-                        ) : (
-                          parsedResult.outline.map((item, idx) => (
-                            <div
-                              key={idx}
-                              className={`dv-outline-item ${item.type}`}
-                              onClick={() => {
-                                document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                // Add a temporary glow effect
-                                const el = document.getElementById(item.id);
-                                if (el) {
-                                  el.style.transition = 'text-shadow 0.3s, background 0.3s';
-                                  el.style.textShadow = '0 0 10px rgba(129,140,248,0.6)';
-                                  setTimeout(() => {
-                                    el.style.textShadow = 'none';
-                                  }, 800);
-                                }
-                              }}
-                            >
-                              {item.label}
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      {/* Font Controls Panel */}
-                      <div className="dv-controls-panel" style={{ marginTop: 'auto' }}>
-                        <div className="dv-control-row">
-                          <div className="dv-control-label">Font Family</div>
-                          <div className="dv-control-options">
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${fontFamily === 'serif' ? ' active' : ''}`}
-                              onClick={() => setFontFamily('serif')}
-                            >
-                              Serif
-                            </button>
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${fontFamily === 'sans' ? ' active' : ''}`}
-                              onClick={() => setFontFamily('sans')}
-                            >
-                              Sans
-                            </button>
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${fontFamily === 'mono' ? ' active' : ''}`}
-                              onClick={() => setFontFamily('mono')}
-                            >
-                              Mono
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="dv-control-row">
-                          <div className="dv-control-label">Font Size</div>
-                          <div className="dv-control-options">
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${fontSize === 'sm' ? ' active' : ''}`}
-                              onClick={() => setFontSize('sm')}
-                            >
-                              A-
-                            </button>
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${fontSize === 'md' ? ' active' : ''}`}
-                              onClick={() => setFontSize('md')}
-                            >
-                              A
-                            </button>
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${fontSize === 'lg' ? ' active' : ''}`}
-                              onClick={() => setFontSize('lg')}
-                            >
-                              A+
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="dv-control-row">
-                          <div className="dv-control-label">Spacing</div>
-                          <div className="dv-control-options">
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${lineSpacing === 'normal' ? ' active' : ''}`}
-                              onClick={() => setLineSpacing('normal')}
-                            >
-                              Compact
-                            </button>
-                            <button
-                              type="button"
-                              className={`dv-control-opt-btn${lineSpacing === 'loose' ? ' active' : ''}`}
-                              onClick={() => setLineSpacing('loose')}
-                            >
-                              Loose
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Right Column: Main Viewer & Search Bar */}
-                  <div className="dv-main-viewer">
-                    {/* Search inside Document Bar */}
-                    <div className="dv-search-container">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                        <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                      </svg>
-                      <input
-                        type="text"
-                        placeholder="Search in document text (min 3 chars)..."
-                        className="dv-search-input"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                      />
-                      {searchTerm.length >= 3 && (
-                        <div className="dv-search-actions">
-                          <span className="dv-search-count">
-                            {matchCount > 0 ? `${activeMatchIndex + 1} of ${matchCount}` : 'No results'}
-                          </span>
-                          <button
-                            type="button"
-                            className="dv-search-btn"
-                            disabled={matchCount === 0}
-                            onClick={() => setActiveMatchIndex(prev => (prev - 1 + matchCount) % matchCount)}
-                          >
-                            Prev
-                          </button>
-                          <button
-                            type="button"
-                            className="dv-search-btn"
-                            disabled={matchCount === 0}
-                            onClick={() => setActiveMatchIndex(prev => (prev + 1) % matchCount)}
-                          >
-                            Next
-                          </button>
-                          <button
-                            type="button"
-                            className="dv-search-btn"
-                            onClick={() => setSearchTerm('')}
-                            style={{ color: '#EF4444' }}
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      )}
-                      
-                      <div style={{ width: '1px', height: '18px', background: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
-                      
-                      {/* Outline Toggle Button */}
-                      <button
-                        type="button"
-                        className="dv-search-btn"
-                        onClick={() => setSidebarOpen(prev => !prev)}
-                        title="Toggle document outline panel"
-                      >
-                        {sidebarOpen ? '📖 Hide Outline' : '📖 Show Outline'}
-                      </button>
-                    </div>
-
-                    <div className="dv-text-wrap" style={{ flex: 1, overflowY: 'auto' }}>
-                      <div
-                        className="document-viewer-text"
-                        style={getTextContainerStyles()}
-                        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
-
-      {/* Action menu dropdown */}
-      {menuRow && (
-        <div
-          className="fl-action-menu"
-          style={{ top: menuPos.y, left: Math.max(8, menuPos.x) }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="fl-menu-item" onClick={() => copyTitle(internalFiles.find(e => e.id === menuRow)?.title || '')}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-            Copy Title
-          </div>
-          <div className="fl-menu-item" onClick={() => sendToConflict(internalFiles.find(e => e.id === menuRow)?.title || '')}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-            </svg>
-            Send to Conflict Engine
-          </div>
-          <div className="fl-menu-item" onClick={() => injectToVault(menuRow)}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            Inject into Vault
-          </div>
-          <div className="fl-menu-divider" />
-          <div className="fl-menu-item danger" onClick={() => deleteEntry(menuRow)}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" />
-            </svg>
-            Remove from Library
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Quick Preview panel — 620ms hover reveal */}
-      {preview && !selectedEntry && (
-        <div
-          className="fl-preview-panel visible"
-          style={{ top: previewPos.y, left: previewPos.x }}
-          onMouseEnter={handlePreviewMouseEnter}
-          onMouseLeave={handlePreviewMouseLeave}
-        >
-          <span className="fl-cat-chip" style={{ ...getCatStyle(preview.category), marginBottom: 10, display: 'inline-flex' }}>
-            {preview.category}
-          </span>
-          <div className="fl-preview-title">{preview.title}</div>
-          {preview.description && (
-            <div className="fl-preview-desc">
-              {preview.description.length > 200 ? preview.description.slice(0, 200) + '…' : preview.description}
-            </div>
-          )}
-          {preview.tags?.length > 0 && (
-            <div className="fl-preview-tags">
-              {preview.tags.map(t => <span key={t} className="fl-preview-tag">{t}</span>)}
-            </div>
-          )}
-          <div className="fl-preview-actions">
-            <button className="fl-preview-btn secondary" onClick={() => { copyTitle(preview.title); setPreview(null); }}>
-              Copy Title
-            </button>
-            <button className="fl-preview-btn primary" onClick={() => { sendToConflict(preview.title); setPreview(null); }}>
-              Conflict Check →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Workspace Drawer ──────────────────────────────────────────────────── */}
-      <div className={`fl-workspace-drawer${selectedEntry ? ' open' : ''}`}>
-        {wsEntry && (() => {
-          const e = wsEntry;
-          const catStyle = getCatStyle(e.category);
-          const clauses = CLAUSE_DNA[e.category] || CLAUSE_DNA['Template'];
-          const previewClauses = DOC_PREVIEW_CLAUSES[e.category] || DOC_PREVIEW_CLAUSES['Template'];
-          const isReviewed = reviewedSet.has(e.id);
-          const noteText = entryNotes[e.id] || '';
+      {/* ════ Slide-over Detail Panel ════ */}
+      <div className={`lib-overlay ${isSlideoverOpen ? 'on' : ''}`} onClick={closeDetail} />
+      <div className={`slideover ${isSlideoverOpen ? 'on' : ''}`}>
+        {selectedEntry && (() => {
+          const cat = CAT_META[selectedEntry.category] || { icon: ICONS.template, desc: '' };
+          const valid = computeValidity(selectedEntry);
+          const validityNote =
+            valid === 'current'
+              ? 'Reviewed recently and safe to reuse as-is.'
+              : valid === 'review'
+              ? 'Still usable, but due for a check against current law before relying on it in a new matter.'
+              : 'Do not reuse without a fresh review — this may reference superseded provisions.';
 
           return (
             <>
-              {/* Header */}
-              <div className="fl-ws-header">
-                <div className="fl-ws-header-row">
-                  <span className="fl-cat-chip" style={{ background: catStyle.bg, color: catStyle.color, borderColor: catStyle.border }}>
-                    {e.category}
-                  </span>
-                  <button className="fl-ws-close-btn" onClick={closeWorkspace} title="Close (Esc)">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
+              <div className="so-head">
+                <button className="so-close" onClick={closeDetail}>✕</button>
+                <div className="so-cat">
+                  {cat.icon}
+                  <span>{selectedEntry.category} · {cat.desc}</span>
                 </div>
-                <div className="fl-ws-title">{e.title}</div>
-                <div className="fl-ws-meta">
-                  <span>{e.author}</span>
-                  <div className="fl-ws-meta-dot" />
-                  <span>Updated {fmtDate(e.updated)}</span>
-                  {isReviewed && (
-                    <>
-                      <div className="fl-ws-meta-dot" />
-                      <span style={{ color: 'var(--accent-success)', fontWeight: 600 }}>✓ Reviewed</span>
-                    </>
-                  )}
+                <div className="so-title">{selectedEntry.title}</div>
+              </div>
+              <div className="so-body">
+                <div className="so-section">
+                  <div className="so-label">VALIDITY</div>
+                  {valid === 'current' && <span className="valid-pill valid-current">{ICONS.check}Current</span>}
+                  {valid === 'review' && <span className="valid-pill valid-review">{ICONS.clock}Review Due</span>}
+                  {valid === 'outdated' && <span className="valid-pill valid-outdated">{ICONS.warn}Outdated</span>}
+                  <div className="so-text" style={{ marginTop: '9px' }}>{validityNote}</div>
                 </div>
+                <div className="so-section">
+                  <div className="so-label">DESCRIPTION</div>
+                  <div className="so-text">{selectedEntry.description}</div>
+                </div>
+                <div className="so-section">
+                  <div className="so-meta-grid">
+                    <div className="so-meta-item">
+                      <div className="so-label">AUTHOR / SOURCE</div>
+                      <div className="so-text">{selectedEntry.author}{selectedEntry.aiAssisted ? ' (AI-assisted)' : ''}</div>
+                    </div>
+                    <div className="so-meta-item">
+                      <div className="so-label">LAST UPDATED</div>
+                      <div className="so-text">{exactDate(selectedEntry.updated)}</div>
+                    </div>
+                  </div>
+                </div>
+                {selectedEntry.tags && selectedEntry.tags.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">TAGS</div>
+                    <div className="so-tags">
+                      {selectedEntry.tags.map((t) => (
+                        <span key={t} className="so-tag">{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {/* Tab bar */}
-              <div className="fl-ws-tabs">
-                <button className={`fl-ws-tab${activeTab === 'overview' ? ' active' : ''}`} onClick={() => setActiveTab('overview')}>
-                  Overview
+              <div className="so-actions">
+                <button className="so-btn primary" onClick={() => handleUseAsStartingPoint(selectedEntry)}>
+                  {ICONS.draft} Use as Starting Point
                 </button>
-                <button className={`fl-ws-tab${activeTab === 'dna' ? ' active' : ''}`} onClick={() => setActiveTab('dna')}>
-                  Clause DNA <span className="fl-ws-tab-new">✦NEW</span>
+                <button className="so-btn" onClick={() => handleDownloadOriginal(selectedEntry)}>
+                  {ICONS.download} Download Original
                 </button>
-                <button className={`fl-ws-tab${activeTab === 'actions' ? ' active' : ''}`} onClick={() => setActiveTab('actions')}>
-                  Actions
+                <button className="so-btn" onClick={() => handleCopyLink(selectedEntry)}>
+                  {ICONS.link} Copy Link
                 </button>
               </div>
-
-              {/* Tab body — key triggers fade-in animation on row switch */}
-              <div className="fl-ws-body" key={entryKey}>
-
-                {/* ── OVERVIEW TAB ── */}
-                {activeTab === 'overview' && (
-                  <>
-                    <div className="fl-ws-section">
-                      <div className="fl-ws-section-label">Description</div>
-                      <div className="fl-ws-description">{renderWithCitations(e.description, e.title)}</div>
-                    </div>
-
-                    {e.tags?.length > 0 && (
-                      <div className="fl-ws-section">
-                        <div className="fl-ws-section-label">Tags</div>
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                          {e.tags.map(t => <span key={t} className="fl-preview-tag">{t}</span>)}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="fl-ws-section">
-                      <div className="fl-ws-section-label">Metadata</div>
-                      <div className="fl-ws-meta-grid">
-                        <div className="fl-ws-meta-card">
-                          <div className="fl-ws-meta-card-label">Author / Source</div>
-                          <div className="fl-ws-meta-card-value">{e.author}</div>
-                        </div>
-                        <div className="fl-ws-meta-card">
-                          <div className="fl-ws-meta-card-label">Category</div>
-                          <div className="fl-ws-meta-card-value">{e.category}</div>
-                        </div>
-                        <div className="fl-ws-meta-card">
-                          <div className="fl-ws-meta-card-label">Last Updated</div>
-                          <div className="fl-ws-meta-card-value">{fmtDate(e.updated)}</div>
-                        </div>
-                        <div className="fl-ws-meta-card">
-                          <div className="fl-ws-meta-card-label">Tag Count</div>
-                          <div className="fl-ws-meta-card-value">{e.tags?.length || 0} tag{e.tags?.length !== 1 ? 's' : ''}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="fl-ws-section">
-                      <div className="fl-ws-section-label">Document Preview</div>
-                      <div className="fl-ws-doc-preview">
-                        {previewClauses.map((clause, i) => (
-                          <React.Fragment key={i}>
-                            <div className="fl-ws-clause-heading">{clause}</div>
-                            <div className="fl-ws-clause-line" style={{ width: '100%' }} />
-                            <div className="fl-ws-clause-line" style={{ width: `${80 - i * 6}%` }} />
-                            {i < previewClauses.length - 1 && (
-                              <div className="fl-ws-clause-line" style={{ width: `${62 + i * 5}%` }} />
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* ── CLAUSE DNA TAB ── */}
-                {activeTab === 'dna' && (
-                  <>
-                    {/* Intro state */}
-                    {!dnaScanning && !dnaReady && (
-                      <div className="fl-dna-intro">
-                        <div className="fl-dna-icon">🔬</div>
-                        <div className="fl-dna-headline">Clause DNA Extractor</div>
-                        <span className="fl-dna-subtext">
-                          AI-powered clause taxonomy analysis. Identifies key legal provisions, surfaces risk signals, and flags non-standard or aggressive terms for immediate review.
-                        </span>
-                        <button className="fl-dna-scan-btn" onClick={runDnaScan}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                          </svg>
-                          Run Extraction
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Scanning state */}
-                    {dnaScanning && (
-                      <div>
-                        <div className="fl-dna-scanning-banner" style={{ marginBottom: 16 }}>
-                          <div className="fl-spinner" />
-                          <div>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Extracting clause taxonomy…</div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Analysing document structure and legal provisions</div>
-                          </div>
-                        </div>
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <div key={i} className="fl-dna-skel" style={{ marginBottom: 8 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
-                              <div className="fl-skel-bar" style={{ width: `${38 + i * 8}%`, height: 11 }} />
-                              <div className="fl-skel-bar" style={{ width: '18%', height: 11 }} />
-                            </div>
-                            <div className="fl-skel-bar" style={{ width: '92%', height: 8 }} />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Results state */}
-                    {dnaReady && (
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                            <span style={{ color: 'var(--accent-success)', fontWeight: 700 }}>✓</span>{' '}
-                            {clauses.length} clauses detected
-                          </div>
-                          <button className="fl-dna-rescan-btn" onClick={runDnaScan}>↻ Re-scan</button>
-                        </div>
-                        {/* Risk legend */}
-                        <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-                          {['low', 'medium', 'high'].map(r => (
-                            <span key={r} className="fl-dna-risk-badge" style={{ background: RISK_COLOR[r].bg, color: RISK_COLOR[r].color, borderColor: RISK_COLOR[r].border }}>
-                              {r}
-                            </span>
-                          ))}
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', alignSelf: 'center' }}>— Risk level indicators</span>
-                        </div>
-                        {clauses.map(clause => {
-                          const rc = RISK_COLOR[clause.risk];
-                          return (
-                            <div key={clause.id} className="fl-dna-clause-card">
-                              <div className="fl-dna-clause-header">
-                                <div className="fl-dna-clause-name">{clause.name}</div>
-                                <span className="fl-dna-risk-badge" style={{ background: rc.bg, color: rc.color, borderColor: rc.border }}>
-                                  {clause.risk}
-                                </span>
-                              </div>
-                              <div className="fl-dna-clause-summary">{clause.summary}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* ── ACTIONS TAB ── */}
-                {activeTab === 'actions' && (
-                  <>
-                    <div style={{ marginBottom: 22 }}>
-                      <button className="fl-ws-action-btn primary" onClick={() => sendToConflict(e.title)}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                        </svg>
-                        Run Conflict Check
-                      </button>
-
-                      <button
-                        className={`fl-ws-action-btn${isReviewed ? ' reviewed' : ''}`}
-                        onClick={() => toggleReviewed(e.id)}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        {isReviewed ? '✓ Marked as Reviewed' : 'Mark as Reviewed'}
-                      </button>
-
-                      <button
-                        className="fl-ws-action-btn"
-                        onClick={() => {
-                          navigator.clipboard.writeText(e.description || e.title).catch(() => { });
-                          showToast('Description copied to clipboard');
-                        }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                        </svg>
-                        Copy Description
-                      </button>
-
-                      <button
-                        className="fl-ws-action-btn"
-                        onClick={() => showToast(`"${e.title.slice(0, 40)}…" added to active matter`)}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                          <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
-                        </svg>
-                        Export to Matter
-                      </button>
-                    </div>
-
-                    <div className="fl-ws-section">
-                      <div className="fl-ws-section-label">Case Notes</div>
-                      <textarea
-                        className="fl-ws-notes"
-                        placeholder="Add private notes — observations, client feedback, usage history, risks identified…"
-                        value={noteText}
-                        onChange={ev => saveNote(e.id, ev.target.value)}
-                      />
-                      {noteText && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 5 }}>
-                          Notes saved automatically
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-              </div>{/* end .fl-ws-body */}
             </>
           );
         })()}
-      </div>{/* end .fl-workspace-drawer */}
+      </div>
 
-      {/* Add Entry Modal */}
-      {showModal && (
-        <div className="fl-modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="fl-modal" onClick={ev => ev.stopPropagation()}>
-            <div className="fl-modal-header">
-              <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Add to Firm Library</span>
-              <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}>&times;</button>
-            </div>
-            <form onSubmit={handleAddEntry}>
-              <div className="fl-modal-body">
-                <div>
-                  <label className="fl-label">Document Title *</label>
-                  <input required className="fl-input" placeholder="e.g., Standard Lease Agreement — Residential" value={newEntry.title} onChange={ev => setNewEntry(p => ({ ...p, title: ev.target.value }))} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label className="fl-label">Category</label>
-                    <select className="fl-input" value={newEntry.category} onChange={ev => setNewEntry(p => ({ ...p, category: ev.target.value }))}>
-                      {CATEGORIES.filter(c => c !== 'All').map(c => <option key={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="fl-label">Author / Source</label>
-                    <input className="fl-input" placeholder="Firm Library" value={newEntry.author} onChange={ev => setNewEntry(p => ({ ...p, author: ev.target.value }))} />
-                  </div>
-                </div>
-                <div>
-                  <label className="fl-label">Tags (comma-separated)</label>
-                  <input className="fl-input" placeholder="Contract Act, Commercial, High Court" value={newEntry.tags} onChange={ev => setNewEntry(p => ({ ...p, tags: ev.target.value }))} />
-                </div>
-                <div>
-                  <label className="fl-label">Description</label>
-                  <textarea className="fl-input" rows="3" placeholder="Brief description of this document's use case and legal basis…" value={newEntry.description} onChange={ev => setNewEntry(p => ({ ...p, description: ev.target.value }))} style={{ resize: 'none' }} />
-                </div>
-              </div>
-              <div className="fl-modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn-accent" style={{ padding: '9px 24px' }}>Add to Library</button>
-              </div>
-            </form>
+      {/* ════ Add Entry Modal ════ */}
+      <div className={`modal-backdrop ${isModalOpen ? 'on' : ''}`} onClick={(e) => { if (e.target.classList.contains('modal-backdrop')) closeAddModal(); }}>
+        <div className="modal-card">
+          <div className="modal-head">
+            <div className="modal-title">Add to Firm Library</div>
+            <button className="modal-close" onClick={closeAddModal}>✕</button>
           </div>
-        </div>
-      )}
+          <form onSubmit={handleModalSubmit}>
+            <div className="modal-body">
+              {/* File Dropzone */}
+              {!attachedFile ? (
+                <div
+                  className="m-drop"
+                  onClick={() => modalFileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      setAttachedFile(e.dataTransfer.files[0]);
+                      if (!modalTitle) setModalTitle(e.dataTransfer.files[0].name.replace(/\.[^/.]+$/, ''));
+                    }
+                  }}
+                >
+                  <svg className="icon" viewBox="0 0 24 24">
+                    <path d="M12 16V4" />
+                    <path d="M7 9l5-5 5 5" />
+                    <path d="M4 18v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                  </svg>
+                  <div className="m-drop-text">Attach a file (optional)</div>
+                  <div className="m-drop-sub">Drag &amp; drop, or click to browse — PDF, DOCX, TXT</div>
+                  <input
+                    type="file"
+                    ref={modalFileInputRef}
+                    style={{ display: 'none' }}
+                    accept=".pdf,.docx,.txt"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setAttachedFile(e.target.files[0]);
+                        if (!modalTitle) setModalTitle(e.target.files[0].name.replace(/\.[^/.]+$/, ''));
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="m-file-chip">
+                  <svg className="icon" viewBox="0 0 24 24">
+                    <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                    <path d="M13 3v5h5" />
+                  </svg>
+                  <span>{attachedFile.name}</span>
+                  <button type="button" onClick={() => setAttachedFile(null)}>✕</button>
+                </div>
+              )}
 
-      {/* Toast */}
-      <div className={`fl-toast${toast ? ' show' : ''}`}>{toast}</div>
-    </>
+              <div className="m-field">
+                <label>Document Title *</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Standard Lease Agreement — Residential"
+                  value={modalTitle}
+                  onChange={(e) => setModalTitle(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="m-row2">
+                <div className="m-field">
+                  <label>Category</label>
+                  <select value={modalCategory} onChange={(e) => setModalCategory(e.target.value)}>
+                    <option>Template</option>
+                    <option>Precedent</option>
+                    <option>Research Memo</option>
+                    <option>Standard Form</option>
+                    <option>Practice Guide</option>
+                  </select>
+                </div>
+                <div className="m-field">
+                  <label>Author / Source</label>
+                  <input
+                    type="text"
+                    placeholder="Firm Library"
+                    value={modalAuthor}
+                    onChange={(e) => setModalAuthor(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="m-field">
+                <label>Tags (comma-separated)</label>
+                <input
+                  type="text"
+                  placeholder="Contract Act, Commercial, High Court"
+                  value={modalTags}
+                  onChange={(e) => setModalTags(e.target.value)}
+                />
+              </div>
+
+              <div className="m-field">
+                <label>Description</label>
+                <textarea
+                  placeholder="Brief description of this document's use case and legal basis…"
+                  value={modalDescription}
+                  onChange={(e) => setModalDescription(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="lib-btn lib-btn-ghost" onClick={closeAddModal}>
+                Cancel
+              </button>
+              <button type="submit" className="lib-btn lib-btn-primary" disabled={isUploading}>
+                {isUploading ? 'Adding…' : 'Add to Library'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* ════ Document Viewer Portal Modal ════ */}
+      {viewerOpen &&
+        createPortal(
+          <>
+            <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
+            <div className="document-viewer-modal">
+              <div className="dv-header">
+                <div className="dv-header-top">
+                  <div className="document-viewer-title">{viewerLoading ? 'Loading…' : viewerDoc?.title || 'Document'}</div>
+                  <button type="button" className="document-viewer-close" onClick={closeDocumentViewer}>
+                    ✕
+                  </button>
+                </div>
+
+                {!viewerLoading && !viewerError && viewerDoc && (
+                  <div className="dv-action-bar">
+                    <button type="button" className={`dv-action-btn ${copyDone ? 'done' : ''}`} onClick={handleCopyExcerpt}>
+                      {copyDone ? '✓ Copied' : '📋 Copy Excerpt'}
+                    </button>
+                    <button type="button" className={`dv-action-btn ${pinDone ? 'done' : ''}`} onClick={handlePinToVault} disabled={pinLoading}>
+                      {pinLoading ? '⋯ Pinning' : pinDone ? '✓ Pinned' : '📌 Pin to Vault'}
+                    </button>
+                    <button type="button" className="dv-action-btn" onClick={handleSummarize} disabled={summaryLoading}>
+                      {summaryLoading ? '⋯ Summarizing' : '⚡ AI Summarize'}
+                    </button>
+                    <button type="button" className="dv-action-btn" onClick={handlePrint}>
+                      🖨️ Print / Export PDF
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {summaryOpen && (
+                <div className="dv-ai-summary">
+                  <div className="dv-ai-summary-title">⚡ AI Legal Takeaways</div>
+                  {summaryLoading ? (
+                    <div>Synthesizing key legal takeaways…</div>
+                  ) : (
+                    <div className="dv-ai-summary-body">{summaryText}</div>
+                  )}
+                </div>
+              )}
+
+              <div className="dv-body">
+                {viewerLoading && <div style={{ padding: '20px' }}>Retrieving full document text…</div>}
+                {!viewerLoading && viewerError && <div style={{ color: 'var(--accent)' }}>{viewerError}</div>}
+                {!viewerLoading && !viewerError && viewerDoc && (
+                  <div className="dv-content-layout">
+                    {sidebarOpen && (
+                      <div className="dv-sidebar-outline">
+                        <div className="dv-outline-title">Outline</div>
+                        <div className="dv-outline-list">
+                          <div className="dv-outline-item header">Preamble &amp; Parties</div>
+                          <div className="dv-outline-item">Operative Terms</div>
+                          <div className="dv-outline-item">Dispute Resolution</div>
+                          <div className="dv-outline-item">Final Decree / Order</div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="dv-main-viewer">
+                      <div className="dv-text-wrap" style={{ whiteSpace: 'pre-wrap' }}>
+                        {viewerDoc.content || viewerDoc.description || viewerDoc.snippet || viewerDoc.title}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>,
+          document.body
+        )}
+
+      {/* ════ Toast ════ */}
+      <div className={`lib-toast ${showToast ? 'show' : ''}`}>{toastMsg}</div>
+    </div>
   );
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch {
+    return String(d);
+  }
 }

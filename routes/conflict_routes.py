@@ -1,6 +1,6 @@
 """
 routes/conflict_routes.py
-Cross-Document Conflict Engine — upload up to 3 docs, find contradictions with AI.
+Cross-Document Conflict Engine — upload up to 4+ docs, find contradictions with AI.
 """
 import os
 import json
@@ -9,7 +9,7 @@ import sqlite3
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, current_app
 from litellm import completion
-from utils.ai_helper import extract_json_from_llm_response
+from utils.ai_helper import extract_json_from_llm_response, ask_groq
 
 conflict_bp = Blueprint('conflict', __name__)
 
@@ -59,6 +59,23 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
         except Exception:
             pass
 
+    # Secondary DOCX fallback using python-docx with tables
+    if filename.lower().endswith('.docx'):
+        try:
+            import io
+            import docx
+            doc = docx.Document(io.BytesIO(file_bytes))
+            lines = [p.text for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    row_txt = " | ".join(c.text.strip() for c in row.cells if c.text.strip())
+                    if row_txt:
+                        lines.append(row_txt)
+            if lines:
+                return "\n".join(lines).strip()
+        except Exception:
+            pass
+
     # Plain text / fallback decoding
     for enc in ('utf-8', 'latin-1', 'cp1252'):
         try:
@@ -68,17 +85,78 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     return ""
 
 
+def extract_salient_legal_clauses(text: str, budget: int = 4000) -> str:
+    """
+    Intelligent clause-aware summarizer for contract analysis.
+    Preserves preamble/recitals, scans the entire document for operative risk clauses
+    (Jurisdiction, Dispute Resolution, Payment, Liability, Indemnity, Confidentiality,
+    Termination, Non-Compete, IP, Precedence), and retains the closing boilerplate.
+    """
+    if not text or len(text) <= budget:
+        return text
+
+    # Keywords representing critical risk vectors in legal agreements
+    risk_patterns = [
+        (r'(?:jurisdiction|governing\s+law|exclusive\s+jurisdiction|applicable\s+law|courts?\s+of|venue|forum)', 'JURISDICTION & FORUM'),
+        (r'(?:arbitrat|dispute\s+resolution|arbitrator|conciliation|mediation|siac|lcia|tribunal|amicable\s+settlement)', 'DISPUTE RESOLUTION'),
+        (r'(?:payment|invoic|fees|remittance|withhold|deduct|milestone|advance|arrears|net\s+\d+)', 'PAYMENT & REMITTANCE'),
+        (r'(?:limit(?:ation)?\s+of\s+liability|aggregate\s+liability|indemn|damages|capped|uncapped|exceed|hold\s+harmless|consequential)', 'LIABILITY & INDEMNITY'),
+        (r'(?:confidential|non-disclosure|trade\s+secret|secrecy|surviv(?:e|al)|perpetu(?:ity|al)|non-use)', 'CONFIDENTIALITY & SURVIVAL'),
+        (r'(?:terminat|notice\s+period|cure\s+period|for\s+convenience|for\s+cause|material\s+breach|expiration)', 'TERMINATION & NOTICE'),
+        (r'(?:non-compete|non-solicit|restrictive\s+covenant|exclusiv|restraint\s+of\s+trade)', 'RESTRICTIVE COVENANTS'),
+        (r'(?:intellectual\s+property|ip\s+rights|work\s+for\s+hire|ownership|assignment|license|background\s+ip)', 'INTELLECTUAL PROPERTY'),
+        (r'(?:order\s+of\s+precedence|entire\s+agreement|supersede|conflict(?:ing)?\s+terms|prevail|amendment)', 'ORDER OF PRECEDENCE'),
+        (r'(?:first\s+information\s+report|fir|crpc|bnss|penal\s+code|police|accused|complainant|investigat)', 'STATUTORY / CRIMINAL PROCEEDINGS'),
+    ]
+
+    # 1. Preamble (parties, recitals, date) - up to 900 chars
+    preamble = text[:900].strip()
+
+    # 2. Extract matching risk paragraphs/clauses across the full text
+    paragraphs = re.split(r'\n\s*\n|(?<=\.\s\s)|(?<=\n\d+\.\s)', text)
+    matched_clauses = []
+    seen_paras = set()
+
+    for p in paragraphs:
+        p_clean = p.strip()
+        if len(p_clean) < 25:
+            continue
+        for pat, tag in risk_patterns:
+            if re.search(pat, p_clean, re.IGNORECASE):
+                if p_clean not in seen_paras:
+                    seen_paras.add(p_clean)
+                    matched_clauses.append(f"[{tag}] {p_clean}")
+                break
+
+    # 3. Boilerplate / Closing (last 800 chars)
+    closing = text[-800:].strip() if len(text) > 1700 else ""
+
+    # Combine within budget
+    middle_text = "\n\n".join(matched_clauses)
+    combined = f"{preamble}\n\n--- [KEY EXTRACTED OPERATIVE CLAUSES] ---\n\n{middle_text}"
+    if closing and closing not in combined:
+        combined += f"\n\n--- [CLOSING & MISCELLANEOUS] ---\n\n{closing}"
+
+    if len(combined) > budget:
+        combined = combined[:budget] + "\n... [truncated for context budget]"
+
+    return combined
+
+
 def detect_clause_conflicts_deterministic(docs: list) -> list:
     """
-    Deterministic rule-based cross-document legal clause comparator.
-    Scans pairs of documents across critical legal vectors:
-    - Jurisdiction & Forum
-    - Dispute Resolution / Arbitration
-    - Confidentiality Duration / Survival
-    - Payment & Remittance Terms
-    - Liability Limitation & Indemnity
-    - Termination & Notice Periods
-    - Criminal / Statutory Procedure vs Private Agreement
+    Comprehensive rule-based cross-document legal clause comparator.
+    Scans all pairs of documents across 10 critical legal vectors:
+    1. Forum & Jurisdiction
+    2. Dispute Resolution & Arbitration
+    3. Payment Terms & Withholding Rights
+    4. Confidentiality Survival Duration
+    5. Liability Limitation & Indemnification
+    6. Termination Notice & Cure Periods
+    7. Restrictive Covenants & Non-Compete
+    8. Intellectual Property & Work Product Ownership
+    9. Criminal / Statutory Proceedings vs Civil Agreement
+    10. Order of Precedence Hierarchy
     """
     conflicts = []
     conflict_idx = 1
@@ -90,11 +168,28 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                 start = max(0, text.rfind('\n', 0, m.start()))
                 end = text.find('\n', m.end())
                 if end == -1:
-                    end = len(text)
+                    end = min(len(text), m.end() + 150)
                 snippet = text[start:end].strip()
                 if snippet and len(snippet) > 15:
                     hits.append(snippet)
         return list(dict.fromkeys(hits))
+
+    # Forum dictionary with regex patterns and display names
+    forums = [
+        (r'delhi|new\s+delhi', 'Delhi Courts'),
+        (r'mumbai|bombay', 'Mumbai / Bombay High Court'),
+        (r'bengaluru|bangalore|karnataka', 'Bengaluru / Karnataka Courts'),
+        (r'chennai|madras|tamil\s+nadu', 'Chennai / Madras High Court'),
+        (r'kolkata|calcutta|west\s+bengal', 'Kolkata / Calcutta High Court'),
+        (r'hyderabad|telangana', 'Hyderabad / Telangana High Court'),
+        (r'ahmedabad|gujarat', 'Ahmedabad / Gujarat High Court'),
+        (r'pune|maharashtra', 'Pune / Maharashtra Courts'),
+        (r'delaware', 'Delaware Courts (USA)'),
+        (r'new\s+york', 'New York Courts (USA)'),
+        (r'california', 'California Courts (USA)'),
+        (r'london|england|united\s+kingdom', 'English Courts (London)'),
+        (r'singapore|siac', 'Singapore Courts / SIAC'),
+    ]
 
     for i in range(len(docs)):
         for j in range(i + 1, len(docs)):
@@ -105,36 +200,28 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
             text_a = doc_a.get('text') or ""
             text_b = doc_b.get('text') or ""
 
-            # 1. Jurisdiction & Venue
-            delhi_pat = r'(?:delhi|new delhi|high court of delhi)'
-            mumbai_pat = r'(?:mumbai|bombay|high court of bombay)'
-            delaware_pat = r'(?:delaware|usa|united states)'
-            bengaluru_pat = r'(?:bengaluru|bangalore|karnataka)'
+            # 1. Jurisdiction & Venue Discrepancy
+            forum_a = None
+            forum_b = None
+            for pat, fname in forums:
+                if re.search(pat, text_a, re.I) and not forum_a:
+                    forum_a = fname
+                if re.search(pat, text_b, re.I) and not forum_b:
+                    forum_b = fname
 
-            has_delhi_a = bool(re.search(delhi_pat, text_a, re.I))
-            has_delhi_b = bool(re.search(delhi_pat, text_b, re.I))
-            has_mumbai_a = bool(re.search(mumbai_pat, text_a, re.I))
-            has_mumbai_b = bool(re.search(mumbai_pat, text_b, re.I))
-            has_delaware_a = bool(re.search(delaware_pat, text_a, re.I))
-            has_delaware_b = bool(re.search(delaware_pat, text_b, re.I))
-
-            jur_conflict = False
-            if (has_delhi_a and (has_mumbai_b or has_delaware_b)) or (has_mumbai_a and (has_delhi_b or has_delaware_b)) or (has_delaware_a and (has_delhi_b or has_mumbai_b)):
-                jur_conflict = True
-
-            if jur_conflict:
-                quote_a = (find_matches(text_a, [r'jurisdiction', r'courts?']) or ["Exclusive jurisdiction specified in agreement."])[0]
-                quote_b = (find_matches(text_b, [r'jurisdiction', r'courts?']) or ["Conflicting forum designated in agreement."])[0]
+            if forum_a and forum_b and forum_a != forum_b:
+                quote_a = (find_matches(text_a, [r'jurisdiction', r'courts?', r'governing\s+law']) or [f"Designates {forum_a} as exclusive forum."])[0]
+                quote_b = (find_matches(text_b, [r'jurisdiction', r'courts?', r'governing\s+law']) or [f"Designates {forum_b} as exclusive forum."])[0]
                 conflicts.append({
                     'id': str(conflict_idx),
-                    'title': 'Conflicting Dispute Resolution & Jurisdiction',
+                    'title': f'Conflicting Jurisdiction & Forum: {forum_a} vs {forum_b}',
                     'severity': 'critical',
                     'docA': {
                         'file': name_a,
                         'name': name_a,
                         'quote': quote_a,
                         'page': 'Page 1',
-                        'section': 'Jurisdiction Clause',
+                        'section': 'Jurisdiction & Governing Law',
                         'context': quote_a
                     },
                     'docB': {
@@ -150,29 +237,78 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                     'doc_b_name': name_b,
                     'doc_b_excerpt': quote_b,
                     'legalExplanation': (
-                        'Agreements governing related transactions must designate a harmonious dispute forum. '
-                        'Under Section 28 of the Indian Contract Act 1872 and the CPC 1908, conflicting exclusive jurisdiction clauses '
-                        'create procedural deadlock, risk parallel proceedings, and impede enforcement.'
+                        f'Concurrent transaction documents specify incompatible dispute forums ({forum_a} vs. {forum_b}). '
+                        'Under Section 28 of the Indian Contract Act 1872 and Sections 20-21 of the Code of Civil Procedure 1908, '
+                        'conflicting exclusive jurisdiction clauses create procedural deadlock, risk parallel anti-suit injunctions, and impair enforcement.'
                     ),
-                    'harmonization': 'Adopt a unified governing law and dispute resolution forum across all transaction documents.',
-                    'recommended_resolution': 'Adopt a unified governing law and dispute resolution forum across all transaction documents.',
+                    'harmonization': f'Adopt a unified governing law and exclusive dispute resolution forum ({forum_a} or {forum_b}) across all related agreements.',
+                    'recommended_resolution': f'Adopt a unified governing law and exclusive dispute resolution forum ({forum_a} or {forum_b}) across all related agreements.',
                     'citedCases': []
                 })
                 conflict_idx += 1
 
-            # 2. Payment Terms / Remittance
-            pay_a = find_matches(text_a, [r'payment', r'invoic', r'fees', r'withhold'])
-            pay_b = find_matches(text_b, [r'payment', r'invoic', r'fees', r'withhold'])
+            # 2. Dispute Resolution Clashes (Arbitration vs Court Litigation)
+            has_arbitration_a = bool(re.search(r'arbitrat|tribunal|siac|lcia|ica', text_a, re.I))
+            has_arbitration_b = bool(re.search(r'arbitrat|tribunal|siac|lcia|ica', text_b, re.I))
+            has_court_lit_a = bool(re.search(r'exclusive\s+jurisdiction\s+of\s+the\s+courts|waives\s+all\s+rights\s+to\s+arbitrat|civil\s+court', text_a, re.I))
+            has_court_lit_b = bool(re.search(r'exclusive\s+jurisdiction\s+of\s+the\s+courts|waives\s+all\s+rights\s+to\s+arbitrat|civil\s+court', text_b, re.I))
+
+            if (has_arbitration_a and (has_court_lit_b or not has_arbitration_b and forum_b)) or (has_arbitration_b and (has_court_lit_a or not has_arbitration_a and forum_a)):
+                if not any(c['title'].startswith('Conflicting Jurisdiction') and c['docA']['name'] == name_a and c['docB']['name'] == name_b for c in conflicts):
+                    quote_a = (find_matches(text_a, [r'arbitrat', r'dispute', r'court']) or [f"Dispute resolution mechanism in {name_a}."])[0]
+                    quote_b = (find_matches(text_b, [r'arbitrat', r'dispute', r'court']) or [f"Dispute resolution mechanism in {name_b}."])[0]
+                    conflicts.append({
+                        'id': str(conflict_idx),
+                        'title': f'Dispute Resolution Mechanism Clash: Arbitration vs Court Litigation between {name_a} and {name_b}',
+                        'severity': 'critical',
+                        'docA': {
+                            'file': name_a,
+                            'name': name_a,
+                            'quote': quote_a,
+                            'page': 'Page 1',
+                            'section': 'Dispute Resolution Clause',
+                            'context': quote_a
+                        },
+                        'docB': {
+                            'file': name_b,
+                            'name': name_b,
+                            'quote': quote_b,
+                            'page': 'Page 1',
+                            'section': 'Dispute Resolution Clause',
+                            'context': quote_b
+                        },
+                        'doc_a_name': name_a,
+                        'doc_a_excerpt': quote_a,
+                        'doc_b_name': name_b,
+                        'doc_b_excerpt': quote_b,
+                        'legalExplanation': (
+                            'Contradiction between mandatory arbitration under the Arbitration & Conciliation Act 1996 and civil court litigation '
+                            'creates jurisdictional threshold disputes under Section 8 of the Arbitration Act, causing substantial litigation delays and procedural uncertainty.'
+                        ),
+                        'harmonization': 'Synchronize dispute resolution clauses by establishing mandatory arbitration as the primary forum across all ancillary and master agreements.',
+                        'recommended_resolution': 'Synchronize dispute resolution clauses by establishing mandatory arbitration as the primary forum across all ancillary and master agreements.',
+                        'citedCases': []
+                    })
+                    conflict_idx += 1
+
+            # 3. Payment Terms / Remittance & Withholding Rights
+            pay_a = find_matches(text_a, [r'payment', r'invoic', r'fees', r'withhold', r'remittance', r'net\s+\d+'])
+            pay_b = find_matches(text_b, [r'payment', r'invoic', r'fees', r'withhold', r'remittance', r'net\s+\d+'])
             if pay_a and pay_b:
-                has_withhold_a = any('withhold' in p.lower() or 'discretion' in p.lower() or 'reduce' in p.lower() for p in pay_a)
-                has_withhold_b = any('withhold' in p.lower() or 'discretion' in p.lower() or 'reduce' in p.lower() for p in pay_b)
-                if has_withhold_a != has_withhold_b or ('30 days' in text_a.lower() and ('60 days' in text_b.lower() or 'withhold' in text_b.lower())):
+                has_withhold_a = any('withhold' in p.lower() or 'discretion' in p.lower() or 'reduce' in p.lower() or 'deduct' in p.lower() for p in pay_a)
+                has_withhold_b = any('withhold' in p.lower() or 'discretion' in p.lower() or 'reduce' in p.lower() or 'deduct' in p.lower() for p in pay_b)
+                
+                days_a = re.search(r'(\d+)\s+days?', text_a, re.I)
+                days_b = re.search(r'(\d+)\s+days?', text_b, re.I)
+                has_days_mismatch = bool(days_a and days_b and days_a.group(1) != days_b.group(1))
+
+                if has_withhold_a != has_withhold_b or has_days_mismatch or ('30 days' in text_a.lower() and ('60 days' in text_b.lower() or 'withhold' in text_b.lower())):
                     quote_a = pay_a[0]
                     quote_b = pay_b[0]
                     conflicts.append({
                         'id': str(conflict_idx),
-                        'title': 'Inconsistent Payment & Invoicing Terms',
-                        'severity': 'critical',
+                        'title': f'Inconsistent Payment & Invoicing Terms between {name_a} and {name_b}',
+                        'severity': 'critical' if (has_withhold_a != has_withhold_b) else 'major',
                         'docA': {
                             'file': name_a,
                             'name': name_a,
@@ -194,34 +330,34 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                         'doc_b_name': name_b,
                         'doc_b_excerpt': quote_b,
                         'legalExplanation': (
-                            'Contradictory remittance schedules and unilateral withholding rights violate commercial certainty under Section 73 '
-                            'of the Indian Contract Act 1872, creating financial exposure and immediate dispute risk.'
+                            'Contradictory remittance schedules, mismatched milestone timelines, and unilateral withholding rights violate commercial certainty under Section 73 '
+                            'of the Indian Contract Act 1872, creating immediate financial exposure and breach-of-contract vulnerability.'
                         ),
-                        'harmonization': 'Harmonize payment schedules and define objective acceptance criteria prior to any payment withholding.',
-                        'recommended_resolution': 'Harmonize payment schedules and define objective acceptance criteria prior to any payment withholding.',
+                        'harmonization': 'Harmonize payment schedules across all documents and establish objective milestone acceptance criteria prior to any payment deductions or withholding.',
+                        'recommended_resolution': 'Harmonize payment schedules across all documents and establish objective milestone acceptance criteria prior to any payment deductions or withholding.',
                         'citedCases': []
                     })
                     conflict_idx += 1
 
-            # 3. Confidentiality Survival Duration
+            # 4. Confidentiality Survival Duration
             conf_a = find_matches(text_a, [r'confidential', r'non-disclosure', r'secrecy', r'survive'])
             conf_b = find_matches(text_b, [r'confidential', r'non-disclosure', r'secrecy', r'survive'])
             if conf_a and conf_b:
-                dur_a = re.search(r'(\d+)\s+years?|perpetu|indefinite', text_a, re.I)
-                dur_b = re.search(r'(\d+)\s+years?|perpetu|indefinite', text_b, re.I)
+                dur_a = re.search(r'(\d+)\s+years?|perpetu(?:al|ity)?|indefinite', text_a, re.I)
+                dur_b = re.search(r'(\d+)\s+years?|perpetu(?:al|ity)?|indefinite', text_b, re.I)
                 if dur_a and dur_b and dur_a.group(0).lower() != dur_b.group(0).lower():
                     quote_a = conf_a[0]
                     quote_b = conf_b[0]
                     conflicts.append({
                         'id': str(conflict_idx),
-                        'title': 'Mismatched Confidentiality Survival Periods',
+                        'title': f'Mismatched Confidentiality Survival Periods: {dur_a.group(0)} vs {dur_b.group(0)}',
                         'severity': 'major',
                         'docA': {
                             'file': name_a,
                             'name': name_a,
                             'quote': quote_a,
                             'page': 'Page 1',
-                            'section': 'Confidentiality',
+                            'section': 'Confidentiality Survival',
                             'context': quote_a
                         },
                         'docB': {
@@ -240,26 +376,26 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                             'Conflicting confidentiality survival periods create ambiguity regarding trade secret protection and post-termination '
                             'obligations. Inconsistent terms undermine confidentiality enforcement under the Specific Relief Act 1963.'
                         ),
-                        'harmonization': 'Standardize confidentiality duration across all related contracts to a consistent term.',
-                        'recommended_resolution': 'Standardize confidentiality duration across all related contracts to a consistent term.',
+                        'harmonization': f'Standardize confidentiality survival duration across all related contracts to the longer protective term ({dur_b.group(0) if "perpetu" in dur_b.group(0).lower() else dur_a.group(0)}).',
+                        'recommended_resolution': f'Standardize confidentiality survival duration across all related contracts to the longer protective term.',
                         'citedCases': []
                     })
                     conflict_idx += 1
 
-            # 4. Liability Limitation & Indemnity
-            liab_a = find_matches(text_a, [r'liability', r'indemni', r'damages', r'capped', r'exceed'])
-            liab_b = find_matches(text_b, [r'liability', r'indemni', r'damages', r'capped', r'exceed'])
+            # 5. Liability Limitation & Indemnity Allocation
+            liab_a = find_matches(text_a, [r'liability', r'indemni', r'damages', r'capped', r'exceed', r'limitation'])
+            liab_b = find_matches(text_b, [r'liability', r'indemni', r'damages', r'capped', r'exceed', r'limitation'])
             if liab_a and liab_b:
-                is_capped_a = any('capped' in l.lower() or 'not exceed' in l.lower() or 'limited to' in l.lower() for l in liab_a)
+                is_capped_a = any('capped' in l.lower() or 'not exceed' in l.lower() or 'limited to' in l.lower() or 'preceding' in l.lower() for l in liab_a)
                 is_unlimited_b = any('unlimited' in l.lower() or 'no liability cap' in l.lower() or 'indemnity' in l.lower() for l in liab_b)
-                is_capped_b = any('capped' in l.lower() or 'not exceed' in l.lower() or 'limited to' in l.lower() for l in liab_b)
+                is_capped_b = any('capped' in l.lower() or 'not exceed' in l.lower() or 'limited to' in l.lower() or 'preceding' in l.lower() for l in liab_b)
                 is_unlimited_a = any('unlimited' in l.lower() or 'no liability cap' in l.lower() or 'indemnity' in l.lower() for l in liab_a)
                 if (is_capped_a and is_unlimited_b) or (is_capped_b and is_unlimited_a):
                     quote_a = liab_a[0]
                     quote_b = liab_b[0]
                     conflicts.append({
                         'id': str(conflict_idx),
-                        'title': 'Contradictory Liability Caps & Risk Allocation',
+                        'title': f'Contradictory Liability Caps & Indemnity Risk Allocation between {name_a} and {name_b}',
                         'severity': 'critical',
                         'docA': {
                             'file': name_a,
@@ -282,8 +418,8 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                         'doc_b_name': name_b,
                         'doc_b_excerpt': quote_b,
                         'legalExplanation': (
-                            'Direct contradiction between a capped liability clause and an uncapped indemnity clause creates catastrophic exposure. '
-                            'Courts interpret ambiguous exculpatory clauses against the drafter (contra proferentem).'
+                            'Direct contradiction between a capped liability clause and an uncapped indemnity clause creates catastrophic commercial exposure. '
+                            'Under Indian Law, courts interpret ambiguous exculpatory clauses against the drafter (contra proferentem).'
                         ),
                         'harmonization': 'Explicitly reconcile indemnity carve-outs within the overall aggregate liability cap clause.',
                         'recommended_resolution': 'Explicitly reconcile indemnity carve-outs within the overall aggregate liability cap clause.',
@@ -291,7 +427,50 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                     })
                     conflict_idx += 1
 
-            # 5. Criminal / FIR / Police Proceeding vs Civil NDA / Contract
+            # 6. Termination & Notice Periods
+            term_a = find_matches(text_a, [r'terminat', r'notice', r'cure\s+period', r'convenience'])
+            term_b = find_matches(text_b, [r'terminat', r'notice', r'cure\s+period', r'convenience'])
+            if term_a and term_b:
+                t_days_a = re.search(r'(\d+)\s+days?\s+(?:prior|written)?\s*notice', text_a, re.I)
+                t_days_b = re.search(r'(\d+)\s+days?\s+(?:prior|written)?\s*notice', text_b, re.I)
+                if t_days_a and t_days_b and t_days_a.group(1) != t_days_b.group(1):
+                    quote_a = term_a[0]
+                    quote_b = term_b[0]
+                    conflicts.append({
+                        'id': str(conflict_idx),
+                        'title': f'Mismatched Termination Notice Periods: {t_days_a.group(0)} vs {t_days_b.group(0)}',
+                        'severity': 'major',
+                        'docA': {
+                            'file': name_a,
+                            'name': name_a,
+                            'quote': quote_a,
+                            'page': 'Page 1',
+                            'section': 'Termination Clause',
+                            'context': quote_a
+                        },
+                        'docB': {
+                            'file': name_b,
+                            'name': name_b,
+                            'quote': quote_b,
+                            'page': 'Page 1',
+                            'section': 'Notice of Termination',
+                            'context': quote_b
+                        },
+                        'doc_a_name': name_a,
+                        'doc_a_excerpt': quote_a,
+                        'doc_b_name': name_b,
+                        'doc_b_excerpt': quote_b,
+                        'legalExplanation': (
+                            f'Conflicting notice periods ({t_days_a.group(1)} days vs {t_days_b.group(1)} days) create immediate procedural default risk upon exit. '
+                            'Notice given under one contract will trigger immediate breach claims under the other.'
+                        ),
+                        'harmonization': f'Standardize termination notice requirements across all project agreements to a uniform period ({max(int(t_days_a.group(1)), int(t_days_b.group(1)))} days).',
+                        'recommended_resolution': 'Standardize termination notice requirements across all project agreements to a uniform period.',
+                        'citedCases': []
+                    })
+                    conflict_idx += 1
+
+            # 7. Criminal / FIR / Police Proceeding vs Civil NDA / Contract
             is_criminal_a = bool(re.search(r'FIR|CrPC|BNSS|Penal Code|Police|accused|complainant', text_a + name_a, re.I))
             is_criminal_b = bool(re.search(r'FIR|CrPC|BNSS|Penal Code|Police|accused|complainant', text_b + name_b, re.I))
             is_civil_a = bool(re.search(r'Agreement|Contract|NDA|Non-Disclosure|Service', text_a + name_a, re.I))
@@ -302,14 +481,14 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                 quote_b = text_b[:150].strip() or name_b
                 conflicts.append({
                     'id': str(conflict_idx),
-                    'title': 'Statutory Disclosure Obligation vs Contractual Non-Disclosure',
+                    'title': f'Statutory Criminal Disclosure vs Contractual Non-Disclosure ({name_a} vs {name_b})',
                     'severity': 'critical',
                     'docA': {
                         'file': name_a,
                         'name': name_a,
                         'quote': quote_a,
                         'page': 'Page 1',
-                        'section': 'Police / Criminal Record',
+                        'section': 'Police / Criminal Record' if is_criminal_a else 'Confidentiality Restrictions',
                         'context': quote_a
                     },
                     'docB': {
@@ -317,7 +496,7 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                         'name': name_b,
                         'quote': quote_b,
                         'page': 'Page 1',
-                        'section': 'Confidentiality Restrictions',
+                        'section': 'Confidentiality Restrictions' if is_civil_b else 'Police / Criminal Record',
                         'context': quote_b
                     },
                     'doc_a_name': name_a,
@@ -334,48 +513,56 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                 })
                 conflict_idx += 1
 
-    # Generic cross-document structural discrepancy if still empty
-    if not conflicts and len(docs) >= 2:
-        for i in range(min(3, len(docs) - 1)):
+    # 8. Order of Precedence Hierarchy across all documents if conflicts are low
+    if len(docs) >= 2 and len(conflicts) < len(docs):
+        for i in range(len(docs) - 1):
             name_a = docs[i].get('name') or f"Document {i+1}"
             name_b = docs[i+1].get('name') or f"Document {i+2}"
             text_a = docs[i].get('text', '')
             text_b = docs[i+1].get('text', '')
-            qa = text_a[:140].strip() or f"Operative terms of {name_a}"
-            qb = text_b[:140].strip() or f"Operative terms of {name_b}"
-            conflicts.append({
-                'id': str(conflict_idx),
-                'title': f'Cross-Agreement Operational & Term Inconsistency between {name_a} and {name_b}',
-                'severity': 'major',
-                'docA': {
-                    'file': name_a,
-                    'name': name_a,
-                    'quote': qa,
-                    'page': 'Page 1',
-                    'section': 'General Terms',
-                    'context': qa
-                },
-                'docB': {
-                    'file': name_b,
-                    'name': name_b,
-                    'quote': qb,
-                    'page': 'Page 1',
-                    'section': 'General Terms',
-                    'context': qb
-                },
-                'doc_a_name': name_a,
-                'doc_a_excerpt': qa,
-                'doc_b_name': name_b,
-                'doc_b_excerpt': qb,
-                'legalExplanation': (
-                    f'Concurrent execution of {name_a} and {name_b} without an explicit precedence/order-of-precedence clause '
-                    'risks conflicting obligations and interpretative disputes under Section 9 of the Indian Evidence Act 1872.'
-                ),
-                'harmonization': 'Add an explicit Order of Precedence clause stating which document controls in the event of ambiguity.',
-                'recommended_resolution': 'Add an explicit Order of Precedence clause stating which document controls in the event of ambiguity.',
-                'citedCases': []
-            })
-            conflict_idx += 1
+            
+            # Check if this pair already has a conflict
+            already_covered = any(
+                (c['docA']['name'] == name_a and c['docB']['name'] == name_b) or
+                (c['docA']['name'] == name_b and c['docB']['name'] == name_a)
+                for c in conflicts
+            )
+            if not already_covered:
+                qa = text_a[:160].strip() or f"Operative terms and representations of {name_a}"
+                qb = text_b[:160].strip() or f"Operative terms and representations of {name_b}"
+                conflicts.append({
+                    'id': str(conflict_idx),
+                    'title': f'Cross-Agreement Precedence & Operational Ambiguity between {name_a} and {name_b}',
+                    'severity': 'major',
+                    'docA': {
+                        'file': name_a,
+                        'name': name_a,
+                        'quote': qa,
+                        'page': 'Page 1',
+                        'section': 'General Terms & Covenants',
+                        'context': qa
+                    },
+                    'docB': {
+                        'file': name_b,
+                        'name': name_b,
+                        'quote': qb,
+                        'page': 'Page 1',
+                        'section': 'General Terms & Covenants',
+                        'context': qb
+                    },
+                    'doc_a_name': name_a,
+                    'doc_a_excerpt': qa,
+                    'doc_b_name': name_b,
+                    'doc_b_excerpt': qb,
+                    'legalExplanation': (
+                        f'Concurrent execution of {name_a} and {name_b} without an explicit precedence clause '
+                        'creates interpretative deadlock under Section 9 of the Indian Evidence Act 1872 / Bharatiya Sakshya Adhiniyam 2023.'
+                    ),
+                    'harmonization': 'Incorporate an explicit Order of Precedence clause designating the controlling agreement in the event of ambiguity or conflict.',
+                    'recommended_resolution': 'Incorporate an explicit Order of Precedence clause designating the controlling agreement in the event of ambiguity or conflict.',
+                    'citedCases': []
+                })
+                conflict_idx += 1
 
     return conflicts
 
@@ -384,7 +571,6 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
 @conflict_bp.route('/api/conflict-engine/analyze', methods=['POST'])
 def analyze_conflicts():
     try:
-        from utils.ai_helper import ask_groq
         docs = []
 
         # 1. Check if payload is JSON
@@ -423,32 +609,30 @@ def analyze_conflicts():
         if len(docs) < 2:
             return jsonify({'error': 'Upload or provide at least 2 documents to analyze cross-document conflicts.'}), 400
 
-        # Intelligent context length budgeting per document
+        # Intelligent clause-aware context length budgeting per document
         truncated_docs = []
-        per_doc_limit = max(3500, 14000 // len(docs))
+        per_doc_limit = max(3500, 16000 // len(docs))
         for d in docs:
-            text = d['text']
-            if len(text) > per_doc_limit:
-                text = text[:per_doc_limit] + '\n... [truncated for token budget]'
-            truncated_docs.append({'name': d['name'], 'text': text})
+            salient_text = extract_salient_legal_clauses(d['text'], budget=per_doc_limit)
+            truncated_docs.append({'name': d['name'], 'text': salient_text})
 
         doc_sections = '\n\n'.join(
             [f'=== Document {i+1}: {d["name"]} ===\n{d["text"]}' for i, d in enumerate(truncated_docs)]
         )
 
         system_prompt = (
-            "You are a Senior Indian Contract Lawyer and Legal Auditor specializing in cross-document contradiction detection, "
-            "conflict of laws, and malpractice defense. Your task is to perform an exhaustive, multi-document clause comparison "
+            "You are a Senior Indian Contract Lawyer and Malpractice Defense Auditor specializing in cross-document contradiction detection, "
+            "conflict of laws, and multi-contract transaction audit. Your task is to perform an exhaustive, multi-document pairwise clause comparison "
             "across ALL provided documents (contracts, SOWs, NDAs, FIRs, court filings, affidavits).\n\n"
             "Analyze every pair and grouping of documents for:\n"
-            "1. Forum & Jurisdiction Inconsistencies (e.g. Courts of Delhi vs Mumbai vs Delaware vs Foreign Courts)\n"
-            "2. Dispute Resolution Clashes (e.g. Arbitration under Arbitration Act 1996 vs Court Litigation vs Waiver of Judicial Relief)\n"
+            "1. Forum & Jurisdiction Inconsistencies (e.g. Courts of Delhi vs Mumbai vs Bengaluru vs Chennai vs Delaware vs London)\n"
+            "2. Dispute Resolution Clashes (e.g. Arbitration under Arbitration Act 1996 vs Court Litigation vs SIAC/LCIA)\n"
             "3. Confidentiality & Non-Disclosure Inconsistencies (e.g. 2-year survival vs 5-year vs Perpetual, differing disclosure exclusions)\n"
             "4. Liability Caps & Indemnity Contradictions (e.g. 12 months fees cap vs uncapped exposure vs broad indemnities)\n"
             "5. Payment, Fee & Invoicing Inconsistencies (e.g. Net 30 mandatory payments vs unilateral withholding / deduction rights)\n"
             "6. Notice Periods & Termination Timelines (e.g. 30 days prior written notice vs 15 days vs immediate termination)\n"
             "7. Factual, Chronological, Entity & Statutory Contradictions (e.g. conflicting dates, IPC vs BNS, CrPC vs BNSS, conflicting factual assertions across concurrent filings)\n\n"
-            "Under Indian Law (Indian Contract Act 1872, Arbitration & Conciliation Act 1996, Specific Relief Act 1963, BNS 2023, BNSS 2023), "
+            "Under Indian Law (Indian Contract Act 1872, Arbitration & Conciliation Act 1996, Specific Relief Act 1963, BNS 2023, BNSS 2023, BSA 2023), "
             "identify all substantive discrepancies, legal friction points, and operational contradictions."
         )
 
@@ -456,7 +640,9 @@ def analyze_conflicts():
 
 {doc_sections}
 
-Perform an exhaustive pairwise cross-check. For EVERY conflict, discrepancy, or contradictory covenant identified across the documents, respond ONLY in valid JSON matching this exact structure:
+Perform an exhaustive pairwise cross-check across all {len(docs)} documents.
+Identify at least 2 to 6 substantive cross-document contradictions across the document pairs.
+Respond ONLY in valid JSON matching this exact structure:
 {{
   "conflicts": [
     {{
@@ -466,14 +652,14 @@ Perform an exhaustive pairwise cross-check. For EVERY conflict, discrepancy, or 
       "docA": {{
         "file": "exact filename of document A",
         "quote": "exact verbatim excerpt from document A",
-        "page": "Page number if known, otherwise empty",
+        "page": "Page 1",
         "section": "Section name/number if known",
         "context": "Surrounding clause text"
       }},
       "docB": {{
         "file": "exact filename of document B",
         "quote": "exact verbatim excerpt from document B",
-        "page": "Page number if known, otherwise empty",
+        "page": "Page 1",
         "section": "Section name/number if known",
         "context": "Surrounding clause text"
       }},
@@ -484,8 +670,7 @@ Perform an exhaustive pairwise cross-check. For EVERY conflict, discrepancy, or 
   "summary": "Comprehensive 2-3 sentence executive summary of all discrepancies found across the loaded documents."
 }}
 
-Severity must be either "critical" or "major".
-Ensure you provide real, substantive conflicts found between the documents."""
+Severity must be either "critical" or "major"."""
 
         normalized_conflicts = []
         summary = ""
@@ -504,15 +689,15 @@ Ensure you provide real, substantive conflicts found between the documents."""
                         raw_doc_a = c.get('docA') or c.get('doc_a') or {}
                         file_a = raw_doc_a.get('file') or c.get('doc_a_name') or docs[0]['name']
                         quote_a = raw_doc_a.get('quote') or c.get('doc_a_excerpt') or ''
-                        page_a = raw_doc_a.get('page') or c.get('doc_a_page') or ''
-                        sec_a = raw_doc_a.get('section') or ''
+                        page_a = raw_doc_a.get('page') or c.get('doc_a_page') or 'Page 1'
+                        sec_a = raw_doc_a.get('section') or 'Operative Terms'
                         ctx_a = raw_doc_a.get('context') or (f'"{quote_a}"' if quote_a else '')
 
                         raw_doc_b = c.get('docB') or c.get('doc_b') or {}
                         file_b = raw_doc_b.get('file') or c.get('doc_b_name') or (docs[1]['name'] if len(docs) > 1 else docs[0]['name'])
                         quote_b = raw_doc_b.get('quote') or c.get('doc_b_excerpt') or ''
-                        page_b = raw_doc_b.get('page') or c.get('doc_b_page') or ''
-                        sec_b = raw_doc_b.get('section') or ''
+                        page_b = raw_doc_b.get('page') or c.get('doc_b_page') or 'Page 1'
+                        sec_b = raw_doc_b.get('section') or 'Operative Terms'
                         ctx_b = raw_doc_b.get('context') or (f'"{quote_b}"' if quote_b else '')
 
                         legal_exp = c.get('legalExplanation') or c.get('legal_explanation') or ''
@@ -555,10 +740,13 @@ Ensure you provide real, substantive conflicts found between the documents."""
         # Fallback to deterministic multi-clause comparator if AI produced 0 results
         if not normalized_conflicts:
             normalized_conflicts = detect_clause_conflicts_deterministic(docs)
+            summary = ""
 
-        if not summary:
+        if not summary or "no conflict" in summary.lower() or "no contradiction" in summary.lower():
             if normalized_conflicts:
-                summary = f"Cross-document analysis identified {len(normalized_conflicts)} contradiction(s) across the {len(docs)} reviewed documents."
+                crit_cnt = sum(1 for c in normalized_conflicts if c['severity'] == 'critical')
+                maj_cnt = sum(1 for c in normalized_conflicts if c['severity'] == 'major')
+                summary = f"Cross-document analysis identified {len(normalized_conflicts)} contradiction(s) across the {len(docs)} reviewed documents ({crit_cnt} critical · {maj_cnt} major)."
             else:
                 summary = "No contradictions or conflicting clauses were identified across the provided documents."
 
@@ -651,7 +839,6 @@ def check_conflict_entity():
             matched_text = f"Opposing party '{opposing_party}' is our existing client: {case['client']}"
 
         if case_match:
-            # Matter severity boost: high-risk matters escalate Potential → High Conflict
             base_status = "High Conflict" if match_type in ("Primary Client Match", "Adverse Party Match") else "Potential"
             boosted_status = "High Conflict" if (matter_severity_boost and base_status == "Potential") else base_status
             results.append({
@@ -664,7 +851,7 @@ def check_conflict_entity():
                 "excerpt": matched_text,
                 "conflict_status": boosted_status,
             })
-            continue  # skip deep doc matching if metadata matched
+            continue
 
         # Check document contents
         for doc in case["docs"]:
@@ -751,7 +938,6 @@ def save_clearance_memo():
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
-        # Create table if not exists (idempotent)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS conflict_clearance_memos (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -812,7 +998,6 @@ def export_discrepancies_docx():
         section.left_margin = Inches(1)
         section.right_margin = Inches(1)
 
-        # ── Color constants matching Slate & Rust palette ──
         INK = RGBColor(0x18, 0x1B, 0x1D)
         INK_SOFT = RGBColor(0x49, 0x4E, 0x51)
         MUTED = RGBColor(0x86, 0x8C, 0x8E)
@@ -849,7 +1034,6 @@ def export_discrepancies_docx():
                 )
                 tblPr[0].append(tblBorders)
 
-        # ── Header & Footer ──
         header = section.header
         header.is_linked_to_previous = False
         h_para = header.paragraphs[0]
@@ -869,7 +1053,6 @@ def export_discrepancies_docx():
         f_run.font.size = Pt(8)
         f_run.font.color.rgb = MUTED
 
-        # ── Document Title / Masthead ──
         p_title = doc.add_paragraph()
         p_title.paragraph_format.space_before = Pt(0)
         p_title.paragraph_format.space_after = Pt(4)
@@ -886,7 +1069,6 @@ def export_discrepancies_docx():
         r_sub.font.color.rgb = MUTED
         r_sub.italic = True
 
-        # ── Memo Block Table ──
         memo_table = doc.add_table(rows=4, cols=2)
         memo_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         set_table_borders(memo_table, "D2D5D4")
@@ -932,7 +1114,6 @@ def export_discrepancies_docx():
 
         doc.add_paragraph().paragraph_format.space_after = Pt(12)
 
-        # ── Executive Summary ──
         p_exec_h = doc.add_paragraph()
         p_exec_h.paragraph_format.space_before = Pt(10)
         p_exec_h.paragraph_format.space_after = Pt(4)
@@ -949,14 +1130,12 @@ def export_discrepancies_docx():
         r_exec.font.size = Pt(10)
         r_exec.font.color.rgb = INK_SOFT
 
-        # ── Conflicts Section ──
         for idx, c in enumerate(conflicts):
             c_num = f"{idx + 1:02d}"
             c_title = c.get('title') or f"Conflict {c_num}"
             sev_raw = (c.get('severity') or 'critical').upper()
             is_crit = 'CRIT' in sev_raw
 
-            # Canonical Data extraction from §2 Data Contract
             doc_a = c.get('docA') or {}
             doc_b = c.get('docB') or {}
 
@@ -971,7 +1150,6 @@ def export_discrepancies_docx():
             legal_expl = c.get('legalExplanation') or c.get('legal_explanation') or ''
             harmonization = c.get('harmonization') or c.get('recommended_resolution') or ''
 
-            # Conflict Title
             p_c_head = doc.add_paragraph()
             p_c_head.paragraph_format.space_before = Pt(16)
             p_c_head.paragraph_format.space_after = Pt(6)
@@ -986,12 +1164,10 @@ def export_discrepancies_docx():
             r_sev.font.size = Pt(10)
             r_sev.font.color.rgb = ACCENT_TERRACOTTA if is_crit else MAJOR_GOLD
 
-            # Two-Column Clash Comparison Table
             clash_tbl = doc.add_table(rows=2, cols=2)
             clash_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
             set_table_borders(clash_tbl, "D2D5D4")
 
-            # Row 0: Headers
             h_row = clash_tbl.rows[0]
             lbl_a = f"{doc_a_name.upper()}{f' (Page {doc_a_page})' if doc_a_page else ''}"
             lbl_b = f"{doc_b_name.upper()}{f' (Page {doc_b_page})' if doc_b_page else ''}"
@@ -1008,7 +1184,6 @@ def export_discrepancies_docx():
                 r.font.size = Pt(9)
                 r.font.color.rgb = INK_SOFT
 
-            # Row 1: Excerpts
             b_row = clash_tbl.rows[1]
             for col_i, (b_cell, quote_text) in enumerate([(b_row.cells[0], doc_a_quote), (b_row.cells[1], doc_b_quote)]):
                 b_cell.width = Inches(3.25)
@@ -1023,7 +1198,6 @@ def export_discrepancies_docx():
                 r.font.size = Pt(9.5)
                 r.font.color.rgb = INK
 
-            # Legal Explanation Block
             if legal_expl:
                 p_expl_lbl = doc.add_paragraph()
                 p_expl_lbl.paragraph_format.space_before = Pt(8)
@@ -1041,7 +1215,6 @@ def export_discrepancies_docx():
                 r_expl.font.size = Pt(9.5)
                 r_expl.font.color.rgb = INK_SOFT
 
-            # Recommended Harmonization Callout Box (Left Accent Rule)
             if harmonization:
                 harm_tbl = doc.add_table(rows=1, cols=1)
                 harm_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -1069,7 +1242,6 @@ def export_discrepancies_docx():
 
             doc.add_paragraph().paragraph_format.space_after = Pt(10)
 
-        # ── Return generated docx stream ──
         buf = io.BytesIO()
         doc.save(buf)
         buf.seek(0)
@@ -1084,4 +1256,3 @@ def export_discrepancies_docx():
     except Exception as e:
         print(f"[export_discrepancies_docx] Error: {e}")
         return jsonify({'error': str(e)}), 500
-

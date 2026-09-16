@@ -1504,6 +1504,21 @@ Section 8.1 (Dispute Resolution): Any disputes arising hereunder shall be resolv
     if (!incoming.length) return;
     hasLiveFilesRef.current = true;
     setShowForceWarning(false);
+
+    // Read text immediately for text files so content is retained in memory
+    incoming.forEach(f => {
+      if (/\.txt$/i.test(f.name)) {
+        try {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const content = e.target.result;
+            setDocs(prev => prev.map(d => (d.name === f.name ? { ...d, text: content } : d)));
+          };
+          reader.readAsText(f);
+        } catch (err) {}
+      }
+    });
+
     setDocs(prev => {
       const existingNames = new Set(prev.map(d => d.name));
       const fresh = incoming
@@ -1543,11 +1558,11 @@ Section 8.1 (Dispute Resolution): Any disputes arising hereunder shall be resolv
 
     const key = getSessionKey(docs);
 
-    // Cache hit: instant deterministic restore if within CACHE_TTL_MS
+    // Cache hit: instant deterministic restore if within CACHE_TTL_MS and contains valid conflicts
     const cached = resultsCacheRef.current[key];
     const cacheIsFresh = cached && cached.timestamp && (Date.now() - new Date(cached.timestamp).getTime() < CACHE_TTL_MS);
 
-    if (!force && cacheIsFresh) {
+    if (!force && cacheIsFresh && cached.conflicts && cached.conflicts.length > 0) {
       setIsStale(false);
       setAnalysisError('');
       setActiveConflicts(cached.conflicts);
@@ -1732,9 +1747,11 @@ Section 8.1 (Dispute Resolution): Any disputes arising hereunder shall be resolv
   const unreviewedCount = useMemo(() => activeConflicts.filter(c => !reviewedIds.has(c.id)).length, [activeConflicts, reviewedIds]);
 
   const summarySentence = useMemo(() => {
-    if (summaryText) return summaryText;
     if (activeConflicts.length === 0) {
-      return 'No conflicts were found across the documents currently in session.';
+      return summaryText || 'No conflicts were found across the documents currently in session.';
+    }
+    if (summaryText && !summaryText.toLowerCase().includes('no conflict') && !summaryText.toLowerCase().includes('no contradiction')) {
+      return summaryText;
     }
     const sevs = [...new Set(activeConflicts.map(c => c.severity))].join(' and ');
     return `These ${docs.length} documents contain ${activeConflicts.length} conflict${activeConflicts.length === 1 ? '' : 's'} spanning ${sevs} severity — review each below before relying on any provision they touch.`;
