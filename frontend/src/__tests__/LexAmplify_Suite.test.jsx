@@ -674,7 +674,7 @@ describe('Legal Calendar', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Legal Calendar Dashboard/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Legal Calendar/i)).toBeInTheDocument();
     expect(screen.getByText(/Tickler Engine/i)).toBeInTheDocument();
   });
 });

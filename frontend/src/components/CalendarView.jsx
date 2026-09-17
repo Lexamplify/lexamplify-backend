@@ -426,10 +426,60 @@ export default function CalendarView() {
            LEGAL CALENDAR (Tickler Engine) — v1 Slate & Rust Tokens
            ============================================================ */
         .cal-view-container {
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(0,0,0,.45);
+          --overlay: rgba(10,10,10,.6);
           color: var(--ink);
           font-family: 'IBM Plex Sans', sans-serif;
           min-height: 100%;
         }
+        [data-theme="light"] .cal-view-container, :root[data-theme="light"] .cal-view-container {
+          --bg: #DFE1E0;
+          --paper: #EAEBE8;
+          --paper-2: #E3E4E1;
+          --ink: #181B1D;
+          --ink-soft: #494E51;
+          --muted: #868C8E;
+          --muted-2: #B3B8B9;
+          --rule: #D2D5D4;
+          --accent: #B24A2E;
+          --accent-soft: #EFDCD1;
+          --major: #9C7A2E;
+          --major-soft: #F1E6C9;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(30,25,18,.14);
+          --overlay: rgba(24,20,15,.45);
+        }
+        [data-theme="dark"] .cal-view-container, :root[data-theme="dark"] .cal-view-container, .dark .cal-view-container {
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(0,0,0,.45);
+          --overlay: rgba(10,10,10,.6);
+        }
+
         .serif { font-family: 'Fraunces', serif; font-style: italic; letter-spacing: -0.01em; }
         .mono { font-family: 'IBM Plex Mono', monospace; }
 
@@ -467,7 +517,7 @@ export default function CalendarView() {
           padding-top: 2px;
           flex-wrap: wrap;
         }
-        .btn-cal {
+        .btn, .btn-cal {
           display: inline-flex;
           align-items: center;
           gap: 8px;
@@ -482,20 +532,20 @@ export default function CalendarView() {
           white-space: nowrap;
           transition: all 0.15s;
         }
-        .btn-cal:hover {
+        .btn:hover, .btn-cal:hover {
           border-color: var(--accent);
           color: var(--accent);
         }
-        .btn-cal-primary {
-          background: var(--accent);
-          border-color: var(--accent);
-          color: var(--on-accent);
+        .btn-primary, .btn-cal-primary {
+          background: var(--accent) !important;
+          border-color: var(--accent) !important;
+          color: var(--on-accent) !important;
         }
-        .btn-cal-primary:hover {
+        .btn-primary:hover, .btn-cal-primary:hover {
           filter: brightness(1.08);
-          color: var(--on-accent);
+          color: var(--on-accent) !important;
         }
-        .btn-cal-sm {
+        .btn-sm, .btn-cal-sm {
           padding: 7px 12px;
           font-size: 12px;
         }
@@ -936,7 +986,7 @@ export default function CalendarView() {
       <header className="topbar-cal">
         <div style={{ flexGrow: 1 }}>
           <div className="eyebrow-cal">Litigation &amp; Disputes · Tickler Engine</div>
-          <h1 className="page-title-cal serif">Legal Calendar Dashboard</h1>
+          <h1 className="page-title-cal serif">Legal Calendar</h1>
           <div className="page-sub-cal">
             Tracks every deadline, hearing and scheduled task across your caseload — nothing here expires silently.
           </div>

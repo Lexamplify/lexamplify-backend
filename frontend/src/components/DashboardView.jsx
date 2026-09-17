@@ -282,11 +282,61 @@ export default function DashboardView() {
            ADVOCATE TERMINAL (Dashboard) — v2 Slate & Rust Token Styles
            ============================================================ */
         .dt-container {
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(0,0,0,.45);
+          --overlay: rgba(10,10,10,.6);
           padding: 0;
           color: var(--ink);
           font-family: 'IBM Plex Sans', sans-serif;
           min-height: 100%;
         }
+        [data-theme="light"] .dt-container, :root[data-theme="light"] .dt-container {
+          --bg: #DFE1E0;
+          --paper: #EAEBE8;
+          --paper-2: #E3E4E1;
+          --ink: #181B1D;
+          --ink-soft: #494E51;
+          --muted: #868C8E;
+          --muted-2: #B3B8B9;
+          --rule: #D2D5D4;
+          --accent: #B24A2E;
+          --accent-soft: #EFDCD1;
+          --major: #9C7A2E;
+          --major-soft: #F1E6C9;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(30,25,18,.14);
+          --overlay: rgba(24,20,15,.45);
+        }
+        [data-theme="dark"] .dt-container, :root[data-theme="dark"] .dt-container, .dark .dt-container {
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(0,0,0,.45);
+          --overlay: rgba(10,10,10,.6);
+        }
+
         .serif { font-family: 'Fraunces', serif; font-style: italic; letter-spacing: -0.01em; }
         .mono { font-family: 'IBM Plex Mono', monospace; }
 
@@ -314,7 +364,7 @@ export default function DashboardView() {
           color: var(--ink-soft);
           margin-top: 7px;
         }
-        .badge-live {
+        .badge, .badge-live {
           display: inline-flex;
           align-items: center;
           gap: 7px;
@@ -352,7 +402,7 @@ export default function DashboardView() {
           padding-top: 2px;
           flex-shrink: 0;
         }
-        .btn-dt {
+        .btn, .btn-dt {
           display: inline-flex;
           align-items: center;
           gap: 8px;
@@ -367,24 +417,24 @@ export default function DashboardView() {
           white-space: nowrap;
           transition: all 0.15s;
         }
-        .btn-dt:hover {
+        .btn:hover, .btn-dt:hover {
           border-color: var(--accent);
           color: var(--accent);
         }
-        .btn-dt-primary {
-          background: var(--accent);
-          border-color: var(--accent);
-          color: var(--on-accent);
+        .btn-primary, .btn-dt-primary {
+          background: var(--accent) !important;
+          border-color: var(--accent) !important;
+          color: var(--on-accent) !important;
         }
-        .btn-dt-primary:hover {
+        .btn-primary:hover, .btn-dt-primary:hover {
           filter: brightness(1.08);
-          color: var(--on-accent);
+          color: var(--on-accent) !important;
         }
-        .btn-dt-sm {
+        .btn-sm, .btn-dt-sm {
           padding: 7px 12px;
           font-size: 12px;
         }
-        .kbd-badge {
+        .kbd, .kbd-badge {
           font-family: 'IBM Plex Mono', monospace;
           font-size: 9.5px;
           opacity: .85;
@@ -474,7 +524,7 @@ export default function DashboardView() {
         }
 
         /* ── Stat Grid ── */
-        .stat-grid-dash {
+        .stat-grid, .stat-grid-dash {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 16px;
@@ -575,7 +625,7 @@ export default function DashboardView() {
           grid-template-columns: 1.3fr 1fr;
           gap: 16px;
         }
-        .panel-dash {
+        .panel, .panel-dash {
           background: var(--paper);
           border: 1px solid var(--rule);
           border-radius: 14px;
@@ -601,15 +651,15 @@ export default function DashboardView() {
           color: var(--ink-soft);
         }
         .panel-head-title svg { color: var(--accent); }
-        .panel-link {
+        .panel-link, .panel-head a {
           font-size: 12px;
           color: var(--accent);
           text-decoration: none;
           font-weight: 500;
           cursor: pointer;
         }
-        .panel-link:hover { text-decoration: underline; }
-        .panel-body-dash {
+        .panel-link:hover, .panel-head a:hover { text-decoration: underline; }
+        .panel-body, .panel-body-dash {
           padding: 18px;
           flex-grow: 1;
         }
@@ -700,7 +750,7 @@ export default function DashboardView() {
         }
         .doc-row:hover { background: var(--paper-2); }
         .doc-row + .doc-row { border-top: 1px dashed var(--rule); }
-        .doc-icon-wrap {
+        .doc-icon, .doc-icon-wrap {
           width: 28px;
           height: 28px;
           border-radius: 7px;
@@ -814,11 +864,11 @@ export default function DashboardView() {
 
         @media (max-width: 980px) {
           .digest-grid { grid-template-columns: 1fr; }
-          .stat-grid-dash { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .stat-grid, .stat-grid-dash { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 560px) {
-          .stat-grid-dash, .module-grid { grid-template-columns: 1fr; }
+          .stat-grid, .stat-grid-dash, .module-grid { grid-template-columns: 1fr; }
           .content-dash, .topbar-dash { padding-left: 18px; padding-right: 18px; }
           .sync-row { flex-direction: column; align-items: stretch; }
         }
@@ -843,17 +893,17 @@ export default function DashboardView() {
           <div className="eyebrow">Workspace · Advocate Terminal</div>
           <h1 className="page-title serif">{timeGreeting}, Counsel</h1>
           <div className="page-sub">{formattedToday} — everything below is live from your practice records.</div>
-          <div className="badge-live">
+          <div className="badge">
             <span className="live-dot" />
             Live eCourts sync active
           </div>
         </div>
         <div className="topbar-actions">
-          <button className="btn-dt btn-dt-primary" onClick={openAgent}>
+          <button type="button" className="btn btn-primary" onClick={openAgent}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 4h16v12H8l-4 4z" />
             </svg>
-            Ask LexAmplify AI <span className="kbd-badge">⌘K</span>
+            Ask LexAmplify AI <span className="kbd">⌘K</span>
           </button>
         </div>
       </header>
@@ -891,7 +941,7 @@ export default function DashboardView() {
               <button
                 type="submit"
                 disabled={isSyncing || !cnrNumber.trim()}
-                className="btn-dt btn-dt-primary btn-dt-sm"
+                className="btn btn-primary btn-sm"
               >
                 {isSyncing ? <>{SPINNER_SVG} Syncing…</> : 'Sync matter'}
               </button>
@@ -912,7 +962,7 @@ export default function DashboardView() {
         )}
 
         {/* ── 4 STAT CARDS ── */}
-        <div className="stat-grid-dash">
+        <div className="stat-grid">
           {stats.map((s) => {
             const displayVal = showingEmpty ? 0 : s.value;
             const isFlagged = displayVal > 0;
@@ -953,7 +1003,7 @@ export default function DashboardView() {
         <div className="digest-grid">
 
           {/* Left: Urgent — Next 48 Hours */}
-          <div className="panel-dash">
+          <div className="panel">
             <div className="panel-head">
               <div className="panel-head-title">
                 {LIGHTNING_ICON}
@@ -961,7 +1011,7 @@ export default function DashboardView() {
               </div>
               <Link to="/calendar" className="panel-link">Open calendar →</Link>
             </div>
-            <div className="panel-body-dash">
+            <div className="panel-body">
               {loading ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
                   {SPINNER_SVG} Loading triage items…
@@ -1006,7 +1056,7 @@ export default function DashboardView() {
           </div>
 
           {/* Right: Recent Vault Activity */}
-          <div className="panel-dash">
+          <div className="panel">
             <div className="panel-head">
               <div className="panel-head-title" style={{ color: 'var(--ink-soft)' }}>
                 {FOLDER_ICON}
@@ -1014,7 +1064,7 @@ export default function DashboardView() {
               </div>
               <Link to="/vault" className="panel-link">Case Vault →</Link>
             </div>
-            <div className="panel-body-dash">
+            <div className="panel-body">
               {loading ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
                   {SPINNER_SVG} Loading vault activity…
@@ -1024,11 +1074,14 @@ export default function DashboardView() {
                   <div className="clear-icon">{UPLOAD_ICON}</div>
                   <div className="clear-title">No vault documents yet</div>
                   <div className="clear-sub">Upload contracts, pleadings or orders to manage them in your vault.</div>
-                  <Link to="/vault" style={{ textDecoration: 'none' }}>
-                    <button className="btn-dt btn-dt-primary btn-dt-sm" style={{ marginTop: '6px' }}>
-                      Upload document
-                    </button>
-                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    style={{ marginTop: '8px' }}
+                    onClick={() => navigate('/vault')}
+                  >
+                    Upload document
+                  </button>
                 </div>
               ) : (
                 recentVaultDocs.map((d) => (
@@ -1038,7 +1091,7 @@ export default function DashboardView() {
                     state={{ fromVault: true, docData: { id: d.id, title: d.title, text: d.content, doc_type: d.doc_type } }}
                     className="doc-row"
                   >
-                    <div className="doc-icon-wrap">{DOC_ICON}</div>
+                    <div className="doc-icon">{DOC_ICON}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="doc-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {d.title || 'Untitled Document'}
@@ -1069,7 +1122,7 @@ export default function DashboardView() {
             <div className="draft-title">Quick Draft</div>
             <div className="draft-sub">Jump straight to a legal template — NDA, recovery notice, bail petition, eviction petition — without leaving this console.</div>
           </div>
-          <span className="kbd-badge" style={{ borderColor: 'var(--rule)', color: 'var(--muted)' }}>⌘K</span>
+          <span className="kbd">⌘K</span>
         </button>
 
         {/* ── LAW PRACTICE MODULES GRID (QUICK ACTIONS) ── */}
