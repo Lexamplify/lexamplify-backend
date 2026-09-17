@@ -2,215 +2,51 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import { loginWithGoogle, logoutFromGoogle, fetchGoogleEvents, pushToGoogleCalendar, ensureGisLoaded } from '../utils/googleCalendar';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// ── Event type → visual accent ───────────────────────────────────────────────
+// ── Event type → visual accent mapping (Slate & Rust Two-Color Contract) ─────
 function getEventAccent(type) {
   const t = (type || '').toLowerCase();
-  if (t === 'drop_dead' || t.includes('deadline') || t.includes('limitation') || t === 'tickler')
-    return { border: '#DC2626', bg: 'rgba(220,38,38,0.10)', text: '#FCA5A5' };
-  if (t === 'appearance' || t.includes('hearing'))
-    return { border: '#2563EB', bg: 'rgba(37,99,235,0.10)', text: '#93C5FD' };
-  return { border: '#475569', bg: 'rgba(71,85,105,0.10)', text: '#94A3B8' };
+  if (t === 'deadline' || t === 'drop_dead' || t.includes('limitation') || t === 'tickler') {
+    return { type: 'deadline', border: 'var(--accent)', bg: 'var(--accent-soft)', text: 'var(--accent)', label: 'Deadline' };
+  }
+  if (t === 'hearing' || t === 'appearance' || t.includes('hearing') || t.includes('court')) {
+    return { type: 'hearing', border: 'var(--major)', bg: 'var(--major-soft)', text: 'var(--major)', label: 'Hearing' };
+  }
+  return { type: 'task', border: 'var(--muted-2)', bg: 'var(--paper-2)', text: 'var(--ink-soft)', label: 'Task' };
 }
 
-const GOOGLE_BLUE = '#4285F4';
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 
-// ── Small inline Google "G" glyph — flags source:'google' events in the grid ──
-function GoogleGlyph({ size = 9 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" style={{ flexShrink: 0 }}>
-      <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
-      <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
-      <path fill="#FBBC05" d="M11.69 28.18A13.98 13.98 0 0 1 10.94 24c0-1.45.25-2.86.7-4.18v-5.7H4.34A21.96 21.96 0 0 0 2 24c0 3.55.85 6.91 2.34 9.88z" />
-      <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
-    </svg>
-  );
+function daysBetween(a, b) {
+  const ms = new Date(b.getFullYear(), b.getMonth(), b.getDate()) - new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  return Math.round(ms / 86400000);
 }
 
-const calendarStyles = `
-  @keyframes cal-fade {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
-  @keyframes cal-scale {
-    from { opacity: 0; transform: scale(0.96) translateY(8px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
-  }
-  @keyframes cal-spin {
-    to { transform: rotate(360deg); }
-  }
-  @keyframes cal-tooltip-in {
-    from { opacity: 0; transform: translateY(-100%) translateY(-4px); }
-    to   { opacity: 1; transform: translateY(-100%) translateY(0); }
-  }
-  @keyframes cal-tooltip-in-below {
-    from { opacity: 0; transform: translateY(4px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
+function fmtWhen(diff) {
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff > 1) return `In ${diff} days`;
+  return `${Math.abs(diff)} days ago`;
+}
 
-  .animate-fade  { animation: cal-fade  0.25s ease-out forwards; }
-  .animate-scale { animation: cal-scale 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-
-  .calendar-grid-cell {
-    position: relative;
-    aspect-ratio: 1.2;
-    background-color: var(--bg-dark-panel, #171c26);
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    border-radius: 6px;
-    padding: 8px;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    overflow: hidden;
-  }
-  .calendar-grid-cell:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent-primary, #3B82F6);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-    background-color: rgba(59, 130, 246, 0.02);
-  }
-  .calendar-grid-cell.today-cell {
-    border-color: rgba(59, 130, 246, 0.45);
-    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.2);
-  }
-  .calendar-grid-cell.padding-cell {
-    background-color: transparent;
-    border-color: transparent;
-    cursor: default;
-    pointer-events: none;
-  }
-
-  .cal-input {
-    width: 100%;
-    padding: 8px 12px;
-    font-size: 13px;
-    border-radius: 6px;
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    background-color: rgba(255,255,255,0.01);
-    color: white;
-    outline: none;
-    box-sizing: border-box;
-    font-family: var(--font-sans);
-    transition: border-color 0.15s;
-  }
-  .cal-input:focus { border-color: rgba(59,130,246,0.5); }
-  .cal-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-dark-muted, #8F9CAE);
-    display: block;
-    margin-bottom: 6px;
-  }
-
-  /* ── Day-at-a-Glance Split Modal ────────────────────────────────────────── */
-  .dag-shell {
-    display: flex;
-    width: min(860px, 96vw);
-    max-height: 88vh;
-    background: var(--bg-dark-panel, #171c26);
-    border: 1px solid var(--border-dark-subtle, #2C3241);
-    border-radius: 14px;
-    overflow: hidden;
-    box-shadow: 0 28px 60px -8px rgba(0,0,0,0.72), 0 0 0 1px rgba(255,255,255,0.04);
-  }
-  .dag-agenda {
-    width: 295px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--border-dark-subtle, #2C3241);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .dag-agenda-head {
-    padding: 18px 18px 14px;
-    border-bottom: 1px solid var(--border-dark-subtle, #2C3241);
-    background: rgba(0,0,0,0.18);
-    flex-shrink: 0;
-  }
-  .dag-events-scroll { flex: 1; overflow-y: auto; padding: 14px 14px; display: flex; flex-direction: column; gap: 9px; }
-  .dag-event-card {
-    border-radius: 8px;
-    padding: 11px 13px;
-    transition: transform 0.15s;
-    animation: cal-scale 0.18s ease-out;
-  }
-  .dag-event-card:hover { transform: translateX(3px); }
-  .dag-empty-day {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    flex: 1; padding: 32px 16px; gap: 10px; opacity: 0.45; text-align: center;
-  }
-  .dag-form-pane {
-    flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0;
-  }
-  .dag-form-head {
-    padding: 18px 22px 14px;
-    border-bottom: 1px solid var(--border-dark-subtle, #2C3241);
-    display: flex; justify-content: space-between; align-items: flex-start;
-    flex-shrink: 0;
-  }
-  .dag-form-body { flex: 1; overflow-y: auto; padding: 18px 22px; }
-  .dag-form-footer {
-    padding: 13px 22px;
-    border-top: 1px solid var(--border-dark-subtle, #2C3241);
-    display: flex; justify-content: flex-end; gap: 10px;
-    flex-shrink: 0;
-    background: rgba(0,0,0,0.1);
-  }
-  .dag-conflict {
-    display: flex; gap: 10px; align-items: flex-start;
-    padding: 11px 14px; border-radius: 8px; margin-bottom: 16px;
-    background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.28);
-    animation: cal-scale 0.22s cubic-bezier(0.16,1,0.3,1);
-  }
-  :root[data-theme="light"] .dag-shell { background: #fff; border-color: rgba(0,0,0,0.1); }
-  :root[data-theme="light"] .dag-agenda-head { background: rgba(0,0,0,0.03); }
-  :root[data-theme="light"] .dag-form-footer { background: rgba(0,0,0,0.02); }
-
-  /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
-  @media (max-width: 768px) {
-    .calendar-grid {
-      grid-template-columns: repeat(7, 1fr) !important;
-      gap: 4px !important;
-    }
-    .calendar-grid-cell {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      min-height: 38px !important;
-      padding: 0 !important;
-      position: relative !important;
-    }
-    .calendar-grid-cell > div {
-      justify-content: center !important;
-      width: 100% !important;
-      align-items: center !important;
-    }
-    .today-text-badge {
-      display: none !important;
-    }
-    .today-cell {
-      border: 1.5px solid var(--accent-blue, #3b82f6) !important;
-      border-radius: 8px !important;
-      font-weight: 700 !important;
-    }
-    .dag-shell {
-      padding-bottom: 96px !important;
-      overflow-x: hidden !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-    }
-  }
-`;
+// ── Generic Sync Icon ────────────────────────────────────────────────────────
+const SYNC_ICON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 2.1l4 4-4 4" /><path d="M3 12.6v-2a4 4 0 0 1 4-4h14" />
+    <path d="M7 21.9l-4-4 4-4" /><path d="M21 11.4v2a4 4 0 0 1-4 4H3" />
+  </svg>
+);
 
 // ── Hover Brief Tooltip (rendered via ReactDOM.createPortal) ─────────────────
 function HoverBriefTooltip({ tooltip, synopsisCache, synopsisLoading, onGenerate, onMouseEnter, onMouseLeave }) {
   if (!tooltip) return null;
   const { event, x, y, showBelow } = tooltip;
-  const TOOLTIP_W = 286;
+  const TOOLTIP_W = 290;
 
   let tx = Math.min(Math.max(x - TOOLTIP_W / 2, 8), window.innerWidth - TOOLTIP_W - 8);
   const acc = getEventAccent(event.event_type);
@@ -227,69 +63,64 @@ function HoverBriefTooltip({ tooltip, synopsisCache, synopsisLoading, onGenerate
         top: y,
         transform: showBelow ? 'translateY(6px)' : 'translateY(calc(-100% - 6px))',
         width: TOOLTIP_W,
-        background: '#1E293B',
-        border: `1px solid ${acc.border}55`,
+        background: 'var(--paper)',
+        border: '1px solid var(--rule)',
         borderLeft: `3px solid ${acc.border}`,
         borderRadius: '10px',
         padding: '14px',
         zIndex: 99999,
-        boxShadow: '0 20px 48px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04)',
+        boxShadow: 'var(--shadow)',
         pointerEvents: 'auto',
-        fontFamily: 'var(--font-sans, system-ui, sans-serif)',
-        animation: showBelow ? 'cal-tooltip-in-below 0.18s ease-out' : 'cal-tooltip-in 0.18s ease-out',
+        fontFamily: 'inherit',
       }}
     >
-      {/* Title */}
-      <div style={{ fontSize: '13.5px', fontWeight: '700', color: '#F8FAFC', marginBottom: '8px', lineHeight: 1.35 }}>
+      <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px', lineHeight: 1.35 }}>
         {event.title}
       </div>
 
-      {/* Type badge */}
       <div style={{
-        display: 'inline-flex', alignItems: 'center', marginBottom: '10px',
-        padding: '2px 8px', borderRadius: '4px', background: acc.bg,
-        color: acc.text, fontSize: '10px', fontWeight: '700',
-        textTransform: 'uppercase', letterSpacing: '0.5px',
+        display: 'inline-flex', alignItems: 'center', gap: '5px', marginBottom: '8px',
+        padding: '2px 7px', borderRadius: '4px', background: acc.bg,
+        color: acc.text, fontSize: '10px', fontWeight: 700,
+        fontFamily: 'IBM Plex Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.5px',
       }}>
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: acc.border }} />
         {(event.event_type || 'event').replace(/_/g, ' ')}
       </div>
 
-      {/* Location + Opposing counsel */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: event.related_case_id ? '12px' : '0' }}>
-        <div style={{ display: 'flex', gap: '7px', fontSize: '12px', color: event.location ? '#CBD5E1' : '#475569', fontStyle: event.location ? 'normal' : 'italic' }}>
-          <span style={{ flexShrink: 0 }}>📍</span>
-          <span>{event.location || 'No location set'}</span>
-        </div>
-        <div style={{ display: 'flex', gap: '7px', fontSize: '12px', color: event.opposing_counsel ? '#CBD5E1' : '#475569', fontStyle: event.opposing_counsel ? 'normal' : 'italic' }}>
-          <span style={{ flexShrink: 0 }}>⚖️</span>
-          <span>{event.opposing_counsel || 'No opposing counsel'}</span>
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: event.related_case_id ? '10px' : '0' }}>
+        {event.location && (
+          <div style={{ fontSize: '11.5px', color: 'var(--ink-soft)' }}>
+            📍 {event.location}
+          </div>
+        )}
+        {event.opposing_counsel && (
+          <div style={{ fontSize: '11.5px', color: 'var(--muted)' }}>
+            ⚖️ {event.opposing_counsel}
+          </div>
+        )}
       </div>
 
-      {/* Matter Synopsis — only when related_case_id is set */}
       {event.related_case_id && (
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '10px' }}>
-          <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.6px', color: '#475569', marginBottom: '7px' }}>
-            Matter Synopsis · Case {event.related_case_id}
+        <div style={{ borderTop: '1px solid var(--rule)', paddingTop: '10px', marginTop: '6px' }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--muted)', marginBottom: '6px', fontFamily: 'IBM Plex Mono, monospace' }}>
+            Matter Synopsis · Case #{event.related_case_id}
           </div>
           {synopsis ? (
-            <div style={{ fontSize: '12px', color: '#94A3B8', lineHeight: 1.65 }}>{synopsis}</div>
+            <div style={{ fontSize: '12px', color: 'var(--ink-soft)', lineHeight: 1.55 }}>{synopsis}</div>
           ) : isFetching ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: '#64748B' }}>
-              <div style={{ width: '12px', height: '12px', border: '2px solid rgba(59,130,246,0.25)', borderTopColor: '#3B82F6', borderRadius: '50%', animation: 'cal-spin 0.75s linear infinite', flexShrink: 0 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: 'var(--muted)' }}>
+              <span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid var(--rule)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
               Generating synopsis…
             </div>
           ) : (
             <button
-              onClick={e => { e.stopPropagation(); onGenerate(event.related_case_id); }}
+              onClick={(e) => { e.stopPropagation(); onGenerate(event.related_case_id); }}
               style={{
-                background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)',
-                color: '#93C5FD', borderRadius: '6px', padding: '5px 12px',
-                fontSize: '11.5px', fontWeight: '600', cursor: 'pointer',
-                fontFamily: 'inherit', transition: 'background 0.15s',
+                background: 'var(--accent-soft)', border: '1px solid var(--accent)',
+                color: 'var(--accent)', borderRadius: '6px', padding: '4px 10px',
+                fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.2)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.1)'}
             >
               ✦ Generate Synopsis
             </button>
@@ -301,42 +132,41 @@ function HoverBriefTooltip({ tooltip, synopsisCache, synopsisLoading, onGenerate
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Main Legal Calendar Component ─────────────────────────────────────────────
 export default function CalendarView() {
-  const [events, setEvents]           = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState(null);
-  const [currentMonth, setCurrentMonth] = useState(() => {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [today] = useState(() => new Date());
+  const [viewDate, setViewDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [gridKey, setGridKey]         = useState(0);
 
-  // Modal state
-  const [isModalOpen, setIsModalOpen]         = useState(false);
-  const [selectedDate, setSelectedDate]       = useState(null);
-  const [newTitle, setNewTitle]               = useState('');
-  const [newType, setNewType]                 = useState('task');
-  const [newCaseId, setNewCaseId]             = useState('');
-  const [newLocation, setNewLocation]         = useState('');
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [newTitle, setNewTitle] = useState('');
+  const [newType, setNewType] = useState('hearing');
+  const [newCaseId, setNewCaseId] = useState('');
+  const [newLocation, setNewLocation] = useState('');
   const [newOpposingCounsel, setNewOpposingCounsel] = useState('');
-  const [modalSaving, setModalSaving]         = useState(false);
-  const [syncToGoogle, setSyncToGoogle]       = useState(false);
+  const [modalSaving, setModalSaving] = useState(false);
+  const [syncToGoogle, setSyncToGoogle] = useState(false);
 
-  // Google Calendar sync state — token lives in memory only (never
-  // localStorage), since it's a live credential with calendar-write access.
-  const [googleToken, setGoogleToken]         = useState(null);
-  const [googleEvents, setGoogleEvents]       = useState([]);
+  // Google Calendar GIS sync state
+  const [googleToken, setGoogleToken] = useState(null);
+  const [googleEvents, setGoogleEvents] = useState([]);
   const [googleConnecting, setGoogleConnecting] = useState(false);
-  const [googleError, setGoogleError]         = useState(null);
+  const [googleError, setGoogleError] = useState(null);
 
-  // Tooltip state
-  const [tooltip, setTooltip]               = useState(null);
-  const [synopsisCache, setSynopsisCache]   = useState({});
+  // Tooltip & Synopsis Cache
+  const [tooltip, setTooltip] = useState(null);
+  const [synopsisCache, setSynopsisCache] = useState({});
   const [synopsisLoading, setSynopsisLoading] = useState(null);
   const hideTimerRef = useRef(null);
 
-  // ── Tooltip logic ──────────────────────────────────────────────────────────
   const showTooltip = useCallback((rect, event) => {
     clearTimeout(hideTimerRef.current);
     const showBelow = rect.top < 200;
@@ -369,12 +199,11 @@ export default function CalendarView() {
       const data = await res.json();
       setSynopsisCache(prev => ({ ...prev, [caseId]: data.response || 'Synopsis unavailable.' }));
     } catch {
-      setSynopsisCache(prev => ({ ...prev, [caseId]: 'Failed to generate — check connection.' }));
+      setSynopsisCache(prev => ({ ...prev, [caseId]: 'Failed to generate synopsis.' }));
     }
     setSynopsisLoading(null);
   };
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
   const loadEvents = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/calendar/events`);
@@ -382,7 +211,7 @@ export default function CalendarView() {
       const data = await res.json();
       setEvents(data.events || []);
     } catch (err) {
-      setError(err.message || 'Failed to load events.');
+      setError(err.message || 'Failed to load calendar events.');
     } finally {
       setLoading(false);
     }
@@ -390,15 +219,11 @@ export default function CalendarView() {
 
   useEffect(() => {
     loadEvents();
-    // Preload the GIS script well ahead of any click — requestAccessToken()
-    // needs to run synchronously off the click's user gesture, and starting
-    // the script load only when the button is clicked crosses an async
-    // boundary that can make the browser refuse the OAuth popup.
     ensureGisLoaded().catch(() => {});
     return () => clearTimeout(hideTimerRef.current);
   }, []);
 
-  // ── Google Calendar connect / disconnect ──────────────────────────────────
+  // Google Calendar Handlers
   const handleGoogleConnect = async () => {
     setGoogleConnecting(true);
     setGoogleError(null);
@@ -419,17 +244,10 @@ export default function CalendarView() {
     setSyncToGoogle(false);
   };
 
-  // ── Fetch Google events for the visible month whenever it changes ────────
-  // Kept in its own state (not merged into `events`) and re-fetched only on
-  // [googleToken, currentMonth] — neither of which this effect writes to —
-  // so there's no effect-writes-its-own-dependency infinite-loop risk.
   useEffect(() => {
-    // No need to clear googleEvents here when disconnected — the only path
-    // that clears googleToken (handleGoogleDisconnect) already clears
-    // googleEvents itself, and it starts empty on mount.
     if (!googleToken) return;
     let cancelled = false;
-    const y = currentMonth.getFullYear(), m = currentMonth.getMonth();
+    const y = viewDate.getFullYear(), m = viewDate.getMonth();
     const timeMin = new Date(y, m, 1).toISOString();
     const timeMax = new Date(y, m + 1, 0, 23, 59, 59).toISOString();
 
@@ -438,55 +256,72 @@ export default function CalendarView() {
       .catch(err => { if (!cancelled) { setGoogleEvents([]); setGoogleError(err.message || 'Failed to fetch Google events.'); } });
 
     return () => { cancelled = true; };
-  }, [googleToken, currentMonth]);
+  }, [googleToken, viewDate]);
 
-  // Merged view for rendering — internal + Google events, recomputed only
-  // when either source array actually changes.
   const allEvents = useMemo(() => [...events, ...googleEvents], [events, googleEvents]);
 
-  // ── Date helpers ───────────────────────────────────────────────────────────
-  const getDaysInMonth = (date) => {
-    const year = date.getFullYear(), month = date.getMonth();
-    return {
-      firstDayIndex: new Date(year, month, 1).getDay(),
-      totalDays: new Date(year, month + 1, 0).getDate(),
-    };
-  };
+  // Date Math Helpers
+  const dateToKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-  const { firstDayIndex, totalDays } = getDaysInMonth(currentMonth);
-  const paddingCells = Array.from({ length: firstDayIndex });
-  const dayCells = Array.from({ length: totalDays }, (_, i) => i + 1);
+  const eventsByKey = useMemo(() => {
+    const map = {};
+    for (const ev of allEvents) {
+      if (!ev.event_date) continue;
+      const k = ev.event_date.split('T')[0];
+      if (!map[k]) map[k] = [];
+      map[k].push(ev);
+    }
+    return map;
+  }, [allEvents]);
 
-  const getEventsForDay = (day) => {
-    const y = currentMonth.getFullYear();
-    const m = String(currentMonth.getMonth() + 1).padStart(2, '0');
-    const d = String(day).padStart(2, '0');
-    return allEvents.filter(e => e.event_date === `${y}-${m}-${d}`);
-  };
+  // Upcoming Events Feed (Shared with Dashboard)
+  const upcomingItems = useMemo(() => {
+    const items = [];
+    const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
+    for (const ev of allEvents) {
+      if (!ev.event_date) continue;
+      const parts = ev.event_date.split('T')[0].split('-').map(Number);
+      if (parts.length < 3) continue;
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      const diff = daysBetween(todayZero, d);
+      if (diff >= 0) {
+        items.push({ date: d, diff, ev });
+      }
+    }
+    items.sort((a, b) => a.diff - b.diff);
+    return items.slice(0, 10);
+  }, [allEvents, today]);
+
+  // Navigation handlers
   const handlePrevMonth = () => {
-    setGridKey(p => p + 1);
-    setCurrentMonth(p => new Date(p.getFullYear(), p.getMonth() - 1, 1));
+    setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   };
   const handleNextMonth = () => {
-    setGridKey(p => p + 1);
-    setCurrentMonth(p => new Date(p.getFullYear(), p.getMonth() + 1, 1));
+    setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+  const handleTodayJump = () => {
+    setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
   };
 
-  const handleDayClick = (day) => {
-    setSelectedDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day));
+  const handleDayClick = (y, m, d) => {
+    setSelectedDate(new Date(y, m, d));
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setNewTitle(''); setNewType('task'); setNewCaseId('');
-    setNewLocation(''); setNewOpposingCounsel(''); setSyncToGoogle(false);
+    setNewTitle('');
+    setNewType('hearing');
+    setNewCaseId('');
+    setNewLocation('');
+    setNewOpposingCounsel('');
+    setSyncToGoogle(false);
   };
 
   const handleAddEventSubmit = async (e) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim() || !selectedDate) return;
     setModalSaving(true);
     try {
       const y = selectedDate.getFullYear();
@@ -503,9 +338,7 @@ export default function CalendarView() {
             location: newLocation.trim(),
           });
         } catch {
-          // A Google API hiccup shouldn't lose the user's internal event —
-          // it still gets saved below, just without a google_event_id.
-          setGoogleError('Saved locally, but the Google Calendar push failed.');
+          setGoogleError('Saved locally, but Google Calendar sync failed.');
         }
       }
 
@@ -517,45 +350,577 @@ export default function CalendarView() {
             event_date: eventDate,
             event_type: newType,
             title: newTitle.trim(),
-            related_case_id: newCaseId.trim(),
+            related_case_id: newCaseId.trim() || null,
             location: newLocation.trim(),
             opposing_counsel: newOpposingCounsel.trim(),
             google_event_id: googleEventId,
           }],
         }),
       });
+
       await loadEvents();
       closeModal();
     } catch {
-      alert('Error saving event. Check connection.');
+      alert('Error saving event. Please check connection.');
     } finally {
       setModalSaving(false);
     }
   };
 
-  const now = new Date();
-  const todayY = now.getFullYear(), todayM = now.getMonth(), todayD = now.getDate();
-  const monthName = currentMonth.toLocaleString('default', { month: 'long' });
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // Selected Day Events for Modal Agenda
+  const selectedDayKey = selectedDate ? dateToKey(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()) : '';
+  const selectedDayEvents = selectedDayKey ? (eventsByKey[selectedDayKey] || []) : [];
 
-  // ── Day-at-a-Glance: derive events for selected date ──────────────────────
-  const selectedDayEvents = selectedDate ? (() => {
-    const y = selectedDate.getFullYear();
-    const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
-    const d = String(selectedDate.getDate()).padStart(2, '0');
-    return allEvents.filter(e => e.event_date === `${y}-${m}-${d}`);
-  })() : [];
-
-  // Conflict: user is adding a high-priority type to a day that already has one
-  const HIGH_PRIO = new Set(['drop_dead', 'appearance']);
+  const HIGH_PRIO = new Set(['deadline', 'drop_dead', 'limitation', 'appearance', 'hearing']);
   const hasConflict =
     newTitle.trim() !== '' &&
     HIGH_PRIO.has(newType) &&
     selectedDayEvents.some(e => HIGH_PRIO.has(e.event_type));
 
+  // Calendar Grid Calculation
+  const y = viewDate.getFullYear();
+  const m = viewDate.getMonth();
+  const monthTitle = `${MONTH_NAMES[m].toUpperCase()} ${y}`;
+
+  const firstWeekday = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const daysInPrevMonth = new Date(y, m, 0).getDate();
+  const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+
+  const cells = [];
+  for (let i = 0; i < totalCells; i++) {
+    const dayNum = i - firstWeekday + 1;
+    const isPad = dayNum < 1 || dayNum > daysInMonth;
+    let cellY = y, cellM = m, cellD = dayNum;
+
+    if (dayNum < 1) {
+      cellD = daysInPrevMonth + dayNum;
+      cellM = m - 1;
+      if (cellM < 0) { cellM = 11; cellY = y - 1; }
+    } else if (dayNum > daysInMonth) {
+      cellD = dayNum - daysInMonth;
+      cellM = m + 1;
+      if (cellM > 11) { cellM = 0; cellY = y + 1; }
+    }
+
+    const k = dateToKey(cellY, cellM, cellD);
+    const isToday = !isPad && cellY === today.getFullYear() && cellM === today.getMonth() && cellD === today.getDate();
+    const cellEvents = (!isPad && eventsByKey[k]) ? eventsByKey[k] : [];
+
+    cells.push({
+      key: k,
+      dayNum: cellD,
+      isPad,
+      isToday,
+      cellY,
+      cellM,
+      cellD,
+      events: cellEvents,
+    });
+  }
+
   return (
-    <div style={{ padding: '24px', fontFamily: 'var(--font-sans)', color: 'var(--text-primary)' }}>
-      <style>{calendarStyles}</style>
+    <div className="cal-view-container">
+      <style>{`
+        /* ============================================================
+           LEGAL CALENDAR (Tickler Engine) — v1 Slate & Rust Tokens
+           ============================================================ */
+        .cal-view-container {
+          color: var(--ink);
+          font-family: 'IBM Plex Sans', sans-serif;
+          min-height: 100%;
+        }
+        .serif { font-family: 'Fraunces', serif; font-style: italic; letter-spacing: -0.01em; }
+        .mono { font-family: 'IBM Plex Mono', monospace; }
+
+        .topbar-cal {
+          display: flex;
+          align-items: flex-start;
+          gap: 20px;
+          padding: 28px 36px 0;
+          flex-wrap: wrap;
+        }
+        .eyebrow-cal {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 10.5px;
+          letter-spacing: .1em;
+          text-transform: uppercase;
+          color: var(--muted);
+        }
+        .page-title-cal {
+          font-size: 28px;
+          margin-top: 6px;
+          margin-bottom: 0;
+          color: var(--ink);
+        }
+        .page-sub-cal {
+          font-size: 13px;
+          color: var(--ink-soft);
+          margin-top: 7px;
+          max-width: 540px;
+          line-height: 1.5;
+        }
+        .topbar-actions-cal {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding-top: 2px;
+          flex-wrap: wrap;
+        }
+        .btn-cal {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 16px;
+          border-radius: 9px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          border: 1px solid var(--rule);
+          background: var(--paper);
+          color: var(--ink);
+          white-space: nowrap;
+          transition: all 0.15s;
+        }
+        .btn-cal:hover {
+          border-color: var(--accent);
+          color: var(--accent);
+        }
+        .btn-cal-primary {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: var(--on-accent);
+        }
+        .btn-cal-primary:hover {
+          filter: brightness(1.08);
+          color: var(--on-accent);
+        }
+        .btn-cal-sm {
+          padding: 7px 12px;
+          font-size: 12px;
+        }
+
+        .month-nav {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          background: var(--paper);
+          border: 1px solid var(--rule);
+          border-radius: 10px;
+          padding: 4px;
+        }
+        .month-nav button {
+          width: 30px;
+          height: 30px;
+          border-radius: 7px;
+          border: 0;
+          background: transparent;
+          color: var(--ink-soft);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s;
+        }
+        .month-nav button:hover {
+          background: var(--paper-2);
+          color: var(--accent);
+        }
+        .month-label {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 12.5px;
+          font-weight: 600;
+          padding: 0 10px;
+          min-width: 140px;
+          text-align: center;
+        }
+
+        .content-cal {
+          padding: 26px 36px 70px;
+        }
+        .cal-layout {
+          display: grid;
+          grid-template-columns: 1fr 300px;
+          gap: 18px;
+          align-items: start;
+        }
+
+        /* ── Calendar Grid ── */
+        .cal-card {
+          background: var(--paper);
+          border: 1px solid var(--rule);
+          border-radius: 14px;
+          overflow: hidden;
+        }
+        .cal-weekdays {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          border-bottom: 1px solid var(--rule);
+        }
+        .cal-weekdays div {
+          padding: 12px 4px;
+          text-align: center;
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 10.5px;
+          letter-spacing: .07em;
+          color: var(--muted);
+        }
+        .cal-grid {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+        }
+        .cal-cell {
+          min-height: 96px;
+          border-right: 1px solid var(--rule);
+          border-bottom: 1px solid var(--rule);
+          padding: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          cursor: pointer;
+          text-align: left;
+          background: transparent;
+          color: var(--ink);
+          transition: background 0.15s;
+        }
+        .cal-cell:nth-child(7n) { border-right: 0; }
+        .cal-cell:hover:not(.pad) { background: var(--paper-2); }
+        .cal-cell.pad {
+          color: var(--muted-2);
+          cursor: default;
+          opacity: 0.35;
+        }
+        .cal-date {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 12.5px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .cal-cell.today .cal-date {
+          color: var(--accent);
+          font-weight: 600;
+        }
+        .today-pill {
+          font-size: 8.5px;
+          letter-spacing: .05em;
+          font-weight: 600;
+          background: var(--accent);
+          color: var(--on-accent);
+          border-radius: 4px;
+          padding: 1px 5px;
+        }
+        .cal-events {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .cal-event-pill {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 10px;
+          padding: 2px 5px;
+          border-radius: 5px;
+          background: var(--paper-2);
+          color: var(--ink-soft);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .cal-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          flex-shrink: 0;
+          background: var(--muted-2);
+        }
+        .cal-dot.deadline { background: var(--accent); }
+        .cal-dot.hearing { background: var(--major); }
+        .cal-more {
+          font-size: 9.5px;
+          color: var(--muted);
+          padding-left: 2px;
+        }
+
+        /* ── Upcoming Rail & Legend ── */
+        .rail-card {
+          background: var(--paper);
+          border: 1px solid var(--rule);
+          border-radius: 14px;
+          overflow: hidden;
+        }
+        .rail-head {
+          padding: 15px 16px;
+          border-bottom: 1px solid var(--rule);
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: .04em;
+          text-transform: uppercase;
+          color: var(--ink-soft);
+          font-family: 'IBM Plex Mono', monospace;
+        }
+        .rail-body {
+          padding: 8px 12px;
+          max-height: 420px;
+          overflow-y: auto;
+        }
+        .rail-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 11px 6px;
+        }
+        .rail-item + .rail-item { border-top: 1px dashed var(--rule); }
+        .rail-dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 50%;
+          margin-top: 3px;
+          flex-shrink: 0;
+          background: var(--muted-2);
+        }
+        .rail-dot.deadline { background: var(--accent); }
+        .rail-dot.hearing { background: var(--major); }
+        .rail-title {
+          font-size: 12.5px;
+          font-weight: 500;
+          line-height: 1.4;
+          color: var(--ink);
+        }
+        .rail-meta {
+          font-size: 10.5px;
+          color: var(--muted);
+          margin-top: 3px;
+        }
+        .rail-when {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 9.5px;
+          color: var(--ink-soft);
+          margin-top: 4px;
+          display: inline-block;
+          padding: 2px 7px;
+          border-radius: 999px;
+          background: var(--paper-2);
+        }
+        .rail-when.urgent {
+          background: var(--accent-soft);
+          color: var(--accent);
+        }
+
+        .legend-card {
+          background: var(--paper);
+          border: 1px solid var(--rule);
+          border-radius: 14px;
+          padding: 14px 16px;
+          margin-top: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+        }
+        .legend-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12px;
+          color: var(--ink-soft);
+        }
+        .legend-dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 50%;
+        }
+        .legend-dot.deadline { background: var(--accent); }
+        .legend-dot.hearing { background: var(--major); }
+        .legend-dot.task { background: var(--muted-2); }
+
+        /* ── Day Modal ── */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: var(--overlay);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 30px;
+          z-index: 2000;
+        }
+        .modal-cal {
+          background: var(--paper);
+          border: 1px solid var(--rule);
+          border-radius: 16px;
+          box-shadow: var(--shadow);
+          width: 100%;
+          max-width: 860px;
+          max-height: 88vh;
+          overflow: hidden;
+          display: grid;
+          grid-template-columns: 300px 1fr;
+          position: relative;
+        }
+        .modal-agenda {
+          border-right: 1px solid var(--rule);
+          padding: 22px;
+          display: flex;
+          flex-direction: column;
+          background: var(--paper-2);
+          overflow-y: auto;
+        }
+        .modal-agenda-eyebrow {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 10px;
+          letter-spacing: .08em;
+          text-transform: uppercase;
+          color: var(--muted);
+        }
+        .modal-agenda-day {
+          font-size: 22px;
+          margin-top: 6px;
+          color: var(--ink);
+        }
+        .modal-agenda-date {
+          font-size: 12.5px;
+          color: var(--ink-soft);
+          margin-top: 2px;
+        }
+        .modal-agenda-count {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 10.5px;
+          color: var(--muted);
+          margin-top: 10px;
+          padding-top: 10px;
+          border-top: 1px solid var(--rule);
+        }
+        .modal-agenda-list {
+          margin-top: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          overflow-y: auto;
+          flex-grow: 1;
+        }
+        .modal-agenda-empty {
+          text-align: center;
+          margin-top: 30px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          color: var(--muted);
+        }
+        .modal-main-cal {
+          padding: 22px 24px;
+          overflow-y: auto;
+        }
+        .modal-main-eyebrow {
+          font-family: 'IBM Plex Mono', monospace;
+          font-size: 10px;
+          letter-spacing: .08em;
+          text-transform: uppercase;
+          color: var(--accent);
+        }
+        .modal-main-title {
+          font-size: 19px;
+          margin-top: 4px;
+          margin-bottom: 18px;
+          color: var(--ink);
+        }
+        .field-grid-cal {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+        .field-cal {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin-bottom: 14px;
+        }
+        .field-cal label {
+          font-size: 11.5px;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+          font-weight: 500;
+          color: var(--muted);
+        }
+        .req { color: var(--accent); }
+        .field-cal input, .field-cal select {
+          background: var(--paper-2);
+          border: 1px solid var(--rule);
+          border-radius: 8px;
+          padding: 9px 11px;
+          font-size: 13px;
+          color: var(--ink);
+          width: 100%;
+          outline: none;
+        }
+        .field-cal input:focus, .field-cal select:focus {
+          border-color: var(--accent);
+        }
+        .field-cal input::placeholder { color: var(--muted); }
+        .modal-legend {
+          display: flex;
+          gap: 16px;
+          padding: 12px 0;
+          margin: 6px 0 18px;
+          border-top: 1px solid var(--rule);
+          border-bottom: 1px solid var(--rule);
+        }
+        .modal-footer-row {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+        }
+        .close-btn-cal {
+          position: absolute;
+          top: 16px;
+          right: 16px;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          border: 1px solid var(--rule);
+          background: var(--paper-2);
+          color: var(--ink-soft);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s;
+        }
+        .close-btn-cal:hover {
+          border-color: var(--accent);
+          color: var(--accent);
+        }
+
+        .conflict-alert {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          padding: 10px 14px;
+          border-radius: 8px;
+          margin-bottom: 14px;
+          background: var(--major-soft);
+          border: 1px solid var(--major);
+          color: var(--major);
+          font-size: 12px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 980px) {
+          .cal-layout { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 880px) {
+          .cal-cell { min-height: 74px; }
+          .modal-cal { grid-template-columns: 1fr; }
+          .modal-agenda { border-right: 0; border-bottom: 1px solid var(--rule); }
+        }
+        @media (max-width: 560px) {
+          .content-cal, .topbar-cal { padding-left: 18px; padding-right: 18px; }
+          .field-grid-cal { grid-template-columns: 1fr; }
+          .cal-event-pill span.evt-label { display: none; }
+        }
+      `}</style>
 
       {/* Portal Tooltip */}
       <HoverBriefTooltip
@@ -567,221 +932,234 @@ export default function CalendarView() {
         onMouseLeave={startHide}
       />
 
-      {/* ── Header ── */}
-      <div className="calendar-header-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '6px' }}>Legal Calendar Dashboard</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-            Tickler Engine tracking deadlines, appearances, and scheduled legal events.
-          </p>
+      {/* ── TOPBAR MASTHEAD ── */}
+      <header className="topbar-cal">
+        <div style={{ flexGrow: 1 }}>
+          <div className="eyebrow-cal">Litigation &amp; Disputes · Tickler Engine</div>
+          <h1 className="page-title-cal serif">Legal Calendar Dashboard</h1>
+          <div className="page-sub-cal">
+            Tracks every deadline, hearing and scheduled task across your caseload — nothing here expires silently.
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div className="topbar-actions-cal">
           {googleToken ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(66,133,244,0.08)', border: '1px solid rgba(66,133,244,0.3)', padding: '6px 12px', borderRadius: '8px' }}>
-              <GoogleGlyph size={13} />
-              <span style={{ fontSize: '12.5px', fontWeight: '600', color: '#93C5FD' }}>Google Calendar Synced</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--paper-2)', border: '1px solid var(--rule)', padding: '6px 12px', borderRadius: '8px' }}>
+              {SYNC_ICON}
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink)' }}>Google Calendar Synced</span>
               <button
                 onClick={handleGoogleDisconnect}
                 title="Disconnect Google Calendar"
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted, #8F9CAE)', cursor: 'pointer', fontSize: '12px', padding: '0 0 0 4px' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '12px', padding: '0 0 0 4px' }}
               >✕</button>
             </div>
           ) : (
             <button
               onClick={handleGoogleConnect}
               disabled={googleConnecting}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-dark-panel, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', padding: '7px 14px', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '12.5px', fontWeight: '600', cursor: googleConnecting ? 'not-allowed' : 'pointer', opacity: googleConnecting ? 0.65 : 1 }}
+              className="btn-cal"
             >
-              <GoogleGlyph size={13} />
+              {SYNC_ICON}
               {googleConnecting ? 'Connecting…' : 'Sync Google Calendar'}
             </button>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-dark-panel, #171c26)', border: '1px solid var(--border-dark-subtle, #2C3241)', padding: '6px 14px', borderRadius: '8px' }}>
-            <button onClick={handlePrevMonth} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center' }}>◀</button>
-            <span style={{ fontSize: '15px', fontWeight: '600', minWidth: '130px', textAlign: 'center', userSelect: 'none' }}>
-              {monthName} {currentMonth.getFullYear()}
-            </span>
-            <button onClick={handleNextMonth} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center' }}>▶</button>
+
+          <div className="month-nav">
+            <button onClick={handlePrevMonth} aria-label="Previous month">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+            <span className="month-label mono">{monthTitle}</span>
+            <button onClick={handleNextMonth} aria-label="Next month">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </button>
           </div>
-        </div>
-      </div>
 
-      {googleError && (
-        <div style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-          <span>⚠️ {googleError}</span>
-          <button onClick={() => setGoogleError(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '13px' }}>✕</button>
+          <button onClick={handleTodayJump} className="btn-cal btn-cal-sm">
+            Today
+          </button>
         </div>
-      )}
+      </header>
 
-      {/* Loading */}
-      {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '200px', gap: '12px' }}>
-          <div style={{ width: '32px', height: '32px', border: '3px solid rgba(255,255,255,0.06)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'cal-spin 1s linear infinite' }} />
-          <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading events…</span>
-        </div>
-      )}
+      <div className="content-cal">
+        {googleError && (
+          <div style={{ color: 'var(--major)', background: 'var(--major-soft)', border: '1px solid var(--major)', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>⚠️ {googleError}</span>
+            <button onClick={() => setGoogleError(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer' }}>✕</button>
+          </div>
+        )}
 
-      {/* Error */}
-      {error && (
-        <div style={{ color: '#EF4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', padding: '16px', borderRadius: '8px', fontSize: '14px', marginBottom: '24px' }}>
-          ⚠️ <strong>Failed to load calendar:</strong> {error}
-        </div>
-      )}
+        {loading && (
+          <div style={{ padding: '36px', textAlign: 'center', color: 'var(--muted)' }}>
+            <span style={{ display: 'inline-block', width: '20px', height: '20px', border: '2px solid var(--rule)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '8px' }} />
+            <div>Loading legal calendar…</div>
+          </div>
+        )}
 
-      {/* ── Calendar Grid ── */}
-      {!loading && !error && (
-        <div key={gridKey} className="animate-fade">
-          {/* Weekday headers */}
-          <div className="calendar-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '4px' }}>
-            {weekDays.map(d => (
-              <div key={d} style={{ textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-dark-muted, #8F9CAE)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '8px 0' }}>
-                {d}
+        {error && !loading && (
+          <div style={{ color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid var(--accent)', padding: '14px', borderRadius: '10px', fontSize: '13px', marginBottom: '20px' }}>
+            ⚠️ Failed to load calendar: {error}
+          </div>
+        )}
+
+        {!loading && (
+          <div className="cal-layout">
+
+            {/* ── LEFT: Month Grid Card ── */}
+            <div className="cal-card">
+              <div className="cal-weekdays">
+                <div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div>
               </div>
-            ))}
-          </div>
+              <div className="cal-grid">
+                {cells.map((c, i) => {
+                  return (
+                    <div
+                      key={i}
+                      className={`cal-cell ${c.isPad ? 'pad' : ''} ${c.isToday ? 'today' : ''}`}
+                      onClick={() => !c.isPad && handleDayClick(c.cellY, c.cellM, c.cellD)}
+                    >
+                      <div className="cal-date">
+                        {c.dayNum}
+                        {c.isToday && <span className="today-pill">TODAY</span>}
+                      </div>
+                      <div className="cal-events">
+                        {c.events.slice(0, 2).map((ev, evIdx) => {
+                          const acc = getEventAccent(ev.event_type);
+                          return (
+                            <div
+                              key={ev.id || evIdx}
+                              className="cal-event-pill"
+                              onMouseEnter={(e) => {
+                                e.stopPropagation();
+                                showTooltip(e.currentTarget.getBoundingClientRect(), ev);
+                              }}
+                              onMouseLeave={(e) => {
+                                e.stopPropagation();
+                                startHide();
+                              }}
+                            >
+                              <span className={`cal-dot ${acc.type}`} />
+                              <span className="evt-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {ev.title}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {c.events.length > 2 && (
+                          <div className="cal-more">+{c.events.length - 2} more</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-          {/* Day cells */}
-          <div className="calendar-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
-            {paddingCells.map((_, i) => <div key={`pad-${i}`} className="calendar-grid-cell padding-cell" />)}
-
-            {dayCells.map(day => {
-              const dayEvents = getEventsForDay(day);
-              const isToday = currentMonth.getFullYear() === todayY
-                && currentMonth.getMonth() === todayM
-                && day === todayD;
-
-              return (
-                <div
-                  key={`day-${day}`}
-                  className={`calendar-grid-cell${isToday ? ' today-cell' : ''}`}
-                  onClick={() => handleDayClick(day)}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '14px', fontWeight: '700', color: isToday ? '#3B82F6' : 'var(--text-dark-primary, #FFFFFF)' }}>
-                      {day}
-                    </span>
-                    {isToday && (
-                      <span className="today-text-badge" style={{ fontSize: '7.5px', fontWeight: '800', color: '#3B82F6', background: 'rgba(59,130,246,0.12)', padding: '1px 4px', borderRadius: '3px', letterSpacing: '0.4px' }}>
-                        TODAY
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Event pills */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', width: '100%', marginTop: '6px' }}>
-                    {dayEvents.slice(0, 3).map(ev => {
-                      const isGoogle = ev.source === 'google';
-                      const acc = getEventAccent(ev.event_type);
+            {/* ── RIGHT: Upcoming Rail & Legend ── */}
+            <div>
+              <div className="rail-card">
+                <div className="rail-head">Upcoming</div>
+                <div className="rail-body">
+                  {upcomingItems.length === 0 ? (
+                    <div style={{ padding: '22px 8px', textAlign: 'center', color: 'var(--muted)', fontSize: '12.5px' }}>
+                      Nothing scheduled ahead.
+                    </div>
+                  ) : (
+                    upcomingItems.map((it, idx) => {
+                      const acc = getEventAccent(it.ev.event_type);
                       return (
-                        <div
-                          key={ev.id}
-                          style={{
-                            fontSize: '9px', fontWeight: '600', color: acc.text,
-                            backgroundColor: acc.bg,
-                            borderLeft: `2.5px solid ${isGoogle ? GOOGLE_BLUE : acc.border}`,
-                            padding: '2px 5px', borderRadius: '2px',
-                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                            cursor: 'default',
-                            display: 'flex', alignItems: 'center', gap: '4px',
-                          }}
-                          onMouseEnter={e => {
-                            e.stopPropagation();
-                            showTooltip(e.currentTarget.getBoundingClientRect(), ev);
-                          }}
-                          onMouseLeave={e => { e.stopPropagation(); startHide(); }}
-                        >
-                          {isGoogle && <GoogleGlyph size={8} />}
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.title}</span>
+                        <div key={it.ev.id || idx} className="rail-item">
+                          <div className={`rail-dot ${acc.type}`} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="rail-title">{it.ev.title}</div>
+                            <div className="rail-meta">
+                              {it.ev.location || it.ev.opposing_counsel ? (
+                                <>
+                                  {it.ev.location}
+                                  {it.ev.location && it.ev.opposing_counsel ? ' · ' : ''}
+                                  {it.ev.opposing_counsel}
+                                </>
+                              ) : (
+                                (it.ev.event_type || 'Event').replace(/_/g, ' ')
+                              )}
+                            </div>
+                            <span className={`rail-when ${it.diff <= 1 ? 'urgent' : ''}`}>
+                              {fmtWhen(it.diff)}
+                            </span>
+                          </div>
                         </div>
                       );
-                    })}
-                    {dayEvents.length > 3 && (
-                      <div style={{ fontSize: '9px', color: 'var(--accent-primary)', textAlign: 'right', fontWeight: '600' }}>
-                        +{dayEvents.length - 3} more
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Day-at-a-Glance Split Modal ── */}
-      {isModalOpen && selectedDate && (
-        <div
-          onClick={closeModal}
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(5,5,8,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, animation: 'cal-fade 0.2s ease-out', padding: '16px' }}
-        >
-          <div onClick={e => e.stopPropagation()} className="animate-scale dag-shell">
-
-            {/* ── LEFT: Day Agenda Pane ───────────────────────────────── */}
-            <div className="dag-agenda">
-              <div className="dag-agenda-head">
-                <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.7px', color: 'var(--text-dark-muted)', marginBottom: '5px' }}>
-                  Day Agenda
-                </div>
-                <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-dark-primary, #fff)', lineHeight: 1.1 }}>
-                  {selectedDate.toLocaleDateString(undefined, { weekday: 'long' })}
-                </div>
-                <div style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '3px' }}>
-                  {selectedDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
-                </div>
-                <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ height: '1px', flex: 1, background: 'rgba(255,255,255,0.06)' }} />
-                  <span style={{ fontSize: '10px', color: 'var(--text-dark-muted)', fontWeight: '600' }}>
-                    {selectedDayEvents.length} event{selectedDayEvents.length !== 1 ? 's' : ''}
-                  </span>
-                  <div style={{ height: '1px', flex: 1, background: 'rgba(255,255,255,0.06)' }} />
+                    })
+                  )}
                 </div>
               </div>
 
-              <div className="dag-events-scroll">
+              <div className="legend-card">
+                <div className="legend-row">
+                  <span className="legend-dot deadline" />
+                  Deadline — statutory, urgent
+                </div>
+                <div className="legend-row">
+                  <span className="legend-dot hearing" />
+                  Hearing — needs preparation
+                </div>
+                <div className="legend-row">
+                  <span className="legend-dot task" />
+                  Task / internal
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+      </div>
+
+      {/* ── DAY AGENDA + QUICK ADD SPLIT MODAL ── */}
+      {isModalOpen && selectedDate && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-cal" onClick={(e) => e.stopPropagation()}>
+            <button className="close-btn-cal" onClick={closeModal} aria-label="Close">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Left Column: Day Agenda */}
+            <div className="modal-agenda">
+              <div className="modal-agenda-eyebrow">Day agenda</div>
+              <div className="modal-agenda-day serif">
+                {WEEKDAY_NAMES[selectedDate.getDay()]}
+              </div>
+              <div className="modal-agenda-date mono">
+                {selectedDate.getDate()} {MONTH_NAMES[selectedDate.getMonth()]} {selectedDate.getFullYear()}
+              </div>
+              <div className="modal-agenda-count">
+                {selectedDayEvents.length} {selectedDayEvents.length === 1 ? 'EVENT' : 'EVENTS'}
+              </div>
+
+              <div className="modal-agenda-list">
                 {selectedDayEvents.length === 0 ? (
-                  <div className="dag-empty-day">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-dark-muted)', opacity: 0.5 }}>
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
+                  <div className="modal-agenda-empty">
+                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4.5" width="18" height="16" rx="2" />
+                      <path d="M3 9.5h18" />
                     </svg>
-                    <div style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', lineHeight: 1.55 }}>
-                      No hearings or events<br />scheduled for this day
-                    </div>
+                    <div style={{ fontSize: '12.5px' }}>No hearings or events scheduled for this day.</div>
                   </div>
                 ) : (
-                  selectedDayEvents.map(ev => {
-                    const isGoogle = ev.source === 'google';
+                  selectedDayEvents.map((ev, idx) => {
                     const acc = getEventAccent(ev.event_type);
-                    const borderColor = isGoogle ? GOOGLE_BLUE : acc.border;
                     return (
-                      <div
-                        key={ev.id}
-                        className="dag-event-card"
-                        style={{ background: acc.bg, border: `1px solid ${borderColor}44`, borderLeft: `3px solid ${borderColor}` }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: ev.location || ev.opposing_counsel ? '7px' : 0 }}>
-                          <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#E2E8F0', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {isGoogle && <GoogleGlyph size={11} />}
-                            {ev.title}
-                          </div>
-                          <div style={{ fontSize: '9px', fontWeight: '700', textTransform: 'uppercase', color: acc.text, background: `${acc.border}20`, padding: '2px 6px', borderRadius: '3px', flexShrink: 0, letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
-                            {isGoogle ? 'google' : (ev.event_type || 'event').replace(/_/g, ' ')}
+                      <div key={ev.id || idx} style={{ display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
+                        <div className={`rail-dot ${acc.type}`} style={{ marginTop: '4px' }} />
+                        <div>
+                          <div className="rail-title">{ev.title}</div>
+                          <div className="rail-meta">
+                            {ev.location || ev.opposing_counsel ? `${ev.location || ''} ${ev.opposing_counsel ? '· ' + ev.opposing_counsel : ''}` : (ev.event_type || 'Event')}
                           </div>
                         </div>
-                        {ev.location && (
-                          <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', gap: '5px', alignItems: 'flex-start', marginTop: '3px' }}>
-                            <span style={{ flexShrink: 0, marginTop: '1px' }}>📍</span>
-                            <span>{ev.location}</span>
-                          </div>
-                        )}
-                        {ev.opposing_counsel && (
-                          <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', gap: '5px', alignItems: 'flex-start', marginTop: '3px' }}>
-                            <span style={{ flexShrink: 0, marginTop: '1px' }}>⚖️</span>
-                            <span>{ev.opposing_counsel}</span>
-                          </div>
-                        )}
                       </div>
                     );
                   })
@@ -789,111 +1167,112 @@ export default function CalendarView() {
               </div>
             </div>
 
-            {/* ── RIGHT: Quick Add Pane ───────────────────────────────── */}
-            <div className="dag-form-pane">
-              <div className="dag-form-head">
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.7px', color: 'var(--text-dark-muted)', marginBottom: '4px' }}>Quick Add</div>
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Schedule Event</div>
-                </div>
-                <button onClick={closeModal} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '5px 8px', borderRadius: '6px', transition: 'all 0.15s' }}
-                  onMouseEnter={e => e.currentTarget.style.color = 'white'}
-                  onMouseLeave={e => e.currentTarget.style.color = ''}
-                >✕</button>
-              </div>
+            {/* Right Column: Quick Add Form */}
+            <div className="modal-main-cal">
+              <div className="modal-main-eyebrow">Quick add</div>
+              <div className="modal-main-title serif">Schedule event</div>
 
-              <div className="dag-form-body">
-                {/* ── Architect's Innovation: Conflict Warning ── */}
-                {hasConflict && (
-                  <div className="dag-conflict">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '1px' }}>
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                    <div>
-                      <div style={{ fontSize: '12px', fontWeight: '700', color: '#F59E0B', marginBottom: '2px' }}>Scheduling Conflict Detected</div>
-                      <div style={{ fontSize: '11px', color: '#92400E', lineHeight: 1.5 }}>
-                        This day already has {selectedDayEvents.filter(e => HIGH_PRIO.has(e.event_type)).map(e => `"${e.title}"`).join(' and ')}. Verify before confirming.
-                      </div>
-                    </div>
+              {hasConflict && (
+                <div className="conflict-alert">
+                  <span style={{ fontSize: '14px', flexShrink: 0 }}>⚠️</span>
+                  <div>
+                    <strong>Scheduling conflict alert:</strong> High-priority events are already scheduled for this date. Verify before confirming.
                   </div>
+                </div>
+              )}
+
+              <form onSubmit={handleAddEventSubmit}>
+                <div className="field-cal">
+                  <label>Target date</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${selectedDate.getDate()} ${MONTH_NAMES[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`}
+                  />
+                </div>
+
+                <div className="field-cal">
+                  <label>Event title <span className="req">*</span></label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g., Bail application deadline"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+
+                <div className="field-grid-cal">
+                  <div className="field-cal">
+                    <label>Event type</label>
+                    <select value={newType} onChange={(e) => setNewType(e.target.value)}>
+                      <option value="hearing">Hearing</option>
+                      <option value="deadline">Deadline</option>
+                      <option value="task">Task / Internal</option>
+                    </select>
+                  </div>
+                  <div className="field-cal">
+                    <label>Related case ID</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 101"
+                      value={newCaseId}
+                      onChange={(e) => setNewCaseId(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="field-cal">
+                  <label>Location / court</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Delhi High Court, Court Room 7"
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                  />
+                </div>
+
+                <div className="field-cal">
+                  <label>Opposing counsel</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Adv. Rajesh Kumar, Singh &amp; Co."
+                    value={newOpposingCounsel}
+                    onChange={(e) => setNewOpposingCounsel(e.target.value)}
+                  />
+                </div>
+
+                {googleToken && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--ink)', cursor: 'pointer', marginBottom: '14px' }}>
+                    <input
+                      type="checkbox"
+                      checked={syncToGoogle}
+                      onChange={(e) => setSyncToGoogle(e.target.checked)}
+                    />
+                    Sync to Google Calendar
+                  </label>
                 )}
 
-                {/* Date chip */}
-                <div style={{ marginBottom: '16px', padding: '9px 13px', background: 'rgba(59,130,246,0.06)', borderRadius: '7px', border: '1px solid rgba(59,130,246,0.18)' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-dark-muted)', display: 'block', marginBottom: '1px', letterSpacing: '0.5px' }}>Target Date</span>
-                  <strong style={{ fontSize: '13.5px', color: '#3B82F6' }}>
-                    {selectedDate.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                  </strong>
+                <div className="modal-legend">
+                  <div className="legend-row"><span className="legend-dot deadline" />Deadline</div>
+                  <div className="legend-row"><span className="legend-dot hearing" />Hearing</div>
+                  <div className="legend-row"><span className="legend-dot task" />Task</div>
                 </div>
 
-                <form onSubmit={handleAddEventSubmit} id="dag-form" style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
-                  <div>
-                    <label className="cal-label">Event Title *</label>
-                    <input type="text" required className="cal-input" placeholder="e.g. Bail application deadline" value={newTitle} onChange={e => setNewTitle(e.target.value)} autoFocus />
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div>
-                      <label className="cal-label">Event Type</label>
-                      <select value={newType} onChange={e => setNewType(e.target.value)} className="cal-input" style={{ backgroundColor: 'var(--bg-dark-panel, #171c26)' }}>
-                        <option value="task">Task / Internal</option>
-                        <option value="tickler">Tickler Alert</option>
-                        <option value="appearance">Court Appearance</option>
-                        <option value="drop_dead">Drop Dead Deadline</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="cal-label">Related Case ID</label>
-                      <input type="text" className="cal-input" placeholder="e.g. 101" value={newCaseId} onChange={e => setNewCaseId(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="cal-label">Location / Court</label>
-                    <input type="text" className="cal-input" placeholder="e.g. Delhi High Court, Court Room 7" value={newLocation} onChange={e => setNewLocation(e.target.value)} />
-                  </div>
-
-                  <div>
-                    <label className="cal-label">Opposing Counsel</label>
-                    <input type="text" className="cal-input" placeholder="e.g. Adv. Rajesh Kumar, Singh & Co." value={newOpposingCounsel} onChange={e => setNewOpposingCounsel(e.target.value)} />
-                  </div>
-
-                  {googleToken && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--text-dark-primary, #fff)', cursor: 'pointer', userSelect: 'none' }}>
-                      <input type="checkbox" checked={syncToGoogle} onChange={e => setSyncToGoogle(e.target.checked)} style={{ width: '14px', height: '14px', accentColor: GOOGLE_BLUE, cursor: 'pointer' }} />
-                      <GoogleGlyph size={12} />
-                      Sync to Google Calendar
-                    </label>
-                  )}
-
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '9px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    {[['drop_dead', 'Deadline'], ['appearance', 'Hearing'], ['task', 'Task']].map(([t, lbl]) => {
-                      const a = getEventAccent(t);
-                      return (
-                        <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: a.text }}>
-                          <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: a.border }} />
-                          {lbl}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </form>
-              </div>
-
-              <div className="dag-form-footer">
-                <button type="button" onClick={closeModal} style={{ padding: '8px 16px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-dark-subtle, #2C3241)', background: 'transparent', color: 'var(--text-dark-primary)', cursor: 'pointer' }}>
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  form="dag-form"
-                  disabled={modalSaving || !newTitle.trim()}
-                  style={{ padding: '8px 20px', fontSize: '12px', fontWeight: '600', borderRadius: '6px', border: 'none', background: hasConflict ? '#D97706' : '#3B82F6', color: 'white', cursor: modalSaving ? 'not-allowed' : 'pointer', opacity: modalSaving ? 0.65 : 1, transition: 'background 0.2s' }}
-                >
-                  {modalSaving ? 'Saving…' : hasConflict ? 'Add Anyway' : 'Add Event'}
-                </button>
-              </div>
+                <div className="modal-footer-row">
+                  <button type="button" className="btn-cal btn-cal-sm" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={modalSaving || !newTitle.trim()}
+                    className="btn-cal btn-cal-primary btn-cal-sm"
+                  >
+                    {modalSaving ? 'Saving…' : 'Add event'}
+                  </button>
+                </div>
+              </form>
             </div>
 
           </div>
