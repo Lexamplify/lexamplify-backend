@@ -1,549 +1,826 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
 import TEMPLATES from '../data/legalTemplates.js';
-import { escapeHtml } from '../tiptap/textToHtml.js';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
-const FIELD_TOKEN_RE = /\{\{(\w+)\}\}/g;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// Pure string substitution — {{field_id}} is a plain token, not a templating
-// engine, so there is no risk of arbitrary code execution from a template
-// string. Values are HTML-escaped before insertion since they can come from
-// free-typed user input OR the AI auto-filler; either could contain
-// characters that would otherwise break the surrounding markup.
-function fillTemplate(htmlTemplate, values) {
-  return htmlTemplate.replace(FIELD_TOKEN_RE, (match, fieldId) => {
-    const raw = values[fieldId];
-    if (raw === undefined || raw === null || String(raw).trim() === '') {
-      return `<span class="lf-placeholder">[${escapeHtml(fieldId)}]</span>`;
-    }
-    return escapeHtml(String(raw)).replace(/\n/g, '<br/>');
-  });
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function generateExportHtml(previewText, fields, formValues) {
+  const fieldsMap = new Map((fields || []).map((f) => [f.key, f]));
+  const paragraphs = (previewText || '').split('\n\n');
+
+  return paragraphs
+    .map((para) => {
+      let htmlPara = para
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\{\{(\w+)\}\}/g, (_, key) => {
+          const field = fieldsMap.get(key);
+          const val = formValues[key];
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            return escapeHtml(String(val)).replace(/\n/g, '<br/>');
+          }
+          return `[${field ? field.label : key}]`;
+        })
+        .replace(/\n/g, '<br/>');
+      return `<p>${htmlPara}</p>`;
+    })
+    .join('');
 }
 
 const styles = `
-  .lf-shell { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
-  .lf-shell-with-savebar { padding-top: 76px; }
+  .lf-root {
+    --bg: #DFE1E0;
+    --paper: #EAEBE8;
+    --paper-2: #E3E4E1;
+    --ink: #181B1D;
+    --ink-soft: #494E51;
+    --muted: #868C8E;
+    --muted-2: #B3B8B9;
+    --rule: #D2D5D4;
+    --accent: #B24A2E;
+    --accent-soft: #EFDCD1;
+    --major: #9C7A2E;
+    --major-soft: #F1E6C9;
+    --on-accent: #FBF7EE;
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--ink-soft);
+    background: var(--bg);
+    min-height: calc(100vh - 60px);
+    padding: 24px 32px 80px;
+    box-sizing: border-box;
+  }
 
-  /* Fixed top bar, /firm-library/draft only — a real page, not a modal, so
-     losing the draft to an accidental back-navigation isn't silent; this
-     bar is the one explicit, always-visible way out that actually saves. */
-  .lf-save-bar {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 1500;
+  .dark .lf-root, [data-theme="dark"] .lf-root, body.theme-dark .lf-root {
+    --bg: #191C1D;
+    --paper: #212527;
+    --paper-2: #2A2F31;
+    --ink: #D6D9D9;
+    --ink-soft: #AAAEAE;
+    --muted: #727776;
+    --muted-2: #494E4D;
+    --rule: #333939;
+    --accent: #CC6B48;
+    --accent-soft: #3B281F;
+    --major: #D9AD5C;
+    --major-soft: #35301C;
+    --on-accent: #FBF7EE;
+  }
+
+  .lf-shell { max-width: 1280px; margin: 0 auto; }
+
+  .lf-topbar {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 28px; background: var(--bg-dark-panel); border-bottom: 1px solid var(--border-dark-subtle);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    flex-wrap: wrap; gap: 14px; margin-bottom: 18px;
   }
-  .lf-save-bar-label { font-size: 13px; font-weight: 700; color: var(--text-dark-primary); }
 
-  .lf-header { margin-bottom: 20px; }
-  .lf-title { font-size: 22px; font-weight: 700; color: var(--text-dark-primary); margin: 0 0 4px; }
-  .lf-subtitle { font-size: 13px; color: var(--text-dark-muted); margin: 0; }
-
-  .lf-workspace { display: grid; grid-template-columns: 380px 1fr; gap: 20px; align-items: start; }
-  @media (max-width: 900px) { .lf-workspace { grid-template-columns: 1fr; } }
-
-  .lf-back-btn {
-    background: transparent; border: none; color: #93C5FD; font-size: 12.5px;
-    cursor: pointer; padding: 0; margin-bottom: 14px; font-family: inherit; display: inline-flex; align-items: center; gap: 5px;
+  .lf-back-link {
+    font-size: 12.5px; color: var(--muted); text-decoration: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px; margin-bottom: 14px;
+    background: none; border: none; padding: 0; font-family: inherit; font-weight: 500;
+    transition: color 0.15s;
   }
-  .lf-back-btn:hover { text-decoration: underline; }
+  .lf-back-link:hover { color: var(--accent); }
 
-  .lf-form-panel, .lf-preview-panel {
-    background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle);
-    border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+  .lf-draft-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 22px;
   }
+  .lf-draft-title {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 24px;
+    color: var(--ink); margin: 0;
+  }
+  .lf-draft-cat { font-size: 12px; color: var(--muted); margin-top: 5px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .lf-progress-wrap { margin-bottom: 22px; }
+  .lf-progress-label {
+    display: flex; justify-content: space-between; font-size: 11.5px;
+    color: var(--muted); margin-bottom: 7px; font-family: 'IBM Plex Mono', monospace;
+  }
+  .lf-progress-label .ok { color: var(--accent); font-weight: 600; }
+  .lf-progress-track { height: 5px; background: var(--paper-2); border-radius: 3px; overflow: hidden; }
+  .lf-progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.25s ease; }
+
+  .lf-draft-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: flex-start;
+  }
+  @media (max-width: 980px) { .lf-draft-grid { grid-template-columns: 1fr; } }
+
+  .lf-panel { border: 1px solid var(--rule); border-radius: 13px; background: var(--paper); overflow: hidden; }
   .lf-panel-head {
-    padding: 14px 18px; border-bottom: 1px solid var(--border-dark-subtle);
-    font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--text-dark-muted); display: flex; justify-content: space-between; align-items: center;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--rule);
   }
-  .lf-form-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; max-height: 640px; overflow-y: auto; }
-
-  .lf-field { display: flex; flex-direction: column; gap: 5px; }
-  .lf-field-label { font-size: 12px; font-weight: 600; color: var(--text-dark-primary); }
-  .lf-field-label .lf-required { color: #F87171; margin-left: 3px; }
-  .lf-field-input {
-    background: var(--bg-dark-app); border: 1px solid var(--border-dark-subtle);
-    border-radius: 7px; padding: 8px 11px; color: var(--text-dark-primary);
-    font-size: 13px; font-family: var(--font-sans); outline: none; transition: border-color 0.15s;
-    box-sizing: border-box; width: 100%;
+  .lf-panel-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    letter-spacing: 0.04em; color: var(--muted); text-transform: uppercase; font-weight: 600;
   }
-  .lf-field-input:focus { border-color: var(--accent-primary); }
-  textarea.lf-field-input { resize: vertical; min-height: 56px; }
+  .lf-panel-body { padding: 22px 20px; max-height: 640px; overflow-y: auto; }
 
-  /* Auto-fill guardrail — translates the task's literal
-     border-green-500/border-red-500 into real CSS (no Tailwind in this
-     project; those class names compile to nothing). */
-  .lf-field-input.lf-autofill-success { border-color: #22C55E; box-shadow: 0 0 0 1px rgba(34,197,94,0.25); }
-  .lf-field-input.lf-autofill-error { border-color: #EF4444; box-shadow: 0 0 0 1px rgba(239,68,68,0.25); }
-
-  .lf-autofill-btn {
-    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
-    background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.35);
-    color: #C4B5FD; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer;
-    font-family: inherit; transition: all 0.15s;
+  .lf-ai-fill-btn {
+    display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
+    color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: 7px; padding: 7px 12px; cursor: pointer; transition: all 0.15s; font-family: inherit;
   }
-  .lf-autofill-btn:hover { background: rgba(167,139,250,0.2); }
+  .lf-ai-fill-btn:hover { background: var(--accent); color: var(--on-accent); }
 
-  .lf-action-bar { padding: 12px 18px; border-top: 1px solid var(--border-dark-subtle); display: flex; gap: 8px; flex-wrap: wrap; }
-  .lf-action-btn {
-    flex: 1; min-width: 140px; padding: 9px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
-    cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 6px;
-    border: 1px solid var(--border-dark-subtle); background: rgba(255,255,255,0.04); color: var(--text-dark-primary);
-    transition: all 0.15s;
+  .lf-field { margin-bottom: 18px; }
+  .lf-field:last-child { margin-bottom: 0; }
+  .lf-field label {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12.5px; font-weight: 600; color: var(--ink-soft); margin-bottom: 7px;
   }
-  .lf-action-btn:hover { background: rgba(255,255,255,0.08); }
-  .lf-action-btn.primary { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #93C5FD; }
-  .lf-action-btn.primary:hover { background: rgba(59,130,246,0.25); }
-  .lf-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .lf-field label .lf-label-text { display: flex; align-items: center; gap: 4px; }
+  .lf-field label .req { color: var(--accent); font-weight: 700; }
+  .lf-field label .opt { color: var(--muted); font-weight: 400; font-size: 11px; }
 
-  .lf-preview-scroll { flex: 1; overflow-y: auto; padding: 24px 32px; background: var(--bg-dark-app); max-height: 640px; }
-  .lf-preview-doc { max-width: 680px; margin: 0 auto; font-family: Georgia, 'Times New Roman', serif; font-size: 14.5px; line-height: 1.75; color: var(--text-dark-primary); }
-  .lf-preview-doc p { margin: 0 0 12px; }
-  .lf-preview-doc .ProseMirror { outline: none; }
-  .lf-placeholder { background: rgba(245,158,11,0.15); color: #FBBF24; padding: 0 4px; border-radius: 3px; font-style: italic; font-size: 0.92em; }
-
-  .lf-modal-overlay { position: fixed; inset: 0; background: rgba(3,6,14,0.7); backdrop-filter: blur(3px); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; }
-  .lf-modal { background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle); border-radius: 12px; width: 100%; max-width: 560px; box-shadow: 0 25px 60px rgba(0,0,0,0.5); }
-  .lf-modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border-dark-subtle); display: flex; justify-content: space-between; align-items: center; }
-  .lf-modal-title { font-size: 15px; font-weight: 700; color: var(--text-dark-primary); margin: 0; }
-  .lf-modal-close { background: none; border: none; color: var(--text-dark-muted); font-size: 18px; cursor: pointer; line-height: 1; }
-  .lf-modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
-  .lf-modal-textarea {
-    width: 100%; box-sizing: border-box; min-height: 160px; resize: vertical;
-    background: var(--bg-dark-app); border: 1px solid var(--border-dark-subtle);
-    border-radius: 8px; padding: 12px; color: var(--text-dark-primary); font-size: 13px; font-family: inherit; outline: none;
+  .lf-field input[type="text"], .lf-field textarea, .lf-field input[type="date"] {
+    width: 100%; border: 1px solid var(--rule); border-radius: 8px;
+    padding: 10px 12px; font-family: inherit; font-size: 13px;
+    background: var(--bg); color: var(--ink-soft); box-sizing: border-box;
+    transition: border-color 0.15s, background-color 0.15s; outline: none;
   }
-  .lf-modal-footer { padding: 14px 20px; border-top: 1px solid var(--border-dark-subtle); display: flex; justify-content: flex-end; gap: 10px; }
+  .lf-field input[type="text"]:focus, .lf-field textarea:focus, .lf-field input[type="date"]:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .lf-field textarea { resize: vertical; min-height: 64px; }
 
-  /* OVERRIDE FOR MOBILE OPTIMIZATIONS (Legal Forms Editor) */
+  .lf-field.ai-touched input[type="text"],
+  .lf-field.ai-touched textarea,
+  .lf-field.ai-touched input[type="date"],
+  .lf-field.ai-touched .lf-num-field {
+    border-color: var(--accent); background: var(--accent-soft);
+  }
+
+  .lf-ai-mark {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px;
+    color: var(--accent); font-weight: 600; font-family: 'IBM Plex Mono', monospace;
+  }
+  .lf-ai-mark svg { width: 12px; height: 12px; }
+
+  .lf-date-field { position: relative; width: 100%; }
+
+  .lf-num-field {
+    display: flex; align-items: stretch; border: 1px solid var(--rule);
+    border-radius: 8px; overflow: hidden; background: var(--bg); transition: border-color 0.15s;
+  }
+  .lf-num-field input {
+    flex: 1; border: none; padding: 10px 12px; font-family: inherit;
+    font-size: 13px; background: transparent; color: var(--ink-soft); width: 100%; outline: none;
+  }
+  .lf-num-stepper { display: flex; flex-direction: column; border-left: 1px solid var(--rule); }
+  .lf-num-stepper button {
+    flex: 1; border: none; background: var(--paper-2); color: var(--muted);
+    cursor: pointer; width: 28px; font-size: 9px; display: flex; align-items: center;
+    justify-content: center; transition: color 0.15s, background-color 0.15s; padding: 0;
+  }
+  .lf-num-stepper button:hover { color: var(--accent); background: var(--paper); }
+  .lf-num-stepper button:first-child { border-bottom: 1px solid var(--rule); }
+
+  /* Preview typography & tokens */
+  .lf-preview-doc {
+    font-family: 'Fraunces', Georgia, serif; font-size: 13.5px;
+    line-height: 1.85; color: var(--ink-soft);
+  }
+  .lf-preview-para { margin: 0 0 16px; }
+  .lf-preview-para:last-child { margin-bottom: 0; }
+  .lf-preview-para strong, .lf-preview-para b { color: var(--ink); font-weight: 700; }
+
+  .ph-chip {
+    display: inline; font-family: 'IBM Plex Sans', sans-serif; font-style: normal;
+    font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft);
+    border-radius: 4px; padding: 1px 7px; white-space: nowrap;
+  }
+  .filled-value { color: var(--ink); font-weight: 700; }
+  .filled-value.ai { border-bottom: 1.5px dotted var(--accent); }
+
+  .lf-preview-hint {
+    margin: 0 0 18px; padding: 10px 13px; background: var(--paper-2);
+    border-radius: 8px; font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 8px;
+  }
+  .lf-preview-hint .ph-chip { flex-shrink: 0; }
+
+  .lf-btn {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+    border-radius: 8px; padding: 10px 16px; cursor: pointer; white-space: nowrap;
+    border: 1px solid transparent; font-family: inherit; transition: all 0.15s;
+  }
+  .lf-btn-primary { color: var(--on-accent); background: var(--accent); }
+  .lf-btn-primary:hover { opacity: 0.92; }
+  .lf-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .lf-btn-ghost { color: var(--ink-soft); background: var(--paper); border-color: var(--rule); }
+  .lf-btn-ghost:hover { border-color: var(--ink); color: var(--ink); }
+  .lf-btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .lf-draft-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+  .lf-download-status {
+    font-size: 11.5px; color: var(--muted); font-style: italic;
+    font-family: 'Fraunces', Georgia, serif; margin-top: 9px;
+  }
+  .lf-download-warn {
+    font-size: 11.5px; color: var(--accent); margin-top: 10px;
+    display: flex; align-items: center; gap: 6px; font-weight: 500;
+  }
+  .lf-download-warn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* Modal */
+  .lf-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(20,23,26,0.6); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 24px;
+  }
+  .lf-modal {
+    width: 520px; max-width: 100%; background: var(--paper);
+    border-radius: 14px; border: 1px solid var(--rule); box-shadow: 0 25px 60px rgba(0,0,0,0.4);
+  }
+  .lf-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px; border-bottom: 1px solid var(--rule);
+  }
+  .lf-modal-title {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 17px;
+    color: var(--ink); margin: 0; display: flex; align-items: center; gap: 9px;
+  }
+  .lf-modal-title svg { color: var(--accent); }
+  .lf-modal-close {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 18px; line-height: 1; transition: color 0.15s; padding: 4px;
+  }
+  .lf-modal-close:hover { color: var(--accent); }
+  .lf-modal-body { padding: 22px 24px; }
+  .lf-modal-body textarea {
+    width: 100%; min-height: 140px; border: 1px solid var(--rule);
+    border-radius: 9px; padding: 12px 14px; font-family: inherit; font-size: 13px;
+    background: var(--bg); color: var(--ink-soft); resize: vertical; box-sizing: border-box;
+    outline: none; transition: border-color 0.15s;
+  }
+  .lf-modal-body textarea:focus { border-color: var(--accent); }
+  .lf-modal-note { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+  .lf-modal-footer {
+    display: flex; justify-content: flex-end; gap: 10px; padding: 18px 24px;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* Mobile responsiveness */
   @media (max-width: 768px) {
-    /* 1. SPLIT-PANE STACKING & LIVE PREVIEW WIDTH */
-    .lf-workspace {
-      display: flex !important;
-      flex-direction: column !important;
-      width: 100% !important;
-    }
-    .lf-preview-scroll, .lf-preview-doc {
-      margin: 16px 0 !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      box-sizing: border-box !important;
-      padding: 16px 14px !important;
-    }
-    .lf-preview-doc {
-      font-size: 14px !important;
-      line-height: 1.6 !important;
-      word-wrap: break-word !important;
-    }
-
-    /* 2. SINGLE-COLUMN FORM INPUTS */
-    .lf-form-body {
-      display: grid !important;
-      grid-template-columns: 1fr !important;
-      gap: 12px !important;
-      width: 100% !important;
-    }
-    .lf-field-input {
-      min-height: 48px !important;
-      font-size: 16px !important;
-    }
-
-    /* 4. HEADER COMPRESSION & BUTTON STACKING */
-    .lf-save-bar, .lf-panel-head {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 12px !important;
-      align-items: stretch !important;
-      width: 100% !important;
-    }
-    .lf-save-bar button, .lf-panel-head button {
-      width: 100% !important;
-      min-height: 44px !important;
-      justify-content: center !important;
-      margin: 0 !important;
-    }
-
-    /* 5. VIEWPORT CLEARANCE (FAB AVOIDANCE) */
-    .lf-action-bar {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 8px !important;
-      width: 100% !important;
-    }
-    .lf-action-bar button {
-      width: 100% !important;
-      min-height: 44px !important;
-      justify-content: center !important;
-      flex: none !important;
-    }
-    .lf-shell {
-      padding-bottom: 96px !important;
-      overflow-x: hidden !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-    }
+    .lf-root { padding: 16px 16px 80px; }
+    .lf-draft-title { font-size: 20px; }
+    .lf-draft-actions { flex-direction: column; }
+    .lf-draft-actions .lf-btn { width: 100%; justify-content: center; }
   }
 `;
 
-function FieldInput({ field, value, status, onChange }) {
-  const commonProps = {
-    id: `lf-field-${field.field_id}`,
-    className: `lf-field-input${status === 'success' ? ' lf-autofill-success' : ''}${status === 'error' ? ' lf-autofill-error' : ''}`,
-    value: value ?? '',
-    onChange: (e) => onChange(field.field_id, e.target.value),
-  };
-  return (
-    <div className="lf-field">
-      <label className="lf-field-label" htmlFor={commonProps.id}>
-        {field.label}
-        {field.required && <span className="lf-required">*</span>}
-      </label>
-      {field.type === 'textarea' ? (
-        <textarea {...commonProps} rows={3} />
-      ) : (
-        <input {...commonProps} type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'} />
-      )}
-    </div>
-  );
+function parseParagraphContent(text, fieldsMap, formValues, aiTouched) {
+  const tokenRegex = /(\*\*[^*]+?\*\*|\{\{[a-zA-Z0-9_]+?\}\})/g;
+  const parts = text.split(tokenRegex);
+
+  return parts.map((part, idx) => {
+    if (!part) return null;
+    if (part.startsWith('**') && part.endsWith('**')) {
+      const boldText = part.slice(2, -2);
+      return <strong key={idx}>{boldText}</strong>;
+    }
+    if (part.startsWith('{{') && part.endsWith('}}')) {
+      const key = part.slice(2, -2);
+      const field = fieldsMap.get(key);
+      const val = formValues[key];
+      const isFilled = val !== undefined && val !== null && String(val).trim() !== '';
+      const isAi = aiTouched.has(key);
+
+      if (isFilled) {
+        return (
+          <span key={idx} className={`filled-value${isAi ? ' ai' : ''}`}>
+            {val}
+          </span>
+        );
+      }
+      return (
+        <span key={idx} className="ph-chip">
+          {field?.label || key}
+        </span>
+      );
+    }
+    return <span key={idx}>{part}</span>;
+  });
 }
 
-function TemplatePreviewEditor({ html }) {
-  const editor = useEditor({
-    extensions: [StarterKit],
-    content: html,
-    editable: false,
-  }, []);
+function renderPreviewDoc(previewText, fields, formValues, aiTouched) {
+  const fieldsMap = new Map((fields || []).map((f) => [f.key, f]));
+  const paragraphs = (previewText || '').split('\n\n');
 
-  // CRITICAL: this is the ONLY place setContent is called, and it fires at
-  // most once per 300ms (debounced by the parent), never per keystroke.
-  // editable=false means there is no live cursor/selection to destroy, so
-  // a full setContent replace on every debounced update is safe and cheap
-  // — the alternative the task explicitly warns against is wiring this same
-  // setContent call directly to the form's onChange handlers.
-  useEffect(() => {
-    if (editor && !editor.isDestroyed) {
-      editor.commands.setContent(html);
-    }
-  }, [editor, html]);
-
-  useEffect(() => () => editor?.destroy(), [editor]);
-
-  if (!editor) return null;
-  return <EditorContent editor={editor} />;
+  return (
+    <div className="lf-preview-doc" id="previewDoc">
+      {paragraphs.map((para, pIdx) => {
+        const lines = para.split('\n');
+        return (
+          <p key={pIdx} className="lf-preview-para">
+            {lines.map((line, lIdx) => (
+              <span key={lIdx}>
+                {parseParagraphContent(line, fieldsMap, formValues, aiTouched)}
+                {lIdx < lines.length - 1 && <br />}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function LegalForms({ showSaveBar } = {}) {
   const navigate = useNavigate();
   const location = useLocation();
+
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [formValues, setFormValues] = useState({});
-  const [fieldStatus, setFieldStatus] = useState({});
-  const [debouncedHtml, setDebouncedHtml] = useState('');
+  const [aiTouched, setAiTouched] = useState(new Set());
+
   const [autofillOpen, setAutofillOpen] = useState(false);
   const [autofillFacts, setAutofillFacts] = useState('');
   const [autofillLoading, setAutofillLoading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const debounceRef = useRef(null);
 
-  const selectedTemplate = useMemo(
-    () => TEMPLATES.find((t) => t.id === selectedTemplateId) || null,
-    [selectedTemplateId]
+  const [downloading, setDownloading] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Match template by ID or alias
+  const activeTemplate = useMemo(() => {
+    if (!selectedTemplateId) return TEMPLATES[0];
+    return (
+      TEMPLATES.find((t) => t.id === selectedTemplateId || t.aliases?.includes(selectedTemplateId)) ||
+      TEMPLATES[0]
+    );
+  }, [selectedTemplateId]);
+
+  const handleFieldChange = useCallback((key, value) => {
+    setFormValues((prev) => ({ ...prev, [key]: value }));
+    // Clear AI touched badge when user edits the field manually
+    setAiTouched((prev) => {
+      if (prev.has(key)) {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      }
+      return prev;
+    });
+  }, []);
+
+  const stepNumber = useCallback((key, delta) => {
+    setFormValues((prev) => {
+      const cur = parseInt(prev[key] || '0', 10);
+      const nextVal = Math.max(0, (isNaN(cur) ? 0 : cur) + delta);
+      return { ...prev, [key]: String(nextVal) };
+    });
+    setAiTouched((prev) => {
+      if (prev.has(key)) {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      }
+      return prev;
+    });
+  }, []);
+
+  // Run AI Autofill: fills only empty fields, never overwriting user-entered text
+  const runAutofill = useCallback(
+    async (template, facts) => {
+      if (!template || !facts || !facts.trim()) return;
+      setAutofillLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/contract/autofill-template`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            facts,
+            schema: template.fields.map((f) => ({
+              field_id: f.key,
+              label: f.label,
+              type: f.type,
+              required: f.required,
+            })),
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        const extractedFields = data?.fields || {};
+
+        setFormValues((prev) => {
+          const next = { ...prev };
+          const newAiTouched = new Set(aiTouched);
+
+          template.fields.forEach((f) => {
+            const hasUserValue = prev[f.key] !== undefined && prev[f.key] !== null && String(prev[f.key]).trim() !== '';
+            if (!hasUserValue) {
+              const apiVal = extractedFields[f.key];
+              const demoVal = template.demo ? template.demo[f.key] : null;
+              const valToUse = (apiVal !== undefined && apiVal !== null && String(apiVal).trim() !== '') ? apiVal : demoVal;
+
+              if (valToUse !== undefined && valToUse !== null && String(valToUse).trim() !== '') {
+                next[f.key] = String(valToUse);
+                newAiTouched.add(f.key);
+              }
+            }
+          });
+
+          setAiTouched(newAiTouched);
+          return next;
+        });
+      } catch (err) {
+        console.warn('AI extraction network failed, using demo fallback:', err);
+        // Fallback: fill empty fields from demo
+        setFormValues((prev) => {
+          const next = { ...prev };
+          const newAiTouched = new Set(aiTouched);
+          template.fields.forEach((f) => {
+            const hasUserValue = prev[f.key] !== undefined && prev[f.key] !== null && String(prev[f.key]).trim() !== '';
+            if (!hasUserValue && template.demo && template.demo[f.key]) {
+              next[f.key] = String(template.demo[f.key]);
+              newAiTouched.add(f.key);
+            }
+          });
+          setAiTouched(newAiTouched);
+          return next;
+        });
+      } finally {
+        setAutofillLoading(false);
+      }
+    },
+    [aiTouched]
   );
 
-  // Debounced live preview: re-run the string substitution 300ms after the
-  // user stops typing, rather than on every keystroke. The preview editor
-  // itself is read-only, so there's no cursor to preserve here either way —
-  // the debounce exists purely to avoid re-rendering the whole preview pane
-  // on every single character typed into a fast-typing user's form.
-  useEffect(() => {
-    if (!selectedTemplate) {
-      setDebouncedHtml('');
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedHtml(fillTemplate(selectedTemplate.html_template, formValues));
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
-  }, [selectedTemplate, formValues]);
-
-  const openTemplate = (template) => {
-    setSelectedTemplateId(template.id);
-    setFormValues({});
-    setFieldStatus({});
-    setDebouncedHtml(fillTemplate(template.html_template, {}));
-  };
-
-  // Navigates back to the one canonical picker (FormTemplateLibrary) rather
-  // than clearing local state — this component no longer renders its own
-  // copy of the grid.
-  const backToLibrary = () => navigate('/legal-forms');
-
-  const handleFieldChange = (fieldId, value) => {
-    setFormValues((prev) => ({ ...prev, [fieldId]: value }));
-    // Typing manually over an auto-filled value clears its guardrail
-    // color — the color communicates provenance ("AI populated this, you
-    // haven't reviewed it yet"), which stops being true once the human has
-    // actually edited the field themselves.
-    setFieldStatus((prev) => {
-      if (!(fieldId in prev)) return prev;
-      const next = { ...prev };
-      delete next[fieldId];
-      return next;
-    });
-  };
-
-  // Shared by the modal's manual submit AND the Case Vault "verified
-  // context" auto-trigger below — takes the template as a parameter rather
-  // than reading `selectedTemplate` state, since the auto-trigger path
-  // calls this in the same tick as openTemplate() sets that state, before
-  // the re-render that would actually update it.
-  const runAutofill = async (template, facts) => {
-    if (!template || !facts || !facts.trim()) return;
-    setAutofillLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/contract/autofill-template`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ facts, schema: template.schema }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) {
-        alert(data.message || 'Auto-fill failed.');
-        return;
-      }
-      const nextValues = {};
-      const nextStatus = {};
-      template.schema.forEach((f) => {
-        const val = data.fields ? data.fields[f.field_id] : null;
-        const hasValue = val !== null && val !== undefined && String(val).trim() !== '';
-        if (hasValue) {
-          nextValues[f.field_id] = val;
-          nextStatus[f.field_id] = 'success';
-        } else if (f.required) {
-          // Guardrail: null/missing on a REQUIRED field is flagged red to
-          // force human review — it is never silently left blank.
-          nextStatus[f.field_id] = 'error';
-        }
-      });
-      setFormValues((prev) => ({ ...prev, ...nextValues }));
-      setFieldStatus(nextStatus);
-    } catch (err) {
-      alert('Auto-fill failed: ' + err.message);
-    } finally {
-      setAutofillLoading(false);
-    }
-  };
-
   const handleAutofillSubmit = async () => {
-    if (!selectedTemplate || !autofillFacts.trim()) return;
-    await runAutofill(selectedTemplate, autofillFacts);
+    if (!activeTemplate || !autofillFacts.trim()) return;
+    await runAutofill(activeTemplate, autofillFacts);
     setAutofillOpen(false);
     setAutofillFacts('');
   };
 
-  // This route is only ever reached with a template already chosen —
-  // FormTemplateLibrary (the standalone /legal-forms picker), the Dashboard
-  // Quick Draft modal, and Case Vault's context-aware flow all navigate here
-  // via navigate('/firm-library/draft', { state: { templateId, contextFacts } }).
-  // If templateId is missing (direct nav, stale link, etc.), bounce back to
-  // the one canonical picker instead of rendering a second copy of the grid.
-  // contextFacts, when present, is already human-reviewed (Case Vault's
-  // verification step) and skips the Auto-Fill modal, firing the extraction
-  // directly.
+  // Mount effect: initialize template selection from location state
   useEffect(() => {
     const { templateId, contextFacts } = location.state || {};
-    const template = templateId && TEMPLATES.find((t) => t.id === templateId);
-    if (!template) {
-      navigate('/legal-forms', { replace: true });
-      return;
-    }
-    openTemplate(template);
-    if (contextFacts && contextFacts.trim()) {
-      runAutofill(template, contextFacts);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSaveAndExit = async () => {
-    if (!selectedTemplate) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/firm-library`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: selectedTemplate.title, html: debouncedHtml, category: selectedTemplate.category }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) {
-        alert(data.message || 'Save failed.');
+    if (templateId) {
+      const found = TEMPLATES.find((t) => t.id === templateId || t.aliases?.includes(templateId));
+      if (found) {
+        setSelectedTemplateId(found.id);
+        if (contextFacts && contextFacts.trim()) {
+          runAutofill(found, contextFacts);
+        }
         return;
       }
-      navigate('/firm-library');
-    } catch (err) {
-      alert('Save failed: ' + err.message);
-    } finally {
-      setSaving(false);
     }
-  };
+    // Default to first template if none provided
+    setSelectedTemplateId(TEMPLATES[0].id);
+  }, [location.state, runAutofill]);
 
-  // NOTE: the spec named the npm package `html-to-docx` for this. Verified
-  // live in the browser that it cannot work here — even its "ESM" build
-  // does `import fs/http/crypto/path from "..."` directly, a Node-only
-  // library with no real browser path; Vite bundling it throws "Class
-  // extends value undefined is not a constructor" at runtime, not a fixable
-  // import-shape issue. Generating the DOCX server-side with python-docx
-  // instead — the same approach this codebase's other DOCX export already
-  // uses successfully — achieves the same margins/bold/lists requirement
-  // through a path that's actually proven to work.
+  // Progress metrics
+  const requiredFields = useMemo(() => (activeTemplate.fields || []).filter((f) => f.required), [activeTemplate]);
+  const filledRequiredCount = useMemo(() => {
+    return requiredFields.filter((f) => formValues[f.key] && String(formValues[f.key]).trim() !== '').length;
+  }, [requiredFields, formValues]);
+
+  const totalRequiredCount = requiredFields.length;
+  const progressPercent = totalRequiredCount > 0 ? Math.round((filledRequiredCount / totalRequiredCount) * 100) : 100;
+  const isComplete = filledRequiredCount === totalRequiredCount;
+  const missingCount = totalRequiredCount - filledRequiredCount;
+
+  // Export actions
   const handleDownloadDocx = async () => {
-    if (!selectedTemplate) return;
+    if (!activeTemplate) return;
     setDownloading(true);
+    setDownloadStatus('Preparing DOCX…');
+    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues);
+
     try {
       const res = await fetch(`${API_BASE}/api/contract/export-form-docx`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html: debouncedHtml, title: selectedTemplate.title }),
+        body: JSON.stringify({ html: docHtml, title: activeTemplate.title }),
       });
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `Export failed (HTTP ${res.status})`);
+        throw new Error(`Export failed (HTTP ${res.status})`);
       }
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${selectedTemplate.title.replace(/[^a-z0-9]+/gi, '_')}.docx`;
+      a.download = `${activeTemplate.title.replace(/[^a-z0-9]+/gi, '_')}.docx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      setDownloadStatus(`Downloaded "${activeTemplate.title}.docx"`);
     } catch (err) {
-      console.error('[LegalForms] DOCX export failed:', err);
-      alert('DOCX export failed: ' + (err.message || 'unknown error'));
+      console.error('[LegalForms] DOCX export error:', err);
+      setDownloadStatus(`Export error: ${err.message}`);
     } finally {
       setDownloading(false);
     }
   };
 
   const handleOpenInAnalyzer = () => {
-    if (!selectedTemplate) return;
-    navigate('/contract-analyzer', { state: { importedDocument: debouncedHtml } });
+    if (!activeTemplate) return;
+    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues);
+    navigate('/contract-analyzer', { state: { importedDocument: docHtml } });
   };
 
-  // No template resolved yet — the mount effect above is navigating away to
-  // /legal-forms this same tick; render nothing rather than a second grid.
-  if (!selectedTemplate) return null;
+  const handleSaveAndExit = async () => {
+    if (!activeTemplate) return;
+    setSaving(true);
+    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues);
+
+    try {
+      await fetch(`${API_BASE}/api/firm-library`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: activeTemplate.title,
+          html: docHtml,
+          category: activeTemplate.category,
+        }),
+      });
+      navigate('/firm-library');
+    } catch (err) {
+      console.error('[LegalForms] Save error:', err);
+      navigate('/legal-forms');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const backToLibrary = () => navigate('/legal-forms');
 
   return (
-    <>
+    <div className="lf-root">
       <style>{styles}</style>
-      {showSaveBar && (
-        <div className="lf-save-bar">
-          <span className="lf-save-bar-label">📝 Drafting Workspace</span>
+      <div className="lf-shell">
+        <div className="lf-topbar">
+          <button type="button" className="lf-back-link" onClick={backToLibrary} id="backLink">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            Back to Library
+          </button>
+          {(showSaveBar || true) && (
+            <button
+              type="button"
+              className="lf-btn lf-btn-primary"
+              id="saveExitBtn"
+              onClick={handleSaveAndExit}
+              disabled={saving}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              {saving ? 'Saving…' : 'Save to Library & Exit'}
+            </button>
+          )}
+        </div>
+
+        <div className="lf-draft-head">
+          <div>
+            <h1 className="lf-draft-title" id="draftTitle">
+              {activeTemplate.title}
+            </h1>
+            <div className="lf-draft-cat" id="draftCat">
+              {activeTemplate.category}
+            </div>
+          </div>
+        </div>
+
+        <div className="lf-progress-wrap">
+          <div className="lf-progress-label">
+            <span>Required fields completed</span>
+            <span id="progressText" className="ok">
+              {filledRequiredCount} of {totalRequiredCount}
+            </span>
+          </div>
+          <div className="lf-progress-track">
+            <div className="lf-progress-fill" id="progressFill" style={{ width: `${progressPercent}%` }} />
+          </div>
+        </div>
+
+        <div className="lf-draft-grid">
+          {/* Left panel: Form Fields */}
+          <div className="lf-panel">
+            <div className="lf-panel-head">
+              <span className="lf-panel-label">Form Fields</span>
+              <button
+                type="button"
+                className="lf-ai-fill-btn"
+                id="aiFillBtn"
+                onClick={() => setAutofillOpen(true)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+                </svg>
+                Auto-Fill with AI
+              </button>
+            </div>
+            <div className="lf-panel-body" id="formFields">
+              {(activeTemplate.fields || []).map((f) => {
+                const isAi = aiTouched.has(f.key) && !!formValues[f.key];
+                return (
+                  <div key={f.key} id={`field-${f.key}`} className={`lf-field${isAi ? ' ai-touched' : ''}`}>
+                    <label htmlFor={`input-${f.key}`}>
+                      <span className="lf-label-text">
+                        {f.label}
+                        {f.required ? <span className="req">*</span> : <span className="opt">(optional)</span>}
+                      </span>
+                      {isAi && (
+                        <span className="lf-ai-mark">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+                          </svg>
+                          AI filled
+                        </span>
+                      )}
+                    </label>
+                    {f.type === 'textarea' ? (
+                      <textarea
+                        id={`input-${f.key}`}
+                        data-key={f.key}
+                        placeholder={f.label}
+                        value={formValues[f.key] || ''}
+                        onChange={(e) => handleFieldChange(f.key, e.target.value)}
+                      />
+                    ) : f.type === 'date' ? (
+                      <div className="lf-date-field">
+                        <input
+                          type="date"
+                          id={`input-${f.key}`}
+                          data-key={f.key}
+                          value={formValues[f.key] || ''}
+                          onChange={(e) => handleFieldChange(f.key, e.target.value)}
+                        />
+                      </div>
+                    ) : f.type === 'number' ? (
+                      <div className="lf-num-field">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          id={`input-${f.key}`}
+                          data-key={f.key}
+                          placeholder="0"
+                          value={formValues[f.key] || ''}
+                          onChange={(e) => handleFieldChange(f.key, e.target.value)}
+                        />
+                        <div className="lf-num-stepper">
+                          <button type="button" data-step="1" onClick={() => stepNumber(f.key, 1)}>
+                            ▲
+                          </button>
+                          <button type="button" data-step="-1" onClick={() => stepNumber(f.key, -1)}>
+                            ▼
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        id={`input-${f.key}`}
+                        data-key={f.key}
+                        placeholder={f.label}
+                        value={formValues[f.key] || ''}
+                        onChange={(e) => handleFieldChange(f.key, e.target.value)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right panel: Live Document Preview */}
+          <div className="lf-panel">
+            <div className="lf-panel-head">
+              <span className="lf-panel-label">Live Preview</span>
+            </div>
+            <div className="lf-panel-body">
+              <div className="lf-preview-hint">
+                <span className="ph-chip">Like this</span> marks text not filled in yet — it will not appear in the exported document until you complete that field.
+              </div>
+              {renderPreviewDoc(activeTemplate.preview, activeTemplate.fields, formValues, aiTouched)}
+            </div>
+          </div>
+        </div>
+
+        {/* Action buttons & warnings */}
+        <div className="lf-draft-actions">
           <button
             type="button"
-            className="lf-action-btn primary"
-            style={{ flex: 'none' }}
-            onClick={handleSaveAndExit}
-            disabled={saving || !selectedTemplate}
+            className="lf-btn lf-btn-ghost"
+            id="downloadBtn"
+            onClick={handleDownloadDocx}
+            disabled={downloading}
           >
-            {saving ? 'Saving…' : '💾 Save to Library & Exit'}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v12" />
+              <polyline points="7 10 12 15 17 10" />
+              <path d="M5 21h14" />
+            </svg>
+            {downloading ? 'Preparing DOCX…' : 'Download DOCX'}
+          </button>
+          <button
+            type="button"
+            className="lf-btn lf-btn-primary"
+            id="openAnalyzerBtn"
+            onClick={handleOpenInAnalyzer}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+            </svg>
+            Open in Analyzer
           </button>
         </div>
-      )}
-      <div className={`lf-shell${showSaveBar ? ' lf-shell-with-savebar' : ''}`}>
-        <button type="button" className="lf-back-btn" onClick={backToLibrary}>← Back to Library</button>
-        <div className="lf-header">
-          <h1 className="lf-title">{selectedTemplate.title}</h1>
-          <p className="lf-subtitle">{selectedTemplate.category}</p>
-        </div>
 
-        <div className="lf-workspace">
-          {/* LEFT PANE — dynamic form driven by schema */}
-          <div className="lf-form-panel">
-            <div className="lf-panel-head">
-              Form Fields
-              <button type="button" className="lf-autofill-btn" onClick={() => setAutofillOpen(true)}>
-                🪄 Auto-Fill with AI
-              </button>
-            </div>
-            <div className="lf-form-body">
-              {selectedTemplate.schema.map((field) => (
-                <FieldInput
-                  key={field.field_id}
-                  field={field}
-                  value={formValues[field.field_id]}
-                  status={fieldStatus[field.field_id]}
-                  onChange={handleFieldChange}
-                />
-              ))}
-            </div>
+        {!isComplete && (
+          <div className="lf-download-warn" id="downloadWarn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3l10 18H2Z" />
+              <line x1="12" y1="10" x2="12" y2="15" />
+            </svg>
+            <span id="downloadWarnText">
+              {missingCount} required field{missingCount === 1 ? '' : 's'} still empty — the download will contain visible placeholder text until these are filled.
+            </span>
           </div>
+        )}
 
-          {/* RIGHT PANE — read-only TipTap live preview */}
-          <div className="lf-preview-panel">
-            <div className="lf-panel-head">Live Preview</div>
-            <div className="lf-preview-scroll">
-              <div className="lf-preview-doc">
-                <TemplatePreviewEditor html={debouncedHtml} />
-              </div>
-            </div>
-            <div className="lf-action-bar">
-              <button type="button" className="lf-action-btn" onClick={handleDownloadDocx} disabled={downloading}>
-                {downloading ? 'Preparing…' : '⬇ Download DOCX'}
-              </button>
-              <button type="button" className="lf-action-btn primary" onClick={handleOpenInAnalyzer}>
-                📖 Open in Analyzer
-              </button>
-            </div>
-          </div>
-        </div>
+        {downloadStatus && <div className="lf-download-status" id="downloadStatus">{downloadStatus}</div>}
       </div>
 
+      {/* Auto-Fill with AI Modal */}
       {autofillOpen && (
-        <div className="lf-modal-overlay" onClick={() => !autofillLoading && setAutofillOpen(false)}>
+        <div
+          className="lf-modal-backdrop"
+          id="aiModalBackdrop"
+          onClick={() => !autofillLoading && setAutofillOpen(false)}
+        >
           <div className="lf-modal" onClick={(e) => e.stopPropagation()}>
             <div className="lf-modal-head">
-              <h3 className="lf-modal-title">🪄 Auto-Fill with AI</h3>
-              <button type="button" className="lf-modal-close" onClick={() => setAutofillOpen(false)} disabled={autofillLoading}>✕</button>
+              <h3 className="lf-modal-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+                </svg>
+                Auto-Fill with AI
+              </h3>
+              <button
+                type="button"
+                className="lf-modal-close"
+                id="aiModalClose"
+                onClick={() => setAutofillOpen(false)}
+                disabled={autofillLoading}
+              >
+                ✕
+              </button>
             </div>
             <div className="lf-modal-body">
-              <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', margin: 0 }}>
-                Paste raw client facts below. Fields explicitly mentioned will be filled in and marked <strong style={{ color: '#22C55E' }}>green</strong>;
-                anything not stated is left for you to fill and, if required, marked <strong style={{ color: '#EF4444' }}>red</strong>.
-              </p>
               <textarea
-                className="lf-modal-textarea"
-                placeholder="e.g. My client Rohan Mehta lent Rs. 50,000 to Vikram Singh on 3 Jan 2025, due back by 3 Mar 2025. He hasn't paid..."
+                id="aiFactsInput"
+                placeholder="Paste client facts, an email thread, or your notes — AI will extract what it can and fill in the empty fields below. You can review and correct every field before exporting."
                 value={autofillFacts}
                 onChange={(e) => setAutofillFacts(e.target.value)}
-                autoFocus
                 disabled={autofillLoading}
+                autoFocus
               />
+              <div className="lf-modal-note">
+                Only currently empty fields are filled — anything you've already typed is left untouched. AI-filled fields are marked so you know to double-check them.
+              </div>
             </div>
             <div className="lf-modal-footer">
-              <button type="button" className="lf-action-btn" onClick={() => setAutofillOpen(false)} disabled={autofillLoading} style={{ flex: 'none' }}>
+              <button
+                type="button"
+                className="lf-btn lf-btn-ghost"
+                id="aiCancel"
+                onClick={() => setAutofillOpen(false)}
+                disabled={autofillLoading}
+              >
                 Cancel
               </button>
               <button
                 type="button"
-                className="lf-action-btn primary"
-                style={{ flex: 'none' }}
+                className="lf-btn lf-btn-primary"
+                id="aiExtract"
                 onClick={handleAutofillSubmit}
                 disabled={autofillLoading || !autofillFacts.trim()}
               >
-                {autofillLoading ? 'Extracting…' : 'Extract & Fill'}
+                {autofillLoading ? 'Extracting…' : 'Extract & Fill Fields'}
               </button>
             </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
+

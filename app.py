@@ -1531,9 +1531,19 @@ def create_app():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
 
-        query = (request.args.get('query') or '').strip()
+        # Accept `q` as a defensive alias — the Firm Library UI's own
+        # fetch call is the canonical caller and always sends `query`,
+        # but this keeps any other/future caller from silently 400ing
+        # the way the UI once did over a param-name mismatch.
+        query = (request.args.get('query') or request.args.get('q') or '').strip()
         if not query:
             return jsonify({'error': True, 'message': 'Query cannot be empty.'}), 400
+        if len(query) < 3:
+            return jsonify({
+                'error': True,
+                'success': False,
+                'message': 'Search query must be at least 3 characters.',
+            }), 400
 
         try:
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))

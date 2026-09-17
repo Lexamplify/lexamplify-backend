@@ -1354,7 +1354,7 @@ export default function ConflictEngine() {
       const sessionData = {
         version: CACHE_VERSION,
         activeMode: overrides.activeMode !== undefined ? overrides.activeMode : activeMode,
-        docs: (overrides.docs !== undefined ? overrides.docs : docs).map(d => ({ id: d.id, name: d.name, size: d.size })),
+        docs: (overrides.docs !== undefined ? overrides.docs : docs).map(d => ({ id: d.id, name: d.name, size: d.size, text: d.text || '' })),
         activeConflicts: overrides.activeConflicts !== undefined ? overrides.activeConflicts : activeConflicts,
         hasAnalyzed: overrides.hasAnalyzed !== undefined ? overrides.hasAnalyzed : hasAnalyzed,
         savedIds: [...(overrides.savedIds !== undefined ? overrides.savedIds : savedIds)],
@@ -1394,7 +1394,7 @@ export default function ConflictEngine() {
 
       if (s.activeMode) setActiveMode(s.activeMode);
       if (Array.isArray(s.docs)) {
-        setDocs(s.docs.map(d => ({ id: d.id, name: d.name, size: d.size })));
+        setDocs(s.docs.map(d => ({ id: d.id, name: d.name, size: d.size, text: d.text || '' })));
       }
       if (Array.isArray(s.activeConflicts)) setActiveConflicts(s.activeConflicts);
       if (typeof s.hasAnalyzed === 'boolean') setHasAnalyzed(s.hasAnalyzed);
@@ -1621,18 +1621,30 @@ Section 8.1 (Dispute Resolution): Any disputes arising hereunder shall be resolv
         return;
       }
 
+      // Update docs in state with extracted text returned from backend
+      if (res && res.documents && Array.isArray(res.documents)) {
+        setDocs(prev => prev.map(d => {
+          const matched = res.documents.find(rd => rd.name === d.name);
+          return (matched && matched.text) ? { ...d, text: matched.text } : d;
+        }));
+      }
+
       const rawList = (res && Array.isArray(res.conflicts)) ? res.conflicts : [];
       const normalized = rawList.map((c, idx) => normalizeConflict(c, idx));
       const summary = res?.summary || (normalized.length === 0 ? 'No conflicts were found across the documents currently in session.' : `Cross-document analysis identified ${normalized.length} conflict(s).`);
 
       runCounterRef.current += 1;
       const thisRun = runCounterRef.current;
-      resultsCacheRef.current[key] = {
-        conflicts: normalized,
-        summary: summary,
-        run: thisRun,
-        timestamp: new Date().toISOString()
-      };
+      
+      // Only cache positive results so re-runs never get locked into empty results
+      if (normalized.length > 0) {
+        resultsCacheRef.current[key] = {
+          conflicts: normalized,
+          summary: summary,
+          run: thisRun,
+          timestamp: new Date().toISOString()
+        };
+      }
 
       setSavedIds(prev => new Set([...prev].filter(id => normalized.some(c => c.id === id))));
       setReviewedIds(prev => new Set([...prev].filter(id => normalized.some(c => c.id === id))));

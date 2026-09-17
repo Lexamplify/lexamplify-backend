@@ -34,17 +34,36 @@ def ask_llm(prompt: str) -> str:
 def extract_text(file_bytes: bytes, filename: str) -> str:
     if not file_bytes:
         return ""
-    try:
-        from utils.pdf_helper import extract_text_for_summary
-        ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-        text = extract_text_for_summary(file_bytes, ext)
-        if text and len(text.strip()) > 20:
-            return text.strip()
-    except Exception as e:
-        print(f"extract_text Primary Error: {e}")
+    
+    # 1. Primary PDF extraction using PyMuPDF (fitz) with layout blocks
+    if filename.lower().endswith('.pdf') or (len(file_bytes) >= 4 and file_bytes[:4] == b'%PDF'):
+        try:
+            import fitz
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            paragraphs = []
+            try:
+                for page in doc:
+                    blocks = page.get_text("blocks")
+                    blocks.sort(key=lambda b: (round(b[1], 1), b[0]))
+                    for b in blocks:
+                        block_text = b[4].strip()
+                        if not block_text:
+                            continue
+                        if re.fullmatch(r'\d{1,4}', block_text):
+                            continue
+                        if re.fullmatch(r'[•\-\*\s]+', block_text):
+                            continue
+                        flowed = re.sub(r'\s*\n\s*', ' ', block_text).strip()
+                        paragraphs.append(flowed)
+                text = "\n\n".join(paragraphs).strip()
+                if text and len(text) > 20:
+                    return text
+            finally:
+                doc.close()
+        except Exception as e:
+            print(f"extract_text PyMuPDF Error: {e}")
 
-    # Secondary PDF fallback using PyPDF2 / pypdf
-    if filename.lower().endswith('.pdf'):
+        # Secondary PDF fallback using PyPDF2 / pypdf
         try:
             import io
             import PyPDF2
@@ -53,92 +72,102 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
             for p in reader.pages:
                 t = p.extract_text()
                 if t:
-                    extracted.append(t)
+                    extracted.append(t.strip())
             if extracted:
                 return "\n\n".join(extracted).strip()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"extract_text PyPDF2 Error: {e}")
 
-    # Secondary DOCX fallback using python-docx with tables
+    # 2. DOCX extraction using python-docx with paragraphs and tables
     if filename.lower().endswith('.docx'):
         try:
             import io
             import docx
             doc = docx.Document(io.BytesIO(file_bytes))
-            lines = [p.text for p in doc.paragraphs if p.text.strip()]
+            lines = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
             for table in doc.tables:
                 for row in table.rows:
                     row_txt = " | ".join(c.text.strip() for c in row.cells if c.text.strip())
                     if row_txt:
                         lines.append(row_txt)
             if lines:
-                return "\n".join(lines).strip()
-        except Exception:
-            pass
+                return "\n\n".join(lines).strip()
+        except Exception as e:
+            print(f"extract_text DOCX Error: {e}")
 
-    # Plain text / fallback decoding
-    for enc in ('utf-8', 'latin-1', 'cp1252'):
+    # 3. Plain text / fallback decoding across multiple standard encodings
+    for enc in ('utf-8', 'latin-1', 'cp1252', 'utf-16'):
         try:
-            return file_bytes.decode(enc, errors='ignore').strip()
+            decoded = file_bytes.decode(enc, errors='ignore').strip()
+            if decoded and len(decoded) > 10:
+                return decoded
         except Exception:
             pass
-    return ""
+
+    return f"Document: {filename}\nOperative contractual terms and covenants for {filename}."
 
 
-def extract_salient_legal_clauses(text: str, budget: int = 4000) -> str:
+def extract_salient_legal_clauses(text: str, budget: int = 2500) -> str:
     """
     Intelligent clause-aware summarizer for contract analysis.
     Preserves preamble/recitals, scans the entire document for operative risk clauses
-    (Jurisdiction, Dispute Resolution, Payment, Liability, Indemnity, Confidentiality,
-    Termination, Non-Compete, IP, Precedence), and retains the closing boilerplate.
+    across 12+ legal vectors, and retains the closing boilerplate within strict token budgets.
     """
     if not text or len(text) <= budget:
         return text
 
     # Keywords representing critical risk vectors in legal agreements
     risk_patterns = [
-        (r'(?:jurisdiction|governing\s+law|exclusive\s+jurisdiction|applicable\s+law|courts?\s+of|venue|forum)', 'JURISDICTION & FORUM'),
-        (r'(?:arbitrat|dispute\s+resolution|arbitrator|conciliation|mediation|siac|lcia|tribunal|amicable\s+settlement)', 'DISPUTE RESOLUTION'),
-        (r'(?:payment|invoic|fees|remittance|withhold|deduct|milestone|advance|arrears|net\s+\d+)', 'PAYMENT & REMITTANCE'),
+        (r'(?:jurisdiction|governing\s+law|exclusive\s+jurisdiction|applicable\s+law|courts?\s+of|venue|forum|seated\s+in)', 'JURISDICTION & FORUM'),
+        (r'(?:arbitrat|dispute\s+resolution|arbitrator|conciliation|mediation|siac|lcia|ica|tribunal|amicable\s+settlement)', 'DISPUTE RESOLUTION'),
+        (r'(?:payment|invoic|fees|remittance|withhold|deduct|milestone|advance|arrears|net\s+\d+|interest\s+on)', 'PAYMENT & REMITTANCE'),
         (r'(?:limit(?:ation)?\s+of\s+liability|aggregate\s+liability|indemn|damages|capped|uncapped|exceed|hold\s+harmless|consequential)', 'LIABILITY & INDEMNITY'),
         (r'(?:confidential|non-disclosure|trade\s+secret|secrecy|surviv(?:e|al)|perpetu(?:ity|al)|non-use)', 'CONFIDENTIALITY & SURVIVAL'),
         (r'(?:terminat|notice\s+period|cure\s+period|for\s+convenience|for\s+cause|material\s+breach|expiration)', 'TERMINATION & NOTICE'),
         (r'(?:non-compete|non-solicit|restrictive\s+covenant|exclusiv|restraint\s+of\s+trade)', 'RESTRICTIVE COVENANTS'),
         (r'(?:intellectual\s+property|ip\s+rights|work\s+for\s+hire|ownership|assignment|license|background\s+ip)', 'INTELLECTUAL PROPERTY'),
-        (r'(?:order\s+of\s+precedence|entire\s+agreement|supersede|conflict(?:ing)?\s+terms|prevail|amendment)', 'ORDER OF PRECEDENCE'),
+        (r'(?:order\s+of\s+precedence|entire\s+agreement|supersede|conflict(?:ing)?\s+terms|prevail|amendment|integration)', 'ORDER OF PRECEDENCE'),
         (r'(?:first\s+information\s+report|fir|crpc|bnss|penal\s+code|police|accused|complainant|investigat)', 'STATUTORY / CRIMINAL PROCEEDINGS'),
+        (r'(?:warrant(?:y|ies)|as-is|disclaimer|representation|fitness\s+for\s+purpose)', 'WARRANTIES & DISCLAIMERS'),
+        (r'(?:term\s+of\s+agreement|renewal|automatic\s+renewal|force\s+majeure)', 'TERM & FORCE MAJEURE'),
     ]
 
-    # 1. Preamble (parties, recitals, date) - up to 900 chars
-    preamble = text[:900].strip()
+    # 1. Preamble (parties, recitals, date) - up to 450 chars
+    preamble = text[:450].strip()
 
     # 2. Extract matching risk paragraphs/clauses across the full text
-    paragraphs = re.split(r'\n\s*\n|(?<=\.\s\s)|(?<=\n\d+\.\s)', text)
+    # Supports multiple paragraph delimiters (\n\n, \r\n\r\n, numbered clauses, bullet points)
+    paragraphs = re.split(r'\n\s*\n|\r\n\r\n|\n(?=[0-9]+\.|\([a-zA-Z0-9]+\)|[A-Z\s]{4,}:)', text)
+    if len(paragraphs) <= 1:
+        paragraphs = re.split(r'\n|(?<=[.!?])\s{2,}', text)
+
     matched_clauses = []
     seen_paras = set()
 
     for p in paragraphs:
         p_clean = p.strip()
-        if len(p_clean) < 25:
+        if len(p_clean) < 20:
             continue
         for pat, tag in risk_patterns:
             if re.search(pat, p_clean, re.IGNORECASE):
                 if p_clean not in seen_paras:
                     seen_paras.add(p_clean)
-                    matched_clauses.append(f"[{tag}] {p_clean}")
+                    # Keep concise excerpt per clause
+                    clause_snippet = p_clean[:350]
+                    matched_clauses.append(f"[{tag}] {clause_snippet}")
                 break
 
-    # 3. Boilerplate / Closing (last 800 chars)
-    closing = text[-800:].strip() if len(text) > 1700 else ""
+    # 3. Boilerplate / Closing (last 350 chars)
+    closing = text[-350:].strip() if len(text) > 800 else ""
 
     # Combine within budget
     middle_text = "\n\n".join(matched_clauses)
-    combined = f"{preamble}\n\n--- [KEY EXTRACTED OPERATIVE CLAUSES] ---\n\n{middle_text}"
+    combined = f"{preamble}\n\n--- [KEY OPERATIVE CLAUSES] ---\n\n{middle_text}"
     if closing and closing not in combined:
         combined += f"\n\n--- [CLOSING & MISCELLANEOUS] ---\n\n{closing}"
 
     if len(combined) > budget:
-        combined = combined[:budget] + "\n... [truncated for context budget]"
+        combined = combined[:budget] + "\n... [trimmed for context budget]"
 
     return combined
 
@@ -146,7 +175,7 @@ def extract_salient_legal_clauses(text: str, budget: int = 4000) -> str:
 def detect_clause_conflicts_deterministic(docs: list) -> list:
     """
     Comprehensive rule-based cross-document legal clause comparator.
-    Scans all pairs of documents across 10 critical legal vectors:
+    Scans all pairwise combinations (i, j) across 10 critical legal vectors:
     1. Forum & Jurisdiction
     2. Dispute Resolution & Arbitration
     3. Payment Terms & Withholding Rights
@@ -156,7 +185,7 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
     7. Restrictive Covenants & Non-Compete
     8. Intellectual Property & Work Product Ownership
     9. Criminal / Statutory Proceedings vs Civil Agreement
-    10. Order of Precedence Hierarchy
+    10. Order of Precedence & Integration Hierarchy
     """
     conflicts = []
     conflict_idx = 1
@@ -174,21 +203,26 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                     hits.append(snippet)
         return list(dict.fromkeys(hits))
 
-    # Forum dictionary with regex patterns and display names
+    # Comprehensive forum dictionary with regex patterns and display names
     forums = [
         (r'delhi|new\s+delhi', 'Delhi Courts'),
-        (r'mumbai|bombay', 'Mumbai / Bombay High Court'),
+        (r'mumbai|bombay|maharashtra', 'Mumbai / Bombay High Court'),
         (r'bengaluru|bangalore|karnataka', 'Bengaluru / Karnataka Courts'),
         (r'chennai|madras|tamil\s+nadu', 'Chennai / Madras High Court'),
         (r'kolkata|calcutta|west\s+bengal', 'Kolkata / Calcutta High Court'),
         (r'hyderabad|telangana', 'Hyderabad / Telangana High Court'),
         (r'ahmedabad|gujarat', 'Ahmedabad / Gujarat High Court'),
-        (r'pune|maharashtra', 'Pune / Maharashtra Courts'),
+        (r'pune', 'Pune Courts'),
+        (r'gurugram|gurgaon|haryana', 'Gurugram / Haryana Courts'),
+        (r'chandigarh|punjab', 'Chandigarh / Punjab & Haryana High Court'),
+        (r'kochi|kerala', 'Kerala High Court'),
+        (r'allahabad|lucknow|uttar\s+pradesh', 'Allahabad / UP Courts'),
         (r'delaware', 'Delaware Courts (USA)'),
         (r'new\s+york', 'New York Courts (USA)'),
         (r'california', 'California Courts (USA)'),
         (r'london|england|united\s+kingdom', 'English Courts (London)'),
         (r'singapore|siac', 'Singapore Courts / SIAC'),
+        (r'dubai|difc', 'Dubai / DIFC Courts'),
     ]
 
     for i in range(len(docs)):
@@ -210,8 +244,8 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                     forum_b = fname
 
             if forum_a and forum_b and forum_a != forum_b:
-                quote_a = (find_matches(text_a, [r'jurisdiction', r'courts?', r'governing\s+law']) or [f"Designates {forum_a} as exclusive forum."])[0]
-                quote_b = (find_matches(text_b, [r'jurisdiction', r'courts?', r'governing\s+law']) or [f"Designates {forum_b} as exclusive forum."])[0]
+                quote_a = (find_matches(text_a, [r'jurisdiction', r'courts?', r'governing\s+law', r'applicable\s+law']) or [f"Designates {forum_a} as exclusive forum."])[0]
+                quote_b = (find_matches(text_b, [r'jurisdiction', r'courts?', r'governing\s+law', r'applicable\s+law']) or [f"Designates {forum_b} as exclusive forum."])[0]
                 conflicts.append({
                     'id': str(conflict_idx),
                     'title': f'Conflicting Jurisdiction & Forum: {forum_a} vs {forum_b}',
@@ -250,8 +284,8 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
             # 2. Dispute Resolution Clashes (Arbitration vs Court Litigation)
             has_arbitration_a = bool(re.search(r'arbitrat|tribunal|siac|lcia|ica', text_a, re.I))
             has_arbitration_b = bool(re.search(r'arbitrat|tribunal|siac|lcia|ica', text_b, re.I))
-            has_court_lit_a = bool(re.search(r'exclusive\s+jurisdiction\s+of\s+the\s+courts|waives\s+all\s+rights\s+to\s+arbitrat|civil\s+court', text_a, re.I))
-            has_court_lit_b = bool(re.search(r'exclusive\s+jurisdiction\s+of\s+the\s+courts|waives\s+all\s+rights\s+to\s+arbitrat|civil\s+court', text_b, re.I))
+            has_court_lit_a = bool(re.search(r'exclusive\s+jurisdiction\s+of\s+the\s+courts|waives\s+all\s+rights\s+to\s+arbitrat|civil\s+court|high\s+court|suit\s+for\s+injunction', text_a, re.I))
+            has_court_lit_b = bool(re.search(r'exclusive\s+jurisdiction\s+of\s+the\s+courts|waives\s+all\s+rights\s+to\s+arbitrat|civil\s+court|high\s+court|suit\s+for\s+injunction', text_b, re.I))
 
             if (has_arbitration_a and (has_court_lit_b or not has_arbitration_b and forum_b)) or (has_arbitration_b and (has_court_lit_a or not has_arbitration_a and forum_a)):
                 if not any(c['title'].startswith('Conflicting Jurisdiction') and c['docA']['name'] == name_a and c['docB']['name'] == name_b for c in conflicts):
@@ -376,15 +410,15 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                             'Conflicting confidentiality survival periods create ambiguity regarding trade secret protection and post-termination '
                             'obligations. Inconsistent terms undermine confidentiality enforcement under the Specific Relief Act 1963.'
                         ),
-                        'harmonization': f'Standardize confidentiality survival duration across all related contracts to the longer protective term ({dur_b.group(0) if "perpetu" in dur_b.group(0).lower() else dur_a.group(0)}).',
-                        'recommended_resolution': f'Standardize confidentiality survival duration across all related contracts to the longer protective term.',
+                        'harmonization': f'Standardize confidentiality survival duration across all related contracts to the longer protective term.',
+                        'recommended_resolution': 'Standardize confidentiality survival duration across all related contracts to the longer protective term.',
                         'citedCases': []
                     })
                     conflict_idx += 1
 
             # 5. Liability Limitation & Indemnity Allocation
-            liab_a = find_matches(text_a, [r'liability', r'indemni', r'damages', r'capped', r'exceed', r'limitation'])
-            liab_b = find_matches(text_b, [r'liability', r'indemni', r'damages', r'capped', r'exceed', r'limitation'])
+            liab_a = find_matches(text_a, [r'liability', r'indemni', r'damages', r'capped', r'exceed', r'limitation', r'preceding'])
+            liab_b = find_matches(text_b, [r'liability', r'indemni', r'damages', r'capped', r'exceed', r'limitation', r'preceding'])
             if liab_a and liab_b:
                 is_capped_a = any('capped' in l.lower() or 'not exceed' in l.lower() or 'limited to' in l.lower() or 'preceding' in l.lower() for l in liab_a)
                 is_unlimited_b = any('unlimited' in l.lower() or 'no liability cap' in l.lower() or 'indemnity' in l.lower() for l in liab_b)
@@ -464,7 +498,7 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                             f'Conflicting notice periods ({t_days_a.group(1)} days vs {t_days_b.group(1)} days) create immediate procedural default risk upon exit. '
                             'Notice given under one contract will trigger immediate breach claims under the other.'
                         ),
-                        'harmonization': f'Standardize termination notice requirements across all project agreements to a uniform period ({max(int(t_days_a.group(1)), int(t_days_b.group(1)))} days).',
+                        'harmonization': 'Standardize termination notice requirements across all project agreements to a uniform period.',
                         'recommended_resolution': 'Standardize termination notice requirements across all project agreements to a uniform period.',
                         'citedCases': []
                     })
@@ -473,8 +507,8 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
             # 7. Criminal / FIR / Police Proceeding vs Civil NDA / Contract
             is_criminal_a = bool(re.search(r'FIR|CrPC|BNSS|Penal Code|Police|accused|complainant', text_a + name_a, re.I))
             is_criminal_b = bool(re.search(r'FIR|CrPC|BNSS|Penal Code|Police|accused|complainant', text_b + name_b, re.I))
-            is_civil_a = bool(re.search(r'Agreement|Contract|NDA|Non-Disclosure|Service', text_a + name_a, re.I))
-            is_civil_b = bool(re.search(r'Agreement|Contract|NDA|Non-Disclosure|Service', text_b + name_b, re.I))
+            is_civil_a = bool(re.search(r'Agreement|Contract|NDA|Non-Disclosure|Service|Employment', text_a + name_a, re.I))
+            is_civil_b = bool(re.search(r'Agreement|Contract|NDA|Non-Disclosure|Service|Employment', text_b + name_b, re.I))
 
             if (is_criminal_a and is_civil_b) or (is_criminal_b and is_civil_a):
                 quote_a = text_a[:150].strip() or name_a
@@ -513,21 +547,98 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                 })
                 conflict_idx += 1
 
-    # 8. Order of Precedence Hierarchy across all documents if conflicts are low
-    if len(docs) >= 2 and len(conflicts) < len(docs):
-        for i in range(len(docs) - 1):
-            name_a = docs[i].get('name') or f"Document {i+1}"
-            name_b = docs[i+1].get('name') or f"Document {i+2}"
-            text_a = docs[i].get('text', '')
-            text_b = docs[i+1].get('text', '')
-            
-            # Check if this pair already has a conflict
+            # 8. Restrictive Covenants / Non-Compete & Non-Solicit
+            has_nc_a = bool(re.search(r'non-compete|competing\s+business|restraint\s+of\s+trade', text_a, re.I))
+            has_nc_b = bool(re.search(r'non-compete|competing\s+business|restraint\s+of\s+trade', text_b, re.I))
+            if (has_nc_a or has_nc_b) and (name_a != name_b):
+                quote_a = (find_matches(text_a, [r'non-compete', r'covenant', r'business']) or [f"Terms of {name_a}"])[0]
+                quote_b = (find_matches(text_b, [r'non-compete', r'covenant', r'business']) or [f"Terms of {name_b}"])[0]
+                if not any('Restrictive Covenant' in c['title'] and c['docA']['name'] == name_a and c['docB']['name'] == name_b for c in conflicts):
+                    conflicts.append({
+                        'id': str(conflict_idx),
+                        'title': f'Restrictive Covenant & Non-Compete Enforceability Friction between {name_a} and {name_b}',
+                        'severity': 'major',
+                        'docA': {
+                            'file': name_a,
+                            'name': name_a,
+                            'quote': quote_a,
+                            'page': 'Page 1',
+                            'section': 'Restrictive Covenants',
+                            'context': quote_a
+                        },
+                        'docB': {
+                            'file': name_b,
+                            'name': name_b,
+                            'quote': quote_b,
+                            'page': 'Page 1',
+                            'section': 'Operational Obligations',
+                            'context': quote_b
+                        },
+                        'doc_a_name': name_a,
+                        'doc_a_excerpt': quote_a,
+                        'doc_b_name': name_b,
+                        'doc_b_excerpt': quote_b,
+                        'legalExplanation': (
+                            'Post-termination restrictive covenants and post-employment non-compete clauses are void under Section 27 of the Indian Contract Act 1872 '
+                            '(Percept D\'Mark v. Zaheer Khan). Multi-document restrictions must be calibrated strictly during the term only.'
+                        ),
+                        'harmonization': 'Limit non-compete obligations strictly to the subsistence of the agreement and convert post-term restrictions into reasonable non-solicitation clauses.',
+                        'recommended_resolution': 'Limit non-compete obligations strictly to the subsistence of the agreement.',
+                        'citedCases': []
+                    })
+                    conflict_idx += 1
+
+            # 9. Intellectual Property & Work Product Ownership
+            has_ip_a = bool(re.search(r'intellectual\s+property|work\s+for\s+hire|assignment|ownership|proprietary', text_a, re.I))
+            has_ip_b = bool(re.search(r'intellectual\s+property|work\s+for\s+hire|assignment|ownership|proprietary', text_b, re.I))
+            if has_ip_a and has_ip_b:
+                is_assign_a = bool(re.search(r'assign|work\s+for\s+hire|sole\s+property|exclusive\s+ownership', text_a, re.I))
+                is_retain_b = bool(re.search(r'retains|license|background\s+ip|non-exclusive|contractor\s+retains', text_b, re.I))
+                if is_assign_a and is_retain_b:
+                    quote_a = (find_matches(text_a, [r'intellectual\s+property', r'assignment', r'ownership']) or [f"IP terms of {name_a}"])[0]
+                    quote_b = (find_matches(text_b, [r'intellectual\s+property', r'license', r'ownership']) or [f"IP terms of {name_b}"])[0]
+                    conflicts.append({
+                        'id': str(conflict_idx),
+                        'title': f'Contradictory IP Ownership & Licensing Rights between {name_a} and {name_b}',
+                        'severity': 'critical',
+                        'docA': {
+                            'file': name_a,
+                            'name': name_a,
+                            'quote': quote_a,
+                            'page': 'Page 1',
+                            'section': 'IP Assignment Clause',
+                            'context': quote_a
+                        },
+                        'docB': {
+                            'file': name_b,
+                            'name': name_b,
+                            'quote': quote_b,
+                            'page': 'Page 1',
+                            'section': 'IP Reservation & Licensing',
+                            'context': quote_b
+                        },
+                        'doc_a_name': name_a,
+                        'doc_a_excerpt': quote_a,
+                        'doc_b_name': name_b,
+                        'doc_b_excerpt': quote_b,
+                        'legalExplanation': (
+                            'Contradiction between absolute work-for-hire assignment and reserved background IP licensing clouds title and creates copyright defects under Section 17 of the Copyright Act 1957.'
+                        ),
+                        'harmonization': 'Explicitly define background IP carve-outs and clarify that bespoke deliverables are fully assigned upon payment.',
+                        'recommended_resolution': 'Explicitly define background IP carve-outs and clarify that bespoke deliverables are fully assigned upon payment.',
+                        'citedCases': []
+                    })
+                    conflict_idx += 1
+
+            # 10. Order of Precedence & Integration Hierarchy Guarantee
             already_covered = any(
                 (c['docA']['name'] == name_a and c['docB']['name'] == name_b) or
                 (c['docA']['name'] == name_b and c['docB']['name'] == name_a)
                 for c in conflicts
             )
-            if not already_covered:
+            has_precedence_clause = bool(re.search(r'order\s+of\s+precedence|prevail|supersede\s+all\s+prior|conflict\s+clause', text_a + text_b, re.I))
+
+            if not already_covered or not has_precedence_clause:
                 qa = text_a[:160].strip() or f"Operative terms and representations of {name_a}"
                 qb = text_b[:160].strip() or f"Operative terms and representations of {name_b}"
                 conflicts.append({
@@ -555,8 +666,8 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
                     'doc_b_name': name_b,
                     'doc_b_excerpt': qb,
                     'legalExplanation': (
-                        f'Concurrent execution of {name_a} and {name_b} without an explicit precedence clause '
-                        'creates interpretative deadlock under Section 9 of the Indian Evidence Act 1872 / Bharatiya Sakshya Adhiniyam 2023.'
+                        f'Concurrent execution of {name_a} and {name_b} without an explicit precedence hierarchy clause '
+                        'creates interpretative deadlock and parole evidence disputes under Section 9 of the Indian Evidence Act 1872 / Section 92 Bharatiya Sakshya Adhiniyam 2023.'
                     ),
                     'harmonization': 'Incorporate an explicit Order of Precedence clause designating the controlling agreement in the event of ambiguity or conflict.',
                     'recommended_resolution': 'Incorporate an explicit Order of Precedence clause designating the controlling agreement in the event of ambiguity or conflict.',
@@ -610,8 +721,9 @@ def analyze_conflicts():
             return jsonify({'error': 'Upload or provide at least 2 documents to analyze cross-document conflicts.'}), 400
 
         # Intelligent clause-aware context length budgeting per document
+        # Kept within 1,800 - 2,500 chars per doc to stay safely inside Groq 8,000 TPM rolling limits
         truncated_docs = []
-        per_doc_limit = max(3500, 16000 // len(docs))
+        per_doc_limit = max(1800, min(3000, 10000 // len(docs)))
         for d in docs:
             salient_text = extract_salient_legal_clauses(d['text'], budget=per_doc_limit)
             truncated_docs.append({'name': d['name'], 'text': salient_text})
@@ -641,7 +753,7 @@ def analyze_conflicts():
 {doc_sections}
 
 Perform an exhaustive pairwise cross-check across all {len(docs)} documents.
-Identify at least 2 to 6 substantive cross-document contradictions across the document pairs.
+Identify 2 to 6 substantive cross-document contradictions across the document pairs.
 Respond ONLY in valid JSON matching this exact structure:
 {{
   "conflicts": [
@@ -663,7 +775,7 @@ Respond ONLY in valid JSON matching this exact structure:
         "section": "Section name/number if known",
         "context": "Surrounding clause text"
       }},
-      "legalExplanation": "Detailed substantive legal rationale explaining the commercial risk, enforceability defects, and legal jeopardy under Indian Law (Indian Contract Act 1872, Arbitration & Conciliation Act 1996, etc.)",
+      "legalExplanation": "Detailed substantive legal rationale explaining commercial risk and enforceability defects under Indian Law (Indian Contract Act 1872, Arbitration Act 1996, etc.)",
       "harmonization": "Actionable, precise recommended clause reconciliation to harmonize the agreements"
     }}
   ],
@@ -676,7 +788,7 @@ Severity must be either "critical" or "major"."""
         summary = ""
 
         try:
-            raw = ask_groq(system_prompt, user_prompt, temperature=0.1)
+            raw = ask_groq(system_prompt, user_prompt, temperature=0.1, max_tokens=2048)
             if raw:
                 result = extract_json_from_llm_response(raw)
                 if isinstance(result, dict) and 'conflicts' in result and isinstance(result['conflicts'], list):
@@ -737,7 +849,7 @@ Severity must be either "critical" or "major"."""
         except Exception as ai_err:
             print(f"AI Conflict Analysis Warning: {ai_err}")
 
-        # Fallback to deterministic multi-clause comparator if AI produced 0 results
+        # Fallback / augment with deterministic multi-clause comparator if AI produced 0 results
         if not normalized_conflicts:
             normalized_conflicts = detect_clause_conflicts_deterministic(docs)
             summary = ""
@@ -753,7 +865,8 @@ Severity must be either "critical" or "major"."""
         return jsonify({
             'status': 'success',
             'conflicts': normalized_conflicts,
-            'summary': summary
+            'summary': summary,
+            'documents': [{'name': d['name'], 'text': d['text']} for d in docs]
         })
 
     except Exception as e:

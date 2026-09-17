@@ -29,6 +29,7 @@ import PleadingDocument, { validateOpeningDraft } from '../components/warroom/Pl
 import SimulationRoom from '../components/warroom/SimulationRoom';
 import FirmLibrary from '../components/FirmLibrary';
 import FormTemplateLibrary from '../components/FormTemplateLibrary';
+import LegalForms from '../components/LegalForms';
 import CommandPalette from '../components/CommandPalette';
 import { AuthProvider } from '../context/AuthContext';
 
@@ -1162,6 +1163,47 @@ describe('Legal Forms Library', () => {
     // A Contracts & NDAs-only template must no longer be visible once the
     // grid is filtered down to the Court Petitions category.
     expect(screen.queryByText(/Mutual Non-Disclosure Agreement/i)).not.toBeInTheDocument();
+  });
+
+  it('renders drafting workspace with live preview, placeholder chips, and AI autofill', async () => {
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/firm-library/draft', state: { templateId: 'recovery-of-dues' } }]}>
+        <LegalForms />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole('heading', { name: /Legal Notice for Recovery of Dues/i })).toBeInTheDocument();
+    expect(screen.getByText(/Required fields completed/i)).toBeInTheDocument();
+
+    // Verify live preview transforms placeholder chip to bold text on typing
+    const senderInput = screen.getByPlaceholderText("Sender's Name");
+    await userEvent.type(senderInput, 'Advocate Ramesh Rao');
+    const filledValues = screen.getAllByText('Advocate Ramesh Rao');
+    expect(filledValues.length).toBeGreaterThanOrEqual(1);
+    expect(filledValues[0].className).toContain('filled-value');
+
+    // Test AI Auto-fill modal
+    const autofillBtn = screen.getByRole('button', { name: /Auto-Fill with AI/i });
+    await userEvent.click(autofillBtn);
+    expect(screen.getByText(/Extract & Fill Fields/i)).toBeInTheDocument();
+
+    const textarea = screen.getByPlaceholderText(/Paste client facts/i);
+    await userEvent.type(textarea, 'Rohan Mehta lent Rs 2,40,000 to Vikram Traders');
+    const extractBtn = screen.getByRole('button', { name: /Extract & Fill Fields/i });
+    await userEvent.click(extractBtn);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue(/Vikram Traders Pvt. Ltd./i)).toBeInTheDocument();
+    });
+
+    const recipientField = document.getElementById('field-recipient_name');
+    expect(recipientField.className).toContain('ai-touched');
+
+    // Editing clears AI mark
+    const recipientInput = screen.getByDisplayValue(/Vikram Traders Pvt. Ltd./i);
+    await userEvent.clear(recipientInput);
+    await userEvent.type(recipientInput, 'Manual Edit Recipient');
+    expect(recipientField.className).not.toContain('ai-touched');
   });
 });
 

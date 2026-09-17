@@ -672,16 +672,40 @@ const styles = `
     opacity: 1; transform: translateY(0);
   }
 
-  /* ---------- Document Viewer Modal (External DB View) ---------- */
+  /* ---------- Document Viewer Modal (External DB View) ----------
+     Portaled to document.body (see createPortal below) so it can never be
+     trapped by an ancestor's overflow/transform — but that also means it
+     sits OUTSIDE .lib-root in the DOM, so the --bg/--paper/--ink/... custom
+     properties declared on .lib-root above never reach it (CSS variables
+     inherit through the real DOM tree, not JSX nesting). .dv-portal-root
+     re-declares the same light/dark token set as its own inheritance root
+     so every var(--x) below actually resolves instead of rendering
+     transparent. */
+  .dv-portal-root {
+    --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
+    --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
+    --accent:#B24A2E; --accent-soft:#EFDCD1;
+    --major:#9C7A2E; --major-soft:#F1E6C9;
+    --on-accent:#FBF7EE;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  html[data-theme="dark"] .dv-portal-root,
+  :root[data-theme="dark"] .dv-portal-root {
+    --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
+    --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
+    --accent:#CC6B48; --accent-soft:#3B281F;
+    --major:#D9AD5C; --major-soft:#35301C;
+    --on-accent:#FBF7EE;
+  }
   .document-viewer-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 199; animation: fl-fade-in 0.2s ease;
+    position: fixed; inset: 0; background: rgba(15,17,18,0.6); backdrop-filter: blur(2px); z-index: 9000; animation: fl-fade-in 0.2s ease;
   }
   @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
   .document-viewer-modal {
-    position: fixed; inset: 16px; z-index: 200; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; animation: fl-fade-in 0.2s ease;
+    position: fixed; inset: 16px; z-index: 9001; background: var(--paper); color: var(--ink-soft); border: 1px solid var(--rule); border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35); display: flex; flex-direction: column; overflow: hidden; animation: fl-fade-in 0.2s ease;
   }
   @media (min-width: 768px) {
-    .document-viewer-modal { inset: 40px; }
+    .document-viewer-modal { inset: 40px; max-width: 1180px; max-height: 860px; margin: auto; }
   }
   .dv-header {
     display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; border-bottom: 1px solid var(--rule); flex-shrink: 0; background: var(--paper);
@@ -689,14 +713,20 @@ const styles = `
   .dv-header-top {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
   }
+  .dv-title-group {
+    min-width: 0;
+  }
   .document-viewer-title {
-    font-family: 'Fraunces', serif; font-size: 17px; font-weight: 700; line-height: 1.4; color: var(--ink);
+    font-family: 'Fraunces', serif; font-style: italic; font-size: 18px; font-weight: 600; line-height: 1.4; color: var(--ink);
   }
   .document-viewer-close {
-    background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; border-radius: 7px; flex-shrink: 0; display: flex;
+    background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 8px; border-radius: 8px; flex-shrink: 0; display: flex;
   }
   .document-viewer-close:hover {
-    color: var(--accent);
+    background: rgba(0,0,0,0.08); color: var(--accent);
+  }
+  html[data-theme="dark"] .document-viewer-close:hover {
+    background: rgba(255,255,255,0.1);
   }
   .dv-action-bar {
     display: flex; gap: 8px; flex-wrap: wrap;
@@ -707,29 +737,64 @@ const styles = `
   .dv-action-btn:hover {
     border-color: var(--ink); color: var(--ink);
   }
+  .dv-action-btn:disabled {
+    opacity: 0.5; cursor: default; pointer-events: none;
+  }
   .dv-action-btn.done {
     color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
   }
+
+  /* ---------- AI Summary accordion ---------- */
+  .dv-ai-summary {
+    margin: 16px 22px 0; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; flex-shrink: 0;
+  }
+  .dv-ai-summary-title {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace;
+  }
+  .dv-ai-summary-body {
+    font-size: 13px; line-height: 1.7; color: var(--ink-soft); white-space: pre-wrap;
+  }
+  .dv-shimmer-line {
+    height: 12px; border-radius: 4px; margin-bottom: 8px; background: linear-gradient(90deg, var(--paper) 25%, var(--rule) 37%, var(--paper) 63%); background-size: 400% 100%; animation: dv-shimmer 1.4s ease infinite;
+  }
+  @keyframes dv-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+  /* ---------- Loading / error states ---------- */
+  .dv-loading {
+    display: flex; align-items: center; gap: 10px; padding: 22px; font-size: 13px; color: var(--muted);
+  }
+  .dv-spinner {
+    width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; flex-shrink: 0; animation: dv-spin 0.8s linear infinite;
+  }
+  @keyframes dv-spin { to { transform: rotate(360deg); } }
+  .document-viewer-error {
+    margin: 22px; color: var(--accent); font-size: 13px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px;
+  }
+
+  /* min-height:0 is load-bearing: without it a flex child refuses to shrink
+     below its content's height, so a 300,000+ character reconstructed
+     judgment would grow .dv-body (and the whole fixed-height modal) past
+     its container instead of scrolling internally. */
   .dv-body {
-    flex: 1 1 0%; min-height: 0; overflow-y: auto; padding: 22px; width: 100%; box-sizing: border-box; background: var(--bg);
+    flex: 1 1 0%; min-height: 0; overflow: hidden; width: 100%; box-sizing: border-box; background: var(--bg);
   }
   .dv-content-layout {
-    display: flex; gap: 20px; height: 100%; width: 100%;
+    display: flex; height: 100%; width: 100%;
   }
   .dv-sidebar-outline {
-    width: 220px; background: var(--paper) !important; border-right: 1px solid var(--rule) !important; padding: 12px; display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; overflow-y: auto; border-radius: 8px;
+    width: 240px; background: var(--paper); border-right: 1px solid var(--rule); padding: 16px; display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; overflow-y: auto;
   }
   .dv-main-viewer {
-    flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%;
+    flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%; padding: 20px 26px;
   }
   .dv-outline-title {
-    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 4px; font-family: 'IBM Plex Mono', monospace;
   }
   .dv-outline-list {
     display: flex; flex-direction: column; gap: 6px;
   }
   .dv-outline-item {
-    font-size: 11.5px; color: var(--ink-soft); padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent;
+    font-size: 11.5px; color: var(--ink-soft); padding: 6px 9px; border-radius: 6px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent;
   }
   .dv-outline-item:hover {
     background: var(--paper-2); color: var(--ink);
@@ -737,17 +802,83 @@ const styles = `
   .dv-outline-item.header {
     font-weight: 600; color: var(--accent);
   }
+  .dv-outline-item.meta {
+    font-size: 11px; color: var(--muted);
+  }
+  .dv-outline-empty {
+    font-size: 11px; color: var(--muted); font-style: italic;
+  }
+
+  /* ---------- In-document search bar (sits above .dv-text-wrap, does not
+     scroll with it) ---------- */
+  .dv-search-container {
+    display: flex; align-items: center; gap: 10px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; flex-shrink: 0;
+  }
+  .dv-search-container .icon {
+    color: var(--muted); flex-shrink: 0;
+  }
+  .dv-search-input {
+    flex: 1; min-width: 0; background: transparent; border: none; color: var(--ink); font-size: 13px; font-family: inherit;
+  }
+  .dv-search-input:focus {
+    outline: none;
+  }
+  .dv-search-actions {
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  }
+  .dv-search-count {
+    font-size: 11px; color: var(--muted); margin-right: 2px; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; white-space: nowrap;
+  }
+  .dv-search-btn {
+    background: var(--paper); border: 1px solid var(--rule); color: var(--ink-soft); padding: 4px 9px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s;
+  }
+  .dv-search-btn:hover:not(:disabled) {
+    border-color: var(--ink); color: var(--ink);
+  }
+  .dv-search-btn:disabled {
+    opacity: 0.45; cursor: not-allowed;
+  }
+  .dv-search-divider {
+    width: 1px; height: 18px; background: var(--rule); margin: 0 2px; flex-shrink: 0;
+  }
+
   .dv-text-wrap {
-    max-width: 896px; margin: 0 auto; padding: 0 20px; font-size: 13.5px; line-height: 1.7; color: var(--ink-soft);
+    flex: 1; overflow-y: auto; max-width: 780px; margin: 0 auto; width: 100%;
   }
-  .dv-ai-summary {
-    margin: 0 22px 16px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; flex-shrink: 0;
+  .document-viewer-text {
+    font-family: 'Fraunces', serif; font-size: 15px; line-height: 1.75; color: var(--ink-soft);
   }
-  .dv-ai-summary-title {
-    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace;
+
+  /* ---------- Reconstructed judgment typography ---------- */
+  .judg-header-center {
+    text-align: center; font-weight: 700; font-size: 15px; margin: 22px 0 12px; color: var(--ink); text-transform: uppercase; letter-spacing: 0.05em; font-style: normal;
   }
-  .dv-ai-summary-body {
-    font-size: 13px; line-height: 1.7; color: var(--ink-soft); white-space: pre-wrap;
+  .judg-party-role {
+    text-align: center; font-style: italic; margin: 8px 0; color: var(--muted); font-size: 13.5px;
+  }
+  .judg-bench-box {
+    text-align: center; background: var(--paper-2); border: 1px solid var(--rule); padding: 10px 14px; border-radius: 8px; margin: 16px 0; font-size: 13px; color: var(--ink-soft); font-style: normal;
+  }
+  .judg-blockquote {
+    border-left: 3px solid var(--accent); margin: 16px 20px; padding: 8px 16px; background: var(--accent-soft); color: var(--ink-soft); font-style: italic; border-radius: 0 6px 6px 0;
+  }
+  .judg-para {
+    margin: 0 0 1.2em; text-align: justify; text-justify: inter-word; color: inherit;
+  }
+  .judg-para-num {
+    font-weight: bold; margin-right: 6px; color: var(--accent); font-style: normal;
+  }
+  .judg-inline-link {
+    color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent); font-weight: 500; font-style: normal;
+  }
+  .judg-inline-link:hover {
+    border-bottom-style: solid;
+  }
+  .judg-search-match {
+    background: var(--major-soft); border-bottom: 2px solid var(--major); color: inherit; border-radius: 2px;
+  }
+  .judg-search-match.active-match {
+    background: var(--accent-soft); border-bottom-color: var(--accent);
   }
 
   @media (max-width: 880px) {
@@ -773,6 +904,164 @@ const styles = `
     .slideover { width: 100vw; max-width: 100vw; }
   }
 `;
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Auto-links citations (e.g. "AIR 2014 SC 1356", "(2012) 9 SCC 552") and
+// statute section references out to an Indian Kanoon search — the same
+// treatment applied throughout the rest of the app wherever cited case law
+// appears in AI-generated text (see CitationLink.jsx).
+function linkifyCitationsAndStatutes(text) {
+  if (!text) return "";
+  let escaped = escapeHtml(text);
+
+  const citationPattern = /\b(?:AIR|SCR|SCC|JT|SCALE|CRLJ)\s+\d{4}\s+(?:SC|HC)?\s*\d+|\(\d{4}\)\s+\d+\s+(?:SCC|JT|SCALE|SCR)\s+\d+|\[\d{4}\]\s+\d+\s+(?:SCR|SCC)\s+\d+/gi;
+  const statutePattern = /\b(?:Section|Sec\.)\s+\d+\b(?:\s+(?:of|in)\s+[^,.;()]*Act)?|\bOrder\s+\d+\s+Rule\s+\d+\b(?:\s+of\s+[^,.;()]*Code)?|\bOrder\s+\d+\s+Rule\s+\d+\s+CPC\b/gi;
+
+  escaped = escaped.replace(citationPattern, (match) => {
+    const query = encodeURIComponent(`cite: ${match}`);
+    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">⚖️ ${match}</a>`;
+  });
+  escaped = escaped.replace(statutePattern, (match) => {
+    const query = encodeURIComponent(match);
+    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">📜 ${match}</a>`;
+  });
+
+  return escaped;
+}
+
+// Reconstructs a readable judgment (headers, bench boxes, numbered
+// paragraphs, block quotes) out of the flat text /api/document/<case_id>
+// returns — that endpoint joins raw Pinecone chunk text with no structural
+// markup of its own, so paragraph boundaries have to be inferred here from
+// line length, punctuation, and list-marker heuristics. Also builds the
+// outline (jump-to-paragraph) list consumed by the sidebar: capped to the
+// first 15 paragraphs plus every 5th one after that, since a full judgment
+// can run to several hundred numbered paragraphs and listing every one
+// would make the outline itself unusable.
+function parseAndFormatJudgment(rawText) {
+  if (!rawText) return { html: "", outline: [] };
+
+  let text = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rawLines = text.split('\n');
+  const processedLines = [];
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const current = rawLines[i].trim();
+    if (!current) {
+      processedLines.push("");
+      continue;
+    }
+
+    const isListMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\b[IVXDivxd]+\.|\(\d{1,2}\)|\([a-zA-Z]\))$/.test(current);
+    if (isListMarker && i + 1 < rawLines.length) {
+      let nextLine = rawLines[i + 1].trim();
+      while (!nextLine && i + 2 < rawLines.length) {
+        i++;
+        nextLine = rawLines[i + 1].trim();
+      }
+      if (nextLine) {
+        processedLines.push(current + " " + nextLine);
+        i++;
+        continue;
+      }
+    }
+    processedLines.push(current);
+  }
+
+  const paragraphs = [];
+  let currentPara = "";
+
+  for (let i = 0; i < processedLines.length; i++) {
+    const line = processedLines[i];
+
+    if (line === "") {
+      if (currentPara) {
+        paragraphs.push(currentPara);
+        currentPara = "";
+      }
+      continue;
+    }
+
+    if (!currentPara) {
+      currentPara = line;
+      continue;
+    }
+
+    const startsWithMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\(\d{1,2}\)|\([a-zA-Z]\))\s+/.test(line);
+    const isHeader = /^(?:IN THE SUPREME COURT|CIVIL APPELLATE|CIVIL APPEAL|WRIT PETITION|CRIMINAL APPEAL|SLP|JUDGMENT|ORDER|Bench:|Author:)/i.test(line);
+    const prevIsShort = currentPara.length < 55;
+    const prevEndsWithPunct = /[.?!:]$/.test(currentPara);
+    const startsWithCapital = /^[A-Z]/.test(line);
+
+    if (startsWithMarker || isHeader || prevIsShort || (prevEndsWithPunct && startsWithCapital)) {
+      paragraphs.push(currentPara);
+      currentPara = line;
+    } else {
+      currentPara += " " + line;
+    }
+  }
+
+  if (currentPara) {
+    paragraphs.push(currentPara);
+  }
+
+  const outline = [];
+  let paraCount = 0;
+
+  const htmlParagraphs = paragraphs.map((para, index) => {
+    let cleanPara = para.replace(/\s+/g, ' ').trim();
+    if (!cleanPara) return "";
+
+    const id = `judg-para-block-${index}`;
+
+    if (/^(?:IN THE SUPREME COURT OF INDIA|CIVIL APPELLATE JURISDICTION|JUDGMENT|ORDER)$/i.test(cleanPara)) {
+      outline.push({ id, label: cleanPara, type: 'header' });
+      return `<h2 id="${id}" class="judg-header-center">${cleanPara}</h2>`;
+    }
+
+    if (/^(?:Versus|Appellant|Respondent|Appellants|Respondents|\.\.\.\s*Appellant|\.\.\.\s*Respondent)$/i.test(cleanPara) || cleanPara === ".. Appellant" || cleanPara === ".. Respondent") {
+      return `<div class="judg-party-role">${cleanPara}</div>`;
+    }
+
+    if (cleanPara.startsWith('[') && cleanPara.endsWith(']')) {
+      outline.push({ id, label: cleanPara.slice(0, 35) + '...', type: 'meta' });
+      return `<div id="${id}" class="judg-bench-box">${cleanPara}</div>`;
+    }
+
+    const isQuoted = (cleanPara.startsWith('"') && cleanPara.endsWith('"')) || (cleanPara.startsWith('“') && cleanPara.endsWith('”'));
+    let formattedText = linkifyCitationsAndStatutes(cleanPara);
+
+    if (isQuoted && cleanPara.length > 80) {
+      return `<blockquote id="${id}" class="judg-blockquote">${formattedText}</blockquote>`;
+    }
+
+    const paraNumMatch = cleanPara.match(/^(\d{1,3})\.\s+(.*)/);
+    if (paraNumMatch) {
+      paraCount++;
+      const pNum = paraNumMatch[1];
+      if (paraCount <= 15 || paraCount % 5 === 0) {
+        outline.push({ id, label: `Paragraph ${pNum}`, type: 'para' });
+      }
+      return `<p id="${id}" class="judg-para"><span class="judg-para-num">${pNum}.</span> ${linkifyCitationsAndStatutes(paraNumMatch[2])}</p>`;
+    }
+
+    return `<p id="${id}" class="judg-para">${formattedText}</p>`;
+  });
+
+  return {
+    html: htmlParagraphs.filter(p => p).join('\n'),
+    outline,
+  };
+}
 
 export default function FirmLibrary() {
   const navigate = useNavigate();
@@ -831,7 +1120,7 @@ export default function FirmLibrary() {
 
   // Document viewer modal state
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerDoc, setViewerDoc] = useState(null);
+  const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, content }
   const [viewerLoading, setViewerLoading] = useState(false);
   const [viewerError, setViewerError] = useState(null);
   const [copyDone, setCopyDone] = useState(false);
@@ -841,6 +1130,56 @@ export default function FirmLibrary() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryText, setSummaryText] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [matchCount, setMatchCount] = useState(0);
+
+  const parsedResult = useMemo(() => {
+    if (!viewerDoc || !viewerDoc.content) return { html: "", outline: [] };
+    return parseAndFormatJudgment(viewerDoc.content);
+  }, [viewerDoc]);
+
+  // Wraps each match in <mark> after the fact rather than during parsing —
+  // parseAndFormatJudgment's output is real markup (headers, links, blank
+  // paragraphs), so the highlighter has to skip over tags and only touch
+  // text nodes, or it would corrupt href attributes/entities containing the
+  // search term.
+  const highlightedHtml = useMemo(() => {
+    if (!parsedResult.html) return "";
+    if (!searchTerm || searchTerm.length < 3) return parsedResult.html;
+    try {
+      const escapedTerm = searchTerm.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regex = new RegExp(`(${escapedTerm})`, 'gi');
+      let index = 0;
+      const output = parsedResult.html.replace(/(<[^>]+>)|([^<]+)/g, (match, tag, textChunk) => {
+        if (tag) return tag;
+        return textChunk.replace(regex, (m) => {
+          const id = `search-match-${index}`;
+          index++;
+          return `<mark id="${id}" class="judg-search-match">${m}</mark>`;
+        });
+      });
+      setTimeout(() => setMatchCount(index), 0);
+      return output;
+    } catch (e) {
+      console.error('[Document Search] highlight error:', e);
+      return parsedResult.html;
+    }
+  }, [parsedResult.html, searchTerm]);
+
+  useEffect(() => {
+    if (matchCount > 0 && searchTerm) {
+      const matches = document.querySelectorAll('.judg-search-match');
+      matches.forEach((el, idx) => {
+        if (idx === activeMatchIndex) {
+          el.classList.add('active-match');
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          el.classList.remove('active-match');
+        }
+      });
+    }
+  }, [activeMatchIndex, matchCount, searchTerm]);
 
   // Save entries to localStorage
   const persistEntries = (newEntries) => {
@@ -1017,10 +1356,15 @@ Author: ${entry.author}
 
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/firm-library/external-search?q=${encodeURIComponent(extQuery.trim())}`);
+        const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(extQuery.trim())}`);
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || 'External search request failed.');
+          // `data.error` is a boolean status flag on this backend (see
+          // tests/test_backend_full.py), not a message — the human-readable
+          // string is always in `data.message`. Falling back to `data.error`
+          // here previously rendered the literal string "true" in the banner.
+          const rawMsg = data.message;
+          throw new Error(typeof rawMsg === 'string' && rawMsg ? rawMsg : 'External search request failed.');
         }
         setExternalResults(Array.isArray(data.results) ? data.results : []);
       } catch (err) {
@@ -1033,70 +1377,135 @@ Author: ${entry.author}
     return () => clearTimeout(timer);
   }, [extQuery, activeTab]);
 
+  // External Database rows are Pinecone chunks — entry.case_id is the
+  // real key to the FULL judgment, reconstructed server-side from every
+  // chunk sharing that case_id (see /api/document/<case_id> in app.py,
+  // which re-queries Pinecone directly — it's unrelated to, and doesn't
+  // collide with, the case_vault-backed /api/documents/<int:doc_id> route
+  // used by internal vault entries). encodeURIComponent is required: real
+  // case_ids are raw ingestion filenames like "2022_13_342_356_EN.pdf",
+  // and an un-encoded "." in a path segment is otherwise indistinguishable
+  // from a route boundary.
   const openDocumentViewer = async (entry) => {
-    setViewerDoc(entry);
+    const sourceCaseId = entry.case_id || entry.id;
     setViewerOpen(true);
     setViewerLoading(true);
     setViewerError(null);
+    setViewerDoc(null);
+    setCopyDone(false);
+    setPinDone(false);
     setSummaryOpen(false);
     setSummaryText('');
-    setPinDone(false);
-    setCopyDone(false);
-
+    setSearchTerm('');
+    setActiveMatchIndex(0);
+    setMatchCount(0);
+    setSidebarOpen(true);
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${entry.id}`);
-      if (res.ok) {
-        const docData = await res.json();
-        setViewerDoc((prev) => ({ ...prev, ...docData }));
-      }
-    } catch {}
-    setViewerLoading(false);
+      const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(sourceCaseId)}`);
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
+      setViewerDoc({ case_id: data.case_id || sourceCaseId, title: data.title || entry.title, content: data.content });
+    } catch (err) {
+      setViewerError(err.message || 'Failed to load the full judgment text.');
+    } finally {
+      setViewerLoading(false);
+    }
   };
 
   const closeDocumentViewer = () => {
     setViewerOpen(false);
     setViewerDoc(null);
+    setViewerError(null);
   };
 
+  // onMouseDown (not onClick) fires before the browser clears the text
+  // selection on focus change, so window.getSelection() still has it —
+  // this copies whatever passage the reader actually highlighted, not a
+  // fixed excerpt.
   const handleCopyExcerpt = () => {
-    if (!viewerDoc) return;
-    const txt = viewerDoc.content || viewerDoc.title || '';
-    navigator.clipboard.writeText(txt).then(() => {
+    const selected = window.getSelection().toString().trim();
+    if (!selected || !viewerDoc) return;
+    const tagged = `${selected} — Extracted from ${viewerDoc.title}, LexAmplify`;
+    navigator.clipboard.writeText(tagged).then(() => {
       setCopyDone(true);
-      showToastNotification('Excerpt copied to clipboard.');
-      setTimeout(() => setCopyDone(false), 2000);
+      showToastNotification('Excerpt copied with citation tag.');
+      setTimeout(() => setCopyDone(false), 2200);
     });
   };
 
-  const handlePinToVault = () => {
+  const handlePinToVault = async () => {
+    if (!viewerDoc || pinLoading) return;
     setPinLoading(true);
-    setTimeout(() => {
-      setPinLoading(false);
+    try {
+      const res = await fetch(`${API_BASE}/api/vault/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: viewerDoc.case_id,
+          title: viewerDoc.title,
+          content: viewerDoc.content,
+          doc_type: 'Pinned Precedent',
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.message || 'Pin failed.');
       setPinDone(true);
-      showToastNotification(`Pinned "${viewerDoc?.title}" to Case Vault.`);
-    }, 600);
+      showToastNotification('Pinned to Case Vault.');
+      setTimeout(() => setPinDone(false), 2200);
+    } catch (err) {
+      showToastNotification(err.message || 'Pin to Vault failed.');
+    } finally {
+      setPinLoading(false);
+    }
   };
 
   const handleSummarize = async () => {
+    if (!viewerDoc || summaryLoading) return;
     if (summaryOpen && summaryText) return;
     setSummaryOpen(true);
     setSummaryLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/contract/summary`, {
+      const res = await fetch(`${API_BASE}/api/ai/summarize-judgment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_text: viewerDoc?.content || viewerDoc?.title || '' }),
+        body: JSON.stringify({ text: viewerDoc.content }),
       });
       const data = await res.json();
-      setSummaryText(data.summary || 'Summary synthesized from primary authorities.');
-    } catch {
-      setSummaryText('Executive summary: Document sets forth binding legal standards and ratio decidendi under Indian Law.');
+      if (data.error || data.status !== 'success') throw new Error(data.message || 'Summarization failed.');
+      setSummaryText(data.summary);
+    } catch (err) {
+      setSummaryText(`⚠ ${err.message || 'Summarization failed.'}`);
+    } finally {
+      setSummaryLoading(false);
     }
-    setSummaryLoading(false);
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!viewerDoc) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${escapeHtml(viewerDoc.title || 'Legal Document')}</title>
+          <style>
+            body { font-family: Georgia, serif; line-height: 1.8; color: #111; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+            h2 { text-align: center; margin-top: 30px; font-size: 18px; }
+            p { text-align: justify; text-justify: inter-word; margin-bottom: 1.2em; }
+            blockquote { border-left: 3px solid #555; margin: 15px 25px; padding-left: 15px; font-style: italic; color: #444; }
+            .judg-bench-box { border: 1px solid #ddd; padding: 10px; border-radius: 6px; text-align: center; margin: 20px 0; background: #f9f9f9; }
+            .judg-para-num { font-weight: bold; margin-right: 6px; }
+            .judg-party-role { text-align: center; font-style: italic; margin: 10px 0; }
+          </style>
+        </head>
+        <body>
+          <h2>${escapeHtml(viewerDoc.title || 'Legal Document')}</h2>
+          <div>${parsedResult.html}</div>
+          <script>window.onload = function() { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   // Categories list for pills
@@ -1622,23 +2031,32 @@ Author: ${entry.author}
         </div>
       </div>
 
-      {/* ════ Document Viewer Portal Modal ════ */}
+      {/* ════ Document Viewer Portal Modal ════
+          Mounted on document.body via createPortal so it can never be
+          trapped by an ancestor's overflow/transform; .dv-portal-root
+          re-declares the Slate & Rust tokens so it also renders correctly
+          once outside .lib-root's CSS-variable scope (see the stylesheet
+          comment above .dv-portal-root). */}
       {viewerOpen &&
         createPortal(
-          <>
+          <div className="dv-portal-root">
             <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
             <div className="document-viewer-modal">
               <div className="dv-header">
                 <div className="dv-header-top">
-                  <div className="document-viewer-title">{viewerLoading ? 'Loading…' : viewerDoc?.title || 'Document'}</div>
-                  <button type="button" className="document-viewer-close" onClick={closeDocumentViewer}>
+                  <div className="dv-title-group">
+                    <div className="document-viewer-title">
+                      {viewerLoading ? 'Loading…' : (viewerDoc?.title || 'Document')}
+                    </div>
+                  </div>
+                  <button type="button" className="document-viewer-close" onClick={closeDocumentViewer} aria-label="Close document viewer">
                     ✕
                   </button>
                 </div>
 
                 {!viewerLoading && !viewerError && viewerDoc && (
                   <div className="dv-action-bar">
-                    <button type="button" className={`dv-action-btn ${copyDone ? 'done' : ''}`} onClick={handleCopyExcerpt}>
+                    <button type="button" className={`dv-action-btn ${copyDone ? 'done' : ''}`} onMouseDown={handleCopyExcerpt}>
                       {copyDone ? '✓ Copied' : '📋 Copy Excerpt'}
                     </button>
                     <button type="button" className={`dv-action-btn ${pinDone ? 'done' : ''}`} onClick={handlePinToVault} disabled={pinLoading}>
@@ -1658,7 +2076,11 @@ Author: ${entry.author}
                 <div className="dv-ai-summary">
                   <div className="dv-ai-summary-title">⚡ AI Legal Takeaways</div>
                   {summaryLoading ? (
-                    <div>Synthesizing key legal takeaways…</div>
+                    <>
+                      <div className="dv-shimmer-line" style={{ width: '92%' }} />
+                      <div className="dv-shimmer-line" style={{ width: '78%' }} />
+                      <div className="dv-shimmer-line" style={{ width: '85%', marginBottom: 0 }} />
+                    </>
                   ) : (
                     <div className="dv-ai-summary-body">{summaryText}</div>
                   )}
@@ -1666,31 +2088,98 @@ Author: ${entry.author}
               )}
 
               <div className="dv-body">
-                {viewerLoading && <div style={{ padding: '20px' }}>Retrieving full document text…</div>}
-                {!viewerLoading && viewerError && <div style={{ color: 'var(--accent)' }}>{viewerError}</div>}
+                {viewerLoading && (
+                  <div className="dv-loading">
+                    <span className="dv-spinner" />
+                    Retrieving full judgment text from the case-law index…
+                  </div>
+                )}
+                {!viewerLoading && viewerError && (
+                  <div className="document-viewer-error">{viewerError}</div>
+                )}
                 {!viewerLoading && !viewerError && viewerDoc && (
                   <div className="dv-content-layout">
                     {sidebarOpen && (
                       <div className="dv-sidebar-outline">
-                        <div className="dv-outline-title">Outline</div>
+                        <div className="dv-outline-title">Document Outline</div>
                         <div className="dv-outline-list">
-                          <div className="dv-outline-item header">Preamble &amp; Parties</div>
-                          <div className="dv-outline-item">Operative Terms</div>
-                          <div className="dv-outline-item">Dispute Resolution</div>
-                          <div className="dv-outline-item">Final Decree / Order</div>
+                          {parsedResult.outline.length === 0 ? (
+                            <div className="dv-outline-empty">No sections found.</div>
+                          ) : (
+                            parsedResult.outline.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className={`dv-outline-item ${item.type}`}
+                                onClick={() => {
+                                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }}
+                              >
+                                {item.label}
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
                     )}
+
                     <div className="dv-main-viewer">
-                      <div className="dv-text-wrap" style={{ whiteSpace: 'pre-wrap' }}>
-                        {viewerDoc.content || viewerDoc.description || viewerDoc.snippet || viewerDoc.title}
+                      <div className="dv-search-container">
+                        <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                        </svg>
+                        <input
+                          type="text"
+                          placeholder="Search in document text (min 3 chars)..."
+                          className="dv-search-input"
+                          value={searchTerm}
+                          onChange={(e) => { setSearchTerm(e.target.value); setActiveMatchIndex(0); }}
+                        />
+                        {searchTerm.length >= 3 && (
+                          <div className="dv-search-actions">
+                            <span className="dv-search-count">
+                              {matchCount > 0 ? `${activeMatchIndex + 1} of ${matchCount}` : 'No results'}
+                            </span>
+                            <button
+                              type="button"
+                              className="dv-search-btn"
+                              disabled={matchCount === 0}
+                              onClick={() => setActiveMatchIndex((prev) => (prev - 1 + matchCount) % matchCount)}
+                            >
+                              Prev
+                            </button>
+                            <button
+                              type="button"
+                              className="dv-search-btn"
+                              disabled={matchCount === 0}
+                              onClick={() => setActiveMatchIndex((prev) => (prev + 1) % matchCount)}
+                            >
+                              Next
+                            </button>
+                            <button type="button" className="dv-search-btn" onClick={() => { setSearchTerm(''); setActiveMatchIndex(0); }}>
+                              Clear
+                            </button>
+                          </div>
+                        )}
+                        <div className="dv-search-divider" />
+                        <button
+                          type="button"
+                          className="dv-search-btn"
+                          onClick={() => setSidebarOpen((prev) => !prev)}
+                          title="Toggle document outline panel"
+                        >
+                          {sidebarOpen ? '📖 Hide Outline' : '📖 Show Outline'}
+                        </button>
+                      </div>
+
+                      <div className="dv-text-wrap">
+                        <div className="document-viewer-text" dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
                       </div>
                     </div>
                   </div>
                 )}
               </div>
             </div>
-          </>,
+          </div>,
           document.body
         )}
 
