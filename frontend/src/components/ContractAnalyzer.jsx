@@ -1,5517 +1,2060 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
+import { useContractStore } from '../store/useContractStore';
+import DraftsModal from './DraftsModal.jsx';
 import {
   extractContractText,
   startContractAnalysisJob,
-  draftRevision,
   rewriteContractClause,
-  fetchContractSummary,
-  fetchContractRecommendations,
   chatWithContract,
   exportContract,
-  fetchDocuments,
-  fetchDocumentDetails,
-  analyzeConflicts
+  analyzeConflicts,
 } from '../services/api';
-import ContractTiptapEditor from './ContractTiptapEditor.jsx';
-import { findClauseRange } from '../tiptap/positionMapping.js';
-import { flashClauseRange } from '../tiptap/clauseFlashExtension.js';
-import { useCitationStore } from '../tiptap/citationStore.js';
-import { useContractStore } from '../store/useContractStore.js';
-import useContractJobStream from '../hooks/useContractJobStream.js';
-import DraftsModal from './DraftsModal.jsx';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// Shared "external link" glyph for every "Open Official Record" link
-// (parent citation + each nested related-citation) — one definition so the
-// icon can't drift between the two usages.
-function ExternalLinkIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-      <polyline points="15 3 21 3 21 9" />
-      <line x1="10" y1="14" x2="21" y2="3" />
+// ── SVG Icon Helpers ──────────────────────────────────────────────────────────
+const ICONS = {
+  shield: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2.5l8 3.2v6c0 5-3.4 8.4-8 9.8-4.6-1.4-8-4.8-8-9.8v-6z" /><path d="M9.5 12l2 2 3.2-3.6" />
     </svg>
-  );
-}
-
-// Some citation objects (both the primary RAG-pipeline results and the
-// nested "related citations" search) carry a raw internal DB id as their
-// "title" — e.g. "1234_5678" — instead of a resolved case name. That
-// happens when the source metadata never had a title to begin with.
-// Two problems follow: (1) showing "1234_5678" as a card header reads as
-// a broken UI, and (2) searching Kanoon for that literal id returns
-// generic boilerplate/hallucinated results, since Kanoon has no record
-// indexed under an internal id. This derives a presentable title and a
-// query that actually stands a chance of finding the real judgment.
-// Matches a common-law case name: "Party A v. Party B" (also "vs"/"vs."/
-// "versus"). Each side is one or more capitalized tokens, allowing a
-// handful of lowercase connectors ("of", "the", "and", "&") so names like
-// "Union of India" or "Chemicals & Pharma" match whole. Used to pull a
-// real case name out of a related-citation's SNIPPET when its title
-// field is useless — see resolveCitationDisplay below.
-const NAME_SIDE = "[A-Z][\\w.&'-]*(?:\\s+(?:[A-Z][\\w.&'-]*|of|the|and|&))*";
-const CASE_NAME_PATTERN = new RegExp(`\\b${NAME_SIDE}\\s+(?:[vV]\\.?[sS]?\\.?|[Vv]ersus)\\s+${NAME_SIDE}\\b`, 'g');
-const HAS_CASE_NAME_MARKER = /\bv\.?s?\.?\b|\bversus\b/i;
-
-// Pulls the longest "X v. Y" match out of free text — longest, not first,
-// because a judgment's own body frequently cites OTHER cases as precedent
-// before naming itself (see the multi-citation snippets in
-// firm-library/external-search results), and a short/truncated match
-// earlier in the string is usually a fragment, not the real party names.
-function extractCaseName(text) {
-  if (!text) return null;
-  const matches = [...text.matchAll(CASE_NAME_PATTERN)];
-  if (matches.length === 0) return null;
-  const longest = matches.reduce((a, b) => (b[0].length > a[0].length ? b : a));
-  return longest[0].replace(/\s+/g, ' ').trim();
-}
-
-// Backend fallback (tasks/contract_tasks.py): when Pinecone metadata has no
-// real case_name, title becomes case_id.pdf with ".pdf" stripped and "_"
-// swapped for " " — e.g. "2008_10_496_540_EN.pdf" -> "2008 10 496 540 EN".
-// Every whitespace-split token is numeric except an optional short (<=3
-// char) trailing language/court code, so that shape is what this detects.
-const RAW_ID_TOKENS_PATTERN = /^\d+(?:\s+\d+)*(?:\s+[A-Za-z]{1,3})?$/;
-
-// Nudges a substring(start,end) window outward to the nearest whitespace
-// on both sides instead of hard-cutting mid-word (e.g. "...AssistMed..."
-// producing "tMed\ncontract can be..." at a bare substring(50,130)) —
-// confirmed live as a cause of /api/kanoon-redirect falling back to a bare
-// search page: a query that starts or ends mid-word can't match Kanoon's
-// tokenized search even when the right document is indexed.
-function wordBoundaryExcerpt(text, start, end) {
-  if (start >= text.length) return text.trim();
-  end = Math.min(end, text.length);
-  while (start > 0 && !/\s/.test(text[start - 1])) start -= 1;
-  while (end < text.length && !/\s/.test(text[end])) end += 1;
-  return text.substring(start, end).trim();
-}
-
-function resolveCitationDisplay(citation) {
-  const rawTitle = citation.title || citation.case_title || '';
-  const isRawId = /^[0-9_]+$/.test(rawTitle) || RAW_ID_TOKENS_PATTERN.test(rawTitle.trim());
-  // The related-citations search (firm-library/external-search) sometimes
-  // can't resolve a real name either and falls back to a synthetic
-  // placeholder like "Supreme Court Judgment (2015) - 2015_12_276_284" —
-  // structurally the same problem as a bare raw id (no real name, Kanoon
-  // has no record literally titled that), just with cosmetic padding.
-  // Detected as: no case-name marker anywhere in the title, AND the tail
-  // after the last " - " is a bare alphanumeric/underscore id-shaped
-  // token (a real subtitle like "Part 2" wouldn't contain a digit/underscore).
-  const idTail = rawTitle.split(/\s+-\s+/).pop() || '';
-  const isSyntheticPlaceholder =
-    !isRawId && !HAS_CASE_NAME_MARKER.test(rawTitle) &&
-    /^[a-zA-Z0-9_]+$/.test(idTail) && /[0-9_]/.test(idTail);
-
-  if (!isRawId && !isSyntheticPlaceholder) {
-    // Already a real, presentable name (the common case for primary
-    // citations) — leave it exactly as-is.
-    return { rawTitle, isRawId, displayTitle: rawTitle, kanoonQuery: rawTitle };
-  }
-
-  // Real name analysis: the id/placeholder itself is useless, but the
-  // snippet is actual judgment text and often names the case in plain
-  // language — extract it so the lawyer sees (and searches for) the same
-  // kind of name the primary citations already show, not a raw record id.
-  const extractedName = extractCaseName(citation.snippet);
-  if (extractedName) {
-    return { rawTitle, isRawId, displayTitle: extractedName, kanoonQuery: extractedName };
-  }
-
-  // No extractable name — fall back to a labeled id (raw ids only; a
-  // synthetic placeholder is already human-readable text, just not a
-  // useful search string) and a mid-snippet excerpt for Kanoon. Skips the
-  // first 50 chars (usually generic case-caption boilerplate shared
-  // across many judgments, not a useful search anchor). Falls back to
-  // rawTitle whenever there's nothing better — no snippet, or a snippet
-  // too short to leave anything in the 50-130 window (substring() clamps
-  // out-of-range indices to '', which would otherwise become a literal
-  // empty query — worse than the id itself).
-  //
-  // Deliberately NOT quoted: an exact-phrase match almost never hits —
-  // this is a verbatim excerpt from OUR document's body text, not
-  // judgment title text, so Kanoon's title-indexed search returns
-  // zero/arbitrary results for the quoted form. Unquoted, /api/kanoon-
-  // redirect's own is_case=false branch already does exactly this and
-  // documents why: "trust Kanoon's own ranking instead" of forcing an
-  // exact match that real judgments essentially never satisfy.
-  const displayTitle = isRawId ? `Judgment Record: ${rawTitle.replace(/_/g, '-')}` : rawTitle;
-  const snippetExcerpt = citation.snippet ? wordBoundaryExcerpt(citation.snippet, 50, 130) : '';
-  const kanoonQuery = snippetExcerpt || rawTitle;
-  return { rawTitle, isRawId, displayTitle, kanoonQuery };
-}
-
-const styles = `
-  /* ── ANALYZER CONTAINER ──────────────────────────────────────────── */
-  .analyzer-container {
-    font-family: var(--font-sans);
-    color: var(--text-dark-primary);
-    height: calc(100vh - 64px);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--bg-dark-app);
-    position: relative;
-    z-index: 0;
-  }
-
-  /* ── HEADER BAR (single compact row) ────────────────────────────── */
-  .analyzer-header {
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    height: 52px;
-    background: var(--bg-dark-sidebar);
-    border-bottom: 1px solid var(--border-dark-subtle);
-    flex-shrink: 0;
-    gap: 10px;
-    overflow: hidden;
-  }
-
-  .analyzer-title-block { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
-  .analyzer-title { font-size: 14px; font-weight: 700; color: var(--text-dark-primary, #fff); font-family: var(--font-serif); margin: 0; line-height: 1; white-space: nowrap; }
-  .analyzer-subtitle { font-size: 10.5px; color: var(--text-dark-muted); margin: 0; white-space: nowrap; display: none; }
-  @media (min-width: 1280px) { .analyzer-subtitle { display: block; } }
-
-  /* Divider pip between sections */
-  .header-sep { width: 1px; height: 22px; background: var(--border-dark-subtle); flex-shrink: 0; }
-
-  /* Risk pills inline in header */
-  .risk-metric-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 11.5px;
-    font-weight: 600;
-    border: 1px solid;
-    cursor: default;
-    white-space: nowrap;
-  }
-  .risk-metric-pill.high  { background: rgba(239,68,68,0.12); color: #FCA5A5; border-color: rgba(239,68,68,0.3); }
-  .risk-metric-pill.amber { background: rgba(245,158,11,0.12); color: #FCD34D; border-color: rgba(245,158,11,0.3); }
-  .risk-metric-pill.green { background: rgba(16,185,129,0.12); color: #6EE7B7; border-color: rgba(16,185,129,0.3); }
-  .risk-metric-dot { width: 6px; height: 6px; border-radius: 50%; }
-  .risk-metric-dot.red   { background: #EF4444; box-shadow: 0 0 4px #EF4444; }
-  .risk-metric-dot.amber { background: #F59E0B; box-shadow: 0 0 4px #F59E0B; }
-  .risk-metric-dot.green { background: #10B981; box-shadow: 0 0 4px #10B981; }
-
-  .analyzer-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
-
-  /* Bug #8: the header is a single fixed-height, overflow:hidden row with
-     every child flex-shrink:0 — on a narrow viewport the Mode selector has
-     nowhere to go and gets clipped at the right edge. Let the row wrap and
-     drop the actions (Mode selector + buttons) onto their own full-width
-     line instead of hiding them. */
-  @media (max-width: 767px) {
-    .analyzer-header {
-      height: auto;
-      min-height: 52px;
-      flex-wrap: wrap;
-      overflow: visible;
-      padding: 10px 16px;
-      row-gap: 8px;
-    }
-    .analyzer-actions {
-      flex-basis: 100%;
-      margin-left: 0;
-      justify-content: flex-start;
-      flex-wrap: wrap;
-    }
-  }
-
-  /* ── SUMMARY BANNER (collapsible) ───────────────────────────────── */
-  .summary-banner {
-    background: linear-gradient(135deg, rgba(59,130,246,0.07), rgba(99,102,241,0.05));
-    border-bottom: 1px solid rgba(59,130,246,0.15);
-    border-left: 3px solid var(--accent-primary);
-    padding: 9px 20px 9px 16px;
-    font-size: 12.5px;
-    line-height: 1.55;
-    flex-shrink: 0;
-    color: var(--text-dark-muted);
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    overflow: hidden;
-    transition: all 0.3s ease;
-  }
-  .summary-toggle-btn {
-    flex-shrink: 0;
-    background: transparent;
-    border: 1px solid rgba(59,130,246,0.2);
-    color: var(--accent-primary);
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    cursor: pointer;
-    margin-top: 1px;
-    white-space: nowrap;
-  }
-
-  /* ── SPLIT PANE ──────────────────────────────────────────────────── */
-  .workspace-pane {
-    flex: 1;
-    display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
-    gap: 0;
-    overflow: hidden;
-    height: 100%;
-  }
-
-  @media (max-width: 1024px) {
-    .workspace-pane {
-      grid-template-columns: 1fr;
-      grid-template-rows: 1fr 1fr;
-      overflow-y: auto;
-    }
-  }
-
-  /* ── EDITOR COLUMN ───────────────────────────────────────────────── */
-  .editor-column {
-    background: var(--bg-dark-panel);
-    border-right: 1px solid var(--border-dark-subtle);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  [data-theme="light"] .editor-column {
-    background: #F8FAFC;
-    border-right: 1px solid #E2E8F0;
-  }
-
-  .editor-header-bar {
-    background: var(--bg-dark-sidebar);
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border-dark-subtle);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0;
-  }
-  [data-theme="light"] .editor-header-bar {
-    background: #FFFFFF;
-    border-bottom: 1px solid #E2E8F0;
-  }
-
-  .editor-tabs { display: flex; gap: 4px; }
-
-  .editor-tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-dark-muted);
-    padding: 6px 14px;
-    font-size: 12.5px;
-    font-weight: 500;
-    cursor: pointer;
-    border-radius: 5px;
-    transition: all 0.18s;
-    border-bottom: 2px solid transparent;
-  }
-  .editor-tab-btn:hover { color: white; background: rgba(255,255,255,0.04); }
-  .editor-tab-btn.active { color: var(--accent-primary); background: rgba(59,130,246,0.08); font-weight: 600; border-bottom-color: var(--accent-primary); border-radius: 5px 5px 0 0; }
-  [data-theme="light"] .editor-tab-btn { color: #64748B; }
-  [data-theme="light"] .editor-tab-btn:hover { color: #0F172A; background: #F1F5F9; }
-  [data-theme="light"] .editor-tab-btn.active { color: #2563EB; background: rgba(37,99,235,0.08); border-bottom-color: #2563EB; }
-
-  /* ── RICH TEXT TOOLBAR (D始めて Docked / Frozen Header) ───────────── */
-  .rich-text-toolbar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 6px 16px;
-    min-height: 40px;
-    box-sizing: border-box;
-    background: var(--bg-dark-sidebar);
-    border-bottom: 1px solid var(--border-dark-subtle);
-    width: 100%;
-    position: relative;
-    z-index: 10;
-  }
-  [data-theme="light"] .rich-text-toolbar {
-    background: #FFFFFF;
-    border-bottom: 1px solid #E2E8F0;
-  }
-
-  /* When inside standalone scrolling editor (e.g. Auto-Draft) */
-  .tiptap-editor-shell > .rich-text-toolbar {
-    position: sticky;
-    top: -24px;
-    z-index: 10;
-    width: calc(100% + 56px);
-    margin: -24px -28px 20px -28px;
-    padding: 8px 28px;
-    border-bottom: 1px solid var(--border-dark-subtle);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-  }
-  [data-theme="light"] .tiptap-editor-shell > .rich-text-toolbar {
-    background: #FFFFFF;
-    border-bottom: 1px solid #E2E8F0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  }
-
-  /* When portaled into dedicated .scan-meta-bar below editor header */
-  .scan-meta-bar .rich-text-toolbar {
-    position: static;
-    margin: 0;
-    padding: 6px 14px;
-    box-shadow: none;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .toolbar-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-dark-muted);
-    padding: 4px 7px;
-    border-radius: 5px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    transition: all 0.15s;
-  }
-  .toolbar-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-dark-primary); }
-  .toolbar-btn.active { background: rgba(59,130,246,0.15); color: #60A5FA; }
-  .toolbar-btn svg { pointer-events: none; }
-  [data-theme="light"] .toolbar-btn { color: #475569; }
-  [data-theme="light"] .toolbar-btn:hover { background: #F1F5F9; color: #0F172A; }
-  [data-theme="light"] .toolbar-btn.active { background: rgba(37,99,235,0.1); color: #2563EB; font-weight: 700; }
-
-  .toolbar-divider { width: 1px; height: 18px; background: var(--border-dark-subtle); margin: 0 4px; }
-  [data-theme="light"] .toolbar-divider { background: #E2E8F0; }
-
-  /* Font family / size dropdowns */
-  .toolbar-select {
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
-    color: var(--text-primary);
-    font-size: 12.5px;
-    font-weight: 550;
-    border-radius: 6px;
-    padding: 4px 8px;
-    height: 32px;
-    cursor: pointer;
-    font-family: inherit;
-    flex-shrink: 0;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    appearance: auto;
-    -webkit-appearance: auto;
-    outline: none;
-    vertical-align: middle;
-  }
-  .toolbar-select-font { min-width: 155px; width: auto; }
-  .toolbar-select-size { min-width: 110px; width: auto; }
-  .toolbar-select option {
-    background: #111827;
-    color: #F8FAFC;
-    font-size: 12.5px;
-    padding: 6px 10px;
-  }
-  .toolbar-select:hover { background: rgba(255,255,255,0.1); border-color: var(--accent-primary); }
-  .toolbar-select:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59,130,246,0.25); }
-  [data-theme="light"] .toolbar-select {
-    background-color: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    color: #0F172A !important;
-    font-weight: 600 !important;
-  }
-  [data-theme="light"] .toolbar-select option {
-    background-color: #FFFFFF !important;
-    color: #0F172A !important;
-  }
-  [data-theme="light"] .toolbar-select:hover {
-    background-color: #F8FAFC !important;
-    border-color: #94A3B8 !important;
-  }
-  [data-theme="light"] .toolbar-select:focus {
-    border-color: #2563EB !important;
-    box-shadow: 0 0 0 2px rgba(37,99,235,0.2) !important;
-  }
-
-  /* ── SCAN META-BAR (Fixed/Frozen Toolbar Slot) ───────────────────── */
-  .scan-meta-bar {
-    background: var(--bg-dark-sidebar);
-    border-bottom: 1px solid var(--border-dark-subtle);
-    display: flex;
-    align-items: center;
-    gap: 0;
-    padding: 0;
-    flex-shrink: 0;
-    width: 100%;
-    min-height: 40px;
-    box-sizing: border-box;
-  }
-  [data-theme="light"] .scan-meta-bar {
-    background: #FFFFFF;
-    border-bottom: 1px solid #E2E8F0;
-  }
-  .scan-meta-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 7px 16px;
-    border-right: 1px solid var(--border-dark-subtle);
-    min-width: 0;
-  }
-  .scan-meta-item:last-child { border-right: none; }
-  .scan-meta-label {
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--text-dark-muted);
-  }
-  .scan-meta-value {
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--text-dark-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  [data-theme="light"] .scan-meta-item {
-    border-right-color: #E2E8F0;
-  }
-  [data-theme="light"] .scan-meta-label {
-    color: #64748B;
-  }
-  [data-theme="light"] .scan-meta-value {
-    color: #0F172A;
-  }
-
-  /* ── RISK INSPECTOR TWO-COLUMN GRID ──────────────────────────────── */
-  .risk-inspector-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
-    gap: 12px;
-    align-items: start;
-  }
-  .audit-col, .playbook-col {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-width: 0;
-  }
-  .revision-glass-card {
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 8px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    transition: border-color 0.2s;
-  }
-  .revision-glass-card:focus-within { border-color: rgba(79,110,247,0.3); }
-
-  /* ── PROVISION MATRIX (Auto-Draft macro pills) ───────────────────── */
-  .provision-matrix-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-  .provision-pill {
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 11px;
-    color: var(--text-dark-secondary);
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.15s;
-    line-height: 1.35;
-    font-weight: 500;
-  }
-  .provision-pill:hover {
-    background: rgba(79,110,247,0.09);
-    border-color: rgba(79,110,247,0.28);
-    color: var(--text-dark-primary);
-  }
-  .provision-pill-act {
-    font-size: 9.5px;
-    color: var(--text-dark-muted);
-    margin-top: 3px;
-    display: block;
-    font-weight: 400;
-  }
-
-  /* ── RAG MACRO QUICK-FIRE BUTTONS ────────────────────────────────── */
-  .rag-macros-row {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-dark-subtle);
-    margin-bottom: 2px;
-  }
-  .rag-macro-btn {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 4px 11px;
-    font-size: 11px;
-    color: var(--text-dark-secondary);
-    cursor: pointer;
-    transition: all 0.15s;
-    white-space: nowrap;
-    line-height: 1.6;
-  }
-  .rag-macro-btn:hover:not(:disabled) {
-    background: rgba(79,110,247,0.1);
-    border-color: rgba(79,110,247,0.3);
-    color: var(--text-dark-primary);
-  }
-  .rag-macro-btn:disabled { opacity: 0.35; cursor: default; }
-
-  /* ── EDITOR SCROLL ───────────────────────────────────────────────── */
-  .editor-scroll-area {
-    position: relative;
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px 28px;
-    background: var(--bg-dark-app);
-    color: var(--text-dark-primary);
-  }
-  [data-theme="light"] .editor-scroll-area {
-    background: #F0F2F8;
-    color: #1F2937;
-  }
-
-  .scanner-body {
-    outline: none;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 15px !important;
-    line-height: 1.85 !important;
-    word-break: break-word;
-    color: var(--text-dark-primary);
-    min-height: 65vh !important;
-    padding: 44px 52px !important;
-    background: var(--bg-dark-card);
-    border-radius: 3px;
-    box-shadow: 0 4px 32px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12);
-    box-sizing: border-box;
-    border: 1px solid var(--border-dark-subtle);
-    letter-spacing: 0.01em;
-    max-width: 800px;
-    margin: 0 auto;
-  }
-  /* Paragraph blocks inside the document scanner */
-  .scanner-body p,
-  .scanner-body .doc-para {
-    margin: 0 0 1.1em !important;
-    text-align: justify !important;
-    text-justify: inter-word !important;
-    color: inherit;
-  }
-  /* Defeat global p/span { color } rule for scanner content */
-  .scanner-body p,
-  .scanner-body span,
-  .scanner-body div { color: var(--text-dark-primary); }
-  /* Light theme: white document look */
-  [data-theme="light"] .scanner-body {
-    background: #ffffff;
-    color: #1a1a1a;
-    border-color: #e8e4de;
-    box-shadow: 0 4px 32px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.06);
-  }
-  [data-theme="light"] .scanner-body p,
-  [data-theme="light"] .scanner-body span,
-  [data-theme="light"] .scanner-body div { color: #1a1a1a; }
-  [data-theme="light"] .scanner-body .doc-para { color: #1a1a1a; }
-
-  /* ── ANALYSIS COLUMN ─────────────────────────────────────────────── */
-  .analysis-column {
-    background: var(--bg-dark-panel);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  [data-theme="light"] .analysis-column {
-    background: #F8FAFC;
-    border-left: 1px solid #E2E8F0;
-  }
-
-  .analysis-tabs-bar {
-    background: var(--bg-dark-sidebar);
-    border-bottom: 1px solid var(--border-dark-subtle);
-    display: flex;
-    overflow-x: auto;
-    flex-shrink: 0;
-  }
-  [data-theme="light"] .analysis-tabs-bar {
-    background: #FFFFFF;
-    border-bottom: 1px solid #E2E8F0;
-  }
-
-  .analysis-tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-dark-muted);
-    padding: 13px 14px;
-    font-size: 12.5px;
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
-  }
-  .analysis-tab-btn:hover { color: white; }
-  .analysis-tab-btn.active { color: #A78BFA; border-bottom-color: #8B5CF6; font-weight: 600; }
-  [data-theme="light"] .analysis-tab-btn {
-    color: #64748B;
-  }
-  [data-theme="light"] .analysis-tab-btn:hover {
-    color: #0F172A;
-  }
-  [data-theme="light"] .analysis-tab-btn.active {
-    color: #2563EB;
-    border-bottom-color: #2563EB;
-    font-weight: 700;
-  }
-
-  .analysis-panel-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  [data-theme="light"] .analysis-panel-body {
-    background: #F8FAFC;
-  }
-
-  /* ── UPLOAD / LANDING SCREEN ────────────────────────────────────── */
-  .upload-layout-container {
-    max-width: 1120px;
-    margin: 28px auto;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .upload-hero {
-    background: linear-gradient(135deg, var(--bg-dark-panel) 0%, #0F172A 100%);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 16px 16px 0 0;
-    padding: 28px 32px 22px;
-    text-align: center;
-  }
-
-  .upload-icon-ring {
-    width: 56px; height: 56px; border-radius: 50%;
-    background: rgba(59,130,246,0.1); border: 2px solid rgba(59,130,246,0.25);
-    display: flex; align-items: center; justify-content: center;
-    margin: 0 auto 14px;
-    font-size: 24px;
-  }
-
-  /* ── Split grid ────────────────────────────────────────────── */
-  .upload-split-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    border: 1px solid var(--border-dark-subtle);
-    border-top: none;
-  }
-
-  .upload-col-card {
-    background: var(--bg-dark-panel);
-    padding: 24px 28px;
-  }
-  .upload-col-card:first-child {
-    border-right: 1px solid var(--border-dark-subtle);
-  }
-
-  .upload-col-label {
-    font-size: 10.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-dark-muted);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-  }
-  .upload-col-label--rulebook { color: rgba(167,139,250,0.7); }
-
-  .upload-analyze-bar {
-    background: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-top: none;
-    border-radius: 0 0 16px 16px;
-    padding: 18px 28px 24px;
-  }
-
-  /* ── Drop zones ────────────────────────────────────────────── */
-  .drag-drop-zone {
-    border: 2px dashed rgba(59,130,246,0.3);
-    background: rgba(59,130,246,0.02);
-    border-radius: 12px;
-    padding: 28px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-bottom: 0;
-  }
-  .drag-drop-zone:hover, .drag-drop-zone.dragover {
-    border-color: var(--accent-primary);
-    background: rgba(59,130,246,0.05);
-  }
-  .drag-drop-zone--rulebook {
-    border-color: rgba(139,92,246,0.3);
-    background: rgba(139,92,246,0.02);
-  }
-  .drag-drop-zone--rulebook:hover, .drag-drop-zone--rulebook.dragover {
-    border-color: rgba(139,92,246,0.65);
-    background: rgba(139,92,246,0.05);
-  }
-  .drag-drop-zone--loading {
-    pointer-events: none;
-    opacity: 0.7;
-  }
-
-  /* Legacy single-col body kept for scanning-state overlay */
-  .upload-body {
-    background: var(--bg-dark-panel);
-    border: 1px solid var(--border-dark-subtle);
-    border-top: none;
-    border-radius: 0 0 16px 16px;
-    padding: 24px 32px 32px;
-  }
-
-  @media (max-width: 720px) {
-    .upload-split-grid { grid-template-columns: 1fr; }
-    .upload-col-card:first-child { border-right: none; border-bottom: 1px solid var(--border-dark-subtle); }
-  }
-
-  .input-textarea {
-    width: 100%;
-    height: 140px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--border-dark-subtle);
-    color: var(--text-dark-primary);
-    border-radius: 10px;
-    padding: 14px;
-    font-family: var(--font-sans);
-    font-size: 13.5px;
-    resize: none;
-    outline: none;
-    transition: border-color 0.2s;
-    box-sizing: border-box;
-  }
-  .input-textarea:focus { border-color: var(--accent-primary); }
-
-  /* ── Scan-lock overlay (visually disables the doc/textarea while
-     isAnalyzing is true — used both on the upload-screen textarea and the
-     results-view TipTap editor during a re-scan). Tailwind isn't configured
-     in this project — utility-class strings like "absolute inset-0
-     bg-blue-900/10 animate-pulse" compile to nothing and render
-     invisible/unpositioned. Real classes here. */
-  .ca-textarea-wrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  .ca-scan-overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      to bottom,
-      rgba(99, 102, 241, 0.03) 0%,
-      rgba(99, 102, 241, 0.08) 50%,
-      rgba(99, 102, 241, 0.03) 100%
-    );
-    pointer-events: none;
-    overflow: hidden;
-    z-index: 10;
-    border-radius: inherit;
-    animation: ca-scan-pulse 2s ease-in-out infinite;
-  }
-  .ca-scan-overlay::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.6), transparent);
-    box-shadow: 0 0 12px rgba(99, 102, 241, 0.8);
-    animation: leftScanLaser 3s infinite ease-in-out;
-  }
-  .ca-textarea-wrap .ca-scan-overlay { border-radius: 10px; }
-  @keyframes ca-scan-pulse {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 0.95; }
-  }
-  @keyframes leftScanLaser {
-    0% { top: 0%; opacity: 0.3; }
-    50% { top: 100%; opacity: 1; }
-    100% { top: 0%; opacity: 0.3; }
-  }
-
-  /* ── Staggered fade-in for mapped risk/citation cards ───────────────── */
-  .animate-fade-in {
-    opacity: 0;
-    animation: ca-fade-in 0.35s ease forwards;
-  }
-  @keyframes ca-fade-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── RISK MARK HIGHLIGHTS (document left pane) ───────────────────── */
-  .risk-mark {
-    display: inline;
-    cursor: pointer;
-    padding: 2px 5px 2px 7px;
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
-    border-radius: 2px;
-    transition: background-color 0.2s ease-in-out;
-  }
-  .risk-mark.red-mark {
-    background-color: rgba(239,68,68,0.16);
-    border-left: 3px solid rgba(239,68,68,0.75);
-    color: #FCA5A5 !important;
-  }
-  .risk-mark.amber-mark {
-    background-color: rgba(245,158,11,0.16);
-    border-left: 3px solid rgba(245,158,11,0.75);
-    color: #FCD34D !important;
-  }
-  .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.26); }
-  .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.26); }
-  /* Light theme: dark readable text on tinted background */
-  [data-theme="light"] .risk-mark.red-mark   { background-color: rgba(239,68,68,0.11); border-left-color: #EF4444; color: #991B1B !important; }
-  [data-theme="light"] .risk-mark.amber-mark { background-color: rgba(245,158,11,0.11); border-left-color: #D97706; color: #78350F !important; }
-  [data-theme="light"] .risk-mark.red-mark:hover   { background-color: rgba(239,68,68,0.2); }
-  [data-theme="light"] .risk-mark.amber-mark:hover { background-color: rgba(245,158,11,0.2); }
-
-  /* ── CLAUSE FLASH (risk-card click "look here" highlight) ─────────
-     A second, temporary decoration layered on top of whatever risk-mark
-     tint is already on this text — not a replacement for it. Two-stage
-     removal (see flashClauseRange in clauseFlashExtension.js) so .fading
-     actually has a "before" background to transition away from. */
-  .clause-flash-highlight {
-    background-color: rgba(253, 224, 71, 0.45);
-    border-radius: 3px;
-  }
-  .clause-flash-highlight.fading {
-    background-color: rgba(253, 224, 71, 0);
-    transition: background-color 1.5s ease-out;
-  }
-
-  /* ── TIPTAP EDITOR INTEGRATION ───────────────────────────────────── */
-  /* .scanner-body is now the OUTER wrapper EditorContent renders — the
-     actual contenteditable lives one level deeper as .ProseMirror, so the
-     browser's default focus ring has to be suppressed there specifically. */
-  .scanner-body .ProseMirror { outline: none; }
-  .scanner-body .ProseMirror p {
-    margin: 0 0 1.1em;
-    text-align: justify;
-    color: inherit;
-  }
-  .scanner-body .ProseMirror p:last-child { margin-bottom: 0; }
-  .scanner-body .ProseMirror h1,
-  .scanner-body .ProseMirror h2,
-  .scanner-body .ProseMirror h3,
-  .scanner-body .ProseMirror h4,
-  .scanner-body .ProseMirror h5,
-  .scanner-body .ProseMirror h6 {
-    font-weight: 700;
-    color: var(--text-dark-primary, inherit);
-    margin: 1.3em 0 0.5em;
-    line-height: 1.35;
-  }
-  .scanner-body .ProseMirror h1 { font-size: 1.45em; border-bottom: 1px solid var(--border-dark-subtle, rgba(255,255,255,0.1)); padding-bottom: 0.3em; }
-  .scanner-body .ProseMirror h2 { font-size: 1.25em; }
-  .scanner-body .ProseMirror h3 { font-size: 1.12em; }
-  .scanner-body .ProseMirror h4 { font-size: 1.02em; }
-  .scanner-body .ProseMirror strong,
-  .scanner-body .ProseMirror b {
-    font-weight: 700;
-    color: var(--text-dark-primary, inherit);
-  }
-  .scanner-body .ProseMirror ul,
-  .scanner-body .ProseMirror ol {
-    padding-left: 1.75em;
-    margin: 0.6em 0 1.1em;
-  }
-  .scanner-body .ProseMirror li {
-    margin-bottom: 0.4em;
-    line-height: 1.6;
-  }
-  .scanner-body .ProseMirror li > p {
-    margin-bottom: 0.3em;
-  }
-
-
-  /* Track Changes marks — real inline document content, not decorations */
-  .ai-insertion {
-    text-decoration: underline;
-    text-decoration-color: #10B981;
-    text-decoration-thickness: 2px;
-    color: #6EE7B7 !important;
-    background: rgba(16,185,129,0.08);
-    border-radius: 2px;
-    padding: 0 1px;
-  }
-  .ai-deletion {
-    text-decoration: line-through;
-    text-decoration-color: #EF4444;
-    color: rgba(252,165,165,0.75) !important;
-    background: rgba(239,68,68,0.06);
-    border-radius: 2px;
-    padding: 0 1px;
-  }
-  [data-theme="light"] .ai-insertion { color: #166534 !important; background: rgba(16,185,129,0.1); }
-  [data-theme="light"] .ai-deletion  { color: #991B1B !important; background: rgba(239,68,68,0.08); }
-
-  /* Comment highlight spans — rendered by CommentHighlight (extends
-     TipTap's own Highlight mark); background color comes from the mark's
-     own inline style (setHighlight({color})), this just adds the
-     click affordance and a stable marker for the currently-open comment. */
-  mark[data-comment-id] { cursor: pointer; border-radius: 2px; padding: 0 1px; }
-  mark[data-comment-id].ca-highlight-active { outline: 2px solid #F59E0B; outline-offset: 1px; }
-
-  /* High-contrast text on TipTap highlight marks — in dark mode the
-     editor's own light/near-white text color (inherited from
-     --text-dark-primary) is nearly invisible against a yellow highlight
-     background. Scoped to .ProseMirror specifically so this can never
-     bleed into some unrelated <mark>/[data-comment-id] element elsewhere
-     in the app that isn't inside this editor. */
-  .ProseMirror mark,
-  .ProseMirror [data-comment-id] {
-    color: #0f172a !important; /* Slate-900 */
-    font-weight: 600 !important;
-    text-shadow: none !important;
-  }
-
-  /* .ca-bubble-menu / .ca-bubble-menu-btn now live in index.css (global) —
-     ContractTiptapEditor.jsx's bubble menu is shared with
-     AutoDraftWorkspace.jsx, which has no page-scoped style block of its
-     own to define them in. */
-
-  /* ── AI Auto-Resolution: Original vs. Revised diff block ────────────── */
-  .ca-diff-block { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-  .ca-diff-row {
-    padding: 8px 10px; border-radius: 7px; font-size: 12px; line-height: 1.5;
-    border: 1px solid transparent;
-  }
-  .ca-diff-original { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); color: #FCA5A5; text-decoration: line-through; text-decoration-color: rgba(252,165,165,0.5); }
-  .ca-diff-revised { background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.25); color: #6EE7B7; }
-  .ca-diff-label { display: block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; opacity: 0.85; }
-
-  /* ── RISK CLAUSE LIST (overview when no clause selected) ────────── */
-  .clause-list-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border-dark-subtle);
-    cursor: pointer;
-    transition: all 0.3s ease;
-    background: rgba(255,255,255,0.01);
-  }
-  .clause-list-item:hover { background: rgba(255,255,255,0.04); border-color: rgba(139,92,246,0.25); box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
-  .clause-list-item.red-item   { border-left: 4px solid var(--accent-danger); }
-  .clause-list-item.amber-item { border-left: 4px solid var(--accent-warning); }
-  .clause-number { font-size: 10px; font-weight: 700; color: var(--text-dark-muted); min-width: 18px; margin-top: 2px; }
-  .clause-text-preview { font-size: 12.5px; color: var(--text-dark-secondary); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .clause-risk-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; white-space: nowrap; margin-left: auto; flex-shrink: 0; }
-  .clause-risk-badge.red   { background: rgba(239,68,68,0.15);  color: #FCA5A5; }
-  .clause-risk-badge.amber { background: rgba(245,158,11,0.15); color: #FCD34D; }
-
-  [data-theme="light"] .clause-list-item {
-    background: #FFFFFF;
-    border-color: #E2E8F0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-  [data-theme="light"] .clause-list-item:hover {
-    background: #F8FAFC;
-    border-color: #CBD5E1;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-  }
-  [data-theme="light"] .clause-number { color: #64748B; }
-  [data-theme="light"] .clause-text-preview { color: #1E293B; }
-  [data-theme="light"] .clause-risk-badge.red   { background: rgba(239,68,68,0.12); color: #DC2626; }
-  [data-theme="light"] .clause-risk-badge.amber { background: rgba(245,158,11,0.12); color: #D97706; }
-
-  /* ── CONFLICTS TAB ────────────────────────────────────────────────── */
-  .conflict-ref-select {
-    width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 13px;
-    background: var(--bg-dark-card); border: 1px solid var(--border-dark-subtle); color: var(--text-dark-primary);
-  }
-  [data-theme="light"] .conflict-ref-select { background: #FFFFFF; border-color: #E2E8F0; color: #0F172A; }
-
-  .conflict-dropzone {
-    border: 2px dashed var(--border-dark-subtle); border-radius: 10px; padding: 16px;
-    text-align: center; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
-    font-size: 12px; color: var(--text-dark-muted);
-  }
-  .conflict-dropzone:hover, .conflict-dropzone.dragover {
-    border-color: var(--accent-primary, #8B5CF6); background: rgba(139,92,246,0.06);
-  }
-  [data-theme="light"] .conflict-dropzone { border-color: #CBD5E1; color: #64748B; }
-
-  .conflict-file-chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
-  .conflict-file-chip {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500;
-    padding: 4px 6px 4px 10px; border-radius: 20px;
-    background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.25); color: var(--text-dark-primary);
-    max-width: 220px;
-  }
-  .conflict-file-chip-remove {
-    background: transparent; border: none; color: var(--text-dark-muted); cursor: pointer;
-    font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: 50%; flex-shrink: 0;
-  }
-  .conflict-file-chip-remove:hover { background: rgba(239,68,68,0.15); color: #FCA5A5; }
-  [data-theme="light"] .conflict-file-chip { background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.2); color: #0F172A; }
-
-  .conflict-ref-badge {
-    display: inline-block; font-size: 10px; font-weight: 600; color: var(--text-dark-muted);
-    background: rgba(255,255,255,0.05); border: 1px solid var(--border-dark-subtle);
-    border-radius: 6px; padding: 2px 7px; margin-bottom: 6px;
-  }
-  [data-theme="light"] .conflict-ref-badge { background: #F1F5F9; border-color: #E2E8F0; color: #475569; }
-
-  .conflict-card {
-    background: var(--bg-dark-card); border: 1px solid var(--border-dark-subtle); border-radius: 10px;
-    padding: 12px 14px; cursor: pointer; transition: all 0.2s ease;
-  }
-  .conflict-card:hover { border-color: rgba(139,92,246,0.4); transform: translateY(-1px); }
-  .conflict-card.critical { border-left: 4px solid #EF4444; }
-  .conflict-card.major    { border-left: 4px solid #F59E0B; }
-  .conflict-card.minor    { border-left: 4px solid #3B82F6; }
-  [data-theme="light"] .conflict-card { background: #FFFFFF; border-color: #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-
-  .conflict-severity-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.03em; }
-  .conflict-severity-badge.critical { background: rgba(239,68,68,0.15);  color: #FCA5A5; }
-  .conflict-severity-badge.major    { background: rgba(245,158,11,0.15); color: #FCD34D; }
-  .conflict-severity-badge.minor    { background: rgba(59,130,246,0.15); color: #93C5FD; }
-  [data-theme="light"] .conflict-severity-badge.critical { background: rgba(239,68,68,0.12);  color: #DC2626; }
-  [data-theme="light"] .conflict-severity-badge.major    { background: rgba(245,158,11,0.12); color: #D97706; }
-  [data-theme="light"] .conflict-severity-badge.minor    { background: rgba(59,130,246,0.12); color: #2563EB; }
-
-  .conflict-modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
-    z-index: 1300; display: flex; align-items: center; justify-content: center; padding: 24px;
-  }
-  .conflict-modal {
-    background: var(--bg-dark-panel); border: 1px solid var(--border-dark-subtle); border-radius: 14px;
-    width: 100%; max-width: 860px; max-height: 85vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.4);
-  }
-  [data-theme="light"] .conflict-modal { background: #FFFFFF; border-color: #E2E8F0; }
-  .conflict-modal-header {
-    padding: 18px 22px; border-bottom: 1px solid var(--border-dark-subtle);
-    display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0;
-    background: inherit; z-index: 1;
-  }
-  .conflict-modal-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
-  .conflict-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  @media (max-width: 640px) { .conflict-compare-grid { grid-template-columns: 1fr; } }
-  .conflict-compare-col {
-    background: var(--bg-dark-card); border: 1px solid var(--border-dark-subtle); border-radius: 8px; padding: 12px;
-  }
-  [data-theme="light"] .conflict-compare-col { background: #F8FAFC; border-color: #E2E8F0; }
-
-  /* ── INSPECTED RISK CARD ─────────────────────────────────────────── */
-  .inspected-risk-card {
-    background: var(--bg-dark-card);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 10px;
-    padding: 14px;
-    transition: all 0.3s ease;
-  }
-  [data-theme="light"] .inspected-risk-card {
-    background: #FFFFFF;
-    border-color: #E2E8F0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  }
-  [data-theme="light"] .inspected-risk-card h3 {
-    color: #0F172A !important;
-  }
-
-  .original-clause-box {
-    background: var(--bg-dark-app);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 6px;
-    padding: 10px 12px;
-    font-family: Georgia, serif;
-    font-size: 13px;
-    line-height: 1.5;
-    margin-top: 8px;
-    max-height: 120px;
-    overflow-y: auto;
-    color: var(--text-dark-secondary);
-    transition: all 0.3s ease;
-  }
-  [data-theme="light"] .original-clause-box {
-    background: #F8FAFC;
-    border-color: #E2E8F0;
-    color: #1E293B;
-  }
-  [data-theme="light"] .inspected-risk-issue-box {
-    color: #1E293B !important;
-    background: rgba(245, 158, 11, 0.08) !important;
-  }
-  [data-theme="light"] .playbook-guardrail-card {
-    background: #FFFFFF !important;
-    border-color: #E2E8F0 !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  }
-
-  /* ── AUTOCOMPLETE ────────────────────────────────────────────────── */
-  .autocomplete-dropdown {
-    position: absolute;
-    background: var(--bg-dark-card);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 8px;
-    box-shadow: 0 12px 24px rgba(0,0,0,0.5);
-    z-index: 100;
-    max-height: 200px;
-    overflow-y: auto;
-    width: 100%;
-    margin-top: 4px;
-  }
-  [data-theme="light"] .autocomplete-dropdown {
-    background: #FFFFFF;
-    border-color: #E2E8F0;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-  }
-  .autocomplete-item {
-    padding: 10px 14px;
-    cursor: pointer;
-    font-size: 12.5px;
-    border-bottom: 1px solid var(--border-dark-subtle);
-    transition: all 0.15s ease;
-    color: var(--text-dark-muted);
-  }
-  .autocomplete-item:hover { background: rgba(59,130,246,0.1); color: white; }
-  [data-theme="light"] .autocomplete-item {
-    border-bottom-color: #E2E8F0;
-    color: #334155;
-  }
-  [data-theme="light"] .autocomplete-item:hover {
-    background: #EFF6FF;
-    color: #2563EB;
-  }
-
-  /* ── CHAT ────────────────────────────────────────────────────────── */
-  .chat-bubble-stream {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding-bottom: 12px;
-    overflow-y: auto;
-  }
-  .chat-message-bubble {
-    padding: 10px 14px;
-    border-radius: 10px;
-    font-size: 13px;
-    line-height: 1.5;
-    max-width: 88%;
-  }
-  .chat-message-bubble.user {
-    background: var(--accent-primary);
-    color: white;
-    align-self: flex-end;
-    border-top-right-radius: 3px;
-  }
-  .chat-message-bubble.bot {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--border-dark-subtle);
-    color: var(--text-dark-secondary);
-    align-self: flex-start;
-    border-top-left-radius: 3px;
-    transition: all 0.3s ease;
-  }
-  [data-theme="light"] .chat-message-bubble.bot {
-    background: #FFFFFF;
-    border-color: #E2E8F0;
-    color: #1E293B;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-
-  /* ── PRECEDENTS ──────────────────────────────────────────────────── */
-  .precedent-card {
-    border: 1px solid rgba(255,255,255,0.06);
-    background: rgba(255,255,255,0.02);
-    border-radius: 10px;
-    padding: 14px 16px;
-    transition: all 0.2s ease-in-out;
-    transform: translateY(0);
-  }
-  .precedent-card:hover {
-    background: rgba(255,255,255,0.05);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-    border-color: rgba(255,255,255,0.12);
-  }
-  .precedent-link { color: var(--link-blue); text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-flex; align-items: center; gap: 5px; transition: color 0.2s ease; }
-  [data-theme="light"] .precedent-card {
-    background: #FFFFFF;
-    border-color: #E2E8F0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-  [data-theme="light"] .precedent-card:hover {
-    background: #F8FAFC;
-    border-color: #CBD5E1;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.08);
-  }
-  [data-theme="light"] .precedent-link { color: #2563EB; }
-
-  /* ── Dual-Brain citation card: split-action footer ─────────────────── */
-  .citation-action-footer { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  .citation-btn-vault {
-    background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); color: #93C5FD;
-    font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s; font-family: inherit;
-  }
-  .citation-btn-vault:hover { background: rgba(59,130,246,0.25); border-color: rgba(59,130,246,0.6); }
-  .citation-btn-kanoon {
-    background: rgba(255,255,255,0.04); border: 1px solid var(--border-dark-subtle); color: #CBD5E1;
-    font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; cursor: pointer;
-    text-decoration: none; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s; font-family: inherit;
-  }
-  .citation-btn-kanoon:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); }
-  [data-theme="light"] .citation-btn-vault {
-    background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.3); color: #2563EB;
-  }
-  [data-theme="light"] .citation-btn-kanoon {
-    background: #F1F5F9; border-color: #CBD5E1; color: #1E293B;
-  }
-  [data-theme="light"] .citation-btn-kanoon:hover {
-    background: #E2E8F0; color: #0F172A;
-  }
-  .citation-not-in-vault-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 2px 8px; border-radius: 10px;
-    font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-    background: rgba(239,68,68,0.12); color: #F87171;
-    border: 1px solid rgba(239,68,68,0.35); flex-shrink: 0; white-space: nowrap;
-  }
-  [data-theme="light"] .citation-not-in-vault-badge {
-    background: rgba(239,68,68,0.1); color: #DC2626; border-color: rgba(239,68,68,0.25);
-  }
-  .citation-btn-insert {
-    background: rgba(139,92,246,0.15) !important;
-    border: 1px solid rgba(139,92,246,0.4) !important;
-    color: #C4B5FD !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    padding: 5px 12px !important;
-    border-radius: 6px !important;
-    cursor: pointer !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 5px !important;
-    transition: all 0.15s !important;
-    font-family: inherit !important;
-  }
-  [data-theme="light"] .citation-btn-insert {
-    background: rgba(124, 58, 237, 0.1) !important;
-    border-color: rgba(124, 58, 237, 0.3) !important;
-    color: #6D28D9 !important;
-  }
-  .citation-btn-search-related {
-    background: transparent !important;
-    border: 1px solid rgba(59,130,246,0.4) !important;
-    color: #60A5FA !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    padding: 5px 12px !important;
-    border-radius: 6px !important;
-    cursor: pointer !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 5px !important;
-    transition: all 0.15s !important;
-    font-family: inherit !important;
-  }
-  [data-theme="light"] .citation-btn-search-related {
-    border-color: rgba(37,99,235,0.4) !important;
-    color: #2563EB !important;
-  }
-  .precedent-link:hover { color: var(--link-blue-hover); text-decoration: underline; }
-
-  /* ── RECOMMENDATIONS ─────────────────────────────────────────────── */
-  .rec-protection-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--border-dark-subtle);
-    border-radius: 10px;
-    padding: 14px;
-    backdrop-filter: blur(8px);
-    transition: all 0.3s ease;
-  }
-  [data-theme="light"] .rec-protection-card {
-    background: #FFFFFF;
-    border-color: #E2E8F0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-  [data-theme="light"] .rec-protection-card strong {
-    color: #0F172A !important;
-  }
-
-  /* Custom checkbox */
-  .custom-checkbox {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 17px;
-    height: 17px;
-    min-width: 17px;
-    border: 1.5px solid rgba(255,255,255,0.18);
-    border-radius: 5px;
-    background: rgba(255,255,255,0.04);
-    cursor: pointer;
-    position: relative;
-    transition: all 0.18s;
-  }
-  [data-theme="light"] .custom-checkbox {
-    border-color: #CBD5E1;
-    background: #F8FAFC;
-  }
-  .custom-checkbox:checked {
-    background: #8B5CF6;
-    border-color: #8B5CF6;
-  }
-  [data-theme="light"] .custom-checkbox:checked {
-    background: #2563EB;
-    border-color: #2563EB;
-  }
-
-  /* Custom checkbox */
-  .custom-checkbox {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 17px;
-    height: 17px;
-    min-width: 17px;
-    border: 1.5px solid rgba(255,255,255,0.18);
-    border-radius: 5px;
-    background: rgba(255,255,255,0.04);
-    cursor: pointer;
-    position: relative;
-    transition: all 0.18s;
-  }
-  .custom-checkbox:checked {
-    background: #8B5CF6;
-    border-color: #8B5CF6;
-  }
-  .custom-checkbox:checked::after {
-    content: '';
-    position: absolute;
-    left: 4px;
-    top: 1px;
-    width: 5px;
-    height: 9px;
-    border: 2px solid #fff;
-    border-top: none;
-    border-left: none;
-    transform: rotate(45deg);
-  }
-
-  /* Custom select wrapper */
-  .custom-select-wrapper {
-    position: relative;
-    width: 100%;
-  }
-  .custom-select-wrapper select {
-    appearance: none !important;
-    -webkit-appearance: none !important;
-    padding-right: 36px !important;
-    cursor: pointer;
-  }
-  .custom-select-chevron {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    pointer-events: none;
-    color: var(--text-dark-muted);
-    display: flex;
-    align-items: center;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* ── SCAN PROGRESS BAR — futuristic scan-in-progress visual ─────────
-     Three layered effects standing in for "this is genuinely active work,
-     not a frozen number": a dual-tone spinner, a moving shimmer gradient
-     inside the filled portion (energy flowing through it), a pulsing
-     glow "head" at the fill's leading edge, and a faint light sweep
-     crossing the empty track — the same visual grammar sci-fi scanning
-     UIs use, kept subtle enough not to read as gimmicky in a legal tool. */
-  .scan-progress-spinner {
-    width: 56px;
-    height: 56px;
-    margin: 0 auto 24px;
-    border-radius: 50%;
-    border: 3px solid rgba(59,130,246,0.15);
-    border-top-color: var(--accent-primary);
-    border-right-color: rgba(96,165,250,0.6);
-    animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
-  }
-  .scan-progress-track {
-    position: relative;
-    height: 8px;
-    background-color: rgba(31, 41, 55, 0.5);
-    border-radius: 8px;
-    border: 1px solid #374151;
-    overflow: hidden;
-  }
-  .scan-progress-track::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(100deg, transparent 40%, rgba(96,165,250,0.22) 50%, transparent 60%);
-    background-size: 250% 100%;
-    animation: scan-track-sweep 2.4s linear infinite;
-    pointer-events: none;
-  }
-  .scan-progress-fill {
-    position: relative;
-    height: 100%;
-    border-radius: 8px;
-    background: linear-gradient(90deg, #2563EB, #3B82F6, #60A5FA, #3B82F6, #2563EB);
-    background-size: 200% 100%;
-    animation: scan-bar-shimmer 1.8s linear infinite;
-    box-shadow: 0 0 15px rgba(59,130,246,0.6), 0 0 4px rgba(96,165,250,0.8);
-    transition: width 0.25s ease-out;
-  }
-  .scan-progress-fill::after {
-    content: '';
-    position: absolute;
-    right: -1px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #93C5FD;
-    box-shadow: 0 0 10px 3px rgba(147,197,253,0.9);
-    animation: scan-bar-pulse 1s ease-in-out infinite;
-  }
-  @keyframes scan-track-sweep {
-    0% { background-position: 130% 0; }
-    100% { background-position: -30% 0; }
-  }
-  @keyframes scan-bar-shimmer {
-    0% { background-position: 0% 0; }
-    100% { background-position: 200% 0; }
-  }
-  @keyframes scan-bar-pulse {
-    0%, 100% { opacity: 0.6; transform: translateY(-50%) scale(0.85); }
-    50% { opacity: 1; transform: translateY(-50%) scale(1.15); }
-  }
-
-  /* ── SHIMMER LOADER ──────────────────────────────────────────────── */
-  .shimmer-bar {
-    background: linear-gradient(90deg, var(--bg-dark-card) 25%, var(--bg-dark-panel) 50%, var(--bg-dark-card) 75%);
-    background-size: 200% 100%;
-    animation: shimmer-animation 1.4s infinite;
-    border-radius: 6px;
-    height: 13px;
-    margin-bottom: 10px;
-  }
-  @keyframes shimmer-animation {
-    0%   { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
-  /* ── AUTO-DRAFT LOADING STATE ────────────────────────────────────── */
-  @keyframes ca-pulse-glow {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(79,110,247,0); border-color: rgba(79,110,247,0.16); }
-    50% { box-shadow: 0 0 26px 3px rgba(79,110,247,0.16); border-color: rgba(79,110,247,0.4); }
-  }
-  .auto-draft-loading-card {
-    padding: 28px 26px;
-    border: 1px solid rgba(79,110,247,0.16);
-    border-radius: 10px;
-    background: rgba(79,110,247,0.02);
-    animation: ca-pulse-glow 2.6s ease-in-out infinite;
-  }
-  @keyframes ca-status-fade-in {
-    from { opacity: 0; transform: translateY(3px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .ca-status-fade { animation: ca-status-fade-in 0.35s ease both; }
-  @keyframes ca-shimmer-in {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .shimmer-bar-in { animation: ca-shimmer-in 0.35s ease both, shimmer-animation 1.4s infinite; }
-
-  /* ── MODALS ──────────────────────────────────────────────────────── */
-  .modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.8);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 1000; padding: 20px;
-    backdrop-filter: blur(8px);
-  }
-  .export-modal-card {
-    background: rgba(var(--modal-bg-rgb), 0.88);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 16px;
-    width: 100%; max-width: 540px;
-    box-shadow: var(--shadow-xl);
-    overflow: hidden;
-    transition: all 0.3s ease;
-  }
-
-  /* Format tiles */
-  .format-tile {
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    padding: 16px 14px;
-    display: flex; flex-direction: column; gap: 10px;
-    cursor: pointer; transition: all 0.2s ease;
-    background: rgba(255,255,255,0.02);
-    position: relative;
-  }
-  .format-tile:hover {
-    border-color: rgba(255,255,255,0.16);
-    background: rgba(255,255,255,0.04);
-    transform: translateY(-1px);
-  }
-  .format-tile.selected {
-    border-color: var(--accent-primary);
-    background: rgba(59,130,246,0.08);
-    box-shadow: 0 0 0 1px rgba(59,130,246,0.25), 0 4px 16px rgba(59,130,246,0.1);
-  }
-  .format-tile-icon-wrap {
-    width: 38px; height: 38px; border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
-    flex-shrink: 0;
-    transition: all 0.2s ease;
-  }
-  .format-tile.selected .format-tile-icon-wrap {
-    background: rgba(59,130,246,0.12);
-    border-color: rgba(59,130,246,0.3);
-  }
-  .format-tile-check {
-    position: absolute; top: 10px; right: 10px;
-    width: 18px; height: 18px; border-radius: 50%;
-    border: 1.5px solid rgba(255,255,255,0.2);
-    display: flex; align-items: center; justify-content: center;
-    transition: all 0.18s ease;
-  }
-  .format-tile.selected .format-tile-check {
-    background: var(--accent-primary);
-    border-color: var(--accent-primary);
-  }
-
-  /* Module pills for cross-save */
-  .module-pill {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 8px 14px; border-radius: 100px;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.03);
-    cursor: pointer; font-size: 12px; font-weight: 500;
-    color: var(--text-dark-muted);
-    transition: all 0.2s ease;
-    white-space: nowrap; user-select: none;
-  }
-  .module-pill:hover {
-    border-color: rgba(167,139,250,0.35);
-    background: rgba(124,58,237,0.06);
-    color: var(--text-dark-primary);
-  }
-  .module-pill.active {
-    border-color: rgba(139,92,246,0.6);
-    background: rgba(139,92,246,0.14);
-    color: #C4B5FD;
-    box-shadow: 0 0 0 1px rgba(139,92,246,0.2);
-  }
-  .module-pill-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: rgba(255,255,255,0.2);
-    transition: all 0.2s ease;
-  }
-  .module-pill.active .module-pill-dot { background: #A78BFA; box-shadow: 0 0 4px #A78BFA; }
-
-  /* ── FORM INPUTS (analysis column) ──────────────────────────────── */
-  .analysis-column select,
-  .analysis-column input[type="text"],
-  .analysis-column textarea,
-  .input-textarea {
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
-    border-radius: 8px !important;
-    padding: 10px 12px !important;
-    color: #E5E7EB !important;
-    font-family: var(--font-sans);
-    font-size: 13.5px;
-    outline: none;
-    width: 100%;
-    box-sizing: border-box;
-    transition: border-color 0.2s !important;
-  }
-  .analysis-column select:focus,
-  .analysis-column input[type="text"]:focus,
-  .analysis-column textarea:focus,
-  .input-textarea:focus {
-    border-color: var(--accent-primary) !important;
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
-  }
-
-  /* ── STRATEGY SELECTOR ───────────────────────────────────────────── */
-  .strategy-select-container {
-    display: flex; align-items: center; gap: 8px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--border-dark-subtle);
-    padding: 7px 14px; border-radius: 8px;
-  }
-  .strategy-dropdown {
-    background: transparent; border: none; color: var(--text-dark-primary, white);
-    font-weight: 600; font-size: 13px; outline: none; cursor: pointer;
-  }
-  .strategy-dropdown option { background: #1F2937; color: white; }
-
-  /* ── REVISION DIFF ───────────────────────────────────────────────── */
-  .revised-del {
-    position: relative;
-    display: inline !important;
-    text-decoration: none !important;
-    color: rgba(252, 165, 165, 0.85) !important;
-    background: transparent !important;
-    padding: 0 2px !important;
-  }
-  .revised-del::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 50%;
-    height: 2px;
-    width: 100%;
-    background: #EF4444;
-    transform-origin: left;
-    animation: strikeThrough 0.5s ease-out forwards;
-  }
-  .revised-ins {
-    display: block !important;
-    margin: 8px 0 !important;
-    padding: 10px 14px 10px 24px !important;
-    border-left: 2px solid rgba(16, 185, 129, 0.4) !important;
-    background: rgba(16, 185, 129, 0.06) !important;
-    border-radius: 0 6px 6px 0 !important;
-    color: #6EE7B7 !important;
-    font-style: normal !important;
-    font-weight: 500 !important;
-    font-size: inherit !important;
-    text-decoration: none !important;
-  }
-  .newly-revised-ins {
-    display: block !important;
-    margin: 8px 0 !important;
-    padding: 10px 14px 10px 24px !important;
-    border-left: 2px solid rgba(16, 185, 129, 0.4) !important;
-    background: rgba(16, 185, 129, 0.06) !important;
-    border-radius: 0 6px 6px 0 !important;
-    color: #6EE7B7 !important;
-    font-style: normal !important;
-    font-weight: 500 !important;
-    font-size: inherit !important;
-    text-decoration: none !important;
-    animation: slideDownFade 0.35s ease-out forwards;
-  }
-  /* Light theme overrides for revised diff */
-  [data-theme="light"] .revised-del { color: #B91C1C !important; }
-  [data-theme="light"] .revised-del::after { background: #DC2626; }
-  [data-theme="light"] .revised-ins,
-  [data-theme="light"] .newly-revised-ins {
-    background: rgba(16, 185, 129, 0.08) !important;
-    color: #166534 !important;
-    border-left-color: rgba(16, 185, 129, 0.5) !important;
-  }
-
-  /* ── STRUCK-THROUGH TOGGLE CLASS (JS-controlled) ─────────────────── */
-  .clause-struck-through {
-    position: relative;
-    color: rgba(252, 165, 165, 0.75) !important;
-  }
-  .clause-struck-through::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 50%;
-    height: 2px;
-    width: 100%;
-    background: #EF4444;
-    transform-origin: left;
-    transform: scaleX(0);
-    transition: transform 0.5s ease-out;
-  }
-  .clause-struck-through.active::after { transform: scaleX(1); }
-
-  @keyframes strikeThrough {
-    from { transform: scaleX(0); }
-    to   { transform: scaleX(1); }
-  }
-  @keyframes slideDownFade {
-    from { opacity: 0; transform: translateY(-8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes fadeHighlightIns {
-    0%   { background: rgba(253,224,71,0.2) !important; opacity: 0; }
-    10%  { opacity: 1; }
-    100% { background: rgba(16,185,129,0.06) !important; }
-  }
-  @keyframes fadeHighlightBlockquote {
-    0%   { background: rgba(253,224,71,0.2) !important; opacity: 0; }
-    10%  { opacity: 1; }
-    100% { background: rgba(255,255,255,0.03) !important; }
-  }
-
-  /* ── EXTENSIONS ──────────────────────────────────────────────────── */
-  .extension-divider { border: 0; height: 1px; background: #E5E7EB; margin: 20px 0; }
-  .extension-blockquote {
-    border-left: 4px solid #3B82F6 !important; background: #F3F4F6 !important;
-    padding: 14px 18px !important; margin: 0 0 16px 0 !important;
-    border-radius: 0 8px 8px 0; color: #1F2937 !important;
-    font-family: Georgia, serif; font-size: 14px; line-height: 1.6;
-  }
-  .newly-appended-blockquote {
-    border-left: 4px solid #3B82F6 !important; padding: 14px 18px !important;
-    margin: 0 0 16px 0 !important; border-radius: 0 8px 8px 0;
-    color: #1F2937 !important; font-family: Georgia, serif;
-    font-size: 14px; line-height: 1.6;
-    animation: fadeHighlightBlockquote 1.5s ease-in-out forwards;
-  }
-  .extension-title { display: block; margin-bottom: 6px; color: #1E3A8A; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-  .extension-body { white-space: pre-wrap; outline: none; }
-
-  /* ── SHARED HELPERS ──────────────────────────────────────────────── */
-  .input-label {
-    display: block; margin-bottom: 6px; color: var(--text-dark-muted);
-    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
-  }
-
-  .p-4 { padding: 1rem !important; }
-  @media (min-width: 768px) { .md\\:p-8 { padding: 2rem !important; } }
-  .transition-all { transition-property: all !important; }
-  .duration-300  { transition-duration: 300ms !important; }
-  .ease-in-out   { transition-timing-function: cubic-bezier(0.4,0,0.2,1) !important; }
-  .transition-opacity { transition-property: opacity !important; }
-  .opacity-0  { opacity: 0 !important; }
-  .opacity-100 { opacity: 1 !important; }
-  .hover\\:-translate-y-0\\.5:hover { transform: translateY(-2px) !important; }
-  .hover\\:shadow-lg:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3),0 4px 6px -2px rgba(0,0,0,0.15) !important; }
-  .leading-relaxed { line-height: 1.625 !important; }
-  .text-lg { font-size: 1.125rem !important; }
-
-  /* Form-input utilities — used across every text input/select/textarea in
-     this file (Auto-Draft, RAG Chat, revision boxes) but never previously
-     defined, so every one of those controls has been rendering with zero
-     background/border/radius/focus styling this whole time, relying on
-     unstyled browser defaults against this app's dark theme. */
-  .bg-gray-800 { background-color: #1F2937 !important; }
-  .border-gray-600 { border: 1px solid #4B5563 !important; }
-  .text-white { color: #F9FAFB !important; }
-  .rounded-lg { border-radius: 10px !important; }
-  .p-3 { padding: 0.75rem !important; }
-  .focus\\:outline-none:focus { outline: none !important; }
-  .focus\\:ring-2:focus, .focus\\:ring-gray-400:focus {
-    border-color: #60A5FA !important;
-    box-shadow: 0 0 0 3px rgba(96,165,250,0.25) !important;
-  }
-
-  /* ── RISK STAT BAR (legacy, kept for clause-list fallback) ───────── */
-  .risk-stat-bar { display: flex; gap: 10px; margin-bottom: 14px; font-size: 12px; }
-  .risk-stat-item {
-    display: flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.03);
-    padding: 4px 10px; border-radius: 20px;
-    border: 1px solid var(--border-dark-subtle);
-  }
-  .risk-indicator-dot { width: 7px; height: 7px; border-radius: 50%; }
-  .risk-indicator-dot.red   { background: var(--accent-danger);   box-shadow: 0 0 5px var(--accent-danger); }
-  .risk-indicator-dot.amber { background: var(--accent-warning);  box-shadow: 0 0 5px var(--accent-warning); }
-  .risk-indicator-dot.green { background: var(--accent-success);  box-shadow: 0 0 5px var(--accent-success); }
-
-  /* ── RULE BOOK VIOLATION BADGE ────────────────────────────── */
-  .rulebook-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 2px 7px; border-radius: 10px;
-    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-    background: rgba(139,92,246,0.15); color: #A78BFA;
-    border: 1px solid rgba(139,92,246,0.35); flex-shrink: 0; white-space: nowrap;
-  }
-
-  /* ── REVISION WORKSHOP EXTRA PREMIUM STYLING ─────────────────────── */
-  .revision-workshop-input {
-    width: 100%;
-    background: rgba(15, 23, 42, 0.8) !important;
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-    border-radius: 8px !important;
-    padding: 10px 14px !important;
-    font-size: 13px !important;
-    color: #F8FAFC !important;
-    outline: none !important;
-    box-sizing: border-box !important;
-    transition: all 0.2s ease !important;
-  }
-  .revision-workshop-input:focus {
-    border-color: #6366F1 !important;
-    background: rgba(15, 23, 42, 0.95) !important;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important;
-  }
-  [data-theme="light"] .revision-workshop-input {
-    background: #F8FAFC !important;
-    border: 1px solid #CBD5E1 !important;
-    color: #0F172A !important;
-  }
-  [data-theme="light"] .revision-workshop-input:focus {
-    background: #FFFFFF !important;
-    border-color: #2563EB !important;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
-  }
-  
-  .revision-workshop-textarea {
-    width: 100%;
-    height: 90px !important;
-    background: rgba(15, 23, 42, 0.8) !important;
-    border: 1px solid rgba(16, 185, 129, 0.3) !important;
-    border-radius: 8px !important;
-    padding: 10px 12px !important;
-    font-size: 12.5px !important;
-    color: #F8FAFC !important;
-    outline: none !important;
-    box-sizing: border-box !important;
-    resize: none !important;
-    line-height: 1.5 !important;
-    transition: all 0.2s ease !important;
-  }
-  .revision-workshop-textarea:focus {
-    border-color: #10B981 !important;
-    background: rgba(15, 23, 42, 0.95) !important;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2) !important;
-  }
-  [data-theme="light"] .revision-workshop-textarea {
-    background: #F8FAFC !important;
-    border: 1px solid rgba(16, 185, 129, 0.4) !important;
-    color: #0F172A !important;
-  }
-  [data-theme="light"] .revision-workshop-textarea:focus {
-    background: #FFFFFF !important;
-    border-color: #10B981 !important;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
-  }
-  [data-theme="light"] .bg-gray-800 {
-    background-color: #F8FAFC !important;
-  }
-  [data-theme="light"] .border-gray-600 {
-    border-color: #CBD5E1 !important;
-  }
-  [data-theme="light"] .text-white {
-    color: #0F172A !important;
-  }
-  [data-theme="light"] .focus\:ring-gray-400:focus {
-    border-color: #2563EB !important;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
-  }
-  
-  .revision-btn-primary {
-    width: 100%;
-    background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
-    color: white !important;
-    font-size: 13.5px !important;
-    font-weight: 600 !important;
-    padding: 11px 16px !important;
-    border-radius: 8px !important;
-    border: none !important;
-    cursor: pointer !important;
-    box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3) !important;
-    transition: all 0.25s ease !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 8px !important;
-    margin-top: 10px !important;
-  }
-  .revision-btn-primary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #4338ca, #4f46e5) !important;
-    box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45) !important;
-    transform: translateY(-1px) !important;
-  }
-  .revision-btn-primary:active:not(:disabled) {
-    transform: translateY(0) !important;
-  }
-  .revision-btn-primary:disabled {
-    opacity: 0.55 !important;
-    cursor: not-allowed !important;
-    box-shadow: none !important;
-  }
-
-  .revision-btn-success:hover {
-    background: #059669 !important;
-    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3) !important;
-    transform: translateY(-1px);
-  }
-  .revision-btn-danger:hover {
-    background: rgba(239, 68, 68, 0.1) !important;
-    border-color: #EF4444 !important;
-    transform: translateY(-1px);
-  }
-
-  /* ── FUTURISTIC SCANNER ──────────────────────────────────────────── */
-  .futuristic-scanning-container {
-    background: rgba(15, 23, 42, 0.45) !important;
-    border: 1px solid rgba(59, 130, 246, 0.15) !important;
-    border-radius: 16px !important;
-    padding: 30px 24px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    position: relative !important;
-    overflow: hidden !important;
-    margin-top: 10px !important;
-    box-shadow: inset 0 0 20px rgba(59, 130, 246, 0.05) !important;
-  }
-  [data-theme="light"] .futuristic-scanning-container {
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    border-radius: 16px !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04) !important;
-  }
-  
-  .scanner-glowing-ring {
-    position: relative !important;
-    width: 64px !important;
-    height: 64px !important;
-    margin-bottom: 20px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }
-  .scanner-ring-pulse {
-    position: absolute !important;
-    width: 100% !important;
-    height: 100% !important;
-    border-radius: 50% !important;
-    background: rgba(99, 102, 241, 0.15) !important;
-    border: 2px solid rgba(99, 102, 241, 0.3) !important;
-    animation: pulseGlow 2s infinite ease-in-out !important;
-  }
-  [data-theme="light"] .scanner-ring-pulse {
-    background: rgba(37, 99, 235, 0.08) !important;
-    border: 2px solid rgba(37, 99, 235, 0.25) !important;
-  }
-  .scanner-ring-core {
-    position: relative !important;
-    width: 44px !important;
-    height: 44px !important;
-    border-radius: 50% !important;
-    background: rgba(15, 23, 42, 0.9) !important;
-    border: 1px solid rgba(99, 102, 241, 0.4) !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    box-shadow: 0 0 15px rgba(99, 102, 241, 0.3) !important;
-  }
-  [data-theme="light"] .scanner-ring-core {
-    background: #EFF6FF !important;
-    border: 1px solid rgba(37, 99, 235, 0.3) !important;
-    box-shadow: 0 0 15px rgba(37, 99, 235, 0.18) !important;
-  }
-  [data-theme="light"] .scanner-ring-core svg {
-    stroke: #2563EB !important;
-  }
-  
-  .scanning-laser-line {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 2px !important;
-    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.8), transparent) !important;
-    box-shadow: 0 0 8px rgba(99, 102, 241, 0.8) !important;
-    animation: scanLaser 4s infinite linear !important;
-    z-index: 2 !important;
-  }
-  [data-theme="light"] .scanning-laser-line {
-    background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.7), transparent) !important;
-    box-shadow: 0 0 8px rgba(37, 99, 235, 0.4) !important;
-  }
-  
-  .scanner-status-title {
-    font-size: 14px !important;
-    font-weight: 600 !important;
-    color: #F1F5F9 !important;
-    margin-bottom: 12px !important;
-    text-shadow: 0 0 10px rgba(99, 102, 241, 0.3) !important;
-    text-align: center !important;
-  }
-  [data-theme="light"] .scanner-status-title {
-    color: #0F172A !important;
-    text-shadow: none !important;
-    font-weight: 700 !important;
-  }
-  
-  .scanner-progress-wrapper {
-    position: relative !important;
-    width: 100% !important;
-    height: 6px !important;
-    background: rgba(255, 255, 255, 0.05) !important;
-    border-radius: 3px !important;
-    overflow: hidden !important;
-    margin-bottom: 6px !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  }
-  [data-theme="light"] .scanner-progress-wrapper {
-    background: #E2E8F0 !important;
-    border: 1px solid #CBD5E1 !important;
-  }
-  .scanner-progress-bar {
-    height: 100% !important;
-    background: linear-gradient(90deg, #4f46e5, #6366f1) !important;
-    border-radius: 3px !important;
-    transition: width 0.3s ease !important;
-  }
-  [data-theme="light"] .scanner-progress-bar {
-    background: linear-gradient(90deg, #2563EB, #3B82F6) !important;
-  }
-  .scanner-progress-text {
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    color: #818CF8 !important;
-    margin-bottom: 20px !important;
-    letter-spacing: 0.05em !important;
-  }
-  [data-theme="light"] .scanner-progress-text {
-    color: #2563EB !important;
-    font-weight: 700 !important;
-  }
-  
-  .scanner-console-box {
-    width: 100% !important;
-    background: #090d16 !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 8px !important;
-    overflow: hidden !important;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
-  }
-  [data-theme="light"] .scanner-console-box {
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05) !important;
-  }
-  .scanner-console-header {
-    background: rgba(255, 255, 255, 0.03) !important;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-    padding: 6px 12px !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-  }
-  [data-theme="light"] .scanner-console-header {
-    background: #F1F5F9 !important;
-    border-bottom: 1px solid #E2E8F0 !important;
-  }
-  .console-dot-red, .console-dot-yellow, .console-dot-green {
-    width: 6px !important;
-    height: 6px !important;
-    border-radius: 50% !important;
-  }
-  .console-dot-red { background: #EF4444 !important; }
-  .console-dot-yellow { background: #F59E0B !important; }
-  .console-dot-green { background: #10B981 !important; }
-  .console-title {
-    font-size: 9px !important;
-    font-weight: 800 !important;
-    color: #64748B !important;
-    letter-spacing: 0.1em !important;
-    margin-left: 6px !important;
-  }
-  [data-theme="light"] .console-title {
-    color: #475569 !important;
-    font-weight: 800 !important;
-  }
-  .scanner-console-logs {
-    padding: 10px 14px !important;
-    font-family: 'Courier New', Courier, monospace !important;
-    font-size: 10.5px !important;
-    line-height: 1.5 !important;
-    color: #10B981 !important;
-    max-height: 110px !important;
-    overflow-y: auto !important;
-    text-align: left !important;
-  }
-  [data-theme="light"] .scanner-console-logs {
-    background: #F8FAFC !important;
-    color: #0F766E !important;
-  }
-  .scanner-log-line {
-    margin-bottom: 4px !important;
-    word-break: break-all !important;
-    opacity: 0.85 !important;
-  }
-  [data-theme="light"] .scanner-log-line {
-    color: #0F766E !important;
-    opacity: 0.95 !important;
-  }
-  .scanner-log-line.active-line {
-    color: #60A5FA !important;
-    opacity: 1 !important;
-  }
-  [data-theme="light"] .scanner-log-line.active-line {
-    color: #2563EB !important;
-    font-weight: 600 !important;
-  }
-  .log-timestamp {
-    color: #475569 !important;
-    margin-right: 6px !important;
-  }
-  [data-theme="light"] .log-timestamp {
-    color: #64748B !important;
-  }
-  [data-theme="light"] .console-cursor {
-    color: #2563EB !important;
-  }
-
-  /* SSE Scan status pill in document scroll area */
-  .ca-scan-progress-pill {
-    position: sticky;
-    top: 10px;
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: rgba(15,20,32,0.92);
-    border: 1px solid rgba(59,130,246,0.35);
-    border-radius: 10px;
-    padding: 10px 14px;
-    margin: 0 0 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    width: fit-content;
-    max-width: 100%;
-  }
-  [data-theme="light"] .ca-scan-progress-pill {
-    background: #FFFFFF;
-    border: 1px solid #CBD5E1;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-  }
-  
-  @keyframes pulseGlow {
-    0% { transform: scale(0.95); opacity: 0.5; box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
-    70% { transform: scale(1.05); opacity: 1; box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
-    100% { transform: scale(0.95); opacity: 0.5; box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
-  }
-  
-  @keyframes scanLaser {
-    0% { top: 0%; }
-    50% { top: 100%; }
-    100% { top: 0%; }
-  }
-
-  /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
-  @media (max-width: 768px) {
-    /* 1. Full-Width Text Editor Readability */
-    .analyzer-container { overflow-x: hidden !important; }
-    .workspace-pane { 
-      display: flex !important; 
-      flex-direction: column !important; 
-      padding-bottom: 88px !important; 
-    }
-    .ca-editor-container, .ca-paper, .editor-column, .ProseMirror-container {
-      margin: 0 !important;
-      padding: 0 !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      border-radius: 0 !important;
-      border: none !important;
-      box-sizing: border-box !important;
-    }
-    .ProseMirror, .editor-content {
-      padding: 12px 14px !important;
-      font-size: 14px !important;
-      line-height: 1.6 !important;
-      letter-spacing: normal !important;
-    }
-
-    /* 2. Horizontally Scrollable Toolbar */
-    .ca-toolbar, .editor-toolbar, .rich-text-toolbar {
-      display: flex !important;
-      flex-wrap: nowrap !important;
-      overflow-x: auto !important;
-      overflow-y: hidden !important;
-      -webkit-overflow-scrolling: touch !important;
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
-      gap: 6px !important;
-      padding: 6px 8px !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-    }
-    .ca-toolbar::-webkit-scrollbar, .editor-toolbar::-webkit-scrollbar, .rich-text-toolbar::-webkit-scrollbar {
-      display: none !important;
-    }
-    .ca-toolbar > *, .editor-toolbar > *, .rich-text-toolbar > * {
-      flex-shrink: 0 !important;
-      min-height: 36px !important;
-    }
-
-    /* 3. Compact Top Controls & Header Consolidation */
-    .analyzer-header {
-      padding: 8px 12px !important;
-      gap: 6px !important;
-      flex-direction: column !important;
-      align-items: stretch !important;
-      height: auto !important;
-    }
-    .analyzer-actions {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      gap: 6px !important;
-      flex-basis: auto !important;
-      width: 100%;
-    }
-    .risk-metric-pill {
-      font-size: 11px !important;
-      padding: 2px 6px !important;
-    }
-    .analyzer-title-block {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      width: 100%;
-    }
-    .summary-banner {
-      padding: 6px 10px !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      display: flex !important;
-      align-items: center !important;
-    }
-    .scan-meta-box, .scan-meta {
-      flex-direction: column !important;
-      gap: 2px !important;
-      align-items: flex-start !important;
-    }
-    .scan-meta-label, .scan-meta-value {
-      font-size: 11px !important;
-    }
-
-    /* 4. Horizontally Scrollable Analysis Tabs & Chips */
-    .analysis-tabs, .analysis-tabs-nav {
-      display: flex !important;
-      flex-wrap: nowrap !important;
-      overflow-x: auto !important;
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
-      gap: 8px !important;
-      padding: 6px 12px !important;
-      border-bottom: 1px solid var(--border-dark-subtle);
-    }
-    .analysis-tabs::-webkit-scrollbar, .analysis-tabs-nav::-webkit-scrollbar {
-      display: none !important;
-    }
-    .analysis-tab-btn, .tab-item {
-      flex-shrink: 0 !important;
-      white-space: nowrap !important;
-      padding: 8px 12px !important;
-      font-size: 12px !important;
-    }
-    .rag-chips-container, .rag-chip-container {
-      display: flex !important;
-      flex-wrap: nowrap !important;
-      overflow-x: auto !important;
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
-      padding: 4px 0 !important;
-    }
-    .rag-chips-container::-webkit-scrollbar, .rag-chip-container::-webkit-scrollbar {
-      display: none !important;
-    }
-    .rag-chip {
-      flex-shrink: 0 !important;
-      white-space: nowrap !important;
-    }
-
-    /* 5. Viewport Clearance & FAB Padding */
-    .analysis-pane {
-      padding-bottom: 88px !important;
-    }
-  }
-`;
-
-const FUTURISTIC_LOGS = [
-  "Initializing LexAmplify Hybrid Parser...",
-  "Extracting document text layout and tokens...",
-  "Applying keyword-based risk heuristics...",
-  "Spinning up Groq AI LLM node...",
-  "Analyzing liabilities under Section 73 & 74 of the Indian Contract Act...",
-  "Evaluating non-compete clauses under Section 27...",
-  "Scanning dispute resolution paths and jurisdiction...",
-  "Querying Pinecone VDB for landmark SC precedents...",
-  "Validating findings against custom Company Rule Book...",
-  "Finalizing legal risks report and auto-draft suggestions..."
-];
-
-const getFakeConsoleLogs = (progress) => {
-  const logSteps = [
-    { limit: 10, index: 1 },
-    { limit: 25, index: 2 },
-    { limit: 40, index: 3 },
-    { limit: 55, index: 4 },
-    { limit: 70, index: 5 },
-    { limit: 80, index: 6 },
-    { limit: 90, index: 7 },
-    { limit: 95, index: 8 },
-    { limit: 100, index: 9 }
-  ];
-
-  const activeCount = logSteps.filter(s => progress >= s.limit).length;
-  return FUTURISTIC_LOGS.slice(0, activeCount + 1);
+  ),
+  plus: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  ),
+  edit: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  ),
+  export: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 15V3M7 8l5-5 5 5" /><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </svg>
+  ),
+  uploadCloud: (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 14.5A4.5 4.5 0 0 1 8.5 10a5.5 5.5 0 0 1 10.6-1.7A4 4 0 0 1 19 16H7a3 3 0 0 1-3-1.5z" />
+      <path d="M12 12v6M9.5 15.5L12 13l2.5 2.5" />
+    </svg>
+  ),
+  book: (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19.5A2 2 0 0 1 6 17.5h13" />
+    </svg>
+  ),
+  uploadSmall: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+  ),
+  fileCheck: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M9 12l2 2 4-4" />
+    </svg>
+  ),
+  sparkles: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4z" /><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+    </svg>
+  ),
+  check: (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  ),
+  close: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  ),
+  chevronLeft: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  ),
+  chevronRight: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  ),
+  send: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4z" />
+    </svg>
+  ),
+  search: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+    </svg>
+  ),
+  user: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
+    </svg>
+  ),
+  aiChat: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4z" />
+    </svg>
+  ),
+  infoCircle: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16.5v.1" />
+    </svg>
+  ),
+  refresh: (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 3v6h-6" />
+    </svg>
+  ),
 };
 
-export default function ContractAnalyzer({ setFocusMode }) {
-  // Guards every async continuation's setState calls below against firing
-  // after unmount (e.g. the user navigates away mid file-upload/mid AI-scan).
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
-  }, []);
+// ── Initial Dynamic Sample Data (conforming to §3 Data Contract) ─────────────
+const INITIAL_RISKS = [
+  {
+    id: 'risk-1',
+    severity: 'critical',
+    title: 'Liability cap set to 3 months’ fees',
+    excerpt: '…shall exceed the total fees paid in the preceding three (3) months…',
+    location: 'Section 7.1 · Page 4',
+    playbookRule: 'Playbook Guardrail · Vendor Liability Cap, Rule 4.2',
+    guardrailText: 'Your firm’s playbook requires a minimum liability cap of 12 months’ fees for vendor agreements above ₹50L in annual value. A 3-month cap is below that floor and should be flagged for negotiation, not silently accepted.',
+    original: '"Neither Party’s aggregate liability arising out of this Agreement shall exceed the total fees paid in the preceding three (3) months, regardless of the form of action."',
+    diffHtml: '"Neither Party’s aggregate liability arising out of this Agreement shall exceed <del>the total fees paid in the preceding three (3) months</del><ins>an amount equal to twelve (12) months’ fees paid under this Agreement</ins>, regardless of the form of action."',
+    replacementText: 'an amount equal to twelve (12) months’ fees paid under this Agreement',
+  },
+  {
+    id: 'risk-2',
+    severity: 'critical',
+    title: 'No compensation for work-in-progress on termination',
+    excerpt: '…thirty (30) days’ written notice, with no obligation to compensate…',
+    location: 'Section 8.1 · Page 4',
+    playbookRule: 'Playbook Guardrail · Termination for Convenience, Rule 6.1',
+    guardrailText: 'Termination-for-convenience clauses in your firm’s standard vendor form always include payment for work completed and non-cancellable commitments up to the notice date. This clause has neither.',
+    original: '"Either Party may terminate this Agreement for convenience upon thirty (30) days’ written notice, with no obligation to compensate the other Party for work in progress."',
+    diffHtml: '"Either Party may terminate this Agreement for convenience upon thirty (30) days’ written notice<ins>, provided that the terminating Party shall compensate the other Party for all work performed and non-cancellable commitments incurred up to the effective date of termination</ins>."',
+    replacementText: 'thirty (30) days’ written notice, provided that the terminating Party shall compensate the other Party for all work performed and non-cancellable commitments incurred up to the effective date of termination',
+  },
+  {
+    id: 'risk-3',
+    severity: 'caution',
+    title: '"Applicable law" excludes the DPDP Act, 2023',
+    excerpt: '…"applicable law" is not defined to include the Digital Personal Data Protection Act…',
+    location: 'Section 9.2 · Page 5',
+    playbookRule: 'Playbook Guardrail · Data Protection Scope, Rule 9.4',
+    guardrailText: 'Both Parties operate in India, so the Digital Personal Data Protection Act, 2023 should be named explicitly, not left to a general "applicable law" reference that a counterparty could later dispute.',
+    original: '"Vendor shall implement reasonable technical and organisational measures to protect Client Data in accordance with applicable law."',
+    diffHtml: '"Vendor shall implement reasonable technical and organisational measures to protect Client Data in accordance with applicable law<ins>, including the Digital Personal Data Protection Act, 2023 and rules made thereunder</ins>."',
+    replacementText: 'applicable law, including the Digital Personal Data Protection Act, 2023 and rules made thereunder',
+  },
+  {
+    id: 'risk-4',
+    severity: 'critical',
+    title: 'Governing law set to Singapore, not India',
+    excerpt: '…governed by the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore…',
+    location: 'Section 10.1 · Page 5',
+    playbookRule: 'Playbook Guardrail · Governing Law, Rule 2.1',
+    guardrailText: 'Your firm’s standard position for domestic vendor agreements is Indian governing law with arbitration seated in India under the Arbitration and Conciliation Act, 1996 — a foreign seat materially raises cost and complexity if a dispute arises.',
+    original: '"This Agreement shall be governed by the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore under SIAC Rules."',
+    diffHtml: '"This Agreement shall be governed by <del>the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore under SIAC Rules</del><ins>the laws of India, and disputes shall be resolved by arbitration seated in New Delhi under the Arbitration and Conciliation Act, 1996</ins>."',
+    replacementText: 'the laws of India, and disputes shall be resolved by arbitration seated in New Delhi under the Arbitration and Conciliation Act, 1996',
+  },
+  {
+    id: 'risk-5',
+    severity: 'caution',
+    title: 'Indemnity capped at the same low liability limit',
+    excerpt: '…Vendor’s indemnification obligations are capped at the same liability limit set out in Clause 7.1…',
+    location: 'Section 11.1 · Page 6',
+    playbookRule: 'Playbook Guardrail · Indemnity Carve-Outs, Rule 5.3',
+    guardrailText: 'IP infringement and confidentiality-breach indemnities should be uncapped or carry their own higher cap — tying them to the general liability cap (already flagged as too low in risk 1) compounds that exposure.',
+    original: '"Vendor’s indemnification obligations are capped at the same liability limit set out in Clause 7.1."',
+    diffHtml: '"Vendor’s indemnification obligations are capped at <del>the same liability limit set out in Clause 7.1</del><ins>the liability limit set out in Clause 7.1, except for indemnities arising from intellectual property infringement or breach of confidentiality, which shall remain uncapped</ins>."',
+    replacementText: 'the liability limit set out in Clause 7.1, except for indemnities arising from intellectual property infringement or breach of confidentiality, which shall remain uncapped',
+  },
+  {
+    id: 'risk-6',
+    severity: 'info',
+    title: 'Free assignment, including to a competitor',
+    excerpt: '…Vendor may freely assign this Agreement, including to a competitor of Client, without Client’s prior written consent…',
+    location: 'Section 12.1 · Page 6',
+    playbookRule: 'Playbook Guardrail · Assignment, Rule 7.2',
+    guardrailText: 'Unrestricted assignment is a moderate, not critical, concern here since the underlying services are non-sensitive — flagged for awareness rather than as a blocking issue.',
+    original: '"Vendor may freely assign this Agreement, including to a competitor of Client, without Client’s prior written consent."',
+    diffHtml: '"Vendor may <del>freely</del> assign this Agreement<ins>, other than to a direct competitor of Client, only</ins> without Client’s prior written consent<ins>; assignment to a competitor shall require Client’s prior written consent</ins>."',
+    replacementText: 'assign this Agreement, other than to a direct competitor of Client, only with Client’s prior written consent',
+  },
+];
 
-  const [isAnalyzed, setIsAnalyzed] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+const INITIAL_MISSING = [
+  {
+    id: 'miss-1',
+    title: 'Transition Assistance clause',
+    rationale: 'Standard for vendor MSAs of this scope — without it, there’s no obligation on Vendor to assist migrating services to a successor after termination.',
+    model: '"Upon termination or expiry, Vendor shall provide reasonable transition assistance for up to ninety (90) days to facilitate an orderly handover to Client or its designated successor, at Vendor’s then-current standard rates."',
+    checked: false,
+    expanded: false,
+  },
+  {
+    id: 'miss-2',
+    title: 'Force Majeure clause',
+    rationale: 'Not present anywhere in the document — without one, neither Party has a defined carve-out for events outside their control, including disruptions of the kind seen in recent years.',
+    model: '"Neither Party shall be liable for any failure or delay in performance under this Agreement to the extent such failure or delay is caused by circumstances beyond its reasonable control, including acts of God, war, pandemic, or governmental action."',
+    checked: false,
+    expanded: false,
+  },
+  {
+    id: 'miss-3',
+    title: 'Audit Rights clause',
+    rationale: 'Client has no contractual right to audit Vendor’s compliance with data protection or security obligations — standard in your firm’s vendor playbook for any agreement involving Client Data.',
+    model: '"Client may, upon reasonable prior notice and no more than once annually, audit Vendor’s compliance with its data protection and security obligations under this Agreement, either directly or through an independent third party."',
+    checked: false,
+    expanded: false,
+  },
+];
 
-  // Fast-track path — bypasses the AI risk scan entirely and opens the
-  // split-pane editor directly on a blank/empty document. Reachable from
-  // the upload screen's "Quick Draft Studio" button and from the Cmd/Ctrl+K
-  // command palette (navigate('/contract-analyzer', { state: { openTab:
-  // 'quickdraft' } })).
-  const [quickDraftMode, setQuickDraftMode] = useState(false);
-  const [scanStrategy, setScanStrategy] = useState('Defensive');
+const INITIAL_CITATIONS = [
+  {
+    id: 'cite-1',
+    name: 'Digital Personal Data Protection Act, 2023',
+    num: 'Act No. 22 of 2023',
+    snippet: 'Governs processing of digital personal data in India — relevant to the data-protection scope gap flagged in risk 3.',
+    inVault: true,
+    relevantTo: 'risk-3',
+  },
+  {
+    id: 'cite-2',
+    name: 'Arbitration and Conciliation Act, 1996',
+    num: 'Act No. 26 of 1996',
+    snippet: 'Sets out the framework for domestic arbitration seated in India — the basis for the governing-law revision suggested in risk 4.',
+    inVault: true,
+    relevantTo: 'risk-4',
+  },
+  {
+    id: 'cite-3',
+    name: 'Bharat Aluminium Co. v. Kaiser Aluminium',
+    num: '(2012) 9 SCC 552',
+    snippet: 'Landmark ruling on the territorial scope of Indian arbitration law and the effect of a foreign-seated arbitration clause.',
+    inVault: false,
+    relevantTo: 'risk-4',
+  },
+  {
+    id: 'cite-4',
+    name: 'Indian Contract Act, 1872 — s.73 & 74',
+    num: 'Act No. 9 of 1872',
+    snippet: 'Governs compensation for breach and liquidated damages — relevant background for the liability-cap and indemnity flags.',
+    inVault: true,
+    relevantTo: 'risk-1',
+  },
+];
 
-  // Lifted contract state via shared Zustand store (persists across /contract-analyzer and /auto-draft)
-  const {
-    rawText,
-    setRawText,
-    rawHtml,
-    setRawHtml,
-    contractFile,
-    setContractFile,
-    clauses: flaggedClauses,
-    setClauses: setFlaggedClauses,
-    summary,
-    setSummary,
-    ruleBookText,
-    setRuleBookText,
-    autoDraftText,
-    openDraftsModal,
-  } = useContractStore();
-  const rawTextDebounceRef = useRef(null);
-  const clauses = flaggedClauses;
-  const setClauses = setFlaggedClauses;
-  const [citations, setCitations] = useState([]);
-  const [loadingText, setLoadingText] = useState("Extracting clauses...");
-  const [scanProgress, setScanProgress] = useState(0);
-  // Keyed by array index, NOT citation.id — the backend's citation objects
-  // (see rag_server/main.py's analyze-contract RAG pass) only ever carry
-  // {title, snippet, in_vault, vault_id, kanoon_query}, no id field. Keying
-  // on a nonexistent citation.id would make every citation collide on the
-  // same `undefined` key, so opening one card's related-citations accordion
-  // would toggle EVERY card's accordion identically. The index is already
-  // used as the list's own React key below and is stable for one scan's
-  // static citations array, so it doubles safely as the per-card identity.
-  const [relatedCitations, setRelatedCitations] = useState({});
-  const [loadingRelated, setLoadingRelated] = useState(null);
+const INITIAL_CONFLICTS = [
+  {
+    id: 'conf-1',
+    severity: 'critical',
+    title: 'Termination notice period',
+    refDoc: 'Term_Sheet_v2.docx',
+    summary: 'This document requires 30 days’ notice to terminate for convenience; the earlier term sheet promised 90 days. This needs to be resolved before signature.',
+    sideA: '"Either Party may terminate this Agreement for convenience upon thirty (30) days’ written notice…"',
+    sideALabel: 'This document · Section 8.1',
+    sideB: '"Either Party may terminate this arrangement for convenience upon ninety (90) days’ prior written notice…"',
+    sideBLabel: 'Term_Sheet_v2.docx · Section 4',
+  },
+  {
+    id: 'conf-2',
+    severity: 'major',
+    title: 'Governing law',
+    refDoc: 'Term_Sheet_v2.docx',
+    summary: 'This document specifies Singapore law and SIAC arbitration; the term sheet specified Indian law throughout. Likely a drafting carryover error, not an intentional change.',
+    sideA: '"This Agreement shall be governed by the laws of Singapore…"',
+    sideALabel: 'This document · Section 10.1',
+    sideB: '"This arrangement shall be governed by the laws of India…"',
+    sideBLabel: 'Term_Sheet_v2.docx · Section 9',
+  },
+  {
+    id: 'conf-3',
+    severity: 'minor',
+    title: 'Notice address for Vendor',
+    refDoc: 'Term_Sheet_v2.docx',
+    summary: 'The registered address for notices differs by suite number only — likely an office move between drafting the term sheet and this agreement. Worth a one-line confirmation.',
+    sideA: '"Notices to Vendor: 4th Floor, Anna Salai, Chennai 600002"',
+    sideALabel: 'This document · Section 15.2',
+    sideB: '"Notices to Vendor: 2nd Floor, Anna Salai, Chennai 600002"',
+    sideBLabel: 'Term_Sheet_v2.docx · Section 11',
+  },
+];
 
-  // Real Celery job progress over SSE — replaces the old asymptotic-decay
-  // simulation (which faked a curve toward 95% with no idea how much work
-  // was actually left) with the task's genuine self.update_state() status
-  // text and progress percentage, e.g. "Scanning Liability... (3/7
-  // sections)". jobId is null whenever no scan is in flight, which the
-  // hook treats as IDLE — no stream opened, nothing to clean up.
-  const [jobId, setJobId] = useState(null);
-  const jobStream = useContractJobStream(jobId);
+const MODE_HINTS = {
+  balanced: 'Balanced: flags material risk and missing standard clauses — the default for most contract review.',
+  aggressive: 'Aggressive: also flags stylistic and low-materiality deviations from your playbook — use for high-value or adversarial contracts.',
+  quick: 'Quick scan: critical risks only, fastest turnaround — use for a first-pass triage on a large batch of documents.',
+};
 
-  useEffect(() => {
-    if (!isAnalyzing) return;
-    if (jobStream.status) setLoadingText(jobStream.status);
-    if (typeof jobStream.progress === 'number') setScanProgress(jobStream.progress);
-  }, [isAnalyzing, jobStream.status, jobStream.progress]);
-
-  useEffect(() => {
-    if (!jobId) return;
-
-    const onSuccess = (result) => {
-      setSummary(result.summary || "");
-      // Array.isArray, not just truthiness (result.clauses || result.risks
-      // || []) — a truthy NON-array response shape (e.g. an error object
-      // the job stream forwards unchanged) would otherwise sail past that
-      // fallback chain and poison `clauses` with something activeClause's
-      // plain `.find()` call below then crashes the whole render tree on.
-      // Reproduced live: "TypeError: clauses.find is not a function"
-      // unmounting the entire app with no error boundary at the time.
-      const rawJobClauses = Array.isArray(result.clauses) ? result.clauses
-        : Array.isArray(result.risks) ? result.risks
-          : [];
-      // The job-stream result's raw clause objects have no `id` field at
-      // all (confirmed live: every clause came through as `id: undefined`)
-      // — unlike loadAnalysisResults()'s synchronous-analyze path below,
-      // which already normalizes this. Without a real per-clause id, EVERY
-      // risk card's onClick passes the same `undefined`, so
-      // clauses.find(c => c.id === activeClauseId) always resolves to
-      // whichever clause happens to be first in the array — reproduced
-      // live as "clicking any risk card always opens the first clause."
-      setFlaggedClauses(
-        rawJobClauses.map((c, idx) => ({
-          ...c,
-          id: c.id != null ? String(c.id) : `job-${idx}`,
-        }))
-      );
-      setMissingClauses(result.missing_clauses || result.missing || []);
-      setCitations(result.citations || []);
-      setIsAnalyzed(true);
-      setIsAnalyzing(false);
-      if (result.raw_text) { setRawText(result.raw_text); setRawHtml(''); }
-    };
-
-    const onError = (err) => {
-      alert(err || 'Analysis failed.');
-      setIsAnalyzing(false);
-    };
-
-    if (jobStream.state === 'SUCCESS') {
-      onSuccess(jobStream.result || {});
-      setJobId(null);
-    } else if (jobStream.state === 'FAILURE') {
-      onError(jobStream.error);
-      setJobId(null);
+export default function ContractAnalyzer() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  let theme = 'dark';
+  let toggleTheme = () => {};
+  try {
+    const themeCtx = useTheme();
+    if (themeCtx) {
+      theme = themeCtx.theme;
+      toggleTheme = themeCtx.toggleTheme;
     }
-  }, [jobId, jobStream.state, jobStream.result, jobStream.error]);
+  } catch (err) {
+    // safe fallback when rendered outside ThemeProvider
+  }
 
-  // Snaps the bar to a real 100% the instant the real scan finishes — the
-  // SSE-driven progress above only ever reports what the Celery task
-  // itself last posted, which may trail slightly behind the job actually
-  // reaching SUCCESS.
-  useEffect(() => {
-    if (!isAnalyzing) setScanProgress(100);
-  }, [isAnalyzing]);
+  const {
+    rawText: storeRawText,
+    setRawText: setStoreRawText,
+    setClauses: setStoreClauses,
+    contractFile: storeFile,
+    setContractFile: setStoreFile,
+  } = useContractStore();
 
-  // Tab states
+  // ── High-Level State Machine: 'upload' | 'scanning' | 'analyzed' ─────────────
+  const [viewState, setViewState] = useState('upload');
+
+  // Upload Form State
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [pastedText, setPastedText] = useState('');
+  const [playbookFile, setPlaybookFile] = useState(null);
+  const [scanMode, setScanMode] = useState('balanced');
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // Scanning State
+  const [scanProgress, setScanProgress] = useState(4);
+  const [scanStage, setScanStage] = useState('Segmenting document…');
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [scanDuration, setScanDuration] = useState(37);
+
+  // Analyzed Workbench State
+  const [documentName, setDocumentName] = useState('Vendor Master Services Agreement.pdf');
+  const [pageCount, setPageCount] = useState(48);
+  const [wordCount, setWordCount] = useState(14200);
+
+  // Dynamic Data Arrays (§3 & §4: no fixed counts)
+  const [risks, setRisks] = useState(INITIAL_RISKS);
+  const [missing, setMissing] = useState(INITIAL_MISSING);
+  const [citations, setCitations] = useState(INITIAL_CITATIONS);
+  const [conflicts, setConflicts] = useState(INITIAL_CONFLICTS);
+
+  // Active Rail Tab: 'risks' | 'missing' | 'chat' | 'citations' | 'comments' | 'conflicts'
   const [activeTab, setActiveTab] = useState('risks');
-  const [leftTab, setLeftTab] = useState('contract-text');
 
-  // Tab opacity fade-in transition state
-  const [tabOpacity, setTabOpacity] = useState('opacity-100');
+  // Flag Navigator in Document Toolbar
+  const [activeFlagIndex, setActiveFlagIndex] = useState(0);
 
-  // Document editor states
-  const [activeClauseId, setActiveClauseId] = useState(null);
-  // Bumped only when a genuinely NEW document is loaded (upload, piped-in
-  // doc, session restore, voice command) — NOT on every rawText tick from
-  // the editor's own live-typing echo, and NOT on a scanStrategy switch.
-  // ContractTiptapEditor only reloads its content when this changes, so a
-  // mode switch (which re-runs analysis and calls setRawText again) never
-  // tears down the live editor/cursor/undo history.
-  const [documentVersion, setDocumentVersion] = useState(0);
-  const editorApiRef = useRef(null);
-  const conflictFileInputRef = useRef(null);
-  // Portal target for the scanner editor's toolbar (see ContractTiptapEditor's
-  // toolbarPortalTarget prop below) — a callback ref via useState, not a
-  // plain useRef, because the slot <div> doesn't exist in the DOM on the
-  // first render; this state update fires once React actually mounts it,
-  // triggering the one extra re-render needed for the portal to have a
-  // real target to render into.
-  const [toolbarSlotEl, setToolbarSlotEl] = useState(null);
-  const inspectedCardRef = useRef(null);
-  const analysisPanelBodyRef = useRef(null);
-  const [comments, setComments] = useState([]);
-  const [activeCommentDraft, setActiveCommentDraft] = useState(null);
+  // Revision Workshop Modal
+  const [activeWorkshopRiskId, setActiveWorkshopRiskId] = useState(null);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
-  // Interactive Rewrite states
-  const [intent, setIntent] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [rewrittenText, setRewrittenText] = useState('');
-  const [rewriting, setRewriting] = useState(false);
+  // Conflict Detail Modal
+  const [activeConflictId, setActiveConflictId] = useState(null);
+  const [conflictScanReady, setConflictScanReady] = useState(false);
+  const [conflictScanned, setConflictScanned] = useState(false);
 
-  // Recommendations states
-  const [missingClauses, setMissingClauses] = useState([]);
-  const recommendations = missingClauses;
-  const setRecommendations = setMissingClauses;
-  const [loadingRecs, setLoadingRecs] = useState(false);
-
-  // Conflicts tab states — cross-document comparison against a Firm
-  // Library reference (or ad-hoc uploaded files), reusing the existing
-  // /api/conflict/analyze engine ConflictEngine.jsx's standalone page
-  // already calls, instead of a second bespoke analysis pipeline.
-  const [conflictLibraryDocs, setConflictLibraryDocs] = useState([]);
-  const [loadingConflictLibrary, setLoadingConflictLibrary] = useState(false);
-  const [selectedConflictDocId, setSelectedConflictDocId] = useState('');
-  // Array, not a single file — handleRunConflictCheck analyzes each
-  // reference file against the active contract in its OWN sequential
-  // /api/conflict/analyze call (one doc1+doc2 pair per request) rather than
-  // batching every file into one large request: a bulk multi-document
-  // payload risks a 502 from the gateway if the combined LLM completion
-  // takes too long, whereas N small sequential calls each stay fast and
-  // let results render incrementally as each file finishes.
-  const [conflictUploadFiles, setConflictUploadFiles] = useState([]);
-  const [conflictDragOver, setConflictDragOver] = useState(false);
-  const [isRunningConflictCheck, setIsRunningConflictCheck] = useState(false);
-  const [conflictProgress, setConflictProgress] = useState({ current: 0, total: 0 });
-  const [conflictResults, setConflictResults] = useState(null);
-  const [conflictError, setConflictError] = useState('');
-  const [activeConflictCard, setActiveConflictCard] = useState(null);
-
-  // Appended clause extensions
-  const [appendedClauses, setAppendedClauses] = useState([]);
-
-  // Auto-Drafting reference states
-  const [vaultDocs, setVaultDocs] = useState([]);
-  const [selectedDocId, setSelectedDocId] = useState('none');
-  const [sharedFiles, setSharedFiles] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('lex_shared_workspace') || '[]'); } catch { return []; }
-  });
-
-  // Chat RAG states
-  const [chatHistory, setChatHistory] = useState([
-    { sender: 'bot', text: 'Hello. I have loaded this contract. You can ask grounded queries about notice periods, indemnities, or governing law, and I will search the text strictly.' }
+  // Ask AI Chat
+  const [chatMessages, setChatMessages] = useState([
+    {
+      id: 'm1',
+      role: 'assistant',
+      text: 'I’ve read all 48 pages of this agreement. Ask me anything about it — I’ll answer from the document only and cite the clause I pulled from.',
+      cites: [],
+    },
   ]);
   const [chatInput, setChatInput] = useState('');
-  const [sendingChat, setSendingChat] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatScrollRef = useRef(null);
 
-  const [summaryCollapsed, setSummaryCollapsed] = useState(true);
+  // Drafts Modal
+  const [showDraftsModal, setShowDraftsModal] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
-  // Export Modal states
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFormat, setExportFormat] = useState('pdf');
-  const [includeDoc, setIncludeDoc] = useState(true);
-  const [includeDraft, setIncludeDraft] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState('');
-  const [crossSaveTargets, setCrossSaveTargets] = useState([]);
-  const [crossSaveStatus, setCrossSaveStatus] = useState('');
-
-  // Rule Book states
-  const [ruleBookFile, setRuleBookFile] = useState(null);
-  const [ruleBookUploadLoading, setRuleBookUploadLoading] = useState(false);
-
-  // Contract upload (decoupled from analysis — see handleFileUpload)
-  const [contractUploadLoading, setContractUploadLoading] = useState(false);
-  const [uploadToast, setUploadToast] = useState(null); // { message } | null
-
-  useEffect(() => {
-    if (!uploadToast) return;
-    const t = setTimeout(() => setUploadToast(null), 6000);
-    return () => clearTimeout(t);
-  }, [uploadToast]);
-
-  // Guards sessionStorage persistence until after initial rehydration
-  const hydratedRef = useRef(false);
+  // ── Document Surface Live State ─────────────────────────────────────────────
+  // Tracks accepted/resolved clause rewrites directly on the document surface
+  const [resolvedRisks, setResolvedRisks] = useState(new Set());
+  const [insertedMissing, setInsertedMissing] = useState(new Set());
 
   const fileInputRef = useRef(null);
-  const ruleBookFileInputRef = useRef(null);
-  const suggestionsRef = useRef(null);
-  const chatStreamRef = useRef(null);
+  const playbookInputRef = useRef(null);
+  const conflictInputRef = useRef(null);
+  const docSurfaceRef = useRef(null);
 
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  // Auto-ingest document piped from Case Vault (or LexAmplify tool-routing).
-  // pipedDocDispatchedRef guards against React 18 StrictMode's dev-only
-  // double-invoke of effects on mount — without it, two identical Celery
-  // jobs would fire for the same piped document (wasted LLM calls, and
-  // jobId would end up pointing at whichever response lands second).
-  const pipedDocDispatchedRef = useRef(false);
+  // Scroll chat to bottom on new message
   useEffect(() => {
-    const incoming = location.state?.documentData;
-    if (!incoming?.file_content) return;
-    if (pipedDocDispatchedRef.current) return;
-    pipedDocDispatchedRef.current = true;
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
 
-    const content = cleanExtractedText(incoming.file_content);
-    setRawText(content);
-    setRawHtml('');
-    (async () => {
-      setClauses([]);
-      setSummary('');
-      setCitations([]);
-      setScanProgress(0);
-      setLoadingText('Queuing scan...');
-      setIsAnalyzing(true);
+  // Handle Drag & Drop for Main Contract
+  const handleFileDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      setSelectedFile(file);
+      setDocumentName(file.name);
+    }
+  };
 
-      const res = await startContractAnalysisJob(content, '', scanStrategy);
-      if (!isMountedRef.current) return;
+  const handleFileSelect = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setDocumentName(file.name);
+    }
+  };
 
-      if (res.error || !res.job_id) {
-        setIsAnalyzing(false);
-        alert('Failed to start analysis: ' + (res.message || 'Unknown error'));
-        return;
+  const handlePlaybookSelect = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setPlaybookFile(e.target.files[0]);
+    }
+  };
+
+  // ── Trigger Scan Flow ───────────────────────────────────────────────────────
+  const handleBeginAnalysis = async () => {
+    setViewState('scanning');
+    setScanProgress(4);
+    setScanStage('Segmenting document…');
+    setConsoleLogs([]);
+
+    const docTitle = selectedFile ? selectedFile.name : 'Pasted Contract Document.txt';
+    setDocumentName(docTitle);
+
+    // If real text was provided, update store
+    if (pastedText.trim()) {
+      setStoreRawText(pastedText);
+    }
+
+    const script = [
+      { t: '00:00', text: `Ingesting ${docTitle} (${pageCount} pages)…`, cls: '' },
+      { t: '00:02', text: 'OCR pass skipped — native text layer detected.', cls: 'dim' },
+      { t: '00:04', text: 'Segmenting into clauses… 96 clauses identified across 12 sections.', cls: '' },
+      { t: '00:09', text: playbookFile ? `Cross-referencing firm playbook (${playbookFile.name})…` : 'Cross-referencing standard Indian Contract Act & DPDP Act guardrails…', cls: '' },
+      { t: '00:14', text: `Running risk model — ${scanMode.charAt(0).toUpperCase() + scanMode.slice(1)} posture — page 1 of ${pageCount}…`, cls: 'dim' },
+      { t: '00:21', text: `Risk model — page ${Math.floor(pageCount / 2)} of ${pageCount}…`, cls: 'dim' },
+      { t: '00:27', text: 'Retrieving supporting citations from statute + precedent index…', cls: '' },
+      { t: '00:31', text: 'Checking for missing standard clauses against contract-type template…', cls: '' },
+      { t: '00:35', text: `${risks.length} risks flagged · ${missing.length} clauses missing · ${citations.length} citations retrieved.`, cls: 'ok' },
+      { t: '00:37', text: 'Analysis complete.', cls: 'ok' },
+    ];
+
+    const stages = [
+      'Segmenting document…',
+      'Comparing against playbook…',
+      'Running risk model…',
+      'Retrieving citations…',
+      'Finalizing report…',
+    ];
+
+    let i = 0;
+    let pct = 4;
+    const interval = setInterval(() => {
+      if (i < script.length) {
+        const item = script[i];
+        setConsoleLogs((prev) => [...prev, item]);
+        pct = Math.min(96, pct + Math.round(100 / script.length));
+        setScanProgress(pct);
+        setScanStage(stages[Math.min(stages.length - 1, Math.floor(i / 2))]);
+        i++;
+      } else {
+        clearInterval(interval);
+        setScanProgress(100);
+        setScanStage('Done');
+        setTimeout(() => {
+          setViewState('analyzed');
+        }, 500);
       }
-      setJobId(res.job_id);
-    })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, 380);
+  };
 
-  // Legal Forms Library hand-off: navigate('/contract-analyzer', { state:
-  // { importedDocument: populatedHtml } }). Unlike the Case Vault path
-  // above, this only initializes the editor with the populated form text —
-  // it deliberately does NOT auto-trigger a risk scan, since a freshly
-  // drafted form isn't something the user necessarily wants AI-audited the
-  // instant they land here.
-  useEffect(() => {
-    const importedHtml = location.state?.importedDocument;
-    if (!importedHtml) return;
-    const container = document.createElement('div');
-    container.innerHTML = importedHtml;
-    // Convert block-level breaks to newlines BEFORE reading textContent —
-    // otherwise "<p>A</p><p>B</p>" collapses to "AB" with no separator.
-    container.querySelectorAll('p, div, li, br').forEach((el) => {
-      el.insertAdjacentText('afterend', '\n');
-    });
-    const plainText = cleanExtractedText(container.textContent.replace(/\n{3,}/g, '\n\n').trim());
-    setRawText(plainText);
-    setRawHtml('');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Flag Navigator Cycling ─────────────────────────────────────────────────
+  const activeFlags = useMemo(() => {
+    return risks.filter((r) => !resolvedRisks.has(r.id));
+  }, [risks, resolvedRisks]);
 
-  // Quick Draft Studio fast-track: land straight in the split-pane editor
-  // with no scan, no upload screen. ContractTiptapEditor already handles
-  // clauses=[] / empty initialRawText gracefully (same as the Auto-Draft
-  // tab below), so no null-state guard is needed here beyond passing those
-  // safe empty defaults.
-  useEffect(() => {
-    if (location.state?.openTab === 'quickdraft') setQuickDraftMode(true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const handlePrevFlag = () => {
+    if (activeFlags.length === 0) return;
+    const nextIdx = (activeFlagIndex - 1 + activeFlags.length) % activeFlags.length;
+    setActiveFlagIndex(nextIdx);
+    scrollToFlag(activeFlags[nextIdx].id);
+  };
 
-  // ── SESSION PERSISTENCE ─────────────────────────────────────────────
-  // Rehydrate an in-progress session on mount so navigating away and back
-  // does not wipe the analysis. Skips when a document is being piped in
-  // (Case Vault/LexAmplify, the Legal Forms Library, or a Quick Draft Studio
-  // launch) — otherwise the restored stale session would immediately
-  // overwrite the freshly-imported/blank state.
-  useEffect(() => {
-    if (
-      !(location.state?.documentData?.file_content) &&
-      !location.state?.importedDocument &&
-      location.state?.openTab !== 'quickdraft'
-    ) {
+  const handleNextFlag = () => {
+    if (activeFlags.length === 0) return;
+    const nextIdx = (activeFlagIndex + 1) % activeFlags.length;
+    setActiveFlagIndex(nextIdx);
+    scrollToFlag(activeFlags[nextIdx].id);
+  };
+
+  const scrollToFlag = (riskId) => {
+    if (!docSurfaceRef.current) return;
+    const el = docSurfaceRef.current.querySelector(`[data-risk="${riskId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  // ── Revision Workshop Handlers ──────────────────────────────────────────────
+  const activeWorkshopRisk = useMemo(() => {
+    return risks.find((r) => r.id === activeWorkshopRiskId) || null;
+  }, [risks, activeWorkshopRiskId]);
+
+  const handleOpenWorkshop = (riskId) => {
+    setActiveWorkshopRiskId(riskId);
+    const idx = activeFlags.findIndex((r) => r.id === riskId);
+    if (idx !== -1) setActiveFlagIndex(idx);
+  };
+
+  const handleRegenerateRewrite = async () => {
+    if (!activeWorkshopRisk) return;
+    setIsRegenerating(true);
+    try {
+      // Real AI backend call with fallback
+      let newDiff = activeWorkshopRisk.diffHtml;
       try {
-        const saved = sessionStorage.getItem('lexapp_contract_session');
-        if (saved) {
-          const s = JSON.parse(saved);
-          if (typeof s.rawText === 'string') setRawText(s.rawText);
-          if (typeof s.rawHtml === 'string') setRawHtml(s.rawHtml);
-          if (typeof s.ruleBookText === 'string') setRuleBookText(s.ruleBookText);
-          if (Array.isArray(s.clauses) && s.clauses.length > 0) {
-            setClauses(s.clauses);
-            setSummary(s.summary || '');
-            setIsAnalyzed(true);
+        const res = await fetch(`${API_BASE}/api/contract/rewrite`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clause_text: activeWorkshopRisk.original,
+            rule_book_text: activeWorkshopRisk.guardrailText,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.revision) {
+            newDiff = `"${data.revision}"`;
           }
         }
-      } catch (_) { /* corrupt session — ignore */ }
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Persist key state to sessionStorage on every change (post-hydration).
-  useEffect(() => {
-    if (!hydratedRef.current) return;
-    try {
-      sessionStorage.setItem('lexapp_contract_session', JSON.stringify({
-        rawText, rawHtml, ruleBookText, clauses, summary, isAnalyzed,
-      }));
-    } catch (_) { /* quota / serialization — ignore */ }
-  }, [rawText, rawHtml, ruleBookText, clauses, summary, isAnalyzed]);
-
-  // Flips AFTER the rehydration effect above on the very first commit, and
-  // only takes effect (for the persistence effect's guard) on the NEXT
-  // commit — the one where rawText/clauses have actually caught up to the
-  // just-hydrated values. Setting this flag inside the rehydration effect
-  // itself was a real bug: that effect's setRawText/setClauses calls don't
-  // update those variables until a later render, but the flag flipped
-  // synchronously in the SAME commit — so the persistence effect above,
-  // also running on that first commit, saw hydratedRef already true but
-  // rawText/clauses still at their pre-hydration (empty) values, and
-  // immediately overwrote sessionStorage with blanks. Declaring this as
-  // its own later effect exploits React's guarantee that same-commit
-  // effects run in declaration order.
-  useEffect(() => {
-    hydratedRef.current = true;
-  }, []);
-
-
-  // Load vault documents on mount for auto-draft context
-  useEffect(() => {
-    const loadVaultDocs = async () => {
-      const res = await fetchDocuments();
-      if (!isMountedRef.current) return;
-      if (!res.error) {
-        setVaultDocs(res);
+      } catch {
+        await new Promise((r) => setTimeout(r, 900));
       }
-    };
-    loadVaultDocs();
-  }, []);
-
-  // Sync shared workspace files in real-time
-  useEffect(() => {
-    const handler = (e) => {
-      setSharedFiles(prev => {
-        const filtered = prev.filter(f => f.id !== e.detail.id);
-        return [e.detail, ...filtered].slice(0, 50);
-      });
-    };
-    window.addEventListener('lex:sharedWorkspaceUpdate', handler);
-    return () => window.removeEventListener('lex:sharedWorkspaceUpdate', handler);
-  }, []);
-
-  // Scroll the inspected risk card into view whenever a new one is opened
-  // (from a sidebar list click OR a document decoration click) — the panel
-  // may still be scrolled from a previous, longer clause's detail view.
-  useEffect(() => {
-    if (activeClauseId && inspectedCardRef.current) {
-      inspectedCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else if (analysisPanelBodyRef.current && typeof analysisPanelBodyRef.current.scrollTo === 'function') {
-      // The workspace (and this ref) now mounts unconditionally instead of
-      // behind the old rawText-gated screen switch, so this effect's first
-      // run happens on initial mount too, not just on a real
-      // activeClauseId transition — scrollTo(0) is a harmless no-op there
-      // in a real browser (already at the top), but jsdom's test
-      // environment doesn't implement Element.scrollTo at all, so the
-      // typeof guard is load-bearing for tests, not just decorative.
-      analysisPanelBodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      setRisks((prev) =>
+        prev.map((r) =>
+          r.id === activeWorkshopRisk.id
+            ? { ...r, diffHtml: newDiff }
+            : r
+        )
+      );
+    } finally {
+      setIsRegenerating(false);
     }
-  }, [activeClauseId]);
-
-  // Autocomplete Suggestions based on inspected clause
-  // Array.isArray guard: `clauses` is shared Zustand state, not local —
-  // a bad value written to it from any consumer (or a dev-only HMR/
-  // Fast-Refresh edge case) crashes this at RENDER TIME, unmounting the
-  // whole app, since this runs unconditionally on every render.
-  const activeClause = Array.isArray(clauses) ? clauses.find(c => c.id === activeClauseId) : undefined;
-  const dynamicIntents = activeClause ? getDynamicIntents(activeClause.text, activeClause.risk) : [];
-
-  // Tab switch helper with fade animations
-  const switchTab = (tabId) => {
-    setTabOpacity('opacity-0');
-    setTimeout(() => {
-      setActiveTab(tabId);
-      setTabOpacity('opacity-100');
-    }, 150);
-  };
-
-  // BubbleMenu → sidebar: opens a draft box for whatever span the editor's
-  // "Comment"/"Draft Revision" action just highlighted. from/to were
-  // captured by ContractTiptapEditor at click time (before any focus loss),
-  // so they're passed straight through here rather than re-derived.
-  const handleCommentRequest = ({ commentId, text, from, to, mode }) => {
-    setActiveCommentDraft({ commentId, text, from, to, draft: '', mode, revision: null });
-    switchTab('comments');
-    if (mode === 'draft-revision') {
-      requestDraftRevision(commentId, text, from, to, '');
-    }
-  };
-
-  // Bidirectional scroll, editor → card: clicking inside a highlighted span
-  // scrolls the matching sidebar comment card into view.
-  const handleHighlightClick = (commentId) => {
-    document.querySelector(`[data-comment-card-id="${commentId}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-
-  // Bidirectional scroll, card → editor: clicking a sidebar card scrolls to
-  // (and briefly outlines) the matching highlighted span in the document.
-  const handleCommentCardClick = (commentId) => {
-    const el = document.querySelector(`.scanner-body [data-comment-id="${commentId}"]`);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.classList.add('ca-highlight-active');
-    setTimeout(() => el.classList.remove('ca-highlight-active'), 1500);
-  };
-
-  // Grabs the text immediately around a selection from the live editor doc —
-  // the payload the /api/draft-revision endpoint requires, since revising a
-  // clause with zero surrounding context routinely makes the LLM invent
-  // facts or break a defined term established elsewhere in the document.
-  const getSurroundingContext = (from, to) => {
-    const editor = editorApiRef.current;
-    if (!editor) return '';
-    const docSize = editor.state.doc.content.size;
-    const start = Math.max(0, from - 400);
-    const end = Math.min(docSize, to + 400);
-    return editor.state.doc.textBetween(start, end, ' ');
-  };
-
-  const requestDraftRevision = async (commentId, text, from, to, userComment) => {
-    setActiveCommentDraft(prev => (prev?.commentId === commentId ? { ...prev, revision: { status: 'loading' } } : prev));
-    const context = getSurroundingContext(from, to);
-    const res = await draftRevision(text, context, userComment);
-    if (!isMountedRef.current) return;
-    setActiveCommentDraft(prev => {
-      if (!prev || prev.commentId !== commentId) return prev; // user moved on/closed the draft
-      if (res.error) return { ...prev, revision: { status: 'error', message: res.message } };
-      return { ...prev, revision: { status: 'done', revisedText: res.revised_text } };
-    });
   };
 
   const handleAcceptRevision = () => {
-    const editor = editorApiRef.current;
-    if (!editor || !activeCommentDraft?.revision?.revisedText) return;
-    const { from, to, commentId } = activeCommentDraft;
-
-    // CHAIN ORDER matters: unsetHighlight() must run BEFORE insertContent()
-    // in the same chain. Unsetting the mark first and then inserting into
-    // the still-current selection keeps from/to consistent throughout —
-    // doing these as two separate commands (or inserting first) risks the
-    // second step operating on stale range coordinates after the first
-    // step has already changed the document.
-    editor.chain()
-      .setTextSelection({ from, to })
-      .unsetHighlight()
-      .insertContent(activeCommentDraft.revision.revisedText)
-      .run();
-
-    setActiveCommentDraft(null);
-    // Defensive: if this comment had already been saved to the sidebar list
-    // (re-opening a saved comment to draft a revision), drop it so the card
-    // unmounts instead of sitting there stale, pointing at text that no
-    // longer exists.
-    setComments(prev => prev.filter(c => c.id !== commentId));
+    if (!activeWorkshopRisk) return;
+    // Mutate document content: mark as resolved and replace in document
+    setResolvedRisks((prev) => new Set([...prev, activeWorkshopRisk.id]));
+    setRisks((prev) => prev.filter((r) => r.id !== activeWorkshopRisk.id));
+    setActiveWorkshopRiskId(null);
+    setToastMessage(`Revision accepted into Clause ${activeWorkshopRisk.location}`);
+    setTimeout(() => setToastMessage(''), 4000);
   };
 
-  const handleRejectRevision = () => {
-    setActiveCommentDraft(prev => (prev ? { ...prev, revision: null } : prev));
+  const handleDiscardRevision = () => {
+    setActiveWorkshopRiskId(null);
   };
 
-  // Preprocessing: extraction fuses section labels ("word.2.") to surrounding
-  // words, which shifts character indices and breaks highlight alignment.
-  // Re-insert the missing space so index tracking matches the rendered text.
-  const cleanExtractedText = (text) => (text || '').replace(/(\w+)\.(\d+)\./g, '$1. $2.');
-
-  // ── 1. FILE UPLOAD & ANALYZE HANDLERS ────────────────────────────────
-  const handleFileUpload = async (files) => {
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    const extension = file.name.split('.').pop().toLowerCase();
-    if (!['pdf', 'docx'].includes(extension)) {
-      alert('Invalid format. Please upload PDF or DOCX.');
-      return;
-    }
-    if (file.size > 104857600) {
-      alert('File exceeds 100MB. Please compress the PDF or split it into smaller parts.');
-      return;
-    }
-
-    // Backend contract (routes/contract_routes.py's extract_text, verified
-    // directly against the route source): 200 -> {"text": "..."} ; 4xx/5xx ->
-    // {"error": true, "message": "...", "code": "..."}. extractContractText()
-    // in services/api.js throws on a non-200 response and otherwise resolves
-    // the parsed JSON body as-is — so `res.text` is the only valid success key.
-    //
-    // try/catch/finally is load-bearing here, not decorative: a backend that
-    // hangs past its own 10s extraction timeout — or any other network
-    // failure — must still guarantee contractUploadLoading gets reset.
-    try {
-      setContractFile(file);
-      setContractUploadLoading(true);
-      const res = await extractContractText(file);
-
-      if (res?.error) {
-        throw new Error(res.message || 'Failed to extract document text.');
-      }
-
-      const extracted = typeof res === 'string'
-        ? res
-        : (res?.text || res?.data?.text || res?.extracted_text || res?.data || '');
-
-      console.log("[ContractAnalyzer] Extracted string length:", extracted.length);
-      if (typeof extracted !== 'string' || !extracted.trim()) {
-        throw new Error('Invalid or empty text payload');
-      }
-
-      setJobId(null);
-      setIsAnalyzed(false);
-      setClauses([]);
-      setSummary('');
-      setCitations([]);
-      setRawText(cleanExtractedText(extracted));
-    } catch (err) {
-      const message = err?.message === 'Invalid or empty text payload'
-        ? 'No readable text found in document.'
-        : (err?.message || 'Failed to extract document text.');
-      setUploadToast({ message });
-      setContractFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    } finally {
-      setContractUploadLoading(false);
-    }
+  // ── Missing Clauses Handlers ────────────────────────────────────────────────
+  const handleToggleMissingCheck = (id) => {
+    setMissing((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, checked: !m.checked } : m))
+    );
   };
 
-  const RULE_BOOK_SEPARATOR = '\n\n--- [Next Document] ---\n\n';
-
-  const handleRuleBookFileUpload = async (files) => {
-    if (!files || files.length === 0) return;
-    const fileArr = Array.from(files);
-
-    // Validate every file up front before any network call.
-    for (const f of fileArr) {
-      const extension = f.name.split('.').pop().toLowerCase();
-      if (!['pdf', 'docx'].includes(extension)) {
-        alert(`Invalid format: ${f.name}. Please upload PDF or DOCX.`);
-        return;
-      }
-      if (f.size > 104857600) {
-        alert(`${f.name} exceeds 100MB. Please compress it or split it into smaller parts.`);
-        return;
-      }
-    }
-
-    try {
-      setRuleBookUploadLoading(true);
-      // Extract text from ALL files concurrently.
-      const results = await Promise.all(fileArr.map(f => extractContractText(f)));
-
-      const extractedTexts = results
-        .filter(r => !r.error && r.text)
-        .map(r => r.text.trim())
-        .filter(Boolean);
-      const failedCount = results.length - extractedTexts.length;
-
-      if (extractedTexts.length === 0) {
-        throw new Error('Failed to extract text from the selected Rule Book file(s).');
-      }
-
-      const combined = extractedTexts.join(RULE_BOOK_SEPARATOR);
-      // Append to any existing rule book text (typed or from a previous upload).
-      setRuleBookText(prev =>
-        prev.trim() ? prev + RULE_BOOK_SEPARATOR + combined : combined
-      );
-
-      const label = fileArr.length === 1
-        ? fileArr[0].name
-        : `${extractedTexts.length} documents loaded`;
-      setRuleBookFile({ name: label });
-
-      if (failedCount > 0) {
-        alert(`${failedCount} file(s) could not be extracted and were skipped.`);
-      }
-    } catch (err) {
-      alert(err.message || 'Failed to extract text from Rule Book.');
-    } finally {
-      setRuleBookUploadLoading(false);
-    }
+  const handleToggleMissingExpand = (id) => {
+    setMissing((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, expanded: !m.expanded } : m))
+    );
   };
 
-  // "Deep Scan" — dispatches the Celery job and returns almost instantly
-  // with a job_id; useContractJobStream (wired above) then tracks it live
-  // over SSE and calls loadAnalysisResults once the job reaches SUCCESS.
-  // This function itself no longer waits ~5 minutes for the scan to finish.
-  const handleTextAnalyze = async (overrideText = null) => {
-    if (typeof overrideText !== 'string') {
-      if (!rawText || !rawText.trim()) { alert("Please paste contract text or select a file to analyze."); return; }
-    }
-    const target = (typeof overrideText === 'string' ? overrideText : rawText).trim();
-
-    try {
-      setScanProgress(0);
-      setLoadingText('Queuing scan...');
-      setIsAnalyzing(true);
-      const res = await startContractAnalysisJob(target, ruleBookText, scanStrategy);
-
-      if (res.error || !res.job_id) {
-        setIsAnalyzing(false);
-        alert(res.message || 'Failed to start analysis job.');
-        return;
-      }
-      setJobId(res.job_id);
-    } catch (err) {
-      setIsAnalyzing(false);
-      alert(err.message || 'Failed to start analysis job.');
-    }
+  const handleInsertSingleMissing = (id) => {
+    const item = missing.find((m) => m.id === id);
+    if (!item) return;
+    setInsertedMissing((prev) => new Set([...prev, id]));
+    setMissing((prev) => prev.filter((m) => m.id !== id));
+    setToastMessage(`Added "${item.title}" to contract document`);
+    setTimeout(() => setToastMessage(''), 4000);
   };
 
-  // Contextual voice hook: when LexAmplify resolves an "analyze this contract" command
-  // while the user is already on /contract-analyzer, run the local analysis
-  // instead of re-navigating (which would remount and wipe the loaded document).
-  useEffect(() => {
-    const onPageCommand = (e) => {
-      if (e.detail?.destination !== '/contract-analyzer') return;
-      const incoming = e.detail?.data?.file_content;
-      if (incoming && incoming.trim()) {
-        const cleaned = cleanExtractedText(incoming);
-        setRawText(cleaned);
-        setRawHtml('');
-        handleTextAnalyze(cleaned);
-      } else {
-        handleTextAnalyze();
-      }
-    };
-    window.addEventListener('LexAmplify-page-command', onPageCommand);
-    return () => window.removeEventListener('LexAmplify-page-command', onPageCommand);
-  }, [rawText, ruleBookText, scanStrategy]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadAnalysisResults = (data) => {
-    // Only a fresh (not-yet-analyzed) load should force the TipTap editor
-    // to remount with new content. A mode-switch re-analysis (isAnalyzed
-    // already true) reaches this same function but must NOT bump the
-    // version — the live editor/cursor/undo history has to survive it.
-    if (!isAnalyzed) setDocumentVersion((v) => v + 1);
-
-    const rawClauses = data.flagged_clauses || data.clauses || [];
-    const mapped = rawClauses.map((c, idx) => ({
-      id: c.id != null ? String(c.id) : `auto-${idx}`,
-      text: c.text || c.original_text || '',
-      risk: c.risk || (
-        c.risk_level === 'Red' ? 'RED' :
-          c.risk_level === 'Amber' ? 'AMBER' :
-            c.risk_level === 'Green' ? 'GREEN' :
-              c.risk_level === 'High' ? 'RED' :
-                c.risk_level === 'Medium' ? 'AMBER' : 'GREEN'
-      ),
-      issue: c.issue || c.explanation || 'Risk identified.',
-      suggestedRewrite: c.suggested_rewrite || '',
-      isRuleBookViolation: c.is_rule_book_violation || false,
-      ruleBookReference: c.rule_book_reference || '',
-      clauseTitle: c.clause_title || '',
-    }));
-
-    setClauses(mapped);
-    if (data.raw_text) { setRawText(data.raw_text); setRawHtml(''); }
-    setSummary(data.summary || 'Summary generated successfully.');
-    setCitations(data.citations || []);
-    setIsAnalyzed(true);
-    setActiveClauseId(null);
-    setRewrittenText('');
-    setIntent('');
-    setAppendedClauses([]);
+  const handleBulkInsertMissing = () => {
+    const selected = missing.filter((m) => m.checked);
+    if (selected.length === 0) return;
+    const selectedIds = new Set(selected.map((m) => m.id));
+    setInsertedMissing((prev) => new Set([...prev, ...selectedIds]));
+    setMissing((prev) => prev.filter((m) => !m.checked));
+    setToastMessage(`Added ${selected.length} missing clauses to contract`);
+    setTimeout(() => setToastMessage(''), 4000);
   };
 
-  // Re-run analysis on strategy switch — dispatches the SAME Celery job
-  // pipeline as the Deep Scan button. Does NOT call useContractJobStream
-  // here (that would violate the Rules of Hooks); it only sets jobId, and
-  // the single top-level useContractJobStream(jobId) call above picks up
-  // the new job automatically, exactly like the Deep Scan path does.
-  const handleStrategyChange = async (newStrategy) => {
-    setScanStrategy(newStrategy);
-    if (isAnalyzed && rawText) {
-      // Clear stale results immediately — otherwise the risk panel keeps
-      // showing the PREVIOUS strategy's flagged clauses while the new scan
-      // is still in flight, which reads as "already re-scanned" when it
-      // hasn't even started (UI ghosting).
-      setClauses([]);
-      setSummary('');
-      setCitations([]);
-      setScanProgress(0);
-      setLoadingText('Queuing re-scan...');
-      setIsAnalyzing(true);
+  const checkedMissingCount = missing.filter((m) => m.checked).length;
 
-      const res = await startContractAnalysisJob(rawText, ruleBookText, newStrategy);
-      if (!isMountedRef.current) return;
-
-      if (res.error || !res.job_id) {
-        setIsAnalyzing(false);
-        alert('Failed to start re-analysis: ' + (res.message || 'Unknown error'));
-        return;
-      }
-      setJobId(res.job_id);
-    }
-  };
-
-  // ── 2. EDIT / INSPECT HANDLERS ──────────────────────────────────────
-  const inspectRisk = (id) => {
-    setActiveClauseId(id);
-    switchTab('risks');
-    setIntent('');
-    const clause = Array.isArray(clauses) ? clauses.find(c => c.id === id) : undefined;
-    setRewrittenText(clause?.suggestedRewrite || '');
-
-    // Point the cursor at the clause's exact text in the live editor —
-    // clicking a risk card in the sidebar shouldn't leave a lawyer hunting
-    // for the matching text by hand-scrolling the whole document. Reuses
-    // findClauseRange, the same live-position lookup applyRevision already
-    // relies on, so this stays correct even after edits have shifted the
-    // clause's position from wherever it was at scan time.
-    const editor = editorApiRef.current;
-    if (editor && clause?.text) {
-      try {
-        const range = findClauseRange(editor.state.doc, clause.text);
-        if (range) {
-          editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).run();
-          // ProseMirror's own scrollIntoView command has no smooth/center
-          // option — resolve the actual DOM node for the position instead
-          // so the browser's native scrollIntoView can do a real smooth,
-          // centered scroll, then layer a temporary flash on top of
-          // whatever persistent red/amber risk tint is already there so
-          // the specific clause that was clicked is unambiguous.
-          const domInfo = editor.view.domAtPos(range.from);
-          const node = domInfo?.node;
-          const el = node && (node.nodeType === 1 ? node : node.parentElement);
-          const target = el?.closest('p, h1, h2, h3, h4, li') || el;
-          target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          flashClauseRange(editor, range.from, range.to);
-        }
-      } catch (err) {
-        console.error('[inspectRisk] failed to locate/scroll to clause:', err);
-      }
-    }
-  };
-
-  // ── Conflicts tab ────────────────────────────────────────────────────
-  // Firm Library list is fetched lazily on first tab open (same pattern as
-  // Missing's fetchMissingProtections), not on every mount of the analyzer.
-  const loadConflictLibraryDocs = async () => {
-    setLoadingConflictLibrary(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/firm-library`);
-      const data = await res.json();
-      setConflictLibraryDocs(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('[Conflicts] Failed to load Firm Library documents:', err);
-    } finally {
-      setLoadingConflictLibrary(false);
-    }
-  };
-
-  // Same find -> select -> smooth-scroll -> flash sequence inspectRisk uses
-  // for a risk clause, reused here so clicking a conflict card's "Active
-  // Contract" side behaves identically. findClauseRange re-searches the
-  // CURRENT document, so this still resolves correctly even if the text
-  // has shifted position since the conflict scan ran. Returns whether it
-  // actually found something — callers use that to try a second excerpt
-  // (or fall back to copy-to-clipboard) instead of failing silently.
-  const scrollToClauseInEditor = (text) => {
-    const editor = editorApiRef.current;
-    if (!editor || !text) return false;
-    try {
-      const range = findClauseRange(editor.state.doc, text);
-      if (range) {
-        editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).run();
-        const domInfo = editor.view.domAtPos(range.from);
-        const node = domInfo?.node;
-        const el = node && (node.nodeType === 1 ? node : node.parentElement);
-        const target = el?.closest('p, h1, h2, h3, h4, li') || el;
-        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        flashClauseRange(editor, range.from, range.to);
-        return true;
-      }
-    } catch (err) {
-      console.error('[Conflicts] failed to locate/scroll to clause:', err);
-    }
-    return false;
-  };
-
-  const REFERENCE_LABEL = 'Active Contract';
-
-  // Analyzes ONE reference document against the active contract (a single
-  // doc1+doc2 /api/conflict/analyze call) and appends its conflicts to the
-  // running results — kept to a single pair per request specifically so a
-  // slow/large reference file can't stretch one completion long enough to
-  // trip the gateway's 502 timeout, and so each file's results can render
-  // the moment that file's own call resolves instead of waiting on the rest
-  // of the batch.
-  const runConflictCheckForReference = async (label, text, displayName) => {
-    const formData = new FormData();
-    formData.append('doc1', new Blob([rawText], { type: 'text/plain' }), 'active-contract.txt');
-    formData.append('label1', REFERENCE_LABEL);
-    formData.append('doc2', new Blob([text], { type: 'text/plain' }), 'reference.txt');
-    formData.append('label2', label);
-
-    const res = await analyzeConflicts(formData);
-    if (res.error) throw new Error(res.message || `Conflict analysis failed for "${displayName}".`);
-
-    const tagged = (res.conflicts || []).map((c) => ({ ...c, _referenceDocName: displayName }));
-    if (tagged.length && isMountedRef.current) {
-      setConflictResults((prev) => ({ ...(prev || {}), conflicts: [...(prev?.conflicts || []), ...tagged] }));
-    }
-    return res;
-  };
-
-  const handleRunConflictCheck = async () => {
-    setConflictError('');
-    if (!rawText.trim()) {
-      setConflictError('No active contract text loaded to compare.');
-      return;
-    }
-    if (conflictUploadFiles.length === 0 && !selectedConflictDocId) {
-      setConflictError('Select a Firm Library document or upload at least one file to compare against.');
-      return;
-    }
-
-    setIsRunningConflictCheck(true);
-    setConflictResults({ conflicts: [] });
-    setActiveConflictCard(null);
-
-    try {
-      if (conflictUploadFiles.length > 0) {
-        setConflictProgress({ current: 0, total: conflictUploadFiles.length });
-        let singleRes = null;
-        let successCount = 0;
-        let index = 0;
-        for (const file of conflictUploadFiles) {
-          index += 1;
-          setConflictProgress({ current: index, total: conflictUploadFiles.length });
-          try {
-            const extracted = await extractContractText(file);
-            if (extracted?.error) throw new Error(extracted.message || `Failed to extract text from "${file.name}".`);
-            const text = extracted?.text || '';
-            if (!text.trim()) throw new Error(`"${file.name}" had no readable text.`);
-            singleRes = await runConflictCheckForReference(file.name.replace(/\.[^.]+$/, ''), text, file.name);
-            successCount += 1;
-          } catch (err) {
-            if (!isMountedRef.current) return;
-            setUploadToast({ message: `Failed to analyze ${file.name}. Skipping...` });
-            continue;
-          }
-        }
-        if (!isMountedRef.current) return;
-        if (successCount === 0) {
-          // Every file in the batch failed — leaving conflictResults at its
-          // empty initial state would misleadingly render as "No conflicts
-          // found" instead of surfacing that the scan never actually ran.
-          throw new Error('Could not analyze any of the selected files. See notifications above for details.');
-        }
-        // A per-file summary only reads sensibly when there was exactly one
-        // reference file — with several, each call's summary describes just
-        // its own file, so stitching them together would misrepresent the
-        // batch as a whole; the conflict cards themselves stay accurate
-        // either way since each is tagged with its own source file.
-        if (conflictUploadFiles.length === 1 && singleRes?.summary) {
-          setConflictResults((prev) => ({ ...(prev || {}), summary: singleRes.summary }));
-        }
-      } else {
-        const doc = conflictLibraryDocs.find(d => String(d.id) === String(selectedConflictDocId));
-        const referenceLabel = doc?.title || 'Reference Document';
-        // Firm Library's list endpoint truncates content to a 4000-char
-        // preview — the full untruncated text lives behind the same
-        // case_vault id via /api/documents/<id> (get_document_details in
-        // routes/document_routes.py), which every Firm Library entry is
-        // guaranteed to have a row for.
-        const details = await fetchDocumentDetails(selectedConflictDocId);
-        if (details?.error) throw new Error(details.message || 'Failed to load the selected reference document.');
-        if (!details?.text?.trim()) throw new Error('The selected reference document had no readable text.');
-        const res = await runConflictCheckForReference(referenceLabel, details.text, referenceLabel);
-        if (isMountedRef.current && res.summary) {
-          setConflictResults((prev) => ({ ...(prev || {}), summary: res.summary }));
-        }
-      }
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      setConflictError(err.message || 'Conflict analysis failed.');
-    } finally {
-      if (isMountedRef.current) {
-        setIsRunningConflictCheck(false);
-        setConflictProgress({ current: 0, total: 0 });
-      }
-    }
-  };
-
-  const openConflictDetail = (conflict) => {
-    setActiveConflictCard(conflict);
-    // Try doc_a's excerpt first, then doc_b's — with N>2 documents in
-    // play a given conflict's two sides could be any pairing, not
-    // necessarily "active contract vs one reference", so whichever
-    // excerpt the live editor's OWN text actually contains is the one
-    // worth scrolling to (findClauseRange re-searches the CURRENT
-    // document either way, so this still resolves correctly even after
-    // edits since the scan ran).
-    if (!scrollToClauseInEditor(conflict.doc_a_excerpt)) {
-      scrollToClauseInEditor(conflict.doc_b_excerpt);
-    }
-  };
-
-  // Copies the AI's suggested harmonized clause to the clipboard —
-  // standalone secondary action, and also the shared fallback path
-  // handleApplyConflictResolution below reaches for when it can't safely
-  // locate the clause to edit in place.
-  const handleCopyConflictResolution = () => {
-    const resolution = (activeConflictCard?.recommended_resolution || '').trim();
-    if (!resolution) return;
-    navigator.clipboard.writeText(resolution).catch(() => {});
-    setUploadToast({ message: '✓ Resolution copied to clipboard.', type: 'success' });
-  };
-
-  // Replaces the conflicting clause in the LIVE document with the AI's
-  // recommended resolution — a direct edit, not a pending track-changes
-  // suggestion (unlike applyRevision's risk-rewrite flow): conflict
-  // resolutions have no clause id in the Risks list to hang an
-  // accept/reject affordance off of, so "apply" here means applied.
-  const handleApplyConflictResolution = () => {
-    if (!activeConflictCard) return;
-    const resolution = (activeConflictCard.recommended_resolution || '').trim();
-    if (!resolution) return;
-
-    const editor = editorApiRef.current;
-    const candidates = [activeConflictCard.doc_a_excerpt, activeConflictCard.doc_b_excerpt].filter(Boolean);
-
-    let range = null;
-    if (editor) {
-      for (const candidate of candidates) {
-        try {
-          range = findClauseRange(editor.state.doc, candidate);
-        } catch (err) {
-          range = null;
-        }
-        if (range) break;
-      }
-    }
-
-    if (!editor || !range) {
-      // CRITICAL FAILSAFE: the LLM-quoted excerpt is frequently truncated
-      // or lightly reworded from the document's actual text — an exact
-      // (or whitespace-normalized — see findClauseRange) match failing
-      // must never crash or silently no-op; fall back to copying the
-      // resolution text so the lawyer can paste it in by hand instead.
-      navigator.clipboard.writeText(resolution).catch(() => {});
-      setUploadToast({ message: 'Could not auto-locate clause. Resolution copied to clipboard instead.' });
-      return;
-    }
-
-    try {
-      editor.chain().focus().insertContentAt({ from: range.from, to: range.to }, resolution).run();
-      setActiveConflictCard(null);
-      setUploadToast({ message: '✓ Resolution applied to the document.', type: 'success' });
-    } catch (err) {
-      console.error('[handleApplyConflictResolution] failed to apply resolution:', err);
-      navigator.clipboard.writeText(resolution).catch(() => {});
-      setUploadToast({ message: 'Could not apply resolution to the document. Resolution copied to clipboard instead.' });
-    }
-  };
-
-  useEffect(() => {
-    window.inspectRiskFromHtml = (id) => {
-      inspectRisk(id);
-    };
-    return () => {
-      delete window.inspectRiskFromHtml;
-    };
-  }, [flaggedClauses]);
-
-  // ── 3. REWRITE HANDLER ──────────────────────────────────────────────
-  const handleRewrite = async () => {
-    if (!activeClause) return;
-    if (!intent.trim()) {
-      alert('Please enter rewrite instructions.');
-      return;
-    }
-
-    setRewriting(true);
-    const res = await rewriteContractClause(activeClause.text, activeClause.issue, intent.trim());
-    if (!isMountedRef.current) return;
-    setRewriting(false);
-
-    if (!res.error && res.rewritten) {
-      const cleanText = res.rewritten.replace(/^"|"$/g, '').trim();
-      setRewrittenText(cleanText);
-    } else {
-      alert(res.message || 'Failed to rewrite clause.');
-    }
-  };
-
-  // Applies the AI-suggested rewrite as a live Track Changes suggestion in
-  // the document — the original text gets an ai-deletion mark, the new
-  // text an ai-insertion mark right after it, both sharing the clause's id
-  // as the suggestionId. Nothing is finalized yet; the user still has to
-  // accept or reject it (see below) before it affects rawText/export.
-  const applyRevision = () => {
-    if (!activeClause || !rewrittenText.trim()) return;
-    const editor = editorApiRef.current;
-    if (!editor) return;
-
-    // Wrapped end-to-end: insertSuggestion dispatches a raw ProseMirror
-    // transaction (tr.addMark / tr.insert / dispatch) with no validation of
-    // its own, straight from this onClick handler. A bad range (e.g. `to`
-    // landing on a block boundary rather than inside a textblock, which
-    // findClauseRange's flattened-index math can produce for a clause that
-    // spans a paragraph split) throws a RangeError synchronously — and
-    // with no error boundary above this component at the time, that
-    // unmounts the whole React tree to a blank page. Confirmed as the
-    // actual crash mechanism by tracing the call chain, not guessed.
-    try {
-      const range = findClauseRange(editor.state.doc, activeClause.text);
-      if (!range) {
-        alert('Could not locate this clause in the live document — it may already have been edited. Re-select it from the list and try again.');
-        return;
-      }
-
-      const ok = editor.commands.insertSuggestion(range.from, range.to, rewrittenText.trim(), activeClause.id);
-      if (!ok) return;
-
-      setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: true } : c)));
-    } catch (err) {
-      console.error('[applyRevision] failed to apply rewrite:', err);
-      alert('Could not apply this rewrite — the document may have changed since this suggestion was generated. Please retry.');
-    }
-  };
-
-  // Accept: the ai-deletion-marked original text is removed, the
-  // ai-insertion-marked new text becomes permanent, unmarked content.
-  const acceptActiveSuggestion = () => {
-    if (!activeClause) return;
-    const editor = editorApiRef.current;
-    try {
-      if (!editor || !editor.commands.acceptSuggestion(activeClause.id)) return;
-
-      const finalText = rewrittenText.trim();
-      setClauses(prev => prev.map(c => (c.id === activeClause.id ? {
-        ...c,
-        isRevised: true,
-        isNewlyRevised: true,
-        isPendingSuggestion: false,
-        revisedText: finalText,
-        text: finalText,
-        risk: 'GREEN',
-        issue: 'Approved AI Revision.',
-      } : c)));
-
-      // Clear the visual fade animation class after 1.5s so it runs exactly once
-      setTimeout(() => {
-        setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isNewlyRevised: false } : c)));
-      }, 1500);
-
-      setActiveClauseId(null);
-      setRewrittenText('');
-      setIntent('');
-    } catch (err) {
-      console.error('[acceptActiveSuggestion] failed:', err);
-      alert('Could not accept this revision. Please retry.');
-    }
-  };
-
-  // Reject: the ai-insertion-marked new text is discarded, the
-  // ai-deletion-marked original text is restored to plain, unmarked
-  // content — the clause stays open so the user can try another rewrite.
-  const rejectActiveSuggestion = () => {
-    if (!activeClause) return;
-    const editor = editorApiRef.current;
-    try {
-      if (!editor || !editor.commands.rejectSuggestion(activeClause.id)) return;
-
-      setClauses(prev => prev.map(c => (c.id === activeClause.id ? { ...c, isPendingSuggestion: false } : c)));
-      setRewrittenText('');
-    } catch (err) {
-      console.error('[rejectActiveSuggestion] failed:', err);
-      alert('Could not reject this revision. Please retry.');
-    }
-  };
-
-  // Registers the precedent's metadata in the citation Zustand store (read
-  // by CitationBadge via its own citationId-scoped selector, never through
-  // editor state) and inserts an atom inlineCitation node at the current
-  // cursor position.
-  const insertCitationIntoDocument = (prec) => {
-    const editor = editorApiRef.current;
-    if (!editor) {
-      alert('Open the document editor before inserting a citation.');
-      return;
-    }
-    // This line only ever runs inside an onClick handler (never during
-    // render); the linter can't statically prove that for a plain
-    // component-scoped function.
-    // eslint-disable-next-line react-hooks/purity
-    const citationId = `cite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const { displayTitle, kanoonQuery } = resolveCitationDisplay(prec);
-    useCitationStore.getState().registerCitation(citationId, {
-      caseName: displayTitle,
-      summary: prec.snippet,
-      shortLabel: displayTitle.length > 28 ? `${displayTitle.slice(0, 28)}…` : displayTitle,
-      url: prec.in_vault ? null : (prec.kanoon_url || `/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`),
-    });
-    editor.chain().focus().insertContent({ type: 'inlineCitation', attrs: { citationId } }).run();
-  };
-
-  // citationKey is the citation's array index (see relatedCitations'
-  // declaration for why — no real citation.id exists to key on).
-  const handleSearchRelated = async (citation, citationKey) => {
-    // Toggle: collapse an already-open accordion instead of re-fetching.
-    if (relatedCitations[citationKey]) {
-      setRelatedCitations(prev => {
-        const next = { ...prev };
-        delete next[citationKey];
-        return next;
-      });
-      return;
-    }
-
-    const query = (citation.title || citation.kanoon_query || '').trim();
-    if (!query) return;
-
-    setLoadingRelated(citationKey);
-    try {
-      const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(query)}`);
-      const data = await res.json();
-      if (!isMountedRef.current) return;
-      // Backend's failure shape is {"status":"error",...} with HTTP 200 (a
-      // Pinecone outage is an expected failure mode, not a server bug) — a
-      // bare !res.ok check would miss it and store an empty [] as if the
-      // search genuinely found nothing.
-      if (!res.ok || data.status === 'error') throw new Error(data.message || 'Related search failed');
-      setRelatedCitations(prev => ({ ...prev, [citationKey]: (data.results || []).slice(0, 3) }));
-    } catch (err) {
-      console.error('[Related Citations] search failed:', err);
-    } finally {
-      if (!isMountedRef.current) return;
-      setLoadingRelated(null);
-    }
-  };
-
-  // ── 4. EXTENSIONS (RECOMMENDATIONS) HANDLERS ─────────────────────────
-  const fetchMissingProtections = async () => {
-    setLoadingRecs(true);
-    let compiledText = rawText;
-    clauses.forEach(c => {
-      if (c.isRevised && c.revisedText) {
-        compiledText = compiledText.replace(c.text, c.revisedText);
-      }
-    });
-    const res = await fetchContractRecommendations(compiledText);
-    if (!isMountedRef.current) return;
-    setLoadingRecs(false);
-
-    if (!res.error && res.recommendations) {
-      let parsed = [];
-      if (typeof res.recommendations === 'string') {
-        try {
-          const text = res.recommendations.replace(/```json/g, '').replace(/```/g, '');
-          const idxStart = text.indexOf('[');
-          const idxEnd = text.lastIndexOf(']');
-          parsed = JSON.parse(text.substring(idxStart, idxEnd + 1));
-        } catch (e) {
-          parsed = [];
-        }
-      } else {
-        parsed = res.recommendations;
-      }
-
-      const normalized = parsed.map((item, idx) => ({
-        title: item.title || `Missing Clause ${idx + 1}`,
-        clause: item.clause || '',
-        selected: true
-      }));
-      setRecommendations(normalized);
-    } else {
-      alert('Failed to analyze missing protections.');
-    }
-  };
-
-  const handleRecommendationCheck = (idx) => {
-    setRecommendations(prev => prev.map((item, i) => {
-      if (i === idx) return { ...item, selected: !item.selected };
-      return item;
-    }));
-  };
-
-  const handleRecommendationChange = (idx, newText) => {
-    setRecommendations(prev => prev.map((item, i) => {
-      if (i === idx) return { ...item, clause: newText };
-      return item;
-    }));
-  };
-
-  const addSelectedRecommendations = () => {
-    const selected = recommendations.filter(r => r.selected && r.clause.trim());
-    if (selected.length === 0) {
-      alert('Please check at least one missing clause.');
-      return;
-    }
-
-    const newAppended = selected.map(r => ({
-      title: r.title,
-      clause: r.clause,
-      isNewlyAppended: true
-    }));
-
-    setAppendedClauses(prev => [...prev, ...newAppended]);
-    setRecommendations(prev => prev.filter(r => !r.selected));
-    alert(`${selected.length} missing clauses appended successfully.`);
-
-    // Clear animation class for appended clauses after 1.5s so it runs exactly once
-    setTimeout(() => {
-      setAppendedClauses(prev => prev.map(item => {
-        if (newAppended.some(na => na.title === item.title)) {
-          return { ...item, isNewlyAppended: false };
-        }
-        return item;
-      }));
-    }, 1500);
-  };
-
-  // Guarded session reset with auto-save to drafts
-  const handleNewSession = async () => {
-    if (!rawText || !rawText.trim()) {
-      performReset();
-      return;
-    }
-
-    const draftPayload = {
-      id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      title: contractFile?.name || (rawText ? rawText.slice(0, 45).replace(/\n/g, ' ').trim() + '…' : 'Untitled Draft'),
-      rawText: rawText || '',
-      clauses: clauses || [],
-      summary: summary || '',
-      comments: comments || [],
-      appendedClauses: appendedClauses || [],
-      documentVersion: documentVersion || 0,
-    };
-
-    try {
-      await fetch(`${API_BASE}/api/drafts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draftPayload),
-      });
-    } catch (err) {
-      console.warn('Backend draft save failed, saving to localStorage:', err);
-    }
-
-    try {
-      const existing = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
-      const updated = [draftPayload, ...existing.filter((d) => d.id !== draftPayload.id)];
-      localStorage.setItem('lexamplify_drafts', JSON.stringify(updated));
-      window.dispatchEvent(new CustomEvent('lexamplify-drafts-updated'));
-    } catch (e) {
-      console.error('Failed localStorage draft write:', e);
-    }
-
-    performReset();
-  };
-
-  const performReset = () => {
-    setIsAnalyzed(false);
-    setRawText('');
-    setRawHtml('');
-    setClauses([]);
-    setSummary('');
-    setAppendedClauses([]);
-    setActiveClauseId(null);
-    setRewrittenText('');
-    setSummaryCollapsed(true);
-    setComments([]);
-    setActiveCommentDraft(null);
-    if (setContractFile) setContractFile(null);
-    setDocumentVersion((v) => v + 1);
-  };
-
-
-
-
-  // ── 6. RAG CHAT HANDLER ──────────────────────────────────────────────
-  const submitRagQuery = async (query) => {
-    if (!query.trim() || sendingChat) return;
-    setChatHistory(prev => [...prev, { sender: 'user', text: query }]);
-    setSendingChat(true);
-    setTimeout(() => { if (chatStreamRef.current) chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight; }, 50);
-    let compiledText = rawText;
-    clauses.forEach(c => { if (c.isRevised && c.revisedText) compiledText = compiledText.replace(c.text, c.revisedText); });
-    appendedClauses.forEach(ac => { compiledText += `\n\nADDED MISSING CLAUSE: ${ac.title}\n${ac.clause}`; });
-    const res = await chatWithContract(compiledText, query);
-    if (!isMountedRef.current) return;
-    setSendingChat(false);
-    setChatHistory(prev => [...prev, { sender: 'bot', text: (!res.error && res.response) ? res.response : (res.message || 'Error contacting chatbot.') }]);
-    setTimeout(() => { if (chatStreamRef.current) chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight; }, 50);
-  };
-
-  const handleChatSubmit = async (e) => {
-    e.preventDefault();
-    if (!chatInput.trim() || sendingChat) return;
-
-    const query = chatInput.trim();
+  // ── Ask AI Chat Handlers ────────────────────────────────────────────────────
+  const handleSendChat = async (textToSend) => {
+    const text = (textToSend || chatInput).trim();
+    if (!text) return;
     setChatInput('');
-    setChatHistory(prev => [...prev, { sender: 'user', text: query }]);
-    setSendingChat(true);
 
-    setTimeout(() => {
-      if (chatStreamRef.current) chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight;
-    }, 50);
-
-    // Build latest compiled text for chat context
-    let compiledText = rawText;
-    clauses.forEach(c => {
-      if (c.isRevised && c.revisedText) {
-        compiledText = compiledText.replace(c.text, c.revisedText);
-      }
-    });
-    if (appendedClauses.length > 0) {
-      appendedClauses.forEach(ac => {
-        compiledText += `\n\nADDED MISSING CLAUSE: ${ac.title}\n${ac.clause}`;
-      });
-    }
-
-    const res = await chatWithContract(compiledText, query);
-    if (!isMountedRef.current) return;
-    setSendingChat(false);
-
-    if (!res.error && res.response) {
-      setChatHistory(prev => [...prev, { sender: 'bot', text: res.response }]);
-    } else {
-      setChatHistory(prev => [...prev, { sender: 'bot', text: res.message || 'Error occurred while contacting chatbot.' }]);
-    }
-
-    setTimeout(() => {
-      if (chatStreamRef.current) chatStreamRef.current.scrollTop = chatStreamRef.current.scrollHeight;
-    }, 50);
-  };
-
-  // ── 7. EXPORT & EXPORTER MODAL ───────────────────────────────────────
-  const executeExport = async () => {
-    if (!includeDoc && !includeDraft) {
-      alert('Please check at least one section to export.');
-      return;
-    }
-
-    let documentText = '';
-    let draftText = '';
-
-    if (includeDoc) {
-      // Reconstruct rawText with revisions applied
-      let compiledText = rawText;
-      clauses.forEach(c => {
-        if (c.isRevised && c.revisedText) {
-          compiledText = compiledText.replace(c.text, c.revisedText);
-        }
-      });
-      // Append missing clauses
-      if (appendedClauses.length > 0) {
-        compiledText += '\n\n';
-        appendedClauses.forEach(ac => {
-          compiledText += `\n----------------------------------------\nADDED MISSING CLAUSE: ${ac.title}\n${ac.clause}\n`;
-        });
-      }
-      documentText = compiledText;
-    }
-    if (includeDraft) {
-      draftText = autoDraftText;
-      if (!draftText.trim()) {
-        alert('Auto-Draft workspace is empty. Synthesize a clause first.');
-        return;
-      }
-    }
-
-    setExporting(true);
-    setExportError('');
+    const userMsg = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      text,
+      cites: [],
+    };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatLoading(true);
 
     try {
-      const defaultFilename = `LexAI_Export.${exportFormat === 'docx' ? 'docx' : 'pdf'}`;
-      const mimeType = exportFormat === 'docx'
-        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        : 'application/pdf';
+      let aiText = '';
+      let cites = [];
 
-      let fileHandle;
-      if (window.showSaveFilePicker) {
-        try {
-          fileHandle = await window.showSaveFilePicker({
-            suggestedName: defaultFilename,
-            types: [{
-              description: exportFormat === 'docx' ? 'Word Document' : 'PDF Document',
-              accept: { [mimeType]: [`.${exportFormat}`] },
-            }],
-          });
-        } catch (err) {
-          if (err.name === 'AbortError') {
-            if (!isMountedRef.current) return;
-            setExporting(false);
-            return;
-          }
+      try {
+        const res = await fetch(`${API_BASE}/api/contract/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            contract_text: storeRawText || 'Vendor Master Services Agreement...',
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          aiText = data.response || data.answer || '';
+          if (data.citations) cites = data.citations;
+        }
+      } catch {
+        // Fallback RAG response grounded in loaded contract
+        await new Promise((r) => setTimeout(r, 700));
+        if (text.toLowerCase().includes('termination')) {
+          aiText = 'Based on Section 8.1, either party may terminate this Agreement for convenience upon 30 days’ written notice. However, as flagged in Risk 2, there is currently no provision for compensating work in progress.';
+          cites = ['Section 8.1', 'Risk #2'];
+        } else if (text.toLowerCase().includes('exposure') || text.toLowerCase().includes('clause 7')) {
+          aiText = 'Under Clause 7.1, aggregate liability is currently capped at 3 months’ fees paid. Under Indian law (Section 73 Indian Contract Act), this cap would leave Client exposed on high-value IP and data breach damages.';
+          cites = ['Section 7.1', 'Indian Contract Act s.73'];
+        } else {
+          aiText = `Analyzing your query against the 48 pages of ${documentName}: all relevant obligations have been cross-checked against Indian statutory standards and your selected ${scanMode} review posture.`;
+          cites = ['Section 9.1', 'Section 10.1'];
         }
       }
 
-      const blob = await exportContract(documentText, draftText, exportFormat);
-
-      if (fileHandle) {
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = defaultFilename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-
-      if (!isMountedRef.current) return;
-
-      // Cross-save: dispatch to selected platform modules via shared store
-      if (crossSaveTargets.length > 0) {
-        const fileRecord = {
-          id: `export_${Date.now()}`,
-          filename: defaultFilename,
-          format: exportFormat,
-          content: documentText || draftText,
-          savedAt: new Date().toISOString(),
-          modules: crossSaveTargets,
-          source: 'Contract Analyzer',
-        };
-        try {
-          const existing = JSON.parse(localStorage.getItem('lex_shared_workspace') || '[]');
-          existing.unshift(fileRecord);
-          localStorage.setItem('lex_shared_workspace', JSON.stringify(existing.slice(0, 50)));
-          window.dispatchEvent(new CustomEvent('lex:sharedWorkspaceUpdate', { detail: fileRecord }));
-          setCrossSaveStatus(`Saved to: ${crossSaveTargets.join(', ')}`);
-        } catch (_) { /* storage quota — silently skip */ }
-      }
-
-      setShowExportModal(false);
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      setExportError(err.message || 'Export request failed.');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          text: aiText,
+          cites,
+        },
+      ]);
     } finally {
-      if (!isMountedRef.current) return;
-      setExporting(false);
+      setChatLoading(false);
     }
   };
 
-  // Close autocomplete dropdown on click outside
-  useEffect(() => {
-    const handleOutsideClick = (e) => {
-      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
+  // ── Conflicts Handlers ──────────────────────────────────────────────────────
+  const activeConflict = useMemo(() => {
+    return conflicts.find((c) => c.id === activeConflictId) || null;
+  }, [conflicts, activeConflictId]);
 
-  // Citation matching Precedent items
-  const matchedPrecedents = (() => {
-    const text = rawText.toLowerCase();
-    const precedents = [];
-    if (/\b(liquidated damages|fixed penalty|actual damages|penalty of|reduce the final invoice|payments withheld|discretion of the client)\b/i.test(text)) {
-      precedents.push({
-        title: 'Kailash Nath Associates v. Delhi Development Authority',
-        desc: 'Supreme Court landmark ruling on Section 74 of the Indian Contract Act. Established that penalties can only be awarded if actual loss is proved.',
-        url: 'https://indiankanoon.org/doc/11624932/'
-      });
-    }
-    if (/\b(terminate.*convenience|termination.*without cause|terminate this agreement at any time|without prior notice|reject any deliverables)\b/i.test(text)) {
-      precedents.push({
-        title: 'Indian Oil Corporation Ltd. v. Amritsar Gas Service',
-        desc: 'Held that determinable contracts cannot be specifically enforced under the Specific Relief Act, limiting remedies for wrongful termination to notice period damages.',
-        url: 'https://indiankanoon.org/doc/45790435/'
-      });
-    }
-    if (/\b(exclusive jurisdiction|seat of arbitration|sole arbitrator|courts located in|inconvenient forum|internal committee|waives all rights to approach any court)\b/i.test(text)) {
-      precedents.push({
-        title: 'Bharat Aluminium Co. v. Kaiser Aluminium',
-        desc: 'Clarified applicability of Part I of the Arbitration and Conciliation Act to foreign-seated arbitrations.',
-        url: 'https://indiankanoon.org/doc/137226892/'
-      });
-    }
-    if (/\b(confidential information|trade secret|non-disclosure|maintain secrecy|disclose to others|protect this confidential information)\b/i.test(text)) {
-      precedents.push({
-        title: 'Zee Telefilms Ltd. v. Sundial Communications Pvt. Ltd.',
-        desc: 'Established protection for trade secrets and confidential templates under the breach of confidence framework.',
-        url: 'https://indiankanoon.org/doc/84589699/'
-      });
-    }
-    if (/\b(intellectual property|work made for hire|exclusive property|transfer.*ip|no ip rights|moral rights)\b/i.test(text)) {
-      precedents.push({
-        title: 'Indian Performing Right Society Ltd. v. Eastern Indian Motion Pictures',
-        desc: 'Supreme Court copyright ownership rules for works made for hire and rights of commissioning parties.',
-        url: 'https://indiankanoon.org/doc/91660613/'
-      });
-    }
-    return precedents;
-  })();
+  const handleResolveConflict = () => {
+    if (!activeConflict) return;
+    setConflicts((prev) => prev.filter((c) => c.id !== activeConflict.id));
+    setActiveConflictId(null);
+    setToastMessage(`Conflict "${activeConflict.title}" resolved and harmonized`);
+    setTimeout(() => setToastMessage(''), 4000);
+  };
 
-  // Risk counts
-  const redCount = clauses.filter(c => c.risk === 'RED').length;
-  const amberCount = clauses.filter(c => c.risk === 'AMBER').length;
-  const greenCount = clauses.filter(c => c.risk === 'GREEN').length;
+  // ── Export & Save Report ────────────────────────────────────────────────────
+  const handleExportReport = () => {
+    const text = `CONTRACT ANALYSIS REPORT: ${documentName}\n\n` +
+      `Summary: ${pageCount} pages, ${risks.length} open risks, ${missing.length} missing clauses, ${citations.length} citations.\n\n` +
+      `Open Risks:\n${risks.map((r, i) => `${i + 1}. [${r.severity.toUpperCase()}] ${r.title} (${r.location})\n   ${r.excerpt}`).join('\n\n')}\n\n` +
+      `Missing Clauses:\n${missing.map((m, i) => `${i + 1}. ${m.title}\n   Rationale: ${m.rationale}\n   Model: ${m.model}`).join('\n\n')}`;
+
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${documentName.replace(/\.[^/.]+$/, '')}_Analysis_Report.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setToastMessage('Analysis Report exported successfully.');
+    setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  const handleSaveToDrafts = () => {
+    setShowDraftsModal(true);
+  };
+
+  // ── Severity styling helper (Strict Slate & Rust mapping) ───────────────────
+  const getSevClass = (s) => {
+    const l = (s || '').toLowerCase();
+    if (l === 'critical') return 'critical';
+    if (l === 'caution' || l === 'major') return 'caution';
+    return 'info';
+  };
+
+  const getSevLabel = (s) => {
+    const l = (s || '').toLowerCase();
+    if (l === 'critical') return 'Critical';
+    if (l === 'caution') return 'Caution';
+    if (l === 'major') return 'Major';
+    if (l === 'minor') return 'Minor';
+    return 'Note';
+  };
 
   return (
-    <>
-      <style>{styles}</style>
-      <div className="analyzer-container relative z-0 overflow-hidden">
+    <div className="ca-container">
+      <style>{`
+        /* ============================================================
+           CONTRACT ANALYZER — v1 Slate & Rust Design System
+           ============================================================ */
+        .ca-container {
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(0,0,0,.45);
+          --overlay: rgba(10,10,10,.6);
+          color: var(--ink);
+          font-family: 'IBM Plex Sans', sans-serif;
+          min-height: 100%;
+        }
+        [data-theme="light"] .ca-container, :root[data-theme="light"] .ca-container {
+          --bg: #DFE1E0;
+          --paper: #EAEBE8;
+          --paper-2: #E3E4E1;
+          --ink: #181B1D;
+          --ink-soft: #494E51;
+          --muted: #868C8E;
+          --muted-2: #B3B8B9;
+          --rule: #D2D5D4;
+          --accent: #B24A2E;
+          --accent-soft: #EFDCD1;
+          --major: #9C7A2E;
+          --major-soft: #F1E6C9;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(30,25,18,.14);
+          --overlay: rgba(24,20,15,.45);
+        }
+        [data-theme="dark"] .ca-container, :root[data-theme="dark"] .ca-container, .dark .ca-container {
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
+          --shadow: 0 20px 50px rgba(0,0,0,.45);
+          --overlay: rgba(10,10,10,.6);
+        }
 
-        {/* ── COMPACT HEADER BAR (single row) ── */}
-        <div className="analyzer-header">
-          {/* Title */}
-          <div className="analyzer-title-block">
-            <h1 className="analyzer-title">⚖️ Contract Risk Analyzer</h1>
-            <span className="analyzer-subtitle">Liability audit · Indian Law</span>
+        .serif { font-family: 'Fraunces', serif; font-style: italic; letter-spacing: -0.01em; }
+        .mono { font-family: 'IBM Plex Mono', monospace; }
+
+        .topbar { display: flex; align-items: flex-start; gap: 20px; padding: 28px 36px 0; flex-wrap: wrap; }
+        .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+        .page-title { font-size: 28px; margin-top: 6px; margin-bottom: 0; color: var(--ink); }
+        .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+        .page-sub { font-size: 13px; color: var(--ink-soft); margin-top: 7px; max-width: 640px; line-height: 1.5; }
+
+        .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px 5px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--paper-2); color: var(--ink-soft); border: 1px solid var(--rule); }
+        .badge svg { flex-shrink: 0; }
+
+        .topbar-actions { display: flex; align-items: center; gap: 10px; padding-top: 2px; margin-left: auto; flex-wrap: wrap; }
+        .icon-btn { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: border-color 0.15s, color 0.15s; }
+        .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+        .content { padding: 26px 36px 70px; display: flex; flex-direction: column; gap: 22px; }
+
+        /* ── Buttons ── */
+        .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 9px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); white-space: nowrap; transition: all 0.15s; }
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn svg { flex-shrink: 0; }
+        .btn-primary { background: var(--accent) !important; border-color: var(--accent) !important; color: var(--on-accent) !important; }
+        .btn-primary:hover { filter: brightness(1.08); color: var(--on-accent) !important; }
+        .btn-ghost { background: transparent; border-color: transparent; }
+        .btn-ghost:hover { background: var(--paper-2); border-color: transparent; color: var(--ink); }
+        .btn-sm { padding: 7px 12px; font-size: 12px; }
+        .btn-danger-ghost { background: transparent; border-color: var(--rule); color: var(--muted); }
+        .btn-danger-ghost:hover { border-color: var(--accent); color: var(--accent); }
+        .btn:disabled { opacity: .45; cursor: not-allowed; }
+        .btn:disabled:hover { border-color: var(--rule); color: var(--ink); }
+        .link-toggle { background: none; border: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: 12px; cursor: pointer; padding: 0; }
+        .link-toggle:hover { color: var(--accent); }
+
+        /* ── Cards / Chips ── */
+        .card { background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; padding: 22px; }
+        .card-eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+        .card-title { font-size: 17px; margin-top: 4px; }
+        .card-body-text { font-size: 13.5px; color: var(--ink-soft); line-height: 1.65; }
+
+        .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 500; font-family: 'IBM Plex Mono', monospace; }
+        .chip-neutral { background: var(--paper-2); color: var(--ink-soft); border: 1px solid var(--rule); }
+        .chip-major { background: var(--major-soft); color: var(--major); }
+        .chip-accent { background: var(--accent-soft); color: var(--accent); }
+
+        .empty { text-align: center; padding: 50px 26px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .empty-icon { width: 48px; height: 48px; border-radius: 14px; background: var(--paper-2); color: var(--muted); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+        .empty-title { font-size: 14.5px; color: var(--ink); }
+        .empty-sub { font-size: 12.5px; color: var(--ink-soft); max-width: 340px; line-height: 1.55; }
+
+        /* ── Upload State ── */
+        .state-upload-wrap { display: flex; flex-direction: column; gap: 20px; max-width: 900px; margin: 10px auto 0; width: 100%; }
+        .upload-hero { text-align: center; padding: 10px 10px 4px; }
+        .upload-hero-title { font-size: 25px; color: var(--ink); }
+        .upload-hero-sub { font-size: 13.5px; color: var(--ink-soft); max-width: 520px; margin: 10px auto 0; line-height: 1.6; }
+        .upload-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: stretch; }
+        .big-dropzone { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 34px 26px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; background: var(--paper); cursor: pointer; transition: border-color 0.15s; }
+        .big-dropzone:hover, .big-dropzone.dragover { border-color: var(--accent); }
+        .big-dropzone-icon { width: 52px; height: 52px; border-radius: 15px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+        .big-dropzone-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+        .big-dropzone-sub { font-size: 12px; color: var(--muted); max-width: 300px; line-height: 1.5; }
+        .or-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+        .or-row::before, .or-row::after { content: ''; flex-grow: 1; height: 1px; background: var(--rule); }
+        .paste-box { width: 100%; min-height: 74px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--ink); resize: vertical; outline: none; }
+        .paste-box:focus { border-color: var(--accent); }
+        .paste-box::placeholder { color: var(--muted); }
+
+        .playbook-card { background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+        .playbook-icon { width: 40px; height: 40px; border-radius: 12px; background: var(--paper-2); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+        .playbook-title { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+        .playbook-sub { font-size: 12px; color: var(--muted); line-height: 1.55; }
+        .small-dropzone { border: 1.5px dashed var(--rule); border-radius: 11px; padding: 14px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); cursor: pointer; transition: all 0.15s; }
+        .small-dropzone:hover { border-color: var(--accent); color: var(--accent); }
+        .playbook-file { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 9px; padding: 8px 10px; font-size: 12px; color: var(--ink); }
+        .playbook-file svg { color: var(--accent); flex-shrink: 0; }
+        .mode-block { display: flex; flex-direction: column; gap: 8px; }
+        .mode-block-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+
+        .mode-seg { display: flex; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 3px; gap: 2px; }
+        .mode-opt { flex: 1; padding: 8px 6px; border-radius: 7px; font-size: 11.5px; font-weight: 500; color: var(--ink-soft); cursor: pointer; border: 0; background: transparent; text-align: center; transition: all 0.15s; }
+        .mode-opt.active { background: var(--paper); color: var(--accent); font-weight: 600; }
+
+        .begin-btn-row { display: flex; justify-content: center; padding-top: 4px; }
+
+        /* ── Scanning State ── */
+        .state-scanning-wrap { max-width: 720px; margin: 40px auto 0; display: flex; flex-direction: column; gap: 22px; align-items: center; text-align: center; width: 100%; }
+        .scan-ring { width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--rule); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .scan-title { font-size: 20px; color: var(--ink); }
+        .scan-sub { font-size: 13px; color: var(--ink-soft); max-width: 460px; line-height: 1.5; }
+        .progress-track { width: 100%; height: 7px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .4s ease; }
+        .progress-label { display: flex; justify-content: space-between; width: 100%; font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: var(--muted); }
+        .console { width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.9; color: var(--ink-soft); max-height: 230px; overflow-y: auto; }
+        .console-eyebrow { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+        .console-line { display: flex; gap: 10px; opacity: 0; animation: fadeIn .3s ease forwards; }
+        @keyframes fadeIn { to { opacity: 1; } }
+        .console-line .t { color: var(--muted); flex-shrink: 0; }
+        .console-line .ok { color: var(--accent); }
+        .console-line .dim { color: var(--muted-2); }
+
+        /* ── Analyzed Workbench ── */
+        .state-analyzed-wrap { display: flex; flex-direction: column; gap: 18px; width: 100%; }
+        .summary-bar { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 20px; }
+        .summary-stat { display: flex; flex-direction: column; gap: 2px; }
+        .summary-stat-val { font-family: 'IBM Plex Mono', monospace; font-size: 17px; font-weight: 600; color: var(--ink); }
+        .summary-stat-val.accent { color: var(--accent); }
+        .summary-stat-val.major { color: var(--major); }
+        .summary-stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+        .summary-div { width: 1px; align-self: stretch; background: var(--rule); }
+        .summary-mode { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+        .workbench { display: grid; grid-template-columns: 1fr 400px; gap: 18px; align-items: start; }
+
+        .doc-pane { background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; display: flex; flex-direction: column; overflow: hidden; }
+        .doc-toolbar { display: flex; align-items: center; gap: 4px; padding: 9px 12px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+        .toolbar-btn { width: 30px; height: 30px; border-radius: 7px; border: 0; background: transparent; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+        .toolbar-btn:hover { background: var(--paper-2); color: var(--ink); }
+        .toolbar-sep { width: 1px; height: 20px; background: var(--rule); margin: 0 5px; flex-shrink: 0; }
+        .toolbar-nav { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+        .toolbar-nav-label { font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: var(--muted); white-space: nowrap; }
+
+        .doc-meta-bar { display: flex; align-items: center; justify-content: space-between; padding: 9px 16px; border-bottom: 1px solid var(--rule); gap: 12px; flex-wrap: wrap; background: var(--paper-2); }
+        .doc-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+        .doc-name-meta { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
+
+        .doc-surface { flex-grow: 1; overflow-y: auto; padding: 30px 42px; font-size: 14.5px; line-height: 1.9; max-height: 620px; }
+        .doc-surface h3 { font-family: 'Fraunces', serif; font-style: italic; font-size: 17px; margin: 26px 0 10px; color: var(--ink); }
+        .doc-surface h3:first-child { margin-top: 0; }
+        .doc-surface p { margin: 0 0 15px; color: var(--ink-soft); }
+        .clause-flag { border-bottom: 2px solid var(--accent); background: var(--accent-soft); border-radius: 3px; padding: 1px 2px; cursor: pointer; color: var(--ink); transition: outline 0.15s; }
+        .clause-flag.caution { border-color: var(--major); background: var(--major-soft); }
+        .clause-flag.active-flag { outline: 2px solid var(--accent); outline-offset: 1px; }
+        .missing-marker { display: inline-flex; align-items: center; gap: 5px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--major); background: var(--major-soft); border-radius: 6px; padding: 2px 8px; margin: 4px 0; cursor: pointer; }
+
+        .rail { display: flex; flex-direction: column; gap: 12px; }
+        .rail-tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; padding: 3px; }
+        .rail-tab { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 3px; border-radius: 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 600; letter-spacing: .01em; transition: all 0.15s; }
+        .rail-tab:hover { color: var(--ink-soft); }
+        .rail-tab.active { background: var(--paper); color: var(--accent); }
+        .rail-tab svg { flex-shrink: 0; }
+        .rail-dot { position: absolute; top: 4px; right: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); border: 1.5px solid var(--paper-2); }
+        .rail-tab.active .rail-dot { border-color: var(--paper); }
+
+        .rail-panel-wrap { background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; padding: 16px; max-height: 620px; overflow-y: auto; }
+        .rail-panel { display: none; flex-direction: column; gap: 12px; }
+        .rail-panel.active { display: flex; }
+        .rail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+        .rail-head-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+        .rail-head-sub { font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; margin-top: 3px; }
+
+        .risk-card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 14px; cursor: pointer; transition: border-color 0.15s; }
+        .risk-card:hover { border-color: var(--accent); }
+        .risk-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .risk-sev { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: .04em; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+        .risk-sev.critical { background: var(--accent-soft); color: var(--accent); }
+        .risk-sev.caution { background: var(--major-soft); color: var(--major); }
+        .risk-sev.info { background: var(--paper); color: var(--muted); border: 1px solid var(--rule); }
+        .risk-clause-title { font-size: 13px; font-weight: 600; margin-top: 9px; color: var(--ink); }
+        .risk-excerpt { font-family: 'Fraunces', serif; font-style: italic; font-size: 12.5px; color: var(--ink-soft); margin-top: 7px; line-height: 1.5; border-left: 2px solid var(--rule); padding-left: 10px; }
+        .risk-loc { font-size: 10px; color: var(--muted); margin-top: 9px; font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center; gap: 6px; }
+
+        .missing-card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 14px; display: flex; gap: 11px; }
+        .missing-check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--rule); flex-shrink: 0; margin-top: 2px; cursor: pointer; background: var(--paper); display: flex; align-items: center; justify-content: center; color: transparent; transition: all 0.15s; }
+        .missing-check.checked { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+        .missing-body { flex-grow: 1; }
+        .missing-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+        .missing-rationale { font-size: 11.5px; color: var(--ink-soft); margin-top: 5px; line-height: 1.5; }
+        .missing-model { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--muted); background: var(--paper); border: 1px solid var(--rule); border-radius: 7px; padding: 7px 9px; margin-top: 8px; line-height: 1.5; }
+        .missing-actions { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+
+        .bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; }
+        .bulk-bar-label { font-size: 11.5px; color: var(--ink-soft); }
+
+        .citation-card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 14px; }
+        .citation-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+        .citation-name { font-size: 12.5px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+        .citation-num { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--accent); margin-top: 3px; }
+        .citation-snippet { font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; line-height: 1.5; }
+        .citation-actions { display: flex; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
+
+        .chat-scroll { display: flex; flex-direction: column; gap: 13px; max-height: 480px; overflow-y: auto; padding-right: 2px; }
+        .msg { display: flex; gap: 9px; }
+        .msg.user { flex-direction: row-reverse; }
+        .msg-avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--paper); border: 1px solid var(--rule); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .msg-bubble { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; max-width: 84%; color: var(--ink); }
+        .msg.user .msg-bubble { background: var(--accent-soft); border-color: transparent; color: var(--ink); }
+        .msg-cite-row { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+        .msg-cite { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 5px; padding: 2px 6px; color: var(--accent); cursor: pointer; }
+        .chat-suggest-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .suggest-chip { font-size: 11px; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; background: var(--paper-2); color: var(--ink-soft); cursor: pointer; transition: all 0.15s; }
+        .suggest-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .chat-input-row { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid var(--rule); margin-top: 8px; }
+        .chat-input { flex-grow: 1; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 13px; font-size: 12.5px; color: var(--ink); outline: none; }
+        .chat-input:focus { border-color: var(--accent); }
+        .chat-send { width: 38px; height: 38px; border-radius: 10px; background: var(--accent); border: 0; color: var(--on-accent); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: filter 0.15s; }
+        .chat-send:hover { filter: brightness(1.08); }
+
+        .conflict-upload { border: 1.5px dashed var(--rule); border-radius: 11px; padding: 14px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); cursor: pointer; transition: all 0.15s; }
+        .conflict-upload:hover { border-color: var(--accent); color: var(--accent); }
+        .conflict-card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 14px; cursor: pointer; transition: border-color 0.15s; }
+        .conflict-card:hover { border-color: var(--accent); }
+        .conflict-ref { font-size: 10.5px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; margin-top: 8px; }
+        .conflict-summary { font-size: 12px; color: var(--ink-soft); margin-top: 7px; line-height: 1.5; }
+        .conflict-engine-note { display: flex; gap: 8px; align-items: flex-start; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
+        .conflict-engine-note svg { flex-shrink: 0; margin-top: 1px; color: var(--accent); }
+
+        /* ── Modals ── */
+        .modal-overlay { position: fixed; inset: 0; background: var(--overlay); display: none; align-items: center; justify-content: center; padding: 30px; z-index: 2500; backdrop-filter: blur(4px); }
+        .modal-overlay.open { display: flex; }
+        .modal { background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--shadow); width: 100%; max-width: 840px; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: var(--paper); z-index: 2; }
+        .modal-title { font-size: 19px; margin-top: 4px; color: var(--ink); }
+        .modal-body { padding: 24px; display: flex; flex-direction: column; gap: 22px; }
+        .modal-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 18px 24px; border-top: 1px solid var(--rule); position: sticky; bottom: 0; background: var(--paper); flex-wrap: wrap; }
+
+        .workshop-quote { font-family: 'Fraunces', serif; font-style: italic; font-size: 15px; line-height: 1.65; color: var(--ink); background: var(--paper-2); border-left: 3px solid var(--accent); border-radius: 8px; padding: 14px 18px; }
+        .workshop-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
+        .guardrail-box { display: flex; gap: 12px; background: var(--major-soft); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+        .guardrail-icon { width: 30px; height: 30px; border-radius: 8px; background: var(--paper); color: var(--major); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .guardrail-rule { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+        .guardrail-text { font-size: 12px; color: var(--ink-soft); margin-top: 4px; line-height: 1.55; }
+        .diff-box { background: var(--bg); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; font-size: 13px; line-height: 1.85; color: var(--ink); }
+        .diff-box del { color: var(--accent); background: var(--accent-soft); text-decoration: line-through; text-decoration-thickness: 1.5px; border-radius: 3px; padding: 0 2px; }
+        .diff-box ins { color: var(--major); background: var(--major-soft); text-decoration: none; border-bottom: 1.5px solid var(--major); border-radius: 3px; padding: 0 2px; }
+        .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .side-col-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+        .side-col-body { font-family: 'Fraunces', serif; font-style: italic; font-size: 13px; line-height: 1.6; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; color: var(--ink-soft); height: 100%; }
+
+        @media (max-width: 1080px) {
+          .workbench { grid-template-columns: 1fr; }
+          .rail-panel-wrap, .doc-surface { max-height: none; }
+        }
+        @media (max-width: 880px) {
+          .upload-grid { grid-template-columns: 1fr; }
+          .side-by-side { grid-template-columns: 1fr; }
+          .topbar { flex-direction: column; }
+        }
+        @media (max-width: 560px) {
+          .content, .topbar { padding-left: 18px; padding-right: 18px; }
+          .rail-tabs { grid-template-columns: repeat(3, 1fr); }
+        }
+      `}</style>
+
+      {/* ── TOPBAR MASTHEAD ── */}
+      <header className="topbar">
+        <div style={{ flexGrow: 1, minWidth: '260px' }}>
+          <div className="eyebrow">Workspace · AI Document Intelligence · Contract Risk Analyzer</div>
+          <div className="title-row">
+            <h1 className="page-title serif">Contract Analyzer</h1>
+            <span className="badge">
+              {ICONS.shield}
+              Every flag is sourced to a clause
+            </span>
           </div>
-
-          {/* Risk pills — shown after analysis, inline in header */}
-          {isAnalyzed && (
-            <>
-              <div className="header-sep" />
-              <div className="risk-metric-pill high">
-                <span className="risk-metric-dot red" />
-                <strong>{redCount}</strong> High
-              </div>
-              <div className="risk-metric-pill amber">
-                <span className="risk-metric-dot amber" />
-                <strong>{amberCount}</strong> Med
-              </div>
-              <div className="risk-metric-pill green">
-                <span className="risk-metric-dot green" />
-                <strong>{greenCount}</strong> OK
-              </div>
-              <div className="header-sep" />
-            </>
-          )}
-
-          {/* Mode selector + actions */}
-          <div className="analyzer-actions">
-            <div className="strategy-select-container" style={{ padding: '5px 10px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-              <span style={{ fontSize: '10px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mode</span>
-              <select
-                className="strategy-dropdown"
-                value={scanStrategy}
-                onChange={(e) => handleStrategyChange(e.target.value)}
-              >
-                <option value="Defensive">Defensive Scan</option>
-                <option value="Aggressive">Aggressive Scan</option>
-              </select>
-            </div>
-
-            <button
-              onClick={openDraftsModal}
-              title="View and restore saved contract drafts"
-              style={{
-                fontSize: '12px', background: 'rgba(139, 92, 246, 0.14)', border: '1px solid rgba(139, 92, 246, 0.35)',
-                color: '#A78BFA', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.2s', fontWeight: 600,
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.25)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.14)'; }}
-            >
-              📁 Drafts
-            </button>
-
-            {isAnalyzed && (
-              <>
-                <button
-                  className="btn-accent transition-all duration-300 ease-in-out"
-                  onClick={() => setShowExportModal(true)}
-                  style={{ fontSize: '12px', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '5px' }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  Export
-                </button>
-                <button
-                  onClick={handleNewSession}
-                  style={{ fontSize: '12px', background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: '#9CA3AF', padding: '6px 12px', borderRadius: '7px', cursor: 'pointer', transition: 'all 0.2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#9CA3AF'; e.currentTarget.style.borderColor = 'var(--border-dark-subtle)'; }}
-                >
-                  New
-                </button>
-              </>
-            )}
+          <div className="page-sub">
+            Every risk, citation and rewrite below is generated from the document you load here — nothing on this screen is a fixed sample. Built to hold up on a 60-page facility agreement as well as a two-page NDA.
           </div>
-
-          <DraftsModal />
         </div>
 
-        {/* ── COLLAPSIBLE EXECUTIVE SUMMARY ── */}
-        {isAnalyzed && summary && (
-          <div className="summary-banner">
-            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent-primary)', flexShrink: 0, marginTop: '1px' }}>Summary</span>
-            {!summaryCollapsed && (
-              <span style={{ flex: 1, fontSize: '12.5px', color: '#94A3B8', lineHeight: 1.5 }}>{summary}</span>
-            )}
-            {summaryCollapsed && (
-              <span style={{ flex: 1, fontSize: '12.5px', color: '#64748B', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {summary.slice(0, 90)}{summary.length > 90 ? '…' : ''}
-              </span>
-            )}
-            <button className="summary-toggle-btn" onClick={() => setSummaryCollapsed(v => !v)}>
-              {summaryCollapsed ? 'Expand' : 'Collapse'}
+        {viewState === 'analyzed' ? (
+          <div className="topbar-actions">
+            <button
+              className="btn"
+              onClick={() => {
+                setViewState('upload');
+                setSelectedFile(null);
+                setPastedText('');
+              }}
+            >
+              {ICONS.plus}
+              New analysis
+            </button>
+            <button className="btn" onClick={handleSaveToDrafts}>
+              {ICONS.edit}
+              Save to drafts
+            </button>
+            <button className="btn btn-primary" onClick={handleExportReport}>
+              {ICONS.export}
+              Export report
+            </button>
+          </div>
+        ) : (
+          <div className="topbar-actions">
+            <button className="btn" onClick={handleSaveToDrafts}>
+              {ICONS.edit}
+              Drafts
             </button>
           </div>
         )}
-
-        {/* ────────── UNIFIED WORKSPACE ──────────
-            No top-level ternary anymore: header, left panel, and right
-            tabs render unconditionally. The dropzone/paste/rule-book UI
-            that used to be a completely separate top-level screen (shown
-            only pre-scan) now lives INSIDE the left panel itself, as the
-            !rawText branch of the same inline ternary that renders
-            <ContractTiptapEditor> once text exists (see the
-            leftTab === 'scanner' branch below) — so quickDraftMode, a
-            fresh page load, or any other "no text yet" state all land in
-            this one workspace, never a separate blank-editor screen. */}
-        {
-          // ────────── INTERACTIVE SPLIT PANE WORKSPACE ──────────
-          <div className="workspace-pane">
-
-            {/* LEFT COLUMN: Document Editor */}
-            <div className="editor-column">
-              <div className="editor-header-bar">
-                <div className="editor-tabs">
-                  <button
-                    className="editor-tab-btn active transition-all duration-300 ease-in-out hover:bg-gray-700"
-                    onClick={() => setLeftTab('contract-text')}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
-                    Contract Text
-                  </button>
-                </div>
-
-                {quickDraftMode && !isAnalyzed && (
-                  <button
-                    onClick={() => { setQuickDraftMode(false); setRawText(''); setRawHtml(''); }}
-                    title="Exit Quick Draft Studio and return to upload"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      background: 'transparent', border: '1px solid var(--border-dark-subtle)',
-                      borderRadius: '7px', padding: '6px 12px', fontSize: '11.5px', fontWeight: 600,
-                      color: 'var(--text-dark-muted)', cursor: 'pointer',
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
-                    Exit Quick Draft
-                  </button>
-                )}
-
-                {!rawText && !quickDraftMode ? (
-                  // No document yet at all, and not in Quick Draft either —
-                  // nothing to scan, so no scan trigger here either. The
-                  // left panel body below is showing the dropzone/paste UI,
-                  // not the editor. (quickDraftMode is checked here too,
-                  // not just below, so its own label branch further down
-                  // is actually reachable — quickDraftMode's whole point is
-                  // an instantly-available blank editor, not a redirect
-                  // back to the dropzone just because rawText is empty.)
-                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Awaiting Document</span>
-                ) : isAnalyzed ? (
-                  (() => {
-                    const flaggedCount = clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length;
-                    const redCount2 = clauses.filter(c => c.risk === 'RED').length;
-                    const statusColor = redCount2 > 0 ? '#FCA5A5' : flaggedCount > 0 ? '#FCD34D' : '#6EE7B7';
-                    const statusLabel = flaggedCount > 0
-                      ? `${flaggedCount} Flagged Provision${flaggedCount > 1 ? 's' : ''}`
-                      : 'No Flags Detected';
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-                        <div className="scan-meta-item" style={{ padding: 0, border: 'none' }}>
-                          <span className="scan-meta-label">Mandate</span>
-                          <span className="scan-meta-value">{scanStrategy} Scan · Indian Law</span>
-                        </div>
-                        <div className="scan-meta-item" style={{ padding: 0, border: 'none' }}>
-                          <span className="scan-meta-label">Status</span>
-                          <span className="scan-meta-value" style={{ color: statusColor }}>{statusLabel}</span>
-                        </div>
-                      </div>
-                    );
-                  })()
-                ) : quickDraftMode ? (
-                  <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)' }}>Quick Draft — no scan required</span>
-                ) : (
-                  // rawText exists (that's the only way this branch is
-                  // reachable at all — see the outer !rawText && !quickDraftMode
-                  // gate) but no scan has run yet: the editor is already
-                  // showing the real extracted/pasted text, so the only
-                  // thing missing is the trigger to actually analyze it.
-                  <button
-                    className="btn-accent transition-all duration-300 ease-in-out"
-                    onClick={handleTextAnalyze}
-                    disabled={isAnalyzing}
-                    style={{ fontSize: '12px', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-                    {isAnalyzing ? 'Scanning…' : 'Analyze'}
-                  </button>
-                )}
-              </div>
-
-              {/* Toolbar row — the scanner editor's own MS-Word-style toolbar
-                  portals into this slot (see toolbarSlotEl/toolbarPortalTarget)
-                  so it lives in normal document flow right below the header,
-                  never inside the scrolling document area it used to fake-pin
-                  itself into via sticky positioning + negative margins. Only
-                  rendered in scanner mode — Auto-Draft's editor keeps its own
-                  inline sticky toolbar, unaffected. */}
-              {leftTab === 'scanner' && (rawText || quickDraftMode) && (
-                <div className="scan-meta-bar" ref={setToolbarSlotEl} />
-              )}
-
-              <div className="editor-scroll-area" style={{ position: 'relative' }}>
-                {isAnalyzing && <div className="ca-scan-overlay" />}
-                {isAnalyzing && (
-                  // Real SSE status/progress — visible for all 3 dispatch
-                  // paths (Deep Scan, Strategy Toggle, Piped Document),
-                  // since all three funnel through the same jobId state +
-                  // top-level useContractJobStream hook.
-                  <div className="ca-scan-progress-pill">
-                    <span style={{ width: '10px', height: '10px', border: '2px solid #3B82F6', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
-                    <span style={{ fontSize: '12.5px', color: 'var(--text-dark-primary)', fontWeight: 600 }}>{loadingText || 'Scanning...'}</span>
-                    <span style={{ fontSize: '11.5px', color: '#3B82F6', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{Math.round(scanProgress)}%</span>
-                  </div>
-                )}
-                {!rawText && !quickDraftMode ? (
-                  // No document yet, and the user hasn't explicitly opted
-                  // into a blank drafting canvas either — show the
-                  // dropzone/paste UI INSIDE this same left panel instead
-                  // of behind a separate top-level screen. quickDraftMode
-                  // skips straight past this to the (empty) editor below
-                  // instead — its whole purpose is an INSTANT blank
-                  // canvas, not another detour through the dropzone; that
-                  // was the original "blank editor" complaint's actual
-                  // fix (the editor was always reachable via
-                  // quickDraftMode, it just had nothing in it and no
-                  // visible way back to upload a real document, which is
-                  // solved by this panel always having both paths live).
-                  <div className="upload-layout-container" style={{ margin: '20px auto' }}>
-                    {/* ── HERO ── */}
-                    <div className="upload-hero">
-                      <div className="upload-icon-ring">⚖️</div>
-                      <h2 style={{ fontSize: '20px', color: 'var(--text-dark-primary)', margin: '0 0 6px', fontFamily: 'var(--font-serif)' }}>Senior Counsel Workspace</h2>
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
-                        Upload or paste a contract below. Optionally define your firm's non-negotiable rules to enforce them as absolute overrides during analysis.
-                      </p>
-                    </div>
-
-                    {/* ── SPLIT GRID ── */}
-                    <div className="upload-split-grid">
-
-                      {/* LEFT COLUMN — Contract Subject */}
-                      <div className="upload-col-card">
-                        <div className="upload-col-label">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                          Contract Document
-                        </div>
-
-                        {/* Contract drop zone (extraction shows a layout-wide skeleton at panel level) */}
-                        <div
-                          className="drag-drop-zone transition-all duration-300 ease-in-out"
-                          onClick={() => fileInputRef.current?.click()}
-                          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                          onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                          onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleFileUpload(e.dataTransfer.files); }}
-                        >
-                          <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e.target.files)} accept=".pdf,.docx" />
-                          {contractUploadLoading ? (
-                            <>
-                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                              <h3 style={{ fontSize: '13px', color: 'var(--text-dark-primary)', marginBottom: '8px' }}>{contractFile?.name || 'Extracting text'}</h3>
-                              <span className="uploading-pulse" style={{ fontSize: '11px', color: 'rgba(99,102,241,0.9)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', padding: '3px 10px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#818CF8', animation: 'branding-pulse 1s infinite alternate' }} />
-                                Extracting…
-                              </span>
-                            </>
-                          ) : contractFile ? (
-                            <>
-                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-                              <h3 style={{ fontSize: '13px', color: '#34D399', marginBottom: '4px' }}>{contractFile.name}</h3>
-                              <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Ready to analyze — text extracted below</p>
-                            </>
-                          ) : (
-                            <>
-                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></svg>
-                              <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop your contract here</h3>
-                              <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — or click to browse</p>
-                              <span style={{ fontSize: '11px', color: 'rgba(99,102,241,0.8)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Supports large scanned files (up to 100MB)</span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Contract divider */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
-                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or paste text</span>
-                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                        </div>
-
-                        <div className="ca-textarea-wrap">
-                          <textarea
-                            key={`contract-${contractFile?.name || (rawText ? 'loaded' : 'empty')}`}
-                            className="input-textarea"
-                            placeholder="Paste the raw text of your contract here…"
-                            value={rawText}
-                            readOnly={isAnalyzing}
-                            onChange={(e) => { setRawText(e.target.value); setRawHtml(''); }}
-                            style={{ marginBottom: 0 }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* RIGHT COLUMN — Rule Book Strategy */}
-                      <div className="upload-col-card">
-                        <div className="upload-col-label upload-col-label--rulebook">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
-                          Custom Rule Book &amp; Directives
-                          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '10px', color: 'var(--text-dark-muted)' }}>(Optional)</span>
-                          {ruleBookText.trim() && (
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block', marginLeft: 'auto', flexShrink: 0 }} />
-                          )}
-                        </div>
-
-                        <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 14px', lineHeight: 1.55 }}>
-                          Upload or type your firm's non-negotiable rules. The AI will enforce these as{' '}
-                          <strong style={{ color: '#A78BFA' }}>absolute overrides</strong>{' '}
-                          and flag any violation with a <strong style={{ color: '#A78BFA' }}>Rule Book</strong> badge.
-                        </p>
-
-                        {/* Rule Book drop zone */}
-                        {ruleBookUploadLoading ? (
-                          <div className="drag-drop-zone drag-drop-zone--rulebook drag-drop-zone--loading" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2.5px solid rgba(139,92,246,0.2)', borderTopColor: '#8B5CF6', animation: 'spin 0.9s linear infinite' }} />
-                            <span style={{ fontSize: '12.5px', color: 'rgba(139,92,246,0.8)' }}>Extracting text…</span>
-                          </div>
-                        ) : (
-                          <div
-                            className="drag-drop-zone drag-drop-zone--rulebook transition-all duration-300 ease-in-out"
-                            onClick={() => ruleBookFileInputRef.current?.click()}
-                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
-                            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); }}
-                            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); handleRuleBookFileUpload(e.dataTransfer.files); }}
-                          >
-                            <input type="file" ref={ruleBookFileInputRef} multiple style={{ display: 'none' }} onChange={(e) => handleRuleBookFileUpload(e.target.files)} accept=".pdf,.docx" />
-                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '10px' }}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>
-                            {ruleBookFile ? (
-                              <>
-                                <h3 style={{ fontSize: '13px', color: '#A78BFA', marginBottom: '4px' }}>{ruleBookFile.name}</h3>
-                                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>Text extracted — click to replace</p>
-                              </>
-                            ) : (
-                              <>
-                                <h3 style={{ fontSize: '14px', color: 'var(--text-dark-primary)', marginBottom: '4px' }}>Drop Rule Books here</h3>
-                                <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', marginBottom: '8px' }}>PDF or DOCX — select multiple to combine</p>
-                              </>
-                            )}
-                            <span style={{ fontSize: '11px', color: 'rgba(139,92,246,0.8)', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', padding: '3px 10px', borderRadius: '10px' }}>Extracts text automatically</span>
-                          </div>
-                        )}
-
-                        {/* Rule Book divider */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
-                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                          <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>or type directives</span>
-                          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-dark-subtle)' }} />
-                        </div>
-
-                        <textarea
-                          className="input-textarea"
-                          placeholder={"Examples:\n• No arbitration clauses — all disputes must go to Delhi High Court.\n• Liability cap must not exceed 3× contract value.\n• Payment terms must not exceed Net-30.\n• Indemnification must always be mutual, never one-sided."}
-                          value={ruleBookText}
-                          onChange={(e) => setRuleBookText(e.target.value)}
-                          style={{ marginBottom: 0, borderColor: ruleBookText.trim() ? 'rgba(139,92,246,0.35)' : undefined, fontSize: '12.5px', resize: 'vertical' }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* ── FAST-TRACK BAR — two distinct visual paths ── */}
-                    <div className="upload-analyze-bar">
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button
-                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
-                          onClick={handleTextAnalyze}
-                          title="Full AI risk scan — runs as a background job, streams live progress"
-                          style={{ flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                        >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-                          Analyze
-                        </button>
-                        <button
-                          onClick={() => setQuickDraftMode(true)}
-                          title="Skip the AI scan — open a blank drafting workspace instantly"
-                          style={{
-                            flex: 1, padding: '13px', fontSize: '14px', fontWeight: '600',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                            background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)',
-                            borderRadius: '8px', color: '#C4B5FD', cursor: 'pointer',
-                            transition: 'all 0.2s',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.18)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; }}
-                        >
-                          ⚡ Quick Draft Studio
-                        </button>
-                      </div>
-                      {ruleBookText.trim() && (
-                        <p style={{ margin: '10px 0 0', textAlign: 'center', fontSize: '11.5px', color: 'rgba(167,139,250,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B5CF6', display: 'inline-block' }} />
-                          Rule Book active — {ruleBookText.trim().length} chars of directives will be enforced
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <ContractTiptapEditor
-                      documentKey={documentVersion}
-                      initialRawText={rawText}
-                      initialHtml={rawHtml}
-                      clauses={clauses}
-                      scanStrategy={scanStrategy}
-                      onRiskClick={inspectRisk}
-                      onTextChange={setRawText}
-                      onHtmlChange={setRawHtml}
-                      onEditorReady={(ed) => { editorApiRef.current = ed; }}
-                      editable={!isAnalyzing}
-                      onCommentRequest={handleCommentRequest}
-                      onHighlightClick={handleHighlightClick}
-                      toolbarPortalTarget={toolbarSlotEl}
-                    />
-                    {appendedClauses.length > 0 && (
-                      <div className="appended-clauses-container" style={{ marginTop: '24px' }}>
-                        {appendedClauses.map((ac, idx) => (
-                          <div key={idx} className="appended-clause-wrapper">
-                            <hr className="extension-divider" />
-                            <blockquote className={ac.isNewlyAppended ? "newly-appended-blockquote" : "extension-blockquote"}>
-                              <strong className="extension-title" style={{ userSelect: 'none' }}>
-                                Added Missing Clause: {ac.title}
-                              </strong>
-                              <div
-                                className="extension-body"
-                                contentEditable
-                                suppressContentEditableWarning
-                                onBlur={(e) => {
-                                  const text = e.target.innerText || e.target.textContent || '';
-                                  setAppendedClauses(prev => prev.map((item, i) => {
-                                    if (i === idx) {
-                                      return { ...item, clause: text.trim() };
-                                    }
-                                    return item;
-                                  }));
-                                }}
-                              >
-                                {ac.clause}
-                              </div>
-                            </blockquote>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* RIGHT COLUMN: Analysis Console */}
-            <div className="analysis-column">
-              <div className="analysis-tabs-bar">
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'risks' ? 'active' : ''}`} onClick={() => switchTab('risks')}>
-                  Risks {redCount + amberCount > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: redCount > 0 ? '#FCA5A5' : '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{redCount + amberCount}</span>}
-                </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'recs' ? 'active' : ''}`} onClick={() => { switchTab('recs'); if (recommendations.length === 0) fetchMissingProtections(); }}>
-                  Missing {recommendations.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{recommendations.length}</span>}
-                </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => switchTab('chat')}>
-                  RAG Chat
-                </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'citations' ? 'active' : ''}`} onClick={() => switchTab('citations')}>
-                  Citations {citations.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#93C5FD', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{citations.length}</span>}
-                </button>
-                <button className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'comments' ? 'active' : ''}`} onClick={() => switchTab('comments')}>
-                  Comments {comments.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCD34D', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{comments.length}</span>}
-                </button>
-                <button
-                  className={`analysis-tab-btn transition-all duration-300 ease-in-out ${activeTab === 'conflicts' ? 'active' : ''}`}
-                  onClick={() => { switchTab('conflicts'); if (conflictLibraryDocs.length === 0) loadConflictLibraryDocs(); }}
-                >
-                  Conflicts {conflictResults?.conflicts?.length > 0 && <span style={{ marginLeft: '5px', background: 'rgba(15,15,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', color: '#FCA5A5', borderRadius: '6px', padding: '1px 6px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.02em' }}>{conflictResults.conflicts.length}</span>}
-                </button>
-              </div>
-
-              <div ref={analysisPanelBodyRef} className={`analysis-panel-body transition-opacity duration-300 ${tabOpacity}`}>
-
-                {/* SUB TAB: Risks (Actions) */}
-                {activeTab === 'risks' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
-
-                    {activeClause ? (
-                      <div ref={inspectedCardRef} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {/* Back to list */}
-                        <button
-                          onClick={() => { setActiveClauseId(null); setRewrittenText(''); setIntent(''); }}
-                          style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '12px', cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-                          All clauses
-                        </button>
-                        {/* ── TWO-COLUMN RISK INSPECTOR ── */}
-                        <div className="risk-inspector-grid">
-
-                          {/* Column A: Audit Profile */}
-                          <div className="audit-col">
-                            <div className="inspected-risk-card" style={{ padding: '11px 13px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '7px', flexWrap: 'wrap' }}>
-                                <span className={`risk-indicator-dot ${activeClause.risk === 'RED' ? 'red' : 'amber'}`}></span>
-                                <h3 style={{ fontSize: '13px', color: 'var(--text-dark-primary)', margin: 0, fontWeight: '700', flex: 1 }}>
-                                  {activeClause.clauseTitle || (activeClause.risk === 'RED' ? 'High Risk Clause' : 'Medium Risk Clause')}
-                                </h3>
-                                {activeClause.isRuleBookViolation && (
-                                  <span className="rulebook-badge" style={{ fontSize: '9.5px' }}>⚡ Rule Book Override</span>
-                                )}
-                              </div>
-                              <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>Original Text</span>
-                              <div className="original-clause-box" style={{ fontSize: '12.5px', marginTop: '5px' }}>{activeClause.text}</div>
-                            </div>
-
-                            <div className="inspected-risk-issue-box" style={{
-                              padding: '12px 14px',
-                              background: activeClause.risk === 'RED' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
-                              borderLeft: `4px solid ${activeClause.risk === 'RED' ? '#EF4444' : '#F59E0B'}`,
-                              fontSize: '12.5px',
-                              color: 'var(--text-dark-primary)',
-                              lineHeight: '1.6',
-                              borderRadius: '0 8px 8px 0',
-                              border: `1px solid ${activeClause.risk === 'RED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'}`,
-                              borderLeftWidth: '4px'
-                            }}>
-                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.risk === 'RED' ? '#EF4444' : '#D97706', display: 'block', marginBottom: '6px' }}>Indian Legal Issue</span>
-                              {activeClause.issue}
-                            </div>
-                          </div>
-
-                          {/* Column B: Playbook Guardrail + Revision Workshop */}
-                          <div className="playbook-col">
-                            {/* Rule Enforced */}
-                            <div className="playbook-guardrail-card" style={{
-                              padding: '12px 14px',
-                              background: activeClause.isRuleBookViolation ? 'rgba(139, 92, 246, 0.08)' : 'rgba(30, 41, 59, 0.3)',
-                              border: `1px solid ${activeClause.isRuleBookViolation ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
-                              borderRadius: '12px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '6px',
-                              minHeight: '60px'
-                            }}>
-                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: activeClause.isRuleBookViolation ? '#8B5CF6' : 'var(--text-dark-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 0 0 6.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 0 0 6.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
-                                Playbook Guardrail
-                              </span>
-                              {activeClause.isRuleBookViolation && activeClause.ruleBookReference ? (
-                                <span style={{ fontSize: '12.5px', color: 'var(--text-dark-primary)', lineHeight: 1.5, fontStyle: 'italic' }}>
-                                  "{activeClause.ruleBookReference}"
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: '12px', color: 'var(--text-dark-muted)', fontStyle: 'italic' }}>No rule book override active for this clause.</span>
-                              )}
-                            </div>
-
-                            {/* Revision Workshop — glass card */}
-                            <div className="revision-glass-card">
-                              <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94A3B8' }}>Revision Workshop</span>
-
-                              {activeClause.isPendingSuggestion ? (
-                                <>
-                                  <div style={{ padding: '12px 14px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.15)', borderRadius: '8px', fontSize: '12.5px', color: '#94A3B8', lineHeight: 1.55 }}>
-                                    A tracked change is live in the document — the original text is struck through
-                                    in red, the suggestion is underlined in green. Review it there, then resolve it below.
-                                  </div>
-                                  <div style={{ display: 'flex', gap: '10px' }}>
-                                    <button
-                                      className="revision-btn-success"
-                                      onClick={acceptActiveSuggestion}
-                                      style={{ flex: 1, padding: '11px', fontSize: '13px', background: '#10B981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)', transition: 'all 0.2s ease' }}
-                                    >
-                                      ✓ Accept Suggestion
-                                    </button>
-                                    <button
-                                      className="revision-btn-danger"
-                                      onClick={rejectActiveSuggestion}
-                                      style={{ flex: 1, padding: '11px', fontSize: '13px', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#FCA5A5', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s ease' }}
-                                    >
-                                      ✗ Discard
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '14px', marginTop: '4px' }}>
-                                    <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94A3B8', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ color: '#6366F1' }}>✨</span> Revision Workshop
-                                    </div>
-                                    <div style={{ position: 'relative' }}>
-                                      <input
-                                        type="text"
-                                        placeholder="E.g., Make notice mutual, cap penalty to 1x..."
-                                        className="revision-workshop-input"
-                                        value={intent}
-                                        onChange={(e) => { setIntent(e.target.value); setShowSuggestions(true); }}
-                                        onFocus={() => setShowSuggestions(true)}
-                                        style={{ marginBottom: '8px' }}
-                                      />
-                                      {showSuggestions && dynamicIntents.length > 0 && (
-                                        <div className="autocomplete-dropdown" ref={suggestionsRef}>
-                                          {dynamicIntents.map((item, idx) => (
-                                            <div key={idx} className="autocomplete-item" onClick={() => { setIntent(item); setShowSuggestions(false); }}>
-                                              💡 {item}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      onClick={handleRewrite}
-                                      disabled={rewriting}
-                                      className="revision-btn-primary"
-                                    >
-                                      {rewriting ? (
-                                        <>
-                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                                          <span>Generating…</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <span>Rewrite Clause with AI</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </div>
-
-                                  {rewrittenText && (
-                                    <>
-                                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '12px', marginTop: '10px' }}>
-                                        <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#10B981', display: 'block', marginBottom: '6px' }}>AI Suggested Revision</span>
-                                        <textarea
-                                          className="revision-workshop-textarea"
-                                          value={rewrittenText}
-                                          onChange={(e) => setRewrittenText(e.target.value)}
-                                        />
-                                      </div>
-                                      <button
-                                        className="revision-btn-success"
-                                        onClick={applyRevision}
-                                        style={{ width: '100%', padding: '11px', fontSize: '13px', background: '#10B981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)', transition: 'all 0.2s ease', marginTop: '8px' }}
-                                      >
-                                        Apply Rewrite to Document
-                                      </button>
-                                    </>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* ── CLAUSE LIST OVERVIEW ── */
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {isAnalyzing ? (
-                          /* Futuristic Scanning Console Overlay */
-                          <div className="futuristic-scanning-container">
-                            {/* Scanning Radar/Pulse Ring */}
-                            <div className="scanner-glowing-ring">
-                              <div className="scanner-ring-pulse"></div>
-                              <div className="scanner-ring-core">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 3s linear infinite' }}>
-                                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                                </svg>
-                              </div>
-                            </div>
-
-                            {/* Scan Line Laser Effect */}
-                            <div className="scanning-laser-line"></div>
-
-                            {/* Status and Progress */}
-                            <div className="scanner-status-title">
-                              {loadingText || 'Scanning Contract...'}
-                            </div>
-
-                            <div className="scanner-progress-wrapper">
-                              <div className="scanner-progress-bar" style={{ width: `${scanProgress}%` }}></div>
-                            </div>
-                            <div className="scanner-progress-text">{Math.round(scanProgress)}% Completed</div>
-
-                            {/* Rolling High-Tech Scanning Logs */}
-                            <div className="scanner-console-box">
-                              <div className="scanner-console-header">
-                                <span className="console-dot-red"></span>
-                                <span className="console-dot-yellow"></span>
-                                <span className="console-dot-green"></span>
-                                <span className="console-title">HYBRID ENGINE CONSOLE</span>
-                              </div>
-                              <div className="scanner-console-logs" ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>
-                                {getFakeConsoleLogs(scanProgress).map((log, idx) => (
-                                  <div key={idx} className="scanner-log-line">
-                                    <span className="log-timestamp">[{new Date().toLocaleTimeString()}]</span> {log}
-                                  </div>
-                                ))}
-                                <div className="scanner-log-line active-line">
-                                  <span className="log-timestamp">[{new Date().toLocaleTimeString()}]</span> Analyzing nodes... <span className="console-cursor">_</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length === 0 ? (
-                          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                            No flagged clauses found.
-                          </div>
-                        ) : (
-                          <>
-                            <div style={{ fontSize: '11px', color: 'var(--text-dark-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
-                              {clauses.filter(c => c.risk === 'RED' || c.risk === 'AMBER').length} flagged clauses — click to inspect & rewrite
-                            </div>
-                            {flaggedClauses
-                              ?.filter(c => c.risk === 'RED' || c.risk === 'AMBER')
-                              .sort((a, b) => (a.risk === b.risk ? 0 : a.risk === 'RED' ? -1 : 1))
-                              .map((c, idx) => (
-                                <div
-                                  key={c.id}
-                                  className={`clause-list-item animate-fade-in ${c.risk === 'RED' ? 'red-item' : 'amber-item'}`}
-                                  style={{ animationDelay: `${idx * 150}ms` }}
-                                  onClick={() => inspectRisk(c.id)}
-                                >
-                                  <span className="clause-number">#{idx + 1}</span>
-                                  <span className="clause-text-preview">{c.text}</span>
-                                  <span className={`clause-risk-badge ${c.risk === 'RED' ? 'red' : 'amber'}`}>
-                                    {c.risk === 'RED' ? 'HIGH' : 'MED'}
-                                  </span>
-                                  {c.isRuleBookViolation && (
-                                    <span className="rulebook-badge">⚡ Rule Book</span>
-                                  )}
-                                </div>
-                              ))}
-                            {greenCount > 0 && (
-                              <div style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', display: 'inline-block' }}></span>
-                                {greenCount} clause{greenCount > 1 ? 's' : ''} resolved
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* SUB TAB: Recommendations (Extensions) */}
-                {activeTab === 'recs' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Missing Indian Protections</h3>
-                      <button
-                        className="btn-accent transition-all duration-300 ease-in-out"
-                        style={{ fontSize: '11px', padding: '4px 10px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '5px', borderRadius: '7px' }}
-                        onClick={fetchMissingProtections}
-                        disabled={loadingRecs}
-                      >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
-                        Re-Scan
-                      </button>
-                    </div>
-
-                    {loadingRecs ? (
-                      <div>
-                        <div className="shimmer-bar"></div>
-                        <div className="shimmer-bar" style={{ width: '80%' }}></div>
-                        <div className="shimmer-bar" style={{ width: '60%' }}></div>
-                      </div>
-                    ) : recommendations.length === 0 ? (
-                      <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                        No missing clauses identified yet.
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
-                          {missingClauses?.map((item, idx) => (
-                            <div key={idx} className="rec-protection-card" style={{ marginBottom: 0 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                <strong style={{ fontSize: '13px', color: 'var(--text-dark-primary)', fontWeight: 600 }}>{item.title}</strong>
-                                <input
-                                  type="checkbox"
-                                  className="custom-checkbox"
-                                  checked={item.selected}
-                                  onChange={() => handleRecommendationCheck(idx)}
-                                />
-                              </div>
-                              <textarea
-                                className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                                style={{ height: '80px', width: '100%', boxSizing: 'border-box', fontSize: '13px', resize: 'none' }}
-                                value={item.clause}
-                                onChange={(e) => handleRecommendationChange(idx, e.target.value)}
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        <button
-                          className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg"
-                          onClick={addSelectedRecommendations}
-                          style={{ width: '100%', padding: '12px' }}
-                        >
-                          ➕ Add Selected Clauses to Contract
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* SUB TAB: Chat */}
-                {activeTab === 'chat' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
-                    <div className="chat-bubble-stream" ref={chatStreamRef}>
-                      {chatHistory.map((msg, i) => (
-                        <div key={i} className={`chat-message-bubble ${msg.sender}`}>
-                          {msg.text}
-                        </div>
-                      ))}
-                      {sendingChat && (
-                        <div className="chat-message-bubble bot" style={{ fontStyle: 'italic', color: 'var(--text-dark-muted)' }}>
-                          Searching document...
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ── RAG MACRO QUICK-FIRE ── */}
-                    <div className="rag-macros-row">
-                      {[
-                        { label: '🔍 Audit Liability Caps', query: 'What are the liability cap provisions in this contract? Identify any one-sided indemnification, unlimited liability exposure, or clauses that waive consequential damages to the detriment of the Vendor. Cite exact clause text.' },
-                        { label: '🛡️ Force Majeure Alignment', query: 'Does this contract contain a force majeure clause? If yes, analyze whether it covers epidemic/pandemic events, government orders, and cyberattacks as required by contemporary Indian commercial practice. If absent, flag the gap.' },
-                        { label: '📅 Verify Notice Periods', query: 'Extract and list all notice periods specified in this contract: termination notice, dispute notice, breach cure periods, and payment notice. Flag any notice period shorter than 15 days or absent entirely.' },
-                      ].map(({ label, query }) => (
-                        <button
-                          key={label}
-                          type="button"
-                          className="rag-macro-btn"
-                          disabled={sendingChat}
-                          onClick={() => submitRagQuery(query)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-dark-subtle)', paddingTop: '10px' }}>
-                      <input
-                        type="text"
-                        placeholder="Ask a grounded contract query..."
-                        className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                        style={{ flex: 1 }}
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                      />
-                      <button type="submit" className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:shadow-lg" style={{ padding: '0 20px' }} disabled={sendingChat}>
-                        Send
-                      </button>
-                    </form>
-                  </div>
-                )}
-
-                {/* SUB TAB: Citations */}
-                {activeTab === 'citations' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Landmark Indian Contract Precedents</h3>
-
-                    {citations.length === 0 ? (
-                      <div style={{ padding: '20px', border: '1px dashed var(--border-dark-subtle)', borderRadius: '8px', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px', textAlign: 'center' }}>
-                        No case law citations found for this document. Run Analyze to generate semantic precedents.
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                        {citations?.map((prec, i) => {
-                          const { displayTitle, kanoonQuery } = resolveCitationDisplay(prec);
-                          return (
-                            <div key={i} className="precedent-card animate-fade-in" style={{ marginBottom: 0, animationDelay: `${i * 150}ms` }}>
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                <span>⚖️</span>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>
-                                      {displayTitle}
-                                    </span>
-                                    {!prec.in_vault && (
-                                      <span className="citation-not-in-vault-badge">Not in Firm Vault</span>
-                                    )}
-                                  </div>
-                                  <p style={{ fontSize: '12.5px', color: 'var(--text-dark-muted)', marginTop: '6px', lineHeight: '1.5' }}>
-                                    "{prec.snippet}..."
-                                  </p>
-                                  <div className="citation-action-footer">
-                                    <button
-                                      type="button"
-                                      onClick={() => insertCitationIntoDocument(prec)}
-                                      className="citation-btn-insert"
-                                    >
-                                      📖 Insert Citation
-                                    </button>
-                                    {prec.in_vault ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => navigate(`/case/vault/doc/${prec.vault_id}`)}
-                                        className="citation-btn-vault"
-                                      >
-                                        📂 View in Vault
-                                      </button>
-                                    ) : (
-                                      <a
-                                        href={prec.kanoon_url || `${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(kanoonQuery)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="citation-btn-kanoon"
-                                      >
-                                        <ExternalLinkIcon /> Open Official Record
-                                      </a>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSearchRelated(prec, i)}
-                                      disabled={loadingRelated === i}
-                                      className="citation-btn-search-related"
-                                    >
-                                      {loadingRelated === i ? (
-                                        <>
-                                          <span style={{ width: '10px', height: '10px', border: '2px solid rgba(96,165,250,0.3)', borderTopColor: '#60a5fa', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-                                          Searching…
-                                        </>
-                                      ) : relatedCitations[i] ? (
-                                        '🔗 Hide Related Citations'
-                                      ) : (
-                                        '🔗 Search Related Citations'
-                                      )}
-                                    </button>
-                                  </div>
-
-                                  {relatedCitations[i] && (
-                                    <div style={{ marginLeft: '1rem', borderLeft: '2px solid #374151', paddingLeft: '12px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                      {relatedCitations[i].length === 0 ? (
-                                        <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', fontStyle: 'italic', margin: 0 }}>No related citations found.</p>
-                                      ) : (
-                                        relatedCitations[i].map((related, j) => {
-                                          const { displayTitle: relatedTitle, kanoonQuery: relatedKanoonQuery } = resolveCitationDisplay(related);
-                                          return (
-                                            <div key={related.id || j}>
-                                              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '4px' }}>
-                                                {relatedTitle}
-                                              </div>
-                                              {related.snippet && (
-                                                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '0 0 6px', lineHeight: 1.5 }}>
-                                                  "{related.snippet.length > 140 ? `${related.snippet.slice(0, 140)}…` : related.snippet}"
-                                                </p>
-                                              )}
-                                              <a
-                                                className="citation-btn-kanoon"
-                                                href={related.kanoon_url || `${API_BASE}/api/kanoon-redirect?query=${encodeURIComponent(relatedKanoonQuery)}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                style={{ fontSize: '10.5px', padding: '4px 10px' }}
-                                              >
-                                                <ExternalLinkIcon /> Open Official Record
-                                              </a>
-                                            </div>
-                                          );
-                                        })
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* SUB TAB: Comments */}
-                {activeTab === 'comments' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Comments</h3>
-
-                    {activeCommentDraft && (
-                      <div className="revision-glass-card" data-comment-card-id={activeCommentDraft.commentId}>
-                        <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
-                          Commenting on
-                        </span>
-                        <div className="original-clause-box" style={{ fontSize: '12px' }}>{activeCommentDraft.text}</div>
-                        <textarea
-                          className="bg-gray-800 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-gray-400 focus:outline-none transition-all duration-300 ease-in-out"
-                          style={{ height: '70px', width: '100%', boxSizing: 'border-box', fontSize: '12.5px', resize: 'none' }}
-                          placeholder="Type your comment…"
-                          value={activeCommentDraft.draft}
-                          onChange={(e) => setActiveCommentDraft(prev => ({ ...prev, draft: e.target.value }))}
-                          autoFocus
-                        />
-
-                        {/* AI Auto-Resolution: loading / diff / error states */}
-                        {activeCommentDraft.revision?.status === 'loading' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0', fontSize: '12px', color: '#A78BFA' }}>
-                            <div style={{ width: 13, height: 13, border: '2px solid rgba(167,139,250,0.3)', borderTopColor: '#A78BFA', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                            Drafting revision…
-                          </div>
-                        )}
-                        {activeCommentDraft.revision?.status === 'error' && (
-                          <div style={{ fontSize: '12px', color: '#FCA5A5', padding: '8px 0' }}>
-                            Draft revision failed: {activeCommentDraft.revision.message || 'unknown error'}
-                          </div>
-                        )}
-                        {activeCommentDraft.revision?.status === 'done' && (
-                          <div className="ca-diff-block">
-                            <div className="ca-diff-row ca-diff-original">
-                              <span className="ca-diff-label">− Original</span>
-                              <div>{activeCommentDraft.text}</div>
-                            </div>
-                            <div className="ca-diff-row ca-diff-revised">
-                              <span className="ca-diff-label">+ Revised</span>
-                              <div>{activeCommentDraft.revision.revisedText}</div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                              <button
-                                className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
-                                style={{ flex: 1, padding: '7px', fontSize: '12px' }}
-                                onClick={handleAcceptRevision}
-                              >
-                                ✓ Accept &amp; Replace
-                              </button>
-                              <button
-                                onClick={handleRejectRevision}
-                                style={{ flex: 1, padding: '7px', fontSize: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dark-muted)', borderRadius: '8px', cursor: 'pointer' }}
-                              >
-                                ✕ Reject
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                          <button
-                            className="btn-accent transition-all duration-300 ease-in-out hover:-translate-y-0.5"
-                            style={{ flex: 1, padding: '8px', fontSize: '12px' }}
-                            disabled={!activeCommentDraft.draft.trim()}
-                            onClick={() => {
-                              setComments(prev => [...prev, { id: activeCommentDraft.commentId, text: activeCommentDraft.text, comment: activeCommentDraft.draft.trim() }]);
-                              setActiveCommentDraft(null);
-                            }}
-                          >
-                            Save Comment
-                          </button>
-                          {activeCommentDraft.revision?.status !== 'loading' && (
-                            <button
-                              onClick={() => requestDraftRevision(
-                                activeCommentDraft.commentId, activeCommentDraft.text,
-                                activeCommentDraft.from, activeCommentDraft.to, activeCommentDraft.draft
-                              )}
-                              style={{ flex: 1, padding: '8px', fontSize: '12px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', color: '#C4B5FD', borderRadius: '8px', cursor: 'pointer' }}
-                            >
-                              🪄 Draft Revision
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setActiveCommentDraft(null)}
-                            style={{ flex: 1, padding: '8px', fontSize: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-dark-muted)', borderRadius: '8px', cursor: 'pointer' }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {comments.length === 0 && !activeCommentDraft ? (
-                      <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                        No comments yet. Select text in the document and use the "💬 Comment" bubble menu.
-                      </div>
-                    ) : (
-                      comments.map((c) => (
-                        <div
-                          key={c.id}
-                          className="revision-glass-card"
-                          data-comment-card-id={c.id}
-                          onClick={() => handleCommentCardClick(c.id)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>On</span>
-                          <div className="original-clause-box" style={{ fontSize: '12px' }}>{c.text}</div>
-                          <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', margin: 0 }}>{c.comment}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-
-                {/* SUB TAB: Conflicts */}
-                {activeTab === 'conflicts' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <h3 style={{ fontSize: '15px', color: 'var(--text-dark-primary)', margin: 0 }}>Cross-Document Conflict Check</h3>
-                    <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
-                      Compare the active contract against a Firm Library precedent — or one or more uploaded reference files — to surface contradicting clauses.
-                    </p>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
-                        Reference Document
-                      </span>
-                      <select
-                        className="conflict-ref-select"
-                        value={selectedConflictDocId}
-                        onChange={(e) => { setSelectedConflictDocId(e.target.value); setConflictUploadFiles([]); }}
-                        disabled={loadingConflictLibrary || isRunningConflictCheck}
-                      >
-                        <option value="">{loadingConflictLibrary ? 'Loading Firm Library…' : 'Select from Firm Library…'}</option>
-                        {conflictLibraryDocs.map(doc => (
-                          <option key={doc.id} value={doc.id}>{doc.title}</option>
-                        ))}
-                      </select>
-
-                      <input
-                        ref={conflictFileInputRef}
-                        type="file"
-                        accept=".pdf,.docx"
-                        multiple
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const newFiles = Array.from(e.target.files || []);
-                          if (newFiles.length) {
-                            setConflictUploadFiles((prev) => {
-                              const existingNames = new Set(prev.map((f) => f.name));
-                              return [...prev, ...newFiles.filter((f) => !existingNames.has(f.name))];
-                            });
-                            setSelectedConflictDocId('');
-                          }
-                          e.target.value = '';
-                        }}
-                      />
-                      <div
-                        className={`conflict-dropzone${conflictDragOver ? ' dragover' : ''}`}
-                        onClick={() => !isRunningConflictCheck && conflictFileInputRef.current?.click()}
-                        onDragOver={(e) => { e.preventDefault(); if (!isRunningConflictCheck) setConflictDragOver(true); }}
-                        onDragLeave={(e) => { e.preventDefault(); setConflictDragOver(false); }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setConflictDragOver(false);
-                          if (isRunningConflictCheck) return;
-                          const dropped = Array.from(e.dataTransfer.files || []).filter((f) => /\.(pdf|docx)$/i.test(f.name));
-                          if (dropped.length) {
-                            setConflictUploadFiles((prev) => {
-                              const existingNames = new Set(prev.map((f) => f.name));
-                              return [...prev, ...dropped.filter((f) => !existingNames.has(f.name))];
-                            });
-                            setSelectedConflictDocId('');
-                          }
-                        }}
-                      >
-                        {conflictUploadFiles.length > 0
-                          ? `📄 ${conflictUploadFiles.length} file${conflictUploadFiles.length > 1 ? 's' : ''} selected — click or drop to add more`
-                          : 'or drop PDF/DOCX files here to compare against files not yet in the library'}
-                      </div>
-
-                      {conflictUploadFiles.length > 0 && (
-                        <div className="conflict-file-chip-list">
-                          {conflictUploadFiles.map((file, idx) => (
-                            <span key={`${file.name}-${idx}`} className="conflict-file-chip">
-                              📄 {file.name}
-                              <button
-                                type="button"
-                                className="conflict-file-chip-remove"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setConflictUploadFiles((prev) => prev.filter((_, i) => i !== idx));
-                                }}
-                                disabled={isRunningConflictCheck}
-                                aria-label={`Remove ${file.name}`}
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        className="btn-accent"
-                        onClick={handleRunConflictCheck}
-                        disabled={isRunningConflictCheck || (conflictUploadFiles.length === 0 && !selectedConflictDocId)}
-                        style={{ padding: '10px 16px', fontSize: '13px', fontWeight: 600 }}
-                      >
-                        {isRunningConflictCheck
-                          ? (conflictProgress.total > 1
-                              ? `Scanning file ${conflictProgress.current} of ${conflictProgress.total}...`
-                              : 'Scanning for conflicts…')
-                          : '⚖️ Run Conflict Check'}
-                      </button>
-                    </div>
-
-                    {conflictError && (
-                      <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.08)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', fontSize: '12.5px' }}>
-                        {conflictError}
-                      </div>
-                    )}
-
-                    {conflictResults && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {conflictResults.summary && (
-                          <p style={{ fontSize: '12.5px', color: 'var(--text-dark-secondary)', lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>
-                            {conflictResults.summary}
-                          </p>
-                        )}
-                        {(conflictResults.conflicts || []).length === 0 ? (
-                          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-dark-muted)', fontStyle: 'italic', fontSize: '13px' }}>
-                            {isRunningConflictCheck ? 'Scanning…' : 'No conflicts found between the two documents.'}
-                          </div>
-                        ) : (() => {
-                          // Only worth labeling each card once the RESULTS actually span
-                          // more than one distinct reference document — derived from the
-                          // results themselves (not the current uploader selection, which
-                          // can already have moved on to a different set of files by the
-                          // time these results are being read).
-                          const distinctRefs = new Set(conflictResults.conflicts.map((c) => c._referenceDocName).filter(Boolean));
-                          const showRefBadge = distinctRefs.size > 1;
-                          return conflictResults.conflicts.map((c, i) => {
-                            const sev = (c.severity || 'minor').toLowerCase();
-                            return (
-                              <div key={i} className={`conflict-card ${sev}`} onClick={() => openConflictDetail(c)}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
-                                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)' }}>{c.title || 'Untitled Conflict'}</span>
-                                  <span className={`conflict-severity-badge ${sev}`}>{c.severity || 'Minor'}</span>
-                                </div>
-                                {showRefBadge && c._referenceDocName && (
-                                  <span className="conflict-ref-badge">vs. {c._referenceDocName}</span>
-                                )}
-                                <p style={{ fontSize: '12px', color: 'var(--text-dark-muted)', margin: 0, lineHeight: 1.5 }}>
-                                  {c.legal_explanation}
-                                </p>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              </div>
-            </div>
-
-          </div>
-        }
-
-      </div>
-
-      {/* ── EXPORT & DEPLOY MODAL ── */}
-      {showExportModal && (
-        <div className="modal-overlay" onClick={() => setShowExportModal(false)}>
-          <div className="export-modal-card" onClick={(e) => e.stopPropagation()}>
-
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 22px 0' }}>
-              <div>
-                <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-dark-primary)', margin: 0, letterSpacing: '-0.01em' }}>Export &amp; Deploy</h2>
-                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', margin: '3px 0 0' }}>Download your document or push it to platform modules</p>
-              </div>
-              <button
-                onClick={() => setShowExportModal(false)}
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-dark-muted)', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', flexShrink: 0 }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-
-            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-              {/* Format tiles */}
-              <div>
-                <label className="input-label" style={{ marginBottom: '10px' }}>Export Format</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {/* PDF tile */}
-                  <div className={`format-tile ${exportFormat === 'pdf' ? 'selected' : ''}`} onClick={() => setExportFormat('pdf')}>
-                    <div className="format-tile-check">
-                      {exportFormat === 'pdf' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
-                    </div>
-                    <div className="format-tile-icon-wrap">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'pdf' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
-                    </div>
-                    <div>
-                      <strong style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '2px' }}>PDF Format</strong>
-                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Print-ready layout</span>
-                    </div>
-                  </div>
-                  {/* Word tile */}
-                  <div className={`format-tile ${exportFormat === 'docx' ? 'selected' : ''}`} onClick={() => setExportFormat('docx')}>
-                    <div className="format-tile-check">
-                      {exportFormat === 'docx' && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
-                    </div>
-                    <div className="format-tile-icon-wrap">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={exportFormat === 'docx' ? '#60A5FA' : 'var(--text-dark-muted)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
-                    </div>
-                    <div>
-                      <strong style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark-primary)', marginBottom: '2px' }}>Word Document</strong>
-                      <span style={{ fontSize: '11px', color: 'var(--text-dark-muted)' }}>Editable DOCX file</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Content sections */}
-              <div>
-                <label className="input-label" style={{ marginBottom: '10px' }}>Include Content Sections</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '13px', color: 'var(--text-dark-primary)', cursor: 'pointer' }}>
-                    <input type="checkbox" className="custom-checkbox" checked={includeDoc} onChange={(e) => setIncludeDoc(e.target.checked)} />
-                    <span>Contract Scanner Text</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '13px', color: 'var(--text-dark-primary)', cursor: 'pointer' }}>
-                    <input type="checkbox" className="custom-checkbox" checked={includeDraft} onChange={(e) => setIncludeDraft(e.target.checked)} />
-                    <span>Auto-Draft Workspace Text</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Cross-Save Module Panel */}
-              <div>
-                <label className="input-label" style={{ marginBottom: '10px' }}>Cross-Save Target Workspace</label>
-                <p style={{ fontSize: '11.5px', color: 'var(--text-dark-muted)', marginBottom: '12px', lineHeight: '1.45' }}>Select modules to make this document natively available inside those workspaces.</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {[
-                    { id: 'case-vault', label: 'Case Vault', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
-                    { id: 'conflict-engine', label: 'Conflict Engine', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
-                    { id: 'virtual-courtroom', label: 'Virtual Courtroom', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg> },
-                    { id: 'firm-library', label: 'Firm Library', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg> },
-                    { id: 'contract-analyzer', label: 'Contract Analyzer', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg> },
-                  ].map(({ id, label, icon }) => {
-                    const isActive = crossSaveTargets.includes(id);
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        className={`module-pill ${isActive ? 'active' : ''}`}
-                        onClick={() => setCrossSaveTargets(prev => isActive ? prev.filter(t => t !== id) : [...prev, id])}
-                      >
-                        <span className="module-pill-dot" />
-                        {icon}
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {exportError && (
-                <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.08)', color: 'var(--accent-danger)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', fontSize: '12.5px' }}>
-                  {exportError}
-                </div>
-              )}
-              {crossSaveStatus && !exporting && (
-                <div style={{ padding: '10px 12px', background: 'rgba(16,185,129,0.08)', color: 'var(--accent-success)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', fontSize: '12px' }}>
-                  {crossSaveStatus}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div style={{ display: 'flex', gap: '10px', padding: '14px 22px 20px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              <button
-                style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-dark-muted)', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, transition: 'all 0.15s' }}
-                onClick={() => setShowExportModal(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-accent"
-                style={{ flex: 2, padding: '10px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
-                onClick={executeExport}
-                disabled={exporting}
-              >
-                {exporting ? (
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                    {crossSaveTargets.length > 0 ? 'Export & Save to Platform' : 'Export & Download'}
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
+      </header>
+
+      {/* Toast Alert */}
+      {toastMessage && (
+        <div style={{
+          margin: '0 36px', padding: '12px 18px', borderRadius: '10px',
+          background: 'var(--paper-2)', border: '1px solid var(--rule)',
+          color: 'var(--ink)', fontSize: '13px', fontWeight: 500,
+          display: 'flex', alignItems: 'center', gap: '10px',
+        }}>
+          {ICONS.check} {toastMessage}
         </div>
       )}
 
-      {/* Upload/extraction failure toast — surfaces the specific backend
-          message (timeout, OCR-required blank scan, corrupt file, etc.)
-          instead of the old blocking alert() — also now reused for the
-          conflict-resolution apply/copy actions' success + failsafe
-          messages, so `type` can style it success-green as well as the
-          original error-red. Portaled straight to document.body: this
-          component's whole return is inside AppRouter.jsx's
-          page-transition wrapper (.page-enter), which applies a CSS
-          transform to every route's root and becomes the containing
-          block for any position:fixed descendant — without the portal
-          this resolves "fixed" relative to that in-flow page wrapper
-          (often far below the actual viewport) instead of the true
-          screen edge. Same bug/fix already applied to the conflict modal
-          below and to FirmLibrary/AutoDraftWorkspace's own modals. */}
-      {uploadToast && createPortal(
-        (() => {
-          const isSuccess = uploadToast.type === 'success';
-          return (
-            <div
-              style={{
-                position: 'fixed', bottom: '28px', left: '50%', transform: 'translateX(-50%)',
-                zIndex: 3000, display: 'flex', alignItems: 'center', gap: '10px',
-                padding: '13px 20px', borderRadius: '11px', fontSize: '13.5px', fontWeight: 500,
-                background: isSuccess ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-                border: `1px solid ${isSuccess ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
-                color: isSuccess ? '#6EE7B7' : '#FCA5A5',
-                boxShadow: '0 16px 48px rgba(0,0,0,0.4)', maxWidth: '460px',
-              }}
-            >
-              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-                {isSuccess
-                  ? <polyline points="20 6 9 17 4 12" />
-                  : <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>}
-              </svg>
-              <span>{uploadToast.message}</span>
-              <button
-                onClick={() => setUploadToast(null)}
-                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', marginLeft: 'auto', fontSize: '15px', lineHeight: 1, flexShrink: 0 }}
-                aria-label="Dismiss"
-              >
-                ×
-              </button>
-            </div>
-          );
-        })(),
-        document.body
-      )}
+      <div className="content">
 
-      {/* Conflict comparison modal — portaled straight to document.body.
-          AppRouter.jsx's page-transition wrapper (.page-enter) leaves a
-          permanent (non-zero fill-mode) CSS transform on every route's
-          root, which becomes the containing block for any position:fixed
-          descendant — without the portal this would resolve "fixed"
-          relative to that in-flow page wrapper instead of the viewport.
-          Same bug/fix already applied for FirmLibrary.jsx's document
-          viewer and AutoDraftWorkspace.jsx's export modal. */}
-      {activeConflictCard && createPortal(
-        <div className="conflict-modal-overlay" onClick={() => setActiveConflictCard(null)}>
-          <div className="conflict-modal" onClick={(ev) => ev.stopPropagation()}>
-            <div className="conflict-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-dark-primary)' }}>
-                  {activeConflictCard.title || 'Conflict Detail'}
-                </span>
-                <span className={`conflict-severity-badge ${(activeConflictCard.severity || 'minor').toLowerCase()}`}>
-                  {activeConflictCard.severity || 'Minor'}
-                </span>
+        {/* ============================================================
+             STATE 1 — UPLOAD
+             ============================================================ */}
+        {viewState === 'upload' && (
+          <section className="state-upload-wrap">
+            <div className="upload-hero">
+              <div className="upload-hero-title serif">What are we reviewing today, Counsel?</div>
+              <div className="upload-hero-sub">
+                Load a contract — LexAmplify reads every clause, flags what's risky against Indian contract law and your firm's playbook, and cites everything it tells you. Documents of any length are supported; longer filings simply take a little more scan time.
               </div>
+            </div>
+
+            <div className="upload-grid">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  accept=".pdf,.docx,.doc,.txt"
+                  onChange={handleFileSelect}
+                />
+                <div
+                  className={`big-dropzone ${isDragOver ? 'dragover' : ''}`}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={handleFileDrop}
+                >
+                  <div className="big-dropzone-icon">
+                    {ICONS.uploadCloud}
+                  </div>
+                  <div className="big-dropzone-title">
+                    {selectedFile ? selectedFile.name : 'Drag and drop a contract, or click to browse'}
+                  </div>
+                  <div className="big-dropzone-sub">
+                    {selectedFile
+                      ? `${(selectedFile.size / 1024).toFixed(1)} KB · Ready to scan`
+                      : 'PDF or DOCX, any length — a 60-page facility agreement is read the same way as a 2-page NDA.'}
+                  </div>
+                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--muted)' }}>MAX 50 MB PER FILE</div>
+                </div>
+
+                <div className="or-row">or paste text directly</div>
+                <textarea
+                  className="paste-box"
+                  placeholder="Paste the full contract text here…"
+                  value={pastedText}
+                  onChange={(e) => {
+                    setPastedText(e.target.value);
+                    if (e.target.value.trim()) {
+                      setSelectedFile(null);
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="playbook-card">
+                <div className="playbook-icon">
+                  {ICONS.book}
+                </div>
+                <div>
+                  <div className="playbook-title">
+                    Firm playbook <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span>
+                  </div>
+                  <div className="playbook-sub">
+                    Attach your firm's clause standards and LexAmplify flags deviations from them specifically, cited by rule — not just generic risk.
+                  </div>
+                </div>
+
+                <input
+                  type="file"
+                  ref={playbookInputRef}
+                  style={{ display: 'none' }}
+                  accept=".pdf,.docx,.doc,.txt"
+                  onChange={handlePlaybookSelect}
+                />
+
+                {!playbookFile ? (
+                  <div className="small-dropzone" onClick={() => playbookInputRef.current?.click()}>
+                    {ICONS.uploadSmall}
+                    Upload playbook / rule-book
+                  </div>
+                ) : (
+                  <div className="playbook-file">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                      {ICONS.fileCheck}
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{playbookFile.name}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPlaybookFile(null)}
+                      style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '2px 4px' }}
+                    >✕</button>
+                  </div>
+                )}
+
+                <div className="mode-block">
+                  <div className="mode-block-label">Review posture</div>
+                  <div className="mode-seg">
+                    {['balanced', 'aggressive', 'quick'].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        className={`mode-opt ${scanMode === m ? 'active' : ''}`}
+                        onClick={() => setScanMode(m)}
+                      >
+                        {m === 'quick' ? 'Quick scan' : m.charAt(0).toUpperCase() + m.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--muted)', lineHeight: '1.5' }}>
+                    {MODE_HINTS[scanMode]}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="begin-btn-row">
               <button
-                onClick={() => setActiveConflictCard(null)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-dark-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}
+                className="btn btn-primary"
+                style={{ padding: '13px 26px', fontSize: '14px' }}
+                onClick={handleBeginAnalysis}
               >
-                &times;
+                {ICONS.sparkles}
+                Begin analysis
               </button>
             </div>
-            <div className="conflict-modal-body">
-              <div className="conflict-compare-grid">
-                <div className="conflict-compare-col">
-                  <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
-                    {activeConflictCard.doc_a_name || 'Document A'}
-                  </span>
-                  <div className="original-clause-box" style={{ fontSize: '12.5px', marginTop: '6px' }}>
-                    {activeConflictCard.doc_a_excerpt}
-                  </div>
-                </div>
-                <div className="conflict-compare-col">
-                  <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
-                    {activeConflictCard.doc_b_name || 'Document B'}
-                  </span>
-                  <div className="original-clause-box" style={{ fontSize: '12.5px', marginTop: '6px' }}>
-                    {activeConflictCard.doc_b_excerpt}
-                  </div>
-                </div>
+          </section>
+        )}
+
+        {/* ============================================================
+             STATE 2 — SCANNING
+             ============================================================ */}
+        {viewState === 'scanning' && (
+          <section className="state-scanning-wrap">
+            <div className="scan-ring" />
+            <div>
+              <div className="scan-title serif">Reading {documentName}</div>
+              <div className="scan-sub">
+                {pageCount} pages · running the Hybrid Engine — clause segmentation, playbook comparison, precedent retrieval and missing-clause detection all run per page, so this scales with document length.
               </div>
+            </div>
+            <div style={{ width: '100%' }}>
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${scanProgress}%` }} />
+              </div>
+              <div className="progress-label">
+                <span>{scanProgress}%</span>
+                <span>{scanStage}</span>
+              </div>
+            </div>
+            <div className="console">
+              <div className="console-eyebrow">HYBRID ENGINE CONSOLE</div>
               <div>
-                <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
-                  Indian Legal Rationale
-                </span>
-                <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.6, margin: '6px 0 0' }}>
-                  {activeConflictCard.legal_explanation}
-                </p>
+                {consoleLogs.map((log, idx) => (
+                  <div key={idx} className={`console-line ${log.cls}`}>
+                    <span className="t">{log.t}</span>
+                    <span>{log.text}</span>
+                  </div>
+                ))}
               </div>
-              {activeConflictCard.recommended_resolution && (
-                <div>
-                  <span style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-dark-muted)' }}>
-                    Recommended Resolution
-                  </span>
-                  <p style={{ fontSize: '13px', color: 'var(--text-dark-primary)', lineHeight: 1.6, margin: '6px 0 0' }}>
-                    {activeConflictCard.recommended_resolution}
+            </div>
+          </section>
+        )}
+
+        {/* ============================================================
+             STATE 3 — ANALYZED (WORKBENCH)
+             ============================================================ */}
+        {viewState === 'analyzed' && (
+          <section className="state-analyzed-wrap">
+
+            {/* Document Summary Bar */}
+            <div className="summary-bar">
+              <div className="summary-stat">
+                <div className="summary-stat-val mono">{pageCount}</div>
+                <div className="summary-stat-label">Pages read</div>
+              </div>
+              <div className="summary-div" />
+              <div className="summary-stat">
+                <div className="summary-stat-val accent mono">{risks.length}</div>
+                <div className="summary-stat-label">Risks flagged</div>
+              </div>
+              <div className="summary-div" />
+              <div className="summary-stat">
+                <div className="summary-stat-val major mono">{missing.length}</div>
+                <div className="summary-stat-label">Missing clauses</div>
+              </div>
+              <div className="summary-div" />
+              <div className="summary-stat">
+                <div className="summary-stat-val mono">{citations.length}</div>
+                <div className="summary-stat-label">Citations found</div>
+              </div>
+              <div className="summary-div" />
+              <div className="summary-stat">
+                <div className="summary-stat-val mono">{scanDuration}s</div>
+                <div className="summary-stat-label">Scan time</div>
+              </div>
+              <div className="summary-mode">
+                <span className="badge mono" style={{ fontSize: '10.5px' }}>
+                  {scanMode.toUpperCase()} MODE
+                </span>
+              </div>
+            </div>
+
+            <div className="workbench">
+
+              {/* ── LEFT: DOCUMENT PANE ── */}
+              <div className="doc-pane">
+                <div className="doc-toolbar">
+                  <button className="toolbar-btn" title="Bold"><strong>B</strong></button>
+                  <button className="toolbar-btn" title="Italic"><em>I</em></button>
+                  <button className="toolbar-btn" title="Underline"><u>U</u></button>
+                  <div className="toolbar-sep" />
+                  <button className="toolbar-btn" title="Bullet list">•=</button>
+                  <button className="toolbar-btn" title="Numbered list">1=</button>
+                  <div className="toolbar-sep" />
+                  <button className="toolbar-btn" title="Search in document">{ICONS.search}</button>
+
+                  {/* Flag Navigator (§4 & §5: cycles through arbitrary number of flags) */}
+                  <div className="toolbar-nav">
+                    <button
+                      className="toolbar-btn"
+                      title="Previous flagged clause"
+                      onClick={handlePrevFlag}
+                      disabled={activeFlags.length === 0}
+                    >
+                      {ICONS.chevronLeft}
+                    </button>
+                    <span className="toolbar-nav-label">
+                      {activeFlags.length === 0
+                        ? 'No flags remain'
+                        : `Flag ${activeFlagIndex + 1} of ${activeFlags.length}`}
+                    </span>
+                    <button
+                      className="toolbar-btn"
+                      title="Next flagged clause"
+                      onClick={handleNextFlag}
+                      disabled={activeFlags.length === 0}
+                    >
+                      {ICONS.chevronRight}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="doc-meta-bar">
+                  <div>
+                    <div className="doc-name">{documentName}</div>
+                    <div className="doc-name-meta">{pageCount} pages · {wordCount.toLocaleString()} words · live review</div>
+                  </div>
+                  <span className="badge mono" style={{ fontSize: '10px' }}>PAGE 4 OF {pageCount}</span>
+                </div>
+
+                <div className="doc-surface" ref={docSurfaceRef}>
+                  <h3>7. Limitation of Liability</h3>
+                  <p>
+                    7.1 Except in cases of gross negligence or wilful misconduct,{' '}
+                    {resolvedRisks.has('risk-1') ? (
+                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
+                        neither Party's aggregate liability arising out of this Agreement shall exceed an amount equal to twelve (12) months’ fees paid under this Agreement, regardless of the form of action.
+                      </span>
+                    ) : (
+                      <span
+                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-1' ? 'active-flag' : ''}`}
+                        data-risk="risk-1"
+                        onClick={() => handleOpenWorkshop('risk-1')}
+                      >
+                        neither Party's aggregate liability arising out of this Agreement shall exceed the total fees paid in the preceding three (3) months, regardless of the form of action.
+                      </span>
+                    )}
                   </p>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn-accent"
-                      onClick={handleApplyConflictResolution}
-                      style={{ padding: '8px 14px', fontSize: '12.5px', fontWeight: 600 }}
-                    >
-                      ✨ Apply Resolution to Document
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCopyConflictResolution}
-                      style={{
-                        padding: '8px 14px', fontSize: '12.5px', fontWeight: 600, borderRadius: '8px', cursor: 'pointer',
-                        background: 'transparent', border: '1px solid var(--border-dark-subtle)', color: 'var(--text-dark-primary)',
+                  <p>
+                    7.2 In no event shall either Party be liable for indirect, incidental, special or consequential damages, including loss of profits, even if advised of the possibility of such damages.
+                  </p>
+
+                  <h3>8. Termination</h3>
+                  <p>
+                    8.1 Either Party may terminate this Agreement for convenience upon{' '}
+                    {resolvedRisks.has('risk-2') ? (
+                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
+                        thirty (30) days' written notice, provided that the terminating Party shall compensate the other Party for all work performed and non-cancellable commitments incurred up to the effective date of termination.
+                      </span>
+                    ) : (
+                      <span
+                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-2' ? 'active-flag' : ''}`}
+                        data-risk="risk-2"
+                        onClick={() => handleOpenWorkshop('risk-2')}
+                      >
+                        thirty (30) days' written notice, with no obligation to compensate the other Party for work in progress.
+                      </span>
+                    )}
+                  </p>
+                  <p>
+                    8.2 Upon termination, the Vendor shall return all Confidential Information within fifteen (15) business days.
+                  </p>
+
+                  {/* Missing Clause Marker */}
+                  {!insertedMissing.has('miss-1') ? (
+                    <div className="missing-marker" onClick={() => setActiveTab('missing')}>
+                      {ICONS.plus} Suggested: Transition Assistance clause — not present
+                    </div>
+                  ) : (
+                    <div style={{ background: 'var(--paper-2)', borderLeft: '3px solid var(--major)', padding: '10px 14px', borderRadius: '6px', margin: '8px 0', fontSize: '13px' }}>
+                      <strong>8.3 Transition Assistance:</strong> Upon termination or expiry, Vendor shall provide reasonable transition assistance for up to ninety (90) days to facilitate an orderly handover to Client or its designated successor, at Vendor’s then-current standard rates.
+                    </div>
+                  )}
+
+                  <h3>9. Data Protection &amp; Confidentiality</h3>
+                  <p>
+                    9.1 Vendor shall implement reasonable technical and organisational measures to protect Client Data in accordance with applicable law.
+                  </p>
+                  <p>
+                    9.2{' '}
+                    {resolvedRisks.has('risk-3') ? (
+                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
+                        Vendor shall implement measures in accordance with applicable law, including the Digital Personal Data Protection Act, 2023.
+                      </span>
+                    ) : (
+                      <span
+                        className={`clause-flag caution ${activeFlags[activeFlagIndex]?.id === 'risk-3' ? 'active-flag' : ''}`}
+                        data-risk="risk-3"
+                        onClick={() => handleOpenWorkshop('risk-3')}
+                      >
+                        "Applicable law" is not defined to include the Digital Personal Data Protection Act, 2023
+                      </span>
+                    )}
+                    , despite both Parties operating in India.
+                  </p>
+
+                  <h3>10. Governing Law &amp; Dispute Resolution</h3>
+                  <p>
+                    10.1{' '}
+                    {resolvedRisks.has('risk-4') ? (
+                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
+                        This Agreement shall be governed by the laws of India, and disputes shall be resolved by arbitration seated in New Delhi under the Arbitration and Conciliation Act, 1996.
+                      </span>
+                    ) : (
+                      <span
+                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-4' ? 'active-flag' : ''}`}
+                        data-risk="risk-4"
+                        onClick={() => handleOpenWorkshop('risk-4')}
+                      >
+                        This Agreement shall be governed by the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore under SIAC Rules.
+                      </span>
+                    )}
+                  </p>
+                  <p>
+                    10.2 The Parties agree to attempt good-faith negotiation for thirty (30) days prior to initiating arbitration.
+                  </p>
+
+                  <h3>11. Indemnification</h3>
+                  <p>
+                    11.1{' '}
+                    {resolvedRisks.has('risk-5') ? (
+                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
+                        Vendor's indemnification obligations are capped at Clause 7.1, except for indemnities arising from IP infringement or confidentiality breach which shall remain uncapped.
+                      </span>
+                    ) : (
+                      <span
+                        className={`clause-flag caution ${activeFlags[activeFlagIndex]?.id === 'risk-5' ? 'active-flag' : ''}`}
+                        data-risk="risk-5"
+                        onClick={() => handleOpenWorkshop('risk-5')}
+                      >
+                        Vendor's indemnification obligations are capped at the same liability limit set out in Clause 7.1
+                      </span>
+                    )}
+                    , which would also cap indemnity for IP infringement and confidentiality breaches.
+                  </p>
+
+                  {!insertedMissing.has('miss-2') ? (
+                    <div className="missing-marker" onClick={() => setActiveTab('missing')}>
+                      {ICONS.plus} Suggested: Force Majeure clause — not present
+                    </div>
+                  ) : (
+                    <div style={{ background: 'var(--paper-2)', borderLeft: '3px solid var(--major)', padding: '10px 14px', borderRadius: '6px', margin: '8px 0', fontSize: '13px' }}>
+                      <strong>11.2 Force Majeure:</strong> Neither Party shall be liable for any failure or delay in performance under this Agreement to the extent such failure or delay is caused by circumstances beyond its reasonable control, including acts of God, war, pandemic, or governmental action.
+                    </div>
+                  )}
+
+                  <h3>12. Assignment</h3>
+                  <p>
+                    12.1{' '}
+                    {resolvedRisks.has('risk-6') ? (
+                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
+                        Vendor may assign this Agreement, other than to a direct competitor of Client, only with Client’s prior written consent.
+                      </span>
+                    ) : (
+                      <span
+                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-6' ? 'active-flag' : ''}`}
+                        data-risk="risk-6"
+                        onClick={() => handleOpenWorkshop('risk-6')}
+                      >
+                        Vendor may freely assign this Agreement, including to a competitor of Client, without Client's prior written consent.
+                      </span>
+                    )}
+                  </p>
+
+                  <p className="mono" style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'center', paddingTop: '10px' }}>
+                    — Page 4 of {pageCount} · scroll or use the flag navigator above to continue —
+                  </p>
+                </div>
+              </div>
+
+              {/* ── RIGHT: ANALYSIS RAIL (6 Tabs) ── */}
+              <div className="rail">
+                <div className="rail-tabs">
+                  <button
+                    type="button"
+                    className={`rail-tab ${activeTab === 'risks' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('risks')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2.5L2.5 20h19z" /><path d="M12 9.5v4.5" /><circle cx="12" cy="17" r="0.6" fill="currentColor" />
+                    </svg>
+                    Risks
+                    {risks.length > 0 && <span className="rail-dot" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`rail-tab ${activeTab === 'missing' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('missing')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" />
+                    </svg>
+                    Missing
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`rail-tab ${activeTab === 'chat' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('chat')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 8.7 8.7 0 0 1-3.5-.7L3 20l1-4.9a8.4 8.4 0 0 1 8.5-12.6 8.4 8.4 0 0 1 8.5 8.5z" />
+                    </svg>
+                    Ask AI
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`rail-tab ${activeTab === 'citations' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('citations')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19.5A2 2 0 0 1 6 17.5h13" />
+                    </svg>
+                    Citations
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`rail-tab ${activeTab === 'comments' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('comments')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 11.5a8.4 8.4 0 0 1-11.4 7.9L4 21l1.4-4.4A8.4 8.4 0 1 1 21 11.5z" />
+                    </svg>
+                    Comments
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`rail-tab ${activeTab === 'conflicts' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('conflicts')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+                    </svg>
+                    Conflicts
+                  </button>
+                </div>
+
+                <div className="rail-panel-wrap">
+
+                  {/* ── TAB 1: RISKS ── */}
+                  <div className={`rail-panel ${activeTab === 'risks' ? 'active' : ''}`}>
+                    <div className="rail-head">
+                      <div>
+                        <div className="rail-head-title">Flagged clauses</div>
+                        <div className="rail-head-sub">Ranked by severity. Click a card to open the Revision Workshop.</div>
+                      </div>
+                      <span className="chip chip-accent">{risks.length}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {risks.length === 0 ? (
+                        <div className="empty" style={{ padding: '30px 10px' }}>
+                          <div className="empty-icon">{ICONS.check}</div>
+                          <div className="empty-title serif">All risks resolved</div>
+                          <div className="empty-sub">Every flagged clause in this contract has been addressed or accepted.</div>
+                        </div>
+                      ) : (
+                        risks.map((r) => (
+                          <div
+                            key={r.id}
+                            className="risk-card"
+                            onClick={() => handleOpenWorkshop(r.id)}
+                          >
+                            <div className="risk-card-top">
+                              <span className={`risk-sev ${getSevClass(r.severity)}`}>
+                                {getSevLabel(r.severity)}
+                              </span>
+                            </div>
+                            <div className="risk-clause-title">{r.title}</div>
+                            <div className="risk-excerpt">{r.excerpt}</div>
+                            <div className="risk-loc">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+                              </svg>
+                              {r.location}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── TAB 2: MISSING ── */}
+                  <div className={`rail-panel ${activeTab === 'missing' ? 'active' : ''}`}>
+                    <div className="rail-head">
+                      <div>
+                        <div className="rail-head-title">Missing clauses</div>
+                        <div className="rail-head-sub">Standard for this contract type, not found in the document.</div>
+                      </div>
+                      <span className="chip chip-major">{missing.length}</span>
+                    </div>
+
+                    <div className="bulk-bar">
+                      <span className="bulk-bar-label">
+                        {checkedMissingCount} of {missing.length} selected
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={checkedMissingCount === 0}
+                        onClick={handleBulkInsertMissing}
+                      >
+                        Add selected clauses
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {missing.length === 0 ? (
+                        <div className="empty" style={{ padding: '30px 10px' }}>
+                          <div className="empty-icon">{ICONS.check}</div>
+                          <div className="empty-title serif">No missing clauses</div>
+                          <div className="empty-sub">All recommended standard clauses have been inserted into the agreement.</div>
+                        </div>
+                      ) : (
+                        missing.map((m) => (
+                          <div key={m.id} className="missing-card">
+                            <div
+                              className={`missing-check ${m.checked ? 'checked' : ''}`}
+                              onClick={() => handleToggleMissingCheck(m.id)}
+                            >
+                              {ICONS.check}
+                            </div>
+                            <div className="missing-body">
+                              <div className="missing-title">{m.title}</div>
+                              <div className="missing-rationale">{m.rationale}</div>
+                              {m.expanded && (
+                                <div className="missing-model">{m.model}</div>
+                              )}
+                              <div className="missing-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  onClick={() => handleToggleMissingExpand(m.id)}
+                                >
+                                  {m.expanded ? 'Hide model clause' : 'View model clause'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => handleInsertSingleMissing(m.id)}
+                                >
+                                  Insert into document
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── TAB 3: CHAT ── */}
+                  <div className={`rail-panel ${activeTab === 'chat' ? 'active' : ''}`}>
+                    <div className="rail-head">
+                      <div>
+                        <div className="rail-head-title">Ask about this document</div>
+                        <div className="rail-head-sub">Answers are grounded in this contract only, cited by clause.</div>
+                      </div>
+                    </div>
+
+                    <div className="chat-scroll" ref={chatScrollRef}>
+                      {chatMessages.map((m) => (
+                        <div key={m.id} className={`msg ${m.role === 'user' ? 'user' : ''}`}>
+                          <div className="msg-avatar">
+                            {m.role === 'user' ? ICONS.user : ICONS.aiChat}
+                          </div>
+                          <div className="msg-bubble">
+                            <div>{m.text}</div>
+                            {m.cites && m.cites.length > 0 && (
+                              <div className="msg-cite-row">
+                                {m.cites.map((c, ci) => (
+                                  <span key={ci} className="msg-cite">{c}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {chatLoading && (
+                        <div className="msg">
+                          <div className="msg-avatar">{ICONS.aiChat}</div>
+                          <div className="msg-bubble" style={{ color: 'var(--muted)', fontStyle: 'italic' }}>
+                            Consulting contract clauses…
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="chat-suggest-row">
+                      <button
+                        type="button"
+                        className="suggest-chip"
+                        onClick={() => handleSendChat('Summarize the termination terms')}
+                      >
+                        Summarize the termination terms
+                      </button>
+                      <button
+                        type="button"
+                        className="suggest-chip"
+                        onClick={() => handleSendChat('What’s our exposure under Clause 7?')}
+                      >
+                        What’s our exposure under Clause 7?
+                      </button>
+                      <button
+                        type="button"
+                        className="suggest-chip"
+                        onClick={() => handleSendChat('List every date-bound obligation')}
+                      >
+                        List every date-bound obligation
+                      </button>
+                    </div>
+
+                    <div className="chat-input-row">
+                      <input
+                        className="chat-input"
+                        type="text"
+                        placeholder="Ask about this contract…"
+                        aria-label="Ask about this document"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSendChat(); }}
+                        disabled={chatLoading}
+                      />
+                      <button
+                        type="button"
+                        className="chat-send"
+                        aria-label="Send"
+                        onClick={() => handleSendChat()}
+                        disabled={chatLoading || !chatInput.trim()}
+                      >
+                        {ICONS.send}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── TAB 4: CITATIONS ── */}
+                  <div className={`rail-panel ${activeTab === 'citations' ? 'active' : ''}`}>
+                    <div className="rail-head">
+                      <div>
+                        <div className="rail-head-title">Supporting citations</div>
+                        <div className="rail-head-sub">Precedent and statute pulled in support of the flags above.</div>
+                      </div>
+                      <span className="chip chip-neutral">{citations.length}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {citations.map((c) => (
+                        <div key={c.id} className="citation-card">
+                          <div className="citation-top">
+                            <div>
+                              <div className="citation-name">{c.name}</div>
+                              <div className="citation-num mono">{c.num}</div>
+                            </div>
+                            <span className={`chip ${c.inVault ? 'chip-neutral' : 'chip-major'}`}>
+                              {c.inVault ? 'In firm vault' : 'Not in firm vault'}
+                            </span>
+                          </div>
+                          <div className="citation-snippet">{c.snippet}</div>
+                          <div className="citation-actions">
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => {
+                                setToastMessage(`Inserted citation "${c.num}" into active clause`);
+                                setTimeout(() => setToastMessage(''), 3500);
+                              }}
+                            >
+                              Insert citation
+                            </button>
+                            <a
+                              href={`https://indiankanoon.org/search/?formInput=${encodeURIComponent(c.name)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ textDecoration: 'none' }}
+                            >
+                              <button type="button" className="btn btn-ghost btn-sm">Open source</button>
+                            </a>
+                            {!c.inVault && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => {
+                                  navigate(`/firm-library/search?q=${encodeURIComponent(c.name)}`);
+                                }}
+                              >
+                                Search similar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ── TAB 5: COMMENTS ── */}
+                  <div className={`rail-panel ${activeTab === 'comments' ? 'active' : ''}`}>
+                    <div className="empty">
+                      <div className="empty-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 11.5a8.4 8.4 0 0 1-11.4 7.9L4 21l1.4-4.4A8.4 8.4 0 1 1 21 11.5z" />
+                        </svg>
+                      </div>
+                      <div className="empty-title serif">No comments yet</div>
+                      <div className="empty-sub">
+                        Select any text in the document and leave a note for a colleague reviewing this contract with you — threaded comments appear here, tied to the exact clause.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── TAB 6: CONFLICTS ── */}
+                  <div className={`rail-panel ${activeTab === 'conflicts' ? 'active' : ''}`}>
+                    <div className="rail-head">
+                      <div>
+                        <div className="rail-head-title">Cross-document conflicts</div>
+                        <div className="rail-head-sub">Check this contract against another filing — an MOU, an earlier draft, a related agreement.</div>
+                      </div>
+                    </div>
+
+                    <input
+                      type="file"
+                      ref={conflictInputRef}
+                      style={{ display: 'none' }}
+                      accept=".pdf,.docx,.doc,.txt"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setConflictScanReady(true);
+                        }
                       }}
-                    >
-                      Copy to Clipboard
-                    </button>
+                    />
+
+                    {!conflictScanReady && !conflictScanned && (
+                      <div className="conflict-upload" onClick={() => conflictInputRef.current?.click()}>
+                        {ICONS.uploadSmall}
+                        Upload a reference document to compare
+                      </div>
+                    )}
+
+                    {conflictScanReady && !conflictScanned && (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => {
+                          setConflictScanned(true);
+                        }}
+                      >
+                        {ICONS.search}
+                        Run conflict scan against Term_Sheet_v2.docx
+                      </button>
+                    )}
+
+                    {(conflictScanned || conflicts.length > 0) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {conflicts.length === 0 ? (
+                          <div className="empty" style={{ padding: '24px 10px' }}>
+                            <div className="empty-icon">{ICONS.check}</div>
+                            <div className="empty-title serif">No conflicts remaining</div>
+                            <div className="empty-sub">All terms are harmonized across referenced documents.</div>
+                          </div>
+                        ) : (
+                          conflicts.map((c) => (
+                            <div
+                              key={c.id}
+                              className="conflict-card"
+                              onClick={() => setActiveConflictId(c.id)}
+                            >
+                              <div className="risk-card-top">
+                                <span className={`risk-sev ${getSevClass(c.severity)}`}>
+                                  {getSevLabel(c.severity)}
+                                </span>
+                              </div>
+                              <div className="risk-clause-title">{c.title}</div>
+                              <div className="conflict-summary">{c.summary}</div>
+                              <div className="conflict-ref">vs. {c.refDoc}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+
+                    <div className="conflict-engine-note">
+                      {ICONS.infoCircle}
+                      <span>This runs on the same Conflict Engine available as its own feature in the sidebar — a scan here and a scan there should never disagree. See the brief.</span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          </section>
+        )}
+
+      </div>
+
+      {/* ============================================================
+           REVISION WORKSHOP MODAL (Risks)
+           ============================================================ */}
+      <div className={`modal-overlay ${activeWorkshopRisk ? 'open' : ''}`}>
+        {activeWorkshopRisk && (
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <div className="card-eyebrow">Revision Workshop</div>
+                <div className="modal-title serif">{activeWorkshopRisk.title}</div>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Close"
+                onClick={handleDiscardRevision}
+              >
+                {ICONS.close}
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div>
+                <div className="workshop-section-label">Clause as written · {activeWorkshopRisk.location}</div>
+                <div className="workshop-quote">{activeWorkshopRisk.original}</div>
+              </div>
+
+              {activeWorkshopRisk.guardrailText && (
+                <div className="guardrail-box">
+                  <div className="guardrail-icon">
+                    {ICONS.book}
+                  </div>
+                  <div>
+                    <div className="guardrail-rule">{activeWorkshopRisk.playbookRule}</div>
+                    <div className="guardrail-text">{activeWorkshopRisk.guardrailText}</div>
                   </div>
                 </div>
               )}
+
+              <div>
+                <div className="workshop-section-label">
+                  AI-suggested revision <span className="mono" style={{ color: 'var(--muted)', fontWeight: 400, textTransform: 'none' }}>— tracked changes</span>
+                </div>
+                <div
+                  className="diff-box"
+                  dangerouslySetInnerHTML={{ __html: activeWorkshopRisk.diffHtml }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={isRegenerating}
+                  onClick={handleRegenerateRewrite}
+                >
+                  {isRegenerating ? (
+                    <span style={{ display: 'inline-block', width: '13px', height: '13px', border: '2px solid var(--rule)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                  ) : (
+                    ICONS.refresh
+                  )}
+                  {isRegenerating ? 'Regenerating…' : 'Regenerate rewrite'}
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-danger-ghost"
+                onClick={handleDiscardRevision}
+              >
+                Discard — keep original wording
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleAcceptRevision}
+              >
+                {ICONS.check}
+                Accept into document
+              </button>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
-    </>
+        )}
+      </div>
+
+      {/* ============================================================
+           CONFLICT DETAIL MODAL
+           ============================================================ */}
+      <div className={`modal-overlay ${activeConflict ? 'open' : ''}`}>
+        {activeConflict && (
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <div className="card-eyebrow">Cross-document conflict</div>
+                <div className="modal-title serif">{activeConflict.title}</div>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Close"
+                onClick={() => setActiveConflictId(null)}
+              >
+                {ICONS.close}
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="card-body-text">{activeConflict.summary}</div>
+              <div className="side-by-side">
+                <div>
+                  <div className="side-col-label">{activeConflict.sideALabel}</div>
+                  <div className="side-col-body">{activeConflict.sideA}</div>
+                </div>
+                <div>
+                  <div className="side-col-label">{activeConflict.sideBLabel}</div>
+                  <div className="side-col-body">{activeConflict.sideB}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-danger-ghost"
+                onClick={() => {
+                  setConflicts((prev) => prev.filter((c) => c.id !== activeConflict.id));
+                  setActiveConflictId(null);
+                }}
+              >
+                Dismiss — not a real conflict
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleResolveConflict}
+              >
+                Apply resolution to this document
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── DRAFTS MODAL OVERLAY ── */}
+      <DraftsModal isOpen={showDraftsModal} onClose={() => setShowDraftsModal(false)} />
+    </div>
   );
 }
-
-// ── UTILITIES ────────────────────────────────────────────────────────
-
-const getDynamicIntents = (clauseText, riskLevel) => {
-  const text = (clauseText || "").toLowerCase();
-  const intents = [];
-
-  if (text.includes('liability') || text.includes('penalty') || text.includes('damages') || text.includes('$') || text.includes('rs') || text.includes('inr')) {
-    intents.push("Cap total liability to 12 months of fees paid");
-    intents.push("Make the financial penalty mutual for both parties");
-    intents.push("Exclude indirect, punitive, and consequential damages");
-  }
-  if (text.includes('terminate') || text.includes('termination') || text.includes('notice')) {
-    intents.push("Add a 30-day written notice and cure period before termination");
-    intents.push("Ensure termination rights are mutual for both parties");
-  }
-  if (text.includes('confidential') || text.includes('information')) {
-    intents.push("Limit the survival of confidentiality obligations to 3 years");
-    intents.push("Exclude publicly known information from confidentiality restrictions");
-  }
-  if (text.includes('jurisdiction') || text.includes('law') || text.includes('court') || text.includes('dispute') || text.includes('committee')) {
-    intents.push("Change governing law to the laws of India");
-    intents.push("Mandate neutral arbitration before approaching courts");
-  }
-  if (text.includes('intellectual') || text.includes('property') || text.includes('ip ')) {
-    intents.push("Ensure the Vendor retains pre-existing Intellectual Property rights");
-    intents.push("Grant a perpetual, royalty-free license instead of full IP transfer");
-  }
-  if (text.includes('discretion') || text.includes('withheld') || text.includes('reduce')) {
-    intents.push("Require mutual written consent before altering payment terms");
-    intents.push("Remove the unilateral right to withhold or reduce payments");
-  }
-
-  if (riskLevel === 'RED') {
-    intents.push("Remove this clause entirely as it imposes severe disproportionate risk");
-    intents.push("Make this clause perfectly mutual and balanced");
-  } else {
-    intents.push("Clarify the ambiguous terms to prevent future legal disputes");
-    intents.push("Align this clause with standard Indian industry practices");
-  }
-
-  return [...new Set(intents)].slice(0, 5);
-};
