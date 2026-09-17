@@ -114,6 +114,35 @@ const ICONS = {
   ),
 };
 
+// ── Safe Structured Diff Renderer (brief §5 & §8: No dangerouslySetInnerHTML) ─
+function renderSafeDiff(diffInput) {
+  if (!diffInput) return null;
+  if (Array.isArray(diffInput)) {
+    return diffInput.map((seg, idx) => {
+      if (seg.type === 'removed') return <del key={idx}>{seg.text}</del>;
+      if (seg.type === 'added') return <ins key={idx}>{seg.text}</ins>;
+      return <span key={idx}>{seg.text}</span>;
+    });
+  }
+  if (typeof diffInput === 'string') {
+    const parts = [];
+    const regex = /(<del>[\s\S]*?<\/del>|<ins>[\s\S]*?<\/ins>)/gi;
+    const tokens = diffInput.split(regex);
+    tokens.forEach((token, idx) => {
+      if (!token) return;
+      if (token.toLowerCase().startsWith('<del>') && token.toLowerCase().endsWith('</del>')) {
+        parts.push(<del key={idx}>{token.slice(5, -6)}</del>);
+      } else if (token.toLowerCase().startsWith('<ins>') && token.toLowerCase().endsWith('</ins>')) {
+        parts.push(<ins key={idx}>{token.slice(5, -6)}</ins>);
+      } else {
+        parts.push(<span key={idx}>{token}</span>);
+      }
+    });
+    return parts;
+  }
+  return null;
+}
+
 // ── Initial Dynamic Sample Data (conforming to §3 Data Contract) ─────────────
 const INITIAL_RISKS = [
   {
@@ -1951,10 +1980,9 @@ export default function ContractAnalyzer() {
                 <div className="workshop-section-label">
                   AI-suggested revision <span className="mono" style={{ color: 'var(--muted)', fontWeight: 400, textTransform: 'none' }}>— tracked changes</span>
                 </div>
-                <div
-                  className="diff-box"
-                  dangerouslySetInnerHTML={{ __html: activeWorkshopRisk.diffHtml }}
-                />
+                <div className="diff-box">
+                  {renderSafeDiff(activeWorkshopRisk.suggestedRevision?.diffSegments || activeWorkshopRisk.diffHtml)}
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
