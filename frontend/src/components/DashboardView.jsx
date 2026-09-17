@@ -69,6 +69,7 @@ export default function DashboardView() {
   const [calendarEvents, setCalEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showingEmpty, setShowingEmpty] = useState(false);
 
   // ── Quick Draft (⌘K style template picker) ──────────────────────────────────
   const [quickDraftOpen, setQuickDraftOpen] = useState(false);
@@ -821,6 +822,19 @@ export default function DashboardView() {
           .content-dash, .topbar-dash { padding-left: 18px; padding-right: 18px; }
           .sync-row { flex-direction: column; align-items: stretch; }
         }
+        .link-toggle {
+          background: none;
+          border: 0;
+          color: var(--muted);
+          text-decoration: underline;
+          text-underline-offset: 3px;
+          font-size: 12px;
+          cursor: pointer;
+          padding: 0;
+        }
+        .link-toggle:hover {
+          color: var(--accent);
+        }
       `}</style>
 
       {/* ── TOPBAR MASTHEAD ── */}
@@ -900,7 +914,8 @@ export default function DashboardView() {
         {/* ── 4 STAT CARDS ── */}
         <div className="stat-grid-dash">
           {stats.map((s) => {
-            const isFlagged = s.value > 0;
+            const displayVal = showingEmpty ? 0 : s.value;
+            const isFlagged = displayVal > 0;
             const tileCls = isFlagged && s.severity !== 'neutral' ? s.severity : '';
             const statusLabel = isFlagged ? s.statusFlag : s.statusOk;
 
@@ -918,7 +933,7 @@ export default function DashboardView() {
                 </div>
                 <div>
                   <div className="stat-value">
-                    {loading ? SPINNER_SVG : s.value}
+                    {loading ? SPINNER_SVG : displayVal}
                   </div>
                   <div className="stat-label">{s.label}</div>
                 </div>
@@ -951,7 +966,7 @@ export default function DashboardView() {
                 <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
                   {SPINNER_SVG} Loading triage items…
                 </div>
-              ) : urgentItems.length === 0 ? (
+              ) : (urgentItems.length === 0 || showingEmpty) ? (
                 <div className="clear-state">
                   <div className="clear-icon">{CHECK_ICON}</div>
                   <div className="clear-title">Clear — no urgent deadlines</div>
@@ -1004,7 +1019,7 @@ export default function DashboardView() {
                 <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
                   {SPINNER_SVG} Loading vault activity…
                 </div>
-              ) : recentVaultDocs.length === 0 ? (
+              ) : (recentVaultDocs.length === 0 || showingEmpty) ? (
                 <div className="clear-state">
                   <div className="clear-icon">{UPLOAD_ICON}</div>
                   <div className="clear-title">No vault documents yet</div>
@@ -1037,6 +1052,12 @@ export default function DashboardView() {
               )}
             </div>
           </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-10px' }}>
+          <button className="link-toggle" onClick={() => setShowingEmpty(v => !v)}>
+            {showingEmpty ? 'View populated state' : 'View "all clear" empty state'}
+          </button>
         </div>
 
         {/* ── QUICK DRAFT BANNER ── */}
