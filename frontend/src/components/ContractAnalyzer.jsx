@@ -390,73 +390,116 @@ export default function ContractAnalyzer() {
       setScanProgress(30);
       setScanStage('Analyzing risks & liabilities…');
 
-      // Live job streaming via SSE with polling backup
+      // ── Transport Strategy: EventSource with clean Polling fallback & Circuit Breaker ──
       await new Promise((resolve, reject) => {
         let isDone = false;
-        const es = new EventSource(`${API_BASE}/api/contract/stream/${jobId}`, { withCredentials: true });
-        eventSourceRef.current = es;
+        let pollTimer = null;
+        let consecutiveFailures = 0;
+        const MAX_FAILURES = 3;
 
-        const pollTimer = setInterval(async () => {
-          if (isDone) {
+        const cleanup = () => {
+          if (pollTimer) {
             clearInterval(pollTimer);
-            return;
+            pollTimer = null;
           }
-          try {
-            const statusRes = await fetch(`${API_BASE}/api/contract/analysis-status/${jobId}`);
-            if (statusRes.ok) {
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+        };
+
+        const startPollingFallback = (reason = '') => {
+          if (isDone || pollTimer) return;
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          log(`Switching transport to resilient status polling${reason ? ` (${reason})` : ''}…`, 'dim');
+
+          pollTimer = setInterval(async () => {
+            if (isDone) {
+              cleanup();
+              return;
+            }
+            try {
+              const statusRes = await fetch(`${API_BASE}/api/contract/analysis-status/${jobId}`);
+              if (!statusRes.ok) {
+                consecutiveFailures += 1;
+                if (consecutiveFailures >= MAX_FAILURES) {
+                  isDone = true;
+                  cleanup();
+                  reject(new Error('The analysis engine encountered a service disruption. Your document is preserved; please retry.'));
+                  return;
+                }
+                return;
+              }
+
               const sData = await statusRes.json();
+              consecutiveFailures = 0; // Reset on success
+
               if (sData.status === 'complete' && sData.results) {
                 isDone = true;
-                clearInterval(pollTimer);
-                es.close();
+                cleanup();
                 handleAnalysisSuccess(sData.results, extractedClauses, extractedPages, extractedWords, startTime);
                 resolve();
               } else if (sData.status === 'failed') {
                 isDone = true;
-                clearInterval(pollTimer);
-                es.close();
+                cleanup();
                 reject(new Error(sData.error || 'Contract analysis pipeline reported failure.'));
               } else if (sData.progress) {
                 setScanProgress((prev) => Math.max(prev, Math.min(95, sData.progress)));
                 if (sData.stage) setScanStage(sData.stage);
               }
+            } catch (pollErr) {
+              consecutiveFailures += 1;
+              if (consecutiveFailures >= MAX_FAILURES) {
+                isDone = true;
+                cleanup();
+                reject(new Error('The analysis engine encountered a service disruption. Your document is preserved; please retry.'));
+              }
             }
-          } catch {
-            // ignore intermittent polling blips
-          }
-        }, 2500);
-
-        es.onmessage = (evt) => {
-          if (isDone) return;
-          try {
-            const data = JSON.parse(evt.data);
-            if (data.progress) {
-              setScanProgress((prev) => Math.max(prev, Math.min(95, data.progress)));
-            }
-            if (data.status) {
-              setScanStage(data.status);
-              log(data.status, data.status.toLowerCase().includes('fail') ? 'err' : 'dim');
-            }
-            if (data.state === 'SUCCESS' && data.result) {
-              isDone = true;
-              clearInterval(pollTimer);
-              es.close();
-              handleAnalysisSuccess(data.result, extractedClauses, extractedPages, extractedWords, startTime);
-              resolve();
-            } else if (data.state === 'FAILURE') {
-              isDone = true;
-              clearInterval(pollTimer);
-              es.close();
-              reject(new Error(data.error || 'Contract analysis failed.'));
-            }
-          } catch {
-            // ignore frame parse
-          }
+          }, 1200);
         };
 
-        es.onerror = () => {
-          // SSE reconnects or polling continues
-        };
+        // Try SSE first. If it connects, stream live. If onerror fires, immediately fall back to polling.
+        try {
+          const es = new EventSource(`${API_BASE}/api/contract/stream/${jobId}`, { withCredentials: true });
+          eventSourceRef.current = es;
+
+          es.onmessage = (evt) => {
+            if (isDone) return;
+            try {
+              const data = JSON.parse(evt.data);
+              if (data.progress) {
+                setScanProgress((prev) => Math.max(prev, Math.min(95, data.progress)));
+              }
+              if (data.status) {
+                setScanStage(data.status);
+                log(data.status, data.status.toLowerCase().includes('fail') ? 'err' : 'dim');
+              }
+              if (data.state === 'SUCCESS' && data.result) {
+                isDone = true;
+                cleanup();
+                handleAnalysisSuccess(data.result, extractedClauses, extractedPages, extractedWords, startTime);
+                resolve();
+              } else if (data.state === 'FAILURE') {
+                isDone = true;
+                cleanup();
+                reject(new Error(data.error || 'Contract analysis failed.'));
+              }
+            } catch {
+              // frame parse error, continue
+            }
+          };
+
+          es.onerror = () => {
+            if (isDone) return;
+            // Close EventSource and transition cleanly to HTTP polling with circuit breaker
+            startPollingFallback('SSE transport disconnected');
+          };
+        } catch {
+          startPollingFallback('SSE initialization failed');
+        }
       });
 
     } catch (err) {
@@ -466,7 +509,7 @@ export default function ContractAnalyzer() {
       }
       setScanError(err.message || 'An error occurred during contract analysis.');
       log(`Analysis error: ${err.message}`, 'err');
-      // STRICT GUARDRAIL: Do NOT fall back to dummy mock data!
+      // STRICT GUARDRAIL: Do NOT fall back to dummy mock data! Document is preserved in state.
     }
   };
 
@@ -1330,6 +1373,34 @@ export default function ContractAnalyzer() {
                 Load a contract — LexAmplify reads every clause, flags what's risky against Indian contract law and your firm's playbook, and cites everything it tells you. Documents of any length are supported; longer filings simply take a little more scan time.
               </div>
             </div>
+
+            {/* High-Contrast Error Card on Failure (Document Preserved) */}
+            {scanError && (
+              <div className="scan-error-banner" style={{ maxWidth: '100%', marginBottom: '24px' }}>
+                <div className="scan-error-title">
+                  {ICONS.alertTriangle} <span>Analysis Interrupted</span>
+                </div>
+                <div className="scan-error-msg">{scanError}</div>
+                <div className="scan-error-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleBeginAnalysis}
+                    disabled={!contractFile && !pastedText.trim()}
+                  >
+                    {ICONS.refresh}
+                    <span>Retry Analysis</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setScanError(null)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 2. Upload Grid */}
             <div className="upload-grid">

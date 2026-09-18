@@ -169,14 +169,13 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                 print(f"[analyze_contract_task] Celery update_state failed: {e}")
         if job_id:
             try:
-                from routes.contract_routes import LOCAL_JOBS
-                if job_id in LOCAL_JOBS:
-                    LOCAL_JOBS[job_id].update({
-                        "progress": progress,
-                        "status": status
-                    })
+                from utils.job_store import load_job, save_job
+                job_data = load_job(job_id) or {}
+                job_data["progress"] = progress
+                job_data["status"] = status
+                save_job(job_id, job_data)
             except Exception as e:
-                print(f"[analyze_contract_task] Local job state update failed: {e}")
+                print(f"[analyze_contract_task] Job store state update failed: {e}")
 
     report('Chunking document...', 5)
     chunks = chunk_text_by_boundary(full_text, chunk_size=3000, overlap=300)
@@ -306,10 +305,17 @@ Return ONLY a valid JSON array of objects with these exact keys:
 
     report('Matching precedents...', 88)
     citations = []
-    search_query = " ".join(c.get("explanation", "") for c in formatted_clauses[:5]).strip() if formatted_clauses else ""
 
-    if search_query:
+    def safe_check_case_in_vault(title_to_check, case_id_to_check):
         try:
+            return check_case_in_vault(title_to_check, case_id_to_check)
+        except Exception as v_err:
+            print(f"[analyze_contract_task] Vault check non-fatal error: {v_err}")
+            return False, None
+
+    try:
+        search_query = " ".join(c.get("explanation", "") for c in formatted_clauses[:5]).strip() if formatted_clauses else ""
+        if search_query and os.getenv("PINECONE_API_KEY") and os.getenv("PINECONE_HOST"):
             from pinecone import Pinecone
             pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
             index = pc.Index(host=os.getenv("PINECONE_HOST"))
@@ -337,14 +343,17 @@ Return ONLY a valid JSON array of objects with these exact keys:
                     if extracted:
                         title = extracted
                     else:
-                        resolved = fetch_kanoon_case_title(snippet)
-                        if resolved.get('title'):
-                            title = resolved['title']
-                            kanoon_url = resolved.get('url')
-                        elif title.endswith('.pdf'):
-                            title = title[:-4].replace('_', ' ')
+                        try:
+                            resolved = fetch_kanoon_case_title(snippet)
+                            if resolved.get('title'):
+                                title = resolved['title']
+                                kanoon_url = resolved.get('url')
+                            elif title.endswith('.pdf'):
+                                title = title[:-4].replace('_', ' ')
+                        except Exception:
+                            pass
 
-                in_vault, vault_id = check_case_in_vault(title, case_id)
+                in_vault, vault_id = safe_check_case_in_vault(title, case_id)
 
                 citations.append({
                     "id": f"cite-{len(citations)+1}",
@@ -361,48 +370,51 @@ Return ONLY a valid JSON array of objects with these exact keys:
                 })
                 if len(citations) >= 4:
                     break
-        except Exception as e:
-            print(f"[analyze_contract_task] Citation RAG failed: {e}")
+    except Exception as precedent_err:
+        print(f"[analyze_contract_task] Precedent matching non-fatal failure: {precedent_err}")
 
-    # Fallback statutory citations if index was empty or offline
+    # Fallback statutory citations if index was empty or offline (guaranteed non-fatal)
     if not citations:
-        statutory_candidates = [
-            {
-                "title": "Digital Personal Data Protection Act, 2023",
-                "num": "Act No. 22 of 2023",
-                "snippet": "Governs the processing of digital personal data within India, requiring reasonable security safeguards and lawful basis for processing.",
-            },
-            {
-                "title": "Indian Contract Act, 1872 — Section 73 & 74",
-                "num": "Act No. 9 of 1872",
-                "snippet": "Statutory rules on compensation for loss or damage caused by breach of contract and enforcement of liquidated damages.",
-            },
-            {
-                "title": "Arbitration and Conciliation Act, 1996",
-                "num": "Act No. 26 of 1996",
-                "snippet": "Sets out the legal framework for domestic and international commercial arbitration seated in India, party autonomy, and enforceability.",
-            },
-            {
-                "title": "Specific Relief Act, 1963 — Section 14",
-                "num": "Act No. 47 of 1963",
-                "snippet": "Contracts not specifically enforceable, including contracts dependent on personal qualifications or determinable contracts.",
-            },
-        ]
-        for c_cand in statutory_candidates:
-            in_v, v_id = check_case_in_vault(c_cand["title"], c_cand["num"])
-            citations.append({
-                "id": f"cite-{len(citations)+1}",
-                "case_id": c_cand["num"],
-                "title": c_cand["title"],
-                "name": c_cand["title"],
-                "year": c_cand["num"],
-                "num": c_cand["num"],
-                "snippet": c_cand["snippet"],
-                "in_vault": in_v,
-                "inVault": in_v,
-                "vault_id": v_id,
-                "kanoon_url": f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(c_cand['title'])}",
-            })
+        try:
+            statutory_candidates = [
+                {
+                    "title": "Digital Personal Data Protection Act, 2023",
+                    "num": "Act No. 22 of 2023",
+                    "snippet": "Governs the processing of digital personal data within India, requiring reasonable security safeguards and lawful basis for processing.",
+                },
+                {
+                    "title": "Indian Contract Act, 1872 — Section 73 & 74",
+                    "num": "Act No. 9 of 1872",
+                    "snippet": "Statutory rules on compensation for loss or damage caused by breach of contract and enforcement of liquidated damages.",
+                },
+                {
+                    "title": "Arbitration and Conciliation Act, 1996",
+                    "num": "Act No. 26 of 1996",
+                    "snippet": "Sets out the legal framework for domestic and international commercial arbitration seated in India, party autonomy, and enforceability.",
+                },
+                {
+                    "title": "Specific Relief Act, 1963 — Section 14",
+                    "num": "Act No. 47 of 1963",
+                    "snippet": "Contracts not specifically enforceable, including contracts dependent on personal qualifications or determinable contracts.",
+                },
+            ]
+            for c_cand in statutory_candidates:
+                in_v, v_id = safe_check_case_in_vault(c_cand["title"], c_cand["num"])
+                citations.append({
+                    "id": f"cite-{len(citations)+1}",
+                    "case_id": c_cand["num"],
+                    "title": c_cand["title"],
+                    "name": c_cand["title"],
+                    "year": c_cand["num"],
+                    "num": c_cand["num"],
+                    "snippet": c_cand["snippet"],
+                    "in_vault": in_v,
+                    "inVault": in_v,
+                    "vault_id": v_id,
+                    "kanoon_url": f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(c_cand['title'])}",
+                })
+        except Exception as stat_err:
+            print(f"[analyze_contract_task] Statutory fallback non-fatal error: {stat_err}")
 
     report('Finalizing report...', 97)
     word_count = len(full_text.split())
