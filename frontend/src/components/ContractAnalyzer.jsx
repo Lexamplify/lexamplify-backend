@@ -143,179 +143,11 @@ function renderSafeDiff(diffInput) {
   return null;
 }
 
-// ── Initial Dynamic Sample Data (conforming to §3 Data Contract) ─────────────
-const INITIAL_RISKS = [
-  {
-    id: 'risk-1',
-    severity: 'critical',
-    title: 'Liability cap set to 3 months’ fees',
-    excerpt: '…shall exceed the total fees paid in the preceding three (3) months…',
-    location: 'Section 7.1 · Page 4',
-    playbookRule: 'Playbook Guardrail · Vendor Liability Cap, Rule 4.2',
-    guardrailText: 'Your firm’s playbook requires a minimum liability cap of 12 months’ fees for vendor agreements above ₹50L in annual value. A 3-month cap is below that floor and should be flagged for negotiation, not silently accepted.',
-    original: '"Neither Party’s aggregate liability arising out of this Agreement shall exceed the total fees paid in the preceding three (3) months, regardless of the form of action."',
-    diffHtml: '"Neither Party’s aggregate liability arising out of this Agreement shall exceed <del>the total fees paid in the preceding three (3) months</del><ins>an amount equal to twelve (12) months’ fees paid under this Agreement</ins>, regardless of the form of action."',
-    replacementText: 'an amount equal to twelve (12) months’ fees paid under this Agreement',
-  },
-  {
-    id: 'risk-2',
-    severity: 'critical',
-    title: 'No compensation for work-in-progress on termination',
-    excerpt: '…thirty (30) days’ written notice, with no obligation to compensate…',
-    location: 'Section 8.1 · Page 4',
-    playbookRule: 'Playbook Guardrail · Termination for Convenience, Rule 6.1',
-    guardrailText: 'Termination-for-convenience clauses in your firm’s standard vendor form always include payment for work completed and non-cancellable commitments up to the notice date. This clause has neither.',
-    original: '"Either Party may terminate this Agreement for convenience upon thirty (30) days’ written notice, with no obligation to compensate the other Party for work in progress."',
-    diffHtml: '"Either Party may terminate this Agreement for convenience upon thirty (30) days’ written notice<ins>, provided that the terminating Party shall compensate the other Party for all work performed and non-cancellable commitments incurred up to the effective date of termination</ins>."',
-    replacementText: 'thirty (30) days’ written notice, provided that the terminating Party shall compensate the other Party for all work performed and non-cancellable commitments incurred up to the effective date of termination',
-  },
-  {
-    id: 'risk-3',
-    severity: 'caution',
-    title: '"Applicable law" excludes the DPDP Act, 2023',
-    excerpt: '…"applicable law" is not defined to include the Digital Personal Data Protection Act…',
-    location: 'Section 9.2 · Page 5',
-    playbookRule: 'Playbook Guardrail · Data Protection Scope, Rule 9.4',
-    guardrailText: 'Both Parties operate in India, so the Digital Personal Data Protection Act, 2023 should be named explicitly, not left to a general "applicable law" reference that a counterparty could later dispute.',
-    original: '"Vendor shall implement reasonable technical and organisational measures to protect Client Data in accordance with applicable law."',
-    diffHtml: '"Vendor shall implement reasonable technical and organisational measures to protect Client Data in accordance with applicable law<ins>, including the Digital Personal Data Protection Act, 2023 and rules made thereunder</ins>."',
-    replacementText: 'applicable law, including the Digital Personal Data Protection Act, 2023 and rules made thereunder',
-  },
-  {
-    id: 'risk-4',
-    severity: 'critical',
-    title: 'Governing law set to Singapore, not India',
-    excerpt: '…governed by the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore…',
-    location: 'Section 10.1 · Page 5',
-    playbookRule: 'Playbook Guardrail · Governing Law, Rule 2.1',
-    guardrailText: 'Your firm’s standard position for domestic vendor agreements is Indian governing law with arbitration seated in India under the Arbitration and Conciliation Act, 1996 — a foreign seat materially raises cost and complexity if a dispute arises.',
-    original: '"This Agreement shall be governed by the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore under SIAC Rules."',
-    diffHtml: '"This Agreement shall be governed by <del>the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore under SIAC Rules</del><ins>the laws of India, and disputes shall be resolved by arbitration seated in New Delhi under the Arbitration and Conciliation Act, 1996</ins>."',
-    replacementText: 'the laws of India, and disputes shall be resolved by arbitration seated in New Delhi under the Arbitration and Conciliation Act, 1996',
-  },
-  {
-    id: 'risk-5',
-    severity: 'caution',
-    title: 'Indemnity capped at the same low liability limit',
-    excerpt: '…Vendor’s indemnification obligations are capped at the same liability limit set out in Clause 7.1…',
-    location: 'Section 11.1 · Page 6',
-    playbookRule: 'Playbook Guardrail · Indemnity Carve-Outs, Rule 5.3',
-    guardrailText: 'IP infringement and confidentiality-breach indemnities should be uncapped or carry their own higher cap — tying them to the general liability cap (already flagged as too low in risk 1) compounds that exposure.',
-    original: '"Vendor’s indemnification obligations are capped at the same liability limit set out in Clause 7.1."',
-    diffHtml: '"Vendor’s indemnification obligations are capped at <del>the same liability limit set out in Clause 7.1</del><ins>the liability limit set out in Clause 7.1, except for indemnities arising from intellectual property infringement or breach of confidentiality, which shall remain uncapped</ins>."',
-    replacementText: 'the liability limit set out in Clause 7.1, except for indemnities arising from intellectual property infringement or breach of confidentiality, which shall remain uncapped',
-  },
-  {
-    id: 'risk-6',
-    severity: 'info',
-    title: 'Free assignment, including to a competitor',
-    excerpt: '…Vendor may freely assign this Agreement, including to a competitor of Client, without Client’s prior written consent…',
-    location: 'Section 12.1 · Page 6',
-    playbookRule: 'Playbook Guardrail · Assignment, Rule 7.2',
-    guardrailText: 'Unrestricted assignment is a moderate, not critical, concern here since the underlying services are non-sensitive — flagged for awareness rather than as a blocking issue.',
-    original: '"Vendor may freely assign this Agreement, including to a competitor of Client, without Client’s prior written consent."',
-    diffHtml: '"Vendor may <del>freely</del> assign this Agreement<ins>, other than to a direct competitor of Client, only</ins> without Client’s prior written consent<ins>; assignment to a competitor shall require Client’s prior written consent</ins>."',
-    replacementText: 'assign this Agreement, other than to a direct competitor of Client, only with Client’s prior written consent',
-  },
-];
-
-const INITIAL_MISSING = [
-  {
-    id: 'miss-1',
-    title: 'Transition Assistance clause',
-    rationale: 'Standard for vendor MSAs of this scope — without it, there’s no obligation on Vendor to assist migrating services to a successor after termination.',
-    model: '"Upon termination or expiry, Vendor shall provide reasonable transition assistance for up to ninety (90) days to facilitate an orderly handover to Client or its designated successor, at Vendor’s then-current standard rates."',
-    checked: false,
-    expanded: false,
-  },
-  {
-    id: 'miss-2',
-    title: 'Force Majeure clause',
-    rationale: 'Not present anywhere in the document — without one, neither Party has a defined carve-out for events outside their control, including disruptions of the kind seen in recent years.',
-    model: '"Neither Party shall be liable for any failure or delay in performance under this Agreement to the extent such failure or delay is caused by circumstances beyond its reasonable control, including acts of God, war, pandemic, or governmental action."',
-    checked: false,
-    expanded: false,
-  },
-  {
-    id: 'miss-3',
-    title: 'Audit Rights clause',
-    rationale: 'Client has no contractual right to audit Vendor’s compliance with data protection or security obligations — standard in your firm’s vendor playbook for any agreement involving Client Data.',
-    model: '"Client may, upon reasonable prior notice and no more than once annually, audit Vendor’s compliance with its data protection and security obligations under this Agreement, either directly or through an independent third party."',
-    checked: false,
-    expanded: false,
-  },
-];
-
-const INITIAL_CITATIONS = [
-  {
-    id: 'cite-1',
-    name: 'Digital Personal Data Protection Act, 2023',
-    num: 'Act No. 22 of 2023',
-    snippet: 'Governs processing of digital personal data in India — relevant to the data-protection scope gap flagged in risk 3.',
-    inVault: true,
-    relevantTo: 'risk-3',
-  },
-  {
-    id: 'cite-2',
-    name: 'Arbitration and Conciliation Act, 1996',
-    num: 'Act No. 26 of 1996',
-    snippet: 'Sets out the framework for domestic arbitration seated in India — the basis for the governing-law revision suggested in risk 4.',
-    inVault: true,
-    relevantTo: 'risk-4',
-  },
-  {
-    id: 'cite-3',
-    name: 'Bharat Aluminium Co. v. Kaiser Aluminium',
-    num: '(2012) 9 SCC 552',
-    snippet: 'Landmark ruling on the territorial scope of Indian arbitration law and the effect of a foreign-seated arbitration clause.',
-    inVault: false,
-    relevantTo: 'risk-4',
-  },
-  {
-    id: 'cite-4',
-    name: 'Indian Contract Act, 1872 — s.73 & 74',
-    num: 'Act No. 9 of 1872',
-    snippet: 'Governs compensation for breach and liquidated damages — relevant background for the liability-cap and indemnity flags.',
-    inVault: true,
-    relevantTo: 'risk-1',
-  },
-];
-
-const INITIAL_CONFLICTS = [
-  {
-    id: 'conf-1',
-    severity: 'critical',
-    title: 'Termination notice period',
-    refDoc: 'Term_Sheet_v2.docx',
-    summary: 'This document requires 30 days’ notice to terminate for convenience; the earlier term sheet promised 90 days. This needs to be resolved before signature.',
-    sideA: '"Either Party may terminate this Agreement for convenience upon thirty (30) days’ written notice…"',
-    sideALabel: 'This document · Section 8.1',
-    sideB: '"Either Party may terminate this arrangement for convenience upon ninety (90) days’ prior written notice…"',
-    sideBLabel: 'Term_Sheet_v2.docx · Section 4',
-  },
-  {
-    id: 'conf-2',
-    severity: 'major',
-    title: 'Governing law',
-    refDoc: 'Term_Sheet_v2.docx',
-    summary: 'This document specifies Singapore law and SIAC arbitration; the term sheet specified Indian law throughout. Likely a drafting carryover error, not an intentional change.',
-    sideA: '"This Agreement shall be governed by the laws of Singapore…"',
-    sideALabel: 'This document · Section 10.1',
-    sideB: '"This arrangement shall be governed by the laws of India…"',
-    sideBLabel: 'Term_Sheet_v2.docx · Section 9',
-  },
-  {
-    id: 'conf-3',
-    severity: 'minor',
-    title: 'Notice address for Vendor',
-    refDoc: 'Term_Sheet_v2.docx',
-    summary: 'The registered address for notices differs by suite number only — likely an office move between drafting the term sheet and this agreement. Worth a one-line confirmation.',
-    sideA: '"Notices to Vendor: 4th Floor, Anna Salai, Chennai 600002"',
-    sideALabel: 'This document · Section 15.2',
-    sideB: '"Notices to Vendor: 2nd Floor, Anna Salai, Chennai 600002"',
-    sideBLabel: 'Term_Sheet_v2.docx · Section 11',
-  },
-];
+// ── Dynamic Data Arrays (populated strictly from live AI pipeline) ───────────
+const INITIAL_RISKS = [];
+const INITIAL_MISSING = [];
+const INITIAL_CITATIONS = [];
+const INITIAL_CONFLICTS = [];
 
 const MODE_HINTS = {
   balanced: 'Balanced: flags material risk and missing standard clauses — the default for most contract review.',
@@ -344,6 +176,10 @@ export default function ContractAnalyzer() {
     setClauses: setStoreClauses,
     contractFile: storeFile,
     setContractFile: setStoreFile,
+    comments: storeComments = [],
+    addComment: addStoreComment,
+    toggleCommentResolved: toggleStoreCommentResolved,
+    deleteComment: deleteStoreComment,
   } = useContractStore();
 
   // ── High-Level State Machine: 'upload' | 'scanning' | 'analyzed' ─────────────
@@ -360,17 +196,21 @@ export default function ContractAnalyzer() {
   const contractFile = selectedFile || storeFile;
 
   // Scanning State
-  const [scanProgress, setScanProgress] = useState(4);
-  const [scanStage, setScanStage] = useState('Segmenting document…');
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanStage, setScanStage] = useState('Preparing engine…');
   const [consoleLogs, setConsoleLogs] = useState([]);
-  const [scanDuration, setScanDuration] = useState(37);
+  const [scanDuration, setScanDuration] = useState(0);
+  const [scanError, setScanError] = useState(null);
+  const eventSourceRef = useRef(null);
 
-  // Analyzed Workbench State
-  const [documentName, setDocumentName] = useState('Vendor Master Services Agreement.pdf');
-  const [pageCount, setPageCount] = useState(48);
-  const [wordCount, setWordCount] = useState(14200);
+  // Analyzed Workbench State (Dynamic from live pipeline)
+  const [documentName, setDocumentName] = useState('Contract Document.pdf');
+  const [pageCount, setPageCount] = useState(0);
+  const [wordCount, setWordCount] = useState(0);
+  const [contractClauses, setContractClauses] = useState([]);
+  const [rawContractText, setRawContractText] = useState(storeRawText || '');
 
-  // Dynamic Data Arrays (§3 & §4: no fixed counts)
+  // Dynamic Data Arrays (§3 & §4: no fixed counts, strictly populated from AI)
   const [risks, setRisks] = useState(INITIAL_RISKS);
   const [missing, setMissing] = useState(INITIAL_MISSING);
   const [citations, setCitations] = useState(INITIAL_CITATIONS);
@@ -386,17 +226,24 @@ export default function ContractAnalyzer() {
   const [activeWorkshopRiskId, setActiveWorkshopRiskId] = useState(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
-  // Conflict Detail Modal
+  // Conflict Detail Modal & State
   const [activeConflictId, setActiveConflictId] = useState(null);
   const [conflictScanReady, setConflictScanReady] = useState(false);
   const [conflictScanned, setConflictScanned] = useState(false);
+  const [conflictFile, setConflictFile] = useState(null);
+  const [conflictScanning, setConflictScanning] = useState(false);
+
+  // Comments Tab & Inline Selection State
+  const [commentInput, setCommentInput] = useState('');
+  const [selectedQuote, setSelectedQuote] = useState('');
+  const [selectionPopup, setSelectionPopup] = useState(null);
 
   // Ask AI Chat
   const [chatMessages, setChatMessages] = useState([
     {
       id: 'm1',
       role: 'assistant',
-      text: 'I’ve read all 48 pages of this agreement. Ask me anything about it — I’ll answer from the document only and cite the clause I pulled from.',
+      text: 'I’ve read all pages of this agreement. Ask me anything about it — I’ll answer grounded in the contract text and cite the clause I pulled from.',
       cites: [],
     },
   ]);
@@ -452,61 +299,211 @@ export default function ContractAnalyzer() {
     }
   };
 
-  // ── Trigger Scan Flow ───────────────────────────────────────────────────────
+  // ── Trigger Dynamic Scan Flow ───────────────────────────────────────────────
   const handleBeginAnalysis = async () => {
     setViewState('scanning');
-    setScanProgress(4);
-    setScanStage('Segmenting document…');
+    setScanProgress(5);
+    setScanStage('Extracting document text…');
+    setScanError(null);
     setConsoleLogs([]);
 
-    const docTitle = contractFile ? contractFile.name : (pastedText.trim() ? 'Pasted Contract Document.txt' : 'Vendor Master Services Agreement.pdf');
+    const docTitle = contractFile ? contractFile.name : (pastedText.trim() ? 'Pasted Contract Document.txt' : 'Contract Document.pdf');
     setDocumentName(docTitle);
 
-    // If real text was provided, update store
-    if (pastedText.trim()) {
-      setStoreRawText(pastedText);
-    }
+    const startTime = Date.now();
+    const log = (text, cls = '') => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      const t = `${m}:${s}`;
+      setConsoleLogs((prev) => [...prev, { t, text, cls }]);
+    };
 
-    const script = [
-      { t: '00:00', text: `Ingesting ${docTitle} (${pageCount} pages)…`, cls: '' },
-      { t: '00:02', text: 'OCR pass skipped — native text layer detected.', cls: 'dim' },
-      { t: '00:04', text: 'Segmenting into clauses… 96 clauses identified across 12 sections.', cls: '' },
-      { t: '00:09', text: playbookFile ? `Cross-referencing firm playbook (${playbookFile.name})…` : 'Cross-referencing standard Indian Contract Act & DPDP Act guardrails…', cls: '' },
-      { t: '00:14', text: `Running risk model — ${scanMode.charAt(0).toUpperCase() + scanMode.slice(1)} posture — page 1 of ${pageCount}…`, cls: 'dim' },
-      { t: '00:21', text: `Risk model — page ${Math.floor(pageCount / 2)} of ${pageCount}…`, cls: 'dim' },
-      { t: '00:27', text: 'Retrieving supporting citations from statute + precedent index…', cls: '' },
-      { t: '00:31', text: 'Checking for missing standard clauses against contract-type template…', cls: '' },
-      { t: '00:35', text: `${risks.length} risks flagged · ${missing.length} clauses missing · ${citations.length} citations retrieved.`, cls: 'ok' },
-      { t: '00:37', text: 'Analysis complete.', cls: 'ok' },
-    ];
+    log(`Ingesting ${docTitle}…`);
 
-    const stages = [
-      'Segmenting document…',
-      'Comparing against playbook…',
-      'Running risk model…',
-      'Retrieving citations…',
-      'Finalizing report…',
-    ];
+    let extractedText = pastedText.trim();
+    let extractedPages = 1;
+    let extractedWords = 0;
+    let extractedClauses = [];
 
-    let i = 0;
-    let pct = 4;
-    const interval = setInterval(() => {
-      if (i < script.length) {
-        const item = script[i];
-        setConsoleLogs((prev) => [...prev, item]);
-        pct = Math.min(96, pct + Math.round(100 / script.length));
-        setScanProgress(pct);
-        setScanStage(stages[Math.min(stages.length - 1, Math.floor(i / 2))]);
-        i++;
+    try {
+      if (contractFile) {
+        log(`Uploading and extracting text from ${contractFile.name}…`, 'dim');
+        const extractRes = await extractContractText(contractFile);
+        if (extractRes.error) {
+          throw new Error(extractRes.message || 'Failed to extract text from uploaded file.');
+        }
+        extractedText = extractRes.raw_text || extractRes.text || '';
+        extractedPages = extractRes.page_count || Math.max(1, Math.ceil(extractedText.split(/\s+/).length / 250));
+        extractedWords = extractRes.word_count || extractedText.split(/\s+/).filter(Boolean).length;
+        extractedClauses = extractRes.clauses || [];
+      } else if (pastedText.trim()) {
+        extractedWords = pastedText.trim().split(/\s+/).filter(Boolean).length;
+        extractedPages = Math.max(1, Math.ceil(extractedWords / 250));
+        const paragraphs = pastedText.trim().split(/\n\n+/).filter(Boolean);
+        extractedClauses = paragraphs.map((p, idx) => ({
+          id: `clause-${idx + 1}`,
+          title: p.split('\n')[0].slice(0, 60),
+          text: p,
+        }));
       } else {
-        clearInterval(interval);
-        setScanProgress(100);
-        setScanStage('Done');
-        setTimeout(() => {
-          setViewState('analyzed');
-        }, 500);
+        throw new Error('Please upload a contract file or paste contract text to begin analysis.');
       }
-    }, 380);
+
+      if (!extractedText) {
+        throw new Error('No readable text could be extracted from this document.');
+      }
+
+      setStoreRawText(extractedText);
+      setRawContractText(extractedText);
+      setPageCount(extractedPages);
+      setWordCount(extractedWords);
+      setContractClauses(extractedClauses);
+
+      log(`Document verified: ${extractedWords.toLocaleString()} words across ${extractedPages} pages.`, 'dim');
+      log(`Segmented into ${extractedClauses.length} clause sections.`, '');
+
+      setScanProgress(20);
+      setScanStage('Dispatching AI analysis pipeline…');
+
+      let playbookText = '';
+      if (playbookFile) {
+        log(`Extracting custom firm playbook rules (${playbookFile.name})…`, 'dim');
+        try {
+          const pbRes = await extractContractText(playbookFile);
+          playbookText = pbRes.raw_text || pbRes.text || '';
+          log('Custom playbook rules applied to review criteria.', '');
+        } catch (pbErr) {
+          log(`Playbook warning: ${pbErr.message}, using statutory standards.`, 'dim');
+        }
+      } else {
+        log('Cross-referencing Indian Contract Act 1872 & DPDP Act 2023 guardrails…', '');
+      }
+
+      const jobRes = await startContractAnalysisJob(extractedText, playbookText, scanMode);
+      if (jobRes.error || !jobRes.job_id) {
+        throw new Error(jobRes.message || 'Analysis service failed to start.');
+      }
+
+      const jobId = jobRes.job_id;
+      log(`AI analysis job dispatched (Job ID: ${jobId.slice(0, 10)}…).`, 'dim');
+      setScanProgress(30);
+      setScanStage('Analyzing risks & liabilities…');
+
+      // Live job streaming via SSE with polling backup
+      await new Promise((resolve, reject) => {
+        let isDone = false;
+        const es = new EventSource(`${API_BASE}/api/contract/stream/${jobId}`, { withCredentials: true });
+        eventSourceRef.current = es;
+
+        const pollTimer = setInterval(async () => {
+          if (isDone) {
+            clearInterval(pollTimer);
+            return;
+          }
+          try {
+            const statusRes = await fetch(`${API_BASE}/api/contract/analysis-status/${jobId}`);
+            if (statusRes.ok) {
+              const sData = await statusRes.json();
+              if (sData.status === 'complete' && sData.results) {
+                isDone = true;
+                clearInterval(pollTimer);
+                es.close();
+                handleAnalysisSuccess(sData.results, extractedClauses, extractedPages, extractedWords, startTime);
+                resolve();
+              } else if (sData.status === 'failed') {
+                isDone = true;
+                clearInterval(pollTimer);
+                es.close();
+                reject(new Error(sData.error || 'Contract analysis pipeline reported failure.'));
+              } else if (sData.progress) {
+                setScanProgress((prev) => Math.max(prev, Math.min(95, sData.progress)));
+                if (sData.stage) setScanStage(sData.stage);
+              }
+            }
+          } catch {
+            // ignore intermittent polling blips
+          }
+        }, 2500);
+
+        es.onmessage = (evt) => {
+          if (isDone) return;
+          try {
+            const data = JSON.parse(evt.data);
+            if (data.progress) {
+              setScanProgress((prev) => Math.max(prev, Math.min(95, data.progress)));
+            }
+            if (data.status) {
+              setScanStage(data.status);
+              log(data.status, data.status.toLowerCase().includes('fail') ? 'err' : 'dim');
+            }
+            if (data.state === 'SUCCESS' && data.result) {
+              isDone = true;
+              clearInterval(pollTimer);
+              es.close();
+              handleAnalysisSuccess(data.result, extractedClauses, extractedPages, extractedWords, startTime);
+              resolve();
+            } else if (data.state === 'FAILURE') {
+              isDone = true;
+              clearInterval(pollTimer);
+              es.close();
+              reject(new Error(data.error || 'Contract analysis failed.'));
+            }
+          } catch {
+            // ignore frame parse
+          }
+        };
+
+        es.onerror = () => {
+          // SSE reconnects or polling continues
+        };
+      });
+
+    } catch (err) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      setScanError(err.message || 'An error occurred during contract analysis.');
+      log(`Analysis error: ${err.message}`, 'err');
+      // STRICT GUARDRAIL: Do NOT fall back to dummy mock data!
+    }
+  };
+
+  const handleAnalysisSuccess = (result, clauses, pages, words, startTime) => {
+    const rawRisks = result.risks || result.clauses || [];
+    const rawMissing = result.missing || result.missing_clauses || [];
+    const rawCitations = result.citations || [];
+    const docClauses = result.document_clauses || clauses || [];
+
+    setRisks(rawRisks);
+    setMissing(rawMissing);
+    setCitations(rawCitations);
+    if (docClauses.length > 0) {
+      setContractClauses(docClauses);
+    }
+    if (result.page_count) setPageCount(result.page_count);
+    if (result.word_count) setWordCount(result.word_count);
+
+    const elapsed = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+    setScanDuration(elapsed);
+    setScanProgress(100);
+    setScanStage('Analysis complete.');
+
+    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const s = String(elapsed % 60).padStart(2, '0');
+    setConsoleLogs((prev) => [
+      ...prev,
+      {
+        t: `${m}:${s}`,
+        text: `Analysis complete: ${rawRisks.length} risks flagged · ${rawMissing.length} missing clauses · ${rawCitations.length} citations matched.`,
+        cls: 'ok',
+      },
+    ]);
+
+    setTimeout(() => {
+      setViewState('analyzed');
+    }, 600);
   };
 
   // ── Flag Navigator Cycling ─────────────────────────────────────────────────
@@ -536,6 +533,38 @@ export default function ContractAnalyzer() {
     }
   };
 
+  // ── Dynamic Document Segmentation for Canvas ────────────────────────────────
+  const displayDocumentSections = useMemo(() => {
+    if (contractClauses && contractClauses.length > 0) {
+      return contractClauses.map((c, idx) => ({
+        id: c.id || `clause-${idx + 1}`,
+        title: c.title || c.heading || `Clause ${idx + 1}`,
+        text: c.text || '',
+      }));
+    }
+    const raw = (rawContractText || storeRawText || '').trim();
+    if (!raw) {
+      return [
+        {
+          id: 'sec-1',
+          title: 'Document Content',
+          text: 'No document text loaded. Please upload or paste a contract.',
+        },
+      ];
+    }
+    const chunks = raw.split(/\n\s*\n+/).filter(Boolean);
+    return chunks.map((chunk, idx) => {
+      const lines = chunk.trim().split('\n');
+      const firstLine = lines[0].trim();
+      const isHeader = firstLine.length < 80 && (/^\d+[\.\)]/i.test(firstLine) || /^(section|clause|article)\s+\d+/i.test(firstLine));
+      return {
+        id: `clause-${idx + 1}`,
+        title: isHeader ? firstLine : `Section ${idx + 1}`,
+        text: isHeader ? lines.slice(1).join('\n').trim() || firstLine : chunk.trim(),
+      };
+    });
+  }, [contractClauses, rawContractText, storeRawText]);
+
   // ── Revision Workshop Handlers ──────────────────────────────────────────────
   const activeWorkshopRisk = useMemo(() => {
     return risks.find((r) => r.id === activeWorkshopRiskId) || null;
@@ -551,35 +580,48 @@ export default function ContractAnalyzer() {
     if (!activeWorkshopRisk) return;
     setIsRegenerating(true);
     try {
-      // Real AI backend call with fallback
-      let newDiff = activeWorkshopRisk.diffHtml;
-      try {
-        const res = await fetch(`${API_BASE}/api/contract/rewrite`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clause_text: activeWorkshopRisk.original,
-            rule_book_text: activeWorkshopRisk.guardrailText,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.revision) {
-            newDiff = `"${data.revision}"`;
-          }
-        }
-      } catch {
-        await new Promise((r) => setTimeout(r, 900));
+      const res = await fetch(`${API_BASE}/api/contract/rewrite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          original_clause: activeWorkshopRisk.original,
+          clause_text: activeWorkshopRisk.original,
+          rule_book_text: activeWorkshopRisk.guardrailText || activeWorkshopRisk.playbookRule || '',
+          issue: activeWorkshopRisk.guardrailText || activeWorkshopRisk.playbookRule || '',
+          user_intent: 'Make this clause fair, balanced, and enforceable under Indian contract law.',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const cleanRewritten = data.rewritten || data.revision || data.replacementText || '';
+        const diffSegments = data.diffSegments || null;
+        const diffHtml = data.diffHtml || (cleanRewritten ? `"${cleanRewritten}"` : activeWorkshopRisk.diffHtml);
+
+        setRisks((prev) =>
+          prev.map((r) =>
+            r.id === activeWorkshopRisk.id
+              ? {
+                  ...r,
+                  diffHtml,
+                  diffSegments,
+                  replacementText: cleanRewritten || r.replacementText,
+                  suggestedRevision: cleanRewritten
+                    ? { ...r.suggestedRevision, diffSegments, cleanRevision: cleanRewritten }
+                    : r.suggestedRevision,
+                }
+              : r
+          )
+        );
+        setToastMessage('Generated updated clause revision.');
+      } else {
+        setToastMessage('Failed to regenerate rewrite from AI service.');
       }
-      setRisks((prev) =>
-        prev.map((r) =>
-          r.id === activeWorkshopRisk.id
-            ? { ...r, diffHtml: newDiff }
-            : r
-        )
-      );
+    } catch (err) {
+      console.error('Rewrite error:', err);
+      setToastMessage('Network error while connecting to AI rewrite service.');
     } finally {
       setIsRegenerating(false);
+      setTimeout(() => setToastMessage(''), 3500);
     }
   };
 
@@ -647,49 +689,150 @@ export default function ContractAnalyzer() {
     setChatLoading(true);
 
     try {
-      let aiText = '';
-      let cites = [];
-
-      try {
-        const res = await fetch(`${API_BASE}/api/contract/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: text,
-            contract_text: storeRawText || 'Vendor Master Services Agreement...',
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          aiText = data.response || data.answer || '';
-          if (data.citations) cites = data.citations;
-        }
-      } catch {
-        // Fallback RAG response grounded in loaded contract
-        await new Promise((r) => setTimeout(r, 700));
-        if (text.toLowerCase().includes('termination')) {
-          aiText = 'Based on Section 8.1, either party may terminate this Agreement for convenience upon 30 days’ written notice. However, as flagged in Risk 2, there is currently no provision for compensating work in progress.';
-          cites = ['Section 8.1', 'Risk #2'];
-        } else if (text.toLowerCase().includes('exposure') || text.toLowerCase().includes('clause 7')) {
-          aiText = 'Under Clause 7.1, aggregate liability is currently capped at 3 months’ fees paid. Under Indian law (Section 73 Indian Contract Act), this cap would leave Client exposed on high-value IP and data breach damages.';
-          cites = ['Section 7.1', 'Indian Contract Act s.73'];
-        } else {
-          aiText = `Analyzing your query against the 48 pages of ${documentName}: all relevant obligations have been cross-checked against Indian statutory standards and your selected ${scanMode} review posture.`;
-          cites = ['Section 9.1', 'Section 10.1'];
-        }
+      const activeContractContent = rawContractText || storeRawText || '';
+      const res = await fetch(`${API_BASE}/api/contract/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: text,
+          message: text,
+          raw_text: activeContractContent,
+          contract_text: activeContractContent,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const aiText = data.response || data.answer || 'No response received from contract assistant.';
+        const cites = data.citations || [];
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            text: aiText,
+            cites,
+          },
+        ]);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            text: `Error from analysis service: ${errData.error || 'Failed to generate response.'}`,
+            cites: [],
+          },
+        ]);
       }
-
+    } catch (err) {
+      console.error('Chat error:', err);
       setChatMessages((prev) => [
         ...prev,
         {
           id: `a-${Date.now()}`,
           role: 'assistant',
-          text: aiText,
-          cites,
+          text: 'Unable to reach the contract analysis service. Please check backend connection.',
+          cites: [],
         },
       ]);
     } finally {
       setChatLoading(false);
+    }
+  };
+
+  // ── Text Selection & Inline Comment Handlers ────────────────────────────────
+  const handleTextSelection = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      return;
+    }
+    const text = sel.toString().trim();
+    if (text.length < 3) return;
+
+    try {
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      if (docSurfaceRef.current) {
+        const parentRect = docSurfaceRef.current.getBoundingClientRect();
+        setSelectedQuote(text);
+        setSelectionPopup({
+          top: Math.max(10, rect.top - parentRect.top + docSurfaceRef.current.scrollTop - 40),
+          left: Math.max(10, rect.left - parentRect.left + (rect.width / 2) - 60),
+        });
+      }
+    } catch {
+      // ignore range calculation errors
+    }
+  };
+
+  const handleOpenCommentWithQuote = (quoteText) => {
+    setSelectedQuote(quoteText || '');
+    setSelectionPopup(null);
+    setActiveTab('comments');
+  };
+
+  const handleAddComment = (e) => {
+    if (e) e.preventDefault();
+    if (!commentInput.trim()) return;
+    addStoreComment({
+      id: `c-${Date.now()}`,
+      text: commentInput.trim(),
+      quote: selectedQuote || null,
+      author: 'Reviewer',
+      resolved: false,
+      createdAt: new Date().toISOString(),
+    });
+    setCommentInput('');
+    setSelectedQuote('');
+    setSelectionPopup(null);
+    setToastMessage('Comment posted to document review.');
+    setTimeout(() => setToastMessage(''), 3000);
+  };
+
+  // ── Conflicts Handlers ──────────────────────────────────────────────────────
+  const handleConflictFileSelect = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setConflictFile(file);
+      setConflictScanReady(true);
+    }
+  };
+
+  const handleRunConflictScan = async () => {
+    if (!conflictFile) return;
+    setConflictScanning(true);
+    try {
+      const ext = await extractContractText(conflictFile);
+      const refText = ext.raw_text || ext.text || '';
+      const primaryContent = rawContractText || storeRawText || '';
+
+      const res = await fetch(`${API_BASE}/api/contract/cross-check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          primary_text: primaryContent,
+          secondary_text: refText,
+          ref_doc_name: conflictFile.name,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setConflicts(data.conflicts || []);
+        setConflictScanned(true);
+        setToastMessage(`Detected ${(data.conflicts || []).length} cross-document contradictions.`);
+      } else {
+        setConflicts([]);
+        setConflictScanned(true);
+        setToastMessage('Cross-contract conflict analysis completed with 0 contradictions.');
+      }
+    } catch (err) {
+      console.error('Conflict scan error:', err);
+      setToastMessage('Error running cross-document conflict check.');
+    } finally {
+      setConflictScanning(false);
+      setTimeout(() => setToastMessage(''), 3500);
     }
   };
 
@@ -1064,6 +1207,43 @@ export default function ContractAnalyzer() {
         .side-col-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
         .side-col-body { font-family: 'Fraunces', serif; font-style: italic; font-size: 13px; line-height: 1.6; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; color: var(--ink-soft); height: 100%; }
 
+        /* ── Scan Error Banner ── */
+        .scan-error-banner { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 12px; padding: 18px 20px; color: var(--ink); margin: 16px 0; display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 640px; }
+        .scan-error-title { font-weight: 600; font-size: 14px; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+        .scan-error-msg { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+        .scan-error-actions { display: flex; gap: 10px; margin-top: 4px; }
+
+        /* ── Floating Selection Chip ── */
+        .selection-chip-btn { position: absolute; z-index: 100; background: var(--paper); border: 1px solid var(--accent); border-radius: 20px; box-shadow: 0 4px 14px rgba(0,0,0,.35); color: var(--ink); font-size: 11.5px; font-weight: 600; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: transform 0.15s, background 0.15s; }
+        .selection-chip-btn:hover { background: var(--accent-soft); color: var(--on-accent); transform: scale(1.03); }
+        .selection-chip-btn svg { color: var(--accent); width: 14px; height: 14px; }
+
+        /* ── Comments UI ── */
+        .comment-composer { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+        .comment-quote-badge { background: var(--paper); border-left: 2.5px solid var(--accent); border-radius: 4px; padding: 6px 10px; font-size: 11.5px; font-style: italic; color: var(--ink-soft); line-height: 1.4; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .comment-quote-badge span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .comment-quote-dismiss { background: transparent; border: 0; color: var(--muted); cursor: pointer; padding: 0; line-height: 1; font-size: 14px; }
+        .comment-quote-dismiss:hover { color: var(--accent); }
+        .comment-textarea { width: 100%; min-height: 68px; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 11px; font-size: 12.5px; color: var(--ink); outline: none; resize: vertical; font-family: inherit; }
+        .comment-textarea:focus { border-color: var(--accent); }
+        .comment-submit-row { display: flex; justify-content: flex-end; }
+        .comment-list { display: flex; flex-direction: column; gap: 10px; }
+        .comment-card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; transition: opacity 0.2s; }
+        .comment-card.resolved { opacity: 0.55; }
+        .comment-card-top { display: flex; justify-content: space-between; align-items: center; }
+        .comment-card-author { font-size: 11.5px; font-weight: 600; color: var(--ink); }
+        .comment-card-time { font-size: 10.5px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+        .comment-card-quote { font-size: 11.5px; font-style: italic; color: var(--muted); border-left: 2px solid var(--rule); padding-left: 8px; margin: 2px 0; }
+        .comment-card-text { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; white-space: pre-wrap; }
+        .comment-card-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--rule); padding-top: 6px; margin-top: 2px; }
+        .comment-action-btn { background: transparent; border: 0; font-size: 11px; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 4px; display: flex; align-items: center; gap: 4px; transition: color 0.15s; }
+        .comment-action-btn:hover { color: var(--ink); background: var(--paper); }
+        .comment-action-btn.delete:hover { color: var(--accent); }
+
+        /* ── Resolved & Doc Canvas Elements ── */
+        .resolved-clause { background: var(--paper-2); border-left: 2.5px solid #4E7D5C; padding: 2px 6px; border-radius: 4px; display: inline-block; color: var(--ink); }
+        .missing-clause-inserted { background: var(--paper-2); border-left: 3px solid var(--major); padding: 10px 14px; border-radius: 6px; margin: 10px 0; font-size: 13px; line-height: 1.6; }
+
         @media (max-width: 1080px) {
           .workbench { grid-template-columns: 1fr; }
           .rail-panel-wrap, .doc-surface { max-height: none; }
@@ -1299,22 +1479,64 @@ export default function ContractAnalyzer() {
              ============================================================ */}
         {viewState === 'scanning' && (
           <section className="state-scanning-wrap">
-            <div className="scan-ring" />
+            {!scanError ? (
+              <div className="scan-ring" />
+            ) : (
+              <div style={{ color: 'var(--accent)', display: 'flex', justifyContent: 'center' }}>
+                {ICONS.alertTriangle}
+              </div>
+            )}
             <div>
-              <div className="scan-title serif">Reading {documentName}</div>
+              <div className="scan-title serif">
+                {scanError ? 'Analysis Interrupted' : `Reading ${documentName}`}
+              </div>
               <div className="scan-sub">
-                {pageCount} pages · running the Hybrid Engine — clause segmentation, playbook comparison, precedent retrieval and missing-clause detection all run per page, so this scales with document length.
+                {scanError
+                  ? 'The dynamic analysis pipeline encountered an issue. See details below.'
+                  : `${pageCount} pages · running the Hybrid Engine — clause segmentation, playbook comparison, precedent retrieval and missing-clause detection all run per page, so this scales with document length.`}
               </div>
             </div>
-            <div style={{ width: '100%' }}>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${scanProgress}%` }} />
+
+            {scanError && (
+              <div className="scan-error-banner">
+                <div className="scan-error-title">
+                  {ICONS.alertTriangle} <span>Analysis Pipeline Error</span>
+                </div>
+                <div className="scan-error-msg">{scanError}</div>
+                <div className="scan-error-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleBeginAnalysis}
+                  >
+                    {ICONS.refresh}
+                    <span>Retry Analysis</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setViewState('upload');
+                      setScanError(null);
+                    }}
+                  >
+                    Back to Upload
+                  </button>
+                </div>
               </div>
-              <div className="progress-label">
-                <span>{scanProgress}%</span>
-                <span>{scanStage}</span>
+            )}
+
+            {!scanError && (
+              <div style={{ width: '100%' }}>
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${scanProgress}%` }} />
+                </div>
+                <div className="progress-label">
+                  <span>{scanProgress}%</span>
+                  <span>{scanStage}</span>
+                </div>
               </div>
-            </div>
+            )}
             <div className="console">
               <div className="console-eyebrow">HYBRID ENGINE CONSOLE</div>
               <div>
@@ -1413,155 +1635,131 @@ export default function ContractAnalyzer() {
                     <div className="doc-name">{documentName}</div>
                     <div className="doc-name-meta">{pageCount} pages · {wordCount.toLocaleString()} words · live review</div>
                   </div>
-                  <span className="badge mono" style={{ fontSize: '10px' }}>PAGE 4 OF {pageCount}</span>
+                  <span className="badge mono" style={{ fontSize: '10px' }}>
+                    {pageCount} {pageCount === 1 ? 'PAGE' : 'PAGES'}
+                  </span>
                 </div>
 
-                <div className="doc-surface" ref={docSurfaceRef}>
-                  <h3>7. Limitation of Liability</h3>
-                  <p>
-                    7.1 Except in cases of gross negligence or wilful misconduct,{' '}
-                    {resolvedRisks.has('risk-1') ? (
-                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
-                        neither Party's aggregate liability arising out of this Agreement shall exceed an amount equal to twelve (12) months’ fees paid under this Agreement, regardless of the form of action.
-                      </span>
-                    ) : (
-                      <span
-                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-1' ? 'active-flag' : ''}`}
-                        data-risk="risk-1"
-                        onClick={() => handleOpenWorkshop('risk-1')}
-                      >
-                        neither Party's aggregate liability arising out of this Agreement shall exceed the total fees paid in the preceding three (3) months, regardless of the form of action.
-                      </span>
-                    )}
-                  </p>
-                  <p>
-                    7.2 In no event shall either Party be liable for indirect, incidental, special or consequential damages, including loss of profits, even if advised of the possibility of such damages.
-                  </p>
-
-                  <h3>8. Termination</h3>
-                  <p>
-                    8.1 Either Party may terminate this Agreement for convenience upon{' '}
-                    {resolvedRisks.has('risk-2') ? (
-                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
-                        thirty (30) days' written notice, provided that the terminating Party shall compensate the other Party for all work performed and non-cancellable commitments incurred up to the effective date of termination.
-                      </span>
-                    ) : (
-                      <span
-                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-2' ? 'active-flag' : ''}`}
-                        data-risk="risk-2"
-                        onClick={() => handleOpenWorkshop('risk-2')}
-                      >
-                        thirty (30) days' written notice, with no obligation to compensate the other Party for work in progress.
-                      </span>
-                    )}
-                  </p>
-                  <p>
-                    8.2 Upon termination, the Vendor shall return all Confidential Information within fifteen (15) business days.
-                  </p>
-
-                  {/* Missing Clause Marker */}
-                  {!insertedMissing.has('miss-1') ? (
-                    <div className="missing-marker" onClick={() => setActiveTab('missing')}>
-                      {ICONS.plus} Suggested: Transition Assistance clause — not present
-                    </div>
-                  ) : (
-                    <div style={{ background: 'var(--paper-2)', borderLeft: '3px solid var(--major)', padding: '10px 14px', borderRadius: '6px', margin: '8px 0', fontSize: '13px' }}>
-                      <strong>8.3 Transition Assistance:</strong> Upon termination or expiry, Vendor shall provide reasonable transition assistance for up to ninety (90) days to facilitate an orderly handover to Client or its designated successor, at Vendor’s then-current standard rates.
-                    </div>
+                <div
+                  className="doc-surface"
+                  ref={docSurfaceRef}
+                  onMouseUp={handleTextSelection}
+                  style={{ position: 'relative' }}
+                >
+                  {selectionPopup && (
+                    <button
+                      type="button"
+                      className="selection-chip-btn"
+                      style={{ top: `${selectionPopup.top}px`, left: `${selectionPopup.left}px` }}
+                      onClick={() => handleOpenCommentWithQuote(selectedQuote)}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 11.5a8.4 8.4 0 0 1-11.4 7.9L4 21l1.4-4.4A8.4 8.4 0 1 1 21 11.5z" />
+                      </svg>
+                      <span>Add Comment</span>
+                    </button>
                   )}
 
-                  <h3>9. Data Protection &amp; Confidentiality</h3>
-                  <p>
-                    9.1 Vendor shall implement reasonable technical and organisational measures to protect Client Data in accordance with applicable law.
-                  </p>
-                  <p>
-                    9.2{' '}
-                    {resolvedRisks.has('risk-3') ? (
-                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
-                        Vendor shall implement measures in accordance with applicable law, including the Digital Personal Data Protection Act, 2023.
-                      </span>
-                    ) : (
-                      <span
-                        className={`clause-flag caution ${activeFlags[activeFlagIndex]?.id === 'risk-3' ? 'active-flag' : ''}`}
-                        data-risk="risk-3"
-                        onClick={() => handleOpenWorkshop('risk-3')}
+                  {displayDocumentSections.map((sec, sIdx) => {
+                    const secRisks = risks.filter((r) => {
+                      if (r.id === sec.id) return true;
+                      if (r.location && sec.title && (sec.title.toLowerCase().includes(r.location.toLowerCase()) || r.location.toLowerCase().includes(sec.title.toLowerCase()))) return true;
+                      if (r.original && sec.text && sec.text.includes(r.original)) return true;
+                      if (r.excerpt && sec.text && sec.text.includes(r.excerpt)) return true;
+                      return false;
+                    });
+
+                    return (
+                      <div key={sec.id || sIdx} style={{ marginBottom: '24px' }}>
+                        <h3>{sec.title}</h3>
+                        {secRisks.map((risk) => {
+                          const isResolved = resolvedRisks.has(risk.id);
+                          const isActiveFlag = activeFlags[activeFlagIndex]?.id === risk.id;
+                          return (
+                            <div key={risk.id} style={{ margin: '8px 0' }}>
+                              {isResolved ? (
+                                <div className="resolved-clause" style={{ display: 'block', padding: '10px 14px', margin: '6px 0' }}>
+                                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+                                    Resolved Revision ({risk.location || sec.title}) · Accepted
+                                  </div>
+                                  <div>{risk.replacementText || risk.suggestedRevision?.cleanRevision || risk.original}</div>
+                                </div>
+                              ) : (
+                                <div
+                                  className={`clause-flag ${getSevClass(risk.severity)} ${isActiveFlag ? 'active-flag' : ''}`}
+                                  data-risk={risk.id}
+                                  onClick={() => handleOpenWorkshop(risk.id)}
+                                  style={{ display: 'block', margin: '6px 0', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '11px' }}>
+                                    <span style={{ fontWeight: 600 }}>{risk.title}</span>
+                                    <span className="mono">{getSevLabel(risk.severity).toUpperCase()} · {risk.location || `Clause ${sIdx + 1}`}</span>
+                                  </div>
+                                  <div>{risk.excerpt || risk.original}</div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <p style={{ whiteSpace: 'pre-wrap' }}>{sec.text}</p>
+                      </div>
+                    );
+                  })}
+
+                  {/* Render any active risks that weren't caught in section matching */}
+                  {risks.filter((r) => !displayDocumentSections.some((sec) => sec.id === r.id || (r.location && sec.title && (sec.title.toLowerCase().includes(r.location.toLowerCase()) || r.location.toLowerCase().includes(sec.title.toLowerCase()))) || (r.original && sec.text && sec.text.includes(r.original)) || (r.excerpt && sec.text && sec.text.includes(r.excerpt)))).map((risk) => {
+                    const isResolved = resolvedRisks.has(risk.id);
+                    const isActiveFlag = activeFlags[activeFlagIndex]?.id === risk.id;
+                    return (
+                      <div key={risk.id} style={{ margin: '12px 0' }}>
+                        {isResolved ? (
+                          <div className="resolved-clause" style={{ display: 'block', padding: '10px 14px' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
+                              Resolved Revision ({risk.location || 'Clause'}) · Accepted
+                            </div>
+                            <div>{risk.replacementText || risk.suggestedRevision?.cleanRevision || risk.original}</div>
+                          </div>
+                        ) : (
+                          <div
+                            className={`clause-flag ${getSevClass(risk.severity)} ${isActiveFlag ? 'active-flag' : ''}`}
+                            data-risk={risk.id}
+                            onClick={() => handleOpenWorkshop(risk.id)}
+                            style={{ display: 'block', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer' }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '11px' }}>
+                              <span style={{ fontWeight: 600 }}>{risk.title}</span>
+                              <span className="mono">{getSevLabel(risk.severity).toUpperCase()} · {risk.location || 'General'}</span>
+                            </div>
+                            <div>{risk.excerpt || risk.original}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Missing Clause Markers on Document Canvas */}
+                  {missing.map((m) => {
+                    const isInserted = insertedMissing.has(m.id);
+                    if (isInserted) {
+                      return (
+                        <div key={m.id} className="missing-clause-inserted">
+                          <strong>{m.title}:</strong> {m.model || m.clause || m.rationale}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={m.id}
+                        className="missing-marker"
+                        onClick={() => setActiveTab('missing')}
                       >
-                        "Applicable law" is not defined to include the Digital Personal Data Protection Act, 2023
-                      </span>
-                    )}
-                    , despite both Parties operating in India.
-                  </p>
+                        {ICONS.plus} Suggested missing clause: {m.title} — click to view & insert
+                      </div>
+                    );
+                  })}
 
-                  <h3>10. Governing Law &amp; Dispute Resolution</h3>
-                  <p>
-                    10.1{' '}
-                    {resolvedRisks.has('risk-4') ? (
-                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
-                        This Agreement shall be governed by the laws of India, and disputes shall be resolved by arbitration seated in New Delhi under the Arbitration and Conciliation Act, 1996.
-                      </span>
-                    ) : (
-                      <span
-                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-4' ? 'active-flag' : ''}`}
-                        data-risk="risk-4"
-                        onClick={() => handleOpenWorkshop('risk-4')}
-                      >
-                        This Agreement shall be governed by the laws of Singapore, and disputes shall be resolved by arbitration seated in Singapore under SIAC Rules.
-                      </span>
-                    )}
-                  </p>
-                  <p>
-                    10.2 The Parties agree to attempt good-faith negotiation for thirty (30) days prior to initiating arbitration.
-                  </p>
-
-                  <h3>11. Indemnification</h3>
-                  <p>
-                    11.1{' '}
-                    {resolvedRisks.has('risk-5') ? (
-                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
-                        Vendor's indemnification obligations are capped at Clause 7.1, except for indemnities arising from IP infringement or confidentiality breach which shall remain uncapped.
-                      </span>
-                    ) : (
-                      <span
-                        className={`clause-flag caution ${activeFlags[activeFlagIndex]?.id === 'risk-5' ? 'active-flag' : ''}`}
-                        data-risk="risk-5"
-                        onClick={() => handleOpenWorkshop('risk-5')}
-                      >
-                        Vendor's indemnification obligations are capped at the same liability limit set out in Clause 7.1
-                      </span>
-                    )}
-                    , which would also cap indemnity for IP infringement and confidentiality breaches.
-                  </p>
-
-                  {!insertedMissing.has('miss-2') ? (
-                    <div className="missing-marker" onClick={() => setActiveTab('missing')}>
-                      {ICONS.plus} Suggested: Force Majeure clause — not present
-                    </div>
-                  ) : (
-                    <div style={{ background: 'var(--paper-2)', borderLeft: '3px solid var(--major)', padding: '10px 14px', borderRadius: '6px', margin: '8px 0', fontSize: '13px' }}>
-                      <strong>11.2 Force Majeure:</strong> Neither Party shall be liable for any failure or delay in performance under this Agreement to the extent such failure or delay is caused by circumstances beyond its reasonable control, including acts of God, war, pandemic, or governmental action.
-                    </div>
-                  )}
-
-                  <h3>12. Assignment</h3>
-                  <p>
-                    12.1{' '}
-                    {resolvedRisks.has('risk-6') ? (
-                      <span style={{ background: 'var(--paper-2)', padding: '1px 3px', borderRadius: '3px' }}>
-                        Vendor may assign this Agreement, other than to a direct competitor of Client, only with Client’s prior written consent.
-                      </span>
-                    ) : (
-                      <span
-                        className={`clause-flag ${activeFlags[activeFlagIndex]?.id === 'risk-6' ? 'active-flag' : ''}`}
-                        data-risk="risk-6"
-                        onClick={() => handleOpenWorkshop('risk-6')}
-                      >
-                        Vendor may freely assign this Agreement, including to a competitor of Client, without Client's prior written consent.
-                      </span>
-                    )}
-                  </p>
-
-                  <p className="mono" style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'center', paddingTop: '10px' }}>
-                    — Page 4 of {pageCount} · scroll or use the flag navigator above to continue —
+                  <p className="mono" style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'center', paddingTop: '16px' }}>
+                    — {documentName} · {pageCount} {pageCount === 1 ? 'page' : 'pages'} · {wordCount.toLocaleString()} words —
                   </p>
                 </div>
               </div>
@@ -1896,17 +2094,93 @@ export default function ContractAnalyzer() {
 
                   {/* ── TAB 5: COMMENTS ── */}
                   <div className={`rail-panel ${activeTab === 'comments' ? 'active' : ''}`}>
-                    <div className="empty">
-                      <div className="empty-icon">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 11.5a8.4 8.4 0 0 1-11.4 7.9L4 21l1.4-4.4A8.4 8.4 0 1 1 21 11.5z" />
-                        </svg>
-                      </div>
-                      <div className="empty-title serif">No comments yet</div>
-                      <div className="empty-sub">
-                        Select any text in the document and leave a note for a colleague reviewing this contract with you — threaded comments appear here, tied to the exact clause.
+                    <div className="rail-head">
+                      <div>
+                        <div className="rail-head-title">Clause Notes & Comments</div>
+                        <div className="rail-head-sub">
+                          Threaded team observations tied to exact contract clauses.
+                        </div>
                       </div>
                     </div>
+
+                    <form className="comment-composer" onSubmit={handleAddComment}>
+                      {selectedQuote && (
+                        <div className="comment-quote-badge">
+                          <span>“{selectedQuote}”</span>
+                          <button
+                            type="button"
+                            className="comment-quote-dismiss"
+                            onClick={() => setSelectedQuote('')}
+                            title="Clear attached quote"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                      <textarea
+                        className="comment-textarea"
+                        placeholder={selectedQuote ? "Add review note on selected text…" : "Select text on document canvas or write a general contract note…"}
+                        value={commentInput}
+                        onChange={(e) => setCommentInput(e.target.value)}
+                      />
+                      <div className="comment-submit-row">
+                        <button
+                          type="submit"
+                          className="btn btn-primary btn-sm"
+                          disabled={!commentInput.trim()}
+                        >
+                          Post Note
+                        </button>
+                      </div>
+                    </form>
+
+                    {storeComments.length === 0 ? (
+                      <div className="empty" style={{ padding: '24px 10px' }}>
+                        <div className="empty-icon">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 11.5a8.4 8.4 0 0 1-11.4 7.9L4 21l1.4-4.4A8.4 8.4 0 1 1 21 11.5z" />
+                          </svg>
+                        </div>
+                        <div className="empty-title serif">No comments yet</div>
+                        <div className="empty-sub">
+                          Select any text on the document surface to attach an inline annotation or draft a general note above.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="comment-list">
+                        {storeComments.map((c) => (
+                          <div key={c.id} className={`comment-card ${c.resolved ? 'resolved' : ''}`}>
+                            <div className="comment-card-top">
+                              <span className="comment-card-author">{c.author || 'Reviewer'}</span>
+                              <span className="comment-card-time">
+                                {c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Saved'}
+                              </span>
+                            </div>
+                            {c.quote && (
+                              <div className="comment-card-quote">“{c.quote}”</div>
+                            )}
+                            <div className="comment-card-text">{c.text}</div>
+                            <div className="comment-card-actions">
+                              <button
+                                type="button"
+                                className="comment-action-btn"
+                                onClick={() => toggleStoreCommentResolved(c.id)}
+                              >
+                                {c.resolved ? 'Reopen' : 'Mark Resolved'}
+                              </button>
+                              <button
+                                type="button"
+                                className="comment-action-btn delete"
+                                onClick={() => deleteStoreComment(c.id)}
+                                title="Delete comment"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* ── TAB 6: CONFLICTS ── */}
@@ -1923,11 +2197,7 @@ export default function ContractAnalyzer() {
                       ref={conflictInputRef}
                       style={{ display: 'none' }}
                       accept=".pdf,.docx,.doc,.txt"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          setConflictScanReady(true);
-                        }
-                      }}
+                      onChange={handleConflictFileSelect}
                     />
 
                     {!conflictScanReady && !conflictScanned && (
@@ -1941,12 +2211,19 @@ export default function ContractAnalyzer() {
                       <button
                         type="button"
                         className="btn btn-primary"
-                        onClick={() => {
-                          setConflictScanned(true);
-                        }}
+                        onClick={handleRunConflictScan}
+                        disabled={conflictScanning}
                       >
-                        {ICONS.search}
-                        Run conflict scan against Term_Sheet_v2.docx
+                        {conflictScanning ? (
+                          <span style={{ display: 'inline-block', width: '13px', height: '13px', border: '2px solid var(--rule)', borderTopColor: 'var(--on-accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                        ) : (
+                          ICONS.search
+                        )}
+                        <span>
+                          {conflictScanning
+                            ? 'Scanning contradictions…'
+                            : `Run conflict scan against ${conflictFile?.name || 'reference file'}`}
+                        </span>
                       </button>
                     )}
 

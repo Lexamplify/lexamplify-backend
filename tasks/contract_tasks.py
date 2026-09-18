@@ -155,6 +155,9 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
         chunk_text_by_boundary,
         analyze_contract_with_llm,
         is_near_duplicate_risk,
+        compute_diff_segments,
+        format_diff_html,
+        segment_text_into_clauses,
         EMBED_MODEL,
     )
 
@@ -221,24 +224,87 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     final_summary = all_summaries[0] if all_summaries else "Document analyzed successfully."
 
     formatted_clauses = []
-    for c in unique_clauses:
+    for idx, c in enumerate(unique_clauses):
         risk_val = str(c.get("risk_level", "AMBER")).upper()
-        if "HIGH" in risk_val:
+        if "HIGH" in risk_val or "RED" in risk_val:
             color = "RED"
-        elif "LOW" in risk_val:
+            severity = "critical"
+        elif "LOW" in risk_val or "GREEN" in risk_val:
             color = "GREEN"
+            severity = "info"
         else:
             color = "AMBER"
+            severity = "caution"
+
+        orig_text = c.get("original_text") or c.get("text") or ""
+        rev_text = c.get("suggested_revision") or ""
+        diff_segs = compute_diff_segments(orig_text, rev_text) if (orig_text and rev_text) else []
+        diff_h = format_diff_html(diff_segs) if diff_segs else (f'"{orig_text}"' if orig_text else "")
+
+        title = c.get("title") or c.get("issue") or f"Risk in {c.get('location', f'Clause {idx+1}')}"
+        loc = c.get("location") or f"Section {idx+1}"
+        rule = c.get("playbook_rule") or "Indian Contract Act, 1872"
+        explanation = c.get("explanation") or c.get("issue") or "This clause presents contractual risk under Indian law."
+
         formatted_clauses.append({
-            "original_text": c.get("original_text", ""),
+            "id": f"risk-{idx+1}",
+            "severity": severity,
+            "title": title,
+            "excerpt": (orig_text[:140] + "…") if len(orig_text) > 140 else orig_text,
+            "location": loc,
+            "playbookRule": f"Playbook Guardrail · {rule}" if not rule.startswith("Playbook") else rule,
+            "guardrailText": explanation,
+            "original": f'"{orig_text}"' if not orig_text.startswith('"') else orig_text,
+            "diffHtml": diff_h,
+            "replacementText": rev_text,
+            "suggestedRevision": {
+                "diffSegments": diff_segs,
+                "replacementText": rev_text,
+            },
+            "original_text": orig_text,
             "risk_level": c.get("risk_level", "Medium").capitalize(),
-            "explanation": c.get("explanation", ""),
-            "text": c.get("original_text", ""),
+            "explanation": explanation,
+            "text": orig_text,
             "risk": color,
-            "issue": c.get("explanation", ""),
+            "issue": explanation,
         })
 
-    report('Matching precedents...', 85)
+    report('Identifying missing standard clauses...', 80)
+    missing_clauses = []
+    try:
+        from utils.ai_helper import ask_groq, extract_json_from_llm_response
+        missing_prompt = """You are a senior Indian corporate lawyer reviewing a contract.
+Identify 3 to 5 critical clauses or legal protections that are completely MISSING or dangerously absent from this agreement (e.g. Force Majeure, Transition Assistance, Audit Rights, DPDP Act 2023 compliance, Mutual Indemnification, Severability).
+
+Return ONLY a valid JSON array of objects with these exact keys:
+[
+  {
+    "title": "Clause Title (e.g. Force Majeure clause)",
+    "rationale": "One-sentence rationale explaining why this clause is standard and what exposure its absence creates under Indian law.",
+    "model": "Complete, formal contractual clause ready to insert directly into the executed agreement."
+  }
+]
+"""
+        raw_missing = ask_groq(missing_prompt, f"Contract Text excerpt:\n{full_text[:9000]}")
+        parsed_missing = extract_json_from_llm_response(raw_missing)
+        if isinstance(parsed_missing, list):
+            for m_idx, m_item in enumerate(parsed_missing):
+                if isinstance(m_item, dict) and m_item.get("title"):
+                    model_txt = m_item.get("model", "")
+                    if not model_txt.startswith('"') and model_txt:
+                        model_txt = f'"{model_txt}"'
+                    missing_clauses.append({
+                        "id": f"miss-{m_idx+1}",
+                        "title": m_item.get("title", ""),
+                        "rationale": m_item.get("rationale", ""),
+                        "model": model_txt,
+                        "checked": False,
+                        "expanded": False,
+                    })
+    except Exception as e:
+        print(f"[analyze_contract_task] Missing clauses detection error: {e}")
+
+    report('Matching precedents...', 88)
     citations = []
     search_query = " ".join(c.get("explanation", "") for c in formatted_clauses[:5]).strip() if formatted_clauses else ""
 
@@ -264,12 +330,6 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                     continue
                 seen_cases.add(case_id)
                 title = metadata.get('title') or metadata.get('case_name') or metadata.get('doc_title') or case_id
-                # Captured only when fetch_kanoon_case_title below actually
-                # resolves a search result — lets the frontend link straight
-                # to that exact document instead of re-searching Kanoon at
-                # click time with an independently-derived (and sometimes
-                # word-mangled) query that can turn up a different result,
-                # or none at all.
                 kanoon_url = None
                 if title == case_id:
                     snippet = metadata.get('text', '') or ''
@@ -284,29 +344,81 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                         elif title.endswith('.pdf'):
                             title = title[:-4].replace('_', ' ')
 
-                # Check database for in_vault
                 in_vault, vault_id = check_case_in_vault(title, case_id)
 
                 citations.append({
+                    "id": f"cite-{len(citations)+1}",
                     "case_id": case_id,
                     "title": title,
+                    "name": title,
                     "year": metadata.get('year', ''),
+                    "num": metadata.get('year') or case_id,
                     "snippet": (metadata.get('text', '') or '')[:200],
                     "in_vault": in_vault,
+                    "inVault": in_vault,
                     "vault_id": vault_id,
-                    "kanoon_url": kanoon_url,
+                    "kanoon_url": kanoon_url or f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(title)}",
                 })
-                if len(citations) >= 3:
+                if len(citations) >= 4:
                     break
         except Exception as e:
             print(f"[analyze_contract_task] Citation RAG failed: {e}")
 
+    # Fallback statutory citations if index was empty or offline
+    if not citations:
+        statutory_candidates = [
+            {
+                "title": "Digital Personal Data Protection Act, 2023",
+                "num": "Act No. 22 of 2023",
+                "snippet": "Governs the processing of digital personal data within India, requiring reasonable security safeguards and lawful basis for processing.",
+            },
+            {
+                "title": "Indian Contract Act, 1872 — Section 73 & 74",
+                "num": "Act No. 9 of 1872",
+                "snippet": "Statutory rules on compensation for loss or damage caused by breach of contract and enforcement of liquidated damages.",
+            },
+            {
+                "title": "Arbitration and Conciliation Act, 1996",
+                "num": "Act No. 26 of 1996",
+                "snippet": "Sets out the legal framework for domestic and international commercial arbitration seated in India, party autonomy, and enforceability.",
+            },
+            {
+                "title": "Specific Relief Act, 1963 — Section 14",
+                "num": "Act No. 47 of 1963",
+                "snippet": "Contracts not specifically enforceable, including contracts dependent on personal qualifications or determinable contracts.",
+            },
+        ]
+        for c_cand in statutory_candidates:
+            in_v, v_id = check_case_in_vault(c_cand["title"], c_cand["num"])
+            citations.append({
+                "id": f"cite-{len(citations)+1}",
+                "case_id": c_cand["num"],
+                "title": c_cand["title"],
+                "name": c_cand["title"],
+                "year": c_cand["num"],
+                "num": c_cand["num"],
+                "snippet": c_cand["snippet"],
+                "in_vault": in_v,
+                "inVault": in_v,
+                "vault_id": v_id,
+                "kanoon_url": f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(c_cand['title'])}",
+            })
+
     report('Finalizing report...', 97)
+    word_count = len(full_text.split())
+    page_count = max(1, word_count // 250)
+    doc_clauses = segment_text_into_clauses(full_text)
+
     return {
         "summary": final_summary,
         "clauses": formatted_clauses,
-        "missing_clauses": [],
+        "risks": formatted_clauses,
+        "missing_clauses": missing_clauses,
+        "missing": missing_clauses,
         "citations": citations,
         "raw_text": full_text,
+        "document_clauses": doc_clauses,
+        "page_count": page_count,
+        "word_count": word_count,
         "pdf_url": "",
     }

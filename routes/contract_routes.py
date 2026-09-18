@@ -184,16 +184,119 @@ Make it fair, balanced, and enforceable under the Indian Contract Act 1872.
 Return ONLY the rewritten clause text. No preamble. No explanation.
 """
 
-MASTER_SYSTEM_PROMPT = """You are an elite legal AI architect analyzing a contract.
+def compute_diff_segments(original: str, replacement: str) -> list:
+    """
+    Computes structured word-level diff segments between original and replacement text.
+    Returns list of dicts: [{"type": "unchanged"|"removed"|"added", "text": str}]
+    Safe for frontend rendering into <del> / <ins> elements without dangerouslySetInnerHTML.
+    """
+    if not original and not replacement:
+        return []
+    if not original:
+        return [{"type": "added", "text": replacement}]
+    if not replacement:
+        return [{"type": "removed", "text": original}]
+
+    orig_words = re.findall(r'\S+|\s+', original)
+    repl_words = re.findall(r'\S+|\s+', replacement)
+
+    matcher = difflib.SequenceMatcher(None, orig_words, repl_words)
+    segments = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == 'equal':
+            text = "".join(orig_words[i1:i2])
+            if text:
+                segments.append({"type": "unchanged", "text": text})
+        elif tag == 'delete':
+            text = "".join(orig_words[i1:i2])
+            if text:
+                segments.append({"type": "removed", "text": text})
+        elif tag == 'insert':
+            text = "".join(repl_words[j1:j2])
+            if text:
+                segments.append({"type": "added", "text": text})
+        elif tag == 'replace':
+            rem_text = "".join(orig_words[i1:i2])
+            add_text = "".join(repl_words[j1:j2])
+            if rem_text:
+                segments.append({"type": "removed", "text": rem_text})
+            if add_text:
+                segments.append({"type": "added", "text": add_text})
+
+    return segments
+
+def format_diff_html(diff_segments: list) -> str:
+    """Helper to convert structured diff segments to legacy <del>/<ins> html string."""
+    out = []
+    for s in diff_segments:
+        t = s.get("text", "")
+        if s.get("type") == "removed":
+            out.append(f"<del>{t}</del>")
+        elif s.get("type") == "added":
+            out.append(f"<ins>{t}</ins>")
+        else:
+            out.append(t)
+    return "".join(out)
+
+def segment_text_into_clauses(text: str) -> list:
+    """
+    Segments contract text into structured clauses.
+    Each clause: {"id": f"clause-{i+1}", "title": "...", "text": "..."}
+    """
+    if not text or not text.strip():
+        return []
+
+    clean = text.replace('\r\n', '\n').replace('\r', '\n').strip()
+
+    pattern = re.compile(
+        r'(?=(?:^|\n\n)(?:(?:Section|Clause|Article)\s+\d+|(?:\d{1,2}\.[\d\.]*\s+[A-Z])|(?:\d{1,2}\.\s+[A-Z])))',
+        re.MULTILINE
+    )
+
+    parts = pattern.split(clean)
+    if len(parts) <= 1:
+        parts = [p.strip() for p in clean.split('\n\n') if p.strip()]
+
+    clauses = []
+    clause_idx = 1
+    for p in parts:
+        pt = p.strip()
+        if not pt:
+            continue
+        lines = pt.split('\n', 1)
+        first_line = lines[0].strip()
+        if len(first_line) < 80 and any(c.isalpha() for c in first_line):
+            title = first_line
+        else:
+            title = f"Clause {clause_idx}"
+        clauses.append({
+            "id": f"clause-{clause_idx}",
+            "title": title,
+            "text": pt
+        })
+        clause_idx += 1
+
+    return clauses
+
+MASTER_SYSTEM_PROMPT = """You are an elite legal AI architect analyzing a contract under Indian law.
 
 CRITICAL DIRECTIVES:
 1. STRICT BOILERPLATE EXCLUSION: DO NOT extract, highlight, or flag introductory recitals, party definitions, signature blocks, dates, contact details, or basic document titles. Ignore standard boilerplate entirely.
 2. RISK STRATEGY ({scanStrategy}):
-   - If Aggressive: Be hyper-critical. Flag every minor ambiguity, standard boilerplate risk, and slight imbalance. Output many clauses — aim for 8 to 15 flagged items.
-   - If Defensive: Be highly lenient. ONLY flag catastrophic, deal-breaking liabilities (e.g., massive fixed financial penalties, total loss of IP, permanent non-compete with no time limit). Ignore standard confidentiality, jurisdiction, notice, or governing-law clauses completely. Your output MUST have significantly fewer flagged clauses — aim for 2 to 4 items maximum.
+   - If Aggressive: Be hyper-critical. Flag every minor ambiguity, standard boilerplate risk, and slight imbalance (aim for 8 to 15 flagged items).
+   - If Defensive: Be highly lenient. ONLY flag catastrophic, deal-breaking liabilities (e.g., massive fixed financial penalties, total loss of IP, permanent non-compete with no time limit). Aim for 2 to 4 items maximum.
+   - If Balanced: Flag key material risks, unconscionable clauses, and statutory compliance gaps under Indian law (aim for 4 to 8 items).
 3. MANDATORY JSON SCHEMA: You MUST return a strictly valid JSON object. No markdown, no conversational text. It MUST contain exactly two top-level keys:
   - "summary": A professional 3-sentence brief summarizing the actual content, purpose, and parties of the document. Do not summarize the risks here.
-  - "clauses": An array of risk objects. Each object must contain: "original_text" (the exact clause from the document), "risk_level" (High, Medium, or Low), and "explanation" (why it is a risk).
+  - "clauses": An array of risk objects. Each object must contain:
+      * "title": A short 4-8 word title summarizing the risk (e.g. "Unilateral termination without notice", "Liability cap set to 3 months fees")
+      * "original_text": The exact clause or excerpt from the document
+      * "risk_level": "High", "Medium", or "Low"
+      * "explanation": Clear explanation of why this clause creates legal exposure under Indian law or playbook guardrails
+      * "location": Section/clause reference if present (e.g. "Section 7.1", "Clause 8.1", or "Page 4")
+      * "playbook_rule": Relevant Indian statute or playbook rule (e.g. "Playbook Guardrail · Section 27 Indian Contract Act", "Playbook Guardrail · DPDP Act 2023")
+      * "suggested_revision": The recommended fair, balanced, and legally enforceable rewrite of this clause
 """
 
 
@@ -281,6 +384,7 @@ def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive") 
     return parsed
 
 
+@contract_bp.route("/start-analysis", methods=["POST"])
 @contract_bp.route("/analyze", methods=["POST"])
 def analyze():
     """Dispatches the contract scan to Celery and returns immediately with
@@ -478,6 +582,47 @@ def stream_job(job_id):
     )
 
 
+@contract_bp.route("/analysis-status/<job_id>", methods=["GET"])
+def analysis_status(job_id):
+    """Status polling endpoint for background contract scan."""
+    from flask import current_app
+    from celery.result import AsyncResult
+
+    if job_id in LOCAL_JOBS:
+        job = LOCAL_JOBS.get(job_id, {})
+        state = job.get("state", "PENDING")
+        status_map = {
+            "PENDING": "processing",
+            "PROGRESS": "processing",
+            "SUCCESS": "complete",
+            "FAILURE": "failed",
+        }
+        return jsonify({
+            "job_id": job_id,
+            "status": status_map.get(state, "processing"),
+            "progress": job.get("progress", 0),
+            "stage": job.get("status", "Processing..."),
+            "results": job.get("result"),
+            "error": job.get("error"),
+        }), 200
+
+    celery_app = current_app.extensions.get("celery")
+    if celery_app:
+        result = AsyncResult(job_id, app=celery_app)
+        state = result.state
+        meta = result.info if isinstance(result.info, dict) else {}
+        if state == 'SUCCESS':
+            return jsonify({"job_id": job_id, "status": "complete", "progress": 100, "stage": "Complete", "results": result.result}), 200
+        elif state == 'FAILURE':
+            return jsonify({"job_id": job_id, "status": "failed", "progress": 0, "stage": "Failed", "error": str(result.info)}), 200
+        elif state == 'PROGRESS':
+            return jsonify({"job_id": job_id, "status": "processing", "progress": meta.get("progress", 0), "stage": meta.get("status", "Working...")}), 200
+        else:
+            return jsonify({"job_id": job_id, "status": "processing", "progress": 0, "stage": "Queued"}), 200
+
+    return jsonify({"job_id": job_id, "status": "failed", "error": "Job not found"}), 404
+
+
 EXTRACTION_TIMEOUT_SECONDS = 10
 
 
@@ -518,61 +663,78 @@ def extract_text():
     # "message" key at all, so every specific error text here was silently
     # discarded in favor of a generic "Request failed with status NNN"
     # before ever reaching the UI.
-    if not request.files.get("file"):
-        return jsonify({"error": True, "message": "No file provided."}), 400
-
-    try:
-        f = request.files["file"]
-        fname = secure_filename(f.filename.lower())
-        data = f.read()
-
-        if fname.endswith(".pdf"):
-            filetype = "pdf"
-        elif fname.endswith(".docx"):
-            filetype = "docx"
-        else:
-            return jsonify({"error": True, "message": "Unsupported format. Use PDF or DOCX."}), 400
-
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(extract_text_for_summary, data, filetype)
+    text = ""
+    if request.files.get("file"):
         try:
-            text = future.result(timeout=EXTRACTION_TIMEOUT_SECONDS)
-        except FutureTimeoutError:
-            return jsonify({
-                "error": True,
-                "message": f"Document extraction timed out after {EXTRACTION_TIMEOUT_SECONDS} seconds. The file may be corrupted or too complex.",
-                "code": "EXTRACTION_TIMEOUT",
-            }), 422
+            f = request.files["file"]
+            fname = secure_filename(f.filename.lower())
+            data = f.read()
+
+            if fname.endswith(".pdf"):
+                filetype = "pdf"
+            elif fname.endswith(".docx"):
+                filetype = "docx"
+            else:
+                return jsonify({"error": True, "message": "Unsupported format. Use PDF or DOCX."}), 400
+
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(extract_text_for_summary, data, filetype)
+            try:
+                text = future.result(timeout=EXTRACTION_TIMEOUT_SECONDS)
+            except FutureTimeoutError:
+                return jsonify({
+                    "error": True,
+                    "message": f"Document extraction timed out after {EXTRACTION_TIMEOUT_SECONDS} seconds. The file may be corrupted or too complex.",
+                    "code": "EXTRACTION_TIMEOUT",
+                }), 422
+            except Exception as e:
+                return jsonify({
+                    "error": True,
+                    "message": f"Failed to extract text: {str(e)}",
+                    "code": "EXTRACTION_ERROR"
+                }), 500
+
+            if not text or not text.strip():
+                return jsonify({
+                    "error": True,
+                    "message": "No readable text found - OCR required.",
+                    "code": "BLANK_DOCUMENT",
+                }), 422
         except Exception as e:
-            return jsonify({
-                "error": True,
-                "message": f"Failed to extract text: {str(e)}",
-                "code": "EXTRACTION_ERROR"
-            }), 500
+            return jsonify({"error": True, "message": f"Failed to extract text: {e}", "code": "FILE_PROCESSING_ERROR"}), 500
 
-        # Blank-document guard — a scanned PDF with no embedded text layer
-        # extracts to "" (or whitespace) with no error of its own; that
-        # empty payload must never flow forward into rawText/analysis.
-        if not text or not text.strip():
-            return jsonify({
-                "error": True,
-                "message": "No readable text found - OCR required.",
-                "code": "BLANK_DOCUMENT",
-            }), 422
+    elif request.is_json and request.json.get("text"):
+        text = str(request.json["text"]).strip()
+    elif request.form.get("text"):
+        text = str(request.form["text"]).strip()
+    else:
+        return jsonify({"error": True, "message": "No file or text provided."}), 400
 
-        return jsonify({"text": text}), 200
-    except Exception as e:
-        return jsonify({"error": True, "message": f"Failed to extract text: {e}", "code": "FILE_PROCESSING_ERROR"}), 500
+    if not text:
+        return jsonify({"error": True, "message": "No readable text found."}), 422
 
+    word_count = len(text.split())
+    page_count = max(1, word_count // 250)
+    clauses = segment_text_into_clauses(text)
+
+    return jsonify({
+        "text": text,
+        "raw_text": text,
+        "page_count": page_count,
+        "word_count": word_count,
+        "clauses": clauses,
+    }), 200
+
+@contract_bp.route("/rewrite-clause", methods=["POST"])
 @contract_bp.route("/rewrite", methods=["POST"])
 def rewrite():
-    data = request.get_json()
-    original = data.get("original_clause", "").strip()
-    issue    = data.get("issue", "").strip()
-    intent   = data.get("user_intent", "").strip()
+    data = request.get_json(silent=True) or {}
+    original = (data.get("original_clause") or data.get("clause_text") or data.get("original") or "").strip()
+    issue = (data.get("issue") or data.get("rule_book_text") or data.get("guardrailText") or "").strip()
+    intent = (data.get("user_intent") or data.get("intent") or "Make this clause fair, balanced, and legally compliant under Indian contract law.").strip()
 
-    if not original or not intent:
-        return jsonify({"error": "original_clause and user_intent are required."}), 400
+    if not original:
+        return jsonify({"error": "original_clause or clause_text is required."}), 400
 
     user_msg = f"""Original clause:
 \"\"\"{original}\"\"\"
@@ -585,7 +747,17 @@ Rewrite it now."""
 
     try:
         rewritten = ask_groq(REWRITE_PROMPT, user_msg)
-        return jsonify({"rewritten": rewritten.strip()})
+        clean_rewritten = (rewritten or "").strip()
+        diff_segments = compute_diff_segments(original, clean_rewritten)
+        diff_html = format_diff_html(diff_segments)
+
+        return jsonify({
+            "rewritten": clean_rewritten,
+            "revision": clean_rewritten,
+            "replacementText": clean_rewritten,
+            "diffSegments": diff_segments,
+            "diffHtml": diff_html,
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1095,9 +1267,9 @@ def get_vault():
 
 @contract_bp.route("/chat", methods=["POST"])
 def contract_chat():
-    data = request.get_json()
-    raw_text = data.get("raw_text", "").strip()
-    query = data.get("query", "").strip()
+    data = request.get_json(silent=True) or {}
+    raw_text = (data.get("raw_text") or data.get("contract_text") or "").strip()
+    query = (data.get("query") or data.get("message") or "").strip()
     
     if not raw_text or not query:
         return jsonify({"error": "Missing contract text or query."}), 400
@@ -1185,3 +1357,50 @@ def export_contract():
             return send_file(buffer, as_attachment=True, download_name="LexAI_Export.pdf", mimetype='application/pdf')
     except Exception as e:
         return jsonify({"error": True, "message": f"Failed to generate export: {e}", "code": "EXPORT_ERROR"}), 500
+
+
+@contract_bp.route("/cross-check", methods=["POST"])
+def cross_check_contracts():
+    data = request.get_json(silent=True) or {}
+    primary_text = (data.get("primary_text") or "").strip()
+    secondary_text = (data.get("secondary_text") or "").strip()
+    ref_doc_name = (data.get("ref_doc_name") or "Reference Document").strip()
+
+    if not primary_text or not secondary_text:
+        return jsonify({"conflicts": []}), 200
+
+    prompt = f"""You are a senior contract lawyer comparing two agreements to identify legal contradictions and conflicts.
+Reference Document Name: {ref_doc_name}
+
+Compare the Primary Contract against the Reference Document. Look specifically for:
+1. Contradictory liability caps or indemnities.
+2. Mismatched termination notice periods or cure windows.
+3. Incompatible IP ownership assignments or licensing scopes.
+4. Conflicting governing law, dispute resolution forums, or arbitration rules.
+5. Inconsistent non-compete, confidentiality, or non-solicitation durations.
+
+Output STRICT JSON only:
+{{
+  "conflicts": [
+    {{
+      "id": "conf-1",
+      "severity": "critical",
+      "title": "Contradictory Liability Cap",
+      "summary": "Primary contract caps liability at 12 months fees while reference document states uncapped liability for IP indemnity.",
+      "refDoc": "{ref_doc_name}"
+    }}
+  ]
+}}
+If no contradictions are found, return {{"conflicts": []}}."""
+
+    user_msg = f"Primary Contract (first 8000 chars):\n{primary_text[:8000]}\n\nReference Document (first 8000 chars):\n{secondary_text[:8000]}"
+
+    try:
+        raw_res = ask_groq(prompt, user_msg)
+        cleaned = re.sub(r"```(?:json)?", "", raw_res).strip("` \n")
+        parsed = json.loads(cleaned)
+        conflicts = parsed.get("conflicts", [])
+        return jsonify({"conflicts": conflicts}), 200
+    except Exception as e:
+        logger.warning(f"Failed to cross-check contracts with Groq: {e}")
+        return jsonify({"conflicts": []}), 200

@@ -66,12 +66,52 @@ export const useContractStore = create((set, get) => ({
   openDraftsModal: () => set({ isDraftsModalOpen: true }),
   closeDraftsModal: () => set({ isDraftsModalOpen: false }),
 
+  // ── Persistent Comments Slice ──────────────────────────────────────────────
+  comments: [],
+  setComments: (comments) =>
+    set((state) => ({
+      comments: typeof comments === 'function' ? comments(state.comments) : comments,
+    })),
+  addComment: ({ clauseId = '', clauseTitle = '', author = 'Counsel', text = '', selectedText = '' }) => {
+    if (!text || !text.trim()) return null;
+    const newComment = {
+      id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      clauseId,
+      clauseTitle,
+      author,
+      text: text.trim(),
+      selectedText: selectedText ? selectedText.trim() : '',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
+      resolved: false,
+    };
+    set((state) => ({ comments: [newComment, ...state.comments] }));
+    return newComment;
+  },
+  toggleCommentResolved: (id) =>
+    set((state) => ({
+      comments: state.comments.map((c) =>
+        c.id === id ? { ...c, resolved: !c.resolved } : c
+      ),
+    })),
+  deleteComment: (id) =>
+    set((state) => ({
+      comments: state.comments.filter((c) => c.id !== id),
+    })),
+  updateComment: (id, newText) =>
+    set((state) => ({
+      comments: state.comments.map((c) =>
+        c.id === id ? { ...c, text: newText.trim() } : c
+      ),
+    })),
+
   clearContract: () =>
     set({
       rawText: '',
       rawHtml: '',
       contractFile: null,
       clauses: [],
+      comments: [],
       summary: '',
       ruleBookText: '',
       autoDraftText: '',
