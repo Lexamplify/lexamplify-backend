@@ -356,6 +356,9 @@ export default function ContractAnalyzer() {
   const [scanMode, setScanMode] = useState('balanced');
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Synced contractFile reference from local state or global store
+  const contractFile = selectedFile || storeFile;
+
   // Scanning State
   const [scanProgress, setScanProgress] = useState(4);
   const [scanStage, setScanStage] = useState('Segmenting document…');
@@ -429,6 +432,7 @@ export default function ContractAnalyzer() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       setSelectedFile(file);
+      setStoreFile(file);
       setDocumentName(file.name);
     }
   };
@@ -437,6 +441,7 @@ export default function ContractAnalyzer() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
+      setStoreFile(file);
       setDocumentName(file.name);
     }
   };
@@ -454,7 +459,7 @@ export default function ContractAnalyzer() {
     setScanStage('Segmenting document…');
     setConsoleLogs([]);
 
-    const docTitle = selectedFile ? selectedFile.name : 'Pasted Contract Document.txt';
+    const docTitle = contractFile ? contractFile.name : (pastedText.trim() ? 'Pasted Contract Document.txt' : 'Vendor Master Services Agreement.pdf');
     setDocumentName(docTitle);
 
     // If real text was provided, update store
@@ -808,7 +813,7 @@ export default function ContractAnalyzer() {
           display: flex !important;
           align-items: flex-start !important;
           gap: 20px !important;
-          padding: 30px 36px 0 !important;
+          padding: 24px 32px 0 !important;
           flex-wrap: wrap !important;
           height: auto !important;
           min-height: auto !important;
@@ -837,7 +842,7 @@ export default function ContractAnalyzer() {
         .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 
         .ca-content {
-          padding: 26px 36px 70px !important;
+          padding: 20px 32px 60px !important;
           display: flex !important;
           flex-direction: column !important;
           gap: 22px !important;
@@ -879,38 +884,40 @@ export default function ContractAnalyzer() {
         .empty-sub { font-size: 12.5px; color: var(--ink-soft); max-width: 340px; line-height: 1.55; }
 
         /* ── Upload State ── */
-        .state-upload-wrap { display: flex; flex-direction: column; gap: 20px; max-width: 900px; margin: 10px auto 0; width: 100%; }
-        .upload-hero { text-align: center; padding: 10px 10px 4px; background: transparent !important; margin: 0 auto; }
-        .upload-hero-title { font-size: 25px; color: var(--ink); margin-bottom: 0; }
-        .upload-hero-sub { font-size: 13.5px; color: var(--ink-soft); max-width: 520px; margin: 10px auto 0; line-height: 1.6; }
-        .upload-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: stretch; }
-        .big-dropzone { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 34px 26px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; background: var(--paper); cursor: pointer; transition: border-color 0.15s; }
-        .big-dropzone:hover, .big-dropzone.dragover { border-color: var(--accent); }
-        .big-dropzone-icon { width: 52px; height: 52px; border-radius: 15px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; }
-        .big-dropzone-title { font-size: 15px; font-weight: 600; color: var(--ink); }
-        .big-dropzone-sub { font-size: 12px; color: var(--muted); max-width: 300px; line-height: 1.5; }
-        .or-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+        .state-upload-wrap { display: flex; flex-direction: column; align-items: center; max-width: 1040px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+        .upload-hero { margin: 12px auto 28px !important; text-align: center !important; max-width: 680px !important; width: 100% !important; background: transparent !important; }
+        .upload-hero-title { font-family: 'Fraunces', serif !important; font-style: italic !important; font-weight: 500 !important; font-size: 28px !important; line-height: 1.3 !important; color: var(--ink) !important; margin-bottom: 0 !important; }
+        .upload-hero-sub { font-family: 'IBM Plex Sans', sans-serif !important; font-size: 13px !important; line-height: 1.5 !important; color: var(--muted) !important; margin-top: 8px !important; max-width: 640px !important; margin-left: auto !important; margin-right: auto !important; }
+        .upload-grid { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)) !important; gap: 24px !important; width: 100% !important; align-items: stretch !important; }
+        .upload-card { background: var(--paper) !important; border: 1px solid var(--rule) !important; border-radius: 16px !important; padding: 24px !important; display: flex !important; flex-direction: column !important; gap: 16px !important; box-sizing: border-box !important; }
+        .big-dropzone { border: 2px dashed var(--rule) !important; border-radius: 12px !important; padding: 28px 20px !important; text-align: center !important; cursor: pointer !important; transition: border-color 0.2s !important; background: var(--paper-2) !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; }
+        .big-dropzone:hover, .big-dropzone.dragover { border-color: var(--accent) !important; }
+        .big-dropzone-icon { width: 40px !important; height: 40px !important; border-radius: 12px !important; background: var(--accent-soft) !important; color: var(--accent) !important; display: flex !important; align-items: center !important; justify-content: center !important; margin: 0 auto 8px !important; }
+        .big-dropzone-title { font-weight: 600 !important; font-size: 14px !important; color: var(--ink) !important; }
+        .big-dropzone-sub { font-size: 12px !important; color: var(--muted) !important; max-width: 300px !important; line-height: 1.5 !important; margin-top: 4px !important; }
+        .or-row { display: flex !important; align-items: center !important; gap: 10px !important; color: var(--muted-2) !important; font-family: 'IBM Plex Mono', monospace !important; font-size: 10px !important; letter-spacing: 0.1em !important; text-transform: uppercase !important; width: 100% !important; margin: 2px 0 !important; }
         .or-row::before, .or-row::after { content: ''; flex-grow: 1; height: 1px; background: var(--rule); }
-        .paste-box { width: 100%; min-height: 74px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--ink); resize: vertical; outline: none; }
-        .paste-box:focus { border-color: var(--accent); }
-        .paste-box::placeholder { color: var(--muted); }
+        .paste-box { background: var(--paper-2) !important; border: 1px solid var(--rule) !important; border-radius: 8px !important; color: var(--ink) !important; font-family: 'IBM Plex Sans', sans-serif !important; font-size: 13px !important; padding: 12px !important; min-height: 90px !important; resize: vertical !important; outline: none !important; width: 100% !important; box-sizing: border-box !important; }
+        .paste-box:focus { border-color: var(--accent) !important; }
+        .paste-box::placeholder { color: var(--muted) !important; }
 
-        .playbook-card { background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
-        .playbook-icon { width: 40px; height: 40px; border-radius: 12px; background: var(--paper-2); color: var(--accent); display: flex; align-items: center; justify-content: center; }
-        .playbook-title { font-size: 14.5px; font-weight: 600; color: var(--ink); }
-        .playbook-sub { font-size: 12px; color: var(--muted); line-height: 1.55; }
-        .small-dropzone { border: 1.5px dashed var(--rule); border-radius: 11px; padding: 14px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); cursor: pointer; transition: all 0.15s; }
-        .small-dropzone:hover { border-color: var(--accent); color: var(--accent); }
-        .playbook-file { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 9px; padding: 8px 10px; font-size: 12px; color: var(--ink); }
+        .playbook-card { background: var(--paper) !important; border: 1px solid var(--rule) !important; border-radius: 16px !important; padding: 24px !important; display: flex !important; flex-direction: column !important; gap: 20px !important; box-sizing: border-box !important; }
+        .playbook-icon { width: 40px !important; height: 40px !important; border-radius: 12px !important; background: var(--paper-2) !important; color: var(--accent) !important; display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0 !important; }
+        .playbook-title { font-size: 15px !important; font-weight: 600 !important; color: var(--ink) !important; }
+        .playbook-sub { font-size: 12px !important; color: var(--muted) !important; line-height: 1.55 !important; margin-top: 3px !important; }
+        .small-dropzone { border: 1px dashed var(--rule) !important; border-radius: 8px !important; padding: 14px !important; background: var(--paper-2) !important; cursor: pointer !important; display: flex !important; align-items: center !important; gap: 10px !important; font-size: 12px !important; color: var(--muted) !important; transition: all 0.15s !important; }
+        .small-dropzone:hover { border-color: var(--accent) !important; color: var(--accent) !important; }
+        .playbook-file { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 8px !important; background: var(--paper-2) !important; border: 1px solid var(--rule) !important; border-radius: 8px !important; padding: 10px 12px !important; font-size: 12px !important; color: var(--ink) !important; }
         .playbook-file svg { color: var(--accent); flex-shrink: 0; }
-        .mode-block { display: flex; flex-direction: column; gap: 8px; }
-        .mode-block-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+        .mode-block { display: flex !important; flex-direction: column !important; gap: 8px !important; }
+        .mode-block-label { font-size: 11px !important; text-transform: uppercase !important; letter-spacing: .06em !important; color: var(--muted) !important; font-weight: 500 !important; }
 
-        .mode-seg { display: flex; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 3px; gap: 2px; }
-        .mode-opt { flex: 1; padding: 8px 6px; border-radius: 7px; font-size: 11.5px; font-weight: 500; color: var(--ink-soft); cursor: pointer; border: 0; background: transparent; text-align: center; transition: all 0.15s; }
-        .mode-opt.active { background: var(--paper); color: var(--accent); font-weight: 600; }
+        .mode-seg { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 4px !important; background: var(--paper-2) !important; border: 1px solid var(--rule) !important; border-radius: 8px !important; padding: 3px !important; }
+        .mode-opt { font-size: 12px !important; font-weight: 500 !important; padding: 6px 10px !important; border-radius: 6px !important; text-align: center !important; transition: all 0.15s !important; border: 0 !important; background: transparent !important; color: var(--muted) !important; cursor: pointer !important; }
+        .mode-opt:hover { color: var(--ink) !important; }
+        .mode-opt.active { background: var(--paper) !important; color: var(--accent) !important; font-weight: 600 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important; }
 
-        .begin-btn-row { display: flex; justify-content: center; padding-top: 4px; }
+        .begin-btn-row { width: 100% !important; display: flex !important; justify-content: center !important; margin-top: 24px !important; margin-bottom: 32px !important; }
 
         /* ── Scanning State ── */
         .state-scanning-wrap { max-width: 720px; margin: 40px auto 0; display: flex; flex-direction: column; gap: 22px; align-items: center; text-align: center; width: 100%; }
@@ -1135,7 +1142,8 @@ export default function ContractAnalyzer() {
              STATE 1 — UPLOAD
              ============================================================ */}
         {viewState === 'upload' && (
-          <section className="state-upload-wrap">
+          <div className="w-full max-w-[1040px] mx-auto flex flex-col items-center state-upload-wrap">
+            {/* 1. Upload Hero */}
             <div className="upload-hero">
               <div className="upload-hero-title serif">What are we reviewing today, Counsel?</div>
               <div className="upload-hero-sub">
@@ -1143,8 +1151,10 @@ export default function ContractAnalyzer() {
               </div>
             </div>
 
+            {/* 2. Upload Grid */}
             <div className="upload-grid">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Left Card: Document Upload + Direct Text Paste */}
+              <div className="upload-card">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -1163,14 +1173,14 @@ export default function ContractAnalyzer() {
                     {ICONS.uploadCloud}
                   </div>
                   <div className="big-dropzone-title">
-                    {selectedFile ? selectedFile.name : 'Drag and drop a contract, or click to browse'}
+                    {contractFile ? contractFile.name : 'Drag and drop a contract, or click to browse'}
                   </div>
                   <div className="big-dropzone-sub">
-                    {selectedFile
-                      ? `${(selectedFile.size / 1024).toFixed(1)} KB · Ready to scan`
+                    {contractFile
+                      ? `${(contractFile.size / 1024).toFixed(1)} KB · Ready to scan`
                       : 'PDF or DOCX, any length — a 60-page facility agreement is read the same way as a 2-page NDA.'}
                   </div>
-                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--muted)' }}>MAX 50 MB PER FILE</div>
+                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--muted)', marginTop: '4px' }}>MAX 50 MB PER FILE</div>
                 </div>
 
                 <div className="or-row">or paste text directly</div>
@@ -1182,21 +1192,25 @@ export default function ContractAnalyzer() {
                     setPastedText(e.target.value);
                     if (e.target.value.trim()) {
                       setSelectedFile(null);
+                      setStoreFile(null);
                     }
                   }}
                 />
               </div>
 
+              {/* Right Card: Firm Playbook + Review Posture */}
               <div className="playbook-card">
-                <div className="playbook-icon">
-                  {ICONS.book}
-                </div>
-                <div>
-                  <div className="playbook-title">
-                    Firm playbook <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span>
+                <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                  <div className="playbook-icon">
+                    {ICONS.book}
                   </div>
-                  <div className="playbook-sub">
-                    Attach your firm's clause standards and LexAmplify flags deviations from them specifically, cited by rule — not just generic risk.
+                  <div>
+                    <div className="playbook-title">
+                      Firm playbook <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span>
+                    </div>
+                    <div className="playbook-sub">
+                      Attach your firm's clause standards and LexAmplify flags deviations from them specifically, cited by rule — not just generic risk.
+                    </div>
                   </div>
                 </div>
 
@@ -1241,24 +1255,43 @@ export default function ContractAnalyzer() {
                       </button>
                     ))}
                   </div>
-                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--muted)', lineHeight: '1.5' }}>
+                  <div className="mono" style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: '1.4', minHeight: '32px' }}>
                     {MODE_HINTS[scanMode]}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="begin-btn-row">
+            {/* 3. Centered Action Button */}
+            <div className="w-full flex justify-center mt-6 mb-8" style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: '24px', marginBottom: '32px' }}>
               <button
-                className="btn btn-primary"
-                style={{ padding: '13px 26px', fontSize: '14px' }}
+                type="button"
+                className="btn btn-primary flex items-center justify-center gap-2 px-8 py-3 rounded-xl font-medium text-sm transition-all"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--on-accent)',
+                  boxShadow: '0 2px 8px rgba(178, 74, 46, 0.25)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '12px 32px',
+                  borderRadius: '12px',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: (!contractFile && !pastedText.trim()) ? 'not-allowed' : 'pointer',
+                  opacity: (!contractFile && !pastedText.trim()) ? 0.55 : 1,
+                  transition: 'all 0.15s ease',
+                }}
                 onClick={handleBeginAnalysis}
+                disabled={!contractFile && !pastedText.trim()}
               >
                 {ICONS.sparkles}
-                Begin analysis
+                <span>Begin analysis</span>
               </button>
             </div>
-          </section>
+          </div>
         )}
 
         {/* ============================================================
