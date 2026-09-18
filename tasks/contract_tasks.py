@@ -169,11 +169,12 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                 print(f"[analyze_contract_task] Celery update_state failed: {e}")
         if job_id:
             try:
-                from utils.job_store import load_job, save_job
-                job_data = load_job(job_id) or {}
+                from utils.job_store import get_local_job, save_local_job
+                job_data = get_local_job(job_id) or {}
+                job_data["status"] = "processing"
                 job_data["progress"] = progress
-                job_data["status"] = status
-                save_job(job_id, job_data)
+                job_data["stage"] = status
+                save_local_job(job_id, job_data)
             except Exception as e:
                 print(f"[analyze_contract_task] Job store state update failed: {e}")
 

@@ -17,7 +17,7 @@ import time
 from flask import Blueprint, request, jsonify
 
 LOCAL_JOBS = {}
-from utils.job_store import save_job, load_job, update_job
+from utils.job_store import save_local_job, get_local_job, save_job, load_job, update_job
 from utils.ai_helper import ask_groq, ask_litellm, extract_json_from_llm_response
 from utils.pdf_helper import extract_text_for_summary
 
@@ -470,15 +470,18 @@ def analyze():
         print(f"[analyze] Celery offline, falling back to local thread immediately: {e}")
         from tasks.contract_tasks import analyze_contract_task
         job_id = f"local_{uuid.uuid4()}"
+        created_at = time.time()
         initial_job = {
             "job_id": job_id,
-            "state": "PROGRESS",
-            "progress": 15,
-            "status": "Analyzing contract (Local Engine)...",
+            "status": "processing",
+            "progress": 10,
+            "stage": "Ingesting contract text...",
+            "created_at": created_at,
+            "results": None,
             "result": None,
             "error": None
         }
-        save_job(job_id, initial_job)
+        save_local_job(job_id, initial_job)
         LOCAL_JOBS[job_id] = initial_job
 
         def _run_local_job():
@@ -486,24 +489,28 @@ def analyze():
                 res = analyze_contract_task(full_text, rule_book_text, scan_strategy, job_id=job_id)
                 success_job = {
                     "job_id": job_id,
-                    "state": "SUCCESS",
+                    "status": "complete",
                     "progress": 100,
-                    "status": "Analysis Complete",
+                    "stage": "Complete",
+                    "results": res,
                     "result": res,
-                    "error": None
+                    "error": None,
+                    "created_at": created_at
                 }
-                save_job(job_id, success_job)
+                save_local_job(job_id, success_job)
                 LOCAL_JOBS[job_id] = success_job
             except Exception as err:
                 fail_job = {
                     "job_id": job_id,
-                    "state": "FAILURE",
+                    "status": "failed",
                     "progress": 0,
-                    "status": str(err),
+                    "stage": "Failed",
+                    "error": str(err),
+                    "results": None,
                     "result": None,
-                    "error": str(err)
+                    "created_at": created_at
                 }
-                save_job(job_id, fail_job)
+                save_local_job(job_id, fail_job)
                 LOCAL_JOBS[job_id] = fail_job
 
         threading.Thread(target=_run_local_job, daemon=True).start()
@@ -517,35 +524,80 @@ def stream_job(job_id):
     import time
     from flask import Response, stream_with_context, current_app
 
-    def generate_stream():
-        last_payload = None
-        start_time = time.time()
-        try:
-            while True:
-                # 1. Check atomic process-safe job store first
-                job = load_job(job_id) or LOCAL_JOBS.get(job_id)
-                if job:
+    if job_id.startswith('local_'):
+        def generate_local_stream():
+            last_payload = None
+            start_time = time.time()
+            try:
+                while True:
+                    job_data = get_local_job(job_id) or LOCAL_JOBS.get(job_id)
+                    if not job_data:
+                        # Grace period: Worker is currently starting up
+                        if time.time() - start_time < 8.0:
+                            init_payload = {
+                                "state": "PROGRESS",
+                                "status": "Initializing analysis pipeline...",
+                                "progress": 5,
+                                "result": None,
+                                "error": None
+                            }
+                            if init_payload != last_payload:
+                                yield f"data: {json.dumps(init_payload)}\n\n"
+                                last_payload = init_payload
+                            time.sleep(0.5)
+                            continue
+                        else:
+                            yield f'data: {{"status": "failed", "state": "FAILURE", "error": "Job not found"}}\n\n'
+                            break
+
+                    status_val = job_data.get("status", "processing")
+                    stage = job_data.get("stage") or job_data.get("status", "Processing...")
+                    results = job_data.get("results") or job_data.get("result")
+                    error = job_data.get("error")
+
+                    state = "SUCCESS" if status_val == "complete" else ("FAILURE" if status_val == "failed" else "PROGRESS")
                     payload = {
-                        "state": job.get("state", "PENDING"),
-                        "progress": job.get("progress", 0),
-                        "status": job.get("status", "Processing..."),
-                        "result": job.get("result"),
-                        "error": job.get("error")
+                        "state": state,
+                        "status": stage,
+                        "progress": job_data.get("progress", 0),
+                        "result": results,
+                        "error": error
                     }
                     if payload != last_payload:
                         yield f"data: {json.dumps(payload)}\n\n"
                         last_payload = payload
-                    if job.get("state") in ["SUCCESS", "FAILURE"]:
-                        break
-                    time.sleep(0.5)
-                    continue
 
-                # 2. Check Celery task if present and connected
-                celery_app = current_app.extensions.get("celery")
-                if celery_app:
-                    try:
-                        from celery.result import AsyncResult
-                        result = AsyncResult(job_id, app=celery_app)
+                    if status_val in ["complete", "failed"]:
+                        break
+
+                    time.sleep(0.5)
+            except GeneratorExit:
+                return
+            except Exception as e:
+                print(f"[stream_job] Local SSE generator exception: {e}")
+                yield f'data: {{"status": "failed", "state": "FAILURE", "error": "Stream disconnected"}}\n\n'
+
+        return Response(
+            stream_with_context(generate_local_stream()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive"
+            }
+        )
+
+    # Only query Celery for non-local jobs if broker is explicitly configured
+    broker_url = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL")
+    if broker_url:
+        celery_app = current_app.extensions.get("celery")
+        if celery_app:
+            def event_stream():
+                last_payload = None
+                try:
+                    from celery.result import AsyncResult
+                    result = AsyncResult(job_id, app=celery_app)
+                    while True:
                         if result.state == 'PROGRESS':
                             meta = result.info if isinstance(result.info, dict) else {}
                             payload = {
@@ -568,75 +620,82 @@ def stream_job(job_id):
 
                         if result.ready():
                             break
-                    except Exception as cel_err:
-                        print(f"[stream_job] Celery query error: {cel_err}")
+                        time.sleep(0.6)
+                except GeneratorExit:
+                    return
+                except Exception as e:
+                    yield f'data: {{"status": "failed", "state": "FAILURE", "error": str(e)}}\n\n'
 
-                # 3. Timeout check if job never appeared
-                if time.time() - start_time > 15 and not job:
-                    yield f'data: {{"status": "failed", "state": "FAILURE", "error": "Job not found"}}\n\n'
-                    break
+            return Response(
+                stream_with_context(event_stream()),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "Connection": "keep-alive",
+                }
+            )
 
-                time.sleep(0.6)
-        except GeneratorExit:
-            return
-        except Exception as e:
-            print(f"[stream_job] SSE generator exception: {e}")
-            yield f'data: {{"status": "failed", "state": "FAILURE", "error": "Stream disconnected"}}\n\n'
-
-    return Response(
-        stream_with_context(generate_stream()),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive"
-        }
-    )
+    return jsonify({"success": False, "status": "not_found", "error": "Job not found"}), 404
 
 
 @contract_bp.route("/analysis-status/<job_id>", methods=["GET"])
 def analysis_status(job_id):
     """Status polling endpoint for background contract scan.
-    Process-safe, atomic, non-fatal, returns 404 if job expired or not found.
+    Decouples local_* jobs completely from Celery/Redis.
     """
     try:
-        job = load_job(job_id) or LOCAL_JOBS.get(job_id)
-        if job:
-            state = job.get("state", "PENDING")
-            status_map = {
-                "PENDING": "processing",
-                "PROGRESS": "processing",
-                "SUCCESS": "complete",
-                "FAILURE": "failed",
-            }
+        # Check job prefix first: if job_id.startswith('local_'), BYPASS CELERY ENTIRELY
+        if job_id.startswith('local_'):
+            job_data = get_local_job(job_id) or LOCAL_JOBS.get(job_id)
+            if not job_data:
+                # Grace period: Worker is currently starting up
+                return jsonify({
+                    "success": True,
+                    "status": "processing",
+                    "progress": 5,
+                    "stage": "Initializing analysis pipeline..."
+                }), 200
+
+            status_val = job_data.get("status", "processing")
+            if status_val in ["PROGRESS", "PENDING"]:
+                status_val = "processing"
+            elif status_val == "SUCCESS":
+                status_val = "complete"
+            elif status_val == "FAILURE":
+                status_val = "failed"
+
             return jsonify({
                 "success": True,
                 "job_id": job_id,
-                "status": status_map.get(state, "processing"),
-                "progress": job.get("progress", 0),
-                "stage": job.get("status", "Processing..."),
-                "results": job.get("result"),
-                "error": job.get("error"),
+                "status": status_val,
+                "progress": job_data.get("progress", 0),
+                "stage": job_data.get("stage") or job_data.get("status", "Processing"),
+                "results": job_data.get("results") or job_data.get("result"),
+                "error": job_data.get("error")
             }), 200
 
-        from flask import current_app
-        celery_app = current_app.extensions.get("celery")
-        if celery_app:
-            try:
-                from celery.result import AsyncResult
-                result = AsyncResult(job_id, app=celery_app)
-                state = result.state
-                meta = result.info if isinstance(result.info, dict) else {}
-                if state == 'SUCCESS':
-                    return jsonify({"success": True, "job_id": job_id, "status": "complete", "progress": 100, "stage": "Complete", "results": result.result}), 200
-                elif state == 'FAILURE':
-                    return jsonify({"success": False, "job_id": job_id, "status": "failed", "progress": 0, "stage": "Failed", "error": str(result.info)}), 200
-                elif state == 'PROGRESS':
-                    return jsonify({"success": True, "job_id": job_id, "status": "processing", "progress": meta.get("progress", 0), "stage": meta.get("status", "Working...")}), 200
-            except Exception as cel_err:
-                print(f"[analysis_status] Celery lookup error: {cel_err}")
+        # Only check Celery if explicitly configured with external broker
+        broker_url = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL")
+        if broker_url:
+            from flask import current_app
+            celery_app = current_app.extensions.get("celery")
+            if celery_app:
+                try:
+                    from celery.result import AsyncResult
+                    result = AsyncResult(job_id, app=celery_app)
+                    state = result.state
+                    meta = result.info if isinstance(result.info, dict) else {}
+                    if state == 'SUCCESS':
+                        return jsonify({"success": True, "job_id": job_id, "status": "complete", "progress": 100, "stage": "Complete", "results": result.result}), 200
+                    elif state == 'FAILURE':
+                        return jsonify({"success": False, "job_id": job_id, "status": "failed", "progress": 0, "stage": "Failed", "error": str(result.info)}), 200
+                    elif state == 'PROGRESS':
+                        return jsonify({"success": True, "job_id": job_id, "status": "processing", "progress": meta.get("progress", 0), "stage": meta.get("status", "Working...")}), 200
+                except Exception as cel_err:
+                    print(f"[analysis_status] Celery lookup error: {cel_err}")
 
-        return jsonify({"success": False, "status": "not_found", "error": "Job expired or not found"}), 404
+        return jsonify({"success": False, "status": "not_found", "error": "Job not found"}), 404
     except Exception as e:
         print(f"[analysis_status] Unhandled exception: {e}")
         return jsonify({"success": False, "status": "failed", "error": str(e)}), 500
