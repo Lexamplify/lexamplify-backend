@@ -24,6 +24,8 @@ import FirmLibrary from './components/FirmLibrary';
 import LegalForms from './components/LegalForms';
 import FormTemplateLibrary from './components/FormTemplateLibrary';
 import TEMPLATES from './data/legalTemplates.js';
+import MatterLauncher from './components/organization/MatterLauncher';
+import ContextCapsule from './components/organization/ContextCapsule';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -188,6 +190,9 @@ const SidebarIcons = {
   forms: () => (
     <svg className="icon" viewBox="0 0 24 24"><path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M13 3v5h5" /><path d="M8.5 13.5l1.3 1.3L12.5 12" /><line x1="8.5" y1="17.5" x2="14" y2="17.5" /></svg>
   ),
+  gateway: () => (
+    <svg className="icon" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+  ),
 };
 
 const NAVIGATION_GROUPS = [
@@ -195,6 +200,7 @@ const NAVIGATION_GROUPS = [
     title: "Workspace",
     items: [
       { name: "Dashboard", path: "/dashboard", icon: SidebarIcons.dashboard() },
+      { name: "Matter Gateway", path: "/matters", icon: SidebarIcons.gateway() },
       { name: "Contract Analyzer", path: "/contract-analyzer", icon: SidebarIcons.contract(), aiAssisted: true },
       { name: "Auto-Draft Studio", path: "/auto-draft", icon: SidebarIcons.pencil(), aiAssisted: true },
     ]
@@ -569,6 +575,7 @@ const Breadcrumbs = () => {
   const items = [{ label: 'Dashboard', url: '/dashboard' }];
   const p = location.pathname;
   if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
+  else if (p === '/matters') items.push({ label: 'Matter Gateway', url: p });
   else if (p === '/contract-analyzer') items.push({ label: 'Contract Analyzer', url: p });
   else if (p === '/auto-draft') items.push({ label: 'Auto-Draft Studio', url: p });
   else if (p === '/conflict-engine') items.push({ label: 'Conflict Engine', url: p });
@@ -840,6 +847,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
           <Breadcrumbs />
 
+          <ContextCapsule />
+
           <button
             className="topbar-theme-toggle"
             onClick={toggleTheme}
@@ -879,6 +888,8 @@ function AppRouterContent() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
+        <Route path="/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterLauncher /></Layout>} />
+        <Route path="/home" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterLauncher /></Layout>} />
         <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
         <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AutoDraftWorkspace /></Layout>} />
         <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
