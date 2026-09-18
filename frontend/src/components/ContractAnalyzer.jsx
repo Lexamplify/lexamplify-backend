@@ -804,7 +804,19 @@ export default function ContractAnalyzer() {
         .serif { font-family: 'Fraunces', serif; font-style: italic; letter-spacing: -0.01em; }
         .mono { font-family: 'IBM Plex Mono', monospace; }
 
-        .topbar { display: flex; align-items: flex-start; gap: 20px; padding: 28px 36px 0; flex-wrap: wrap; }
+        .ca-topbar {
+          display: flex !important;
+          align-items: flex-start !important;
+          gap: 20px !important;
+          padding: 30px 36px 0 !important;
+          flex-wrap: wrap !important;
+          height: auto !important;
+          min-height: auto !important;
+          background: transparent !important;
+          border-bottom: none !important;
+          box-sizing: border-box !important;
+          width: 100% !important;
+        }
         .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
         .page-title { font-size: 28px; margin-top: 6px; margin-bottom: 0; color: var(--ink); }
         .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
@@ -813,11 +825,26 @@ export default function ContractAnalyzer() {
         .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px 5px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--paper-2); color: var(--ink-soft); border: 1px solid var(--rule); }
         .badge svg { flex-shrink: 0; }
 
-        .topbar-actions { display: flex; align-items: center; gap: 10px; padding-top: 2px; margin-left: auto; flex-wrap: wrap; }
+        .ca-topbar-actions {
+          display: flex !important;
+          align-items: center !important;
+          gap: 10px !important;
+          padding-top: 2px !important;
+          margin-left: auto !important;
+          flex-wrap: wrap !important;
+        }
         .icon-btn { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: border-color 0.15s, color 0.15s; }
         .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-        .content { padding: 26px 36px 70px; display: flex; flex-direction: column; gap: 22px; }
+        .ca-content {
+          padding: 26px 36px 70px !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 22px !important;
+          box-sizing: border-box !important;
+          width: 100% !important;
+          clear: both !important;
+        }
 
         /* ── Buttons ── */
         .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 9px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); white-space: nowrap; transition: all 0.15s; }
@@ -853,8 +880,8 @@ export default function ContractAnalyzer() {
 
         /* ── Upload State ── */
         .state-upload-wrap { display: flex; flex-direction: column; gap: 20px; max-width: 900px; margin: 10px auto 0; width: 100%; }
-        .upload-hero { text-align: center; padding: 10px 10px 4px; }
-        .upload-hero-title { font-size: 25px; color: var(--ink); }
+        .upload-hero { text-align: center; padding: 10px 10px 4px; background: transparent !important; margin: 0 auto; }
+        .upload-hero-title { font-size: 25px; color: var(--ink); margin-bottom: 0; }
         .upload-hero-sub { font-size: 13.5px; color: var(--ink-soft); max-width: 520px; margin: 10px auto 0; line-height: 1.6; }
         .upload-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: stretch; }
         .big-dropzone { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 34px 26px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; background: var(--paper); cursor: pointer; transition: border-color 0.15s; }
@@ -1037,18 +1064,21 @@ export default function ContractAnalyzer() {
         @media (max-width: 880px) {
           .upload-grid { grid-template-columns: 1fr; }
           .side-by-side { grid-template-columns: 1fr; }
-          .topbar { flex-direction: column; }
+          .ca-topbar { flex-direction: column !important; }
         }
         @media (max-width: 560px) {
-          .content, .topbar { padding-left: 18px; padding-right: 18px; }
+          .ca-content, .ca-topbar { padding-left: 18px !important; padding-right: 18px !important; }
           .rail-tabs { grid-template-columns: repeat(3, 1fr); }
         }
       `}</style>
 
       {/* ── TOPBAR MASTHEAD ── */}
-      <header className="topbar">
+      <header className="ca-topbar">
         <div style={{ flexGrow: 1, minWidth: '260px' }}>
-          <div className="eyebrow">Workspace · AI Document Intelligence · Contract Risk Analyzer</div>
+          <div className="eyebrow">
+            Workspace · AI Document Intelligence
+            <span style={{ display: 'none' }}> · Contract Risk Analyzer</span>
+          </div>
           <div className="title-row">
             <h1 className="page-title serif">Contract Analyzer</h1>
             <span className="badge">
@@ -1061,9 +1091,10 @@ export default function ContractAnalyzer() {
           </div>
         </div>
 
-        {viewState === 'analyzed' ? (
-          <div className="topbar-actions">
+        {viewState === 'analyzed' && (
+          <div className="ca-topbar-actions">
             <button
+              type="button"
               className="btn"
               onClick={() => {
                 setViewState('upload');
@@ -1074,20 +1105,13 @@ export default function ContractAnalyzer() {
               {ICONS.plus}
               New analysis
             </button>
-            <button className="btn" onClick={handleSaveToDrafts}>
+            <button type="button" className="btn" onClick={handleSaveToDrafts}>
               {ICONS.edit}
               Save to drafts
             </button>
-            <button className="btn btn-primary" onClick={handleExportReport}>
+            <button type="button" className="btn btn-primary" onClick={handleExportReport}>
               {ICONS.export}
               Export report
-            </button>
-          </div>
-        ) : (
-          <div className="topbar-actions">
-            <button className="btn" onClick={handleSaveToDrafts}>
-              {ICONS.edit}
-              Drafts
             </button>
           </div>
         )}
@@ -1105,7 +1129,7 @@ export default function ContractAnalyzer() {
         </div>
       )}
 
-      <div className="content">
+      <div className="ca-content">
 
         {/* ============================================================
              STATE 1 — UPLOAD
