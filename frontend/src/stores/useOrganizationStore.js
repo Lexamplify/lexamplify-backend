@@ -16,7 +16,7 @@ export const useOrganizationStore = create(
       teams: [
         {
           id: 'team_private',
-          name: 'My Private Space',
+          name: 'My Chambers',
           description: 'Personal confidential workspace for private drafts & advisory notes.',
           isPrivate: true,
           membersCount: 1,

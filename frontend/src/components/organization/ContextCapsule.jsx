@@ -163,15 +163,15 @@ export default function ContextCapsule() {
           </button>
         </div>
 
-        {/* Segment 3: [ • Org Dashboard ] */}
+        {/* Segment 3: [ • Firm Console ] */}
         <button
           type="button"
           className={`context-seg ${isOrgActive ? 'active' : ''}`}
           onClick={() => navigate('/workspace/org')}
-          title="Organization / Firm Executive Console"
+          title="Organization / Firm Console"
         >
           <span className="seg-dot" />
-          <span>Org Dashboard</span>
+          <span>Firm Console</span>
         </button>
       </nav>
 

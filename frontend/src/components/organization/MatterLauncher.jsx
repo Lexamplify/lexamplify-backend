@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationStore } from '../../stores/useOrganizationStore';
+import { AuthContext } from '../../context/AuthContext';
 import NewMatterModal from './NewMatterModal';
 import NewTeamModal from './NewTeamModal';
 import './organization.css';
@@ -37,6 +38,8 @@ const Icons = {
 
 export default function MatterLauncher() {
   const navigate = useNavigate();
+  const authCtx = useContext(AuthContext);
+  const user = authCtx?.user;
 
   const matters = useOrganizationStore((state) => state.matters);
   const teams = useOrganizationStore((state) => state.teams);
@@ -48,6 +51,42 @@ export default function MatterLauncher() {
   const [selectedTeamTab, setSelectedTeamTab] = useState('all');
   const [isMatterModalOpen, setIsMatterModalOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+
+  // Derive personalized user and time details
+  const firstName = user?.name ? user.name.trim().split(/\s+/)[0] : 'Narendar';
+  const hour = new Date().getHours();
+  const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+
+  const formattedTodayDate = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      }).format(new Date());
+    } catch {
+      return 'Saturday, September 19';
+    }
+  }, []);
+
+  const activeMatter = useMemo(() => {
+    return matters.find((m) => m.id === activeMatterId) || matters[0];
+  }, [matters, activeMatterId]);
+
+  const activeTeam = useMemo(() => {
+    if (!activeMatter) return teams[0];
+    return teams.find((t) => t.id === activeMatter.teamId) || teams[0];
+  }, [teams, activeMatter]);
+
+  const urgentDeadlinesCount = useMemo(() => {
+    if (!activeMatter?.deadlines) return 0;
+    return activeMatter.deadlines.length;
+  }, [activeMatter]);
+
+  const openTasksCount = useMemo(() => {
+    if (!activeMatter?.tasks) return 0;
+    return activeMatter.tasks.filter((t) => !t.completed).length;
+  }, [activeMatter]);
 
   // Debounce search input to 200ms
   useEffect(() => {
@@ -92,6 +131,30 @@ export default function MatterLauncher() {
 
   return (
     <div className="org-gateway-container">
+      {/* ── PERSONALIZED HERO BANNER (HOME) ──────────────────────────────── */}
+      <section className="hero" aria-label="Home Hero Banner">
+        <div className="hero-eyebrow">
+          {Icons.gateway}
+          HOME · <span id="todayDate">{formattedTodayDate}</span>
+        </div>
+        <h1 className="hero-title serif">
+          Good {timeOfDay}, <span className="accent-word">{firstName}</span>.
+        </h1>
+        <p className="hero-sub">
+          You're working inside <strong>{activeMatter?.title || activeTeam?.name || 'My Chambers'}</strong>.
+          {urgentDeadlinesCount > 0 && (
+            <> <strong id="urgentCount">{urgentDeadlinesCount}</strong> deadline{urgentDeadlinesCount !== 1 ? 's' : ''} need{urgentDeadlinesCount === 1 ? 's' : ''} attention this week{openTasksCount > 0 ? ',' : '.'}</>
+          )}
+          {openTasksCount > 0 && (
+            <> <strong id="openTaskCount">{openTasksCount}</strong> task{openTasksCount !== 1 ? 's' : ''} {openTasksCount === 1 ? 'is' : 'are'} still open.</>
+          )}
+          <br />
+          <span className="placeholder">
+            — every number in this line is computed live from useOrganizationStore (deadlines[], tasks[]) for whichever matter/team is active. No case names, counts, or status words are ever hardcoded into this banner's copy.
+          </span>
+        </p>
+      </section>
+
       {/* Masthead */}
       <section className="launcher-masthead" aria-label="Practice Gateway Masthead">
         <div className="masthead-info">

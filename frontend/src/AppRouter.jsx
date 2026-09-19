@@ -203,8 +203,8 @@ const NAVIGATION_GROUPS = [
   {
     title: "Workspace",
     items: [
+      { name: "Home", path: "/workspace/matters", icon: SidebarIcons.gateway() },
       { name: "Dashboard", path: "/dashboard", icon: SidebarIcons.dashboard() },
-      { name: "Matters", path: "/workspace/matters", icon: SidebarIcons.gateway() },
       { name: "Contract Analyzer", path: "/contract-analyzer", icon: SidebarIcons.contract(), aiAssisted: true },
       { name: "Auto-Draft Studio", path: "/auto-draft", icon: SidebarIcons.pencil(), aiAssisted: true },
     ]
@@ -582,10 +582,10 @@ const Breadcrumbs = () => {
   const items = [{ label: 'Dashboard', url: '/dashboard' }];
   const p = location.pathname;
   if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
-  else if (p === '/workspace/matters' || p === '/chamber' || p === '/matters') items.push({ label: 'Matters', url: '/workspace/matters' });
+  else if (p === '/workspace/matters' || p === '/chamber' || p === '/matters' || p === '/home') items.push({ label: 'Home', url: '/workspace/matters' });
   else if (p.startsWith('/workspace/matter/')) items.push({ label: 'Matter Workspace', url: p });
-  else if (p.startsWith('/workspace/team/')) items.push({ label: 'Team Hub', url: p });
-  else if (p === '/workspace/org') items.push({ label: 'Firm Executive Console', url: p });
+  else if (p.startsWith('/workspace/team/')) items.push({ label: 'Team Workspace', url: p });
+  else if (p === '/workspace/org') items.push({ label: 'Firm Console', url: p });
   else if (p === '/contract-analyzer') items.push({ label: 'Contract Analyzer', url: p });
   else if (p === '/auto-draft') items.push({ label: 'Auto-Draft Studio', url: p });
   else if (p === '/conflict-engine') items.push({ label: 'Conflict Engine', url: p });

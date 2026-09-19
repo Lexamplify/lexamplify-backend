@@ -1195,3 +1195,115 @@
   }
 }
 
+/* ==========================================================================
+   HOME GATEWAY v2 STYLES (MATCHING home-gateway-v2.html)
+   ========================================================================== */
+
+/* Personalized Hero Banner */
+.hero {
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  padding: 26px 30px;
+  background: linear-gradient(135deg, var(--paper-2), var(--paper));
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-eyebrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 30px;
+  margin: 8px 0 0;
+  line-height: 1.2;
+}
+
+.hero-title .accent-word {
+  color: var(--accent);
+}
+
+.hero-sub {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin-top: 10px;
+  max-width: 640px;
+  line-height: 1.55;
+}
+
+.hero-sub strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.hero-sub .placeholder {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* Current active card indicator */
+.matter-card.current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Quick Dock */
+.quick-dock {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qd-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-radius: 11px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.qd-item:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.qd-item svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Empty note for litigation details */
+.empty-note {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 10px 0;
+  line-height: 1.55;
+}
+
+/* Muted metric value (e.g. Hours logged not tracked yet) */
+.metric-value.muted-val {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--muted) !important;
+  font-style: italic !important;
+  font-family: 'IBM Plex Sans', sans-serif !important;
+}
+

@@ -609,7 +609,7 @@ export default function LoginPage() {
   const resetToken = searchParams.get('resetToken');
 
   // Public-route guard: an already-authenticated user landing here (e.g. via
-  // browser back after login) is bounced straight to /dashboard. Gated on
+  // browser back after login) is bounced straight to /workspace/matters. Gated on
   // !isInitializing so this never fires on the stale `isAuthenticated: false`
   // that's true for an instant while the /me cookie check is in flight — that
   // would flash the login form into a redirect on every fresh page load.
@@ -617,7 +617,7 @@ export default function LoginPage() {
   // reset link must still be able to complete that flow, not get redirected away.
   useEffect(() => {
     if (isAuthenticated && !isInitializing && !resetToken) {
-      navigate('/dashboard', { replace: true });
+      navigate('/workspace/matters', { replace: true });
     }
   }, [isAuthenticated, isInitializing, resetToken, navigate]);
 
@@ -779,7 +779,7 @@ export default function LoginPage() {
       // isAuthenticated stays stale (false) until the next /me poll, and hitting
       // back to /login would re-render the form instead of the guard redirecting.
       await refreshSession();
-      navigate('/dashboard', { replace: true });
+      navigate('/workspace/matters', { replace: true });
     } catch (err) {
       if (err.name === 'AbortError') {
         setError(WAKING_UP_MESSAGE);
@@ -832,7 +832,7 @@ export default function LoginPage() {
         );
       }
       await refreshSession();
-      navigate('/dashboard', { replace: true });
+      navigate('/workspace/matters', { replace: true });
     } catch (err) {
       if (err.name === 'AbortError') {
         setError(WAKING_UP_MESSAGE);

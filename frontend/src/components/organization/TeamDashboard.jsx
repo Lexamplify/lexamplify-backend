@@ -93,20 +93,23 @@ export default function TeamDashboard() {
   return (
     <div className="org-gateway-container">
       {/* ── TEAM HEADER ──────────────────────────────────────────────────── */}
-      <section className="org-team-header" aria-label="Team Header">
-        <div className="org-team-header-left">
-          <div className="org-team-avatar-box">
-            {teamInitial}
+      <section style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '8px' }} aria-label="Team Header">
+        <div>
+          <div className="eyebrow">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+            </svg>
+            TEAM WORKSPACE
           </div>
-          <div>
-            <h1 className="org-team-title">{team.name}</h1>
-            <p className="org-team-desc">{team.description}</p>
-          </div>
+          <h1 className="page-title serif" style={{ fontSize: '28px', margin: '6px 0 0' }}>{team.name}</h1>
+          <p className="page-sub" style={{ fontSize: '13px', color: 'var(--ink-soft)', marginTop: '7px' }}>
+            {team.description} · {team.membersCount || 1} member{team.membersCount !== 1 ? 's' : ''}
+          </p>
         </div>
 
         <button
           type="button"
-          className="btn-org btn-org-secondary"
+          className="btn-org btn-org-primary"
           onClick={() => alert(`Invite link generated for ${team.name}.`)}
         >
           {Icons.userPlus}
@@ -115,29 +118,29 @@ export default function TeamDashboard() {
       </section>
 
       {/* ── 4 METRICS TILES ──────────────────────────────────────────────── */}
-      <section className="org-metric-grid" aria-label="Team Metrics">
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Members</span>
-          <span className="org-metric-value">{team.membersCount || 1}</span>
-          <span className="org-metric-sub">Assigned practitioners</span>
+      <section className="metric-grid" aria-label="Team Metrics">
+        <div className="metric-tile">
+          <span className="metric-label">Members</span>
+          <span className="metric-value">{team.membersCount || 1}</span>
+          <span className="metric-sub">team.membersCount</span>
         </div>
 
-        <div className="org-metric-tile">
-          <span className="org-metric-label">AI Runs (30D)</span>
-          <span className="org-metric-value">{teamAiRuns}</span>
-          <span className="org-metric-sub">Scoped practice telemetry</span>
+        <div className="metric-tile">
+          <span className="metric-label">Open matters</span>
+          <span className="metric-value">{openCount}</span>
+          <span className="metric-sub">of {total} total</span>
         </div>
 
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Shared Files</span>
-          <span className="org-metric-value">{totalSharedFiles}</span>
-          <span className="org-metric-sub">Across {teamMatters.length} matter{teamMatters.length !== 1 ? 's' : ''}</span>
+        <div className="metric-tile">
+          <span className="metric-label">On hold</span>
+          <span className="metric-value">{holdCount}</span>
+          <span className="metric-sub">status === 'on_hold'</span>
         </div>
 
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Open Tasks</span>
-          <span className="org-metric-value">{totalOpenTasks}</span>
-          <span className="org-metric-sub">Action items pending</span>
+        <div className="metric-tile">
+          <span className="metric-value" style={{ fontSize: '13px' }}>{team.isPrivate ? 'Private' : 'Shared'}</span>
+          <span className="metric-label" style={{ marginTop: '2px' }}>Visibility</span>
+          <span className="metric-sub">{team.isPrivate ? 'Confidential' : 'Open to org'}</span>
         </div>
       </section>
 

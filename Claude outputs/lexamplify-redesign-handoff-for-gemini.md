@@ -407,6 +407,19 @@ Once those seven files are deleted, it's also worth deleting the now-empty `fron
 
 ---
 
+## 11. Latest round — Home Gateway v2 (IA promotion + renaming + full dynamic-data pass)
+
+Triggered by JN recording a walkthrough of Lexlegis.ai's own "Home" screen and asking for three things: (1) promote the matter-chooser from "one nav item among many" to the app's actual landing screen, the same role Lexlegis's Home plays; (2) redesign and rename the Matter/Team/Org screens — JN doesn't like their current UI or names; (3) make everything on the matter screen dynamic, nothing hardcoded.
+
+Delivered as `home-gateway-v2.html` / `home-gateway-v2-brief.md` — full detail in that brief; summary here for continuity:
+
+- **IA change:** "Matters" nav item renamed to "Home," moved above "Dashboard" in the sidebar (was below it), and made the post-login default route (was `/dashboard`). A personalized hero greeting banner (name, date, a live deadline/task-count sentence — no weather widget, deliberately not copied from the Lexlegis reference since it's decorative and not legal-work-relevant) sits above the existing matter-chooser grid, which is otherwise unchanged from `workspace-hierarchy-v1.html`.
+- **Renaming, with reasoning documented in the brief §3:** default seed team `"My Private Space"` → `"My Chambers"` (a real data change in `useOrganizationStore.js`'s seed, not just a label — "My Private Space" turned out to be Lexlegis's own trial-account default copy, coincidentally duplicated verbatim in LexAmplify's seed data); `"Org Dashboard"` → `"Firm Console"` everywhere it's a nav/breadcrumb/capsule label, keeping "Executive Console" as the existing small eyebrow; the informal "My Matter"/"My Team" screens given neutral `MATTER WORKSPACE` / `TEAM WORKSPACE` eyebrow labels while always showing the real record's own title/name as the H1 — never a generic screen name.
+- **Full dynamic-data contract for the Matter Workspace screen** (brief §4): every metric tile, list panel, and the new hero banner's status sentence mapped to its exact `useOrganizationStore` field, including the nullable Chamber-migration fields (`counsel`, `forum`, `ecourtsSync`, `integrity`, `telemetry`) added in the previous round and their required empty-state copy while null. Zero-count clauses in the hero sentence must drop out rather than render "0 …", to avoid a false all-clear reading.
+- **Not yet applied to the live repo** — this round is mockup + brief only, same handoff pattern as every prior round; the IA/routing change (§2 of that brief) and the seed-name data change (§5) still need to be made in `AppRouter.jsx` and `stores/useOrganizationStore.js` respectively.
+
+---
+
 ## 10. Files produced in this conversation (all delivered, all in the same location)
 
 - `case-vault-v1.html` + `case-vault-v1-brief.md`
@@ -415,6 +428,7 @@ Once those seven files are deleted, it's also worth deleting the now-empty `fron
 - `dashboard-calendar-live-verification-report.md` (diagnostic, not a redesign brief)
 - `contract-analyzer-v1.html` + `contract-analyzer-v1-brief.md`
 - `workspace-hierarchy-v1.html` + `workspace-hierarchy-v1-brief.md`
+- `home-gateway-v2.html` + `home-gateway-v2-brief.md`
 - This document
 
 All mockups share the exact same CSS token block, sidebar markup, typography rules, icon spec, and vanilla-JS render-function pattern (`render*()` functions driven by JS arrays, `escapeHtml()` helper, `addEventListener`-based interactivity, no framework) — any new feature redesigned going forward should follow the same pattern for visual and structural consistency with everything built so far.

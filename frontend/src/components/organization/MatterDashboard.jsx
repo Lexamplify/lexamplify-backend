@@ -5,27 +5,29 @@ import './organization.css';
 
 // Modern, high-craft vector icons (zero stock emojis)
 const Icons = {
-  spark: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
-    </svg>
-  ),
-  vault: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-      <circle cx="12" cy="16" r="1.5" />
+  briefcase: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
     </svg>
   ),
   contract: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" />
+    </svg>
+  ),
+  draft: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
     </svg>
   ),
   courtroom: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m3 21 18 0" /><path d="M5 21V7l7-4 7 4v14" /><path d="M9 10v6" /><path d="M15 10v6" />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M8 2v4M16 2v4" />
+    </svg>
+  ),
+  shield: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   ),
   plus: (
@@ -131,106 +133,107 @@ export default function MatterDashboard() {
 
   return (
     <div className="org-gateway-container">
-      {/* ── BANNER ───────────────────────────────────────────────────────── */}
-      <section className="org-workspace-banner" aria-label="Workspace Greeting Banner">
-        <div className="org-banner-greeting">
-          Good morning, naren. You're working inside <strong>{team?.name || 'My Private Space'}</strong>.
+      {/* ── MATTER WORKSPACE HEADER ───────────────────────────────────────── */}
+      <section style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '8px' }} aria-label="Matter Header">
+        <div>
+          <div className="eyebrow">
+            {Icons.briefcase}
+            MATTER WORKSPACE
+          </div>
+          <h1 className="page-title serif" style={{ fontSize: '28px', margin: '6px 0 0' }}>{matter.title}</h1>
+          <p className="page-sub" style={{ fontSize: '13px', color: 'var(--ink-soft)', marginTop: '7px' }}>
+            {matter.status ? matter.status.charAt(0).toUpperCase() + matter.status.slice(1) : 'Open'} · {team?.name || 'My Chambers'} · Lead counsel {matter.leadCounsel || 'Narendar V'} · Opened {matter.openedAt || 'Sep 13, 2026'}
+          </p>
         </div>
 
-        <div className="org-active-chip-row">
-          <div className="org-active-chip">
-            <span style={{ color: 'var(--muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Active Matter:
-            </span>
-            <strong>{matter.title}</strong>
-            <span className="org-chip-status">
-              {matter.status ? matter.status.charAt(0).toUpperCase() + matter.status.slice(1) : 'Open'}
-            </span>
-          </div>
-
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
             type="button"
             className="btn-org btn-org-secondary"
             onClick={() => navigate(`/workspace/team/${team?.id}`)}
-            style={{ padding: '6px 14px', fontSize: '12px', gap: '6px' }}
           >
-            Open Team Hub {Icons.arrowRight}
+            Open Team Hub
+          </button>
+          <button
+            type="button"
+            className="btn-org btn-org-primary"
+            onClick={() => navigate('/workspace/matters')}
+          >
+            Gateway Launchpad
           </button>
         </div>
       </section>
 
-      {/* ── 5 DYNAMIC METRICS ────────────────────────────────────────────── */}
-      <section className="org-metric-grid" aria-label="Matter Metrics">
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Documents</span>
-          <span className="org-metric-value">{docCount}</span>
-          <span className="org-metric-sub">Vault dossiers</span>
-        </div>
-
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Open Tasks</span>
-          <span className="org-metric-value">{openTasksCount}</span>
-          <span className="org-metric-sub">Action items pending</span>
-        </div>
-
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Deadlines</span>
-          <span className="org-metric-value">{deadlinesCount}</span>
-          <span className="org-metric-sub">Limitation dates</span>
-        </div>
-
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Hours Logged</span>
-          <span className="org-metric-value" style={{ fontSize: '22px' }}>{hoursLoggedFormatted}</span>
-          <span className="org-metric-sub">Recorded time</span>
-        </div>
-
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Team</span>
-          <span className="org-metric-value">1 member</span>
-          <span className="org-metric-sub">Assigned counsel</span>
-        </div>
-      </section>
-
-      {/* ── MODULE QUICK JUMP BAR ────────────────────────────────────────── */}
-      <section className="org-quick-jump-bar" aria-label="Module Quick Jump Bar">
-        <span className="org-jump-label">Direct Modules:</span>
-
-        <Link
-          to={`/contract-analyzer?tab=ask-ai&matterId=${matter.id}`}
-          className="org-jump-btn"
-          title="Open AI Legal Assistant for this matter"
-        >
-          {Icons.spark}
-          <span>Ask AI</span>
-        </Link>
-
-        <Link
-          to={`/vault?matterId=${matter.id}`}
-          className="org-jump-btn"
-          title="Open Case Vault for this matter"
-        >
-          {Icons.vault}
-          <span>Case Vault</span>
-        </Link>
-
-        <Link
-          to={`/contract-analyzer?matterId=${matter.id}`}
-          className="org-jump-btn"
-          title="Scan and analyze contracts for this matter"
+      {/* ── MODULE QUICK DOCK ────────────────────────────────────────────── */}
+      <section className="quick-dock" aria-label="Module Quick Dock">
+        <button
+          type="button"
+          className="qd-item"
+          onClick={() => navigate(`/contract-analyzer?matterId=${matter.id}`)}
+          title="Contract Analyzer for this matter"
         >
           {Icons.contract}
           <span>Contract Analyzer</span>
-        </Link>
+        </button>
 
-        <Link
-          to={`/war-room?matterId=${matter.id}`}
-          className="org-jump-btn"
-          title="Open Virtual Courtroom simulation for this matter"
+        <button
+          type="button"
+          className="qd-item"
+          onClick={() => navigate(`/auto-draft?matterId=${matter.id}`)}
+          title="Auto-Draft Studio for this matter"
+        >
+          {Icons.draft}
+          <span>Auto-Draft Studio</span>
+        </button>
+
+        <button
+          type="button"
+          className="qd-item"
+          onClick={() => navigate(`/war-room?matterId=${matter.id}`)}
+          title="Virtual Courtroom simulation for this matter"
         >
           {Icons.courtroom}
           <span>Virtual Courtroom</span>
-        </Link>
+        </button>
+
+        <button
+          type="button"
+          className="qd-item"
+          onClick={() => navigate(`/conflict-engine?matterId=${matter.id}`)}
+          title="Conflict Engine for this matter"
+        >
+          {Icons.shield}
+          <span>Conflict Engine</span>
+        </button>
+      </section>
+
+      {/* ── 4 DYNAMIC METRICS ─────────────────────────────────────────────── */}
+      <section className="metric-grid" aria-label="Matter Metrics">
+        <div className="metric-tile">
+          <span className="metric-label">Documents</span>
+          <span className="metric-value">{docCount}</span>
+          <span className="metric-sub">in Case Vault</span>
+        </div>
+
+        <div className="metric-tile">
+          <span className="metric-label">Open tasks</span>
+          <span className="metric-value">{openTasksCount}</span>
+          <span className="metric-sub">of {matter.tasks ? matter.tasks.length : 0} total</span>
+        </div>
+
+        <div className="metric-tile">
+          <span className="metric-label">Deadlines</span>
+          <span className="metric-value">{deadlinesCount}</span>
+          <span className="metric-sub">
+            next: {matter.deadlines && matter.deadlines.length > 0 ? (matter.deadlines[0].date || matter.deadlines[0].title) : 'none'}
+          </span>
+        </div>
+
+        <div className="metric-tile">
+          <span className="metric-label">Hours logged</span>
+          <span className="metric-value muted-val">Not tracked yet</span>
+          <span className="metric-sub">no time-entry feature exists</span>
+        </div>
       </section>
 
       {/* ── TWO-COLUMN COLLABORATIVE GRID ────────────────────────────────── */}
@@ -328,6 +331,17 @@ export default function MatterDashboard() {
                 {Icons.plus} Add task
               </button>
             </form>
+          </div>
+
+          {/* Litigation Detail Widget */}
+          <div className="card">
+            <div className="card-head">
+              <span className="card-title">Litigation detail</span>
+              <span className="org-role-chip" style={{ fontSize: '10.5px' }}>eCourts</span>
+            </div>
+            <div className="empty-note">
+              Forum, eCourts sync, and conflict-integrity data aren't available for this matter yet — these fields exist on the record (<code className="inline">forum</code>, <code className="inline">ecourtsSync</code>, <code className="inline">integrity</code>) but stay <code className="inline">null</code>, and the UI, until a real matter has them. Never fill this with placeholder legal detail.
+            </div>
           </div>
 
           {/* Recent Activity Widget */}

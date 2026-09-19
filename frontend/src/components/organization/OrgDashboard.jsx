@@ -48,51 +48,76 @@ export default function OrgDashboard() {
   return (
     <div className="org-gateway-container">
       {/* ── MASTHEAD ─────────────────────────────────────────────────────── */}
-      <section className="launcher-masthead" aria-label="Firm Console Header">
-        <div className="masthead-info">
+      <section style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '8px' }} aria-label="Firm Console Header">
+        <div>
           <div className="eyebrow">
             {Icons.briefcase}
-            Executive Console
+            EXECUTIVE CONSOLE
           </div>
-          <h1 className="masthead-title">{organization?.name || 'LexAmplify'}</h1>
-          <p className="masthead-desc">
-            Enterprise overview of practice groups, matter pipeline, pooled AI consumption, and compliance telemetry.
+          <h1 className="page-title serif" style={{ fontSize: '28px', margin: '6px 0 0' }}>Firm Console</h1>
+          <p className="page-sub" style={{ fontSize: '13px', color: 'var(--ink-soft)', marginTop: '7px' }}>
+            Enterprise overview of practice groups, matter pipeline, pooled AI consumption, and compliance telemetry — <span>{organization?.name || 'LexAmplify'}</span> is shown here too, not a second hardcoded title.
           </p>
         </div>
 
-        <div className="action-group">
-          <Link to="/workspace/matters" className="btn-org btn-org-primary">
-            Open Gateway Launchpad
-          </Link>
-        </div>
+        <button
+          type="button"
+          className="btn-org btn-org-primary"
+          onClick={() => navigate('/workspace/matters')}
+        >
+          Open gateway launchpad
+        </button>
       </section>
 
       {/* ── 4 FIRM OVERVIEW METRICS ──────────────────────────────────────── */}
-      <section className="org-metric-grid" aria-label="Firm Overview Metrics">
-        <div className="org-metric-tile">
-          <span className="org-metric-label">People</span>
-          <span className="org-metric-value">{totalPeople}</span>
-          <span className="org-metric-sub">Total members across firm</span>
+      <section className="metric-grid" aria-label="Firm Overview Metrics">
+        <div className="metric-tile">
+          <span className="metric-label">People</span>
+          <span className="metric-value">{totalPeople}</span>
+          <span className="metric-sub">total across firm</span>
         </div>
 
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Teams</span>
-          <span className="org-metric-value">{teams.length}</span>
-          <span className="org-metric-sub">Active practice groups</span>
+        <div className="metric-tile">
+          <span className="metric-label">Teams</span>
+          <span className="metric-value">{teams.length}</span>
+          <span className="metric-sub">active practice groups</span>
         </div>
 
-        <div className="org-metric-tile">
-          <span className="org-metric-label">Open Matters</span>
-          <span className="org-metric-value">{openMattersCount}</span>
-          <span className="org-metric-sub">of {matters.length} total registered</span>
+        <div className="metric-tile">
+          <span className="metric-label">Open matters</span>
+          <span className="metric-value">{openMattersCount}</span>
+          <span className="metric-sub">of {matters.length} total registered</span>
         </div>
 
-        <div className="org-metric-tile">
-          <span className="org-metric-label">AI Runs (30D)</span>
-          <span className="org-metric-value">{organization?.totalAiRuns30d || 142}</span>
-          <span className="org-metric-sub">Firm pooled LLM executions</span>
+        <div className="metric-tile">
+          <span className="metric-label">AI runs (30d)</span>
+          <span className="metric-value">{organization?.totalAiRuns30d || 142}</span>
+          <span className="metric-sub">firm-pooled LLM executions</span>
         </div>
       </section>
+
+      {/* ── PRACTICE GROUPS SUMMARY ─────────────────────────────────────── */}
+      <div className="card" style={{ marginTop: '16px', marginBottom: '8px' }}>
+        <div className="card-head" style={{ marginBottom: '12px' }}>
+          <span className="card-title" style={{ fontWeight: 600, fontSize: '15px' }}>Practice groups</span>
+        </div>
+        {teams.map((t) => {
+          const teamMatters = matters.filter((m) => m.teamId === t.id);
+          return (
+            <div
+              key={t.id}
+              className="list-row"
+              style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--rule)' }}
+              onClick={() => navigate(`/workspace/team/${t.id}`)}
+            >
+              <span style={{ fontWeight: 500 }}>{t.name}</span>
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: 'var(--muted)', fontSize: '12px' }}>
+                {t.membersCount || 1} member{t.membersCount !== 1 ? 's' : ''} · {teamMatters.length} matter{teamMatters.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          );
+        })}
+      </div>
 
       {/* ── TEAMS GRID ───────────────────────────────────────────────────── */}
       <section aria-label="Firm Practice Groups">

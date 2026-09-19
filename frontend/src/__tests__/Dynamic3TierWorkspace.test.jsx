@@ -29,7 +29,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
       teams: [
         {
           id: 'team_private',
-          name: 'My Private Space',
+          name: 'My Chambers',
           description: 'Personal confidential workspace for private drafts & advisory notes.',
           isPrivate: true,
           membersCount: 1,
@@ -181,7 +181,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
       );
 
       expect(screen.getByText('LexAmplify Chamber Console')).toBeInTheDocument();
-      expect(screen.getByText('law')).toBeInTheDocument();
+      expect(screen.getAllByText('law')[0]).toBeInTheDocument();
       expect(screen.getByText('Corporate litigation')).toBeInTheDocument();
       expect(screen.getByText(/Active Workspaces/i)).toBeInTheDocument();
     });
@@ -228,7 +228,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
 
   // ── 4. CONTEXT CAPSULE 3-SEGMENT DOCK & SWITCHER ───────────────────────────
   describe('ContextCapsule 3-Segment Dock', () => {
-    it('renders 3 segments: [ • matter.title ], [ • team.name ], [ • Org Dashboard ]', () => {
+    it('renders 3 segments: [ • matter.title ], [ • team.name ], [ • Firm Console ]', () => {
       render(
         <MemoryRouter initialEntries={['/workspace/matters']}>
           <ContextCapsule />
@@ -236,8 +236,8 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
       );
 
       expect(screen.getByText('My 1st Matter')).toBeInTheDocument();
-      expect(screen.getByText('My Private Space')).toBeInTheDocument();
-      expect(screen.getByText('Org Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('My Chambers')).toBeInTheDocument();
+      expect(screen.getByText('Firm Console')).toBeInTheDocument();
     });
 
     it('toggles matter popover on caret click and switches active matter', async () => {
@@ -288,9 +288,9 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
     });
   });
 
-  // ── 5. MATTER DASHBOARD: 5 DYNAMIC METRICS, QUICK JUMP & ZERO EMOJIS ────────
+  // ── 5. MATTER DASHBOARD: 4 DYNAMIC METRICS, QUICK DOCK & ZERO EMOJIS ────────
   describe('MatterDashboard Tier 3 Workspace', () => {
-    it('renders 5 dynamic metrics, greeting banner, and vector SVG quick jump buttons', () => {
+    it('renders 4 dynamic metrics, workspace header, Quick Dock, and Litigation detail card', () => {
       render(
         <MemoryRouter initialEntries={['/workspace/matter/mat_default']}>
           <Routes>
@@ -299,27 +299,27 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
         </MemoryRouter>
       );
 
-      // Greeting banner & active chip
-      expect(screen.getByText(/Good morning, naren/i)).toBeInTheDocument();
-      expect(screen.getByText(/My 1st Matter/i)).toBeInTheDocument();
-      expect(screen.getByText('Open', { selector: '.org-chip-status' })).toBeInTheDocument();
+      // Workspace header & dynamic title
+      expect(screen.getByText(/MATTER WORKSPACE/i)).toBeInTheDocument();
+      expect(screen.getByText('My 1st Matter', { selector: '.page-title' })).toBeInTheDocument();
+      expect(screen.getByText(/Open · My Chambers/i)).toBeInTheDocument();
 
-      // 5 Dynamic Metrics
+      // 4 Dynamic Metrics (Hours logged rendered as muted 'Not tracked yet')
       expect(screen.getByText('Documents')).toBeInTheDocument();
-      expect(screen.getByText('Open Tasks')).toBeInTheDocument();
+      expect(screen.getByText('Open tasks')).toBeInTheDocument();
       expect(screen.getByText('Deadlines')).toBeInTheDocument();
-      expect(screen.getByText('Hours Logged')).toBeInTheDocument();
-      expect(screen.getByText('Team')).toBeInTheDocument();
+      expect(screen.getByText('Hours logged')).toBeInTheDocument();
+      expect(screen.getByText('Not tracked yet')).toBeInTheDocument();
 
-      // Verify initial metric values: 1 open task, 1 deadline, 4.5h billable
-      expect(screen.getByText(/1 Pending/i)).toBeInTheDocument();
-      expect(screen.getByText('4.5h billable')).toBeInTheDocument();
+      // Quick Dock (Contract Analyzer, Auto-Draft Studio, Virtual Courtroom, Conflict Engine)
+      expect(screen.getByRole('button', { name: /Contract Analyzer/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Auto-Draft Studio/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Virtual Courtroom/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Conflict Engine/i })).toBeInTheDocument();
 
-      // Quick Jump Bar has no stock emojis (Ask AI, Case Vault, Contract Analyzer, Virtual Courtroom)
-      expect(screen.getByRole('link', { name: /Ask AI/i })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Case Vault/i })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Contract Analyzer/i })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Virtual Courtroom/i })).toBeInTheDocument();
+      // Litigation detail card with null-field fallback copy
+      expect(screen.getByText('Litigation detail')).toBeInTheDocument();
+      expect(screen.getByText(/Forum, eCourts sync, and conflict-integrity data aren't available for this matter yet/i)).toBeInTheDocument();
     });
 
     it('interactively adds a task and increments the open task metric immediately', async () => {
