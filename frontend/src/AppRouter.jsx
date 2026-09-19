@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { fetchTrackedCases, fetchDocuments } from './services/api';
@@ -26,6 +26,8 @@ import FormTemplateLibrary from './components/FormTemplateLibrary';
 import TEMPLATES from './data/legalTemplates.js';
 import MatterLauncher from './components/organization/MatterLauncher';
 import ContextCapsule from './components/organization/ContextCapsule';
+import ChamberRoster from './components/chamber/ChamberRoster';
+import ChamberSwitcher from './components/chamber/ChamberSwitcher';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -200,7 +202,7 @@ const NAVIGATION_GROUPS = [
     title: "Workspace",
     items: [
       { name: "Dashboard", path: "/dashboard", icon: SidebarIcons.dashboard() },
-      { name: "Matter Gateway", path: "/matters", icon: SidebarIcons.gateway() },
+      { name: "Chamber Roster", path: "/chamber", icon: SidebarIcons.gateway() },
       { name: "Contract Analyzer", path: "/contract-analyzer", icon: SidebarIcons.contract(), aiAssisted: true },
       { name: "Auto-Draft Studio", path: "/auto-draft", icon: SidebarIcons.pencil(), aiAssisted: true },
     ]
@@ -575,7 +577,7 @@ const Breadcrumbs = () => {
   const items = [{ label: 'Dashboard', url: '/dashboard' }];
   const p = location.pathname;
   if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
-  else if (p === '/matters') items.push({ label: 'Matter Gateway', url: p });
+  else if (p === '/chamber' || p === '/matters') items.push({ label: 'Chamber Roster', url: '/chamber' });
   else if (p === '/contract-analyzer') items.push({ label: 'Contract Analyzer', url: p });
   else if (p === '/auto-draft') items.push({ label: 'Auto-Draft Studio', url: p });
   else if (p === '/conflict-engine') items.push({ label: 'Conflict Engine', url: p });
@@ -707,8 +709,9 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
         <aside className="sb-sidebar">
           <div className="sb-masthead">
-            <div className="sb-firm-name">LexAmplify</div>
-            <div className="sb-product-credit">ENTERPRISE CONSOLE</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <ChamberSwitcher variant="sidebar" isCollapsed={isIconOnly} />
+            </div>
             {!focusMode && (
               <button className="sb-collapse-toggle" onClick={() => setIsCollapsed(true)} aria-label="Collapse sidebar" title="Collapse sidebar">‹</button>
             )}
@@ -847,6 +850,10 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
           <Breadcrumbs />
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ChamberSwitcher variant="topbar" />
+          </div>
+
           <ContextCapsule />
 
           <button
@@ -888,8 +895,9 @@ function AppRouterContent() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
-        <Route path="/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterLauncher /></Layout>} />
-        <Route path="/home" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterLauncher /></Layout>} />
+        <Route path="/chamber" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ChamberRoster /></Layout>} />
+        <Route path="/matters" element={<Navigate to="/chamber" replace />} />
+        <Route path="/home" element={<Navigate to="/chamber" replace />} />
         <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
         <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AutoDraftWorkspace /></Layout>} />
         <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
