@@ -6,7 +6,7 @@ export const useOrganizationStore = create(
     (set, get) => ({
       organization: {
         id: 'org_lexamplify_main',
-        name: 'LexAmplify Chamber Console',
+        name: 'LexAmplify',
         plan: 'Enterprise',
         totalAiRuns30d: 142,
       },
@@ -57,6 +57,14 @@ export const useOrganizationStore = create(
           activity: [
             { id: 'a1', text: 'Created initial advisory brief', timestamp: 'Sep 13, 2026' },
           ],
+          // ── Extended litigation detail (migrated from the retired Chamber
+          // system, see AppRouter.jsx cleanup). Optional — null until a real
+          // matter has this data. Never seed a fake value into these. ──────
+          counsel: null, // { leadPartner, advocateOnRecord, leadAssociate }
+          forum: null, // { name, benchOrVenue, stage, nextDate, urgency }
+          ecourtsSync: null, // { cnrNumber, isListedToday, syncedAt }
+          integrity: null, // { conflictStatus, conflictDetail, wallEnforced }
+          telemetry: null, // { vaultDocuments, flaggedRisks, simulationsRun }
         },
       ],
       activities: [
@@ -118,6 +126,11 @@ export const useOrganizationStore = create(
           activity: [
             { id: `act_${Date.now()}_${uniqueSuffix}`, text: `Opened matter "${(title || '').trim()}"`, timestamp: 'Just now' },
           ],
+          counsel: null,
+          forum: null,
+          ecourtsSync: null,
+          integrity: null,
+          telemetry: null,
         };
         set((state) => ({
           matters: [newMatter, ...state.matters],

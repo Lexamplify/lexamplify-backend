@@ -54,7 +54,7 @@ export default function OrgDashboard() {
             {Icons.briefcase}
             Executive Console
           </div>
-          <h1 className="masthead-title">{organization?.name || 'LexAmplify Chamber Console'}</h1>
+          <h1 className="masthead-title">{organization?.name || 'LexAmplify'}</h1>
           <p className="masthead-desc">
             Enterprise overview of practice groups, matter pipeline, pooled AI consumption, and compliance telemetry.
           </p>

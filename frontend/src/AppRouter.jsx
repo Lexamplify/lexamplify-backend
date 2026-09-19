@@ -29,8 +29,7 @@ import MatterDashboard from './components/organization/MatterDashboard';
 import TeamDashboard from './components/organization/TeamDashboard';
 import OrgDashboard from './components/organization/OrgDashboard';
 import ContextCapsule from './components/organization/ContextCapsule';
-import ChamberRoster from './components/chamber/ChamberRoster';
-import ChamberSwitcher from './components/chamber/ChamberSwitcher';
+import { useOrganizationStore } from './stores/useOrganizationStore';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -292,6 +291,9 @@ const SIDEBAR_STYLES = `
                border-color .2s ease;
   }
   .sb-masthead{ padding:26px 24px 16px; border-bottom:1px solid var(--sb-rule); position:relative; }
+  .sb-firm-block{ display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+  .sb-firm-name{ font-family:var(--sb-font-serif); font-style:italic; font-size:17px; font-weight:600; color:var(--sb-ink); line-height:1.15; letter-spacing:-0.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sb-firm-credit{ font-family:var(--sb-font-mono); font-size:9.5px; letter-spacing:.14em; color:var(--sb-muted); white-space:nowrap; }
   .sb-firm-name{ font-family:var(--sb-font-serif); font-style:italic; font-weight:600; font-size:20px; color:var(--sb-ink); line-height:1.15; }
   .sb-product-credit{ font-family:var(--sb-font-mono); font-size:10px; letter-spacing:.06em; color:var(--sb-muted); margin-top:5px; }
   .sb-collapse-toggle{ position:absolute; top:26px; right:22px; background:none; border:1px solid var(--sb-rule); width:22px; height:22px; border-radius:4px; color:var(--sb-muted); font-family:var(--sb-font-mono); font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
@@ -636,6 +638,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  const orgName = useOrganizationStore((state) => state.organization?.name);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem('lexai_sidebar_collapsed') === '1');
   useEffect(() => {
@@ -715,9 +718,12 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
         <aside className="sb-sidebar">
           <div className="sb-masthead">
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <ChamberSwitcher variant="sidebar" isCollapsed={isIconOnly} />
-            </div>
+            {!isIconOnly && (
+              <div className="sb-firm-block">
+                <div className="sb-firm-name">{orgName || 'LexAmplify'}</div>
+                <div className="sb-firm-credit">LEXAMPLIFY</div>
+              </div>
+            )}
             {!focusMode && (
               <button className="sb-collapse-toggle" onClick={() => setIsCollapsed(true)} aria-label="Collapse sidebar" title="Collapse sidebar">‹</button>
             )}
@@ -855,10 +861,6 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           </button>
 
           <Breadcrumbs />
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ChamberSwitcher variant="topbar" />
-          </div>
 
           <ContextCapsule />
 
