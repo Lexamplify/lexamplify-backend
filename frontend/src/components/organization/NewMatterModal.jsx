@@ -1,27 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useOrgStore } from '../../store/useOrgStore';
+import { useNavigate, useInRouterContext } from 'react-router-dom';
+import { useOrganizationStore } from '../../stores/useOrganizationStore';
 import './organization.css';
 
 export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatterCreated }) {
-  const teams = useOrgStore((state) => state.teams);
-  const createMatter = useOrgStore((state) => state.createMatter);
+  const inRouter = useInRouterContext();
+  const navigate = inRouter ? useNavigate() : () => {};
+  const teams = useOrganizationStore((state) => state.teams);
+  const activeTeamId = useOrganizationStore((state) => state.activeTeamId);
+  const createMatter = useOrganizationStore((state) => state.createMatter);
 
   const [title, setTitle] = useState('');
-  const [teamId, setTeamId] = useState(teams[0]?.id || 'team_dispute');
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [leadCounsel, setLeadCounsel] = useState('Narendar V');
+  const [teamId, setTeamId] = useState(activeTeamId || teams[0]?.id || 'team_private');
   const [error, setError] = useState('');
 
   const inputRef = useRef(null);
   const modalBoxRef = useRef(null);
 
-  // Sync default teamId when teams list changes
+  // Sync teamId when teams or activeTeamId change
   useEffect(() => {
     if (teams.length > 0 && !teams.some((t) => t.id === teamId)) {
-      setTeamId(teams[0].id);
+      setTeamId(activeTeamId || teams[0].id);
     }
-  }, [teams, teamId]);
+  }, [teams, activeTeamId, teamId]);
 
   // Focus on mount and handle Escape key
   useEffect(() => {
@@ -60,18 +62,17 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
       return;
     }
 
-    const newMatter = createMatter({
-      title: trimmedTitle,
-      teamId,
-      isPrivate: isPrivate || teamId === 'team_private',
-      leadCounsel: leadCounsel.trim() || 'Narendar V',
-    });
+    const newMatter = createMatter(trimmedTitle, teamId);
 
     if (onMatterCreated) {
       onMatterCreated(newMatter);
     }
 
     onClose();
+
+    if (newMatter && newMatter.id) {
+      navigate(`/workspace/matter/${newMatter.id}`);
+    }
   };
 
   const handleBackdropClick = (e) => {
@@ -82,7 +83,7 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
 
   const modalContent = (
     <div
-      className="modal-overlay"
+      className="modal-overlay active"
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
@@ -128,7 +129,7 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
                 ref={inputRef}
                 type="text"
                 className="form-input"
-                placeholder="e.g. Acme Corp v. Union of India"
+                placeholder="e.g. Acme Corp v. Verma or A v. B"
                 value={title}
                 onChange={(e) => {
                   setTitle(e.target.value);
@@ -141,7 +142,7 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
             <div className="form-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <label className="form-label" htmlFor="matterTeamSelect">
-                  Assigned Practice Group (Team)
+                  Assigned Team
                 </label>
                 {onOpenNewTeam && (
                   <button
@@ -174,38 +175,8 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
                 ))}
               </select>
               <span className="form-hint">
-                Files this matter into the selected team workspace and enforces ethical walls.
+                Files the matter into this team and selects it for you. Add client and fees any time from the matter.
               </span>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="matterLeadCounselInput">
-                Lead Counsel
-              </label>
-              <input
-                id="matterLeadCounselInput"
-                type="text"
-                className="form-input"
-                placeholder="e.g. Narendar V"
-                value={leadCounsel}
-                onChange={(e) => setLeadCounsel(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
-              <input
-                id="matterPrivateCheckbox"
-                type="checkbox"
-                checked={isPrivate}
-                onChange={(e) => setIsPrivate(e.target.checked)}
-                style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-              />
-              <label
-                htmlFor="matterPrivateCheckbox"
-                style={{ fontSize: '12px', color: 'var(--ink-soft)', cursor: 'pointer', userSelect: 'none' }}
-              >
-                Mark as Restricted (Private Space only)
-              </label>
             </div>
           </div>
 
@@ -220,6 +191,7 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
             <button
               type="submit"
               className="btn-org btn-org-primary"
+              style={{ background: 'var(--accent)', color: '#ffffff' }}
             >
               Create matter
             </button>

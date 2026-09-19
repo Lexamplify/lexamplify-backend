@@ -635,7 +635,552 @@
   background: var(--paper-2);
 }
 
+/* ── 3-TIER OPERATING SYSTEM WORKSPACE STYLES ────────────────────────── */
+
+/* Workspace Banner */
+.org-workspace-banner {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.org-banner-greeting {
+  font-size: 15px;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.org-banner-greeting strong {
+  color: var(--ink);
+}
+
+.org-active-chip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.org-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.org-chip-status {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--accent);
+  border: 1px solid var(--rule);
+}
+
+/* 5 Dynamic Metrics Grid / 4 Metrics Tiles */
+.org-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.org-metric-tile {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.org-metric-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+
+.org-metric-value {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.org-metric-sub {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* Module Quick Jump Bar */
+.org-quick-jump-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+
+.org-jump-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.6px;
+}
+
+.org-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.org-jump-btn:hover {
+  background: var(--paper);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Two-Column Collaborative Grid */
+.org-collaborative-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+}
+
+.org-grid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.org-widget-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.org-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.org-widget-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Deadlines & Tasks Lists */
+.org-deadline-list,
+.org-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.org-deadline-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.org-badge-urgent {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.org-task-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.org-task-item:hover {
+  border-color: var(--accent);
+}
+
+.org-task-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.org-task-text {
+  flex: 1;
+  color: var(--ink);
+  transition: all 0.15s ease;
+}
+
+.org-task-text.completed {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.org-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.org-inline-input {
+  flex: 1;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--ink);
+  outline: none;
+}
+
+.org-inline-input:focus {
+  border-color: var(--accent);
+}
+
+.org-btn-sm {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Activity Stream & Notes */
+.org-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.org-activity-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.org-activity-time {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Documents & People Widgets */
+.org-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.org-doc-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.org-people-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--paper-2);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.org-avatar-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.org-role-chip {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--muted);
+}
+
+/* Guarded Team Performance Bar */
+.org-perf-bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.org-perf-bar {
+  display: flex;
+  height: 12px;
+  width: 100%;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.org-perf-seg {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.org-perf-seg.open { background: var(--accent); }
+.org-perf-seg.active { background: var(--major); }
+.org-perf-seg.hold { background: var(--muted-2); }
+.org-perf-seg.closed { background: var(--muted); }
+
+.org-perf-chips {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.org-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+}
+
+/* Team Header & Roster Table */
+.org-team-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.org-team-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.org-team-avatar-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 22px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.org-team-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.org-team-desc {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.org-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.org-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.org-table th {
+  background: var(--paper-2);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.org-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.org-table-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.org-table-row:hover {
+  background: var(--paper-2);
+}
+
+/* Firm Console (OrgDashboard) Teams Grid */
+.org-teams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.org-team-summary-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.org-team-summary-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.org-team-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.org-team-card-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.org-btn-open-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.org-btn-open-team:hover {
+  background: var(--paper);
+  border-color: var(--accent);
+}
+
 /* ── RESPONSIVE CONSTRAINTS ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .org-collaborative-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 768px) {
   .launcher-masthead {
     flex-direction: column;
@@ -649,3 +1194,4 @@
     display: none;
   }
 }
+

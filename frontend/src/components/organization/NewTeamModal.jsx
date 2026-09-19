@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useOrgStore } from '../../store/useOrgStore';
+import { useOrganizationStore } from '../../stores/useOrganizationStore';
 import './organization.css';
 
 export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
-  const createTeam = useOrgStore((state) => state.createTeam);
+  const createTeam = useOrganizationStore((state) => state.createTeam);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -51,10 +51,7 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
       return;
     }
 
-    const newTeam = createTeam({
-      name: trimmedName,
-      description: description.trim(),
-    });
+    const newTeam = createTeam(trimmedName, description.trim());
 
     if (onTeamCreated) {
       onTeamCreated(newTeam);
@@ -71,7 +68,7 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
 
   const modalContent = (
     <div
-      className="modal-overlay"
+      className="modal-overlay active"
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
@@ -117,7 +114,7 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
                 ref={inputRef}
                 type="text"
                 className="form-input"
-                placeholder="e.g. Infrastructure & Project Finance"
+                placeholder="e.g. Corporate Advisory or law"
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value);
@@ -127,22 +124,9 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="teamDescriptionInput">
-                Description (Optional)
-              </label>
-              <input
-                id="teamDescriptionInput"
-                type="text"
-                className="form-input"
-                placeholder="e.g. Project financing, concession agreements, and public-private partnerships"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-              <span className="form-hint">
-                A team is where practice groups collaborate on related matters, playbooks, and shared precedents.
-              </span>
-            </div>
+            <p className="form-hint" style={{ marginTop: '4px' }}>
+              A team is where people collaborate on matters. It becomes your active workspace — add members and matters next.
+            </p>
           </div>
 
           <div className="modal-footer">
@@ -156,6 +140,7 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
             <button
               type="submit"
               className="btn-org btn-org-primary"
+              style={{ background: 'var(--accent)', color: '#ffffff' }}
             >
               Create team
             </button>

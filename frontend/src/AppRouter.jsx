@@ -25,6 +25,9 @@ import LegalForms from './components/LegalForms';
 import FormTemplateLibrary from './components/FormTemplateLibrary';
 import TEMPLATES from './data/legalTemplates.js';
 import MatterLauncher from './components/organization/MatterLauncher';
+import MatterDashboard from './components/organization/MatterDashboard';
+import TeamDashboard from './components/organization/TeamDashboard';
+import OrgDashboard from './components/organization/OrgDashboard';
 import ContextCapsule from './components/organization/ContextCapsule';
 import ChamberRoster from './components/chamber/ChamberRoster';
 import ChamberSwitcher from './components/chamber/ChamberSwitcher';
@@ -202,7 +205,7 @@ const NAVIGATION_GROUPS = [
     title: "Workspace",
     items: [
       { name: "Dashboard", path: "/dashboard", icon: SidebarIcons.dashboard() },
-      { name: "Chamber Roster", path: "/chamber", icon: SidebarIcons.gateway() },
+      { name: "Matters", path: "/workspace/matters", icon: SidebarIcons.gateway() },
       { name: "Contract Analyzer", path: "/contract-analyzer", icon: SidebarIcons.contract(), aiAssisted: true },
       { name: "Auto-Draft Studio", path: "/auto-draft", icon: SidebarIcons.pencil(), aiAssisted: true },
     ]
@@ -577,7 +580,10 @@ const Breadcrumbs = () => {
   const items = [{ label: 'Dashboard', url: '/dashboard' }];
   const p = location.pathname;
   if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
-  else if (p === '/chamber' || p === '/matters') items.push({ label: 'Chamber Roster', url: '/chamber' });
+  else if (p === '/workspace/matters' || p === '/chamber' || p === '/matters') items.push({ label: 'Matters', url: '/workspace/matters' });
+  else if (p.startsWith('/workspace/matter/')) items.push({ label: 'Matter Workspace', url: p });
+  else if (p.startsWith('/workspace/team/')) items.push({ label: 'Team Hub', url: p });
+  else if (p === '/workspace/org') items.push({ label: 'Firm Executive Console', url: p });
   else if (p === '/contract-analyzer') items.push({ label: 'Contract Analyzer', url: p });
   else if (p === '/auto-draft') items.push({ label: 'Auto-Draft Studio', url: p });
   else if (p === '/conflict-engine') items.push({ label: 'Conflict Engine', url: p });
@@ -895,9 +901,13 @@ function AppRouterContent() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
-        <Route path="/chamber" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ChamberRoster /></Layout>} />
-        <Route path="/matters" element={<Navigate to="/chamber" replace />} />
-        <Route path="/home" element={<Navigate to="/chamber" replace />} />
+        <Route path="/workspace/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterLauncher /></Layout>} />
+        <Route path="/workspace/matter/:matterId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterDashboard /></Layout>} />
+        <Route path="/workspace/team/:teamId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><TeamDashboard /></Layout>} />
+        <Route path="/workspace/org" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><OrgDashboard /></Layout>} />
+        <Route path="/chamber" element={<Navigate to="/workspace/matters" replace />} />
+        <Route path="/matters" element={<Navigate to="/workspace/matters" replace />} />
+        <Route path="/home" element={<Navigate to="/workspace/matters" replace />} />
         <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
         <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AutoDraftWorkspace /></Layout>} />
         <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
