@@ -60,118 +60,72 @@ export default function ContextCapsule() {
   };
 
   const p = location.pathname;
-  const isMatterActive = p.startsWith('/workspace/matter/');
-  const isTeamActive = p.startsWith('/workspace/team/');
   const isOrgActive = p === '/workspace/org';
+  const isTeamActive = p.startsWith('/workspace/team/');
+  const isMatterActive = !isOrgActive && !isTeamActive;
 
   return (
     <div className="context-capsule-wrapper" ref={capsuleRef}>
-      <nav className="context-capsule" aria-label="Context Switcher">
-        {/* Segment 1: [ • {matter.title} ] */}
-        <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
-          <button
-            type="button"
-            className={`context-seg ${isMatterActive ? 'active' : ''}`}
-            onClick={() => {
-              if (activeMatter) {
-                navigate(`/workspace/matter/${activeMatter.id}`);
-              }
-            }}
-            title={activeMatter ? `Matter: ${activeMatter.title}` : 'Active Matter'}
-          >
-            <span className="seg-dot" style={{ background: 'var(--accent)' }} />
-            <span
-              className="seg-label-matter"
-              style={{
-                maxWidth: '140px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {activeMatter ? activeMatter.title : 'Select Matter'}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setTeamDropdownOpen(false);
-              setMatterDropdownOpen((prev) => !prev)}
-            }
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--ink-soft)',
-              padding: '4px 6px 4px 0',
-              cursor: 'pointer',
-              fontSize: '10px',
-              opacity: 0.8,
-            }}
-            aria-label="Switch active matter dropdown"
-            aria-expanded={matterDropdownOpen}
-          >
-            ▾
-          </button>
-        </div>
-
-        {/* Segment 2: [ • {team.name} ] */}
-        <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
-          <button
-            type="button"
-            className={`context-seg ${isTeamActive ? 'active' : ''}`}
-            onClick={() => {
-              if (activeTeam) {
-                navigate(`/workspace/team/${activeTeam.id}`);
-              }
-            }}
-            title={activeTeam ? `Team: ${activeTeam.name}` : 'Active Team'}
-          >
-            <span className="seg-dot" />
-            <span
-              className="seg-label-team"
-              style={{
-                maxWidth: '120px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {activeTeam ? activeTeam.name : 'Select Team'}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMatterDropdownOpen(false);
-              setTeamDropdownOpen((prev) => !prev)}
-            }
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--ink-soft)',
-              padding: '4px 6px 4px 0',
-              cursor: 'pointer',
-              fontSize: '10px',
-              opacity: 0.8,
-            }}
-            aria-label="Switch active team dropdown"
-            aria-expanded={teamDropdownOpen}
-          >
-            ▾
-          </button>
-        </div>
-
-        {/* Segment 3: [ • Firm Console ] */}
+      <nav className="trail" aria-label="Context Trail">
+        {/* Segment 1: Matter */}
         <button
           type="button"
-          className={`context-seg ${isOrgActive ? 'active' : ''}`}
-          onClick={() => navigate('/workspace/org')}
-          title="Organization / Firm Console"
+          className={`trail-seg ${isMatterActive ? 'current' : ''}`}
+          onClick={() => {
+            setTeamDropdownOpen(false);
+            setMatterDropdownOpen((prev) => !prev);
+          }}
+          title={activeMatter ? `Matter: ${activeMatter.title}` : 'Untitled Matter'}
+          aria-label="Switch active matter dropdown"
+          aria-expanded={matterDropdownOpen}
         >
-          <span className="seg-dot" />
-          <span>Firm Console</span>
+          <span className="dot" />
+          <span className="txt serif">{activeMatter ? activeMatter.title : 'Untitled Matter'}</span>
+          <svg className="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        <span className="trail-sep">›</span>
+
+        {/* Segment 2: Team */}
+        <button
+          type="button"
+          className={`trail-seg ${isTeamActive ? 'current' : ''}`}
+          onClick={() => {
+            setMatterDropdownOpen(false);
+            setTeamDropdownOpen((prev) => !prev);
+          }}
+          title={activeTeam ? `Team: ${activeTeam.name}` : 'My Chambers'}
+          aria-label="Switch active team dropdown"
+          aria-expanded={teamDropdownOpen}
+        >
+          <span className="dot" />
+          <span className="txt">{activeTeam ? activeTeam.name : 'My Chambers'}</span>
+          <svg className="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        <span className="trail-sep">›</span>
+
+        {/* Segment 3: Firm Console */}
+        <button
+          type="button"
+          className={`trail-seg ${isOrgActive ? 'current' : ''}`}
+          onClick={() => {
+            setMatterDropdownOpen(false);
+            setTeamDropdownOpen(false);
+            navigate('/workspace/org');
+          }}
+          title="Organization / Firm Console"
+          aria-label="Firm Console"
+        >
+          <span className="dot" />
+          <span className="txt">Firm Console</span>
+          <svg className="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </button>
       </nav>
 

@@ -19,7 +19,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
     useOrganizationStore.setState({
       organization: {
         id: 'org_lexamplify_main',
-        name: 'LexAmplify Chamber Console',
+        name: 'LexAmplify',
         plan: 'Enterprise',
         totalAiRuns30d: 142,
       },
@@ -48,7 +48,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
         {
           id: 'mat_default',
           teamId: 'team_private',
-          title: 'My 1st Matter',
+          title: 'Untitled Matter',
           status: 'open',
           leadCounsel: 'Narendar V',
           openedAt: 'Sep 13, 2026',
@@ -73,7 +73,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
         },
       ],
       activities: [
-        { id: 'act_1', teamId: 'team_private', text: 'Opened matter "My 1st Matter"', timestamp: 'Sep 13, 2026' },
+        { id: 'act_1', teamId: 'team_private', text: 'Opened matter "Untitled Matter"', timestamp: 'Sep 13, 2026' },
       ],
     });
     localStorage.clear();
@@ -83,7 +83,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
   describe('useOrganizationStore Client State & Contracts', () => {
     it('initializes with default firm, teams, and default matter', () => {
       const state = useOrganizationStore.getState();
-      expect(state.organization.name).toBe('LexAmplify Chamber Console');
+      expect(state.organization.name).toBe('LexAmplify');
       expect(state.teams.length).toBe(2);
       expect(state.matters.length).toBe(1);
       expect(state.activeMatterId).toBe('mat_default');
@@ -180,7 +180,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
         </MemoryRouter>
       );
 
-      expect(screen.getByText('LexAmplify Chamber Console')).toBeInTheDocument();
+      expect(screen.getByText('LexAmplify')).toBeInTheDocument();
       expect(screen.getAllByText('law')[0]).toBeInTheDocument();
       expect(screen.getByText('Corporate litigation')).toBeInTheDocument();
       expect(screen.getByText(/Active Workspaces/i)).toBeInTheDocument();
@@ -235,7 +235,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
         </MemoryRouter>
       );
 
-      expect(screen.getByText('My 1st Matter')).toBeInTheDocument();
+      expect(screen.getByText('Untitled Matter')).toBeInTheDocument();
       expect(screen.getByText('My Chambers')).toBeInTheDocument();
       expect(screen.getByText('Firm Console')).toBeInTheDocument();
     });
@@ -301,7 +301,7 @@ describe('Dynamic 3-Tier Organization & Matter Operating System', () => {
 
       // Workspace header & dynamic title
       expect(screen.getByText(/MATTER WORKSPACE/i)).toBeInTheDocument();
-      expect(screen.getByText('My 1st Matter', { selector: '.page-title' })).toBeInTheDocument();
+      expect(screen.getByText('Untitled Matter', { selector: '.page-title' })).toBeInTheDocument();
       expect(screen.getByText(/Open · My Chambers/i)).toBeInTheDocument();
 
       // 4 Dynamic Metrics (Hours logged rendered as muted 'Not tracked yet')

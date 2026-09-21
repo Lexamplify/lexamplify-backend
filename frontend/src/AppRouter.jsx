@@ -30,6 +30,7 @@ import TeamDashboard from './components/organization/TeamDashboard';
 import OrgDashboard from './components/organization/OrgDashboard';
 import ContextCapsule from './components/organization/ContextCapsule';
 import { useOrganizationStore } from './stores/useOrganizationStore';
+import logoMark from './assets/lexamplify-logo-mark.png';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
 const STATUS_STYLES = {
@@ -291,11 +292,11 @@ const SIDEBAR_STYLES = `
                border-color .2s ease;
   }
   .sb-masthead{ padding:26px 24px 16px; border-bottom:1px solid var(--sb-rule); position:relative; }
+  .sb-brand-id{ display:flex; align-items:center; gap:10px; overflow:hidden; }
+  .sb-logo-mark{ width:27px; height:27px; flex-shrink:0; display:block; object-fit:contain; }
   .sb-firm-block{ display:flex; flex-direction:column; gap:2px; overflow:hidden; }
   .sb-firm-name{ font-family:var(--sb-font-serif); font-style:italic; font-size:17px; font-weight:600; color:var(--sb-ink); line-height:1.15; letter-spacing:-0.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sb-firm-credit{ font-family:var(--sb-font-mono); font-size:9.5px; letter-spacing:.14em; color:var(--sb-muted); white-space:nowrap; }
-  .sb-firm-name{ font-family:var(--sb-font-serif); font-style:italic; font-weight:600; font-size:20px; color:var(--sb-ink); line-height:1.15; }
-  .sb-product-credit{ font-family:var(--sb-font-mono); font-size:10px; letter-spacing:.06em; color:var(--sb-muted); margin-top:5px; }
   .sb-collapse-toggle{ position:absolute; top:26px; right:22px; background:none; border:1px solid var(--sb-rule); width:22px; height:22px; border-radius:4px; color:var(--sb-muted); font-family:var(--sb-font-mono); font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
   .sb-collapse-toggle:hover{ border-color:var(--sb-accent); color:var(--sb-accent); }
   .sb-collapse-toggle:focus-visible, .sb-collapse-toggle:focus{ outline:2px solid var(--sb-accent); outline-offset:1px; }
@@ -719,9 +720,12 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         <aside className="sb-sidebar">
           <div className="sb-masthead">
             {!isIconOnly && (
-              <div className="sb-firm-block">
-                <div className="sb-firm-name">{orgName || 'LexAmplify'}</div>
-                <div className="sb-firm-credit">LEXAMPLIFY</div>
+              <div className="sb-brand-id">
+                <img className="sb-logo-mark" alt="LexAmplify" src={logoMark} />
+                <div className="sb-firm-block">
+                  <div className="sb-firm-name">{orgName || 'LexAmplify'}</div>
+                  <div className="sb-firm-credit">LEXAMPLIFY</div>
+                </div>
               </div>
             )}
             {!focusMode && (
@@ -811,7 +815,9 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
         {/* ── COLLAPSED CAPSULE ────────────────────────────────────────────── */}
         <div className="sb-capsule-outer">
           <div className="sb-capsule">
-            <div className="sb-capsule-mono">{monogram}</div>
+            <div className="sb-capsule-mono" title={orgName || 'LexAmplify'}>
+              <img src={logoMark} alt="LexAmplify" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+            </div>
             <button className="sb-capsule-expand" onClick={() => setIsCollapsed(false)} aria-label="Expand sidebar" title="Expand sidebar">›</button>
             <div className="sb-capsule-list">
               {NAVIGATION_GROUPS.map((group, gIdx) => (

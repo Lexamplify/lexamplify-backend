@@ -364,6 +364,86 @@
   align-items: center;
 }
 
+/* ── TOPBAR CONTEXT TRAIL (v3 Redesign) ─────────────────────────────────── */
+.trail {
+  display: inline-flex;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 4px;
+  gap: 0;
+}
+
+.trail-seg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 190px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  transition: all 0.15s ease;
+}
+
+.trail-seg .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.trail-seg span.txt {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trail-seg span.txt.serif {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+}
+
+.trail-seg .chev {
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.trail-seg:not(.current):hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.trail-seg.current {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.trail-seg.current .dot {
+  background: var(--on-accent);
+}
+
+.trail-seg.current .chev {
+  opacity: 0.85;
+}
+
+.trail-sep {
+  color: var(--muted);
+  padding: 0 1px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  user-select: none;
+}
+
 .context-capsule {
   display: flex;
   align-items: center;

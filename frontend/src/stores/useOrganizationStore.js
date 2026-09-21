@@ -35,7 +35,7 @@ export const useOrganizationStore = create(
         {
           id: 'mat_default',
           teamId: 'team_private',
-          title: 'My 1st Matter',
+          title: 'Untitled Matter',
           status: 'open',
           leadCounsel: 'Narendar V',
           openedAt: 'Sep 13, 2026',
@@ -68,7 +68,7 @@ export const useOrganizationStore = create(
         },
       ],
       activities: [
-        { id: 'act_1', teamId: 'team_private', text: 'Opened matter "My 1st Matter"', timestamp: 'Sep 13, 2026' },
+        { id: 'act_1', teamId: 'team_private', text: 'Opened matter "Untitled Matter"', timestamp: 'Sep 13, 2026' },
       ],
       setActiveMatter: (matterId) => {
         const matter = get().matters.find((m) => m.id === matterId);
@@ -105,15 +105,16 @@ export const useOrganizationStore = create(
         }));
         return newTeam;
       },
-      createMatter: (title, teamId) => {
+      createMatter: (title, teamId, leadCounsel = 'Narendar V') => {
         const uniqueSuffix = Math.random().toString(36).slice(2, 7);
         const targetTeam = get().teams.find((t) => t.id === teamId) || get().teams[0];
+        const matterTitle = (title || '').trim() || 'Untitled Matter';
         const newMatter = {
           id: `mat_${Date.now()}_${uniqueSuffix}`,
           teamId: targetTeam.id,
-          title: (title || '').trim(),
+          title: matterTitle,
           status: 'open',
-          leadCounsel: 'Narendar V',
+          leadCounsel: leadCounsel || 'Narendar V',
           openedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
           lastUsedAt: new Date().toISOString(),
           documentsCount: 0,
@@ -124,7 +125,7 @@ export const useOrganizationStore = create(
           tasks: [],
           documents: [],
           activity: [
-            { id: `act_${Date.now()}_${uniqueSuffix}`, text: `Opened matter "${(title || '').trim()}"`, timestamp: 'Just now' },
+            { id: `act_${Date.now()}_${uniqueSuffix}`, text: `Opened matter "${matterTitle}"`, timestamp: 'Just now' },
           ],
           counsel: null,
           forum: null,
@@ -187,6 +188,41 @@ export const useOrganizationStore = create(
     }),
     {
       name: 'lexamplify-organization-store',
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (!version || version < 2) {
+          if (persistedState && typeof persistedState === 'object') {
+            if (persistedState.organization && (persistedState.organization.name === 'LexAmplify Chamber Console' || !persistedState.organization.name)) {
+              persistedState.organization.name = 'LexAmplify';
+            }
+            if (Array.isArray(persistedState.teams)) {
+              persistedState.teams = persistedState.teams.map((t) => {
+                if (t.id === 'team_private' && (t.name === 'My Private Space' || !t.name)) {
+                  return { ...t, name: 'My Chambers' };
+                }
+                return t;
+              });
+            }
+            if (Array.isArray(persistedState.matters)) {
+              persistedState.matters = persistedState.matters.map((m) => {
+                if (m.id === 'mat_default' && (m.title === 'My 1st Matter' || !m.title)) {
+                  return { ...m, title: 'Untitled Matter' };
+                }
+                return m;
+              });
+            }
+            if (Array.isArray(persistedState.activities)) {
+              persistedState.activities = persistedState.activities.map((a) => {
+                if (a.id === 'act_1' && a.text && a.text.includes('My 1st Matter')) {
+                  return { ...a, text: 'Opened matter "Untitled Matter"' };
+                }
+                return a;
+              });
+            }
+          }
+        }
+        return persistedState;
+      },
     }
   )
 );

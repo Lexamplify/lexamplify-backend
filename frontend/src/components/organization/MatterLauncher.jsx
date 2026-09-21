@@ -148,10 +148,6 @@ export default function MatterLauncher() {
           {openTasksCount > 0 && (
             <> <strong id="openTaskCount">{openTasksCount}</strong> task{openTasksCount !== 1 ? 's' : ''} {openTasksCount === 1 ? 'is' : 'are'} still open.</>
           )}
-          <br />
-          <span className="placeholder">
-            — every number in this line is computed live from useOrganizationStore (deadlines[], tasks[]) for whichever matter/team is active. No case names, counts, or status words are ever hardcoded into this banner's copy.
-          </span>
         </p>
       </section>
 
