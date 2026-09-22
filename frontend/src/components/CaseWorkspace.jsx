@@ -8,6 +8,17 @@ import ContextMenu from './vault/ContextMenu';
 import ShareModal from './vault/ShareModal';
 import MoveModal from './vault/MoveModal';
 import SyncToast from './vault/SyncToast';
+import { Folder, FileText, MoreVertical } from 'lucide-react';
+
+function formatBreadcrumbs(path) {
+  if (!path || path.length <= 4) return path;
+  return [
+    path[0],
+    { id: '__ellipsis__', name: '...', isEllipsis: true },
+    path[path.length - 2],
+    path[path.length - 1],
+  ];
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -1317,37 +1328,25 @@ export default function CaseWorkspace() {
             </div>
 
             {/* Breadcrumb Trail */}
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              {(() => {
-                const path = getFolderPath(activeFolderId);
-                let renderedPath = path;
-                if (path.length > 4) {
-                  renderedPath = [path[0], { id: 'ellipsis', name: '...' }, path[path.length - 2], path[path.length - 1]];
-                }
-                return renderedPath.map((crumb, idx) => (
-                  <React.Fragment key={crumb.id}>
-                    {idx > 0 && <span>/</span>}
-                    {crumb.id === 'ellipsis' ? (
-                      <span>...</span>
-                    ) : (
-                      <span
-                        onClick={() => setActiveFolderId(crumb.id)}
-                        style={{
-                          cursor: idx === renderedPath.length - 1 ? 'default' : 'pointer',
-                          color: idx === renderedPath.length - 1 ? 'var(--ink)' : 'var(--muted)',
-                          fontWeight: idx === renderedPath.length - 1 ? 600 : 400,
-                          transition: 'color 0.15s'
-                        }}
-                        onMouseEnter={(e) => { if (idx !== renderedPath.length - 1) e.target.style.color = 'var(--accent)' }}
-                        onMouseLeave={(e) => { if (idx !== renderedPath.length - 1) e.target.style.color = 'var(--muted)' }}
-                      >
-                        {crumb.name}
-                      </span>
-                    )}
-                  </React.Fragment>
-                ));
-              })()}
-            </div>
+            <nav className="flex items-center gap-1.5 text-xs font-mono text-[var(--muted)] mb-4 overflow-x-auto py-1">
+              {formatBreadcrumbs(getFolderPath(activeFolderId)).map((crumb, idx, arr) => (
+                <React.Fragment key={crumb.id || idx}>
+                  {crumb.isEllipsis ? (
+                    <span className="text-[var(--muted)] px-1 select-none">...</span>
+                  ) : (
+                    <button
+                      onClick={() => setActiveFolderId(crumb.id)}
+                      className={`hover:text-[var(--accent)] transition-colors ${
+                        idx === arr.length - 1 ? 'text-[var(--ink)] font-semibold cursor-default' : ''
+                      }`}
+                    >
+                      {crumb.name}
+                    </button>
+                  )}
+                  {idx < arr.length - 1 && <span className="text-[var(--rule)]">/</span>}
+                </React.Fragment>
+              ))}
+            </nav>
 
             {/* Dropzone */}
             <div
@@ -1427,61 +1426,62 @@ export default function CaseWorkspace() {
                   {currentItems.map((item) => (
                     <div
                       key={item.id}
-                      className="cv-folder-card group relative flex flex-col justify-between"
-                      style={{ cursor: item.type === 'folder' ? 'pointer' : 'default', padding: '16px', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: '12px', minHeight: '100px' }}
+                      onDoubleClick={() => item.type === 'folder' && setActiveFolderId(item.id)}
                       onContextMenu={(e) => openContextMenu(e, item)}
-                      onClick={() => { if (item.type === 'folder') setActiveFolderId(item.id); }}
+                      className="group relative bg-[var(--paper)] border border-[var(--rule)] hover:border-[var(--accent)] rounded-xl p-4 cursor-pointer transition-all duration-150 flex flex-col justify-between h-32 select-none"
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="w-9 h-9 rounded-lg bg-[var(--paper-2)] flex items-center justify-center">
-                          {item.type === 'folder' ? (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-[var(--accent)]"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                          ) : (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-[var(--ink-soft)]"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                          )}
+                      {/* Card Header: Folder/File Icon Left, [•••] Button Top-Right */}
+                      <div className="flex items-center justify-between w-full">
+                        <div className="p-2 rounded-lg bg-[var(--paper-2)] text-[var(--accent)]">
+                          {item.type === 'folder' ? <Folder size={18}/> : <FileText size={18}/>}
                         </div>
-                        <button 
-                          className="p-1 rounded hover:bg-[var(--paper-2)] text-[var(--muted)] hover:text-[var(--ink)] opacity-0 group-hover:opacity-100 transition-opacity"
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            openContextMenu(e, item);
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            openContextMenu(e, item, { x: rect.right, y: rect.bottom });
                           }}
+                          className="p-1.5 rounded-md text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--paper-2)] transition-colors opacity-70 group-hover:opacity-100"
+                          title="Actions"
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                          <MoreVertical size={16}/>
                         </button>
                       </div>
-                      
-                      {renamingId === item.id ? (
-                        <input
-                          type="text"
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              if (renameValue.trim()) renameItem(item.id, renameValue.trim());
+
+                      {/* Card Body: Name + Item/Size Count */}
+                      <div className="mt-2">
+                        {renamingId === item.id ? (
+                          <input
+                            type="text"
+                            value={renameValue}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onBlur={() => {
+                              renameItem(item.id, renameValue);
                               setRenamingId(null);
-                            }
-                            if (e.key === 'Escape') setRenamingId(null);
-                          }}
-                          onBlur={() => {
-                            if (renameValue.trim()) renameItem(item.id, renameValue.trim());
-                            setRenamingId(null);
-                          }}
-                          autoFocus
-                          className="bg-[var(--paper-2)] border border-[var(--accent)] text-[var(--ink)] text-sm rounded px-2 py-1 outline-none w-full font-medium"
-                        />
-                      ) : (
-                        <div className="text-[14.5px] font-medium text-[var(--ink)] truncate mb-1">
-                          {item.name}
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                renameItem(item.id, renameValue);
+                                setRenamingId(null);
+                              } else if (e.key === 'Escape') {
+                                setRenamingId(null);
+                              }
+                            }}
+                            className="w-full bg-[var(--paper-2)] border border-[var(--accent)] text-xs text-[var(--ink)] px-2 py-1 rounded outline-none"
+                          />
+                        ) : (
+                          <div className="font-serif italic text-sm text-[var(--ink)] truncate font-medium" title={item.name}>
+                            {item.name}
+                          </div>
+                        )}
+                        <div className="font-mono text-[10px] text-[var(--muted)] mt-1 uppercase tracking-wider">
+                          {item.type === 'folder'
+                            ? `${getItemsInFolder(item.id, activeMatterId).length} Items`
+                            : item.size || 'Document'}
                         </div>
-                      )}
-                      
-                      <div className="text-[11px] text-[var(--muted)] font-mono truncate">
-                        {item.type === 'folder' 
-                          ? `${getItemsInFolder(item.id, activeMatterId).length} ITEMS`
-                          : `${item.size} · ${item.updated}`
-                        }
                       </div>
                     </div>
                   ))}
@@ -2064,33 +2064,20 @@ export default function CaseWorkspace() {
       )}
 
       {/* ── VAULT MODALS ── */}
-      <ContextMenu
-        item={contextMenu.item}
-        x={contextMenu.x}
+      <ContextMenu 
+        isOpen={contextMenu.isOpen} 
+        item={contextMenu.item} 
+        onClose={closeContextMenu} 
+        x={contextMenu.x} 
         y={contextMenu.y}
-        onOpen={(item) => {
-          setActiveFolderId(item.id);
-          closeContextMenu();
-        }}
+        onOpen={(item) => setActiveFolderId(item.id)}
         onRename={(item) => {
           setRenamingId(item.id);
           setRenameValue(item.name);
-          closeContextMenu();
         }}
-        onMove={(item) => {
-          setItemToMove(item);
-          closeContextMenu();
-        }}
-        onShare={(item) => {
-          setItemToShare(item);
-          closeContextMenu();
-        }}
-        onDelete={(item) => {
-          if (window.confirm(`Are you sure you want to delete ${item.name}?`)) {
-            deleteItem(item.id);
-          }
-          closeContextMenu();
-        }}
+        onMove={(item) => setItemToMove(item)}
+        onShare={(item) => setItemToShare(item)}
+        onDelete={(item) => deleteItem(item.id)}
       />
 
       <ShareModal
