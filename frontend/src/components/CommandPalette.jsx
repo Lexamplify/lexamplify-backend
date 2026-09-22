@@ -186,6 +186,27 @@ const generateConversationTitle = (text, existingSessions = []) => {
     return qualifiedTitle;
   }
 
+  // A counterparty name already disambiguated well above — this path only
+  // runs when none was found and the base title collides with an existing
+  // session. A bare incrementing "(draft 2)"/"(draft 3)" is exactly the
+  // unscannable "three identical entries" problem auto-titling exists to
+  // prevent, so try a short, content-derived phrase first and fall back to
+  // a plain counter only when nothing distinctive is left in the message.
+  const baseWords = new Set(baseTitle.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/));
+  const STOPWORDS = new Set(['a', 'an', 'the', 'of', 'and', 'or', 'to', 'for', 'in', 'on', 'with', 'this', 'that', 'draft', 'agreement', 'please', 'can', 'you', 'need', 'want', 'under', 'using']);
+  const distinctiveWords = clean
+    .replace(/[^\w\s-]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !baseWords.has(w.toLowerCase()) && !STOPWORDS.has(w.toLowerCase()))
+    .slice(0, 3);
+
+  if (distinctiveWords.length > 0) {
+    const disambiguated = `${qualifiedTitle} — ${distinctiveWords.join(' ')}`;
+    if (!titles.includes(disambiguated)) {
+      return disambiguated;
+    }
+  }
+
   let counter = 2;
   while (titles.includes(`${qualifiedTitle} (draft ${counter})`)) {
     counter++;
@@ -212,30 +233,39 @@ const KNOWN_STATUTES = [
   { pattern: /insolvency\s+and\s+bankruptcy|ibc/i, name: 'Insolvency & Bankruptcy Code, 2016' },
 ];
 
+// Returns { real, fallback } rather than one flat list: `real` comes from
+// the backend's actual retrieval provenance (utils/rag_pipeline.py's
+// review_document branch — search_chunks() results resolved to a document
+// title), `fallback` is this file's own regex guess at statute names
+// mentioned in the LLM's own output text, which is NOT verified against
+// anything. The caller must label these two cases differently — showing
+// fallback under a "verified" banner would misrepresent an unverified
+// text match as retrieval-backed grounding.
 const extractGroundedStatutes = (docContent = '', citations = []) => {
-  const results = [];
+  const real = [];
   const seen = new Set();
 
   if (Array.isArray(citations)) {
     for (const c of citations) {
-      const label = typeof c === 'string' ? c : (c.statute || c.title || c.source || '');
+      const label = typeof c === 'string' ? c : (c.title || c.statute || c.source || '');
       if (label && !seen.has(label)) {
         seen.add(label);
-        results.push(label);
+        real.push(label);
       }
     }
   }
 
+  const fallback = [];
   if (docContent) {
     for (const s of KNOWN_STATUTES) {
       if (s.pattern.test(docContent) && !seen.has(s.name)) {
         seen.add(s.name);
-        results.push(s.name);
+        fallback.push(s.name);
       }
     }
   }
 
-  return results;
+  return { real, fallback };
 };
 
 // ═══════════════════════════════════════════════════════
@@ -430,6 +460,102 @@ const renderDraftHtml = (text) => {
 
     // Regular paragraph
     out.push(`<p class="draft-p">${applyInline(ln)}</p>`);
+    i++;
+  }
+
+  return out.join('');
+};
+
+// POST /api/contract/export-form-docx (routes/contract_routes.py) only walks
+// top-level <p>/<ul>/<ol> tags — renderDraftHtml()'s <table>, <div>-wrapped
+// section headers, and <h2> title would all be silently dropped from the
+// exported .docx (not an error, just missing content) if sent as-is. This
+// mirrors the same markdown walk but flattens everything into that
+// endpoint's supported subset instead, so nothing in the draft — including
+// table rows like Parties/Signatures — goes missing on export.
+const renderDraftHtmlForDocx = (text, title) => {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const out = [];
+  if (title) out.push(`<p style="text-align:center"><strong>${applyInline(title)}</strong></p>`);
+  let i = 0;
+
+  while (i < lines.length) {
+    const ln = lines[i];
+    const trimmed = ln.trim();
+
+    if (trimmed.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const headers = parseRowCells(lines[i]);
+      let curr = i + 2;
+      const rows = [];
+      while (curr < lines.length && lines[curr].trim().includes('|') && !/^---+$/.test(lines[curr].trim())) {
+        rows.push(parseRowCells(lines[curr]));
+        curr++;
+      }
+      // No table support server-side — flatten each row into a labeled
+      // paragraph (header:value pairs) so the data survives, just not as
+      // a formatted grid.
+      rows.forEach((row) => {
+        const pairs = headers.map((h, idx) => `<strong>${applyInline(h)}:</strong> ${applyInline(row[idx] || '')}`).join('&nbsp;&nbsp;&nbsp;');
+        out.push(`<p>${pairs}</p>`);
+      });
+      i = curr;
+      continue;
+    }
+
+    const secMatch = trimmed.match(/^(?:#{1,3}\s*)?(\d{1,2}\.?\s+[A-Z\s]{3,40})$/i)
+      || trimmed.match(/^(?:SECTION|CLAUSE)\s+(\d{1,2})[.\s:]+([A-Za-z\s]{3,40})$/i);
+    if (secMatch) {
+      out.push(`<p><strong>${applyInline(trimmed.replace(/^#{1,3}\s*/, ''))}</strong></p>`);
+      i++;
+      continue;
+    }
+
+    if (/^#\s+/.test(trimmed)) {
+      // Title already emitted up front from the `title` param — skip the
+      // in-body H1 line itself to avoid printing it twice.
+      i++;
+      continue;
+    }
+
+    if (/^#{2,3}\s+/.test(trimmed)) {
+      out.push(`<p><strong>${applyInline(trimmed.replace(/^#{2,3}\s+/, ''))}</strong></p>`);
+      i++;
+      continue;
+    }
+
+    if (/^---+$/.test(trimmed)) {
+      i++;
+      continue;
+    }
+
+    if (/^[*-] /.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^[*-] /.test(lines[i].trim())) {
+        items.push(`<li>${applyInline(lines[i].trim().replace(/^[*-] /, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ul>${items.join('')}</ul>`);
+      continue;
+    }
+
+    if (/^\d+\. /.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i].trim())) {
+        items.push(`<li>${applyInline(lines[i].trim().replace(/^\d+\. /, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ol>${items.join('')}</ol>`);
+      continue;
+    }
+
+    if (trimmed === '') {
+      out.push('<p></p>');
+      i++;
+      continue;
+    }
+
+    out.push(`<p>${applyInline(ln)}</p>`);
     i++;
   }
 
@@ -679,7 +805,15 @@ const AGENT_CSS = `
   @keyframes lex-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   @keyframes lex-pulse-halo { 0% { transform: scale(0.7); opacity: 0.9; } 100% { transform: scale(1.6); opacity: 0; } }
 
-  :root, [data-theme="dark"] {
+  /* Scoped to .LexAmplify-drawer (this overlay's own root), not global :root
+     — index.css already defines the same Slate & Rust tokens app-wide, so
+     redeclaring them unscoped here just clobbered global custom properties
+     every time this full-screen overlay mounted/unmounted for no benefit.
+     Scoping is safe: nothing in this file is portaled outside
+     .LexAmplify-drawer (grep confirms no createPortal usage), so every
+     var(--x) reference below still resolves through normal DOM
+     inheritance. */
+  .LexAmplify-drawer {
     --bg: #191C1D;
     --paper: #212527;
     --paper-2: #2A2F31;
@@ -715,7 +849,7 @@ const AGENT_CSS = `
     --lex-accent-blue-subtle: var(--accent-soft);
   }
 
-  [data-theme="light"] {
+  html[data-theme="light"] .LexAmplify-drawer {
     --bg: #DFE1E0;
     --paper: #EAEBE8;
     --paper-2: #E3E4E1;
@@ -874,15 +1008,15 @@ const AGENT_CSS = `
     text-align: center; gap: 8px;
   }
   .hero-mark {
-    width: 52px; height: 52px; border-radius: 14px;
+    width: 56px; height: 56px; border-radius: 16px;
     background: var(--accent-soft); color: var(--accent);
-    display: flex; align-items: center; justify-content: center; margin-bottom: 4px;
+    display: flex; align-items: center; justify-content: center; margin-bottom: 6px;
   }
-  .hero-title { font-size: 26px; color: var(--ink); margin: 0; font-weight: 600; }
-  .hero-desc { font-size: 13px; color: var(--ink-soft); max-width: 540px; line-height: 1.5; margin: 0; }
+  .hero-title { font-size: 30px; color: var(--ink); margin: 0; font-weight: 600; }
+  .hero-desc { font-size: 13.5px; color: var(--ink-soft); max-width: 560px; line-height: 1.55; margin: 0; }
   .trust-line {
     display: inline-flex; align-items: center; gap: 8px; margin-top: 4px;
-    padding: 5px 13px; border-radius: 999px; background: var(--paper-2);
+    padding: 6px 14px; border-radius: 999px; background: var(--paper-2);
     border: 1px solid var(--rule); font-family: 'IBM Plex Mono', monospace;
     font-size: 10.5px; color: var(--ink-soft);
   }
@@ -890,48 +1024,48 @@ const AGENT_CSS = `
   .trust-line b { color: var(--ink); font-weight: 600; }
 
   .wf-tabs {
-    display: flex; gap: 6px; margin-top: 16px;
+    display: flex; gap: 8px; margin-top: 22px;
     background: var(--paper-2); border: 1px solid var(--rule);
-    border-radius: 10px; padding: 3px;
+    border-radius: 11px; padding: 4px;
   }
   .wf-tab {
-    padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 500;
+    padding: 8px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 500;
     border: 0; background: transparent; color: var(--ink-soft); cursor: pointer;
     transition: all 0.12s ease;
   }
   .wf-tab.active { background: var(--accent) !important; color: var(--on-accent) !important; }
 
   .wf-grid {
-    width: 100%; max-width: 900px; margin: 14px auto 0;
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: left;
+    width: 100%; max-width: 920px; margin: 18px auto 0;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: left;
   }
   .wf-card {
-    border: 1px solid var(--rule); border-radius: 12px; padding: 13px;
-    background: var(--paper); display: flex; gap: 11px; cursor: pointer;
+    border: 1px solid var(--rule); border-radius: 13px; padding: 16px;
+    background: var(--paper); display: flex; gap: 12px; cursor: pointer;
     transition: all 0.15s ease; width: 100%;
   }
   .wf-card:hover { border-color: var(--accent); background: var(--paper-2); transform: translateY(-1px); }
   .wf-icon {
-    width: 32px; height: 32px; border-radius: 8px; background: var(--paper-2);
+    width: 34px; height: 34px; border-radius: 9px; background: var(--paper-2);
     color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
   .wf-body { min-width: 0; flex: 1; }
   .wf-top-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
-  .wf-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .wf-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
   .wf-cat {
     font-family: 'IBM Plex Mono', monospace; font-size: 8.5px; letter-spacing: .06em;
     text-transform: uppercase; color: var(--muted); background: var(--paper-2);
-    border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
+    border: 1px solid var(--rule); border-radius: 5px; padding: 1.5px 5px; flex-shrink: 0;
   }
-  .wf-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .wf-desc { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
 
   /* TRY Prompt Chips */
-  .try-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 8px; }
+  .try-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   .try-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .08em; color: var(--muted); }
   .try-chip {
-    display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
     border-radius: 999px; border: 1px solid var(--rule); background: var(--paper);
-    color: var(--ink-soft); font-size: 11px; cursor: pointer; transition: all 0.12s ease;
+    color: var(--ink-soft); font-size: 11.5px; cursor: pointer; transition: all 0.12s ease;
   }
   .try-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
@@ -956,22 +1090,25 @@ const AGENT_CSS = `
     display: flex; align-items: center; justify-content: space-between;
     padding: 6px 12px 8px; background: transparent; flex-wrap: wrap; gap: 8px;
   }
-  .lex-composer-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .lex-composer-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .lex-tool-divider { width: 1px; height: 16px; background: var(--rule); margin: 0 3px; }
   .tool-pill {
-    display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px;
-    border-radius: 7px; border: 1px solid transparent; background: transparent;
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px;
+    border-radius: 8px; border: 1px solid transparent; background: transparent;
     color: var(--ink-soft); font-size: 11.5px; font-weight: 500; cursor: pointer;
     transition: all 0.12s ease;
   }
   .tool-pill:hover { background: var(--paper-2); color: var(--ink); }
   .tool-pill svg { color: var(--accent); }
 
+  /* Icon-only filled rust action button — 36x36, radius 10px (a rounded
+     square, matching the mockup's own .send-btn rule exactly; not a true
+     circle despite the brief's looser "filled rust circle" prose). */
   .lex-send-btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-    padding: 6px 13px; border-radius: 8px; border: none !important;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; padding: 0; border-radius: 10px; border: none !important;
     background: var(--accent) !important; color: var(--on-accent) !important;
-    font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+    cursor: pointer; flex-shrink: 0;
     transition: all 0.15s ease;
   }
   .lex-send-btn:hover:not(:disabled) { filter: brightness(1.08); }
@@ -980,7 +1117,7 @@ const AGENT_CSS = `
     cursor: not-allowed;
   }
   .lex-stop-btn {
-    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px;
     border-radius: 8px; border: 1px solid var(--rule) !important;
     background: var(--paper) !important; color: var(--ink-soft) !important;
     font-size: 11.5px; font-weight: 500; cursor: pointer; transition: all 0.12s ease;
@@ -1010,50 +1147,50 @@ const AGENT_CSS = `
   .msg-user-bubble {
     max-width: 78%; background: var(--accent-soft);
     border: 1px solid var(--accent); border-radius: 14px 14px 3px 14px;
-    padding: 11px 15px; font-size: 13px; line-height: 1.5; color: var(--ink);
+    padding: 13px 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink);
     word-break: break-word;
   }
   .msg-user-label { font-size: 10px; font-family: 'IBM Plex Mono', monospace; color: var(--muted); margin-bottom: 3px; }
 
   .work-card {
-    border: 1px solid var(--rule); border-radius: 12px; background: var(--paper);
-    padding: 14px 18px; margin: 6px 0;
+    border: 1px solid var(--rule); border-radius: 14px; background: var(--paper);
+    padding: 18px 20px; margin: 6px 0;
   }
-  .work-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .work-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .work-head-left { display: flex; align-items: center; gap: 10px; }
   .work-spinner {
     width: 16px; height: 16px; border-radius: 50%;
     border: 2px solid var(--rule); border-top-color: var(--accent);
     animation: lex-spin 0.9s linear infinite; flex-shrink: 0;
   }
-  .work-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .work-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
   .work-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
 
-  .step-list { display: flex; flex-direction: column; gap: 3px; }
-  .step-row { display: flex; align-items: center; gap: 10px; padding: 5px 2px; }
+  .step-list { display: flex; flex-direction: column; gap: 2px; }
+  .step-row { display: flex; align-items: center; gap: 11px; padding: 8px 4px; }
   .step-marker {
-    width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+    width: 19px; height: 19px; border-radius: 50%; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
   }
   .step-marker.done { background: var(--accent); color: var(--on-accent); }
   .step-marker.active { border: 2px solid var(--accent); position: relative; }
   .step-marker.active::after {
-    content: ''; position: absolute; inset: -3px; border-radius: 50%;
+    content: ''; position: absolute; inset: -4px; border-radius: 50%;
     border: 1px solid var(--accent-soft); animation: lex-pulse-halo 1.6s ease-out infinite;
   }
   .step-marker.pending { border: 2px solid var(--rule); }
-  .step-text { font-size: 12px; }
+  .step-text { font-size: 12.5px; }
   .step-row.done .step-text { color: var(--muted); }
   .step-row.active .step-text { color: var(--ink); font-weight: 600; }
   .step-row.pending .step-text { color: var(--muted); }
 
   .stopped-card {
-    border: 1px solid var(--rule); border-radius: 12px;
-    background: var(--paper); padding: 14px 18px; margin: 6px 0;
+    border: 1px solid var(--rule); border-radius: 14px;
+    background: var(--paper); padding: 18px 20px; margin: 6px 0;
   }
   .failed-card {
-    border: 1px solid var(--major); border-radius: 12px;
-    background: var(--major-soft); padding: 14px 18px; margin: 6px 0;
+    border: 1px solid var(--major); border-radius: 14px;
+    background: var(--major-soft); padding: 18px 20px; margin: 6px 0;
   }
 
   /* Generated Artifact Card */
@@ -1110,11 +1247,11 @@ const AGENT_CSS = `
     font-size: 14px; line-height: 1.8; outline: none; box-sizing: border-box;
   }
   .draft-trust-bar {
-    display: flex; align-items: center; gap: 8px; padding: 9px 16px;
+    display: flex; align-items: center; gap: 9px; padding: 11px 22px;
     background: var(--major-soft); border-bottom: 1px solid var(--rule);
   }
   .draft-trust-bar svg { color: var(--major); flex-shrink: 0; }
-  .draft-trust-text { font-size: 11px; color: var(--ink-soft); line-height: 1.45; }
+  .draft-trust-text { font-size: 11.5px; color: var(--ink-soft); line-height: 1.45; }
   .draft-trust-text b { color: var(--ink); font-weight: 600; }
 
   .draft-h { font-size: 13.5px; font-weight: 600; margin: 18px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--rule); color: var(--ink); }
@@ -1175,9 +1312,9 @@ const AGENT_CSS = `
 
   /* Grounding Chips */
   .ground-chip {
-    display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
     border-radius: 999px; background: var(--paper-2); border: 1px solid var(--rule);
-    font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--ink-soft);
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--ink-soft);
     cursor: pointer; transition: all 0.12s ease;
   }
   .ground-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
@@ -2039,16 +2176,35 @@ export function CommandPalette() {
     }
   };
 
-  const handleDownloadDraft = () => {
+  const [exportingDocx, setExportingDocx] = useState(false);
+  const [exportError, setExportError] = useState(false);
+
+  const handleDownloadDraft = async () => {
     const doc = viewingSnapshot || activeDocument;
-    if (!doc?.content) return;
-    const blob = new Blob([doc.content], { type: 'text/markdown;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(doc.title || 'legal_draft').replace(/\s+/g, '_')}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!doc?.content || exportingDocx) return;
+    setExportingDocx(true);
+    setExportError(false);
+    try {
+      const title = doc.title || 'Legal Draft';
+      const res = await fetch(`${API_BASE}/api/contract/export-form-docx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: renderDraftHtmlForDocx(doc.content, title), title }),
+      });
+      if (!res.ok) throw new Error('Export failed.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title.replace(/\s+/g, '_')}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError(true);
+      setTimeout(() => setExportError(false), 2500);
+    } finally {
+      setExportingDocx(false);
+    }
   };
 
   const handleClose = () => {
@@ -2595,8 +2751,7 @@ export function CommandPalette() {
                         disabled={!query.trim() && !attachedFile}
                         onClick={() => handleSearch(null)}
                       >
-                        <span>Send</span>
-                        <Icon name="send" size={12} />
+                        <Icon name="send" size={14} />
                       </button>
                     )}
                   </div>
@@ -2655,8 +2810,8 @@ export function CommandPalette() {
                     <button className="btn btn-sm" onClick={handleCopyDraft} title="Copy Draft">
                       <Icon name="copy" size={12} /> {copyToast ? 'Copied!' : 'Copy'}
                     </button>
-                    <button className="btn btn-sm" onClick={handleDownloadDraft} title="Download Markdown (.md)">
-                      <Icon name="download" size={12} /> Export
+                    <button className="btn btn-sm" onClick={handleDownloadDraft} disabled={exportingDocx} title="Export as .docx">
+                      <Icon name="download" size={12} /> {exportError ? 'Export failed' : exportingDocx ? 'Exporting…' : 'Export .docx'}
                     </button>
                     <button className="btn btn-sm" onClick={() => window.print()} title="Print or Save as PDF">
                       <Icon name="print" size={12} /> Print
@@ -2677,17 +2832,28 @@ export function CommandPalette() {
                   </div>
                 </div>
 
-                {/* Deterministic "GROUNDED IN:" Statutory Authorities Row */}
+                {/* Statutory Grounding Row — real retrieval provenance when
+                    available (activeDocument.sources, populated server-side
+                    in rag_pipeline.py's review_document branch), text-match
+                    fallback only when there's nothing retrieved to show. The
+                    two cases are labeled differently on purpose — see
+                    extractGroundedStatutes's comment. */}
                 {(() => {
-                  const groundedStatutes = extractGroundedStatutes(activeDocText, activeDocument.citations || activeDocument.sources);
-                  if (groundedStatutes.length === 0) return null;
+                  const { real, fallback } = extractGroundedStatutes(activeDocText, activeDocument.citations || activeDocument.sources);
+                  const isReal = real.length > 0;
+                  const chips = isReal ? real : fallback;
+                  if (chips.length === 0) return null;
                   return (
                     <div style={{ padding: '7px 14px', background: 'var(--paper-2)', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                       <span className="mono" style={{ fontSize: 9.5, letterSpacing: '.08em', color: 'var(--muted)', fontWeight: 600 }}>
-                        GROUNDED IN:
+                        {isReal ? 'GROUNDED IN:' : 'STATUTES REFERENCED:'}
                       </span>
-                      {groundedStatutes.map((stat, idx) => (
-                        <span key={idx} className="ground-chip" title="Verified Statutory Authority">
+                      {chips.map((stat, idx) => (
+                        <span
+                          key={idx}
+                          className="ground-chip"
+                          title={isReal ? 'Retrieved from a document in this matter' : 'Mentioned in this draft — not independently verified'}
+                        >
                           <Icon name="bookmark" size={10} />
                           {stat}
                         </span>

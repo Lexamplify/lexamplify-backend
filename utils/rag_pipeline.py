@@ -732,6 +732,31 @@ Return ONLY raw JSON matching this schema."""
                 )
                 draft_content = draft_res.choices[0].message.content
                 doc_info = intent_data.get("draft", {})
+
+                # search_chunks() above already retrieved the real context this
+                # draft was grounded on — resolve each unique chunk's parent
+                # document to a human-readable title here (the frontend's
+                # "GROUNDED IN:" chips need a name, not a bare document_id) so
+                # that provenance actually reaches the UI instead of being
+                # discarded, which is what happened before this change.
+                sources = []
+                if matched_chunks:
+                    import sqlite3 as _sqlite3
+                    seen_doc_ids = set()
+                    conn = _sqlite3.connect('lex_assistant.db')
+                    conn.row_factory = _sqlite3.Row
+                    try:
+                        for c in matched_chunks:
+                            doc_id = c.get("document_id")
+                            if doc_id is None or doc_id in seen_doc_ids:
+                                continue
+                            seen_doc_ids.add(doc_id)
+                            row = conn.execute("SELECT title FROM case_vault WHERE id = ?", (doc_id,)).fetchone()
+                            if row and row["title"]:
+                                sources.append({"document_id": doc_id, "title": row["title"]})
+                    finally:
+                        conn.close()
+
                 result = {
                     "action": "review_document",
                     "draft": {
@@ -739,6 +764,7 @@ Return ONLY raw JSON matching this schema."""
                         "doc_type": doc_info.get("doc_type", "Legal Document"),
                         "content": draft_content,
                         "case_id": str(case_id or "Unknown"),
+                        "sources": sources,
                     }
                 }
                 yield f"data: {json.dumps(result)}\n\n"
