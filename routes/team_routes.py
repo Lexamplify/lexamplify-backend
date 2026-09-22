@@ -4,6 +4,7 @@ Team Management — members CRUD and task board.
 """
 import sqlite3
 from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import jwt_required
 
 team_bp = Blueprint('team', __name__)
 
@@ -14,11 +15,45 @@ def get_db():
 
 # ── TEAM MEMBERS ──────────────────────────────────────────────────────────────
 
+def _resolve_member_user_ids(conn):
+    """Case-insensitive email match of every team_members row against the
+    real `users` table, caching the result in team_members.user_id. Mirrors
+    app.py's _resolve_team_member_user_ids (duplicated rather than imported
+    to avoid a routes.team_routes <-> app circular import — app.py already
+    imports team_bp from this module at blueprint-registration time). Used
+    by Case Vault v2's sharing feature (Phase 2), which made this roster
+    load-bearing for real access control rather than a display-only list."""
+    from models.user import User
+    rows = conn.execute(
+        "SELECT id, email FROM team_members WHERE email IS NOT NULL AND email != ''"
+    ).fetchall()
+    if not rows:
+        return
+    users = User.query.filter(User.email.isnot(None)).all()
+    by_email = {u.email.strip().lower(): u.id for u in users if u.email}
+    for member_id, email in rows:
+        resolved_uid = by_email.get((email or '').strip().lower())
+        conn.execute('UPDATE team_members SET user_id = ? WHERE id = ?', (resolved_uid, member_id))
+    conn.commit()
+
+
+# Authenticated as of Case Vault v2 Phase 2 — the Share modal's people-
+# picker now reads this roster to decide who can be granted real document/
+# folder access, so an unauthenticated caller enumerating it is no longer
+# just a display-only leak. The other team routes (add/delete/tasks) are
+# unchanged/still open — flagged separately, not silently expanded here.
 @team_bp.route('/api/team/members', methods=['GET'])
+@jwt_required()
 def list_members():
     try:
         conn = get_db()
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute('ALTER TABLE team_members ADD COLUMN user_id INTEGER')
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        _resolve_member_user_ids(conn)
         members = conn.execute('SELECT * FROM team_members ORDER BY name ASC').fetchall()
         result = []
         for m in members:
@@ -28,6 +63,7 @@ def list_members():
                 (row['id'],)
             ).fetchone()[0]
             row['active_tasks'] = count
+            row['matched'] = row.get('user_id') is not None
             result.append(row)
         conn.close()
         return jsonify(result)

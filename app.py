@@ -41,20 +41,54 @@ from utils.ai_helper import extract_json_from_llm_response
 # block is a no-op and lex_assistant.db resolves exactly as it always has.
 load_dotenv()
 _persistent_data_dir = os.getenv('PERSISTENT_DATA_DIR')
-if _persistent_data_dir and os.path.isdir(_persistent_data_dir):
-    _persistent_db_path = os.path.join(_persistent_data_dir, 'lex_assistant.db')
-    if not os.path.exists(_persistent_db_path):
+
+
+def _symlink_onto_persistent_disk(relative_path):
+    """Symlinks a CWD-relative sqlite path onto the Persistent Disk mount so
+    it survives Render's ephemeral-filesystem wipes on every deploy/restart.
+    Originally only lex_assistant.db went through this; Phase 2 of Case
+    Vault v2 sharing makes instance/client_data.db (team_members) load-
+    bearing for real access control too — an unshared team roster silently
+    reset on every deploy would look like shares randomly disappearing.
+    relative_path may include subdirectories (e.g. 'instance/client_data.db');
+    the parent directory is created before the symlink is placed since
+    os.symlink doesn't create intermediate dirs itself."""
+    parent = os.path.dirname(relative_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    _persistent_path = os.path.join(_persistent_data_dir, os.path.basename(relative_path))
+    if not os.path.exists(_persistent_path):
         # First boot after attaching a fresh disk — nothing to link to yet;
-        # sqlite3 will populate real tables into this empty file once
-        # init_db()/init_sqlite_db() run against it through the symlink.
-        open(_persistent_db_path, 'a').close()
-    if not os.path.islink('lex_assistant.db'):
-        if os.path.exists('lex_assistant.db'):
+        # the table-creation code will populate real tables into this empty
+        # file once it runs against it through the symlink.
+        open(_persistent_path, 'a').close()
+    if not os.path.islink(relative_path):
+        if os.path.exists(relative_path):
             # A non-symlink file already exists here (e.g. this is the very
             # first deploy after attaching the disk) — never silently
             # discard it; back it up once instead of overwriting.
-            os.rename('lex_assistant.db', 'lex_assistant.db.pre-disk-backup')
-        os.symlink(_persistent_db_path, 'lex_assistant.db')
+            os.rename(relative_path, relative_path + '.pre-disk-backup')
+        os.symlink(_persistent_path, relative_path)
+
+
+# Render's filesystem is ephemeral — anything written to the working
+# directory (including a bare-relative-path SQLite file like
+# lex_assistant.db) is wiped on every deploy/restart unless it lives on an
+# attached Persistent Disk. Every sqlite3.connect('lex_assistant.db') call
+# across this codebase (10+ files: app.py, document_routes.py,
+# auth_routes.py, ai_routes.py, conflict_routes.py, rag_pipeline.py, ...)
+# uses that same bare relative path, resolved against the process's CWD —
+# rather than threading an env-var-driven absolute path through every one
+# of those call sites, this symlinks the CWD-relative name to the
+# Persistent Disk's mount path ONCE, at import time, before anything
+# connects. Every existing sqlite3.connect('lex_assistant.db') call then
+# transparently resolves through the symlink with zero further changes.
+# PERSISTENT_DATA_DIR is only set on Render once a Disk is attached and
+# this env var points at its mount path — locally it's unset, so this
+# block is a no-op and both paths resolve exactly as they always have.
+if _persistent_data_dir and os.path.isdir(_persistent_data_dir):
+    _symlink_onto_persistent_disk('lex_assistant.db')
+    _symlink_onto_persistent_disk(os.path.join('instance', 'client_data.db'))
 
 db = sqlite3.connect('lex_assistant.db', check_same_thread=False)
 
@@ -111,6 +145,38 @@ def init_db():
             c.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
         except Exception:
             pass
+    # Standard-blueprint folders (see /api/vault/folders/init-blueprint) are
+    # marked protected so they can't be renamed/deleted out from under a
+    # matter with linked documents — everything else defaults unprotected.
+    try:
+        c.execute('ALTER TABLE vault_folders ADD COLUMN protected BOOLEAN DEFAULT 0')
+    except Exception:
+        pass
+    # Per-node "Anyone with the link" toggle (Phase 2 sharing) — distinct
+    # from an explicit per-person share row in document_vault_shares below.
+    for _tbl in ('case_vault', 'vault_folders'):
+        try:
+            c.execute(f'ALTER TABLE {_tbl} ADD COLUMN link_shared BOOLEAN DEFAULT 0')
+        except Exception:
+            pass
+    # Explicit per-person shares (Phase 2 sharing), uniform across folders
+    # and documents. Cascade is NOT stored here — sharing a folder grants
+    # access to its contents by walking the ancestor chain at
+    # permission-check time (see _effective_permission), so moving a folder
+    # or adding new children later can never leave a stale/duplicated grant
+    # behind. UNIQUE lets a re-share just update the existing row's
+    # permission instead of accumulating duplicates.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS document_vault_shares (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            node_type      TEXT    NOT NULL CHECK (node_type IN ('folder', 'document')),
+            node_id        INTEGER NOT NULL,
+            team_member_id INTEGER NOT NULL,
+            permission     TEXT    NOT NULL DEFAULT 'view' CHECK (permission IN ('view', 'edit')),
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(node_type, node_id, team_member_id)
+        )
+    ''')
     # AI Provenance / Audit Trail — links saved docs to the agent conversation that produced them
     c.execute('''
         CREATE TABLE IF NOT EXISTS vault_audit (
@@ -238,6 +304,19 @@ def init_sqlite_db():
         role TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
+    # Resolved lazily (case-insensitive email match against the real `users`
+    # table) whenever the roster is listed or a share is created — see
+    # _resolve_team_member_user_ids() in app.py. team_members lives in this
+    # sqlite file; `users` is a SQLAlchemy model against Postgres/Neon in
+    # production, so there is no SQL JOIN across them, only this cached,
+    # self-healing column. A member with no matching registered account
+    # stays NULL and is still shown in Share's people-picker for
+    # visibility/intent, but grants them no actual access — see the Case
+    # Vault v2 Phase 2 sharing notes.
+    try:
+        c.execute('ALTER TABLE team_members ADD COLUMN user_id INTEGER')
+    except sqlite3.OperationalError:
+        pass
     c.execute('''CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT,
@@ -474,6 +553,193 @@ def _current_vault_user_id():
     return int(get_jwt_identity())
 
 
+# ── Case Vault sharing (Phase 2) ────────────────────────────────────────
+def _resolve_team_member_user_ids(conn=None):
+    """Case-insensitive email match of every team_members row against the
+    real `users` table, writing the result into team_members.user_id.
+    team_members lives in instance/client_data.db (sqlite); `users` is a
+    SQLAlchemy model against Postgres/Neon in production — there is no SQL
+    JOIN possible across the two, so this resolves in Python and caches the
+    result column. Called opportunistically (roster list, share creation,
+    permission checks) rather than on a schedule, so a newly-registered
+    account is picked up the next time anyone touches sharing rather than
+    drifting indefinitely. Unmatched members are left NULL — expected, not
+    an error; see the Phase 2 sharing notes on team_members having no real
+    user_id FK."""
+    from models.user import User
+    own_conn = conn is None
+    if own_conn:
+        conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute(
+            "SELECT id, email FROM team_members WHERE email IS NOT NULL AND email != ''"
+        ).fetchall()
+        if not rows:
+            return
+        users = User.query.filter(User.email.isnot(None)).all()
+        by_email = {u.email.strip().lower(): u.id for u in users if u.email}
+        for member_id, email in rows:
+            resolved_uid = by_email.get((email or '').strip().lower())
+            conn.execute('UPDATE team_members SET user_id = ? WHERE id = ?', (resolved_uid, member_id))
+        conn.commit()
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def _current_user_team_member_ids(current_user_id):
+    """team_members.id values whose resolved user_id matches the current
+    session. Re-resolves first so a share created right after someone's
+    first login/registration is honored immediately rather than waiting for
+    the next opportunistic resolution elsewhere."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _resolve_team_member_user_ids(conn)
+        rows = conn.execute('SELECT id FROM team_members WHERE user_id = ?', (current_user_id,)).fetchall()
+        return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def _get_ancestor_folder_ids(folder_id):
+    """Walks vault_folders.parent_id upward from folder_id to the root,
+    returning every ancestor's id (excluding folder_id itself). Cycle-
+    guarded defensively even though nothing in this app can create one."""
+    ancestors = []
+    seen = set()
+    current = folder_id
+    while current is not None and current not in seen:
+        seen.add(current)
+        row = db.execute('SELECT parent_id FROM vault_folders WHERE id = ?', (current,)).fetchone()
+        if not row:
+            break
+        current = row[0]
+        if current is not None:
+            ancestors.append(current)
+    return ancestors
+
+
+_PERMISSION_RANK = {'view': 1, 'edit': 2}
+
+
+def _effective_permission(node_type, node_id, member_ids):
+    """Highest permission any of the given team_member ids holds on this
+    node, unioned with every ancestor folder's own explicit shares — a
+    folder share cascades to everything nested inside it. Computed at
+    check time by walking the ancestor chain rather than duplicating grants
+    into descendants on share/move, so moving a folder or adding new
+    children later can never leave a stale or missing grant behind (see
+    document_vault_shares' schema comment). Returns None if nothing grants
+    access. A document's own ancestor chain starts at its containing
+    folder, since documents have no children of their own to cascade to."""
+    if not member_ids:
+        return None
+    if node_type == 'document':
+        folder_row = db.execute('SELECT folder_id FROM case_vault WHERE id = ?', (node_id,)).fetchone()
+        start_folder = folder_row[0] if folder_row else None
+    else:
+        start_folder = node_id
+
+    nodes_to_check = {(node_type, node_id)}
+    if start_folder is not None:
+        nodes_to_check.add(('folder', start_folder))
+        for ancestor_id in _get_ancestor_folder_ids(start_folder):
+            nodes_to_check.add(('folder', ancestor_id))
+
+    best = None
+    placeholders = ','.join('?' for _ in member_ids)
+    for ntype, nid in nodes_to_check:
+        rows = db.execute(
+            f'SELECT permission FROM document_vault_shares WHERE node_type = ? AND node_id = ? '
+            f'AND team_member_id IN ({placeholders})',
+            (ntype, nid, *member_ids)
+        ).fetchall()
+        for (perm,) in rows:
+            if best is None or _PERMISSION_RANK.get(perm, 0) > _PERMISSION_RANK.get(best, 0):
+                best = perm
+    return best
+
+
+def _visible_shared_vault_ids(current_user_id):
+    """Additional folder/document ids a non-owner can see through sharing —
+    composes with the existing `user_id = ? OR user_id IS NULL` filters via
+    `OR id IN (...)` rather than replacing them, so every pre-Phase-2 query
+    keeps its ownership semantics unchanged and only gains extra rows.
+
+    Sharing a folder grants access to everything nested inside it, so a
+    shared folder's entire descendant subtree is included even though only
+    the root folder has an explicit document_vault_shares row (walked
+    downward here rather than duplicated into every descendant on share/
+    move — see that table's schema comment). A directly-shared document
+    that lives inside a folder the recipient otherwise can't see would
+    dangle with no browsable path to it, so that document's whole ancestor
+    chain is added too, read-only-visible for navigation even though the
+    share itself doesn't grant rights to the intermediate folders."""
+    member_ids = _current_user_team_member_ids(current_user_id)
+    if not member_ids:
+        return set(), set()
+    placeholders = ','.join('?' for _ in member_ids)
+
+    shared_folder_roots = {
+        r[0] for r in db.execute(
+            f"SELECT node_id FROM document_vault_shares WHERE node_type = 'folder' AND team_member_id IN ({placeholders})",
+            member_ids
+        ).fetchall()
+    }
+    shared_doc_ids = {
+        r[0] for r in db.execute(
+            f"SELECT node_id FROM document_vault_shares WHERE node_type = 'document' AND team_member_id IN ({placeholders})",
+            member_ids
+        ).fetchall()
+    }
+
+    all_folders = db.execute('SELECT id, parent_id FROM vault_folders').fetchall()
+    children_of, parent_of = {}, {}
+    for fid, pid in all_folders:
+        parent_of[fid] = pid
+        children_of.setdefault(pid, []).append(fid)
+
+    visible_folder_ids = set(shared_folder_roots)
+    stack = list(shared_folder_roots)
+    while stack:
+        fid = stack.pop()
+        for child in children_of.get(fid, []):
+            if child not in visible_folder_ids:
+                visible_folder_ids.add(child)
+                stack.append(child)
+
+    if shared_doc_ids:
+        doc_ph = ','.join('?' for _ in shared_doc_ids)
+        doc_folder_rows = db.execute(
+            f'SELECT DISTINCT folder_id FROM case_vault WHERE id IN ({doc_ph}) AND folder_id IS NOT NULL',
+            list(shared_doc_ids)
+        ).fetchall()
+        for (fid,) in doc_folder_rows:
+            cur, seen = fid, set()
+            while cur is not None and cur not in seen:
+                seen.add(cur)
+                visible_folder_ids.add(cur)
+                cur = parent_of.get(cur)
+
+    return visible_folder_ids, shared_doc_ids
+
+
+def _vault_access_ok(node_type, node_id, row_user_id, current_user_id, require_edit=False):
+    """Owner (or legacy/unowned) access always passes — identical to
+    _vault_owner_ok's behavior, which every mutation/read guard in the vault
+    routes now calls through here instead. On top of that, a non-owner can
+    pass if a team_members row resolved to their account holds an explicit
+    share (own or cascaded from an ancestor folder) at or above the
+    requested permission level."""
+    if _vault_owner_ok(row_user_id, current_user_id):
+        return True
+    member_ids = _current_user_team_member_ids(current_user_id)
+    perm = _effective_permission(node_type, node_id, member_ids)
+    if perm is None:
+        return False
+    return perm == 'edit' if require_edit else True
+
+
 def create_app():
     app = Flask(__name__)
     # Render terminates TLS at its edge and proxies to this app over plain
@@ -695,28 +961,69 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
+            shared_folder_ids, shared_doc_ids = _visible_shared_vault_ids(uid)
+
             conn = db
             old_rf = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
-                rows = conn.execute(
-                    'SELECT id, name, parent_id, created_at FROM vault_folders '
-                    'WHERE user_id = ? OR user_id IS NULL ORDER BY name ASC',
-                    (uid,)
+                if shared_folder_ids:
+                    fph = ','.join('?' for _ in shared_folder_ids)
+                    rows = conn.execute(
+                        f'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
+                        f'WHERE user_id = ? OR user_id IS NULL OR id IN ({fph}) ORDER BY name ASC',
+                        (uid, *shared_folder_ids)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
+                        'WHERE user_id = ? OR user_id IS NULL ORDER BY name ASC',
+                        (uid,)
+                    ).fetchall()
+
+                # Direct (own, non-inherited) share counts per folder — the
+                # Share badge only ever reflects a node's OWN explicit
+                # shares, never ones it merely inherits by cascade from an
+                # ancestor, so this is a plain GROUP BY on document_vault_shares
+                # itself rather than anything cascade-aware.
+                share_count_rows = conn.execute(
+                    "SELECT node_id, COUNT(*) AS cnt FROM document_vault_shares "
+                    "WHERE node_type = 'folder' GROUP BY node_id"
                 ).fetchall()
-                folders = [dict(r) for r in rows]
+                folder_share_counts = {r['node_id']: r['cnt'] for r in share_count_rows}
+
+                folders = [
+                    {
+                        **dict(r),
+                        'protected': bool(r['protected']),
+                        'link_shared': bool(r['link_shared']),
+                        'share_count': folder_share_counts.get(r['id'], 0),
+                    }
+                    for r in rows
+                ]
 
                 # Cheap GROUP BY for per-folder document counts — never touches
                 # `content`, so this stays fast regardless of table size and
                 # lets the frontend show folder counts without loading every
                 # document just to count them client-side. Scoped the same
-                # way as the folder list itself.
-                count_rows = conn.execute(
-                    'SELECT folder_id, COUNT(*) AS cnt FROM case_vault '
-                    'WHERE user_id = ? OR user_id IS NULL GROUP BY folder_id',
-                    (uid,)
-                ).fetchall()
-                doc_counts = {
+                # way as the folder list itself. This is each folder's OWN
+                # direct count — rolled up into a recursive count below, since
+                # the vault's document-count display must reflect nested
+                # contents too, not just direct children.
+                if shared_folder_ids:
+                    fph = ','.join('?' for _ in shared_folder_ids)
+                    count_rows = conn.execute(
+                        f'SELECT folder_id, COUNT(*) AS cnt FROM case_vault '
+                        f'WHERE user_id = ? OR user_id IS NULL OR folder_id IN ({fph}) GROUP BY folder_id',
+                        (uid, *shared_folder_ids)
+                    ).fetchall()
+                else:
+                    count_rows = conn.execute(
+                        'SELECT folder_id, COUNT(*) AS cnt FROM case_vault '
+                        'WHERE user_id = ? OR user_id IS NULL GROUP BY folder_id',
+                        (uid,)
+                    ).fetchall()
+                own_counts = {
                     ('root' if r['folder_id'] is None else str(r['folder_id'])): r['cnt']
                     for r in count_rows
                 }
@@ -732,6 +1039,23 @@ def create_app():
                     by_id[pid]['children'].append(f)
                 else:
                     roots.append(f)
+
+            # Recursive (rolled-up) document counts, computed once over the
+            # in-memory tree — a folder's displayed count includes every
+            # document nested under any depth of subfolder, not just its own
+            # direct children. This is the actual intended behavior (per the
+            # Document Vault v2 brief), not a stand-in for a stored count.
+            doc_counts = {}
+            def _rollup(fid):
+                total = own_counts.get(str(fid), 0)
+                for child in by_id[fid]['children']:
+                    total += _rollup(child['id'])
+                doc_counts[str(fid)] = total
+                return total
+            for f in by_id.values():
+                if str(f['id']) not in doc_counts:
+                    _rollup(f['id'])
+            doc_counts['root'] = own_counts.get('root', 0)
 
             return jsonify({'folders': roots, 'flat': folders, 'doc_counts': doc_counts}), 200
         except Exception as e:
@@ -761,7 +1085,7 @@ def create_app():
                 parent_row = conn.execute(
                     'SELECT user_id FROM vault_folders WHERE id = ?', (parent_id,)
                 ).fetchone()
-                if not parent_row or not _vault_owner_ok(parent_row[0], uid):
+                if not parent_row or not _vault_access_ok('folder', parent_id, parent_row[0], uid, require_edit=True):
                     return jsonify({'error': True, 'message': 'Parent folder not found.'}), 404
 
             # Uniqueness check: same name + same parent, within this user's own folders
@@ -783,6 +1107,51 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    # Standard blueprint — the 5 canonical top-level folders every matter
+    # starts with. Idempotent: no-ops (200, not an error) if this user
+    # already has any of them at root, mirroring the pre-existing
+    # client-side "already initialized" check rather than erroring on a
+    # repeat click. Created server-side with protected=1 so Delete/Rename
+    # can enforce it — the client can no longer request protection itself
+    # for arbitrary folders, since that would just be a trust boundary with
+    # no real purpose (protection here is a safety guard, not a security
+    # control, but it should still only ever apply to these 5 real folders).
+    _BLUEPRINT_FOLDER_NAMES = [
+        '01 · Pleadings & Drafts',
+        '02 · Court Filings',
+        '03 · Evidence & Exhibits',
+        '04 · Correspondence',
+        '05 · Research & Precedents',
+    ]
+
+    @app.route('/api/vault/folders/init-blueprint', methods=['POST', 'OPTIONS'])
+    @jwt_required()
+    def init_vault_blueprint():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            existing = db.execute(
+                'SELECT name FROM vault_folders WHERE parent_id IS NULL AND (user_id = ? OR user_id IS NULL)',
+                (uid,)
+            ).fetchall()
+            existing_names = {r[0] for r in existing}
+            if existing_names & set(_BLUEPRINT_FOLDER_NAMES):
+                return jsonify({'success': True, 'created': False, 'message': 'Blueprint already initialized.'}), 200
+
+            c = db.cursor()
+            created = []
+            for name in _BLUEPRINT_FOLDER_NAMES:
+                c.execute(
+                    'INSERT INTO vault_folders (name, parent_id, user_id, protected) VALUES (?, NULL, ?, 1)',
+                    (name, uid)
+                )
+                created.append({'id': c.lastrowid, 'name': name, 'protected': True})
+            db.commit()
+            return jsonify({'success': True, 'created': True, 'folders': created}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     @app.route('/api/vault/folders/<int:folder_id>', methods=['PATCH', 'OPTIONS'])
     @jwt_required()
     def update_vault_folder(folder_id):
@@ -790,9 +1159,11 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            owner_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
-            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+            owner_row = db.execute('SELECT user_id, protected FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            if not owner_row or not _vault_access_ok('folder', folder_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Folder not found.'}), 404
+            if owner_row[1]:
+                return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be renamed or moved.'}), 403
 
             data = request.get_json(force=True, silent=True) or {}
 
@@ -813,7 +1184,7 @@ def create_app():
                 # underneath another user's private tree by guessing an id.
                 if new_parent is not None:
                     dest_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (new_parent,)).fetchone()
-                    if not dest_row or not _vault_owner_ok(dest_row[0], uid):
+                    if not dest_row or not _vault_access_ok('folder', new_parent, dest_row[0], uid, require_edit=True):
                         return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
                 # Prevent circular parentage: new_parent must not be self or a descendant
                 def get_descendants(fid):
@@ -839,15 +1210,26 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            owner_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
-            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+            owner_row = db.execute('SELECT user_id, protected FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            if not owner_row or not _vault_access_ok('folder', folder_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Folder not found.'}), 404
+            if owner_row[1]:
+                return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be deleted.'}), 403
 
             def recursive_delete(fid):
                 # Delete all documents in this folder that this user may
                 # touch — a shared/legacy child document sitting inside an
                 # otherwise-owned folder is still left alone rather than
                 # deleted out from under whoever else can see it.
+                doc_ids = [
+                    r[0] for r in db.execute(
+                        'SELECT id FROM case_vault WHERE folder_id = ? AND (user_id = ? OR user_id IS NULL)',
+                        (fid, uid)
+                    ).fetchall()
+                ]
+                if doc_ids:
+                    doc_ph = ','.join('?' for _ in doc_ids)
+                    db.execute(f"DELETE FROM document_vault_shares WHERE node_type = 'document' AND node_id IN ({doc_ph})", doc_ids)
                 db.execute(
                     'DELETE FROM case_vault WHERE folder_id = ? AND (user_id = ? OR user_id IS NULL)',
                     (fid, uid)
@@ -863,6 +1245,7 @@ def create_app():
                 ]
                 for child_id in children:
                     recursive_delete(child_id)
+                db.execute("DELETE FROM document_vault_shares WHERE node_type = 'folder' AND node_id = ?", (fid,))
                 db.execute('DELETE FROM vault_folders WHERE id = ?', (fid,))
 
             recursive_delete(folder_id)
@@ -879,14 +1262,78 @@ def create_app():
         uid = _current_vault_user_id()
         try:
             owner_row = db.execute('SELECT user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
-            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+            if not owner_row or not _vault_access_ok('document', doc_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Document not found.'}), 404
 
             data = request.get_json(force=True, silent=True) or {}
-            new_content = data.get('content', '')
-            db.execute('UPDATE case_vault SET content = ? WHERE id = ?', (new_content, doc_id))
+            if 'content' in data:
+                db.execute('UPDATE case_vault SET content = ? WHERE id = ?', (data.get('content', ''), doc_id))
+            if 'title' in data or 'smart_title' in data:
+                new_title = (data.get('title') or data.get('smart_title') or '').strip()
+                if not new_title:
+                    return jsonify({'error': True, 'message': 'Title cannot be empty.'}), 400
+                if len(new_title) > 200:
+                    return jsonify({'error': True, 'message': 'Title must be under 200 characters.'}), 400
+                db.execute('UPDATE case_vault SET smart_title = ? WHERE id = ?', (new_title, doc_id))
+            if 'folder_id' in data:
+                new_folder_id = data.get('folder_id')
+                if new_folder_id is not None:
+                    dest_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (new_folder_id,)).fetchone()
+                    if not dest_row or not _vault_access_ok('folder', new_folder_id, dest_row[0], uid, require_edit=True):
+                        return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
+                db.execute('UPDATE case_vault SET folder_id = ? WHERE id = ?', (new_folder_id, doc_id))
             db.commit()
             return jsonify({'success': True, 'id': doc_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    # Real multipart file upload into the vault — distinct from /api/vault/save,
+    # which only ever renders app-generated text content into a blob. This is
+    # the actual "Upload here" / dropzone target: the caller's own file bytes,
+    # unmodified, stored in file_blob. No real auto-classification pipeline
+    # exists anywhere in the app yet (uploads everywhere else in the product
+    # get a placeholder tag too), so this deliberately doesn't invent one here.
+    @app.route('/api/vault/documents/upload', methods=['POST', 'OPTIONS'])
+    @jwt_required()
+    def upload_vault_document():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            if 'file' not in request.files:
+                return jsonify({'error': True, 'message': 'No file provided.'}), 400
+            f = request.files['file']
+            if not f.filename:
+                return jsonify({'error': True, 'message': 'No file selected.'}), 400
+
+            folder_id = request.form.get('folder_id') or None
+            case_id = request.form.get('case_id') or 'General'
+            if folder_id is not None:
+                folder_row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+                if not folder_row or not _vault_access_ok('folder', folder_id, folder_row[0], uid, require_edit=True):
+                    return jsonify({'error': True, 'message': 'Folder not found.'}), 404
+
+            file_bytes = f.read()
+            ext = (f.filename.rsplit('.', 1)[-1] if '.' in f.filename else '').lower()
+            title = f.filename.rsplit('.', 1)[0] if '.' in f.filename else f.filename
+
+            c = db.cursor()
+            c.execute(
+                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (case_id, f.filename, 'uploaded', '', folder_id, title, 'UNCLASSIFIED', file_bytes, ext, uid)
+            )
+            db.commit()
+            doc_id = c.lastrowid
+            return jsonify({
+                'success': True,
+                'id': doc_id,
+                'title': title,
+                'filename': f.filename,
+                'sizeBytes': len(file_bytes),
+                'folder_id': folder_id,
+                'tag': 'UNCLASSIFIED',
+            }), 201
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
@@ -898,11 +1345,189 @@ def create_app():
         uid = _current_vault_user_id()
         try:
             owner_row = db.execute('SELECT user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
-            if not owner_row or not _vault_owner_ok(owner_row[0], uid):
+            if not owner_row or not _vault_access_ok('document', doc_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            db.execute("DELETE FROM document_vault_shares WHERE node_type = 'document' AND node_id = ?", (doc_id,))
             db.execute('DELETE FROM case_vault WHERE id = ?', (doc_id,))
             db.commit()
             return jsonify({'success': True, 'deleted_id': doc_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    # ── Vault Sharing API (Phase 2) ──────────────────────────────────────────
+    # Sharing itself is owner-only to manage (an editor granted access to a
+    # folder can read/write its contents but can't re-share it to someone
+    # else) — _vault_owner_ok, not _vault_access_ok, guards every route here.
+    def _fetch_vault_node_owner(node_type, node_id):
+        table = 'vault_folders' if node_type == 'folder' else 'case_vault'
+        row = db.execute(f'SELECT user_id FROM {table} WHERE id = ?', (node_id,)).fetchone()
+        return row[0] if row else None
+
+    @app.route('/api/vault/shares', methods=['GET', 'OPTIONS'])
+    @jwt_required()
+    def list_vault_shares():
+        """Returns a node's OWN explicit shares only (never ones it merely
+        inherits by cascade from an ancestor folder) — this is what the
+        Share modal's people list and the vault grid's share badge both
+        render, so cascaded access stays invisible/implicit exactly like a
+        parent folder's other properties would."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            node_type = request.args.get('node_type')
+            node_id = request.args.get('node_id', type=int)
+            if node_type not in ('folder', 'document') or node_id is None:
+                return jsonify({'error': True, 'message': 'node_type and node_id are required.'}), 400
+
+            row_owner = _fetch_vault_node_owner(node_type, node_id)
+            if row_owner is None and db.execute(
+                f"SELECT 1 FROM {'vault_folders' if node_type == 'folder' else 'case_vault'} WHERE id = ?", (node_id,)
+            ).fetchone() is None:
+                return jsonify({'error': True, 'message': 'Not found.'}), 404
+            if not _vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can view sharing for this item.'}), 403
+
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, team_member_id, permission, created_at FROM document_vault_shares '
+                    'WHERE node_type = ? AND node_id = ? ORDER BY created_at ASC',
+                    (node_type, node_id)
+                ).fetchall()
+                shares = [dict(r) for r in rows]
+            finally:
+                conn.row_factory = old_rf
+
+            # Enrich with the roster's name/email/resolved-user_id so the
+            # modal doesn't need a second round trip per row.
+            if shares:
+                team_conn = sqlite3.connect(DB_PATH)
+                team_conn.row_factory = sqlite3.Row
+                try:
+                    _resolve_team_member_user_ids(team_conn)
+                    ids = [s['team_member_id'] for s in shares]
+                    ph = ','.join('?' for _ in ids)
+                    members = {
+                        r['id']: dict(r) for r in team_conn.execute(
+                            f'SELECT id, name, email, role, user_id FROM team_members WHERE id IN ({ph})', ids
+                        ).fetchall()
+                    }
+                finally:
+                    team_conn.close()
+                for s in shares:
+                    m = members.get(s['team_member_id'], {})
+                    s['member_name'] = m.get('name')
+                    s['member_email'] = m.get('email')
+                    s['member_matched'] = m.get('user_id') is not None
+
+            link_shared = False
+            table = 'vault_folders' if node_type == 'folder' else 'case_vault'
+            ls_row = db.execute(f'SELECT link_shared FROM {table} WHERE id = ?', (node_id,)).fetchone()
+            if ls_row:
+                link_shared = bool(ls_row[0])
+
+            return jsonify({'shares': shares, 'link_shared': link_shared}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/vault/shares', methods=['POST', 'OPTIONS'])
+    @jwt_required()
+    def create_vault_share():
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            node_type = data.get('node_type')
+            node_id = data.get('node_id')
+            team_member_id = data.get('team_member_id')
+            permission = data.get('permission', 'view')
+            if node_type not in ('folder', 'document') or not node_id or not team_member_id:
+                return jsonify({'error': True, 'message': 'node_type, node_id and team_member_id are required.'}), 400
+            if permission not in ('view', 'edit'):
+                return jsonify({'error': True, 'message': 'permission must be "view" or "edit".'}), 400
+
+            row_owner = _fetch_vault_node_owner(node_type, node_id)
+            if row_owner is None and db.execute(
+                f"SELECT 1 FROM {'vault_folders' if node_type == 'folder' else 'case_vault'} WHERE id = ?", (node_id,)
+            ).fetchone() is None:
+                return jsonify({'error': True, 'message': 'Not found.'}), 404
+            if not _vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can share this item.'}), 403
+
+            team_conn = sqlite3.connect(DB_PATH)
+            try:
+                member_row = team_conn.execute('SELECT id FROM team_members WHERE id = ?', (team_member_id,)).fetchone()
+            finally:
+                team_conn.close()
+            if not member_row:
+                return jsonify({'error': True, 'message': 'Team member not found.'}), 404
+
+            db.execute(
+                'INSERT INTO document_vault_shares (node_type, node_id, team_member_id, permission) VALUES (?, ?, ?, ?) '
+                'ON CONFLICT(node_type, node_id, team_member_id) DO UPDATE SET permission = excluded.permission',
+                (node_type, node_id, team_member_id, permission)
+            )
+            db.commit()
+            share_id = db.execute(
+                'SELECT id FROM document_vault_shares WHERE node_type = ? AND node_id = ? AND team_member_id = ?',
+                (node_type, node_id, team_member_id)
+            ).fetchone()[0]
+            return jsonify({'success': True, 'id': share_id, 'permission': permission}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/vault/shares/<int:share_id>', methods=['DELETE', 'OPTIONS'])
+    @jwt_required()
+    def delete_vault_share(share_id):
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            share_row = db.execute(
+                'SELECT node_type, node_id FROM document_vault_shares WHERE id = ?', (share_id,)
+            ).fetchone()
+            if not share_row:
+                return jsonify({'error': True, 'message': 'Share not found.'}), 404
+            node_type, node_id = share_row
+            row_owner = _fetch_vault_node_owner(node_type, node_id)
+            if not _vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can revoke this share.'}), 403
+            db.execute('DELETE FROM document_vault_shares WHERE id = ?', (share_id,))
+            db.commit()
+            return jsonify({'success': True, 'deleted_id': share_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/vault/shares/link', methods=['PATCH', 'OPTIONS'])
+    @jwt_required()
+    def toggle_vault_link_share():
+        """Owner-only toggle for the node's "Anyone with the link" flag —
+        distinct from (and independent of) the per-person shares above."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            node_type = data.get('node_type')
+            node_id = data.get('node_id')
+            link_shared = bool(data.get('link_shared'))
+            if node_type not in ('folder', 'document') or not node_id:
+                return jsonify({'error': True, 'message': 'node_type and node_id are required.'}), 400
+
+            table = 'vault_folders' if node_type == 'folder' else 'case_vault'
+            row_owner = _fetch_vault_node_owner(node_type, node_id)
+            if row_owner is None and db.execute(f'SELECT 1 FROM {table} WHERE id = ?', (node_id,)).fetchone() is None:
+                return jsonify({'error': True, 'message': 'Not found.'}), 404
+            if not _vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can change link sharing.'}), 403
+
+            db.execute(f'UPDATE {table} SET link_shared = ? WHERE id = ?', (1 if link_shared else 0, node_id))
+            db.commit()
+            return jsonify({'success': True, 'link_shared': link_shared}), 200
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
@@ -1033,7 +1658,7 @@ def create_app():
             # private folder just by sending its id.
             if folder_id:
                 folder_owner = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
-                if not folder_owner or not _vault_owner_ok(folder_owner[0], uid):
+                if not folder_owner or not _vault_access_ok('folder', folder_id, folder_owner[0], uid, require_edit=True):
                     return jsonify({"error": True, "message": "Destination folder not found."}), 404
 
             # Format conversion — generate binary blob if requested
@@ -1180,7 +1805,7 @@ def create_app():
             conn = db
             conn.execute('BEGIN IMMEDIATE')
             row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
-            if not row or not _vault_owner_ok(row[1], uid):
+            if not row or not _vault_access_ok('document', doc_id, row[1], uid, require_edit=True):
                 conn.rollback()
                 return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
             conn.execute(_CITATION_INSERT_SQL, (citation_id, payload, doc_id, doc_id))
@@ -1205,7 +1830,7 @@ def create_app():
             conn = db
             conn.execute('BEGIN IMMEDIATE')
             row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
-            if not row or not _vault_owner_ok(row[1], uid):
+            if not row or not _vault_access_ok('document', doc_id, row[1], uid, require_edit=True):
                 conn.rollback()
                 return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
             conn.execute(_CITATION_DELETE_SQL, (doc_id, citation_id, doc_id))
@@ -1231,18 +1856,23 @@ def create_app():
             row = db.execute(
                 'SELECT file_blob, file_format, smart_title, title, user_id FROM case_vault WHERE id = ?', (doc_id,)
             ).fetchone()
-            if not row or not _vault_owner_ok(row[4], uid):
+            if not row or not _vault_access_ok('document', doc_id, row[4], uid, require_edit=False):
                 return jsonify({'error': True, 'message': 'Document not found.'}), 404
             if not row[0]:
                 return jsonify({'error': True, 'message': 'No binary file stored for this document.'}), 404
-            fmt = row[1] or 'native'
+            fmt = (row[1] or 'native').lower()
             name = row[2] or row[3] or f'document_{doc_id}'
-            if fmt == 'pdf':
-                mime = 'application/pdf'
-                ext  = '.pdf'
-            else:
-                mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                ext  = '.docx'
+            # Server-generated exports are always 'pdf' or 'docx' (see
+            # /api/vault/save); real uploads (/api/vault/documents/upload)
+            # store the caller's own file extension in file_format, which can
+            # be anything — mislabeling a .jpg as .docx would corrupt it, so
+            # only the two known-generated formats get special-cased mimes.
+            _KNOWN_MIMES = {
+                'pdf': 'application/pdf',
+                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            }
+            mime = _KNOWN_MIMES.get(fmt, 'application/octet-stream')
+            ext = f'.{fmt}' if fmt and fmt != 'native' else ''
             safe_name = ''.join(c for c in name if c.isalnum() or c in ' _-.')
             return FlaskResponse(
                 bytes(row[0]),
@@ -1384,22 +2014,43 @@ def create_app():
     @app.route('/api/vault/meta', methods=['GET', 'OPTIONS'])
     @jwt_required()
     def get_vault_meta():
-        """Lightweight document metadata for the Save-to-Vault modal explorer.
-        Returns id, title, doc_type, folder_id, file_format, created_at — NO content field."""
+        """Lightweight document metadata for the Save-to-Vault modal explorer
+        and the Document Vault tree. Returns id, title, smart_title, doc_type,
+        folder_id, file_format, size_bytes, created_at — NO content field, and
+        no LIMIT (unlike /api/vault/documents, which pages/caps for its own
+        content-bearing use case) since the tree needs every document this
+        user can see to render correctly regardless of vault size."""
         if request.method == 'OPTIONS':
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
+            shared_folder_ids, shared_doc_ids = _visible_shared_vault_ids(uid)
+            visible_ids = shared_folder_ids | shared_doc_ids
+
             conn = db
             old_rf = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
-                rows = conn.execute(
-                    'SELECT id, title, doc_type, folder_id, file_format, created_at '
-                    'FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
-                    (uid,)
+                base_sql = (
+                    'SELECT id, title, smart_title, doc_type, folder_id, file_format, tags, '
+                    'LENGTH(file_blob) AS size_bytes, created_at '
+                    'FROM case_vault WHERE user_id = ? OR user_id IS NULL'
+                )
+                if visible_ids:
+                    ph = ','.join('?' for _ in visible_ids)
+                    rows = conn.execute(
+                        f'{base_sql} OR folder_id IN ({ph}) OR id IN ({ph}) ORDER BY created_at DESC',
+                        (uid, *visible_ids, *visible_ids)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(f'{base_sql} ORDER BY created_at DESC', (uid,)).fetchall()
+
+                share_count_rows = conn.execute(
+                    "SELECT node_id, COUNT(*) AS cnt FROM document_vault_shares "
+                    "WHERE node_type = 'document' GROUP BY node_id"
                 ).fetchall()
-                docs = [dict(r) for r in rows]
+                doc_share_counts = {r['node_id']: r['cnt'] for r in share_count_rows}
+                docs = [{**dict(r), 'share_count': doc_share_counts.get(r['id'], 0)} for r in rows]
             finally:
                 conn.row_factory = old_rf
             return jsonify({'documents': docs}), 200
@@ -3031,6 +3682,26 @@ def create_app():
                 conn.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
             except Exception:
                 pass
+        try:
+            conn.execute('ALTER TABLE vault_folders ADD COLUMN protected BOOLEAN DEFAULT 0')
+        except Exception:
+            pass
+        for _tbl in ('case_vault', 'vault_folders'):
+            try:
+                conn.execute(f'ALTER TABLE {_tbl} ADD COLUMN link_shared BOOLEAN DEFAULT 0')
+            except Exception:
+                pass
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS document_vault_shares (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_type      TEXT    NOT NULL CHECK (node_type IN ('folder', 'document')),
+                node_id        INTEGER NOT NULL,
+                team_member_id INTEGER NOT NULL,
+                permission     TEXT    NOT NULL DEFAULT 'view' CHECK (permission IN ('view', 'edit')),
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(node_type, node_id, team_member_id)
+            )
+        ''')
         conn.execute('''
             CREATE TABLE IF NOT EXISTS vault_audit (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,

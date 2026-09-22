@@ -271,6 +271,144 @@ class TestAuditTrailIDOR:
         assert "Alice's AI session" not in titles
 
 
+class TestProtectedBlueprintFolders:
+    """Case Vault v2 Phase 1 — the 5 standard-blueprint folders must be
+    immune to rename/delete (via the owner's own session, not just IDOR),
+    and init-blueprint must be idempotent."""
+
+    def test_init_blueprint_creates_five_protected_folders(self, client):
+        _register(client, "blueprint1@example.com")
+        resp = _mutating(client, "post", "/api/vault/folders/init-blueprint")
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["created"] is True
+        assert len(data["folders"]) == 5
+        assert all(f["protected"] is True for f in data["folders"])
+
+        listed = client.get("/api/vault/folders")
+        flat = listed.get_json()["flat"]
+        blueprint_rows = [f for f in flat if f["id"] in [x["id"] for x in data["folders"]]]
+        assert all(f["protected"] is True for f in blueprint_rows)
+
+    def test_init_blueprint_is_idempotent(self, client):
+        _register(client, "blueprint2@example.com")
+        first = _mutating(client, "post", "/api/vault/folders/init-blueprint")
+        assert first.get_json()["created"] is True
+
+        second = _mutating(client, "post", "/api/vault/folders/init-blueprint")
+        assert second.status_code == 200
+        assert second.get_json()["created"] is False
+
+        listed = client.get("/api/vault/folders")
+        assert len(listed.get_json()["flat"]) == 5  # not duplicated
+
+    def test_owner_cannot_delete_protected_folder(self, client):
+        _register(client, "blueprint3@example.com")
+        created = _mutating(client, "post", "/api/vault/folders/init-blueprint").get_json()
+        protected_id = created["folders"][0]["id"]
+
+        resp = _mutating(client, "delete", f"/api/vault/folders/{protected_id}")
+        assert resp.status_code == 403
+
+        listed = client.get("/api/vault/folders")
+        assert protected_id in [f["id"] for f in listed.get_json()["flat"]]
+
+    def test_owner_cannot_rename_protected_folder(self, client):
+        _register(client, "blueprint4@example.com")
+        created = _mutating(client, "post", "/api/vault/folders/init-blueprint").get_json()
+        protected_id = created["folders"][0]["id"]
+
+        resp = _mutating(client, "patch", f"/api/vault/folders/{protected_id}", json={"name": "Renamed"})
+        assert resp.status_code == 403
+
+    def test_ordinary_folder_can_still_be_renamed_and_deleted(self, client):
+        """Confirms the protected guard is scoped to blueprint folders only
+        — an ordinary, user-created folder must be unaffected."""
+        _register(client, "blueprint5@example.com")
+        created = _mutating(client, "post", "/api/vault/folders", json={"name": "Untitled folder"})
+        folder_id = created.get_json()["id"]
+
+        renamed = _mutating(client, "patch", f"/api/vault/folders/{folder_id}", json={"name": "Bank Statements"})
+        assert renamed.status_code == 200
+
+        deleted = _mutating(client, "delete", f"/api/vault/folders/{folder_id}")
+        assert deleted.status_code == 200
+
+
+class TestRecursiveDocCounts:
+    def test_doc_counts_roll_up_nested_subfolders(self, client):
+        _register(client, "counts1@example.com")
+        parent = _mutating(client, "post", "/api/vault/folders", json={"name": "03 · Evidence"}).get_json()
+        child = _mutating(
+            client, "post", "/api/vault/folders",
+            json={"name": "Bank Statements", "parent_id": parent["id"]},
+        ).get_json()
+
+        _save_document(client, title="Direct child doc", folder_id=parent["id"])
+        _save_document(client, title="Nested doc", folder_id=child["id"])
+
+        listed = client.get("/api/vault/folders")
+        doc_counts = listed.get_json()["doc_counts"]
+        # Parent's count includes its own direct document AND the one nested
+        # under its child folder — not just direct children.
+        assert doc_counts.get(str(parent["id"])) == 2
+        assert doc_counts.get(str(child["id"])) == 1
+
+
+class TestDocumentRenameAndUpload:
+    def test_put_document_title_updates_smart_title(self, client):
+        _register(client, "rename1@example.com")
+        doc_id = _save_document(client, title="Original Name")
+
+        resp = _mutating(client, "put", f"/api/vault/documents/{doc_id}", json={"title": "Renamed Document"})
+        assert resp.status_code == 200
+
+        listed = client.get("/api/vault/meta")
+        doc = next(d for d in listed.get_json()["documents"] if d["id"] == doc_id)
+        assert doc["smart_title"] == "Renamed Document"
+
+    def test_put_document_rejects_empty_title(self, client):
+        _register(client, "rename2@example.com")
+        doc_id = _save_document(client)
+        resp = _mutating(client, "put", f"/api/vault/documents/{doc_id}", json={"title": "   "})
+        assert resp.status_code == 400
+
+    def test_real_file_upload_stores_and_downloads_correctly(self, client):
+        import io
+        _register(client, "upload1@example.com")
+        data = {
+            "file": (io.BytesIO(b"%PDF-1.4 fake pdf bytes"), "Exhibit_A.pdf"),
+            "case_id": "CASE-UPLOAD-1",
+        }
+        resp = _mutating(
+            client, "post", "/api/vault/documents/upload",
+            data=data, content_type="multipart/form-data",
+        )
+        assert resp.status_code == 201
+        doc_id = resp.get_json()["id"]
+
+        download = client.get(f"/api/vault/documents/{doc_id}/download")
+        assert download.status_code == 200
+        assert download.data == b"%PDF-1.4 fake pdf bytes"
+        assert download.headers["Content-Disposition"].endswith('.pdf"')
+
+    def test_upload_into_another_users_folder_is_rejected(self, client):
+        import io
+        _register(client, "upload2@example.com")
+        folder = _mutating(client, "post", "/api/vault/folders", json={"name": "Alice's Folder"}).get_json()
+
+        client.delete_cookie("access_token_cookie")
+        client.delete_cookie("csrf_access_token")
+        _register(client, "upload3@example.com")
+
+        resp = _mutating(
+            client, "post", "/api/vault/documents/upload",
+            data={"file": (io.BytesIO(b"x"), "f.pdf"), "folder_id": str(folder["id"])},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 404
+
+
 class TestLegitimateFlowStillWorks:
     def test_existing_legitimate_vault_flow_still_works(self, client):
         """#10 — full save → list → folder → filter → update → delete round

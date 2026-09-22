@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
-import { uploadDocument, deleteDocument } from '../services/api';
-import { useChamberStore } from '../stores/useChamberStore';
+import { useChamberStore, getItemsInFolder, getFolderPath } from '../stores/useChamberStore';
+import { useVaultTree } from '../hooks/useVaultTree';
 import { useContextMenu } from '../hooks/useContextMenu';
 import ContextMenu from './vault/ContextMenu';
 import ShareModal from './vault/ShareModal';
 import MoveModal from './vault/MoveModal';
+import ConfirmDeleteDialog from './vault/ConfirmDeleteDialog';
 import SyncToast from './vault/SyncToast';
 import { Folder, FileText, MoreVertical } from 'lucide-react';
 
@@ -21,15 +22,6 @@ function formatBreadcrumbs(path) {
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-
-// ── Default 5-Folder Litigation Blueprint ─────────────────────────────────
-const DEFAULT_BLUEPRINT_FOLDERS = [
-  { id: 'f1', name: '01 · Pleadings & Drafts', slug: 'pleadings' },
-  { id: 'f2', name: '02 · Court Filings', slug: 'court-filings' },
-  { id: 'f3', name: '03 · Evidence & Exhibits', slug: 'evidence' },
-  { id: 'f4', name: '04 · Correspondence', slug: 'correspondence' },
-  { id: 'f5', name: '05 · Research & Precedents', slug: 'research' },
-];
 
 // ── Initial Mock / Fallback Matters ───────────────────────────────────────
 const INITIAL_MATTERS = [
@@ -126,30 +118,6 @@ const INITIAL_TIMELINE = [
   { id: 't3', date: '18 Sep 2026', label: "Respondent's counter-affidavit received", source: 'Counter_Affidavit_SBI.pdf' },
   { id: 't4', date: '24 Sep 2026', label: 'Next hearing scheduled', source: 'Cause list entry' },
 ];
-
-// ── Fallback Initial Folder Documents ────────────────────────────────────
-const INITIAL_FOLDER_DOCS = {
-  f1: [
-    { id: 'd1', name: 'Plaint_TN_HC_2026.pdf', tag: 'AUTO-CLASSIFIED · PLEADING', tagSeverity: 'neutral', size: '842 KB', updated: '2d ago', folderId: 'f1', matterId: 'm1' },
-    { id: 'd2', name: 'Vakalatnama_Signed.pdf', tag: 'SIGNED', tagSeverity: 'neutral', size: '210 KB', updated: '5d ago', folderId: 'f1', matterId: 'm1' },
-  ],
-  f2: [
-    { id: 'd3', name: 'Interim_Application.pdf', tag: 'AUTO-CLASSIFIED · FILING', tagSeverity: 'neutral', size: '318 KB', updated: '1d ago', folderId: 'f2', matterId: 'm1' },
-    { id: 'd4', name: 'Counter_Affidavit_SBI.pdf', tag: 'NEEDS REVIEW', tagSeverity: 'review', size: '540 KB', updated: '4d ago', folderId: 'f2', matterId: 'm1' },
-  ],
-  f3: [
-    { id: 'd5', name: 'Exhibit_A_Bank_Statement.pdf', tag: 'EVIDENCE', tagSeverity: 'neutral', size: '1.1 MB', updated: '3d ago', folderId: 'f3', matterId: 'm1' },
-    { id: 'd6', name: 'Exhibit_B_Correspondence.pdf', tag: 'EVIDENCE', tagSeverity: 'neutral', size: '640 KB', updated: '6d ago', folderId: 'f3', matterId: 'm1' },
-  ],
-  f4: [
-    { id: 'd7', name: 'Legal_Notice_Reply.pdf', tag: 'CORRESPONDENCE', tagSeverity: 'neutral', size: '190 KB', updated: '6d ago', folderId: 'f4', matterId: 'm1' },
-    { id: 'd8', name: 'Client_Email_Thread.pdf', tag: 'CORRESPONDENCE', tagSeverity: 'neutral', size: '95 KB', updated: '1w ago', folderId: 'f4', matterId: 'm1' },
-  ],
-  f5: [
-    { id: 'd9', name: 'SC_Judgment_2019_Ref.pdf', tag: 'PRECEDENT', tagSeverity: 'neutral', size: '410 KB', updated: '4d ago', folderId: 'f5', matterId: 'm2' },
-    { id: 'd10', name: 'HC_Order_Comparable.pdf', tag: 'PRECEDENT', tagSeverity: 'neutral', size: '285 KB', updated: '1w ago', folderId: 'f5', matterId: 'm2' },
-  ],
-};
 
 function generateQuickHash() {
   const chars = '0123456789abcdef';
@@ -318,6 +286,32 @@ const styles = `
   .cv-dropzone-title { font-size: 14px; font-weight: 600; color: var(--ink); }
   .cv-dropzone-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
+  /* ---------- Document Vault tree grid (real recursive folders/documents) ---------- */
+  .cv-vault-breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-family: 'IBM Plex Mono', monospace; color: var(--muted); margin-bottom: 16px; overflow-x: auto; padding: 2px 0; }
+  .cv-vault-breadcrumb-item { background: none; border: none; padding: 0; font-family: inherit; font-size: inherit; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .cv-vault-breadcrumb-item:hover { color: var(--accent); }
+  .cv-vault-breadcrumb-item.current { color: var(--ink); font-weight: 600; cursor: default; }
+  .cv-vault-breadcrumb-item.current:hover { color: var(--ink); }
+  .cv-vault-breadcrumb-sep { color: var(--rule); }
+  .cv-vault-breadcrumb-ellipsis { color: var(--muted); padding: 0 2px; user-select: none; }
+
+  .cv-vault-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .cv-vault-card {
+    position: relative; background: var(--paper); border: 1px solid var(--rule); border-radius: 13px;
+    padding: 16px; cursor: pointer; transition: border-color 0.15s ease; display: flex;
+    flex-direction: column; justify-content: space-between; height: 128px; user-select: none;
+  }
+  .cv-vault-card:hover { border-color: var(--accent); }
+  .cv-vault-card-top { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+  .cv-vault-card-icon { padding: 8px; border-radius: 8px; background: var(--paper-2); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+  .cv-vault-card-kebab { padding: 6px; border-radius: 6px; border: none; background: transparent; color: var(--muted); cursor: pointer; opacity: 0.7; transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease; }
+  .cv-vault-card:hover .cv-vault-card-kebab { opacity: 1; }
+  .cv-vault-card-kebab:hover { background: var(--paper-2); color: var(--ink); }
+  .cv-vault-card-body { margin-top: 8px; min-width: 0; }
+  .cv-vault-card-name { font-family: 'Fraunces', serif; font-style: italic; font-weight: 500; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cv-vault-card-meta { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 4px; }
+  .cv-vault-card-rename-input { width: 100%; background: var(--paper-2); border: 1px solid var(--accent); border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: var(--ink); font-family: inherit; outline: none; box-sizing: border-box; }
+
   .cv-folder-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
   .cv-folder-card {
     background: var(--paper); border: 1px solid var(--rule); border-radius: 13px;
@@ -464,42 +458,38 @@ export default function CaseWorkspace() {
   const {
     activeFolderId,
     setActiveFolderId,
-    activeMatterId,
-    vaultItems,
-    addItem,
-    addBatchItems,
-    deleteItem,
-    renameItem,
-    moveItem,
-    getItemsInFolder,
-    getFolderPath,
-    initializeBlueprintFolders,
     setSyncProgress,
     syncProgress,
   } = useChamberStore();
+
+  // Real, backend-persisted folder/document tree — replaces the old
+  // Zustand-only `vaultItems` array, which lost the entire vault on every
+  // page refresh (see the Phase 1 plan).
+  const vault = useVaultTree();
 
   const { contextMenu, openContextMenu, closeContextMenu } = useContextMenu();
 
   // Modal target states
   const [itemToShare, setItemToShare] = useState(null);
   const [itemToMove, setItemToMove] = useState(null);
+  const [itemToDelete, setItemToDelete] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
 
   // Hidden file input refs
   const folderInputRef = useRef(null);
+  // Set by the context menu's "Upload here" before programmatically
+  // clicking the shared file input — lets one hidden <input> serve both the
+  // toolbar's "Upload document" (into activeFolderId) and a specific
+  // folder's "Upload here" (into that folder, regardless of which folder is
+  // currently open) without duplicating the file-input/handler pair.
+  const uploadHereFolderIdRef = useRef(null);
 
   // Tab State
   const [activeTab, setActiveTab] = useState('overview');
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Folders & Documents State
-  const [folders, setFolders] = useState(DEFAULT_BLUEPRINT_FOLDERS);
-  const [folderDocs, setFolderDocs] = useState(INITIAL_FOLDER_DOCS);
-  const [openFolderId, setOpenFolderId] = useState('f1');
-  const [vaultEmptyView, setVaultEmptyView] = useState(false);
 
   // Matters State
   const [matters, setMatters] = useState(INITIAL_MATTERS);
@@ -550,39 +540,22 @@ export default function CaseWorkspace() {
     return subscribeSharedFiles(all => setSharedFiles(all.filter(f => f.modules?.includes('case-vault'))));
   }, []);
 
-  // Fetch real documents on mount
-  useEffect(() => {
-    fetch(`${API_BASE}/api/vault/documents`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(data => {
-        const docs = data?.documents || [];
-        if (docs.length > 0) {
-          // Map real documents into folder groupings
-          const mapped = { f1: [], f2: [], f3: [], f4: [], f5: [] };
-          docs.forEach(d => {
-            const fid = d.folder_id ? `f${d.folder_id}` : 'f1';
-            const targetList = mapped[fid] || mapped.f1;
-            targetList.push({
-              id: String(d.id),
-              name: d.filename || d.title || 'Document.pdf',
-              tag: d.doc_type ? `AUTO-CLASSIFIED · ${d.doc_type.toUpperCase()}` : 'DOCUMENT',
-              tagSeverity: (d.doc_type || '').toLowerCase().includes('review') ? 'review' : 'neutral',
-              size: d.size ? `${Math.round(d.size / 1024)} KB` : '420 KB',
-              updated: 'Recently',
-              folderId: fid,
-              matterId: d.matter_id ? String(d.matter_id) : 'm1',
-            });
-          });
-          setFolderDocs(prev => ({ ...prev, ...mapped }));
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Compute total counts
+  // Real vault documents (from useVaultTree, backed by GET /api/vault/meta)
+  // mapped onto the display shape the Overview stats / Legal Drafts tab
+  // already expect — replaces the old separate `folderDocs` fetch, which
+  // populated a second, disconnected document list that the vault grid
+  // itself never read from.
   const allDocs = useMemo(() => {
-    return Object.values(folderDocs).flat();
-  }, [folderDocs]);
+    return (vault.documents || []).map((d) => ({
+      id: d.id,
+      name: d.smart_title || d.title || 'Untitled document',
+      tag: d.doc_type ? d.doc_type.toUpperCase() : 'DOCUMENT',
+      tagSeverity: (d.doc_type || '').toLowerCase().includes('review') ? 'review' : 'neutral',
+      size: d.size_bytes ? `${Math.round(d.size_bytes / 1024)} KB` : '—',
+      updated: d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—',
+      folderId: d.folder_id,
+    }));
+  }, [vault.documents]);
 
   const totalDocCount = allDocs.length;
   const activeMatterCount = matters.filter(m => (m.status || '').toLowerCase() === 'active').length;
@@ -591,29 +564,6 @@ export default function CaseWorkspace() {
   // Handle Tab Switch
   const goTab = (tabName) => {
     setActiveTab(tabName);
-  };
-
-  // Toggle Folder Accordion
-  const toggleFolder = (folderId) => {
-    setOpenFolderId(prev => (prev === folderId ? null : folderId));
-  };
-
-  // Initialize Standard Blueprint
-  const handleInitializeBlueprint = () => {
-    setFolders(DEFAULT_BLUEPRINT_FOLDERS);
-    setVaultEmptyView(false);
-    setTrail(prev => [
-      {
-        id: `p-${Date.now()}`,
-        hash: generateQuickHash(),
-        action: 'Standard blueprint applied',
-        actorType: 'human',
-        by: 'You (advocate)',
-        doc: '5 litigation folders created',
-        time: 'Just now',
-      },
-      ...prev,
-    ]);
   };
 
   // Quick CNR Lookup
@@ -769,56 +719,42 @@ export default function CaseWorkspace() {
     e.preventDefault();
     e.stopPropagation();
     const items = e.dataTransfer.items;
-    if (!items) return;
+    if (!items || items.length === 0) return;
 
-    const filesToAdd = [];
     setSyncProgress({ isSyncing: true, current: 0, total: items.length });
-
+    let count = 0;
     for (let i = 0; i < items.length; i++) {
       const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
       if (entry) {
-        await traverseFileTree(entry, activeFolderId || 'root', filesToAdd);
+        count = await traverseFileTree(entry, activeFolderId, count);
       }
     }
-
-    if (filesToAdd.length > 0) {
-      addBatchItems(filesToAdd);
-    }
-    setSyncProgress({ isSyncing: false, current: filesToAdd.length, total: filesToAdd.length });
+    setSyncProgress({ isSyncing: false, current: count, total: count });
   };
 
-  const traverseFileTree = async (entry, currentParentId, filesToAdd) => {
+  // Recreates a dropped OS folder structure against the real backend —
+  // each nested folder is a real POST (so its id is real and can parent the
+  // next level down), each file a real multipart upload. Sequential, not
+  // parallel: a subfolder's real id must exist before anything can be
+  // uploaded into it.
+  const traverseFileTree = async (entry, currentParentId, count) => {
     if (entry.isFile) {
       const file = await new Promise((resolve) => entry.file(resolve));
-      filesToAdd.push({
-        type: 'file',
-        name: entry.name,
-        parentId: currentParentId,
-        matterId: activeMatterId,
-        size: `${Math.round(file.size / 1024)} KB`,
-        tag: 'DOCUMENT',
-        tagSeverity: 'neutral',
-        updated: 'Just now'
-      });
-      // Non-blocking update
-      setSyncProgress({ current: filesToAdd.length, currentName: entry.name });
-      await new Promise(r => setTimeout(r, 0));
+      setSyncProgress({ currentName: entry.name });
+      await vault.uploadFile(file, currentParentId);
+      count += 1;
+      setSyncProgress({ current: count });
+      return count;
     } else if (entry.isDirectory) {
-      const folderId = `f_${Math.random().toString(36).slice(2, 9)}`;
-      filesToAdd.push({
-        id: folderId,
-        type: 'folder',
-        name: entry.name,
-        parentId: currentParentId,
-        matterId: activeMatterId
-      });
-      
+      const created = await vault.createFolder(currentParentId, entry.name);
       const dirReader = entry.createReader();
       const entries = await readAllDirectoryEntries(dirReader);
       for (let i = 0; i < entries.length; i++) {
-        await traverseFileTree(entries[i], folderId, filesToAdd);
+        count = await traverseFileTree(entries[i], created.id, count);
       }
+      return count;
     }
+    return count;
   };
 
   const readAllDirectoryEntries = async (dirReader) => {
@@ -834,115 +770,56 @@ export default function CaseWorkspace() {
   const handleFolderUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    
-    const filesToAdd = [];
-    setSyncProgress({ isSyncing: true, current: 0, total: files.length });
 
-    // Fallback simple traversal for <input webkitdirectory>
-    // files contains a flat list of files with webkitRelativePath
+    setSyncProgress({ isSyncing: true, current: 0, total: files.length });
+    // <input webkitdirectory> gives a flat file list with webkitRelativePath
+    // ("TopFolder/Sub/file.pdf") — real folders are created on first sight
+    // of each path segment and cached by path so siblings share the same
+    // real parent id instead of creating duplicates.
     const folderCache = {};
+    let count = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const pathParts = file.webkitRelativePath.split('/');
-      let currentParentId = activeFolderId || 'root';
-      
-      // Create folders if they don't exist
+      let currentParentId = activeFolderId;
+      let cacheKeyPrefix = '';
+
       for (let j = 0; j < pathParts.length - 1; j++) {
         const folderName = pathParts[j];
-        const cacheKey = `${currentParentId}_${folderName}`;
-        if (!folderCache[cacheKey]) {
-          const newFolderId = `f_${Math.random().toString(36).slice(2, 9)}`;
-          folderCache[cacheKey] = newFolderId;
-          filesToAdd.push({
-            id: newFolderId,
-            type: 'folder',
-            name: folderName,
-            parentId: currentParentId,
-            matterId: activeMatterId
-          });
+        cacheKeyPrefix += `/${folderName}`;
+        if (!(cacheKeyPrefix in folderCache)) {
+          const created = await vault.createFolder(currentParentId, folderName);
+          folderCache[cacheKeyPrefix] = created.id;
         }
-        currentParentId = folderCache[cacheKey];
+        currentParentId = folderCache[cacheKeyPrefix];
       }
 
-      filesToAdd.push({
-        type: 'file',
-        name: file.name,
-        parentId: currentParentId,
-        matterId: activeMatterId,
-        size: `${Math.round(file.size / 1024)} KB`,
-        tag: 'DOCUMENT',
-        tagSeverity: 'neutral',
-        updated: 'Just now'
-      });
-      
-      if (i % 10 === 0) {
-        setSyncProgress({ current: i + 1, currentName: file.name });
-        await new Promise(r => setTimeout(r, 0));
-      }
+      setSyncProgress({ current: i + 1, currentName: file.name });
+      await vault.uploadFile(file, currentParentId);
+      count += 1;
     }
-    
-    if (filesToAdd.length > 0) {
-      addBatchItems(filesToAdd);
-    }
-    setSyncProgress({ isSyncing: false, current: filesToAdd.length, total: filesToAdd.length });
-    // reset input
+
+    setSyncProgress({ isSyncing: false, current: count, total: count });
     if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   const handleFileUpload = async (e) => {
-    // Check if it's an event or raw files array
     const files = e.target ? e.target.files : e;
     if (!files || files.length === 0) return;
-    const file = files[0];
+    const targetFolderId = uploadHereFolderIdRef.current !== null ? uploadHereFolderIdRef.current : activeFolderId;
+    uploadHereFolderIdRef.current = null;
     setUploading(true);
-
     try {
-      const response = await uploadDocument(file, 'vault_case', 'case_vault');
-      addItem({
-        type: 'file',
-        name: file.name,
-        parentId: activeFolderId || 'root',
-        matterId: activeMatterId,
-        size: `${Math.round(file.size / 1024)} KB`,
-        tag: 'AUTO-CLASSIFIED · FILING',
-        tagSeverity: 'neutral',
-        updated: 'Just now'
-      });
-      setTrail(prev => [
-        {
-          id: `p-${Date.now()}`,
-          hash: generateQuickHash(),
-          action: 'Document auto-classified & hashed',
-          actorType: 'ai',
-          by: 'LexAmplify AI',
-          doc: file.name,
-          time: 'Just now',
-        },
-        ...prev,
-      ]);
-    } catch {
-      addItem({
-        type: 'file',
-        name: file.name,
-        parentId: activeFolderId || 'root',
-        matterId: activeMatterId,
-        size: `${Math.round(file.size / 1024)} KB`,
-        tag: 'AUTO-CLASSIFIED · FILING',
-        tagSeverity: 'neutral',
-        updated: 'Just now'
-      });
-      setTrail(prev => [
-        {
-          id: `p-${Date.now()}`,
-          hash: generateQuickHash(),
-          action: 'Document auto-classified & hashed',
-          actorType: 'ai',
-          by: 'LexAmplify AI',
-          doc: file.name,
-          time: 'Just now',
-        },
-        ...prev,
-      ]);
+      for (let i = 0; i < files.length; i++) {
+        await vault.uploadFile(files[i], targetFolderId);
+      }
+    } catch (err) {
+      // Surfaced via the vault's own error state on next refresh rather
+      // than a fabricated success trail entry — the old code here added a
+      // "Document auto-classified & hashed" Provenance entry even on
+      // failure, which is exactly the kind of silent-success-on-error the
+      // vault's tamper-evident framing shouldn't allow.
+      console.error('[Vault Upload]', err);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1292,11 +1169,15 @@ export default function CaseWorkspace() {
                   type="button"
                   className="cv-btn cv-btn-sm"
                   style={{ background: 'var(--paper-2)', borderColor: 'var(--rule)', color: 'var(--ink)' }}
-                  onClick={() => {
-                    const newId = `f_${Math.random().toString(36).slice(2, 9)}`;
-                    addItem({ id: newId, type: 'folder', name: 'New Folder', parentId: activeFolderId || 'root', matterId: activeMatterId });
-                    setRenamingId(newId);
-                    setRenameValue('New Folder');
+                  onClick={async () => {
+                    // Real create-then-rename: folder creation is a small,
+                    // fast POST with no payload weight, so there's no real
+                    // latency here worth hiding behind an optimistic local id
+                    // that would then need reconciling if the create fails
+                    // (e.g. a name collision on retry).
+                    const created = await vault.createFolder(activeFolderId, 'Untitled folder');
+                    setRenamingId(`folder-${created.id}`);
+                    setRenameValue('Untitled folder');
                   }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
@@ -1328,22 +1209,20 @@ export default function CaseWorkspace() {
             </div>
 
             {/* Breadcrumb Trail */}
-            <nav className="flex items-center gap-1.5 text-xs font-mono text-[var(--muted)] mb-4 overflow-x-auto py-1">
-              {formatBreadcrumbs(getFolderPath(activeFolderId)).map((crumb, idx, arr) => (
-                <React.Fragment key={crumb.id || idx}>
+            <nav className="cv-vault-breadcrumb">
+              {formatBreadcrumbs(getFolderPath(vault.flatFolders, activeFolderId)).map((crumb, idx, arr) => (
+                <React.Fragment key={crumb.id ?? 'root'}>
                   {crumb.isEllipsis ? (
-                    <span className="text-[var(--muted)] px-1 select-none">...</span>
+                    <span className="cv-vault-breadcrumb-ellipsis">...</span>
                   ) : (
                     <button
                       onClick={() => setActiveFolderId(crumb.id)}
-                      className={`hover:text-[var(--accent)] transition-colors ${
-                        idx === arr.length - 1 ? 'text-[var(--ink)] font-semibold cursor-default' : ''
-                      }`}
+                      className={`cv-vault-breadcrumb-item${idx === arr.length - 1 ? ' current' : ''}`}
                     >
                       {crumb.name}
                     </button>
                   )}
-                  {idx < arr.length - 1 && <span className="text-[var(--rule)]">/</span>}
+                  {idx < arr.length - 1 && <span className="cv-vault-breadcrumb-sep">/</span>}
                 </React.Fragment>
               ))}
             </nav>
@@ -1385,11 +1264,19 @@ export default function CaseWorkspace() {
               </div>
             </div>
 
+            {vault.error && (
+              <div style={{ fontSize: '12.5px', color: 'var(--accent)', padding: '14px 0' }}>{vault.error}</div>
+            )}
+
             {/* Dynamic Explorer Grid */}
-            {(() => {
-              const currentItems = getItemsInFolder(activeFolderId, activeMatterId);
+            {vault.loading ? (
+              <p style={{ fontSize: '12px', color: 'var(--muted)', padding: '32px 0', textAlign: 'center' }}>
+                Loading your vault…
+              </p>
+            ) : (() => {
+              const currentItems = getItemsInFolder(vault.flatFolders, vault.documents, activeFolderId);
               if (currentItems.length === 0) {
-                if (activeFolderId === 'root') {
+                if (activeFolderId === null) {
                   return (
                     <div className="cv-card cv-empty">
                       <div className="cv-empty-icon">
@@ -1406,7 +1293,7 @@ export default function CaseWorkspace() {
                         type="button"
                         className="cv-btn cv-btn-primary"
                         style={{ marginTop: '6px' }}
-                        onClick={() => initializeBlueprintFolders(activeMatterId)}
+                        onClick={() => vault.initBlueprint()}
                       >
                         Initialize standard blueprint
                       </button>
@@ -1422,69 +1309,78 @@ export default function CaseWorkspace() {
               }
 
               return (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                  {currentItems.map((item) => (
-                    <div
-                      key={item.id}
-                      onDoubleClick={() => item.type === 'folder' && setActiveFolderId(item.id)}
-                      onContextMenu={(e) => openContextMenu(e, item)}
-                      className="group relative bg-[var(--paper)] border border-[var(--rule)] hover:border-[var(--accent)] rounded-xl p-4 cursor-pointer transition-all duration-150 flex flex-col justify-between h-32 select-none"
-                    >
-                      {/* Card Header: Folder/File Icon Left, [•••] Button Top-Right */}
-                      <div className="flex items-center justify-between w-full">
-                        <div className="p-2 rounded-lg bg-[var(--paper-2)] text-[var(--accent)]">
-                          {item.type === 'folder' ? <Folder size={18}/> : <FileText size={18}/>}
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            openContextMenu(e, item, { x: rect.right, y: rect.bottom });
-                          }}
-                          className="p-1.5 rounded-md text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--paper-2)] transition-colors opacity-70 group-hover:opacity-100"
-                          title="Actions"
-                        >
-                          <MoreVertical size={16}/>
-                        </button>
-                      </div>
-
-                      {/* Card Body: Name + Item/Size Count */}
-                      <div className="mt-2">
-                        {renamingId === item.id ? (
-                          <input
-                            type="text"
-                            value={renameValue}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            onDoubleClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={() => {
-                              renameItem(item.id, renameValue);
-                              setRenamingId(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                renameItem(item.id, renameValue);
-                                setRenamingId(null);
-                              } else if (e.key === 'Escape') {
-                                setRenamingId(null);
-                              }
-                            }}
-                            className="w-full bg-[var(--paper-2)] border border-[var(--accent)] text-xs text-[var(--ink)] px-2 py-1 rounded outline-none"
-                          />
-                        ) : (
-                          <div className="font-serif italic text-sm text-[var(--ink)] truncate font-medium" title={item.name}>
-                            {item.name}
+                <div className="cv-vault-grid">
+                  {currentItems.map((item) => {
+                    const isFolder = item.type === 'folder';
+                    const docCount = isFolder ? (vault.docCounts[String(item.id)] || 0) : 0;
+                    return (
+                      <div
+                        key={`${item.type}-${item.id}`}
+                        onDoubleClick={() => isFolder && setActiveFolderId(item.id)}
+                        onContextMenu={(e) => openContextMenu(e, item)}
+                        className="cv-vault-card"
+                      >
+                        <div className="cv-vault-card-top">
+                          <div className="cv-vault-card-icon">
+                            {isFolder ? <Folder size={18} /> : <FileText size={18} />}
                           </div>
-                        )}
-                        <div className="font-mono text-[10px] text-[var(--muted)] mt-1 uppercase tracking-wider">
-                          {item.type === 'folder'
-                            ? `${getItemsInFolder(item.id, activeMatterId).length} Items`
-                            : item.size || 'Document'}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              openContextMenu(e, item, { x: rect.right, y: rect.bottom });
+                            }}
+                            className="cv-vault-card-kebab"
+                            title="Actions"
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+                        </div>
+
+                        <div className="cv-vault-card-body">
+                          {/* Folders and documents live in separate backend
+                              tables with independently auto-incrementing ids
+                              (vault_folders vs case_vault), so a bare numeric
+                              renamingId can collide — folder id 1 and
+                              document id 1 would both match. The key is
+                              type-qualified to keep them distinct. */}
+                          {renamingId === `${item.type}-${item.id}` ? (
+                            <input
+                              type="text"
+                              value={renameValue}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={async () => {
+                                const val = renameValue.trim();
+                                setRenamingId(null);
+                                if (val && val !== item.name) {
+                                  isFolder ? await vault.renameFolder(item.id, val) : await vault.renameDocument(item.id, val);
+                                }
+                              }}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  e.currentTarget.blur();
+                                } else if (e.key === 'Escape') {
+                                  setRenamingId(null);
+                                }
+                              }}
+                              className="cv-vault-card-rename-input"
+                            />
+                          ) : (
+                            <div className="cv-vault-card-name" title={item.name}>
+                              {item.name}
+                            </div>
+                          )}
+                          <div className="cv-vault-card-meta">
+                            {isFolder ? `${docCount} doc${docCount === 1 ? '' : 's'}` : (item.size_bytes ? `${Math.round(item.size_bytes / 1024)} KB` : 'Document')}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -2064,20 +1960,32 @@ export default function CaseWorkspace() {
       )}
 
       {/* ── VAULT MODALS ── */}
-      <ContextMenu 
-        isOpen={contextMenu.isOpen} 
-        item={contextMenu.item} 
-        onClose={closeContextMenu} 
-        x={contextMenu.x} 
+      <ContextMenu
+        isOpen={contextMenu.isOpen}
+        item={contextMenu.item}
+        onClose={closeContextMenu}
+        x={contextMenu.x}
         y={contextMenu.y}
         onOpen={(item) => setActiveFolderId(item.id)}
+        onNewSubfolder={async (item) => {
+          const created = await vault.createFolder(item.id, 'Untitled folder');
+          setActiveFolderId(item.id);
+          setRenamingId(`folder-${created.id}`);
+          setRenameValue('Untitled folder');
+        }}
+        onUploadHere={(item) => {
+          uploadHereFolderIdRef.current = item.id;
+          fileInputRef.current?.click();
+        }}
         onRename={(item) => {
-          setRenamingId(item.id);
+          setRenamingId(`${item.type}-${item.id}`);
           setRenameValue(item.name);
         }}
         onMove={(item) => setItemToMove(item)}
         onShare={(item) => setItemToShare(item)}
-        onDelete={(item) => deleteItem(item.id)}
+        onPreview={(item) => window.open(`${API_BASE}/api/vault/documents/${item.id}/download`, '_blank')}
+        onDownload={(item) => window.open(`${API_BASE}/api/vault/documents/${item.id}/download`, '_blank')}
+        onDelete={(item) => setItemToDelete(item)}
       />
 
       <ShareModal
@@ -2089,10 +1997,30 @@ export default function CaseWorkspace() {
       <MoveModal
         isOpen={!!itemToMove}
         item={itemToMove}
+        folders={vault.flatFolders}
         onClose={() => setItemToMove(null)}
-        onMove={(newParentId) => {
-          moveItem(itemToMove.id, newParentId);
+        onMove={async (newParentId) => {
+          const item = itemToMove;
           setItemToMove(null);
+          if (item.type === 'folder') {
+            await vault.moveFolder(item.id, newParentId);
+          } else {
+            await vault.moveDocument(item.id, newParentId);
+          }
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        isOpen={!!itemToDelete}
+        item={itemToDelete}
+        onCancel={() => setItemToDelete(null)}
+        onConfirm={async (item) => {
+          if (item.type === 'folder') {
+            await vault.deleteFolder(item.id);
+          } else {
+            await vault.deleteDocument(item.id);
+          }
+          setItemToDelete(null);
         }}
       />
 
