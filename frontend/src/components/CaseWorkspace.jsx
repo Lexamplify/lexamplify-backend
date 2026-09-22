@@ -3,13 +3,29 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
 import { useChamberStore, getItemsInFolder, getFolderPath } from '../stores/useChamberStore';
 import { useVaultTree } from '../hooks/useVaultTree';
+import { useVaultProvenance } from '../hooks/useVaultProvenance';
+import { useAuth } from '../context/AuthContext';
 import { useContextMenu } from '../hooks/useContextMenu';
 import ContextMenu from './vault/ContextMenu';
 import ShareModal from './vault/ShareModal';
 import MoveModal from './vault/MoveModal';
 import ConfirmDeleteDialog from './vault/ConfirmDeleteDialog';
 import SyncToast from './vault/SyncToast';
-import { Folder, FileText, MoreVertical, Users } from 'lucide-react';
+import { Folder, FileText, MoreVertical, Users, Lock, Search, FileImage, FileSpreadsheet, FileCode, FileArchive } from 'lucide-react';
+
+// File-type-aware icon for a document card, keyed off case_vault.file_format
+// (the caller's own extension for real uploads; 'pdf'/'docx' for
+// server-generated exports — see app.py's download route comment on why
+// those two are special-cased there too).
+const FILE_TYPE_ICONS = {
+  png: FileImage, jpg: FileImage, jpeg: FileImage, gif: FileImage, webp: FileImage, svg: FileImage,
+  xls: FileSpreadsheet, xlsx: FileSpreadsheet, csv: FileSpreadsheet,
+  zip: FileArchive, rar: FileArchive, '7z': FileArchive,
+  json: FileCode, js: FileCode, jsx: FileCode, ts: FileCode, py: FileCode, html: FileCode, css: FileCode,
+};
+function getVaultFileIcon(fileFormat) {
+  return FILE_TYPE_ICONS[(fileFormat || '').toLowerCase()] || FileText;
+}
 
 function formatBreadcrumbs(path) {
   if (!path || path.length <= 4) return path;
@@ -71,46 +87,6 @@ const INITIAL_MATTERS = [
   },
 ];
 
-// ── Initial Provenance Trail Entries ─────────────────────────────────────
-const INITIAL_PROVENANCE = [
-  {
-    id: 'p1',
-    hash: '0x8f2a19…c91e',
-    action: 'Case synopsis generated',
-    actorType: 'ai',
-    by: 'LexAmplify AI',
-    doc: 'Case Vault Synopsis',
-    time: 'Today · 10:42 AM',
-  },
-  {
-    id: 'p2',
-    hash: '0x51de77…aa07',
-    action: 'Document auto-classified',
-    actorType: 'ai',
-    by: 'LexAmplify AI',
-    doc: 'Plaint_TN_HC_2026.pdf',
-    time: 'Yesterday · 4:15 PM',
-  },
-  {
-    id: 'p3',
-    hash: '0x2c90ab…4b18',
-    action: 'Matter added to tracker',
-    actorType: 'human',
-    by: 'You (advocate)',
-    doc: 'Sharma Textiles vs. SBI',
-    time: '2 days ago',
-  },
-  {
-    id: 'p4',
-    hash: '0x0a71fe…de23',
-    action: 'Standard blueprint applied',
-    actorType: 'human',
-    by: 'You (advocate)',
-    doc: '5 folders created',
-    time: '2 days ago',
-  },
-];
-
 // ── Initial Timeline Events ──────────────────────────────────────────────
 const INITIAL_TIMELINE = [
   { id: 't1', date: '02 Sep 2026', label: 'Petition filed before Madras High Court', source: 'Plaint_TN_HC_2026.pdf' },
@@ -119,13 +95,71 @@ const INITIAL_TIMELINE = [
   { id: 't4', date: '24 Sep 2026', label: 'Next hearing scheduled', source: 'Cause list entry' },
 ];
 
-function generateQuickHash() {
-  const chars = '0123456789abcdef';
-  let prefix = '0x';
-  for (let i = 0; i < 6; i++) prefix += chars[Math.floor(Math.random() * chars.length)];
-  let suffix = '';
-  for (let i = 0; i < 4; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
-  return `${prefix}…${suffix}`;
+// ── Provenance Trail formatting helpers ──────────────────────────────────
+// The action strings here match app.py's _write_provenance call sites
+// exactly (create/rename/move/delete/upload/share/unshare/link toggle,
+// plus the blueprint-init and vault_audit "ai_generated" pseudo-action).
+const PROVENANCE_ACTION_LABELS = {
+  created: 'Created',
+  renamed: 'Renamed',
+  moved: 'Moved',
+  deleted: 'Deleted',
+  uploaded: 'Uploaded',
+  shared: 'Shared',
+  unshared: 'Access revoked',
+  link_shared: 'Link sharing enabled',
+  link_unshared: 'Link sharing disabled',
+  blueprint_applied: 'Standard blueprint applied',
+  ai_generated: 'Generated via AI',
+};
+
+function provenanceActionLabel(entry) {
+  return PROVENANCE_ACTION_LABELS[entry.action] || entry.action;
+}
+
+function provenanceDetailSummary(entry) {
+  const d = entry.detail || {};
+  switch (entry.action) {
+    case 'renamed':
+      return d.old_name || d.old_title ? `"${d.old_name || d.old_title}" → "${d.new_name || d.new_title}"` : '';
+    case 'moved':
+      return 'parent_id' in d || 'old_parent_id' in d || 'old_folder_id' in d ? 'Relocated within the vault' : '';
+    case 'shared':
+      return `${d.member_name || d.member_email || 'A team member'} · ${d.permission === 'edit' ? 'can edit' : 'can view'}`;
+    case 'unshared':
+      return d.member_name || d.member_email ? `${d.member_name || d.member_email}` : '';
+    case 'uploaded':
+      return d.size_bytes ? `${Math.round(d.size_bytes / 1024)} KB` : '';
+    case 'blueprint_applied':
+      return Array.isArray(d.folders) ? `${d.folders.length} folders created` : '';
+    case 'ai_generated':
+      return d.session_title || '';
+    default:
+      return '';
+  }
+}
+
+function provenanceActorLabel(entry, currentUser) {
+  if (entry.source === 'audit') return 'LexAmplify AI';
+  if (entry.actor_user_id == null) return 'System';
+  if (currentUser && Number(entry.actor_user_id) === Number(currentUser.id)) return 'You';
+  return 'Team member';
+}
+
+function provenanceRelativeTime(raw) {
+  if (!raw) return '';
+  const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  const d = new Date(iso.endsWith('Z') ? iso : `${iso}Z`);
+  if (Number.isNaN(d.getTime())) return raw;
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 const styles = `
@@ -313,6 +347,17 @@ const styles = `
   .cv-vault-card-name { font-family: 'Fraunces', serif; font-style: italic; font-weight: 500; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cv-vault-card-meta { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 4px; }
   .cv-vault-card-rename-input { width: 100%; background: var(--paper-2); border: 1px solid var(--accent); border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: var(--ink); font-family: inherit; outline: none; box-sizing: border-box; }
+  .cv-vault-card-lock { width: 20px; height: 20px; border-radius: 6px; background: var(--major-soft); color: var(--major); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .cv-vault-card.is-dragover { border-color: var(--accent); background: var(--accent-soft); }
+
+  .cv-vault-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .cv-vault-toolbar-spacer { flex: 1 1 auto; }
+  .cv-vault-search {
+    display: flex; align-items: center; gap: 7px; background: var(--paper-2); border: 1px solid var(--rule);
+    border-radius: 9px; padding: 7px 12px; min-width: 200px; color: var(--muted);
+  }
+  .cv-vault-search input { border: 0; background: transparent; outline: 0; color: var(--ink); font-size: 12.5px; width: 100%; font-family: inherit; }
+  .cv-vault-search input::placeholder { color: var(--muted); }
 
   .cv-folder-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
   .cv-folder-card {
@@ -390,6 +435,12 @@ const styles = `
     color: var(--accent); background: var(--bg); border: 1px solid var(--rule);
     border-radius: 6px; padding: 2px 8px; margin-top: 7px;
   }
+  .cv-verify-banner {
+    font-size: 12.5px; padding: 11px 14px; border-radius: 9px; margin-bottom: 16px;
+    border: 1px solid var(--rule); line-height: 1.5;
+  }
+  .cv-verify-banner.ok { background: var(--major-soft); color: var(--major); border-color: var(--major); }
+  .cv-verify-banner.broken { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
   /* ── TIMELINE ── */
   .cv-tl-item { display: flex; gap: 16px; }
@@ -468,6 +519,7 @@ export default function CaseWorkspace() {
   // Zustand-only `vaultItems` array, which lost the entire vault on every
   // page refresh (see the Phase 1 plan).
   const vault = useVaultTree();
+  const { user: currentUser } = useAuth();
 
   const { contextMenu, openContextMenu, closeContextMenu } = useContextMenu();
 
@@ -477,6 +529,8 @@ export default function CaseWorkspace() {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [vaultSearch, setVaultSearch] = useState('');
+  const [isVaultDragOver, setIsVaultDragOver] = useState(false);
 
   // Hidden file input refs
   const folderInputRef = useRef(null);
@@ -527,7 +581,14 @@ export default function CaseWorkspace() {
   const [synopsisLoading, setSynopsisLoading] = useState(false);
 
   // Provenance & Timeline State
-  const [trail, setTrail] = useState(INITIAL_PROVENANCE);
+  const provenance = useVaultProvenance();
+  // Re-fetch whenever the tab is opened, not just on mount — vault
+  // mutations happen from the Document Vault tab, so the trail would
+  // otherwise show a stale snapshot from whenever CaseWorkspace first loaded.
+  useEffect(() => {
+    if (activeTab === 'trail') provenance.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
   const [timelineEvents, setTimelineEvents] = useState(INITIAL_TIMELINE);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineGenerated, setTimelineGenerated] = useState(false);
@@ -620,18 +681,6 @@ export default function CaseWorkspace() {
     setMatters(prev => [newMatter, ...prev]);
     setCnrResult(null);
     setCnrSearchInput('');
-    setTrail(prev => [
-      {
-        id: `p-${Date.now()}`,
-        hash: generateQuickHash(),
-        action: 'Matter added from eCourts CNR',
-        actorType: 'human',
-        by: 'You (advocate)',
-        doc: newMatter.caseName,
-        time: 'Just now',
-      },
-      ...prev,
-    ]);
   };
 
   // AI Synopsis Generation
@@ -660,18 +709,6 @@ export default function CaseWorkspace() {
       );
     } finally {
       setSynopsisLoading(false);
-      setTrail(prev => [
-        {
-          id: `p-${Date.now()}`,
-          hash: generateQuickHash(),
-          action: 'Case synopsis generated',
-          actorType: 'ai',
-          by: 'LexAmplify AI',
-          doc: 'Case Vault Synopsis',
-          time: 'Just now',
-        },
-        ...prev,
-      ]);
     }
   };
 
@@ -697,18 +734,6 @@ export default function CaseWorkspace() {
     } finally {
       setTimelineLoading(false);
       setTimelineGenerated(true);
-      setTrail(prev => [
-        {
-          id: `p-${Date.now()}`,
-          hash: generateQuickHash(),
-          action: 'Timeline dates extracted via AI',
-          actorType: 'ai',
-          by: 'LexAmplify AI',
-          doc: 'Case Timeline Events',
-          time: 'Just now',
-        },
-        ...prev,
-      ]);
     }
   };
 
@@ -877,18 +902,6 @@ export default function CaseWorkspace() {
       summary: '',
       notes: '',
     });
-    setTrail(prev => [
-      {
-        id: `p-${Date.now()}`,
-        hash: generateQuickHash(),
-        action: 'Matter added to tracker',
-        actorType: 'human',
-        by: 'You (advocate)',
-        doc: newMatter.caseName,
-        time: 'Just now',
-      },
-      ...prev,
-    ]);
   };
 
   return (
@@ -1158,201 +1171,205 @@ export default function CaseWorkspace() {
 
         {/* ── 2. DOCUMENT VAULT PANEL ── */}
         {activeTab === 'vault' && (() => {
-          // --- Shim for Missing Variables ---
-          const activeMatterId = 'm1';
-          const vaultItems = [
-            ...(vault?.flatFolders || []).map(f => ({ ...f, type: 'folder', parentId: f.parent_id ?? 'root', matterId: activeMatterId })),
-            ...(vault?.documents || []).map(d => ({ ...d, type: 'file', parentId: d.folder_id ?? 'root', name: d.title || d.smart_title || 'Untitled', size: d.size_bytes ? `${Math.round(d.size_bytes / 1024)} KB` : '', matterId: activeMatterId }))
-          ];
-          
-          const addItem = async (item) => {
-            if (item.type === 'folder') await vault?.createFolder(item.parentId === 'root' ? null : item.parentId, item.name);
-          };
-          const renameItem = async (id, name) => {
-            const item = vaultItems.find(i => i.id === id);
-            if (!item) return;
-            if (item.type === 'folder') await vault?.renameFolder(id, name);
-            else await vault?.renameDocument(id, name);
-          };
-          const deleteItem = async (id) => {
-            const item = vaultItems.find(i => i.id === id);
-            if (item && item.type === 'folder') await vault?.deleteFolder(id);
-          };
-          const initializeBlueprintFolders = () => vault?.initBlueprint();
+          const currentItems = getItemsInFolder(vault.flatFolders, vault.documents, activeFolderId)
+            .filter((item) => !vaultSearch.trim() || item.name.toLowerCase().includes(vaultSearch.trim().toLowerCase()))
+            .sort((a, b) => {
+              if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            });
+          const breadcrumbs = formatBreadcrumbs(getFolderPath(vault.flatFolders, activeFolderId));
+          const isRoot = activeFolderId === null;
+          const isEmpty = currentItems.length === 0;
 
-          // 1. Safe Local Computations (Bypassing missing store selectors)
-          const safeVaultItems = vaultItems || [];
-          const currentFolderId = activeFolderId || 'root';
-
-          const currentItems = safeVaultItems.filter(
-            (item) => item.parentId === currentFolderId && item.matterId === activeMatterId
-          );
-
-          const computeBreadcrumbs = () => {
-            if (currentFolderId === 'root') return [{ id: 'root', name: 'Vault' }];
-            const path = [];
-            let curr = currentFolderId;
-            const seen = new Set();
-            
-            while (curr && curr !== 'root' && !seen.has(curr)) {
-              seen.add(curr);
-              const folder = safeVaultItems.find((i) => i.id === curr);
-              if (folder) {
-                path.unshift(folder);
-                curr = folder.parentId;
-              } else {
-                break;
-              }
-            }
-            path.unshift({ id: 'root', name: 'Vault' });
-            
-            if (path.length > 4) {
-              return [
-                path[0],
-                { id: '__ellipsis__', name: '...', isEllipsis: true },
-                path[path.length - 2],
-                path[path.length - 1],
-              ];
-            }
-            return path;
-          };
-
-          const breadcrumbs = computeBreadcrumbs();
-
-          // 2. Render UI
           return (
-            <section className="cv-panel flex flex-col h-full w-full" id="panel-vault" style={{ padding: '24px' }}>
-              {/* Action Bar */}
-              <div className="flex flex-col mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-serif italic text-2xl text-[var(--ink)]">Document Vault</h3>
-                    <div className="text-sm text-[var(--muted)] mt-1">Organized to the standard litigation taxonomy — every upload is auto-classified and hashed on arrival.</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={() => addItem && addItem({ id: `f_${Date.now()}`, type: 'folder', name: 'New Folder', parentId: currentFolderId, matterId: activeMatterId })}
-                      className="px-3 py-2 bg-[var(--paper-2)] border border-[var(--rule)] hover:border-[var(--accent)] text-[var(--ink)] text-sm font-semibold rounded-lg transition-colors"
-                    >
-                      + New folder
-                    </button>
-                    <button 
-                      onClick={() => folderInputRef?.current?.click()}
-                      className="px-3 py-2 bg-[var(--paper-2)] border border-[var(--rule)] hover:border-[var(--accent)] text-[var(--ink)] text-sm font-semibold rounded-lg transition-colors"
-                    >
-                      Upload folder
-                    </button>
-                    <button 
-                      onClick={() => fileInputRef?.current?.click()}
-                      className="px-4 py-2 bg-[var(--accent)] hover:brightness-110 text-white text-sm font-semibold rounded-lg shadow-sm transition-all"
-                    >
-                      Upload document
-                    </button>
+            <section className="cv-panel" id="panel-vault">
+              <div className="cv-section-head">
+                <div>
+                  <h2 className="cv-section-title cv-serif">Document Vault</h2>
+                  <div className="cv-section-sub">
+                    Organized to the standard litigation taxonomy — every upload is hashed and logged to the Provenance Trail on arrival.
                   </div>
                 </div>
-
-                {/* Dynamic Breadcrumbs */}
-                <nav className="flex items-center gap-2 text-sm font-mono text-[var(--muted)] mt-4">
-                  {breadcrumbs.map((crumb, idx) => (
-                    <React.Fragment key={crumb.id || `crumb-${idx}`}>
-                      {crumb.isEllipsis ? (
-                        <span className="px-1 select-none">...</span>
-                      ) : (
-                        <button
-                          onClick={() => setActiveFolderId && setActiveFolderId(crumb.id === 'root' ? null : crumb.id)}
-                          className={`hover:text-[var(--accent)] transition-colors ${idx === breadcrumbs.length - 1 ? 'text-[var(--ink)] font-semibold cursor-default' : ''}`}
-                        >
-                          {crumb.name}
-                        </button>
-                      )}
-                      {idx < breadcrumbs.length - 1 && <span className="text-[var(--rule)]">/</span>}
-                    </React.Fragment>
-                  ))}
-                </nav>
+                <div className="cv-vault-toolbar">
+                  <button
+                    type="button"
+                    className="cv-btn"
+                    onClick={async () => {
+                      const created = await vault.createFolder(activeFolderId, 'Untitled folder');
+                      setRenamingId(`folder-${created.id}`);
+                      setRenameValue('Untitled folder');
+                    }}
+                  >
+                    + New folder
+                  </button>
+                  <button type="button" className="cv-btn" onClick={() => folderInputRef.current?.click()}>
+                    Upload folder
+                  </button>
+                  <button
+                    type="button"
+                    className="cv-btn cv-btn-primary"
+                    onClick={() => { uploadHereFolderIdRef.current = activeFolderId; fileInputRef.current?.click(); }}
+                  >
+                    Upload document
+                  </button>
+                </div>
               </div>
 
-              {/* Explorer Grid */}
-              {currentItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-[var(--rule)] rounded-xl bg-[var(--paper-2)]">
-                  <p className="text-[var(--muted)] mb-4">This folder is empty.</p>
-                  {currentFolderId === 'root' && (
-                    <button 
-                      onClick={() => initializeBlueprintFolders && initializeBlueprintFolders(activeMatterId)}
-                      className="px-4 py-2 bg-[var(--accent)] text-white text-sm font-semibold rounded-lg"
-                    >
+              <div className="cv-vault-breadcrumb">
+                {breadcrumbs.map((crumb, idx) => (
+                  <React.Fragment key={crumb.id ?? 'root'}>
+                    {idx > 0 && <span className="cv-vault-breadcrumb-sep">/</span>}
+                    {crumb.isEllipsis ? (
+                      <span className="cv-vault-breadcrumb-ellipsis">…</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`cv-vault-breadcrumb-item${idx === breadcrumbs.length - 1 ? ' current' : ''}`}
+                        onClick={() => idx !== breadcrumbs.length - 1 && setActiveFolderId(crumb.id)}
+                      >
+                        {crumb.name}
+                      </button>
+                    )}
+                  </React.Fragment>
+                ))}
+                <div className="cv-vault-toolbar-spacer" />
+                <div className="cv-vault-search">
+                  <Search size={13} />
+                  <input
+                    type="text"
+                    placeholder="Filter this folder…"
+                    value={vaultSearch}
+                    onChange={(e) => setVaultSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div
+                className={`cv-dropzone${isVaultDragOver ? ' dragover' : ''}`}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { handleDragOver(e); setIsVaultDragOver(true); }}
+                onDragLeave={() => setIsVaultDragOver(false)}
+                onDrop={(e) => { setIsVaultDragOver(false); handleDrop(e); }}
+              >
+                <div className="cv-dropzone-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M12 3v12m0-12l-4 4m4-4l4 4" />
+                    <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="cv-dropzone-title">Drag and drop folders or files, or click to browse</div>
+                  <div className="cv-dropzone-sub">Filed into {isRoot ? 'the vault root' : `"${breadcrumbs[breadcrumbs.length - 1]?.name}"`} and hashed to the Provenance Trail.</div>
+                </div>
+              </div>
+
+              {isEmpty ? (
+                <div className="cv-card cv-empty">
+                  <div className="cv-empty-icon">
+                    <Folder size={22} />
+                  </div>
+                  <h3 className="cv-empty-title cv-serif">
+                    {vaultSearch.trim() ? 'No matches in this folder' : 'This folder is empty'}
+                  </h3>
+                  <p className="cv-empty-sub">
+                    {vaultSearch.trim()
+                      ? 'Try a different search, or clear it to see everything here.'
+                      : 'Drag files in above, or create a folder to start organizing this matter.'}
+                  </p>
+                  {isRoot && !vaultSearch.trim() && (
+                    <button type="button" className="cv-btn cv-btn-primary" style={{ marginTop: 4 }} onClick={() => vault.initBlueprint()}>
                       Initialize standard blueprint
                     </button>
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {currentItems.map((item) => (
-                    <div
-                      key={item.id}
-                      onDoubleClick={() => item.type === 'folder' && setActiveFolderId && setActiveFolderId(item.id)}
-                      onContextMenu={(e) => { e.preventDefault(); openContextMenu && openContextMenu(e, item); }}
-                      className="group relative bg-[var(--paper)] border border-[var(--rule)] hover:border-[var(--accent)] rounded-xl p-4 cursor-pointer transition-all duration-150 flex flex-col justify-between h-28 select-none"
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <div className="p-2 rounded-lg bg-[var(--paper-2)]">
-                          {item.type === 'folder' ? <Folder className="text-[var(--accent)]" size={18}/> : <FileText className="text-[var(--ink-soft)]" size={18}/>}
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            if (openContextMenu) openContextMenu(e, item, { x: rect.right, y: rect.bottom });
-                          }}
-                          className="p-1 rounded-md text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--paper-2)] opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <MoreVertical size={16}/>
-                        </button>
-                      </div>
-                      
-                      <div className="mt-3">
-                        {renamingId === item.id ? (
-                          <input
-                            type="text"
-                            value={renameValue}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            onDoubleClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={() => { if (renameItem) renameItem(item.id, renameValue); setRenamingId(null); }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { if (renameItem) renameItem(item.id, renameValue); setRenamingId(null); }
-                              if (e.key === 'Escape') setRenamingId(null);
+                <div className="cv-vault-grid">
+                  {currentItems.map((item) => {
+                    const isFolder = item.type === 'folder';
+                    const docCount = isFolder ? (vault.docCounts[String(item.id)] || 0) : 0;
+                    const FileIcon = isFolder ? Folder : getVaultFileIcon(item.file_format);
+                    return (
+                      <div
+                        key={`${item.type}-${item.id}`}
+                        onDoubleClick={() => isFolder && setActiveFolderId(item.id)}
+                        onContextMenu={(e) => openContextMenu(e, item)}
+                        className="cv-vault-card"
+                        title={item.protected ? 'Standard blueprint folder' : undefined}
+                      >
+                        <div className="cv-vault-card-top">
+                          <div className="cv-vault-card-top-left">
+                            <div className="cv-vault-card-icon">
+                              <FileIcon size={18} />
+                            </div>
+                            {item.protected && (
+                              <div className="cv-vault-card-lock" title="Standard blueprint folder — cannot be renamed, moved, or deleted">
+                                <Lock size={11} />
+                              </div>
+                            )}
+                            {item.share_count > 0 && (
+                              <div className="cv-vault-card-share-badge" title={`Shared with ${item.share_count} ${item.share_count === 1 ? 'person' : 'people'}`}>
+                                <Users size={11} />
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              openContextMenu(e, item, { x: rect.right, y: rect.bottom });
                             }}
-                            className="w-full bg-[var(--paper-2)] border border-[var(--accent)] text-xs text-[var(--ink)] px-2 py-1 rounded outline-none"
-                          />
-                        ) : (
-                          <div className="font-serif italic text-sm text-[var(--ink)] truncate font-medium">{item.name}</div>
-                        )}
-                        <div className="text-[10px] font-mono text-[var(--muted)] mt-1 uppercase">
-                          {item.type === 'folder' 
-                            ? `${safeVaultItems.filter(i => i.parentId === item.id).length} Items` 
-                            : item.size || 'Document'}
+                            className="cv-vault-card-kebab"
+                            title="Actions"
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+                        </div>
+
+                        <div className="cv-vault-card-body">
+                          {/* Folders and documents live in separate backend
+                              tables with independently auto-incrementing ids
+                              (vault_folders vs case_vault), so a bare numeric
+                              renamingId can collide — folder id 1 and
+                              document id 1 would both match. The key is
+                              type-qualified to keep them distinct. */}
+                          {renamingId === `${item.type}-${item.id}` ? (
+                            <input
+                              type="text"
+                              value={renameValue}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={async () => {
+                                const val = renameValue.trim();
+                                setRenamingId(null);
+                                if (val && val !== item.name) {
+                                  isFolder ? await vault.renameFolder(item.id, val) : await vault.renameDocument(item.id, val);
+                                }
+                              }}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  e.currentTarget.blur();
+                                } else if (e.key === 'Escape') {
+                                  setRenamingId(null);
+                                }
+                              }}
+                              className="cv-vault-card-rename-input"
+                            />
+                          ) : (
+                            <div className="cv-vault-card-name" title={item.name}>
+                              {item.name}
+                            </div>
+                          )}
+                          <div className="cv-vault-card-meta">
+                            {isFolder ? `${docCount} doc${docCount === 1 ? '' : 's'}` : (item.size_bytes ? `${Math.round(item.size_bytes / 1024)} KB` : 'Document')}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              )}
-
-              {/* Safe Modal Mounts */}
-              {contextMenu?.isOpen && (
-                <ContextMenu 
-                  isOpen={contextMenu.isOpen} 
-                  item={contextMenu.item} 
-                  onClose={closeContextMenu} 
-                  onOpen={(i) => setActiveFolderId && setActiveFolderId(i.id)} 
-                  x={contextMenu.x} 
-                  y={contextMenu.y}
-                  onRename={(i) => { setRenamingId(i.id); setRenameValue(i.name); }}
-                  onMove={(i) => setItemToMove(i)}
-                  onShare={(i) => setItemToShare(i)}
-                  onDelete={(i) => deleteItem && deleteItem(i.id)}
-                />
               )}
             </section>
           );
@@ -1563,45 +1580,86 @@ export default function CaseWorkspace() {
               <div>
                 <h2 className="cv-section-title cv-serif">Provenance Trail</h2>
                 <div className="cv-section-sub">
-                  Every AI action and file event in this vault, chained and hashed — a record you can hand to opposing counsel or the bench.
+                  Every folder/document event in this vault, chained and hashed — a record you can hand to opposing counsel or the bench.
                 </div>
               </div>
               <button
                 type="button"
                 className="cv-btn"
-                onClick={() => alert('Chain integrity verified: all cryptographic SHA-256 blocks valid.')}
+                onClick={() => provenance.verifyChain()}
+                disabled={provenance.verifying}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
                   <path d="M12 2.5l8 3.2v6c0 5-3.4 8.4-8 9.8-4.6-1.4-8-4.8-8-9.8v-6z" />
                   <path d="M9.5 12l2 2 3.2-3.6" />
                 </svg>
-                Verify chain integrity
+                {provenance.verifying ? 'Verifying…' : 'Verify chain integrity'}
               </button>
             </div>
 
-            <div className="cv-card">
-              {trail.map((t, idx) => {
-                const isLast = idx === trail.length - 1;
-                return (
-                  <div key={t.id || idx} className="cv-trail-item">
-                    <div className="cv-trail-rail">
-                      <div className="cv-trail-dot" />
-                      {!isLast && <div className="cv-trail-line" />}
-                    </div>
-                    <div className="cv-trail-body">
-                      <div className="cv-trail-top">
-                        <div className="cv-trail-action">{t.action}</div>
-                        <div className="cv-trail-time">{t.time}</div>
+            {provenance.verifyResult && (
+              <div className={`cv-verify-banner ${provenance.verifyResult.valid ? 'ok' : 'broken'}`}>
+                {provenance.verifyResult.valid
+                  ? `Chain integrity verified — all ${provenance.verifyResult.total_entries} entries check out against their recomputed SHA-256 hashes.`
+                  : provenance.verifyResult.error
+                    ? `Verification failed: ${provenance.verifyResult.error}`
+                    : `Chain integrity check failed at entry #${provenance.verifyResult.broken_at_id} — a stored hash no longer matches its recomputed value. Something in this vault's history was altered outside the app.`}
+              </div>
+            )}
+
+            {provenance.loading ? (
+              <div className="cv-card cv-empty">
+                <p className="cv-empty-sub">Loading the provenance trail…</p>
+              </div>
+            ) : provenance.error ? (
+              <div className="cv-card cv-empty">
+                <p className="cv-empty-sub">{provenance.error}</p>
+              </div>
+            ) : provenance.entries.length === 0 ? (
+              <div className="cv-card cv-empty">
+                <div className="cv-empty-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M12 2.5l8 3.2v6c0 5-3.4 8.4-8 9.8-4.6-1.4-8-4.8-8-9.8v-6z" />
+                  </svg>
+                </div>
+                <h3 className="cv-empty-title cv-serif">Nothing logged yet</h3>
+                <p className="cv-empty-sub">
+                  Every folder/document you create, rename, move, upload, delete, or share here gets its own hashed entry, chained to the one before it.
+                </p>
+              </div>
+            ) : (
+              <div className="cv-card">
+                {provenance.entries.map((entry, idx) => {
+                  const isLast = idx === provenance.entries.length - 1;
+                  const detailSummary = provenanceDetailSummary(entry);
+                  return (
+                    <div key={entry.id} className="cv-trail-item">
+                      <div className="cv-trail-rail">
+                        <div className="cv-trail-dot" />
+                        {!isLast && <div className="cv-trail-line" />}
                       </div>
-                      <div className="cv-trail-meta">
-                        {t.doc} · <span className="cv-trail-actor">{t.by}</span>
+                      <div className="cv-trail-body">
+                        <div className="cv-trail-top">
+                          <div className="cv-trail-action">{provenanceActionLabel(entry)}</div>
+                          <div className="cv-trail-time">{provenanceRelativeTime(entry.created_at)}</div>
+                        </div>
+                        <div className="cv-trail-meta">
+                          {entry.node_name}
+                          {detailSummary && <> · {detailSummary}</>}
+                          {' · '}
+                          <span className="cv-trail-actor">{provenanceActorLabel(entry, currentUser)}</span>
+                        </div>
+                        {entry.content_hash && (
+                          <div className="cv-trail-hash" title={entry.content_hash}>
+                            0x{entry.content_hash.slice(0, 8)}…{entry.content_hash.slice(-4)}
+                          </div>
+                        )}
                       </div>
-                      <div className="cv-trail-hash">{t.hash}</div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
 

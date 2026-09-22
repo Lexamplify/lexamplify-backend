@@ -15,6 +15,7 @@ import sqlite3
 import json
 import io
 import time
+import hashlib
 import uuid
 import requests
 import urllib.parse
@@ -185,6 +186,31 @@ def init_db():
             vault_doc_id   INTEGER,
             session_title  TEXT,
             messages_json  TEXT,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Phase 3 — the real Provenance Trail. Kept separate from vault_audit
+    # above (which stays exactly as-is, still serving its narrower "AI
+    # conversation behind one saved document" purpose) since this instead
+    # records every mutation across the whole vault: folder/document
+    # create/rename/move/delete, upload, share/unshare, link-share toggle.
+    # One GLOBAL linear hash chain, not per-node — content_hash chains off
+    # the previous row's content_hash (see _write_provenance), so altering
+    # or deleting any past row breaks every hash after it. node_id and
+    # owner_user_id are snapshots at write time and are NOT re-validated
+    # against current state, since a deleted node's history must survive
+    # its own deletion for this to be worth anything as a real audit trail.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS vault_provenance (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            node_type      TEXT NOT NULL CHECK (node_type IN ('folder', 'document')),
+            node_id        INTEGER,
+            node_name      TEXT NOT NULL,
+            action         TEXT NOT NULL,
+            actor_user_id  INTEGER,
+            owner_user_id  INTEGER,
+            detail         TEXT,
+            content_hash   TEXT NOT NULL,
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -740,6 +766,40 @@ def _vault_access_ok(node_type, node_id, row_user_id, current_user_id, require_e
     return perm == 'edit' if require_edit else True
 
 
+# ── Case Vault Provenance Trail (Phase 3) ───────────────────────────────
+def _write_provenance(node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail=None):
+    """Appends one entry to the vault's global, linear, tamper-evident hash
+    chain — one chain across the whole vault, not per-node (mirrored in how
+    /api/vault/provenance/verify recomputes and checks it in one pass), with
+    entries filtered per-node/per-case for DISPLAY the same way
+    vault_audit_trail already filters, rather than claiming a filtered
+    slice is independently verifiable on its own.
+
+    Each entry's content_hash covers the previous entry's content_hash plus
+    this entry's own fields, so altering or deleting any past row breaks
+    every hash after it. node_id/node_name/owner_user_id are snapshots at
+    write time and are never re-validated against current state — a
+    deleted node's history has to survive its own deletion for this to be
+    a real audit trail rather than decoration. owner_user_id (distinct from
+    actor_user_id, who performed the action) is what lets a folder's owner
+    see everything a shared editor did inside it, not just their own
+    actions — see GET /api/vault/provenance's scoping."""
+    detail_json = json.dumps(detail or {}, sort_keys=True, default=str)
+    prev_row = db.execute('SELECT content_hash FROM vault_provenance ORDER BY id DESC LIMIT 1').fetchone()
+    prev_hash = prev_row[0] if prev_row else '0' * 64
+    payload = '|'.join(str(x) for x in (
+        prev_hash, node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json
+    ))
+    content_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+    db.execute(
+        'INSERT INTO vault_provenance '
+        '(node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail, content_hash) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json, content_hash)
+    )
+    db.commit()
+
+
 def create_app():
     app = Flask(__name__)
     # Render terminates TLS at its edge and proxies to this app over plain
@@ -1103,6 +1163,7 @@ def create_app():
             )
             conn.commit()
             folder_id = c.lastrowid
+            _write_provenance('folder', folder_id, name, 'created', uid, uid, {'parent_id': parent_id})
             return jsonify({'success': True, 'id': folder_id, 'name': name, 'parent_id': parent_id}), 201
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
@@ -1148,6 +1209,10 @@ def create_app():
                 )
                 created.append({'id': c.lastrowid, 'name': name, 'protected': True})
             db.commit()
+            _write_provenance(
+                'folder', None, 'Standard blueprint', 'blueprint_applied', uid, uid,
+                {'folders': created}
+            )
             return jsonify({'success': True, 'created': True, 'folders': created}), 201
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
@@ -1159,11 +1224,13 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            owner_row = db.execute('SELECT user_id, protected FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            owner_row = db.execute('SELECT user_id, protected, name, parent_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
             if not owner_row or not _vault_access_ok('folder', folder_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Folder not found.'}), 404
             if owner_row[1]:
                 return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be renamed or moved.'}), 403
+            folder_owner_uid = owner_row[0] if owner_row[0] is not None else uid
+            old_name, old_parent_id = owner_row[2], owner_row[3]
 
             data = request.get_json(force=True, silent=True) or {}
 
@@ -1175,6 +1242,10 @@ def create_app():
                     return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
                 db.execute('UPDATE vault_folders SET name = ? WHERE id = ?', (new_name, folder_id))
                 db.commit()
+                _write_provenance(
+                    'folder', folder_id, new_name, 'renamed', uid, folder_owner_uid,
+                    {'old_name': old_name, 'new_name': new_name}
+                )
                 return jsonify({'success': True, 'id': folder_id, 'name': new_name}), 200
 
             if 'parent_id' in data:
@@ -1197,6 +1268,10 @@ def create_app():
                     return jsonify({'error': True, 'message': 'Cannot move a folder into itself or its own descendant.'}), 400
                 db.execute('UPDATE vault_folders SET parent_id = ? WHERE id = ?', (new_parent, folder_id))
                 db.commit()
+                _write_provenance(
+                    'folder', folder_id, old_name, 'moved', uid, folder_owner_uid,
+                    {'old_parent_id': old_parent_id, 'new_parent_id': new_parent}
+                )
                 return jsonify({'success': True, 'id': folder_id, 'parent_id': new_parent}), 200
 
             return jsonify({'error': True, 'message': 'No valid fields provided (name or parent_id).'}), 400
@@ -1210,13 +1285,14 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            owner_row = db.execute('SELECT user_id, protected FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            owner_row = db.execute('SELECT user_id, protected, name FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
             if not owner_row or not _vault_access_ok('folder', folder_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Folder not found.'}), 404
             if owner_row[1]:
                 return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be deleted.'}), 403
+            top_folder_name = owner_row[2]
 
-            def recursive_delete(fid):
+            def recursive_delete(fid, fname, fowner, top=False):
                 # Delete every document and child folder nested here,
                 # unconditionally — the top-level folder's owner/edit-access
                 # check already happened once, above, before recursion
@@ -1234,23 +1310,33 @@ def create_app():
                 # only orphans it (a real bug this surfaced: a shared
                 # editor's own subfolder survived its parent's deletion,
                 # left dangling with a parent_id pointing at nothing).
-                doc_ids = [
-                    r[0] for r in db.execute('SELECT id FROM case_vault WHERE folder_id = ?', (fid,)).fetchall()
-                ]
+                docs = db.execute(
+                    'SELECT id, COALESCE(smart_title, title), user_id FROM case_vault WHERE folder_id = ?', (fid,)
+                ).fetchall()
+                doc_ids = [d[0] for d in docs]
                 if doc_ids:
                     doc_ph = ','.join('?' for _ in doc_ids)
                     db.execute(f"DELETE FROM document_vault_shares WHERE node_type = 'document' AND node_id IN ({doc_ph})", doc_ids)
                 db.execute('DELETE FROM case_vault WHERE folder_id = ?', (fid,))
-                children = [
-                    r['id'] if isinstance(r, sqlite3.Row) else r[0]
-                    for r in db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()
-                ]
-                for child_id in children:
-                    recursive_delete(child_id)
+                for doc_id, doc_name, doc_owner in docs:
+                    _write_provenance(
+                        'document', doc_id, doc_name or f'Document {doc_id}', 'deleted', uid,
+                        doc_owner if doc_owner is not None else uid,
+                        {'reason': 'parent_folder_deleted', 'parent_folder_id': fid}
+                    )
+                child_folders = db.execute(
+                    'SELECT id, name, user_id FROM vault_folders WHERE parent_id = ?', (fid,)
+                ).fetchall()
+                for child_id, child_name, child_owner in child_folders:
+                    recursive_delete(child_id, child_name, child_owner if child_owner is not None else uid)
                 db.execute("DELETE FROM document_vault_shares WHERE node_type = 'folder' AND node_id = ?", (fid,))
                 db.execute('DELETE FROM vault_folders WHERE id = ?', (fid,))
+                _write_provenance(
+                    'folder', fid, fname, 'deleted', uid, fowner,
+                    {} if top else {'reason': 'ancestor_folder_deleted'}
+                )
 
-            recursive_delete(folder_id)
+            recursive_delete(folder_id, top_folder_name, owner_row[0] if owner_row[0] is not None else uid, top=True)
             db.commit()
             return jsonify({'success': True, 'deleted_id': folder_id}), 200
         except Exception as e:
@@ -1263,9 +1349,13 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            owner_row = db.execute('SELECT user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            owner_row = db.execute(
+                'SELECT user_id, COALESCE(smart_title, title), folder_id FROM case_vault WHERE id = ?', (doc_id,)
+            ).fetchone()
             if not owner_row or not _vault_access_ok('document', doc_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            doc_owner_uid = owner_row[0] if owner_row[0] is not None else uid
+            old_title, old_folder_id = owner_row[1], owner_row[2]
 
             data = request.get_json(force=True, silent=True) or {}
             if 'content' in data:
@@ -1277,6 +1367,10 @@ def create_app():
                 if len(new_title) > 200:
                     return jsonify({'error': True, 'message': 'Title must be under 200 characters.'}), 400
                 db.execute('UPDATE case_vault SET smart_title = ? WHERE id = ?', (new_title, doc_id))
+                _write_provenance(
+                    'document', doc_id, new_title, 'renamed', uid, doc_owner_uid,
+                    {'old_title': old_title, 'new_title': new_title}
+                )
             if 'folder_id' in data:
                 new_folder_id = data.get('folder_id')
                 if new_folder_id is not None:
@@ -1284,6 +1378,10 @@ def create_app():
                     if not dest_row or not _vault_access_ok('folder', new_folder_id, dest_row[0], uid, require_edit=True):
                         return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
                 db.execute('UPDATE case_vault SET folder_id = ? WHERE id = ?', (new_folder_id, doc_id))
+                _write_provenance(
+                    'document', doc_id, old_title, 'moved', uid, doc_owner_uid,
+                    {'old_folder_id': old_folder_id, 'new_folder_id': new_folder_id}
+                )
             db.commit()
             return jsonify({'success': True, 'id': doc_id}), 200
         except Exception as e:
@@ -1327,6 +1425,10 @@ def create_app():
             )
             db.commit()
             doc_id = c.lastrowid
+            _write_provenance(
+                'document', doc_id, title, 'uploaded', uid, uid,
+                {'filename': f.filename, 'folder_id': folder_id, 'size_bytes': len(file_bytes)}
+            )
             return jsonify({
                 'success': True,
                 'id': doc_id,
@@ -1346,12 +1448,17 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            owner_row = db.execute('SELECT user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            owner_row = db.execute(
+                'SELECT user_id, COALESCE(smart_title, title) FROM case_vault WHERE id = ?', (doc_id,)
+            ).fetchone()
             if not owner_row or not _vault_access_ok('document', doc_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            doc_owner_uid = owner_row[0] if owner_row[0] is not None else uid
+            doc_name = owner_row[1]
             db.execute("DELETE FROM document_vault_shares WHERE node_type = 'document' AND node_id = ?", (doc_id,))
             db.execute('DELETE FROM case_vault WHERE id = ?', (doc_id,))
             db.commit()
+            _write_provenance('document', doc_id, doc_name or f'Document {doc_id}', 'deleted', uid, doc_owner_uid, {})
             return jsonify({'success': True, 'deleted_id': doc_id}), 200
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
@@ -1364,6 +1471,13 @@ def create_app():
         table = 'vault_folders' if node_type == 'folder' else 'case_vault'
         row = db.execute(f'SELECT user_id FROM {table} WHERE id = ?', (node_id,)).fetchone()
         return row[0] if row else None
+
+    def _fetch_vault_node_name(node_type, node_id):
+        if node_type == 'folder':
+            row = db.execute('SELECT name FROM vault_folders WHERE id = ?', (node_id,)).fetchone()
+        else:
+            row = db.execute('SELECT COALESCE(smart_title, title) FROM case_vault WHERE id = ?', (node_id,)).fetchone()
+        return row[0] if row else f'{node_type} {node_id}'
 
     @app.route('/api/vault/shares', methods=['GET', 'OPTIONS'])
     @jwt_required()
@@ -1462,7 +1576,7 @@ def create_app():
 
             team_conn = sqlite3.connect(DB_PATH)
             try:
-                member_row = team_conn.execute('SELECT id FROM team_members WHERE id = ?', (team_member_id,)).fetchone()
+                member_row = team_conn.execute('SELECT id, name, email FROM team_members WHERE id = ?', (team_member_id,)).fetchone()
             finally:
                 team_conn.close()
             if not member_row:
@@ -1478,6 +1592,13 @@ def create_app():
                 'SELECT id FROM document_vault_shares WHERE node_type = ? AND node_id = ? AND team_member_id = ?',
                 (node_type, node_id, team_member_id)
             ).fetchone()[0]
+            _write_provenance(
+                node_type, node_id, _fetch_vault_node_name(node_type, node_id), 'shared', uid, uid,
+                {
+                    'team_member_id': team_member_id, 'permission': permission,
+                    'member_name': member_row[1], 'member_email': member_row[2],
+                }
+            )
             return jsonify({'success': True, 'id': share_id, 'permission': permission}), 201
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
@@ -1490,16 +1611,30 @@ def create_app():
         uid = _current_vault_user_id()
         try:
             share_row = db.execute(
-                'SELECT node_type, node_id FROM document_vault_shares WHERE id = ?', (share_id,)
+                'SELECT node_type, node_id, team_member_id FROM document_vault_shares WHERE id = ?', (share_id,)
             ).fetchone()
             if not share_row:
                 return jsonify({'error': True, 'message': 'Share not found.'}), 404
-            node_type, node_id = share_row
+            node_type, node_id, team_member_id = share_row
             row_owner = _fetch_vault_node_owner(node_type, node_id)
             if not _vault_owner_ok(row_owner, uid):
                 return jsonify({'error': True, 'message': 'Only the owner can revoke this share.'}), 403
+            member_row = None
+            team_conn = sqlite3.connect(DB_PATH)
+            try:
+                member_row = team_conn.execute('SELECT name, email FROM team_members WHERE id = ?', (team_member_id,)).fetchone()
+            finally:
+                team_conn.close()
             db.execute('DELETE FROM document_vault_shares WHERE id = ?', (share_id,))
             db.commit()
+            _write_provenance(
+                node_type, node_id, _fetch_vault_node_name(node_type, node_id), 'unshared', uid, uid,
+                {
+                    'team_member_id': team_member_id,
+                    'member_name': member_row[0] if member_row else None,
+                    'member_email': member_row[1] if member_row else None,
+                }
+            )
             return jsonify({'success': True, 'deleted_id': share_id}), 200
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
@@ -1529,7 +1664,158 @@ def create_app():
 
             db.execute(f'UPDATE {table} SET link_shared = ? WHERE id = ?', (1 if link_shared else 0, node_id))
             db.commit()
+            _write_provenance(
+                node_type, node_id, _fetch_vault_node_name(node_type, node_id),
+                'link_shared' if link_shared else 'link_unshared', uid, uid, {}
+            )
             return jsonify({'success': True, 'link_shared': link_shared}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    # ── Vault Provenance Trail (Phase 3) ─────────────────────────────────────
+    @app.route('/api/vault/provenance', methods=['GET', 'OPTIONS'])
+    @jwt_required()
+    def get_vault_provenance():
+        """The real Provenance Trail feed — merges vault_provenance (every
+        folder/document mutation, hash-chained) with vault_audit (the
+        pre-existing, narrower "AI conversation behind one saved document"
+        log) into one chronological list, replacing the old client-only
+        mock (INITIAL_PROVENANCE/generateQuickHash()) entirely.
+
+        Scoped by owner_user_id/actor_user_id rather than trying to
+        re-check current access on possibly-deleted nodes: a user sees an
+        entry if they own (or owned, at write time) the node, it was
+        legacy/shared-to-everyone, or they personally performed the action
+        — the same "owned or legacy" convention used everywhere else in
+        this vault, just captured as a snapshot since a deleted node has no
+        current owner to re-check against.
+
+        node_type+node_id optionally filters to one item's own history
+        (folder/document detail view); otherwise this is the vault-wide
+        feed, mirroring vault_audit_trail's own optional folder_id filter."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            node_type = request.args.get('node_type')
+            node_id = request.args.get('node_id', type=int)
+            try:
+                limit = max(1, min(int(request.args.get('limit', 100)), 300))
+            except (TypeError, ValueError):
+                limit = 100
+
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                where = ['(owner_user_id = ? OR owner_user_id IS NULL OR actor_user_id = ?)']
+                params = [uid, uid]
+                if node_type in ('folder', 'document') and node_id is not None:
+                    where.append('node_type = ? AND node_id = ?')
+                    params.extend([node_type, node_id])
+                where_sql = ' AND '.join(where)
+                prov_rows = conn.execute(
+                    f'SELECT id, node_type, node_id, node_name, action, actor_user_id, detail, content_hash, created_at '
+                    f'FROM vault_provenance WHERE {where_sql} ORDER BY id DESC LIMIT ?',
+                    params + [limit]
+                ).fetchall()
+                entries = []
+                for r in prov_rows:
+                    d = dict(r)
+                    try:
+                        d['detail'] = json.loads(d['detail']) if d['detail'] else {}
+                    except Exception:
+                        d['detail'] = {}
+                    d['id'] = f"prov-{d['id']}"
+                    d['source'] = 'provenance'
+                    entries.append(d)
+
+                # Fold in vault_audit, scoped the same way vault_audit_trail
+                # already scopes it (via the case_vault row's own
+                # ownership, since vault_audit itself carries no user_id).
+                audit_where = ['(cv.user_id = ? OR cv.user_id IS NULL)']
+                audit_params = [uid]
+                if node_type == 'folder' and node_id is not None:
+                    audit_where.append('va.folder_id = ?')
+                    audit_params.append(node_id)
+                elif node_type == 'document' and node_id is not None:
+                    audit_where.append('va.vault_doc_id = ?')
+                    audit_params.append(node_id)
+                audit_where_sql = ' AND '.join(audit_where)
+                audit_rows = conn.execute(
+                    f'''
+                    SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title, va.created_at,
+                           cv.title AS doc_title, cv.smart_title AS doc_smart_title
+                    FROM vault_audit va
+                    LEFT JOIN case_vault cv ON va.vault_doc_id = cv.id
+                    WHERE {audit_where_sql}
+                    ORDER BY va.id DESC LIMIT ?
+                    ''',
+                    audit_params + [limit]
+                ).fetchall()
+                for r in audit_rows:
+                    entries.append({
+                        'id': f'audit-{r["id"]}',
+                        'node_type': 'document',
+                        'node_id': r['vault_doc_id'],
+                        'node_name': r['doc_smart_title'] or r['doc_title'] or r['session_title'] or 'Document',
+                        'action': 'ai_generated',
+                        'actor_user_id': None,
+                        'detail': {'session_title': r['session_title']},
+                        'content_hash': None,
+                        'created_at': r['created_at'],
+                        'source': 'audit',
+                    })
+            finally:
+                conn.row_factory = old_rf
+
+            entries.sort(key=lambda e: e['created_at'], reverse=True)
+            return jsonify({'entries': entries[:limit]}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @app.route('/api/vault/provenance/verify', methods=['GET', 'OPTIONS'])
+    @jwt_required()
+    def verify_vault_provenance():
+        """Recomputes the ENTIRE global hash chain from the first row
+        onward using the exact same payload formula _write_provenance
+        writes with, and compares each recomputed hash against what's
+        stored — real tamper-evidence, replacing the old "Verify chain
+        integrity" button's no-op alert(). Deliberately walks the whole
+        chain rather than a per-case slice: vault_audit_trail-style
+        filtering is a display concern, not a verification one — a
+        tampered row anywhere breaks every hash after it, so any partial
+        check would be able to report "valid" while missing corruption
+        upstream of the slice it looked at."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail, content_hash '
+                    'FROM vault_provenance ORDER BY id ASC'
+                ).fetchall()
+            finally:
+                conn.row_factory = old_rf
+
+            prev_hash = '0' * 64
+            for row in rows:
+                payload = '|'.join(str(x) for x in (
+                    prev_hash, row['node_type'], row['node_id'], row['node_name'],
+                    row['action'], row['actor_user_id'], row['owner_user_id'], row['detail']
+                ))
+                expected = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+                if expected != row['content_hash']:
+                    return jsonify({
+                        'valid': False,
+                        'broken_at_id': row['id'],
+                        'total_entries': len(rows),
+                    }), 200
+                prev_hash = row['content_hash']
+            return jsonify({'valid': True, 'broken_at_id': None, 'total_entries': len(rows)}), 200
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
@@ -3711,6 +3997,20 @@ def create_app():
                 vault_doc_id   INTEGER,
                 session_title  TEXT,
                 messages_json  TEXT,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vault_provenance (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_type      TEXT NOT NULL CHECK (node_type IN ('folder', 'document')),
+                node_id        INTEGER,
+                node_name      TEXT NOT NULL,
+                action         TEXT NOT NULL,
+                actor_user_id  INTEGER,
+                owner_user_id  INTEGER,
+                detail         TEXT,
+                content_hash   TEXT NOT NULL,
                 created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
