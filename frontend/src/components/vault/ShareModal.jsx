@@ -1,124 +1,256 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Link2, Check } from 'lucide-react';
 
-const MATER_MEMBERS = [
-  { id: 'u1', name: 'Adv. Ramesh Rao', role: 'Lead Counsel - Petitioner' },
-  { id: 'u2', name: 'Narendar V', role: 'Lead Associate' },
-  { id: 'u3', name: 'Pooja K', role: 'Associate' },
-];
+const styles = `
+  .vlt-share-overlay { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(10,10,10,.55); backdrop-filter: blur(2px); }
+  .vlt-share-modal { background: var(--paper); border: 1px solid var(--rule); border-radius: 13px; box-shadow: 0 20px 50px rgba(0,0,0,.35); width: 100%; max-width: 420px; display: flex; flex-direction: column; max-height: 82vh; }
+  .vlt-share-head { padding: 16px; border-bottom: 1px solid var(--rule); display: flex; justify-content: space-between; align-items: center; }
+  .vlt-share-title { font-family: 'Fraunces', serif; font-style: italic; font-size: 16px; font-weight: 600; color: var(--ink); }
+  .vlt-share-close { background: transparent; border: 0; color: var(--muted); cursor: pointer; padding: 4px; display: flex; }
+  .vlt-share-close:hover { color: var(--ink); }
+  .vlt-share-body { padding: 16px; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 14px; }
+  .vlt-share-search { width: 100%; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: 13px; color: var(--ink); outline: none; }
+  .vlt-share-search:focus { border-color: var(--accent); }
+  .vlt-share-section-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .vlt-share-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 6px; border-radius: 8px; }
+  .vlt-share-row:hover { background: var(--paper-2); }
+  .vlt-share-person { display: flex; align-items: center; gap: 10px; min-width: 0; cursor: pointer; flex: 1; }
+  .vlt-share-checkbox { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+  .vlt-share-name-block { min-width: 0; }
+  .vlt-share-name { font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vlt-share-email { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vlt-share-unmatched { font-size: 10px; color: var(--accent); margin-top: 1px; }
+  .vlt-share-perm { background: var(--paper-2); border: 1px solid var(--rule); color: var(--ink-soft); font-size: 11.5px; border-radius: 6px; padding: 4px 6px; outline: none; flex-shrink: 0; }
+  .vlt-share-perm:focus { border-color: var(--accent); }
+  .vlt-share-empty { font-size: 12.5px; color: var(--muted); padding: 12px 4px; text-align: center; }
+  .vlt-share-link-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 9px; }
+  .vlt-share-link-label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink); }
+  .vlt-share-toggle { position: relative; width: 34px; height: 19px; border-radius: 10px; background: var(--rule); border: 0; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease; }
+  .vlt-share-toggle.on { background: var(--accent); }
+  .vlt-share-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: transform 0.15s ease; }
+  .vlt-share-toggle.on::after { transform: translateX(15px); }
+  .vlt-share-error { font-size: 12px; color: var(--accent); padding: 8px 4px; }
+  .vlt-share-readonly-notice { font-size: 12.5px; color: var(--muted); padding: 16px 4px; text-align: center; }
+  .vlt-share-foot { padding: 12px 16px; border-top: 1px solid var(--rule); display: flex; justify-content: flex-end; }
+  .vlt-share-done-btn { padding: 7px 16px; font-size: 12.5px; font-weight: 500; border-radius: 8px; cursor: pointer; border: 1px solid var(--rule); background: transparent; color: var(--ink); }
+  .vlt-share-done-btn:hover { background: var(--paper-2); }
+  .vlt-share-saving { font-size: 10.5px; color: var(--muted); }
+`;
 
-const FIRM_DIRECTORY = [
-  { id: 'u4', name: 'Dr. A. M. Singhvi', role: 'Sr. Adv. - Appellate' },
-  { id: 'u5', name: 'Saurabh M', role: 'Partner - Arbitration' },
-  { id: 'u6', name: 'Yogesh K', role: 'Partner - Commercial' },
-  { id: 'u7', name: 'K. Parameshwar', role: 'AoR' },
-  { id: 'u8', name: 'Ananya Sharma', role: 'Associate - Corporate' },
-  { id: 'u9', name: 'Vikramaditya Sen', role: 'Senior Partner' },
-];
-
+// Real sharing, wired to app.py's Phase 2 /api/vault/shares* routes — no
+// batch "Save Permissions" button. Every checkbox/dropdown/toggle here
+// persists immediately, matching how the rest of the vault (rename, move,
+// delete) already behaves. window.fetch is globally patched
+// (utils/authFetch.js) to attach cookies + CSRF automatically, so these
+// calls need nothing extra for auth.
 export default function ShareModal({ isOpen, item, onClose }) {
   const [search, setSearch] = useState('');
-  const [selectedAccess, setSelectedAccess] = useState({});
+  const [roster, setRoster] = useState([]);
+  const [shares, setShares] = useState([]); // [{id, team_member_id, permission, member_name, member_email, member_matched}]
+  const [linkShared, setLinkShared] = useState(false);
+  const [readOnly, setReadOnly] = useState(false); // true if the viewer isn't the owner (403 from the API)
+  const [error, setError] = useState(null);
+  const [savingIds, setSavingIds] = useState(() => new Set());
+
+  const nodeType = item?.type === 'folder' ? 'folder' : 'document';
+  const nodeId = item?.id;
+
+  const load = useCallback(async () => {
+    if (!nodeId) return;
+    setError(null);
+    setReadOnly(false);
+    try {
+      const [rosterRes, sharesRes] = await Promise.all([
+        fetch('/api/team/members'),
+        fetch(`/api/vault/shares?node_type=${nodeType}&node_id=${nodeId}`),
+      ]);
+      if (sharesRes.status === 403) {
+        setReadOnly(true);
+        setShares([]);
+        setRoster([]);
+        return;
+      }
+      const rosterData = rosterRes.ok ? await rosterRes.json() : [];
+      const sharesData = sharesRes.ok ? await sharesRes.json() : { shares: [], link_shared: false };
+      setRoster(Array.isArray(rosterData) ? rosterData : []);
+      setShares(sharesData.shares || []);
+      setLinkShared(!!sharesData.link_shared);
+    } catch (e) {
+      setError(e.message || 'Failed to load sharing.');
+    }
+  }, [nodeType, nodeId]);
+
+  useEffect(() => {
+    if (isOpen && item) load();
+  }, [isOpen, item, load]);
 
   if (!isOpen || !item) return null;
 
-  const handleToggleAccess = (userId) => {
-    setSelectedAccess(prev => {
-      const next = { ...prev };
-      if (next[userId]) delete next[userId];
-      else next[userId] = 'Can View';
-      return next;
+  const shareByMember = new Map(shares.map((s) => [s.team_member_id, s]));
+
+  const withSaving = async (memberId, fn) => {
+    setSavingIds((prev) => new Set(prev).add(memberId));
+    setError(null);
+    try {
+      await fn();
+      await load();
+    } catch (e) {
+      setError(e.message || 'Failed to update sharing.');
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(memberId);
+        return next;
+      });
+    }
+  };
+
+  const grant = (member, permission) => withSaving(member.id, async () => {
+    const res = await fetch('/api/vault/shares', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_type: nodeType, node_id: nodeId, team_member_id: member.id, permission }),
     });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.message || 'Could not share with this person.');
+    }
+  });
+
+  const revoke = (member) => withSaving(member.id, async () => {
+    const existing = shareByMember.get(member.id);
+    if (!existing) return;
+    const res = await fetch(`/api/vault/shares/${existing.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.message || 'Could not remove access.');
+    }
+  });
+
+  const toggleLink = async () => {
+    setError(null);
+    const next = !linkShared;
+    setLinkShared(next); // optimistic — this toggle has no per-row state to desync
+    try {
+      const res = await fetch('/api/vault/shares/link', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_type: nodeType, node_id: nodeId, link_shared: next }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.message || 'Could not update link sharing.');
+      }
+    } catch (e) {
+      setLinkShared(!next);
+      setError(e.message || 'Could not update link sharing.');
+    }
   };
 
-  const handleChangeAccessLevel = (userId, level) => {
-    setSelectedAccess(prev => ({ ...prev, [userId]: level }));
-  };
-
-  const isEthicalWallBreached = FIRM_DIRECTORY.some(user => selectedAccess[user.id]);
-
-  const renderUserList = (users) => (
-    <div className="flex flex-col gap-1 mt-2">
-      {users.filter(u => u.name.toLowerCase().includes(search.toLowerCase())).map(user => (
-        <div key={user.id} className="flex items-center justify-between p-2 hover:bg-[var(--paper-2)] rounded-lg transition-colors">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!selectedAccess[user.id]}
-              onChange={() => handleToggleAccess(user.id)}
-              className="w-4 h-4 rounded border-[var(--rule)] text-[var(--accent)] focus:ring-[var(--accent)]"
-            />
-            <div>
-              <div className="text-sm font-medium text-[var(--ink)]">{user.name}</div>
-              <div className="text-xs font-mono text-[var(--muted)]">{user.role}</div>
-            </div>
-          </label>
-          {selectedAccess[user.id] && (
-            <select
-              value={selectedAccess[user.id]}
-              onChange={(e) => handleChangeAccessLevel(user.id, e.target.value)}
-              className="bg-[var(--paper-2)] border border-[var(--rule)] text-[var(--ink-soft)] text-xs rounded-md px-2 py-1 outline-none focus:border-[var(--accent)]"
-            >
-              <option value="Can View">Can View</option>
-              <option value="Can Edit">Can Edit</option>
-              <option value="Full Access">Full Access</option>
-            </select>
-          )}
-        </div>
-      ))}
-    </div>
+  const filteredRoster = roster.filter((m) =>
+    (m.name || '').toLowerCase().includes(search.toLowerCase())
+    || (m.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-[var(--paper)] border border-[var(--rule)] rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
-        <div className="p-5 border-b border-[var(--rule)] flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-[var(--ink)] font-['Fraunces'] italic">Share "{item.name}"</h2>
-          <button onClick={onClose} className="text-[var(--muted)] hover:text-[var(--ink)]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+  return createPortal(
+    <div className="vlt-share-overlay" onClick={onClose}>
+      <style>{styles}</style>
+      <div className="vlt-share-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="vlt-share-head">
+          <div className="vlt-share-title">Share "{item.name}"</div>
+          <button className="vlt-share-close" onClick={onClose} aria-label="Close">
+            <X size={18} />
           </button>
         </div>
-        
-        <div className="p-5 overflow-y-auto flex flex-col gap-4">
-          <input
-            type="text"
-            placeholder="Search firm directory or matter team..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[var(--paper-2)] border border-[var(--rule)] rounded-lg px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted)] outline-none focus:border-[var(--accent)]"
-          />
 
-          <div>
-            <div className="text-xs font-bold tracking-wider text-[var(--ink-soft)] uppercase mb-1">Current Matter Members</div>
-            {renderUserList(MATER_MEMBERS)}
-          </div>
-          
-          <div className="mt-2">
-            <div className="text-xs font-bold tracking-wider text-[var(--ink-soft)] uppercase mb-1">Firm Directory</div>
-            {renderUserList(FIRM_DIRECTORY)}
-          </div>
-
-          {isEthicalWallBreached && (
-            <div className="mt-2 p-3 bg-[var(--major-soft)] border border-[var(--major)] rounded-lg flex items-start gap-3">
-              <svg className="text-[var(--major)] shrink-0 mt-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-              <div>
-                <div className="text-sm font-bold text-[var(--major)]">Security Override Guard</div>
-                <div className="text-xs text-[var(--major)] opacity-90 mt-0.5 leading-relaxed">
-                  Adding this user will grant them access to this Matter and update the Ethical Wall.
-                </div>
-              </div>
+        <div className="vlt-share-body">
+          {readOnly ? (
+            <div className="vlt-share-readonly-notice">
+              Only the owner of this {nodeType} can manage sharing.
             </div>
+          ) : (
+            <>
+              <div className="vlt-share-link-row">
+                <div className="vlt-share-link-label">
+                  <Link2 size={14} />
+                  Anyone with the link can view
+                </div>
+                <button
+                  className={`vlt-share-toggle${linkShared ? ' on' : ''}`}
+                  onClick={toggleLink}
+                  aria-label="Toggle link sharing"
+                />
+              </div>
+
+              <input
+                type="text"
+                placeholder="Search your firm's team..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="vlt-share-search"
+              />
+
+              <div>
+                <div className="vlt-share-section-label">Team</div>
+                {filteredRoster.length === 0 ? (
+                  <div className="vlt-share-empty">
+                    {roster.length === 0 ? 'No team members yet — add them from the Team screen first.' : 'No matches.'}
+                  </div>
+                ) : (
+                  filteredRoster.map((member) => {
+                    const existing = shareByMember.get(member.id);
+                    const isShared = !!existing;
+                    const isSaving = savingIds.has(member.id);
+                    return (
+                      <div className="vlt-share-row" key={member.id}>
+                        <label className="vlt-share-person">
+                          <input
+                            type="checkbox"
+                            className="vlt-share-checkbox"
+                            checked={isShared}
+                            disabled={isSaving}
+                            onChange={() => (isShared ? revoke(member) : grant(member, 'view'))}
+                          />
+                          <div className="vlt-share-name-block">
+                            <div className="vlt-share-name">{member.name || member.email || 'Unnamed'}</div>
+                            {member.email && <div className="vlt-share-email">{member.email}</div>}
+                            {!member.matched && (
+                              <div className="vlt-share-unmatched">No linked account yet — access applies once they sign up</div>
+                            )}
+                          </div>
+                        </label>
+                        {isSaving ? (
+                          <span className="vlt-share-saving">Saving…</span>
+                        ) : isShared ? (
+                          <select
+                            className="vlt-share-perm"
+                            value={existing.permission}
+                            onChange={(e) => grant(member, e.target.value)}
+                          >
+                            <option value="view">Can view</option>
+                            <option value="edit">Can edit</option>
+                          </select>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {error && <div className="vlt-share-error">{error}</div>}
+            </>
           )}
         </div>
 
-        <div className="p-5 border-t border-[var(--rule)] flex justify-end gap-3 bg-[var(--paper)]">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-[var(--ink)] bg-transparent hover:bg-[var(--paper-2)] border border-[var(--rule)] rounded-lg transition-colors">
-            Cancel
-          </button>
-          <button onClick={() => { alert('Permissions updated.'); onClose(); }} className="px-4 py-2 text-sm font-medium text-white bg-[var(--accent)] hover:opacity-90 rounded-lg transition-opacity">
-            Save Permissions
+        <div className="vlt-share-foot">
+          <button className="vlt-share-done-btn" onClick={onClose}>
+            <Check size={13} style={{ marginRight: 5, verticalAlign: -2 }} />
+            Done
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

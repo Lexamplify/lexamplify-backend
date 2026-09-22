@@ -1217,31 +1217,33 @@ def create_app():
                 return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be deleted.'}), 403
 
             def recursive_delete(fid):
-                # Delete all documents in this folder that this user may
-                # touch — a shared/legacy child document sitting inside an
-                # otherwise-owned folder is still left alone rather than
-                # deleted out from under whoever else can see it.
+                # Delete every document and child folder nested here,
+                # unconditionally — the top-level folder's owner/edit-access
+                # check already happened once, above, before recursion
+                # started, and "delete this folder" (per ConfirmDeleteDialog's
+                # own copy: "this folder and everything inside it... will be
+                # permanently deleted") means the whole subtree, including a
+                # subfolder or document a shared editor created inside it
+                # with their own user_id. An earlier, pre-sharing version of
+                # this only recursed into folders owned by the deleter (or
+                # legacy/NULL), meant to guard against a hypothetical
+                # reparenting attack — but every child folder here was only
+                # ever nested under fid via a create/move call that itself
+                # required access to fid, so that boundary was already
+                # enforced at write time; skipping a same-tree child now
+                # only orphans it (a real bug this surfaced: a shared
+                # editor's own subfolder survived its parent's deletion,
+                # left dangling with a parent_id pointing at nothing).
                 doc_ids = [
-                    r[0] for r in db.execute(
-                        'SELECT id FROM case_vault WHERE folder_id = ? AND (user_id = ? OR user_id IS NULL)',
-                        (fid, uid)
-                    ).fetchall()
+                    r[0] for r in db.execute('SELECT id FROM case_vault WHERE folder_id = ?', (fid,)).fetchall()
                 ]
                 if doc_ids:
                     doc_ph = ','.join('?' for _ in doc_ids)
                     db.execute(f"DELETE FROM document_vault_shares WHERE node_type = 'document' AND node_id IN ({doc_ph})", doc_ids)
-                db.execute(
-                    'DELETE FROM case_vault WHERE folder_id = ? AND (user_id = ? OR user_id IS NULL)',
-                    (fid, uid)
-                )
-                # Only recurse into child folders this user actually owns
-                # (or legacy/unowned ones) — never cascade into a subtree
-                # that was somehow reparented under another user's folder.
+                db.execute('DELETE FROM case_vault WHERE folder_id = ?', (fid,))
                 children = [
-                    r['id'] for r in db.execute(
-                        'SELECT id FROM vault_folders WHERE parent_id = ? AND (user_id = ? OR user_id IS NULL)',
-                        (fid, uid)
-                    ).fetchall()
+                    r['id'] if isinstance(r, sqlite3.Row) else r[0]
+                    for r in db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()
                 ]
                 for child_id in children:
                     recursive_delete(child_id)
