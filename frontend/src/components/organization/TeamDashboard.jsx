@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useOrganizationStore } from '../../stores/useOrganizationStore';
+import { useOrganization } from '../../hooks/useOrganization';
 import './organization.css';
 
 // Modern vector icons (zero emojis)
@@ -31,26 +32,26 @@ export default function TeamDashboard() {
   const { teamId } = useParams();
   const navigate = useNavigate();
 
-  const teams = useOrganizationStore((state) => state.teams);
-  const matters = useOrganizationStore((state) => state.matters);
   const organization = useOrganizationStore((state) => state.organization);
   const setActiveTeam = useOrganizationStore((state) => state.setActiveTeam);
   const setActiveMatter = useOrganizationStore((state) => state.setActiveMatter);
+  const { teams, matters } = useOrganization();
+  const numericTeamId = teamId ? Number(teamId) : null;
 
   // Synchronize route params: on mount or URL change, set active team in store
   useEffect(() => {
-    if (teamId) {
-      setActiveTeam(teamId);
+    if (numericTeamId) {
+      setActiveTeam(numericTeamId);
     }
-  }, [teamId, setActiveTeam]);
+  }, [numericTeamId, setActiveTeam]);
 
   const team = useMemo(() => {
-    return teams.find((t) => t.id === teamId) || teams[0];
-  }, [teams, teamId]);
+    return teams.find((t) => t.id === numericTeamId) || teams[0];
+  }, [teams, numericTeamId]);
 
   const teamMatters = useMemo(() => {
     if (!team) return [];
-    return matters.filter((m) => m.teamId === team.id);
+    return matters.filter((m) => m.team_id === team.id);
   }, [matters, team]);
 
   // Guarded Team Performance Bar Calculations
@@ -103,14 +104,16 @@ export default function TeamDashboard() {
           </div>
           <h1 className="page-title serif" style={{ fontSize: '28px', margin: '6px 0 0' }}>{team.name}</h1>
           <p className="page-sub" style={{ fontSize: '13px', color: 'var(--ink-soft)', marginTop: '7px' }}>
-            {team.description} · {team.membersCount || 1} member{team.membersCount !== 1 ? 's' : ''}
+            {team.description}
           </p>
         </div>
 
         <button
           type="button"
           className="btn-org btn-org-primary"
-          onClick={() => alert(`Invite link generated for ${team.name}.`)}
+          disabled
+          title="Real invites aren't wired yet — this is a placeholder, not a working feature."
+          style={{ opacity: 0.55, cursor: 'not-allowed' }}
         >
           {Icons.userPlus}
           Invite user
@@ -121,8 +124,8 @@ export default function TeamDashboard() {
       <section className="metric-grid" aria-label="Team Metrics">
         <div className="metric-tile">
           <span className="metric-label">Members</span>
-          <span className="metric-value">{team.membersCount || 1}</span>
-          <span className="metric-sub">team.membersCount</span>
+          <span className="metric-value">1</span>
+          <span className="metric-sub">Owner only for now</span>
         </div>
 
         <div className="metric-tile">
@@ -138,9 +141,9 @@ export default function TeamDashboard() {
         </div>
 
         <div className="metric-tile">
-          <span className="metric-value" style={{ fontSize: '13px' }}>{team.isPrivate ? 'Private' : 'Shared'}</span>
+          <span className="metric-value" style={{ fontSize: '13px' }}>{team.is_private ? 'Private' : 'Shared'}</span>
           <span className="metric-label" style={{ marginTop: '2px' }}>Visibility</span>
-          <span className="metric-sub">{team.isPrivate ? 'Confidential' : 'Open to org'}</span>
+          <span className="metric-sub">{team.is_private ? 'Confidential' : 'Open to org'}</span>
         </div>
       </section>
 
@@ -148,7 +151,7 @@ export default function TeamDashboard() {
       <section className="org-widget-card" aria-label="Team Performance Posture">
         <div className="org-widget-header">
           <h2 className="org-widget-title">Practice Posture & Matter Pipeline</h2>
-          <span className="org-role-chip" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
+          <span className="org-role-chip" style={{ fontVariantNumeric: 'tabular-nums' }}>
             {total} Total Matter{total !== 1 ? 's' : ''}
           </span>
         </div>
@@ -214,7 +217,7 @@ export default function TeamDashboard() {
                   className="org-table-row"
                   onClick={() => handleMatterRowClick(m.id)}
                 >
-                  <td style={{ fontWeight: 600, fontFamily: "'Fraunces', serif", fontStyle: 'italic' }}>
+                  <td style={{ fontWeight: 600 }}>
                     {m.title}
                   </td>
                   <td>
@@ -222,12 +225,12 @@ export default function TeamDashboard() {
                       {m.status ? m.status.charAt(0).toUpperCase() + m.status.slice(1) : 'Open'}
                     </span>
                   </td>
-                  <td style={{ color: 'var(--ink-soft)' }}>{m.leadCounsel || 'Narendar V'}</td>
-                  <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px', color: 'var(--muted)' }}>
-                    {m.openedAt}
+                  <td style={{ color: 'var(--ink-soft)' }}>{m.lead_counsel || 'Narendar V'}</td>
+                  <td style={{ fontSize: '11px', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+                    {m.opened_date}
                   </td>
-                  <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px' }}>
-                    {m.documents ? m.documents.length : 0} docs
+                  <td style={{ fontSize: '11px', fontVariantNumeric: 'tabular-nums' }}>
+                    —
                   </td>
                   <td>
                     <span style={{ color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600 }}>
@@ -255,7 +258,7 @@ export default function TeamDashboard() {
         <div className="org-widget-card">
           <div className="org-widget-header">
             <h2 className="org-widget-title">Practice Group Practitioners</h2>
-            <span className="org-role-chip">{team.membersCount || 1} Active</span>
+            <span className="org-role-chip">1 Active</span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

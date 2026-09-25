@@ -1,29 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useInRouterContext } from 'react-router-dom';
-import { useOrganizationStore } from '../../stores/useOrganizationStore';
 import './organization.css';
 
-export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatterCreated }) {
+// UNASSIGNED (empty string in the <select>, null once submitted) is a
+// real, first-class option now — Home Gateway v4: matter creation no
+// longer forces a team. A lawyer working solo can create a matter with no
+// team at all and assign one later from the matter's own page.
+const UNASSIGNED_VALUE = '';
+
+export default function NewMatterModal({ isOpen, teams = [], onClose, onOpenNewTeam, onCreate, onMatterCreated }) {
   const inRouter = useInRouterContext();
   const navigate = inRouter ? useNavigate() : () => {};
-  const teams = useOrganizationStore((state) => state.teams);
-  const activeTeamId = useOrganizationStore((state) => state.activeTeamId);
-  const createMatter = useOrganizationStore((state) => state.createMatter);
 
   const [title, setTitle] = useState('');
-  const [teamId, setTeamId] = useState(activeTeamId || teams[0]?.id || 'team_private');
+  const [teamId, setTeamId] = useState(UNASSIGNED_VALUE);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const inputRef = useRef(null);
   const modalBoxRef = useRef(null);
-
-  // Sync teamId when teams or activeTeamId change
-  useEffect(() => {
-    if (teams.length > 0 && !teams.some((t) => t.id === teamId)) {
-      setTeamId(activeTeamId || teams[0].id);
-    }
-  }, [teams, activeTeamId, teamId]);
 
   // Focus on mount and handle Escape key
   useEffect(() => {
@@ -53,7 +49,7 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
@@ -62,16 +58,25 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
       return;
     }
 
-    const newMatter = createMatter(trimmedTitle, teamId);
+    setSubmitting(true);
+    setError('');
+    try {
+      const resolvedTeamId = teamId === UNASSIGNED_VALUE ? null : Number(teamId);
+      const newMatter = await onCreate(trimmedTitle, resolvedTeamId);
 
-    if (onMatterCreated) {
-      onMatterCreated(newMatter);
-    }
+      if (onMatterCreated) {
+        onMatterCreated(newMatter);
+      }
 
-    onClose();
+      onClose();
 
-    if (newMatter && newMatter.id) {
-      navigate(`/workspace/matter/${newMatter.id}`);
+      if (newMatter && newMatter.id) {
+        navigate(`/workspace/matter/${newMatter.id}`);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to create the matter.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -168,6 +173,7 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
                 value={teamId}
                 onChange={(e) => setTeamId(e.target.value)}
               >
+                <option value={UNASSIGNED_VALUE}>Not assigned yet</option>
                 {teams.map((team) => (
                   <option key={team.id} value={team.id}>
                     {team.name}
@@ -175,7 +181,9 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
                 ))}
               </select>
               <span className="form-hint">
-                Files the matter into this team and selects it for you. Add client and fees any time from the matter.
+                {teamId === UNASSIGNED_VALUE
+                  ? 'A matter can exist on its own — add a team any time from the matter\'s own page.'
+                  : 'Files the matter into this team and selects it for you. Add client and fees any time from the matter.'}
               </span>
             </div>
           </div>
@@ -191,9 +199,10 @@ export default function NewMatterModal({ isOpen, onClose, onOpenNewTeam, onMatte
             <button
               type="submit"
               className="btn-org btn-org-primary"
+              disabled={submitting}
               style={{ background: 'var(--accent)', color: '#ffffff' }}
             >
-              Create matter
+              {submitting ? 'Creating…' : 'Create matter'}
             </button>
           </div>
         </form>

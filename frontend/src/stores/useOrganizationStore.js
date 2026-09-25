@@ -16,9 +16,23 @@ const userScopedStorage = {
   },
 };
 
+// Home Gateway v4 — trimmed to pure UI-only selection state. teams/matters/
+// activities and every mutation (createTeam, createMatter, addTask,
+// toggleTask, addDeadline...) moved to frontend/src/hooks/useOrganization.js,
+// which owns the real backend (app.py's /api/matters*, /api/teams* routes)
+// instead of localStorage — the same split useVaultTree.js/useChamberStore.js
+// already established for Case Vault. This store now only remembers which
+// org/team/matter the user last looked at, for UX continuity across
+// navigation/reloads; it has no server equivalent and needs none.
+//
+// version bumped 2 -> 3 with no migrate step: the old persisted
+// teams/matters/activities arrays were seed/demo data (hardcoded
+// mat_default/team_private placeholders), not real user work product, so
+// they're simply superseded once the hook-backed data becomes
+// authoritative rather than migrated forward.
 export const useOrganizationStore = create(
   persist(
-    (set, get) => ({
+    (set) => ({
       organization: {
         id: 'org_lexamplify_main',
         name: 'LexAmplify',
@@ -26,222 +40,20 @@ export const useOrganizationStore = create(
         totalAiRuns30d: 142,
       },
       activeOrgId: 'org_lexamplify_main',
-      activeTeamId: 'team_private',
-      activeMatterId: 'mat_default',
-      teams: [
-        {
-          id: 'team_private',
-          name: 'My Chambers',
-          description: 'Personal confidential workspace for private drafts & advisory notes.',
-          isPrivate: true,
-          membersCount: 1,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: 'team_dispute',
-          name: 'Dispute Resolution',
-          description: 'High Court & Supreme Court appellate litigation practice group.',
-          isPrivate: false,
-          membersCount: 4,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-      matters: [
-        {
-          id: 'mat_default',
-          teamId: 'team_private',
-          title: 'Untitled Matter',
-          status: 'open',
-          leadCounsel: 'Narendar V',
-          openedAt: 'Sep 13, 2026',
-          lastUsedAt: new Date().toISOString(),
-          documentsCount: 3,
-          tasksCount: 2,
-          deadlinesCount: 1,
-          hoursLogged: 4.5,
-          deadlines: [
-            { id: 'd1', title: 'Written Statement Limitation', date: '2026-09-28', urgency: 'urgent' },
-          ],
-          tasks: [
-            { id: 't1', title: 'Review Annexure P-4 in Case Vault', completed: false },
-            { id: 't2', title: 'Draft Vakalatnama for senior counsel', completed: true },
-          ],
-          documents: [
-            { id: 'doc1', name: 'Plaint_Draft_v2.pdf', size: '2.4 MB', uploadedAt: 'Yesterday' },
-          ],
-          activity: [
-            { id: 'a1', text: 'Created initial advisory brief', timestamp: 'Sep 13, 2026' },
-          ],
-          // ── Extended litigation detail (migrated from the retired Chamber
-          // system, see AppRouter.jsx cleanup). Optional — null until a real
-          // matter has this data. Never seed a fake value into these. ──────
-          counsel: null, // { leadPartner, advocateOnRecord, leadAssociate }
-          forum: null, // { name, benchOrVenue, stage, nextDate, urgency }
-          ecourtsSync: null, // { cnrNumber, isListedToday, syncedAt }
-          integrity: null, // { conflictStatus, conflictDetail, wallEnforced }
-          telemetry: null, // { vaultDocuments, flaggedRisks, simulationsRun }
-        },
-      ],
-      activities: [
-        { id: 'act_1', teamId: 'team_private', text: 'Opened matter "Untitled Matter"', timestamp: 'Sep 13, 2026' },
-      ],
-      setActiveMatter: (matterId) => {
-        const matter = get().matters.find((m) => m.id === matterId);
-        if (matter) {
-          set({
-            activeMatterId: matterId,
-            activeTeamId: matter.teamId,
-            matters: get().matters.map((m) =>
-              m.id === matterId ? { ...m, lastUsedAt: new Date().toISOString() } : m
-            ),
-          });
-        }
-      },
-      setActiveTeam: (teamId) => {
-        set({ activeTeamId: teamId });
-      },
-      createTeam: (teamName, description = '') => {
-        const uniqueSuffix = Math.random().toString(36).slice(2, 7);
-        const newTeam = {
-          id: `team_${Date.now()}_${uniqueSuffix}`,
-          name: (teamName || '').trim(),
-          description: (description || '').trim() || 'Collaborative practice workspace.',
-          isPrivate: false,
-          membersCount: 1,
-          createdAt: new Date().toISOString(),
-        };
-        set((state) => ({
-          teams: [...state.teams, newTeam],
-          activeTeamId: newTeam.id,
-          activities: [
-            { id: `act_${Date.now()}_${uniqueSuffix}`, teamId: newTeam.id, text: `Created team "${newTeam.name}"`, timestamp: 'Just now' },
-            ...state.activities,
-          ],
-        }));
-        return newTeam;
-      },
-      createMatter: (title, teamId, leadCounsel = 'Narendar V') => {
-        const uniqueSuffix = Math.random().toString(36).slice(2, 7);
-        const targetTeam = get().teams.find((t) => t.id === teamId) || get().teams[0];
-        const matterTitle = (title || '').trim() || 'Untitled Matter';
-        const newMatter = {
-          id: `mat_${Date.now()}_${uniqueSuffix}`,
-          teamId: targetTeam.id,
-          title: matterTitle,
-          status: 'open',
-          leadCounsel: leadCounsel || 'Narendar V',
-          openedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-          lastUsedAt: new Date().toISOString(),
-          documentsCount: 0,
-          tasksCount: 0,
-          deadlinesCount: 0,
-          hoursLogged: 0.0,
-          deadlines: [],
-          tasks: [],
-          documents: [],
-          activity: [
-            { id: `act_${Date.now()}_${uniqueSuffix}`, text: `Opened matter "${matterTitle}"`, timestamp: 'Just now' },
-          ],
-          counsel: null,
-          forum: null,
-          ecourtsSync: null,
-          integrity: null,
-          telemetry: null,
-        };
-        set((state) => ({
-          matters: [newMatter, ...state.matters],
-          activeMatterId: newMatter.id,
-          activeTeamId: targetTeam.id,
-          activities: [
-            { id: `act_${Date.now()}_${uniqueSuffix}`, teamId: targetTeam.id, text: `Created matter "${newMatter.title}" in team "${targetTeam.name}"`, timestamp: 'Just now' },
-            ...state.activities,
-          ],
-        }));
-        return newMatter;
-      },
-      updateMatterStatus: (matterId, newStatus) => {
-        set((state) => ({
-          matters: state.matters.map((m) =>
-            m.id === matterId ? { ...m, status: newStatus } : m
-          ),
-        }));
-      },
-      addTask: (matterId, taskTitle) => {
-        const newTask = { id: `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, title: (taskTitle || '').trim(), completed: false };
-        set((state) => ({
-          matters: state.matters.map((m) =>
-            m.id === matterId
-              ? { ...m, tasks: [newTask, ...m.tasks], tasksCount: m.tasksCount + 1 }
-              : m
-          ),
-        }));
-      },
-      toggleTask: (matterId, taskId) => {
-        set((state) => ({
-          matters: state.matters.map((m) =>
-            m.id === matterId
-              ? {
-                  ...m,
-                  tasks: m.tasks.map((t) =>
-                    t.id === taskId ? { ...t, completed: !t.completed } : t
-                  ),
-                }
-              : m
-          ),
-        }));
-      },
-      addDeadline: (matterId, deadlineData) => {
-        const newDeadline = { id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ...deadlineData };
-        set((state) => ({
-          matters: state.matters.map((m) =>
-            m.id === matterId
-              ? { ...m, deadlines: [...m.deadlines, newDeadline], deadlinesCount: m.deadlinesCount + 1 }
-              : m
-          ),
-        }));
-      },
-      isHydrating: false,
-      setHydratedData: (data) => set({ ...data, isHydrating: false }),
-      clearStore: () => set({ teams: [], matters: [], activeMatterId: null, activeTeamId: null }),
+      activeTeamId: null,
+      activeMatterId: null,
+      setActiveMatter: (matterId) => set({ activeMatterId: matterId }),
+      setActiveTeam: (teamId) => set({ activeTeamId: teamId }),
+      clearStore: () => set({ activeMatterId: null, activeTeamId: null }),
     }),
     {
       name: 'lexamplify-organization-store',
       storage: createJSONStorage(() => userScopedStorage),
-      version: 2,
-      migrate: (persistedState, version) => {
-        if (!version || version < 2) {
-          if (persistedState && typeof persistedState === 'object') {
-            if (persistedState.organization && (persistedState.organization.name === 'LexAmplify Chamber Console' || !persistedState.organization.name)) {
-              persistedState.organization.name = 'LexAmplify';
-            }
-            if (Array.isArray(persistedState.teams)) {
-              persistedState.teams = persistedState.teams.map((t) => {
-                if (t.id === 'team_private' && (t.name === 'My Private Space' || !t.name)) {
-                  return { ...t, name: 'My Chambers' };
-                }
-                return t;
-              });
-            }
-            if (Array.isArray(persistedState.matters)) {
-              persistedState.matters = persistedState.matters.map((m) => {
-                if (m.id === 'mat_default' && (m.title === 'My 1st Matter' || !m.title)) {
-                  return { ...m, title: 'Untitled Matter' };
-                }
-                return m;
-              });
-            }
-            if (Array.isArray(persistedState.activities)) {
-              persistedState.activities = persistedState.activities.map((a) => {
-                if (a.id === 'act_1' && a.text && a.text.includes('My 1st Matter')) {
-                  return { ...a, text: 'Opened matter "Untitled Matter"' };
-                }
-                return a;
-              });
-            }
-          }
-        }
-        return persistedState;
-      },
+      version: 3,
+      // No real migration — see the version-bump comment above. This just
+      // discards the old teams/matters/activities shape instead of
+      // warning about it on every load.
+      migrate: () => ({ organization: { id: 'org_lexamplify_main', name: 'LexAmplify', plan: 'Enterprise', totalAiRuns30d: 142 }, activeOrgId: 'org_lexamplify_main', activeTeamId: null, activeMatterId: null }),
     }
   )
 );

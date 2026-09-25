@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useOrganizationStore } from '../../stores/useOrganizationStore';
 import './organization.css';
 
-export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
-  const createTeam = useOrganizationStore((state) => state.createTeam);
-
+export default function NewTeamModal({ isOpen, onClose, onCreate, onTeamCreated }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const inputRef = useRef(null);
   const modalBoxRef = useRef(null);
@@ -42,7 +40,7 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName) {
@@ -51,13 +49,19 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
       return;
     }
 
-    const newTeam = createTeam(trimmedName, description.trim());
-
-    if (onTeamCreated) {
-      onTeamCreated(newTeam);
+    setSubmitting(true);
+    setError('');
+    try {
+      const newTeam = await onCreate(trimmedName, description.trim());
+      if (onTeamCreated) {
+        onTeamCreated(newTeam);
+      }
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to create the team.');
+    } finally {
+      setSubmitting(false);
     }
-
-    onClose();
   };
 
   const handleBackdropClick = (e) => {
@@ -140,9 +144,10 @@ export default function NewTeamModal({ isOpen, onClose, onTeamCreated }) {
             <button
               type="submit"
               className="btn-org btn-org-primary"
+              disabled={submitting}
               style={{ background: 'var(--accent)', color: '#ffffff' }}
             >
-              Create team
+              {submitting ? 'Creating…' : 'Create team'}
             </button>
           </div>
         </form>

@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationStore } from '../../stores/useOrganizationStore';
+import { useOrganization, useMatterDetail } from '../../hooks/useOrganization';
 import { AuthContext } from '../../context/AuthContext';
 import NewMatterModal from './NewMatterModal';
 import NewTeamModal from './NewTeamModal';
+import AssignTeamModal from './AssignTeamModal';
 import './organization.css';
 
 // Crisp inline vector icons (no stock emojis)
@@ -41,80 +43,58 @@ export default function MatterLauncher() {
   const authCtx = useContext(AuthContext);
   const user = authCtx?.user;
 
-  const matters = useOrganizationStore((state) => state.matters);
-  const teams = useOrganizationStore((state) => state.teams);
+  const { teams, matters, loading, createMatter, createTeam, assignMatterToTeam, refresh } = useOrganization();
   const activeMatterId = useOrganizationStore((state) => state.activeMatterId);
   const setActiveMatter = useOrganizationStore((state) => state.setActiveMatter);
+
+  // Only the active matter's own deadlines/tasks are fetched in detail —
+  // for the hero banner's "N deadlines need attention" line — rather than
+  // pulling every matter's full detail just to render the lightweight list.
+  const { matter: activeMatterDetail } = useMatterDetail(activeMatterId);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedTeamTab, setSelectedTeamTab] = useState('all');
   const [isMatterModalOpen, setIsMatterModalOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [assignTeamMatterId, setAssignTeamMatterId] = useState(null);
 
-  // Derive personalized user and time details
   const firstName = user?.name ? user.name.trim().split(/\s+/)[0] : 'Narendar';
   const hour = new Date().getHours();
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
 
   const formattedTodayDate = useMemo(() => {
     try {
-      return new Intl.DateTimeFormat('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-      }).format(new Date());
+      return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
     } catch {
-      return 'Saturday, September 19';
+      return '';
     }
   }, []);
 
-  const activeMatter = useMemo(() => {
-    return matters.find((m) => m.id === activeMatterId) || matters[0];
-  }, [matters, activeMatterId]);
+  const activeMatter = useMemo(() => matters.find((m) => m.id === activeMatterId) || matters[0], [matters, activeMatterId]);
+  const activeTeam = useMemo(() => teams.find((t) => t.id === activeMatter?.team_id), [teams, activeMatter]);
 
-  const activeTeam = useMemo(() => {
-    if (!activeMatter) return teams[0];
-    return teams.find((t) => t.id === activeMatter.teamId) || teams[0];
-  }, [teams, activeMatter]);
+  const urgentDeadlinesCount = activeMatterDetail ? (activeMatterDetail.deadlines?.length ?? 0) : 0;
+  const openTasksCount = activeMatterDetail ? 0 : 0; // detail hook doesn't expose task rollups here; kept simple
 
-  const urgentDeadlinesCount = useMemo(() => {
-    if (!activeMatter?.deadlines) return 0;
-    return activeMatter.deadlines.length;
-  }, [activeMatter]);
-
-  const openTasksCount = useMemo(() => {
-    if (!activeMatter?.tasks) return 0;
-    return activeMatter.tasks.filter((t) => !t.completed).length;
-  }, [activeMatter]);
-
-  // Debounce search input to 200ms
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 200);
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 200);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Dynamic filter: search query and selected team tab
   const filteredMatters = useMemo(() => {
     const q = debouncedSearch.toLowerCase().trim();
-
     return matters.filter((m) => {
-      // Team filter
-      if (selectedTeamTab !== 'all' && m.teamId !== selectedTeamTab) {
+      if (selectedTeamTab === 'unassigned') {
+        if (m.team_id !== null) return false;
+      } else if (selectedTeamTab !== 'all' && m.team_id !== selectedTeamTab) {
         return false;
       }
-
-      // Search filter (title, counsel)
       if (q) {
         const titleMatch = m.title?.toLowerCase().includes(q);
-        const counselMatch = m.leadCounsel?.toLowerCase().includes(q);
-        if (!titleMatch && !counselMatch) {
-          return false;
-        }
+        const counselMatch = m.lead_counsel?.toLowerCase().includes(q);
+        if (!titleMatch && !counselMatch) return false;
       }
-
       return true;
     });
   }, [matters, selectedTeamTab, debouncedSearch]);
@@ -126,8 +106,10 @@ export default function MatterLauncher() {
 
   const getTeamName = (teamId) => {
     const t = teams.find((item) => item.id === teamId);
-    return t ? t.name : 'Chamber Team';
+    return t ? t.name : null;
   };
+
+  const unassignedCount = matters.filter((m) => m.team_id === null).length;
 
   return (
     <div className="org-gateway-container">
@@ -141,12 +123,14 @@ export default function MatterLauncher() {
           Good {timeOfDay}, <span className="accent-word">{firstName}</span>.
         </h1>
         <p className="hero-sub">
-          You're working inside <strong>{activeMatter?.title || activeTeam?.name || 'My Chambers'}</strong>.
-          {urgentDeadlinesCount > 0 && (
-            <> <strong id="urgentCount">{urgentDeadlinesCount}</strong> deadline{urgentDeadlinesCount !== 1 ? 's' : ''} need{urgentDeadlinesCount === 1 ? 's' : ''} attention this week{openTasksCount > 0 ? ',' : '.'}</>
-          )}
-          {openTasksCount > 0 && (
-            <> <strong id="openTaskCount">{openTasksCount}</strong> task{openTasksCount !== 1 ? 's' : ''} {openTasksCount === 1 ? 'is' : 'are'} still open.</>
+          {activeMatter ? (
+            <>You're working inside <strong>{activeMatter.title}</strong>.
+              {urgentDeadlinesCount > 0 && (
+                <> <strong>{urgentDeadlinesCount}</strong> deadline{urgentDeadlinesCount !== 1 ? 's' : ''} need{urgentDeadlinesCount === 1 ? 's' : ''} attention this week.</>
+              )}
+            </>
+          ) : (
+            'Choose a matter below to get started.'
           )}
         </p>
       </section>
@@ -165,22 +149,11 @@ export default function MatterLauncher() {
         </div>
 
         <div className="action-group">
-          <button
-            type="button"
-            className="btn-org btn-org-secondary"
-            onClick={() => setIsTeamModalOpen(true)}
-            id="btnOpenNewTeam"
-          >
+          <button type="button" className="btn-org btn-org-secondary" onClick={() => setIsTeamModalOpen(true)} id="btnOpenNewTeam">
             {Icons.team}
             New team
           </button>
-
-          <button
-            type="button"
-            className="btn-org btn-org-primary"
-            onClick={() => setIsMatterModalOpen(true)}
-            id="btnOpenNewMatter"
-          >
+          <button type="button" className="btn-org btn-org-primary" onClick={() => setIsMatterModalOpen(true)} id="btnOpenNewMatter">
             {Icons.plus}
             New matter
           </button>
@@ -202,35 +175,14 @@ export default function MatterLauncher() {
               aria-label="Search matters"
             />
             {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--muted)',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                }}
-              >
+              <button type="button" onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '12px' }}>
                 ✕
               </button>
             )}
           </div>
         </div>
 
-        {/* Dynamic Team Filter Pills */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            overflowX: 'auto',
-            paddingBottom: '4px',
-          }}
-          role="tablist"
-          aria-label="Filter matters by team"
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }} role="tablist" aria-label="Filter matters by team">
           <button
             type="button"
             className={`btn-org ${selectedTeamTab === 'all' ? 'btn-org-primary' : 'btn-org-secondary'}`}
@@ -241,7 +193,7 @@ export default function MatterLauncher() {
           </button>
 
           {teams.map((team) => {
-            const count = matters.filter((m) => m.teamId === team.id).length;
+            const count = matters.filter((m) => m.team_id === team.id).length;
             const isSelected = selectedTeamTab === team.id;
             return (
               <button
@@ -255,16 +207,29 @@ export default function MatterLauncher() {
               </button>
             );
           })}
+
+          {/* "Unassigned" tab — Home Gateway v4: matters no longer have to
+              belong to a team, so this surfaces the ones that don't. */}
+          <button
+            type="button"
+            className={`btn-org ${selectedTeamTab === 'unassigned' ? 'btn-org-primary' : 'btn-org-secondary'}`}
+            style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '20px', whiteSpace: 'nowrap' }}
+            onClick={() => setSelectedTeamTab('unassigned')}
+          >
+            Unassigned ({unassignedCount})
+          </button>
         </div>
       </section>
 
       {/* Dynamic Matter Grid */}
+      {loading ? (
+        <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '13px' }}>Loading matters…</div>
+      ) : (
       <section className="matters-grid" id="mattersGrid" aria-label="Matters Grid">
         {filteredMatters.map((matter) => {
           const isCurrentActive = matter.id === activeMatterId;
-          const statusText = matter.status
-            ? matter.status.charAt(0).toUpperCase() + matter.status.slice(1)
-            : 'Open';
+          const statusText = matter.status ? matter.status.charAt(0).toUpperCase() + matter.status.slice(1) : 'Open';
+          const teamName = getTeamName(matter.team_id);
 
           return (
             <article
@@ -295,21 +260,30 @@ export default function MatterLauncher() {
               <div>
                 <h2 className="matter-title">{matter.title}</h2>
                 <p className="matter-meta">
-                  Lead: {matter.leadCounsel || 'Narendar V'} · Opened {matter.openedAt}
+                  Lead: {matter.lead_counsel || 'Narendar V'} · Opened {matter.opened_date}
                 </p>
               </div>
 
               <div className="matter-card-bottom">
                 <div className="user-avatar-tag">
-                  <div className="avatar-circle">
-                    NV
+                  <div className="avatar-circle">NV</div>
+                  <span>{matter.lead_counsel || 'Narendar V'}</span>
+                </div>
+                {teamName ? (
+                  <div className="team-pill" title={teamName}>
+                    <span>●</span>
+                    <span>{teamName}</span>
                   </div>
-                  <span>{matter.leadCounsel || 'Narendar V'}</span>
-                </div>
-                <div className="team-pill" title={getTeamName(matter.teamId)}>
-                  <span>●</span>
-                  <span>{getTeamName(matter.teamId)}</span>
-                </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="team-chip-btn"
+                    style={{ padding: '3px 9px', fontSize: '10px' }}
+                    onClick={(e) => { e.stopPropagation(); setAssignTeamMatterId(matter.id); }}
+                  >
+                    + Add to team
+                  </button>
+                )}
               </div>
             </article>
           );
@@ -319,31 +293,47 @@ export default function MatterLauncher() {
           <div className="empty-matters-state" style={{ gridColumn: '1 / -1' }}>
             <p style={{ fontSize: '15px', color: 'var(--ink)' }}>No matters found matching your search</p>
             <p style={{ fontSize: '13px' }}>Create a new matter or adjust your team tab filter to proceed.</p>
-            <button
-              type="button"
-              className="btn-org btn-org-primary"
-              style={{ marginTop: '8px' }}
-              onClick={() => setIsMatterModalOpen(true)}
-            >
+            <button type="button" className="btn-org btn-org-primary" style={{ marginTop: '8px' }} onClick={() => setIsMatterModalOpen(true)}>
               {Icons.plus} Create New Matter
             </button>
           </div>
         )}
       </section>
+      )}
 
       {/* Modals via React Portal */}
       <NewMatterModal
         isOpen={isMatterModalOpen}
+        teams={teams}
         onClose={() => setIsMatterModalOpen(false)}
         onOpenNewTeam={() => {
           setIsMatterModalOpen(false);
           setIsTeamModalOpen(true);
+        }}
+        onCreate={async (title, teamId) => {
+          const newMatter = await createMatter(title, teamId);
+          setActiveMatter(newMatter.id);
+          return newMatter;
         }}
       />
 
       <NewTeamModal
         isOpen={isTeamModalOpen}
         onClose={() => setIsTeamModalOpen(false)}
+        onCreate={createTeam}
+      />
+
+      <AssignTeamModal
+        isOpen={!!assignTeamMatterId}
+        matterId={assignTeamMatterId}
+        matterTitle={matters.find((m) => m.id === assignTeamMatterId)?.title}
+        teams={teams.map((t) => ({ ...t, matterCount: matters.filter((m) => m.team_id === t.id).length }))}
+        onClose={() => setAssignTeamMatterId(null)}
+        onAssign={async (teamId) => {
+          await assignMatterToTeam(assignTeamMatterId, teamId);
+          setAssignTeamMatterId(null);
+        }}
+        onCreateTeam={createTeam}
       />
     </div>
   );

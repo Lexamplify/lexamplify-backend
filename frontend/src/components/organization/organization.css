@@ -10,8 +10,38 @@
   display: flex;
   flex-direction: column;
   gap: 28px;
-  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: Calibri, Carlito, 'Segoe UI', Candara, Optima, sans-serif;
   color: var(--ink);
+}
+
+/* Identity-text hooks — used throughout this suite's markup on titles,
+   matter names, the firm name (.serif) and reference data/hashes/stat
+   lines (.mono). Neither swaps to a second typeface anymore (Home Gateway
+   v4: one typeface everywhere, no italics) — .serif is now just a mild
+   weight/spacing distinction, .mono keeps digits tabular so numbers still
+   line up in columns. Class names are legacy from the old two-typeface
+   system; rename to something like .identity-text when this suite is
+   next touched, since neither name describes what it does anymore. */
+.serif { font-weight: 600; letter-spacing: -0.01em; }
+.mono { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+
+/* index.css declares a global `h1,h2,h3,h4,h5,h6 { font-family:
+   var(--font-serif) }` (Merriweather) app-wide — a direct rule on the
+   element itself always wins over an inherited value regardless of
+   container, so headings inside .org-gateway-container would otherwise
+   render in Merriweather despite the container's own Calibri override
+   above. This overrides it back to inherited (Calibri) specifically
+   within this suite, without touching the global rule other features
+   still rely on. .modal-title gets the same treatment since New Matter/
+   New Team modals portal outside .org-gateway-container's DOM subtree. */
+.org-gateway-container h1,
+.org-gateway-container h2,
+.org-gateway-container h3,
+.org-gateway-container h4,
+.org-gateway-container h5,
+.org-gateway-container h6,
+.modal-title {
+  font-family: inherit;
 }
 
 /* ── TRIAL BANNER ───────────────────────────────────────────────────────── */
@@ -68,7 +98,6 @@
 }
 
 .eyebrow {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 1.2px;
@@ -80,8 +109,6 @@
 }
 
 .masthead-title {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 32px;
   font-weight: 500;
   color: var(--ink);
@@ -115,7 +142,6 @@
   cursor: pointer;
   transition: all 0.15s ease;
   text-decoration: none;
-  font-family: 'IBM Plex Sans', sans-serif;
   border: 1px solid transparent;
 }
 
@@ -186,7 +212,6 @@
   border-radius: 12px;
   padding: 8px 16px;
   color: var(--ink-soft);
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 12px;
   outline: none;
   cursor: pointer;
@@ -241,7 +266,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   font-weight: 500;
   color: var(--ink-soft);
@@ -271,7 +295,6 @@
 }
 
 .last-used-tag {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   color: var(--muted);
   background: var(--paper-2);
@@ -281,8 +304,6 @@
 }
 
 .matter-title {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 19px;
   font-weight: 600;
   color: var(--ink);
@@ -324,7 +345,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   font-weight: 600;
   border: 1px solid var(--accent);
@@ -332,7 +352,6 @@
 }
 
 .team-pill {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   color: var(--muted);
   display: flex;
@@ -388,7 +407,6 @@
   font-weight: 500;
   cursor: pointer;
   max-width: 190px;
-  font-family: 'IBM Plex Sans', sans-serif;
   transition: all 0.15s ease;
 }
 
@@ -404,11 +422,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.trail-seg span.txt.serif {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
 }
 
 .trail-seg .chev {
@@ -470,7 +483,6 @@
   text-decoration: none;
   white-space: nowrap;
   background: transparent;
-  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .context-seg:hover {
@@ -498,8 +510,6 @@
 }
 
 .seg-label-matter {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -507,7 +517,6 @@
 }
 
 .seg-label-team {
-  font-family: 'IBM Plex Sans', sans-serif;
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -532,7 +541,6 @@
 }
 
 .capsule-dropdown-header {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -601,6 +609,12 @@
   padding: 16px;
   opacity: 0;
   animation: fadeInModal 0.2s ease forwards;
+  /* New Matter/New Team modals portal to document.body, outside
+     .org-gateway-container's DOM subtree, so they don't inherit that
+     container's Calibri override from the surrounding page — declared
+     here instead so the whole Home Gateway suite (including its modals)
+     is visually consistent without touching the app's global body font. */
+  font-family: Calibri, Carlito, 'Segoe UI', Candara, Optima, sans-serif;
 }
 
 @keyframes fadeInModal {
@@ -635,8 +649,6 @@
 }
 
 .modal-title {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 20px;
   font-weight: 600;
   color: var(--ink);
@@ -761,8 +773,27 @@
   font-weight: 500;
 }
 
+/* Matter Workspace header meta row (Home Gateway v4) — was one long
+   run-on sentence ("Open · My Chambers · Lead counsel __ · Opened __")
+   set as plain .page-sub text, reading as a wall. Now discrete chip-like
+   pieces with real gaps between them. */
+.meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.meta-chip { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.meta-sep { color: var(--rule); }
+.team-chip-static { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; background: var(--paper-2); color: var(--ink-soft); font-size: 11.5px; }
+.team-chip-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; border: 1px dashed var(--accent); background: transparent; color: var(--accent); font-size: 11.5px; font-weight: 500; cursor: pointer; }
+.team-chip-btn:hover { background: var(--accent-soft); }
+
+/* Assign-to-team modal (Home Gateway v4 §7.2) — team picker rows */
+.team-pick-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; cursor: pointer; margin-bottom: 8px; }
+.team-pick-row:hover { border-color: var(--accent); }
+.team-pick-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.team-pick-radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--rule); flex-shrink: 0; }
+.team-pick-row.selected .team-pick-radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px var(--paper); }
+.team-pick-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.team-pick-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
 .org-chip-status {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 4px;
@@ -771,14 +802,21 @@
   border: 1px solid var(--rule);
 }
 
-/* 5 Dynamic Metrics Grid / 4 Metrics Tiles */
-.org-metric-grid {
+/* 5 Dynamic Metrics Grid / 4 Metrics Tiles
+   Unprefixed .metric-* aliases added alongside .org-metric-* below —
+   MatterDashboard.jsx/TeamDashboard.jsx/OrgDashboard.jsx all render the
+   unprefixed class names, which had no matching CSS anywhere in this file
+   (a real class-name mismatch, not a missing property), so every metric
+   tile on all three screens rendered as run-on inline text with none of
+   this flex/column/gap/padding layout applied. Kept as one shared rule set
+   rather than renaming the class in three JSX files. */
+.org-metric-grid, .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
 }
 
-.org-metric-tile {
+.org-metric-tile, .metric-tile {
   background: var(--paper);
   border: 1px solid var(--rule);
   border-radius: 14px;
@@ -788,24 +826,23 @@
   gap: 6px;
 }
 
-.org-metric-label {
-  font-family: 'IBM Plex Mono', monospace;
+.org-metric-label, .metric-label {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.org-metric-value {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
+.org-metric-value, .metric-value {
   font-size: 26px;
   font-weight: 600;
   color: var(--ink);
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
-.org-metric-sub {
+.org-metric-sub, .metric-sub {
   font-size: 12px;
   color: var(--ink-soft);
 }
@@ -823,7 +860,6 @@
 }
 
 .org-jump-label {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   text-transform: uppercase;
   color: var(--muted);
@@ -882,8 +918,6 @@
 }
 
 .org-widget-title {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 18px;
   font-weight: 600;
   color: var(--ink);
@@ -910,7 +944,6 @@
 }
 
 .org-badge-urgent {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   text-transform: uppercase;
   color: var(--accent);
@@ -1005,7 +1038,6 @@
 }
 
 .org-activity-time {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
@@ -1024,7 +1056,6 @@
 }
 
 .org-doc-meta {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   color: var(--muted);
 }
@@ -1049,13 +1080,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   font-weight: 600;
 }
 
 .org-role-chip {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 4px;
@@ -1103,7 +1132,6 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
 }
 
@@ -1133,8 +1161,6 @@
   background: var(--accent-soft);
   border: 1px solid var(--accent);
   color: var(--accent);
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 22px;
   font-weight: 600;
   display: flex;
@@ -1143,8 +1169,6 @@
 }
 
 .org-team-title {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 26px;
   font-weight: 600;
   color: var(--ink);
@@ -1174,7 +1198,6 @@
   background: var(--paper-2);
   padding: 12px 16px;
   border-bottom: 1px solid var(--rule);
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -1226,8 +1249,6 @@
 }
 
 .org-team-card-title {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 18px;
   font-weight: 600;
   color: var(--ink);
@@ -1290,7 +1311,6 @@
 }
 
 .hero-eyebrow {
-  font-family: 'IBM Plex Mono', monospace;
   font-size: 10.5px;
   letter-spacing: .1em;
   text-transform: uppercase;
@@ -1301,8 +1321,6 @@
 }
 
 .hero-title {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
   font-size: 30px;
   margin: 8px 0 0;
   line-height: 1.2;
@@ -1327,7 +1345,6 @@
 
 .hero-sub .placeholder {
   color: var(--muted);
-  font-style: italic;
   font-size: 12px;
 }
 
@@ -1383,7 +1400,5 @@
   font-size: 13px !important;
   font-weight: 500 !important;
   color: var(--muted) !important;
-  font-style: italic !important;
-  font-family: 'IBM Plex Sans', sans-serif !important;
 }
 

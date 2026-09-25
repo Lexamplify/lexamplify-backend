@@ -214,6 +214,99 @@ def init_db():
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # ── Home Gateway v4 — real Matter/Team backend ──────────────────────────
+    # Replaces the old client-only Zustand+localStorage "organization" store.
+    # Lives alongside case_vault/vault_folders in this same lex_assistant.db
+    # connection (not instance/client_data.db) — the most recent, most
+    # structurally similar precedent in this app, and Matter Documents
+    # deliberately reuse case_vault directly (case_id = 'matter:<id>', see
+    # the /api/matters/<id>/documents route) rather than a parallel storage
+    # table, so keeping them in the same physical database avoids any
+    # cross-database join question for that reuse.
+    #
+    # Every row here gets a real owner_user_id from creation onward (unlike
+    # Case Vault's legacy NULL-is-shared carve-out, which exists only for
+    # pre-existing unowned rows that predate any ownership boundary) —
+    # there is no such legacy data for Matter/Team, so ownership is a plain
+    # equality check, or team membership for team-scoped matters.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS teams (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT    NOT NULL,
+            description    TEXT,
+            is_private     BOOLEAN NOT NULL DEFAULT 0,
+            owner_user_id  INTEGER NOT NULL,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS team_memberships (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            user_id     INTEGER NOT NULL,
+            role        TEXT    NOT NULL DEFAULT 'member',
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(team_id, user_id)
+        )
+    ''')
+    # team_id is genuinely nullable — this is the actual fix for "a matter
+    # cannot exist without immediately belonging to a team" (Home Gateway
+    # v4 brief §7): a lawyer working solo can create a matter with no team
+    # at all, and assign one later via PATCH /api/matters/<id>/team.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS matters (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            title          TEXT    NOT NULL,
+            status         TEXT    NOT NULL DEFAULT 'open',
+            team_id        INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+            lead_counsel   TEXT,
+            opened_date    DATE,
+            owner_user_id  INTEGER NOT NULL,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS deadlines (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id     INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            title         TEXT    NOT NULL,
+            date          DATE,
+            description   TEXT,
+            ai_extracted  BOOLEAN NOT NULL DEFAULT 0,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Named tasks_matter (not `tasks`) — that name is already the Team
+    # screen's own task board (routes/team_routes.py), an unrelated feature.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS tasks_matter (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            title       TEXT    NOT NULL,
+            done        BOOLEAN NOT NULL DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS handoff_notes (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id       INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            author_user_id  INTEGER NOT NULL,
+            text            TEXT    NOT NULL,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Named matter_activity (not reusing vault_audit/vault_provenance) —
+    # this is Matter Workspace's own activity spine, a different feature
+    # from Case Vault's audit/provenance trails.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS matter_activity (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            text        TEXT    NOT NULL,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS document_chunks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2903,6 +2996,7 @@ def create_app():
     from routes.billing_routes import billing_bp
     from routes.conflict_routes import conflict_bp
     from routes.team_routes import team_bp
+    from routes.matter_routes import matter_bp
 
     app.register_blueprint(court_bp)
     app.register_blueprint(argument_bp)
@@ -2911,6 +3005,7 @@ def create_app():
     app.register_blueprint(billing_bp)
     app.register_blueprint(conflict_bp)
     app.register_blueprint(team_bp)
+    app.register_blueprint(matter_bp)
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
     app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
@@ -4012,6 +4107,78 @@ def create_app():
                 detail         TEXT,
                 content_hash   TEXT NOT NULL,
                 created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Home Gateway v4 — Matter/Team backend (see init_db()'s copy of
+        # this schema for the full rationale comment).
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS teams (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                name           TEXT    NOT NULL,
+                description    TEXT,
+                is_private     BOOLEAN NOT NULL DEFAULT 0,
+                owner_user_id  INTEGER NOT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS team_memberships (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL,
+                role        TEXT    NOT NULL DEFAULT 'member',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(team_id, user_id)
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS matters (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                title          TEXT    NOT NULL,
+                status         TEXT    NOT NULL DEFAULT 'open',
+                team_id        INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+                lead_counsel   TEXT,
+                opened_date    DATE,
+                owner_user_id  INTEGER NOT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS deadlines (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id     INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                title         TEXT    NOT NULL,
+                date          DATE,
+                description   TEXT,
+                ai_extracted  BOOLEAN NOT NULL DEFAULT 0,
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tasks_matter (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                title       TEXT    NOT NULL,
+                done        BOOLEAN NOT NULL DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS handoff_notes (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id       INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                author_user_id  INTEGER NOT NULL,
+                text            TEXT    NOT NULL,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS matter_activity (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                text        TEXT    NOT NULL,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 

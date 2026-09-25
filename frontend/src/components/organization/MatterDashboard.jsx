@@ -1,6 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useOrganizationStore } from '../../stores/useOrganizationStore';
+import { useOrganization, useMatterDetail } from '../../hooks/useOrganization';
+import AssignTeamModal from './AssignTeamModal';
 import './organization.css';
 
 // Modern, high-craft vector icons (zero stock emojis)
@@ -40,54 +42,48 @@ const Icons = {
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
     </svg>
   ),
-  arrowRight: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-    </svg>
-  ),
 };
 
 export default function MatterDashboard() {
   const { matterId } = useParams();
   const navigate = useNavigate();
+  const numericMatterId = matterId ? Number(matterId) : null;
 
-  const matters = useOrganizationStore((state) => state.matters);
-  const teams = useOrganizationStore((state) => state.teams);
   const setActiveMatter = useOrganizationStore((state) => state.setActiveMatter);
-  const addTask = useOrganizationStore((state) => state.addTask);
-  const toggleTask = useOrganizationStore((state) => state.toggleTask);
-  const addDeadline = useOrganizationStore((state) => state.addDeadline);
+  const { teams, createTeam, matters } = useOrganization();
+  const {
+    matter, deadlines, tasks, notes, documents, activity, loading, error,
+    addDeadline, addTask, toggleTask, addNote, uploadDocument, assignTeam,
+  } = useMatterDetail(numericMatterId);
 
-  // Two-way synchronization: on mount or URL change, set active matter in store
   useEffect(() => {
-    if (matterId) {
-      setActiveMatter(matterId);
-    }
-  }, [matterId, setActiveMatter]);
+    if (numericMatterId) setActiveMatter(numericMatterId);
+  }, [numericMatterId, setActiveMatter]);
 
-  const matter = useMemo(() => {
-    return matters.find((m) => m.id === matterId) || matters[0];
-  }, [matters, matterId]);
+  const team = teams.find((t) => t.id === matter?.team_id);
 
-  const team = useMemo(() => {
-    if (!matter) return teams[0];
-    return teams.find((t) => t.id === matter.teamId) || teams[0];
-  }, [teams, matter]);
-
-  // Form states
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newDeadlineTitle, setNewDeadlineTitle] = useState('');
   const [newDeadlineDate, setNewDeadlineDate] = useState('');
-  const [chatNotes, setChatNotes] = useState([
-    { id: 'cn_1', author: 'Narendar V', text: 'Reviewed initial pleadings; scheduling chamber review.', time: '2h ago' },
-  ]);
-  const [newChatNote, setNewChatNote] = useState('');
+  const [newDeadlineDesc, setNewDeadlineDesc] = useState('');
+  const [newNoteText, setNewNoteText] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [assignTeamOpen, setAssignTeamOpen] = useState(false);
+  const fileInputRef = useRef(null);
+
+  if (loading && !matter) {
+    return (
+      <div className="org-gateway-container">
+        <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '13px' }}>Loading matter…</div>
+      </div>
+    );
+  }
 
   if (!matter) {
     return (
       <div className="org-gateway-container">
         <div className="org-workspace-banner">
-          <p>Matter not found.</p>
+          <p>{error || 'Matter not found.'}</p>
           <Link to="/workspace/matters" className="btn-org btn-org-primary">
             Return to Gateway
           </Link>
@@ -96,43 +92,51 @@ export default function MatterDashboard() {
     );
   }
 
-  // 5 Dynamic Metrics
-  const docCount = matter.documents ? matter.documents.length : 0;
-  const openTasksCount = matter.tasks ? matter.tasks.filter((t) => !t.completed).length : 0;
-  const deadlinesCount = matter.deadlines ? matter.deadlines.length : 0;
-  const hoursLoggedFormatted = matter.hoursLogged != null ? `${matter.hoursLogged.toFixed(1)}h billable` : '0.0h billable';
+  const openTasksCount = tasks.filter((t) => !t.done).length;
+  const nextDeadline = deadlines[0];
 
-  const handleAddTask = (e) => {
+  const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
-    addTask(matter.id, newTaskTitle.trim());
+    await addTask(newTaskTitle.trim());
     setNewTaskTitle('');
   };
 
-  const handleAddDeadline = (e) => {
+  const handleAddDeadline = async (e) => {
     e.preventDefault();
-    if (!newDeadlineTitle.trim()) return;
-    addDeadline(matter.id, {
-      title: newDeadlineTitle.trim(),
-      date: newDeadlineDate || '2026-10-05',
-      urgency: 'urgent',
-    });
+    if (!newDeadlineTitle.trim() || !newDeadlineDate) return;
+    await addDeadline(newDeadlineTitle.trim(), newDeadlineDate, newDeadlineDesc.trim());
     setNewDeadlineTitle('');
     setNewDeadlineDate('');
+    setNewDeadlineDesc('');
   };
 
-  const handleAddChatNote = (e) => {
+  const handleAddNote = async (e) => {
     e.preventDefault();
-    if (!newChatNote.trim()) return;
-    setChatNotes((prev) => [
-      ...prev,
-      { id: `cn_${Date.now()}`, author: 'Narendar V', text: newChatNote.trim(), time: 'Just now' },
-    ]);
-    setNewChatNote('');
+    if (!newNoteText.trim()) return;
+    await addNote(newNoteText.trim());
+    setNewNoteText('');
+  };
+
+  const handleFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      await uploadDocument(file);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[Matter Upload]', err);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
     <div className="org-gateway-container">
+      <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt" style={{ display: 'none' }} onChange={handleFileSelected} />
+
       {/* ── MATTER WORKSPACE HEADER ───────────────────────────────────────── */}
       <section style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '8px' }} aria-label="Matter Header">
         <div>
@@ -141,24 +145,32 @@ export default function MatterDashboard() {
             MATTER WORKSPACE
           </div>
           <h1 className="page-title serif" style={{ fontSize: '28px', margin: '6px 0 0' }}>{matter.title}</h1>
-          <p className="page-sub" style={{ fontSize: '13px', color: 'var(--ink-soft)', marginTop: '7px' }}>
-            {matter.status ? matter.status.charAt(0).toUpperCase() + matter.status.slice(1) : 'Open'} · {team?.name || 'My Chambers'} · Lead counsel {matter.leadCounsel || 'Narendar V'} · Opened {matter.openedAt || 'Sep 13, 2026'}
-          </p>
+          <div className="meta-row">
+            <div className="meta-chip">
+              <span className="org-chip-status">{matter.status ? matter.status.charAt(0).toUpperCase() + matter.status.slice(1) : 'Open'}</span>
+            </div>
+            <span className="meta-sep">·</span>
+            <div className="meta-chip">
+              {team ? (
+                <span className="team-chip-static">{team.name}</span>
+              ) : (
+                <button type="button" className="team-chip-btn" onClick={() => setAssignTeamOpen(true)}>+ Add to team</button>
+              )}
+            </div>
+            <span className="meta-sep">·</span>
+            <div className="meta-chip">Lead counsel {matter.lead_counsel || 'Narendar V'}</div>
+            <span className="meta-sep">·</span>
+            <div className="meta-chip">Opened {matter.opened_date}</div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn-org btn-org-secondary"
-            onClick={() => navigate(`/workspace/team/${team?.id}`)}
-          >
-            Open Team Hub
-          </button>
-          <button
-            type="button"
-            className="btn-org btn-org-primary"
-            onClick={() => navigate('/workspace/matters')}
-          >
+          {team && (
+            <button type="button" className="btn-org btn-org-secondary" onClick={() => navigate(`/workspace/team/${team.id}`)}>
+              Open Team Hub
+            </button>
+          )}
+          <button type="button" className="btn-org btn-org-primary" onClick={() => navigate('/workspace/matters')}>
             Gateway Launchpad
           </button>
         </div>
@@ -166,42 +178,19 @@ export default function MatterDashboard() {
 
       {/* ── MODULE QUICK DOCK ────────────────────────────────────────────── */}
       <section className="quick-dock" aria-label="Module Quick Dock">
-        <button
-          type="button"
-          className="qd-item"
-          onClick={() => navigate(`/contract-analyzer?matterId=${matter.id}`)}
-          title="Contract Analyzer for this matter"
-        >
+        <button type="button" className="qd-item" onClick={() => navigate(`/contract-analyzer?matterId=${matter.id}`)} title="Contract Analyzer for this matter">
           {Icons.contract}
           <span>Contract Analyzer</span>
         </button>
-
-        <button
-          type="button"
-          className="qd-item"
-          onClick={() => navigate(`/auto-draft?matterId=${matter.id}`)}
-          title="Auto-Draft Studio for this matter"
-        >
+        <button type="button" className="qd-item" onClick={() => navigate(`/auto-draft?matterId=${matter.id}`)} title="Auto-Draft Studio for this matter">
           {Icons.draft}
           <span>Auto-Draft Studio</span>
         </button>
-
-        <button
-          type="button"
-          className="qd-item"
-          onClick={() => navigate(`/war-room?matterId=${matter.id}`)}
-          title="Virtual Courtroom simulation for this matter"
-        >
+        <button type="button" className="qd-item" onClick={() => navigate(`/war-room?matterId=${matter.id}`)} title="Virtual Courtroom simulation for this matter">
           {Icons.courtroom}
           <span>Virtual Courtroom</span>
         </button>
-
-        <button
-          type="button"
-          className="qd-item"
-          onClick={() => navigate(`/conflict-engine?matterId=${matter.id}`)}
-          title="Conflict Engine for this matter"
-        >
+        <button type="button" className="qd-item" onClick={() => navigate(`/conflict-engine?matterId=${matter.id}`)} title="Conflict Engine for this matter">
           {Icons.shield}
           <span>Conflict Engine</span>
         </button>
@@ -211,24 +200,19 @@ export default function MatterDashboard() {
       <section className="metric-grid" aria-label="Matter Metrics">
         <div className="metric-tile">
           <span className="metric-label">Documents</span>
-          <span className="metric-value">{docCount}</span>
+          <span className="metric-value">{documents.length}</span>
           <span className="metric-sub">in Case Vault</span>
         </div>
-
         <div className="metric-tile">
           <span className="metric-label">Open tasks</span>
           <span className="metric-value">{openTasksCount}</span>
-          <span className="metric-sub">of {matter.tasks ? matter.tasks.length : 0} total</span>
+          <span className="metric-sub">of {tasks.length} total</span>
         </div>
-
         <div className="metric-tile">
           <span className="metric-label">Deadlines</span>
-          <span className="metric-value">{deadlinesCount}</span>
-          <span className="metric-sub">
-            next: {matter.deadlines && matter.deadlines.length > 0 ? (matter.deadlines[0].date || matter.deadlines[0].title) : 'none'}
-          </span>
+          <span className="metric-value">{deadlines.length}</span>
+          <span className="metric-sub">{nextDeadline ? `next: ${nextDeadline.date}` : 'none yet'}</span>
         </div>
-
         <div className="metric-tile">
           <span className="metric-label">Hours logged</span>
           <span className="metric-value muted-val">Not tracked yet</span>
@@ -238,52 +222,68 @@ export default function MatterDashboard() {
 
       {/* ── TWO-COLUMN COLLABORATIVE GRID ────────────────────────────────── */}
       <div className="org-collaborative-grid">
-        {/* Left Column: Deadlines, Tasks, Activity */}
+        {/* Left Column: Deadlines, Tasks, Litigation detail, Activity */}
         <div className="org-grid-col">
           {/* Deadlines Widget */}
           <div className="org-widget-card">
             <div className="org-widget-header">
               <h2 className="org-widget-title">Limitation & Deadlines</h2>
-              <span className="org-role-chip">{matter.deadlines?.length || 0} Listed</span>
+              <span className="org-role-chip">{deadlines.length} Listed</span>
             </div>
 
             <div className="org-deadline-list">
-              {matter.deadlines && matter.deadlines.map((d) => (
-                <div key={d.id} className="org-deadline-item">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontWeight: 600 }}>{d.title}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                      Target: {d.date}
-                    </span>
+              {deadlines.map((d) => (
+                <div key={d.id} className="org-deadline-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                      <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {d.title}
+                        {!!d.ai_extracted && <span className="ai-tag" style={{ fontSize: '9px', letterSpacing: '.05em', fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-soft)', padding: '2px 7px', borderRadius: '999px' }}>AI-EXTRACTED</span>}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>Target: {d.date}</span>
+                    </div>
                   </div>
-                  <span className="org-badge-urgent">{d.urgency || 'urgent'}</span>
+                  {d.description && (
+                    <div style={{ fontSize: '11.5px', color: 'var(--muted)', lineHeight: 1.5 }}>{d.description}</div>
+                  )}
                 </div>
               ))}
 
-              {(!matter.deadlines || matter.deadlines.length === 0) && (
+              {deadlines.length === 0 && (
                 <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No limitation dates recorded yet.</div>
               )}
             </div>
 
-            {/* Inline Add Deadline */}
+            {/* Inline Add Deadline — now with a description field (Home Gateway v4 §8.1) */}
             <form onSubmit={handleAddDeadline} className="org-inline-form">
-              <input
-                type="text"
+              <div className="inline-form-row" style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  className="org-inline-input"
+                  placeholder="New deadline title..."
+                  value={newDeadlineTitle}
+                  onChange={(e) => setNewDeadlineTitle(e.target.value)}
+                />
+                <input
+                  type="date"
+                  className="org-inline-input"
+                  style={{ maxWidth: '130px' }}
+                  value={newDeadlineDate}
+                  onChange={(e) => setNewDeadlineDate(e.target.value)}
+                />
+              </div>
+              <textarea
                 className="org-inline-input"
-                placeholder="New deadline title..."
-                value={newDeadlineTitle}
-                onChange={(e) => setNewDeadlineTitle(e.target.value)}
+                style={{ marginTop: '8px', minHeight: '44px', resize: 'vertical', width: '100%' }}
+                placeholder="Description — what needs to happen, and why (optional but recommended)"
+                value={newDeadlineDesc}
+                onChange={(e) => setNewDeadlineDesc(e.target.value)}
               />
-              <input
-                type="date"
-                className="org-inline-input"
-                style={{ maxWidth: '130px' }}
-                value={newDeadlineDate}
-                onChange={(e) => setNewDeadlineDate(e.target.value)}
-              />
-              <button type="submit" className="btn-org btn-org-secondary org-btn-sm">
-                {Icons.plus} Add
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button type="submit" className="btn-org btn-org-secondary org-btn-sm">
+                  {Icons.plus} Add
+                </button>
+              </div>
             </form>
           </div>
 
@@ -295,30 +295,17 @@ export default function MatterDashboard() {
             </div>
 
             <div className="org-task-list">
-              {matter.tasks && matter.tasks.map((t) => (
-                <div
-                  key={t.id}
-                  className="org-task-item"
-                  onClick={() => toggleTask(matter.id, t.id)}
-                >
-                  <input
-                    type="checkbox"
-                    className="org-task-checkbox"
-                    checked={Boolean(t.completed)}
-                    onChange={() => {}} // toggled on item click
-                  />
-                  <span className={`org-task-text ${t.completed ? 'completed' : ''}`}>
-                    {t.title}
-                  </span>
+              {tasks.map((t) => (
+                <div key={t.id} className="org-task-item" onClick={() => toggleTask(t.id, !t.done)}>
+                  <input type="checkbox" className="org-task-checkbox" checked={Boolean(t.done)} onChange={() => {}} />
+                  <span className={`org-task-text ${t.done ? 'completed' : ''}`}>{t.title}</span>
                 </div>
               ))}
-
-              {(!matter.tasks || matter.tasks.length === 0) && (
-                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>All tasks completed.</div>
+              {tasks.length === 0 && (
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No tasks yet.</div>
               )}
             </div>
 
-            {/* Inline Add Task */}
             <form onSubmit={handleAddTask} className="org-inline-form">
               <input
                 type="text"
@@ -340,55 +327,61 @@ export default function MatterDashboard() {
               <span className="org-role-chip" style={{ fontSize: '10.5px' }}>eCourts</span>
             </div>
             <div className="empty-note">
-              Forum, eCourts sync, and conflict-integrity data aren't available for this matter yet — these fields exist on the record (<code className="inline">forum</code>, <code className="inline">ecourtsSync</code>, <code className="inline">integrity</code>) but stay <code className="inline">null</code>, and the UI, until a real matter has them. Never fill this with placeholder legal detail.
+              Forum, eCourts sync status, and conflict-integrity checks aren't available for this matter yet — they'll appear here automatically once a real court-record integration is connected.
             </div>
           </div>
 
-          {/* Recent Activity Widget */}
+          {/* Matter Activity Stream — now the screen's real spine (Home
+              Gateway v4 §8.5): every deadline/task/note/upload/team-
+              assignment action writes here server-side (see
+              routes/matter_routes.py's _log_activity calls). */}
           <div className="org-widget-card">
             <div className="org-widget-header">
               <h2 className="org-widget-title">Matter Activity Stream</h2>
               <span className="org-role-chip">Audit</span>
             </div>
-
             <div className="org-activity-list">
-              {matter.activity && matter.activity.map((a) => (
+              {activity.map((a) => (
                 <div key={a.id} className="org-activity-item">
                   <span>{a.text}</span>
-                  <span className="org-activity-time">{a.timestamp}</span>
+                  <span className="org-activity-time">{a.created_at}</span>
                 </div>
               ))}
+              {activity.length === 0 && (
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No activity recorded yet.</div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Right Column: Documents, People, Matter Chat */}
+        {/* Right Column: Documents, People, Handoff Notes */}
         <div className="org-grid-col">
-          {/* Documents Widget */}
+          {/* Documents Widget — real upload (Home Gateway v4 §8.2), reuses
+              Case Vault's existing storage (case_id = 'matter:<id>') */}
           <div className="org-widget-card">
             <div className="org-widget-header">
               <h2 className="org-widget-title">Case Documents</h2>
               <button
                 type="button"
                 className="btn-org btn-org-secondary org-btn-sm"
-                onClick={() => alert('Document ingestion wizard opened.')}
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
               >
-                {Icons.plus} Upload
+                {Icons.plus} {uploading ? 'Uploading…' : 'Upload'}
               </button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {matter.documents && matter.documents.map((doc) => (
+              {documents.map((doc) => (
                 <div key={doc.id} className="org-doc-row">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: 'var(--accent)' }}>{Icons.file}</span>
-                    <span style={{ fontWeight: 500 }}>{doc.name}</span>
+                    <span style={{ fontWeight: 500 }}>{doc.title}</span>
                   </div>
-                  <span className="org-doc-meta">{doc.size} · {doc.uploadedAt}</span>
+                  <span className="org-doc-meta">{doc.size_bytes ? `${Math.round(doc.size_bytes / 1024)} KB` : ''}</span>
                 </div>
               ))}
-
-              {(!matter.documents || matter.documents.length === 0) && (
+              {documents.length === 0 && (
                 <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No documents uploaded yet.</div>
               )}
             </div>
@@ -400,13 +393,12 @@ export default function MatterDashboard() {
               <h2 className="org-widget-title">Allocated Counsel</h2>
               <span className="org-role-chip">Chamber</span>
             </div>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div className="org-people-row">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div className="org-avatar-badge">NV</div>
                   <div>
-                    <div style={{ fontWeight: 600 }}>{matter.leadCounsel || 'Narendar V'}</div>
+                    <div style={{ fontWeight: 600 }}>{matter.lead_counsel || 'Narendar V'}</div>
                     <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Lead Counsel / Partner</div>
                   </div>
                 </div>
@@ -415,7 +407,9 @@ export default function MatterDashboard() {
             </div>
           </div>
 
-          {/* Matter Chat Notes Widget */}
+          {/* Chamber Handoff Notes — now persisted server-side (Home
+              Gateway v4 §8.4), not local component state lost on
+              navigation. */}
           <div className="org-widget-card">
             <div className="org-widget-header">
               <h2 className="org-widget-title">Chamber Handoff Notes</h2>
@@ -423,24 +417,27 @@ export default function MatterDashboard() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-              {chatNotes.map((note) => (
+              {notes.map((note) => (
                 <div key={note.id} style={{ background: 'var(--paper-2)', padding: '8px 12px', borderRadius: '6px', fontSize: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '11px', color: 'var(--muted)' }}>
-                    <strong>{note.author}</strong>
-                    <span>{note.time}</span>
+                    <strong>{note.author_name}</strong>
+                    <span>{note.created_at}</span>
                   </div>
                   <div style={{ color: 'var(--ink)' }}>{note.text}</div>
                 </div>
               ))}
+              {notes.length === 0 && (
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No handoff notes yet — post one for whoever works this matter next.</div>
+              )}
             </div>
 
-            <form onSubmit={handleAddChatNote} className="org-inline-form">
+            <form onSubmit={handleAddNote} className="org-inline-form">
               <input
                 type="text"
                 className="org-inline-input"
                 placeholder="Post an internal handover note..."
-                value={newChatNote}
-                onChange={(e) => setNewChatNote(e.target.value)}
+                value={newNoteText}
+                onChange={(e) => setNewNoteText(e.target.value)}
               />
               <button type="submit" className="btn-org btn-org-secondary org-btn-sm">
                 Post
@@ -449,6 +446,19 @@ export default function MatterDashboard() {
           </div>
         </div>
       </div>
+
+      <AssignTeamModal
+        isOpen={assignTeamOpen}
+        matterId={matter.id}
+        matterTitle={matter.title}
+        teams={teams.map((t) => ({ ...t, matterCount: matters.filter((m) => m.team_id === t.id).length }))}
+        onClose={() => setAssignTeamOpen(false)}
+        onAssign={async (teamId) => {
+          await assignTeam(teamId);
+          setAssignTeamOpen(false);
+        }}
+        onCreateTeam={createTeam}
+      />
     </div>
   );
 }

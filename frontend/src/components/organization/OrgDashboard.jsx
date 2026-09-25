@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useOrganizationStore } from '../../stores/useOrganizationStore';
+import { useOrganization } from '../../hooks/useOrganization';
 import './organization.css';
 
 // Modern, crisp vector icons (zero emojis)
@@ -32,14 +33,16 @@ export default function OrgDashboard() {
   const navigate = useNavigate();
 
   const organization = useOrganizationStore((state) => state.organization);
-  const teams = useOrganizationStore((state) => state.teams);
-  const matters = useOrganizationStore((state) => state.matters);
-  const activities = useOrganizationStore((state) => state.activities);
+  const { teams, matters } = useOrganization();
+  // No firm-wide activity feed exists yet — each matter has its own
+  // Activity Stream now (see MatterDashboard.jsx), but there's no
+  // cross-team rollup of them; shown as empty below rather than faked.
+  const activities = [];
 
-  // Firm Overview Metrics
-  const totalPeople = useMemo(() => {
-    return teams.reduce((acc, t) => acc + (t.membersCount || 1), 0);
-  }, [teams]);
+  // Firm Overview Metrics — membership count isn't tracked yet beyond the
+  // owner (team_memberships has no roster UI yet), so this undercounts
+  // until that's built; not silently fabricated as a bigger number.
+  const totalPeople = teams.length;
 
   const openMattersCount = useMemo(() => {
     return matters.filter((m) => m.status === 'open' || m.status === 'active').length;
@@ -102,7 +105,7 @@ export default function OrgDashboard() {
           <span className="card-title" style={{ fontWeight: 600, fontSize: '15px' }}>Practice groups</span>
         </div>
         {teams.map((t) => {
-          const teamMatters = matters.filter((m) => m.teamId === t.id);
+          const teamMatters = matters.filter((m) => m.team_id === t.id);
           return (
             <div
               key={t.id}
@@ -111,8 +114,8 @@ export default function OrgDashboard() {
               onClick={() => navigate(`/workspace/team/${t.id}`)}
             >
               <span style={{ fontWeight: 500 }}>{t.name}</span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: 'var(--muted)', fontSize: '12px' }}>
-                {t.membersCount || 1} member{t.membersCount !== 1 ? 's' : ''} · {teamMatters.length} matter{teamMatters.length !== 1 ? 's' : ''}
+              <span style={{ color: 'var(--muted)', fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}>
+                {teamMatters.length} matter{teamMatters.length !== 1 ? 's' : ''}
               </span>
             </div>
           );
@@ -130,7 +133,7 @@ export default function OrgDashboard() {
 
         <div className="org-teams-grid">
           {teams.map((t) => {
-            const teamMatters = matters.filter((m) => m.teamId === t.id);
+            const teamMatters = matters.filter((m) => m.team_id === t.id);
             const activeMattersCount = teamMatters.filter((m) => m.status === 'open' || m.status === 'active').length;
 
             return (
@@ -142,12 +145,11 @@ export default function OrgDashboard() {
                     </div>
                     <div>
                       <h3 className="org-team-card-title">{t.name}</h3>
-                      <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                        {t.isPrivate ? '🔒 Private Workspace' : 'Collaborative Practice'}
+                      <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                        {t.is_private ? 'Private Workspace' : 'Collaborative Practice'}
                       </span>
                     </div>
                   </div>
-                  <span className="org-role-chip">{t.membersCount || 1} members</span>
                 </div>
 
                 <p style={{ fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.4' }}>

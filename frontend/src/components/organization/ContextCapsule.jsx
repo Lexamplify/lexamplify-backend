@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useOrganizationStore } from '../../stores/useOrganizationStore';
+import { useOrganization } from '../../hooks/useOrganization';
 import './organization.css';
 
 export default function ContextCapsule() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const matters = useOrganizationStore((state) => state.matters);
-  const teams = useOrganizationStore((state) => state.teams);
+  const { teams, matters } = useOrganization();
   const activeMatterId = useOrganizationStore((state) => state.activeMatterId);
   const activeTeamId = useOrganizationStore((state) => state.activeTeamId);
   const setActiveMatter = useOrganizationStore((state) => state.setActiveMatter);
@@ -147,8 +147,7 @@ export default function ContextCapsule() {
                   <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
                     <span
                       style={{
-                        fontFamily: "'Fraunces', serif",
-                        fontStyle: 'italic',
+                        fontWeight: 600,
                         fontSize: '13px',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
@@ -158,7 +157,7 @@ export default function ContextCapsule() {
                       {matter.title}
                     </span>
                     <span style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
-                      {matter.leadCounsel} · {matter.openedAt}
+                      {matter.lead_counsel} · {matter.opened_date}
                     </span>
                   </div>
                   {isSelected && (
@@ -203,9 +202,11 @@ export default function ContextCapsule() {
                     <span style={{ fontSize: '13px', fontWeight: isSelected ? 600 : 500 }}>
                       {team.name}
                     </span>
-                    <span style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
-                      {team.membersCount} member{team.membersCount !== 1 ? 's' : ''}
-                    </span>
+                    {team.description && (
+                      <span style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
+                        {team.description}
+                      </span>
+                    )}
                   </div>
                   {isSelected && (
                     <span style={{ color: 'var(--accent)', marginLeft: '8px', fontSize: '14px' }}>✓</span>
