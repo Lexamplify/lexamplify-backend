@@ -29,7 +29,9 @@ import MatterDashboard from './components/organization/MatterDashboard';
 import TeamDashboard from './components/organization/TeamDashboard';
 import OrgDashboard from './components/organization/OrgDashboard';
 import ContextCapsule from './components/organization/ContextCapsule';
+import WorkspaceGuard from './components/WorkspaceGuard';
 import { useOrganizationStore } from './stores/useOrganizationStore';
+import { useChamberStore } from './stores/useChamberStore';
 import logoMark from './assets/lexamplify-logo-mark.png';
 
 // ── STATUS BADGE STYLES (mapped from real API status values) ──────────────────
@@ -698,8 +700,18 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   // localStorage keys left over from a pre-cookie auth scheme and no longer
   // actually ended the session server-side.
   const handleSignOut = async () => {
-    await logout();
-    navigate('/');
+    await logout(); // Real session teardown (POSTs /api/auth/logout)
+    
+    // 1. Destroy authentication tokens and user scope
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('active_lex_user');
+    
+    // 2. Wipe in-memory Zustand state securely
+    useOrganizationStore.getState().clearStore();
+    useChamberStore.getState().clearStore();
+    
+    // 3. Hard redirect to clear React tree
+    window.location.href = '/login';
   };
 
   const p = location.pathname;
@@ -889,7 +901,9 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 
         <main style={{ flex: 1, overflowY: 'auto' }}>
           <div key={location.pathname} className="page-enter">
-            {children}
+            <WorkspaceGuard>
+              {children}
+            </WorkspaceGuard>
           </div>
         </main>
       </div>

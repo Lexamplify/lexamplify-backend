@@ -1,5 +1,20 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+const userScopedStorage = {
+  getItem: (name) => {
+    const userId = localStorage.getItem('active_lex_user') || 'guest';
+    return localStorage.getItem(`${userId}_${name}`);
+  },
+  setItem: (name, value) => {
+    const userId = localStorage.getItem('active_lex_user') || 'guest';
+    localStorage.setItem(`${userId}_${name}`, value);
+  },
+  removeItem: (name) => {
+    const userId = localStorage.getItem('active_lex_user') || 'guest';
+    localStorage.removeItem(`${userId}_${name}`);
+  },
+};
 
 export const useOrganizationStore = create(
   persist(
@@ -185,9 +200,13 @@ export const useOrganizationStore = create(
           ),
         }));
       },
+      isHydrating: false,
+      setHydratedData: (data) => set({ ...data, isHydrating: false }),
+      clearStore: () => set({ teams: [], matters: [], activeMatterId: null, activeTeamId: null }),
     }),
     {
       name: 'lexamplify-organization-store',
+      storage: createJSONStorage(() => userScopedStorage),
       version: 2,
       migrate: (persistedState, version) => {
         if (!version || version < 2) {

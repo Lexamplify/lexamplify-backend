@@ -775,11 +775,10 @@ export default function LoginPage() {
           (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Registration failed.')
         );
       }
-      // Refresh the AuthContext's user state before navigating away — otherwise
-      // isAuthenticated stays stale (false) until the next /me poll, and hitting
-      // back to /login would re-render the form instead of the guard redirecting.
+      // Refresh the AuthContext's user state before navigating away
       await refreshSession();
-      navigate('/workspace/matters', { replace: true });
+      localStorage.setItem('active_lex_user', email.trim());
+      window.location.href = '/workspace/matters';
     } catch (err) {
       if (err.name === 'AbortError') {
         setError(WAKING_UP_MESSAGE);
@@ -832,7 +831,8 @@ export default function LoginPage() {
         );
       }
       await refreshSession();
-      navigate('/workspace/matters', { replace: true });
+      localStorage.setItem('active_lex_user', email.trim());
+      window.location.href = '/workspace/matters';
     } catch (err) {
       if (err.name === 'AbortError') {
         setError(WAKING_UP_MESSAGE);

@@ -1,4 +1,20 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+const userScopedStorage = {
+  getItem: (name) => {
+    const userId = localStorage.getItem('active_lex_user') || 'guest';
+    return localStorage.getItem(`${userId}_${name}`);
+  },
+  setItem: (name, value) => {
+    const userId = localStorage.getItem('active_lex_user') || 'guest';
+    localStorage.setItem(`${userId}_${name}`, value);
+  },
+  removeItem: (name) => {
+    const userId = localStorage.getItem('active_lex_user') || 'guest';
+    localStorage.removeItem(`${userId}_${name}`);
+  },
+};
 
 // Client-only UI state with no backend equivalent — folder/document CRUD
 // itself now lives in useVaultTree.js (real /api/vault/* persistence), not
@@ -8,15 +24,24 @@ import { create } from 'zustand';
 // is currently open, which (still-unused/unfiltered) matter scope is active,
 // and the folder-sync progress toast state, none of which the backend needs
 // to know about.
-export const useChamberStore = create((set) => ({
-  activeFolderId: null, // null = root, matching the backend's parent_id/folder_id convention
-  activeMatterId: 'm1', // retained for prop-compatibility with matter-aware UI elsewhere; the real vault_folders/case_vault schema has no per-matter scoping, so this no longer filters anything here
-  syncProgress: { isSyncing: false, current: 0, total: 0, currentName: '' },
+export const useChamberStore = create(
+  persist(
+    (set) => ({
+      activeFolderId: null, // null = root, matching the backend's parent_id/folder_id convention
+      activeMatterId: 'm1', // retained for prop-compatibility with matter-aware UI elsewhere; the real vault_folders/case_vault schema has no per-matter scoping, so this no longer filters anything here
+      syncProgress: { isSyncing: false, current: 0, total: 0, currentName: '' },
 
-  setActiveFolderId: (id) => set({ activeFolderId: id }),
-  setActiveMatterId: (id) => set({ activeMatterId: id }),
-  setSyncProgress: (progress) => set((state) => ({ syncProgress: { ...state.syncProgress, ...progress } })),
-}));
+      setActiveFolderId: (id) => set({ activeFolderId: id }),
+      setActiveMatterId: (id) => set({ activeMatterId: id }),
+      setSyncProgress: (progress) => set((state) => ({ syncProgress: { ...state.syncProgress, ...progress } })),
+      clearStore: () => set({ activeFolderId: null, activeMatterId: 'm1', syncProgress: { isSyncing: false, current: 0, total: 0, currentName: '' } }),
+    }),
+    {
+      name: 'chamber-store',
+      storage: createJSONStorage(() => userScopedStorage),
+    }
+  )
+);
 
 // ── Pure helpers over a real (backend-shaped) folder tree ──────────────────
 // These take the tree/flat-folder data explicitly instead of reading from
