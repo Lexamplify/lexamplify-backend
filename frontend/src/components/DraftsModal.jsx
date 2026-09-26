@@ -21,21 +21,7 @@ export default function DraftsModal({ isOpen, onClose }) {
       const res = await fetch(`${API_BASE}/api/drafts`);
       if (res.ok) apiDrafts = await res.json();
     } catch (e) {}
-
-    let localDrafts = [];
-    try {
-      localDrafts = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
-    } catch (e) {}
-
-    const combined = Array.isArray(apiDrafts) ? [...apiDrafts] : [];
-    if (Array.isArray(localDrafts)) {
-      for (const ld of localDrafts) {
-        if (ld && !combined.some((d) => d.id === ld.id)) {
-          combined.push(ld);
-        }
-      }
-    }
-    setSavedDrafts(combined);
+    setSavedDrafts(Array.isArray(apiDrafts) ? apiDrafts : []);
     setLoading(false);
   };
 
@@ -65,11 +51,6 @@ export default function DraftsModal({ isOpen, onClose }) {
   const deleteSavedDraft = async (draftId) => {
     try {
       await fetch(`${API_BASE}/api/drafts/${draftId}`, { method: 'DELETE' });
-    } catch (e) {}
-    try {
-      const local = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
-      const updated = Array.isArray(local) ? local.filter((d) => d.id !== draftId) : [];
-      localStorage.setItem('lexamplify_drafts', JSON.stringify(updated));
     } catch (e) {}
     setSavedDrafts((prev) => prev.filter((d) => d.id !== draftId));
     window.dispatchEvent(new CustomEvent('lexamplify-drafts-updated'));

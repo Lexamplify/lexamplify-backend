@@ -6,6 +6,7 @@ import DraftsModal from './DraftsModal.jsx';
 import { useContractStore } from '../store/useContractStore.js';
 import { fetchDocuments, extractContractText } from '../services/api.js';
 import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
+import { useLetterheads } from '../hooks/useLetterheads.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -73,6 +74,88 @@ export default function AutoDraftWorkspace() {
   const [showVariablesPanel, setShowVariablesPanel] = useState(false);
   const [extractedVariables, setExtractedVariables] = useState([]);
 
+  // ── Workbench layout: outline rail + collapsible panels ──────────────────
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [outlineHeadings, setOutlineHeadings] = useState([]);
+  const canvasContainerRef = useRef(null);
+  const [intelTab, setIntelTab] = useState('instructions');
+  const [precedentSearch, setPrecedentSearch] = useState('');
+
+  // Client-side heading scan (no backend/section data model — see plan) —
+  // the synthesized document is a flat string/HTML blob, so the outline is
+  // derived by reading the rendered TipTap document's own heading nodes
+  // rather than any structured {sections:[...]} the backend doesn't
+  // produce. A MutationObserver (not just a re-scan on autoDraftText
+  // change) is needed because the canvas is a contenteditable ProseMirror
+  // tree — headings can be added/edited/removed by the user typing
+  // directly into it without ever calling setAutoDraftText synchronously.
+  //
+  // Debounced via setTimeout (a macrotask) rather than scanning inside the
+  // MutationObserver callback directly (a microtask) — TipTap/ProseMirror
+  // mutates its own DOM on essentially every internal update (cursor
+  // decorations, widget nodes), and calling setState synchronously from
+  // that microtask risked a render -> DOM-touch -> new MutationRecord ->
+  // microtask loop that never yields back to the event loop (confirmed
+  // live: the tab hard-hung after Synthesize until reloaded). The
+  // setTimeout hop plus a content-signature check before setState breaks
+  // that cycle. Only childList/subtree is observed, not characterData —
+  // a live rename of heading text is picked up on the next structural
+  // edit or autoDraftText change rather than instantly, which is an
+  // acceptable trade for never re-entering this loop.
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+    let timeoutId = null;
+    let lastSignature = null;
+
+    const scan = () => {
+      const nodes = container.querySelectorAll('.ProseMirror h1, .ProseMirror h2, .ProseMirror h3');
+      const next = Array.from(nodes).map((el, i) => ({
+        id: `ad-outline-heading-${i}`,
+        text: el.textContent || `Untitled ${i + 1}`,
+        level: Number(el.tagName.slice(1)),
+      }));
+      const signature = next.map((h) => `${h.level}:${h.text}`).join('|');
+      if (signature === lastSignature) return;
+      lastSignature = signature;
+      setOutlineHeadings(next);
+    };
+
+    const scheduleScan = () => {
+      if (timeoutId) return;
+      timeoutId = setTimeout(() => {
+        timeoutId = null;
+        scan();
+      }, 400);
+    };
+
+    scan();
+    const observer = new MutationObserver(scheduleScan);
+    observer.observe(container, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [autoDraftText, autoDraftVersion]);
+
+  const jumpToHeading = (headingId) => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+    const index = Number(headingId.replace('ad-outline-heading-', ''));
+    const nodes = container.querySelectorAll('.ProseMirror h1, .ProseMirror h2, .ProseMirror h3');
+    const el = nodes[index];
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.classList.add('ad-outline-flash');
+    setTimeout(() => el.classList.remove('ad-outline-flash'), 900);
+  };
+
+  // Document Health — derived from state that already exists elsewhere in
+  // this component (wordCount below, extractedVariables from Extract
+  // Variables), not a new data source.
+  const openPlaceholderCount = (autoDraftText.match(/\[([^\]\n]{1,80})\]/g) || []).length;
+
   // ── Letterhead export ────────────────────────────────────────────────────
   // Previously lived behind a generic "Export" button that opened a modal
   // containing the letterhead picker — confirmed with the founder that this
@@ -80,19 +163,22 @@ export default function AutoDraftWorkspace() {
   // letterhead) behind a click that didn't read as "letterhead" at all. Now
   // an always-visible bar under the toolbar, no modal, no extra click.
   //
-  // No firm-branding/settings table exists anywhere in this codebase (the
-  // backend confirmed this last cycle), and building one is out of scope
-  // here — user-defined letterheads are persisted client-side in
-  // localStorage instead, and their full data is sent with each export
-  // rather than a server-side lookup key.
-  const [savedLetterheads, setSavedLetterheads] = useState(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(LETTERHEAD_STORAGE_KEY) || '[]');
-      return Array.isArray(stored) ? stored : [];
-    } catch {
-      return [];
-    }
-  });
+  // Real per-user persistence (routes/letterhead_routes.py, `letterheads`
+  // table) replaces the old localStorage-only `userLetterheads` array —
+  // this hook owns the network calls; `savedLetterheads` below is a local
+  // view shaped exactly like the old localStorage array (`id`/`name`/
+  // `firmName`/`tagline`/`address`/`contact`) so the rest of this
+  // component's logic (dedupe-by-firmName, activeLetterhead lookup, the
+  // <select>/modal JSX) is unchanged.
+  const { letterheads: serverLetterheads, loading: letterheadsLoading, createLetterhead, deleteLetterhead: deleteLetterheadRemote } = useLetterheads();
+  const savedLetterheads = serverLetterheads.map((lh) => ({
+    id: String(lh.id),
+    name: lh.auto_detected ? `${lh.name} (Auto-Detected)` : lh.name,
+    firmName: lh.name,
+    tagline: lh.tagline || '',
+    address: lh.address || '',
+    contact: lh.contact || '',
+  }));
   const [selectedLetterheadId, setSelectedLetterheadId] = useState('none');
   const [showLetterheadModal, setShowLetterheadModal] = useState(false);
   const [newLetterheadFirmName, setNewLetterheadFirmName] = useState('');
@@ -100,6 +186,41 @@ export default function AutoDraftWorkspace() {
   const [newLetterheadAddress, setNewLetterheadAddress] = useState('');
   const [newLetterheadContact, setNewLetterheadContact] = useState('');
   const [letterheadFormError, setLetterheadFormError] = useState('');
+  // One-time carry-forward: real letterheads created before this backend
+  // existed live only in localStorage. Unlike Home Gateway's seed/demo
+  // placeholders, these are genuine user-created data worth keeping — so
+  // if the server list comes back empty and an old localStorage array is
+  // still there, push each entry to the server exactly once (guarded by a
+  // ref, not state, so this can't re-fire on every serverLetterheads
+  // refresh) rather than silently dropping them or migrating repeatedly.
+  const letterheadCarryForwardDone = useRef(false);
+  useEffect(() => {
+    if (letterheadCarryForwardDone.current || letterheadsLoading) return;
+    if (serverLetterheads.length > 0) { letterheadCarryForwardDone.current = true; return; }
+    let stored = [];
+    try {
+      stored = JSON.parse(localStorage.getItem(LETTERHEAD_STORAGE_KEY) || '[]');
+    } catch {
+      stored = [];
+    }
+    if (!Array.isArray(stored) || stored.length === 0) { letterheadCarryForwardDone.current = true; return; }
+    letterheadCarryForwardDone.current = true;
+    (async () => {
+      for (const lh of stored) {
+        if (!lh || !lh.firmName) continue;
+        try {
+          await createLetterhead({
+            name: lh.firmName,
+            tagline: lh.tagline || '',
+            address: lh.address || '',
+            contact: lh.contact || '',
+            autoDetected: /\(Auto-Detected\)$/.test(lh.name || ''),
+          });
+        } catch {}
+      }
+      try { localStorage.removeItem(LETTERHEAD_STORAGE_KEY); } catch {}
+    })();
+  }, [serverLetterheads, letterheadsLoading, createLetterhead]);
   // Contextual guidance shown above the creation form when Auto-Detect
   // comes back empty/placeholder-only — opening the modal WITH an
   // explanation instead of a dead-end toast the lawyer has to separately
@@ -121,12 +242,6 @@ export default function AutoDraftWorkspace() {
   // out whatever was saved from the previous session. Nothing is allowed to
   // write until rehydration has explicitly run once.
   const isRehydrated = useRef(false);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(LETTERHEAD_STORAGE_KEY, JSON.stringify(savedLetterheads));
-    } catch {}
-  }, [savedLetterheads]);
 
   // Mount-only rehydration. Only restores from sessionStorage when the
   // in-memory canvas is still empty — if autoDraftText already has content
@@ -277,20 +392,14 @@ export default function AutoDraftWorkspace() {
         return;
       }
 
-      const entry = {
-        id: `lh-${Date.now()}`,
-        // "name" is the list/dropdown label only — marks this entry as
-        // machine-detected there. "firmName" stays the clean extracted
-        // value, since that's what actually gets printed on the exported
-        // letterhead itself; it must never carry the "(Auto-Detected)" suffix.
-        name: `${firmName} (Auto-Detected)`,
-        firmName,
+      const created = await createLetterhead({
+        name: firmName,
         tagline: data.tagline || '',
         address: data.address || '',
         contact: data.contact || '',
-      };
-      setSavedLetterheads((prev) => [...prev, entry]);
-      setSelectedLetterheadId(entry.id);
+        autoDetected: true,
+      });
+      setSelectedLetterheadId(String(created.id));
       showToast(`Detected letterhead: "${firmName}".`);
     } catch (err) {
       openLetterheadModalWithNotice(NOTHING_FOUND_NOTICE);
@@ -299,31 +408,34 @@ export default function AutoDraftWorkspace() {
     }
   };
 
-  const handleSaveLetterhead = () => {
+  const handleSaveLetterhead = async () => {
     const firmName = newLetterheadFirmName.trim();
     if (!firmName) {
       setLetterheadFormError('Firm name is required.');
       return;
     }
-    const entry = {
-      id: `lh-${Date.now()}`,
-      name: firmName,
-      firmName,
-      tagline: newLetterheadTagline.trim(),
-      address: newLetterheadAddress.trim(),
-      contact: newLetterheadContact.trim(),
-    };
-    setSavedLetterheads((prev) => [...prev, entry]);
-    setSelectedLetterheadId(entry.id);
-    setNewLetterheadFirmName('');
-    setNewLetterheadTagline('');
-    setNewLetterheadAddress('');
-    setNewLetterheadContact('');
-    closeLetterheadModal();
+    try {
+      const created = await createLetterhead({
+        name: firmName,
+        tagline: newLetterheadTagline.trim(),
+        address: newLetterheadAddress.trim(),
+        contact: newLetterheadContact.trim(),
+      });
+      setSelectedLetterheadId(String(created.id));
+      setNewLetterheadFirmName('');
+      setNewLetterheadTagline('');
+      setNewLetterheadAddress('');
+      setNewLetterheadContact('');
+      closeLetterheadModal();
+    } catch (err) {
+      setLetterheadFormError(err.message || 'Failed to save letterhead.');
+    }
   };
 
-  const handleDeleteLetterhead = (id) => {
-    setSavedLetterheads((prev) => prev.filter((l) => l.id !== id));
+  const handleDeleteLetterhead = async (id) => {
+    try {
+      await deleteLetterheadRemote(id);
+    } catch {}
     // Deleting the currently-active letterhead falls back to plain —
     // activeLetterhead's own .find() would already resolve to null for a
     // dangling id, but resetting the <select> explicitly avoids leaving
@@ -573,12 +685,6 @@ export default function AutoDraftWorkspace() {
       });
     } catch (e) {}
 
-    try {
-      const existing = JSON.parse(localStorage.getItem('lexamplify_drafts') || '[]');
-      const updated = [newDraft, ...existing.filter((d) => d.id !== newDraft.id)];
-      localStorage.setItem('lexamplify_drafts', JSON.stringify(updated));
-    } catch (e) {}
-
     window.dispatchEvent(new CustomEvent('lexamplify-drafts-updated'));
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
@@ -722,13 +828,66 @@ export default function AutoDraftWorkspace() {
   return (
     <div className="autodraft-page-wrapper">
       <style>{`
+        /* ============================================================
+           AUTO-DRAFT STUDIO — Slate & Rust Design System
+           Same token/font system as Case Vault, Home Gateway, and
+           Contract Analyzer (.ca-container). This screen previously ran
+           its own separate --bg-panel/--text-primary/--accent-primary
+           token set (defined globally in index.css) — rather than
+           rewriting every var(--bg-panel) reference below one at a time,
+           those names are re-pointed to the Slate & Rust palette right
+           here, scoped to .autodraft-page-wrapper, so the whole screen's
+           colors/typography unify with one small block instead of a
+           thousand-line diff.
+           ============================================================ */
         .autodraft-page-wrapper {
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
+
+          --bg-panel: var(--paper);
+          --bg-card: var(--paper-2);
+          --text-primary: var(--ink);
+          --text-muted: var(--muted);
+          --border-subtle: var(--rule);
+          --accent-primary: var(--accent);
+          --accent-muted: var(--accent-soft);
+          --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
+
           padding: 24px 28px;
           max-width: 1560px;
           margin: 0 auto;
           color: var(--text-primary);
-          font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+          font-family: 'IBM Plex Sans', sans-serif;
         }
+        [data-theme="light"] .autodraft-page-wrapper, :root[data-theme="light"] .autodraft-page-wrapper {
+          --bg: #DFE1E0;
+          --paper: #EAEBE8;
+          --paper-2: #E3E4E1;
+          --ink: #181B1D;
+          --ink-soft: #494E51;
+          --muted: #868C8E;
+          --muted-2: #B3B8B9;
+          --rule: #D2D5D4;
+          --accent: #B24A2E;
+          --accent-soft: #EFDCD1;
+          --major: #9C7A2E;
+          --major-soft: #F1E6C9;
+          --on-accent: #FBF7EE;
+        }
+        .autodraft-page-wrapper .serif { font-family: 'Fraunces', serif; font-style: italic; letter-spacing: -0.01em; }
+        .autodraft-page-wrapper .mono { font-family: 'IBM Plex Mono', monospace; }
+        .autodraft-page-wrapper .ad-title-gradient { font-family: 'Fraunces', serif; }
 
         /* Top Header Bar */
         .ad-header-card {
@@ -769,19 +928,112 @@ export default function AutoDraftWorkspace() {
           border-radius: 20px;
         }
 
-        /* Workspace Grid */
+        /* Workspace Grid — outline rail | canvas | controls. Each collapse
+           state zeros ONLY the track it owns (never the canvas's own
+           track) — declaring fewer grid-template-columns entries than
+           rendered children causes implicit-row auto-wrap that squeezes
+           the canvas, exactly the class of bug the mockup's own review
+           flagged; explicit 3-track lists here avoid it regardless of
+           collapse state. */
         .ad-workspace-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.25fr) minmax(370px, 0.75fr);
-          gap: 24px;
+          grid-template-columns: 220px minmax(0, 1.05fr) minmax(320px, 0.65fr);
+          gap: 20px;
           align-items: start;
+        }
+        .ad-workspace-grid.ad-outline-collapsed {
+          grid-template-columns: 40px minmax(0, 1.4fr) minmax(320px, 0.65fr);
+        }
+        .ad-workspace-grid.ad-panel-collapsed {
+          grid-template-columns: 220px minmax(0, 1.75fr) 40px;
+        }
+        .ad-workspace-grid.ad-outline-collapsed.ad-panel-collapsed {
+          grid-template-columns: 40px minmax(0, 2.1fr) 40px;
         }
 
         @media (max-width: 1080px) {
-          .ad-workspace-grid {
+          .ad-workspace-grid,
+          .ad-workspace-grid.ad-outline-collapsed,
+          .ad-workspace-grid.ad-panel-collapsed,
+          .ad-workspace-grid.ad-outline-collapsed.ad-panel-collapsed {
             grid-template-columns: 1fr;
           }
+          .ad-outline-rail { display: none; }
         }
+
+        /* Outline Rail */
+        .ad-outline-rail {
+          background: var(--bg-panel);
+          border-radius: 16px;
+          border: 1px solid var(--border-subtle);
+          padding: 14px 10px;
+          min-height: 720px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          overflow: hidden;
+        }
+        .ad-outline-rail-toggle {
+          align-self: flex-end;
+          background: transparent;
+          border: 1px solid var(--border-subtle);
+          border-radius: 6px;
+          color: var(--text-muted);
+          cursor: pointer;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          flex-shrink: 0;
+        }
+        .ad-outline-rail-toggle:hover { color: var(--text-primary); border-color: var(--accent); }
+        .ad-health-block {
+          font-size: 11.5px;
+          color: var(--text-muted);
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: 12px;
+        }
+        .ad-health-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px; }
+        .ad-health-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .ad-health-row strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+        .ad-outline-list-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+        .ad-outline-item {
+          display: block;
+          width: 100%;
+          text-align: left;
+          background: transparent;
+          border: none;
+          border-radius: 6px;
+          padding: 6px 8px;
+          font-size: 12px;
+          color: var(--text-muted);
+          cursor: pointer;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .ad-outline-item:hover { background: var(--bg-card); color: var(--text-primary); }
+        .ad-outline-item.level-1 { font-weight: 700; }
+        .ad-outline-item.level-2 { padding-left: 16px; }
+        .ad-outline-item.level-3 { padding-left: 24px; font-size: 11.5px; }
+        .ad-outline-empty { font-size: 11.5px; color: var(--text-muted); font-style: italic; padding: 6px 8px; }
+
+        /* Trust strip */
+        .ad-trust-strip {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          color: var(--text-muted);
+          background: var(--major-soft);
+          border: 1px solid var(--major);
+          border-radius: 8px;
+          padding: 6px 12px;
+          margin-bottom: 12px;
+        }
+        .ad-trust-strip strong { color: var(--major); }
 
         /* Left Canvas Panel */
         .ad-canvas-panel {
@@ -1079,6 +1331,25 @@ export default function AutoDraftWorkspace() {
           display: flex;
           flex-direction: column;
           gap: 20px;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .ad-controls-panel-collapsed {
+          background: var(--bg-panel);
+          border: 1px solid var(--border-subtle);
+          border-radius: 16px;
+          min-height: 720px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          padding: 14px 0;
+        }
+        .ad-outline-flash {
+          animation: ad-outline-flash-kf 0.9s ease;
+        }
+        @keyframes ad-outline-flash-kf {
+          0%, 100% { background: transparent; }
+          30% { background: var(--major-soft); }
         }
 
         .ad-card {
@@ -1089,9 +1360,39 @@ export default function AutoDraftWorkspace() {
           box-shadow: 0 8px 24px rgba(0,0,0,0.1);
         }
 
+        .ad-intel-tabs {
+          display: flex;
+          gap: 4px;
+          padding: 4px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: 12px;
+          margin-bottom: 4px;
+        }
+        .ad-intel-tab {
+          flex: 1;
+          padding: 8px 10px;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: var(--text-muted);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .ad-intel-tab.active {
+          background: var(--bg-panel);
+          color: var(--text-primary);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .ad-intel-tab:not(.active):hover {
+          color: var(--text-primary);
+        }
+
         .ad-card-highlight {
-          border-color: rgba(59,130,246,0.3);
-          background: linear-gradient(180deg, var(--bg-panel), rgba(59,130,246,0.03));
+          border-color: var(--accent);
+          background: linear-gradient(180deg, var(--bg-panel), var(--accent-soft));
         }
 
         .ad-card-title {
@@ -1148,11 +1449,11 @@ export default function AutoDraftWorkspace() {
         .ad-precedent-badge {
           font-size: 9.5px;
           font-weight: 700;
-          background: rgba(59,130,246,0.12);
+          background: var(--accent-soft);
           color: var(--accent-primary);
           padding: 2px 7px;
           border-radius: 4px;
-          border: 1px solid rgba(59,130,246,0.25);
+          border: 1px solid var(--accent);
         }
 
         .ad-chip-btn {
@@ -1197,7 +1498,7 @@ export default function AutoDraftWorkspace() {
           position: absolute;
           inset: -8px;
           border-radius: 50%;
-          background: radial-gradient(circle, rgba(59,130,246,0.25) 0%, rgba(59,130,246,0) 70%);
+          background: radial-gradient(circle, var(--accent-soft) 0%, rgba(0,0,0,0) 70%);
           animation: orbGlow 2.4s ease-in-out infinite alternate;
         }
 
@@ -1205,7 +1506,7 @@ export default function AutoDraftWorkspace() {
           position: absolute;
           inset: 0;
           border-radius: 50%;
-          border: 2px dashed rgba(59,130,246,0.4);
+          border: 2px dashed var(--accent);
           animation: spin 10s linear infinite;
         }
 
@@ -1214,8 +1515,8 @@ export default function AutoDraftWorkspace() {
           inset: 10px;
           border-radius: 50%;
           border: 2.5px solid transparent;
-          border-top-color: #3B82F6;
-          border-right-color: #8B5CF6;
+          border-top-color: var(--accent);
+          border-right-color: var(--major);
           animation: spin 1.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
         }
 
@@ -1223,12 +1524,12 @@ export default function AutoDraftWorkspace() {
           width: 44px;
           height: 44px;
           border-radius: 50%;
-          background: linear-gradient(135deg, #2563EB, #7C3AED);
-          color: #FFFFFF;
+          background: linear-gradient(135deg, var(--accent), var(--major));
+          color: var(--on-accent);
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 4px 18px rgba(37,99,235,0.4);
+          box-shadow: 0 4px 18px var(--accent-soft);
           position: relative;
           z-index: 2;
         }
@@ -1278,7 +1579,7 @@ export default function AutoDraftWorkspace() {
 
         .ad-progress-fill {
           height: 100%;
-          background: linear-gradient(90deg, #2563EB, #3B82F6, #8B5CF6);
+          background: linear-gradient(90deg, var(--accent), var(--major));
           border-radius: 10px;
           transition: width 0.35s ease;
           position: relative;
@@ -1343,8 +1644,8 @@ export default function AutoDraftWorkspace() {
         .ad-step-card.active {
           opacity: 1;
           border-color: var(--accent-primary);
-          background: rgba(59,130,246,0.08);
-          box-shadow: 0 4px 14px rgba(59,130,246,0.12);
+          background: var(--accent-soft);
+          box-shadow: 0 4px 14px var(--accent-soft);
         }
 
         .ad-step-card.done {
@@ -1369,10 +1670,10 @@ export default function AutoDraftWorkspace() {
         }
 
         .ad-step-card.active .ad-step-badge {
-          background: #3B82F6;
-          color: #FFFFFF;
-          border-color: #3B82F6;
-          box-shadow: 0 0 8px rgba(59,130,246,0.6);
+          background: var(--accent);
+          color: var(--on-accent);
+          border-color: var(--accent);
+          box-shadow: 0 0 8px var(--accent-soft);
         }
 
         .ad-step-card.done .ad-step-badge {
@@ -1445,9 +1746,9 @@ export default function AutoDraftWorkspace() {
           align-items: center;
           font-size: 11.5px;
           font-weight: 600;
-          background: rgba(59,130,246,0.14);
-          color: #1D4ED8;
-          border: 1px solid rgba(59,130,246,0.3);
+          background: var(--major-soft);
+          color: var(--major);
+          border: 1px solid var(--major);
           border-radius: 5px;
           padding: 3px 8px;
           margin: 0 6px 6px 0;
@@ -1536,9 +1837,9 @@ export default function AutoDraftWorkspace() {
         }
 
         :root[data-theme="light"] .ad-sovereign-badge {
-          background: rgba(37,99,235,0.1) !important;
-          color: #1D4ED8 !important;
-          border-color: rgba(37,99,235,0.3) !important;
+          background: var(--accent-soft) !important;
+          color: var(--accent) !important;
+          border-color: var(--accent) !important;
         }
 
         :root[data-theme="light"] .ad-card {
@@ -1569,8 +1870,8 @@ export default function AutoDraftWorkspace() {
         }
 
         :root[data-theme="light"] .ad-precedent-card:hover {
-          background: #EFF6FF !important;
-          border-color: #3B82F6 !important;
+          background: var(--accent-soft) !important;
+          border-color: var(--accent) !important;
         }
 
         :root[data-theme="light"] .ad-precedent-title {
@@ -1583,9 +1884,9 @@ export default function AutoDraftWorkspace() {
         }
 
         :root[data-theme="light"] .ad-precedent-badge {
-          background: rgba(37,99,235,0.1) !important;
-          color: #1D4ED8 !important;
-          border-color: rgba(37,99,235,0.3) !important;
+          background: var(--accent-soft) !important;
+          color: var(--accent) !important;
+          border-color: var(--accent) !important;
         }
 
         :root[data-theme="light"] .ad-chip-btn {
@@ -1596,9 +1897,9 @@ export default function AutoDraftWorkspace() {
         }
 
         :root[data-theme="light"] .ad-chip-btn:hover {
-          background: #DBEAFE !important;
-          color: #1D4ED8 !important;
-          border-color: #3B82F6 !important;
+          background: var(--accent-soft) !important;
+          color: var(--accent) !important;
+          border-color: var(--accent) !important;
         }
 
         :root[data-theme="light"] .ad-progress-track {
@@ -1611,8 +1912,8 @@ export default function AutoDraftWorkspace() {
         }
 
         :root[data-theme="light"] .ad-step-card.active {
-          background: #EFF6FF !important;
-          border-color: #2563EB !important;
+          background: var(--accent-soft) !important;
+          border-color: var(--accent) !important;
         }
 
         :root[data-theme="light"] .ad-step-card.done {
@@ -1638,8 +1939,8 @@ export default function AutoDraftWorkspace() {
         }
 
         :root[data-theme="light"] .toolbar-select:focus {
-          border-color: #2563EB !important;
-          box-shadow: 0 0 0 2px rgba(37,99,235,0.2) !important;
+          border-color: var(--accent) !important;
+          box-shadow: 0 0 0 2px var(--accent-soft) !important;
         }
 
         :root[data-theme="light"] .ad-document-canvas .scanner-body {
@@ -1668,7 +1969,7 @@ export default function AutoDraftWorkspace() {
 
         :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror strong,
         :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror b {
-          color: #1D4ED8 !important;
+          color: var(--accent) !important;
           font-weight: 700 !important;
         }
 
@@ -1776,9 +2077,54 @@ export default function AutoDraftWorkspace() {
       </div>
 
       {/* ── MAIN WORKSPACE GRID ── */}
-      <div className="ad-workspace-grid">
+      <div className={`ad-workspace-grid${outlineCollapsed ? ' ad-outline-collapsed' : ''}${panelCollapsed ? ' ad-panel-collapsed' : ''}`}>
 
-        {/* LEFT COLUMN — Live Editor & Document Canvas */}
+        {/* OUTLINE RAIL — client-side heading scan (see the effect above);
+            no backend/store section model, purely a derived, read-only
+            view of the rendered document's own heading nodes. */}
+        <div className="ad-outline-rail">
+          <button
+            type="button"
+            className="ad-outline-rail-toggle"
+            onClick={() => setOutlineCollapsed((v) => !v)}
+            title={outlineCollapsed ? 'Expand outline' : 'Collapse outline'}
+          >
+            {outlineCollapsed ? '»' : '«'}
+          </button>
+          {!outlineCollapsed && (
+            <>
+              <div className="ad-health-block">
+                <div className="ad-health-title">Document Health</div>
+                <div className="ad-health-row"><span>Words</span><strong>{wordCount}</strong></div>
+                <div className="ad-health-row"><span>Characters</span><strong>{charCount}</strong></div>
+                <div className="ad-health-row"><span>Open placeholders</span><strong>{openPlaceholderCount}</strong></div>
+                <div className="ad-health-row"><span>Status</span><strong>{drafting ? 'Synthesizing…' : autoDraftText ? 'Ready' : 'Empty'}</strong></div>
+              </div>
+              <div>
+                <div className="ad-outline-list-title" style={{ marginBottom: '6px' }}>Outline</div>
+                {outlineHeadings.length === 0 ? (
+                  <div className="ad-outline-empty">
+                    {autoDraftText ? 'No headings detected yet.' : 'Synthesize a document to see its outline.'}
+                  </div>
+                ) : (
+                  outlineHeadings.map((h) => (
+                    <button
+                      key={h.id}
+                      type="button"
+                      className={`ad-outline-item level-${h.level}`}
+                      onClick={() => jumpToHeading(h.id)}
+                      title={h.text}
+                    >
+                      {h.text}
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* CENTER COLUMN — Live Editor & Document Canvas */}
         <div className="ad-canvas-panel">
           {/* Invisible on screen, shown only under @media print (see
               styles below) — the PDF export path is window.print() with
@@ -1917,6 +2263,13 @@ export default function AutoDraftWorkspace() {
             </div>
           )}
 
+          {autoDraftText && (
+            <div className="ad-trust-strip">
+              <span>⚠️</span>
+              <span><strong>AI-drafted, not filed.</strong> Review every clause and bracketed placeholder before sending to a party or the court.</span>
+            </div>
+          )}
+
           {showVariablesPanel && (
             <div className="ad-variables-panel">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -1944,7 +2297,7 @@ export default function AutoDraftWorkspace() {
           )}
 
           {/* Editor Canvas / In-Flight Reasoning State / Standby Hero */}
-          <div className="ad-document-canvas" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div className="ad-document-canvas" ref={canvasContainerRef} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div className={`ad-upload-overlay${uploadingDraft ? ' visible' : ''}`}>
               <div className="ad-upload-spinner" />
             </div>
@@ -2019,8 +2372,8 @@ export default function AutoDraftWorkspace() {
               />
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'var(--accent-soft)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 20h9" />
                     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                   </svg>
@@ -2034,11 +2387,49 @@ export default function AutoDraftWorkspace() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN — Synthesis Control Console (Instructions at the TOP!) */}
+        {/* RIGHT COLUMN — Draft Intelligence (tabbed Instructions/Playbook) */}
+        {panelCollapsed ? (
+          <div className="ad-controls-panel-collapsed">
+            <button
+              type="button"
+              className="ad-outline-rail-toggle"
+              onClick={() => setPanelCollapsed(false)}
+              title="Expand Draft Intelligence panel"
+            >
+              «
+            </button>
+          </div>
+        ) : (
         <div className="ad-controls-panel">
 
-          {/* CARD 1 (TOP): AI Synthesis Instructions & Engine */}
-          <div className="ad-card ad-card-highlight">
+          <div className="ad-intel-tabs">
+            <button
+              type="button"
+              className={`ad-intel-tab${intelTab === 'instructions' ? ' active' : ''}`}
+              onClick={() => setIntelTab('instructions')}
+            >
+              ✍️ Instructions
+            </button>
+            <button
+              type="button"
+              className={`ad-intel-tab${intelTab === 'playbook' ? ' active' : ''}`}
+              onClick={() => setIntelTab('playbook')}
+            >
+              📜 Playbook
+            </button>
+            <button
+              type="button"
+              className="ad-outline-rail-toggle"
+              onClick={() => setPanelCollapsed(true)}
+              title="Collapse Draft Intelligence panel"
+              style={{ flexShrink: 0 }}
+            >
+              »
+            </button>
+          </div>
+
+          {/* CARD 1: AI Synthesis Instructions & Engine */}
+          <div className="ad-card ad-card-highlight" style={{ display: intelTab === 'instructions' ? 'block' : 'none' }}>
             <div className="ad-card-title">
               <span>✍️</span> Custom Drafting Instructions
             </div>
@@ -2115,6 +2506,7 @@ export default function AutoDraftWorkspace() {
                   >
                     <option value="comprehensive">Comprehensive</option>
                     <option value="standard">Standard Clause</option>
+                    <option value="essential">Essential</option>
                   </select>
                 </div>
               </div>
@@ -2154,13 +2546,27 @@ export default function AutoDraftWorkspace() {
             </form>
           </div>
 
-          {/* CARD 2 (BOTTOM): Indian Playbook Precedent Inserts */}
-          <div className="ad-card">
+          {/* CARD 2: Indian Playbook Precedent Inserts */}
+          <div className="ad-card" style={{ display: intelTab === 'playbook' ? 'block' : 'none' }}>
             <div className="ad-card-title">
               <span>📜</span> Indian Playbook Precedent Inserts
             </div>
+            <input
+              type="text"
+              value={precedentSearch}
+              onChange={(e) => setPrecedentSearch(e.target.value)}
+              placeholder="Search precedents…"
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', marginBottom: '10px',
+                background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '12.5px',
+              }}
+            />
             <div className="ad-precedent-grid">
-              {PRECEDENTS.map(({ label, badge, prompt }) => (
+              {PRECEDENTS.filter(({ label, badge, prompt }) => {
+                const q = precedentSearch.trim().toLowerCase();
+                if (!q) return true;
+                return label.toLowerCase().includes(q) || badge.toLowerCase().includes(q) || prompt.toLowerCase().includes(q);
+              }).map(({ label, badge, prompt }) => (
                 <div
                   key={label}
                   className="ad-precedent-card"
@@ -2187,6 +2593,7 @@ export default function AutoDraftWorkspace() {
           </div>
 
         </div>
+        )}
 
       </div>
 

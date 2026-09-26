@@ -208,6 +208,8 @@ def auto_draft():
     )
     if depth == 'comprehensive':
         system_prompt += "\n6. 'Comprehensive' means covering the full clause checklist above, not writing longer prose per clause — keep every clause template-concise even at this depth."
+    if depth == 'essential':
+        system_prompt += "\n6. 'Essential' means only the clauses genuinely load-bearing for this specific instruction (parties, core operative obligation, term, termination, governing law, dispute resolution, signatures) — omit boilerplate clauses (notices, counterparts, survival, assignment, subcontracting, entire agreement, amendments, waiver, force majeure, independent contractor status, non-solicitation, data protection) unless the instructions specifically call for them."
     if context:
         system_prompt += f"\n\nREFERENCE CONTEXT:\n{context}"
     if precedent:

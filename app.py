@@ -307,6 +307,40 @@ def init_db():
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Auto-Draft Studio v1 — real per-user persistence for letterheads
+    # (previously localStorage only) and saved drafts (previously a single
+    # unauthenticated global saved_drafts_data.json file that let any
+    # logged-in user see/delete every other user's drafts). Both owned
+    # outright, same convention as teams/matters above.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS letterheads (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_user_id   INTEGER NOT NULL,
+            name            TEXT    NOT NULL,
+            tagline         TEXT,
+            address         TEXT,
+            contact         TEXT,
+            auto_detected   BOOLEAN NOT NULL DEFAULT 0,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # id stays a client-generated TEXT primary key (e.g. `draft_<ts>_<rand>`)
+    # rather than an autoincrement surrogate — DraftsModal.jsx/
+    # AutoDraftWorkspace.jsx already mint and pass this id, and its own
+    # optimistic localStorage fallback (dropped below) relied on the same
+    # id being stable across both writes, so keeping it avoids a shape
+    # change on the frontend.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS saved_drafts (
+            id             TEXT    PRIMARY KEY,
+            owner_user_id  INTEGER NOT NULL,
+            title          TEXT    NOT NULL,
+            raw_text       TEXT,
+            clauses_json   TEXT,
+            summary        TEXT,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS document_chunks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1912,66 +1946,87 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    # Auto-Draft Studio v1 — was a single unauthenticated global
+    # saved_drafts_data.json file (any logged-in user could see/delete
+    # every other user's drafts). Now sqlite-backed and owner-scoped via
+    # the `saved_drafts` table (see init_db()); response shape kept
+    # identical to the old file-based version so DraftsModal.jsx and
+    # AutoDraftWorkspace.jsx's handleSaveToDrafts need no changes beyond
+    # dropping their localStorage fallback.
     @app.route('/api/drafts', methods=['GET', 'POST', 'OPTIONS'])
+    @jwt_required()
     def handle_drafts():
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = int(get_jwt_identity())
+        conn = sqlite3.connect('lex_assistant.db')
+        conn.row_factory = sqlite3.Row
+        try:
+            if request.method == 'GET':
+                rows = conn.execute(
+                    'SELECT * FROM saved_drafts WHERE owner_user_id = ? ORDER BY created_at DESC',
+                    (uid,)
+                ).fetchall()
+                drafts = [{
+                    'id': r['id'],
+                    'timestamp': r['created_at'],
+                    'title': r['title'],
+                    'rawText': r['raw_text'] or '',
+                    'clauses': json.loads(r['clauses_json']) if r['clauses_json'] else [],
+                    'summary': r['summary'] or '',
+                } for r in rows]
+                return jsonify(drafts), 200
 
-        drafts_file = os.path.join(os.getcwd(), "saved_drafts_data.json")
-
-        def load_drafts():
-            if os.path.exists(drafts_file):
-                try:
-                    with open(drafts_file, "r", encoding="utf-8") as f:
-                        return json.load(f)
-                except Exception:
-                    return []
-            return []
-
-        def save_drafts_data(data):
-            with open(drafts_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-
-        if request.method == 'GET':
-            return jsonify(load_drafts()), 200
-
-        if request.method == 'POST':
             try:
                 data = request.get_json(force=True, silent=True) or {}
-                drafts = load_drafts()
                 draft_id = data.get('id') or f"draft_{int(time.time())}"
+                title = data.get('title') or "Untitled Contract Draft"
+                raw_text = data.get('rawText') or ""
+                clauses_json = json.dumps(data.get('clauses') or [])
+                summary = data.get('summary') or ""
+                conn.execute(
+                    '''INSERT INTO saved_drafts (id, owner_user_id, title, raw_text, clauses_json, summary)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET
+                         title=excluded.title, raw_text=excluded.raw_text,
+                         clauses_json=excluded.clauses_json, summary=excluded.summary''',
+                    (draft_id, uid, title, raw_text, clauses_json, summary)
+                )
+                conn.commit()
+                row = conn.execute('SELECT * FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()
                 payload = {
-                    "id": draft_id,
-                    "timestamp": data.get('timestamp') or datetime.now().isoformat(),
-                    "title": data.get('title') or "Untitled Contract Draft",
-                    "rawText": data.get('rawText') or "",
-                    "clauses": data.get('clauses') or [],
-                    "summary": data.get('summary') or "",
-                    "comments": data.get('comments') or [],
-                    "appendedClauses": data.get('appendedClauses') or []
+                    'id': row['id'],
+                    'timestamp': row['created_at'],
+                    'title': row['title'],
+                    'rawText': row['raw_text'] or '',
+                    'clauses': json.loads(row['clauses_json']) if row['clauses_json'] else [],
+                    'summary': row['summary'] or '',
                 }
-                drafts = [d for d in drafts if d.get('id') != draft_id]
-                drafts.insert(0, payload)
-                save_drafts_data(drafts)
                 return jsonify({"status": "success", "draft": payload}), 200
             except Exception as e:
                 return jsonify({"error": True, "message": str(e)}), 500
+        finally:
+            conn.close()
 
     @app.route('/api/drafts/<string:draft_id>', methods=['DELETE', 'OPTIONS'])
+    @jwt_required()
     def delete_draft(draft_id):
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = int(get_jwt_identity())
+        conn = sqlite3.connect('lex_assistant.db')
+        conn.row_factory = sqlite3.Row
         try:
-            drafts_file = os.path.join(os.getcwd(), "saved_drafts_data.json")
-            if os.path.exists(drafts_file):
-                with open(drafts_file, "r", encoding="utf-8") as f:
-                    drafts = json.load(f)
-                drafts = [d for d in drafts if str(d.get('id')) != str(draft_id)]
-                with open(drafts_file, "w", encoding="utf-8") as f:
-                    json.dump(drafts, f, indent=2)
+            row = conn.execute('SELECT * FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()
+            if not row or int(row['owner_user_id']) != uid:
+                return jsonify({"error": True, "message": "Draft not found."}), 404
+            conn.execute('DELETE FROM saved_drafts WHERE id = ?', (draft_id,))
+            conn.commit()
             return jsonify({"status": "success", "deleted_id": draft_id}), 200
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
+        finally:
+            conn.close()
 
     @app.route('/api/vault/save', methods=['POST', 'OPTIONS'])
     @jwt_required()
@@ -2997,6 +3052,7 @@ def create_app():
     from routes.conflict_routes import conflict_bp
     from routes.team_routes import team_bp
     from routes.matter_routes import matter_bp
+    from routes.letterhead_routes import letterhead_bp
 
     app.register_blueprint(court_bp)
     app.register_blueprint(argument_bp)
@@ -3006,6 +3062,7 @@ def create_app():
     app.register_blueprint(conflict_bp)
     app.register_blueprint(team_bp)
     app.register_blueprint(matter_bp)
+    app.register_blueprint(letterhead_bp)
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
     app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
@@ -4179,6 +4236,29 @@ def create_app():
                 matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
                 text        TEXT    NOT NULL,
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS letterheads (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id   INTEGER NOT NULL,
+                name            TEXT    NOT NULL,
+                tagline         TEXT,
+                address         TEXT,
+                contact         TEXT,
+                auto_detected   BOOLEAN NOT NULL DEFAULT 0,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS saved_drafts (
+                id             TEXT    PRIMARY KEY,
+                owner_user_id  INTEGER NOT NULL,
+                title          TEXT    NOT NULL,
+                raw_text       TEXT,
+                clauses_json   TEXT,
+                summary        TEXT,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
