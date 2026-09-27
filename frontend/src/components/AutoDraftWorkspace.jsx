@@ -116,7 +116,8 @@ export default function AutoDraftWorkspace() {
       }
     };
     document.addEventListener('click', handler);
-  
+    return () => document.removeEventListener('click', handler);
+  }, [showOverflowMenu]);
 
   // ── Workbench layout: outline rail + collapsible panels ──────────────────
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
@@ -868,10 +869,6 @@ export default function AutoDraftWorkspace() {
   const wordCount = autoDraftText.trim() ? autoDraftText.trim().split(/\s+/).length : 0;
   const charCount = autoDraftText.length;
   const paragraphCount = autoDraftText.trim() ? autoDraftText.split(/\n\s*\n/).length : 0;
-
-
-  return () => document.removeEventListener('click', handler);
-  }, [showOverflowMenu]);
 
   useEffect(() => {
     if (!autoDraftText) return;
