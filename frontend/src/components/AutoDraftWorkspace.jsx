@@ -825,716 +825,1939 @@ export default function AutoDraftWorkspace() {
   const charCount = autoDraftText.length;
   const paragraphCount = autoDraftText.trim() ? autoDraftText.split(/\n\s*\n/).length : 0;
 
-
-  const [activeMods, setActiveMods] = useState({ cure: false, feecap: false, seat: false, carveout: false });
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [showOverflowMenu, setShowOverflowMenu] = useState(false);
-  const [toolbarRef, setToolbarRef] = useState(null);
-
-  const toggleMod = (modKey, text) => {
-    setActiveMods(prev => {
-      const next = !prev[modKey];
-      if (next) {
-        if (!autoDraftPrompt.includes(text)) {
-           setAutoDraftPrompt(p => (p.trim() ? `${p.trim()}\n- ${text}` : `- ${text}`));
-        }
-      } else {
-        const regex = new RegExp(`\\n?- ${text.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g');
-        setAutoDraftPrompt(p => p.replace(regex, '').trim());
-      }
-      return { ...prev, [modKey]: next };
-    });
-  };
-
-  const getStatutes = () => {
-    const set = new Set();
-    if (autoDraftText) {
-      set.add('Indian Contract Act, 1872');
-      if (autoDraftText.toLowerCase().includes('arbitration') || activeMods.carveout) set.add('Arbitration and Conciliation Act, 1996');
-      if (autoDraftText.toLowerCase().includes('company')) set.add('Companies Act, 2013');
-      if (autoDraftText.toLowerCase().includes('copyright')) set.add('Copyright Act, 1957');
-    }
-    return Array.from(set);
-  };
-  const statutes = getStatutes();
-
-  const overflowRef = useRef(null);
-  useEffect(() => {
-    const handler = (e) => {
-      if (showOverflowMenu && overflowRef.current && !overflowRef.current.contains(e.target)) {
-        setShowOverflowMenu(false);
-      }
-    };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [showOverflowMenu]);
-
-  useEffect(() => {
-    if (!autoDraftText) return;
-    const matches = autoDraftText.match(/\[([^\]\n]{1,80})\]/g) || [];
-    const counts = {};
-    const order = [];
-    matches.forEach(m => {
-      const tok = m;
-      if (!counts[tok]) { counts[tok] = 0; order.push(tok); }
-      counts[tok]++;
-    });
-    setExtractedVariables(order.map(t => ({ token: t, count: counts[t] })));
-  }, [autoDraftText]);
-
   return (
     <div className="autodraft-page-wrapper">
       <style>{`
+        /* ============================================================
+           AUTO-DRAFT STUDIO — Slate & Rust Design System
+           Same token/font system as Case Vault, Home Gateway, and
+           Contract Analyzer (.ca-container). This screen previously ran
+           its own separate --bg-panel/--text-primary/--accent-primary
+           token set (defined globally in index.css) — rather than
+           rewriting every var(--bg-panel) reference below one at a time,
+           those names are re-pointed to the Slate & Rust palette right
+           here, scoped to .autodraft-page-wrapper, so the whole screen's
+           colors/typography unify with one small block instead of a
+           thousand-line diff.
+           ============================================================ */
         .autodraft-page-wrapper {
-          --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
-          --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
-          --accent:#CC6B48; --accent-soft:#3B281F;
-          --major:#D9AD5C; --major-soft:#35301C;
-          --on-accent:#FBF7EE;
-          --shadow: 0 20px 50px rgba(0,0,0,.45);
-          --overlay: rgba(10,10,10,.6);
-          --page-bg:#26292B;
-          background: var(--bg); color: var(--ink);
-          font-family: 'IBM Plex Sans', sans-serif;
-          -webkit-font-smoothing: antialiased;
-          transition: background .2s ease, color .2s ease;
-          overflow: hidden;
-          display: flex; height: 100vh;
-        }
-        [data-theme="light"] .autodraft-page-wrapper,
-        :root[data-theme="light"] .autodraft-page-wrapper {
-          --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
-          --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
-          --accent:#B24A2E; --accent-soft:#EFDCD1;
-          --major:#9C7A2E; --major-soft:#F1E6C9;
-          --on-accent:#FBF7EE;
-          --shadow: 0 20px 50px rgba(30,25,18,.14);
-          --overlay: rgba(24,20,15,.45);
-          --page-bg:#FFFFFF;
-        }
+          --bg: #191C1D;
+          --paper: #212527;
+          --paper-2: #2A2F31;
+          --ink: #D6D9D9;
+          --ink-soft: #AAAEAE;
+          --muted: #727776;
+          --muted-2: #494E4D;
+          --rule: #333939;
+          --accent: #CC6B48;
+          --accent-soft: #3B281F;
+          --major: #D9AD5C;
+          --major-soft: #35301C;
+          --on-accent: #FBF7EE;
 
-        .autodraft-page-wrapper * { box-sizing: border-box; }
+          --bg-panel: var(--paper);
+          --bg-card: var(--paper-2);
+          --text-primary: var(--ink);
+          --text-muted: var(--muted);
+          --border-subtle: var(--rule);
+          --accent-primary: var(--accent);
+          --accent-muted: var(--accent-soft);
+          --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
+
+          padding: 24px 28px;
+          max-width: 1560px;
+          margin: 0 auto;
+          color: var(--text-primary);
+          font-family: 'IBM Plex Sans', sans-serif;
+        }
+        [data-theme="light"] .autodraft-page-wrapper, :root[data-theme="light"] .autodraft-page-wrapper {
+          --bg: #DFE1E0;
+          --paper: #EAEBE8;
+          --paper-2: #E3E4E1;
+          --ink: #181B1D;
+          --ink-soft: #494E51;
+          --muted: #868C8E;
+          --muted-2: #B3B8B9;
+          --rule: #D2D5D4;
+          --accent: #B24A2E;
+          --accent-soft: #EFDCD1;
+          --major: #9C7A2E;
+          --major-soft: #F1E6C9;
+          --on-accent: #FBF7EE;
+        }
         .autodraft-page-wrapper .serif { font-family: 'Fraunces', serif; font-style: italic; letter-spacing: -0.01em; }
         .autodraft-page-wrapper .mono { font-family: 'IBM Plex Mono', monospace; }
-        .autodraft-page-wrapper a { color: inherit; }
-        .autodraft-page-wrapper button, .autodraft-page-wrapper input, .autodraft-page-wrapper select, .autodraft-page-wrapper textarea { font-family: inherit; }
-        .autodraft-page-wrapper ::selection { background: var(--accent-soft); color: var(--ink); }
-        .autodraft-page-wrapper svg { display: block; }
+        .autodraft-page-wrapper .ad-title-gradient { font-family: 'Fraunces', serif; }
 
-        .autodraft-page-wrapper .btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 9px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); white-space: nowrap; }
-        .autodraft-page-wrapper .btn:hover { border-color: var(--muted); }
-        .autodraft-page-wrapper .btn svg { flex-shrink: 0; }
-        .autodraft-page-wrapper .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-        .autodraft-page-wrapper .btn-primary:hover { filter: brightness(1.08); border-color: var(--accent); }
-        .autodraft-page-wrapper .btn-ghost { background: transparent; border-color: transparent; }
-        .autodraft-page-wrapper .btn-ghost:hover { background: var(--paper-2); border-color: transparent; color: var(--ink); }
-        .autodraft-page-wrapper .btn-sm { padding: 6px 11px; font-size: 12px; }
-        .autodraft-page-wrapper .btn:disabled { opacity: .45; cursor: not-allowed; }
-        .autodraft-page-wrapper .btn:disabled:hover { border-color: var(--rule); }
-        .autodraft-page-wrapper .icon-btn { width: 34px; height: 34px; flex-shrink:0; border-radius: 9px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        .autodraft-page-wrapper .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
-        .autodraft-page-wrapper .icon-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-        .autodraft-page-wrapper .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--paper-2); color: var(--ink-soft); border: 1px solid var(--rule); }
-        .autodraft-page-wrapper .badge svg { flex-shrink: 0; }
-        .autodraft-page-wrapper .badge-amber { background: var(--major-soft); color: var(--major); border-color: transparent; }
-        .autodraft-page-wrapper select.select-compact, .autodraft-page-wrapper .select-compact select {
-          appearance: none; -webkit-appearance: none; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px;
-          color: var(--ink); font-size: 12.5px; padding: 7px 26px 7px 10px; cursor: pointer;
-          background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23868C8E' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");
-          background-repeat: no-repeat; background-position: right 7px center; background-size: 13px;
+        /* Top Header Bar */
+        .ad-header-card {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: var(--bg-panel);
+          border: 1px solid var(--border-subtle);
+          padding: 16px 24px;
+          border-radius: 14px;
+          margin-bottom: 24px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.12);
         }
-        :root[data-theme="light"] .autodraft-page-wrapper select.select-compact { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23AAAEAE' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>"); }
-        .autodraft-page-wrapper .field-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block; }
-        
-        /* Modals and Toasts */
-        .autodraft-page-wrapper .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(12px); background: var(--paper); border: 1px solid var(--rule); box-shadow: var(--shadow); border-radius: 11px; padding: 12px 18px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 10px; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; z-index: 300; }
-        .autodraft-page-wrapper .toast.open { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-        .autodraft-page-wrapper .toast svg { color: var(--accent); flex-shrink: 0; }
-        
-        .autodraft-page-wrapper .modal-overlay { position: fixed; inset: 0; background: var(--overlay); display: none; align-items: center; justify-content: center; padding: 30px; z-index: 200; }
-        .autodraft-page-wrapper .modal-overlay.open { display: flex; }
-        .autodraft-page-wrapper .modal { background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--shadow); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; }
-        .autodraft-page-wrapper .modal.modal-wide { max-width: 720px; }
-        .autodraft-page-wrapper .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: var(--paper); z-index: 10;}
-        .autodraft-page-wrapper .modal-title { font-size: 18px; margin: 0; }
-        .autodraft-page-wrapper .modal-body { padding: 22px 24px; display: flex; flex-direction: column; gap: 18px; }
-        .autodraft-page-wrapper .modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--rule); position: sticky; bottom: 0; background: var(--paper); z-index: 10;}
-        
-        .autodraft-page-wrapper .field input, .autodraft-page-wrapper .field textarea { width: 100%; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 9px; padding: 10px 12px; font-size: 13.5px; color: var(--ink); outline: 0; }
-        .autodraft-page-wrapper .field input:focus, .autodraft-page-wrapper .field textarea:focus { border-color: var(--accent); }
-        .autodraft-page-wrapper .field input::placeholder, .autodraft-page-wrapper .field textarea::placeholder { color: var(--muted); }
-        .autodraft-page-wrapper .field + .field { margin-top: 2px; }
 
-        @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
-        .autodraft-page-wrapper .shimmer { background: linear-gradient(90deg, var(--paper-2) 25%, var(--rule) 37%, var(--paper-2) 63%); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; border-radius: 6px; }
-        @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 var(--accent-soft); } 100% { box-shadow: 0 0 0 8px rgba(0,0,0,0); } }
-        @keyframes flash-highlight { 0%, 100% { background: var(--major-soft); } 45% { background: var(--major); } }
-        .autodraft-page-wrapper .flash { animation: flash-highlight .9s ease; }
-
-        .autodraft-page-wrapper .ads-main { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; }
-        .autodraft-page-wrapper .crumbbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px 0; font-size: 12.5px; color: var(--muted); flex-shrink: 0; }
-        .autodraft-page-wrapper .crumbbar a { color: var(--accent); text-decoration: none; }
-        .autodraft-page-wrapper .crumb-current { color: var(--ink-soft); }
-        .autodraft-page-wrapper .jurisdiction-note { display: flex; align-items: center; gap: 8px; }
-
-        .autodraft-page-wrapper .ads-commandbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 28px; flex-shrink: 0; border-bottom: 1px solid var(--rule); }
-        .autodraft-page-wrapper .ads-title-wrap { display: flex; align-items: center; gap: 12px; min-width: 0; }
-        .autodraft-page-wrapper .ads-icon { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .autodraft-page-wrapper .ads-title { font-size: 22px; margin: 0; line-height: 1.1; }
-        .autodraft-page-wrapper .ads-jbadge { font-size: 11px; }
-        .autodraft-page-wrapper .ads-commandbar-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .autodraft-page-wrapper .context-chip { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; background: var(--paper-2); border: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); }
-        .autodraft-page-wrapper .context-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: #6FA97A; flex-shrink: 0; }
-        .autodraft-page-wrapper .context-chip.empty .dot { background: var(--muted); }
-        .autodraft-page-wrapper .context-chip b { color: var(--ink); font-weight: 600; }
-
-        .autodraft-page-wrapper .ads-workbench { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: 240px 20px 1fr 20px 380px; transition: grid-template-columns .28s cubic-bezier(.32,.72,0,1); }
-        .autodraft-page-wrapper .ads-workbench.outline-collapsed { grid-template-columns: 0px 20px 1fr 20px 380px; }
-        .autodraft-page-wrapper .ads-workbench.panel-collapsed { grid-template-columns: 240px 20px 1fr 20px 0px; }
-        .autodraft-page-wrapper .ads-workbench.outline-collapsed.panel-collapsed { grid-template-columns: 0px 20px 1fr 20px 0px; }
-
-        .autodraft-page-wrapper .outline-rail { border-right: 1px solid var(--rule); background: var(--paper); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-        .autodraft-page-wrapper .outline-rail-inner { width: 240px; display: flex; flex-direction: column; min-height: 0; height: 100%; }
-        .autodraft-page-wrapper .outline-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; }
-        .autodraft-page-wrapper .outline-head-label { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 7px; }
-        .autodraft-page-wrapper .outline-list { flex-grow: 1; overflow-y: auto; padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 1px; }
-        .autodraft-page-wrapper .outline-item { display: flex; align-items: baseline; gap: 9px; padding: 7px 9px; border-radius: 8px; border: 0; background: transparent; color: var(--ink-soft); font-size: 12.5px; text-align: left; cursor: pointer; width: 100%; transition: background .15s ease; }
-        .autodraft-page-wrapper .outline-item:hover { background: var(--paper-2); }
-        .autodraft-page-wrapper .outline-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-        .autodraft-page-wrapper .outline-item .num { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--muted); flex-shrink: 0; }
-        .autodraft-page-wrapper .outline-item.active .num { color: var(--accent); }
-        .autodraft-page-wrapper .outline-empty { padding: 20px 16px; font-size: 12px; color: var(--muted); line-height: 1.6; }
-        .autodraft-page-wrapper .outline-health { margin: 8px 10px 14px; padding: 13px 14px; border-radius: 12px; background: var(--paper-2); border: 1px solid var(--rule); display: flex; flex-direction: column; gap: 9px; }
-        .autodraft-page-wrapper .health-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
-        .autodraft-page-wrapper .health-row span:first-child { color: var(--muted); }
-        .autodraft-page-wrapper .health-row b { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 12px; }
-        .autodraft-page-wrapper .health-row.warn b { color: var(--major); }
-        .autodraft-page-wrapper .health-row.ok b { color: #6FA97A; }
-
-        .autodraft-page-wrapper .rail-toggle { width: 20px; align-self: stretch; border: 0; border-left: 1px solid var(--rule); background: var(--paper); color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .autodraft-page-wrapper .rail-toggle:hover { color: var(--accent); background: var(--paper-2); }
-        .autodraft-page-wrapper .rail-toggle.right-edge { border-left: 0; border-right: 1px solid var(--rule); }
-        .autodraft-page-wrapper .rail-toggle svg { transition: transform .2s ease; }
-
-        .autodraft-page-wrapper .canvas-col { min-width: 0; display: flex; flex-direction: column; background: var(--bg); position: relative; }
-        .autodraft-page-wrapper .canvas-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--rule); flex-shrink: 0; flex-wrap: wrap; background: var(--paper); }
-        .autodraft-page-wrapper .doc-meta { display: flex; align-items: center; gap: 12px; min-width: 0; }
-        .autodraft-page-wrapper .doc-meta-title { font-size: 14px; font-weight: 600; white-space: nowrap; }
-        .autodraft-page-wrapper .doc-meta-count { font-size: 11.5px; color: var(--muted); }
-        .autodraft-page-wrapper .autosave-chip { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
-        .autodraft-page-wrapper .autosave-dot { width: 6px; height: 6px; border-radius: 50%; background: #6FA97A; animation: pulse-ring 1.8s ease-out infinite; }
-        .autodraft-page-wrapper .toolbar-actions { display: flex; align-items: center; gap: 8px; }
-
-        .autodraft-page-wrapper .overflow-wrap { position: relative; }
-        .autodraft-page-wrapper .overflow-menu { position: absolute; top: calc(100% + 6px); right: 0; width: 210px; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: none; flex-direction: column; gap: 1px; z-index: 40; }
-        .autodraft-page-wrapper .overflow-menu.open { display: flex; }
-        .autodraft-page-wrapper .overflow-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; border: 0; background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; text-align: left; width: 100%; transition: background .15s ease; }
-        .autodraft-page-wrapper .overflow-item:hover { background: var(--paper-2); }
-        .autodraft-page-wrapper .overflow-item svg { color: var(--ink-soft); flex-shrink: 0; }
-        .autodraft-page-wrapper .overflow-item.danger { color: var(--accent); }
-        .autodraft-page-wrapper .overflow-item.danger svg { color: var(--accent); }
-        .autodraft-page-wrapper .overflow-divider { height: 1px; background: var(--rule); margin: 4px 2px; }
-
-        .autodraft-page-wrapper .format-row { display: flex; align-items: center; gap: 8px; padding: 9px 24px; border-bottom: 1px solid var(--rule); flex-shrink: 0; flex-wrap: wrap; background: var(--paper); }
-        .autodraft-page-wrapper .format-group { display: flex; align-items: center; gap: 4px; padding-right: 8px; border-right: 1px solid var(--rule); min-height: 34px; }
-        .autodraft-page-wrapper .format-group:last-child { border-right: 0; }
-
-        /* Override rich-text-toolbar to remove borders as it sits in our format-row */
-        .autodraft-page-wrapper .rich-text-toolbar { border: 0 !important; background: transparent !important; padding: 0 !important; }
-        :root[data-theme="light"] .autodraft-page-wrapper .rich-text-toolbar { border: 0 !important; background: transparent !important; }
-
-        .autodraft-page-wrapper .trust-strip { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 24px; border-bottom: 1px solid var(--rule); background: var(--paper); flex-shrink: 0; flex-wrap: wrap; }
-        .autodraft-page-wrapper .trust-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .autodraft-page-wrapper .statute-chip { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 4px 9px; border-radius: 999px; background: var(--paper-2); color: var(--ink-soft); border: 1px solid var(--rule); }
-        .autodraft-page-wrapper .trust-empty { font-size: 11.5px; color: var(--muted); }
-        .autodraft-page-wrapper .trust-disclaimer { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--major); white-space: nowrap; }
-
-        .autodraft-page-wrapper .canvas-scroll { flex-grow: 1; overflow-y: auto; padding: 40px 40px 90px; }
-        .autodraft-page-wrapper .doc-page { max-width: 820px; margin: 0 auto; background: var(--page-bg); border-radius: 6px; box-shadow: var(--shadow); padding: 76px 84px; min-height: 1000px; color: #23262A; }
-        :root[data-theme="dark"] .autodraft-page-wrapper .doc-page { color: #EDEBE5; }
-        
-        .autodraft-page-wrapper .doc-page h1,
-        .autodraft-page-wrapper .doc-page h2,
-        .autodraft-page-wrapper .doc-page h3 { font-family: 'Source Serif 4', serif; font-size: 17px; font-weight: 600; letter-spacing: .02em; margin: 34px 0 10px; padding-bottom: 8px; border-bottom: 1.5px solid currentColor; opacity: .92; scroll-margin-top: 30px; }
-        .autodraft-page-wrapper .doc-page h1:first-child,
-        .autodraft-page-wrapper .doc-page h2:first-child,
-        .autodraft-page-wrapper .doc-page h3:first-child { margin-top: 0; }
-        .autodraft-page-wrapper .doc-page p { font-family: inherit; font-size: 15px; line-height: 1.75; margin: 0 0 14px; }
-        
-        .autodraft-page-wrapper .doc-subclause { margin-left: 18px; }
-        .autodraft-page-wrapper .doc-placeholder { background: var(--major-soft); color: var(--major); padding: 1px 5px; border-radius: 4px; font-weight: 600; cursor: default; transition: background .3s; }
-        
-        /* Apply to standard brackets from Tiptap */
-        .autodraft-page-wrapper .ProseMirror:not(.ad-placeholder-override) {
-           /* if needed to target brackets via text nodes */
+        .ad-header-title-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
         }
-        
-        .autodraft-page-wrapper .empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 70px 20px 30px; }
-        .autodraft-page-wrapper .empty-icon { width: 62px; height: 62px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
-        .autodraft-page-wrapper .empty-state h3 { font-size: 21px; margin: 0; }
-        .autodraft-page-wrapper .empty-state p { font-size: 13.5px; color: var(--ink-soft); max-width: 460px; line-height: 1.6; margin: 0 0 18px; }
-        .autodraft-page-wrapper .quickstart-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; max-width: 760px; width: 100%; }
-        .autodraft-page-wrapper .quickstart-card { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 18px; border-radius: 13px; border: 1px solid var(--rule); background: var(--paper); cursor: pointer; text-align: left; transition: border-color .15s ease; }
-        .autodraft-page-wrapper .quickstart-card:hover { border-color: var(--accent); }
-        .autodraft-page-wrapper .quickstart-card svg { color: var(--accent); }
-        .autodraft-page-wrapper .quickstart-card .qc-title { font-size: 13.5px; font-weight: 600; }
-        .autodraft-page-wrapper .quickstart-card .qc-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
-        .autodraft-page-wrapper .synth-loading { display: flex; flex-direction: column; gap: 16px; padding: 8px 0 30px; }
-        .autodraft-page-wrapper .synth-loading-label { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
-
-        /* ----- intelligence panel ----- */
-        .autodraft-page-wrapper .intel-panel { border-left: 1px solid var(--rule); background: var(--paper); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-        .autodraft-page-wrapper .intel-panel-inner { width: 380px; display: flex; flex-direction: column; min-height: 0; height: 100%; }
-        .autodraft-page-wrapper .intel-tabs { display: flex; gap: 2px; padding: 12px 16px 0; flex-shrink: 0; }
-        .autodraft-page-wrapper .intel-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 8px; border-radius: 9px 9px 0 0; border: 0; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; }
-        .autodraft-page-wrapper .intel-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--paper-2); }
-        .autodraft-page-wrapper .intel-body { flex-grow: 1; overflow-y: auto; padding: 18px 18px 24px; display: none; flex-direction: column; gap: 18px; }
-        .autodraft-page-wrapper .intel-body.active { display: flex; }
-
-        .autodraft-page-wrapper .instructions-textarea { width: 100%; min-height: 128px; resize: vertical; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 14px; font-size: 13px; line-height: 1.55; color: var(--ink); outline: 0; }
-        .autodraft-page-wrapper .instructions-textarea:focus { border-color: var(--accent); }
-        .autodraft-page-wrapper .instructions-textarea::placeholder { color: var(--muted); }
-
-        .autodraft-page-wrapper .modifier-chips { display: flex; flex-wrap: wrap; gap: 7px; }
-        .autodraft-page-wrapper .modifier-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink-soft); font-size: 12px; font-weight: 500; cursor: pointer; transition: background .15s ease; }
-        .autodraft-page-wrapper .modifier-chip svg { width: 13px; height: 13px; }
-        .autodraft-page-wrapper .modifier-chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-
-        .autodraft-page-wrapper .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .autodraft-page-wrapper .field-row select { width: 100%; }
-
-        .autodraft-page-wrapper .cta-primary { width: 100%; justify-content: center; padding: 13px 16px; font-size: 13.5px; font-weight: 600; }
-        .autodraft-page-wrapper .cta-secondary { width: 100%; justify-content: center; }
-
-        .autodraft-page-wrapper .precedent-search { display: flex; align-items: center; gap: 8px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 9px; padding: 9px 11px; }
-        .autodraft-page-wrapper .precedent-search svg { color: var(--muted); flex-shrink: 0; }
-        .autodraft-page-wrapper .precedent-search input { border: 0; background: transparent; outline: 0; color: var(--ink); font-size: 13px; width: 100%; }
-        .autodraft-page-wrapper .precedent-search input::placeholder { color: var(--muted); }
-        .autodraft-page-wrapper .precedent-list { display: flex; flex-direction: column; gap: 8px; }
-        .autodraft-page-wrapper .precedent-card { border: 1px solid var(--rule); border-radius: 11px; padding: 13px 14px; background: var(--paper-2); cursor: pointer; transition: border-color .15s ease; }
-        .autodraft-page-wrapper .precedent-card:hover { border-color: var(--accent); }
-        .autodraft-page-wrapper .precedent-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-        .autodraft-page-wrapper .precedent-title { font-size: 13px; font-weight: 600; line-height: 1.35; }
-        .autodraft-page-wrapper .precedent-act { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; padding: 3px 7px; border-radius: 999px; background: var(--major-soft); color: var(--major); white-space: nowrap; flex-shrink: 0; }
-        .autodraft-page-wrapper .precedent-desc { font-size: 12px; color: var(--muted); line-height: 1.55; margin: 7px 0 10px; }
-        .autodraft-page-wrapper .precedent-insert { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent; border: 0; cursor: pointer; padding: 0; }
-        .autodraft-page-wrapper .precedent-empty { padding: 24px 6px; text-align: center; font-size: 12.5px; color: var(--muted); }
-
-        .autodraft-page-wrapper .extract-list { display: flex; flex-direction: column; gap: 6px; }
-        .autodraft-page-wrapper .extract-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--rule); background: var(--paper-2); cursor: pointer; transition: border-color .15s ease;}
-        .autodraft-page-wrapper .extract-item:hover { border-color: var(--accent); }
-        .autodraft-page-wrapper .extract-token { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--major); }
-        .autodraft-page-wrapper .extract-count { font-size: 11px; color: var(--muted); }
-        .autodraft-page-wrapper .saved-drafts-list { display: flex; flex-direction: column; gap: 8px; }
-        .autodraft-page-wrapper .saved-draft-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--rule); }
-        .autodraft-page-wrapper .saved-draft-name { font-size: 13px; font-weight: 500; }
-        .autodraft-page-wrapper .saved-draft-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
-
-        @media (max-width: 1180px) {
-          .autodraft-page-wrapper .ads-workbench { grid-template-columns: 0px 20px 1fr 20px 340px; }
-          .autodraft-page-wrapper .ads-workbench.panel-collapsed { grid-template-columns: 0px 20px 1fr 20px 0px; }
+        .ad-title-gradient {
+          font-size: 20px;
+          font-weight: 800;
+          margin: 0;
+          color: var(--text-primary);
+          letter-spacing: -0.02em;
         }
-        
-        .ad-outline-flash { animation: flash-highlight .9s ease; }
+
+        .ad-sovereign-badge {
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          background: var(--accent-muted, rgba(59,130,246,0.12));
+          color: var(--accent-primary, #3B82F6);
+          border: 1px solid rgba(59,130,246,0.3);
+          padding: 3px 10px;
+          border-radius: 20px;
+        }
+
+        /* Workspace Grid — outline rail | canvas | controls. Each collapse
+           state zeros ONLY the track it owns (never the canvas's own
+           track) — declaring fewer grid-template-columns entries than
+           rendered children causes implicit-row auto-wrap that squeezes
+           the canvas, exactly the class of bug the mockup's own review
+           flagged; explicit 3-track lists here avoid it regardless of
+           collapse state. */
+        .ad-workspace-grid {
+          display: grid;
+          grid-template-columns: 220px minmax(0, 1.05fr) minmax(320px, 0.65fr);
+          gap: 20px;
+          align-items: start;
+        }
+        .ad-workspace-grid.ad-outline-collapsed {
+          grid-template-columns: 40px minmax(0, 1.4fr) minmax(320px, 0.65fr);
+        }
+        .ad-workspace-grid.ad-panel-collapsed {
+          grid-template-columns: 220px minmax(0, 1.75fr) 40px;
+        }
+        .ad-workspace-grid.ad-outline-collapsed.ad-panel-collapsed {
+          grid-template-columns: 40px minmax(0, 2.1fr) 40px;
+        }
+
+        @media (max-width: 1080px) {
+          .ad-workspace-grid,
+          .ad-workspace-grid.ad-outline-collapsed,
+          .ad-workspace-grid.ad-panel-collapsed,
+          .ad-workspace-grid.ad-outline-collapsed.ad-panel-collapsed {
+            grid-template-columns: 1fr;
+          }
+          .ad-outline-rail { display: none; }
+        }
+
+        /* Outline Rail */
+        .ad-outline-rail {
+          background: var(--bg-panel);
+          border-radius: 16px;
+          border: 1px solid var(--border-subtle);
+          padding: 14px 10px;
+          min-height: 720px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          overflow: hidden;
+          /* Pin the rail to the viewport as the page scrolls (instead of
+             growing with the outline/canvas/panel columns and dragging
+             the whole page into one long unconstrained scroll), and cap
+             its own height so the OUTLINE LIST below can get its own
+             internal scrollbar rather than pushing the rail — and the
+             whole grid — taller than the screen. */
+          position: sticky;
+          top: 16px;
+          max-height: calc(100vh - 32px);
+        }
+        .ad-outline-scroll {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          padding-right: 2px;
+        }
+        .ad-outline-rail-toggle {
+          align-self: flex-end;
+          background: transparent;
+          border: 1px solid var(--border-subtle);
+          border-radius: 6px;
+          color: var(--text-muted);
+          cursor: pointer;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          flex-shrink: 0;
+        }
+        .ad-outline-rail-toggle:hover { color: var(--text-primary); border-color: var(--accent); }
+        .ad-health-block {
+          font-size: 11.5px;
+          color: var(--text-muted);
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: 12px;
+        }
+        .ad-health-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px; }
+        .ad-health-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .ad-health-row strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+        .ad-outline-list-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+        .ad-outline-item {
+          display: block;
+          width: 100%;
+          text-align: left;
+          background: transparent;
+          border: none;
+          border-radius: 6px;
+          padding: 6px 8px;
+          font-size: 12px;
+          color: var(--text-muted);
+          cursor: pointer;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .ad-outline-item:hover { background: var(--bg-card); color: var(--text-primary); }
+        .ad-outline-item.level-1 { font-weight: 700; }
+        .ad-outline-item.level-2 { padding-left: 16px; }
+        .ad-outline-item.level-3 { padding-left: 24px; font-size: 11.5px; }
+        .ad-outline-empty { font-size: 11.5px; color: var(--text-muted); font-style: italic; padding: 6px 8px; }
+
+        /* Trust strip */
+        .ad-trust-strip {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          color: var(--text-muted);
+          background: var(--major-soft);
+          border: 1px solid var(--major);
+          border-radius: 8px;
+          padding: 6px 12px;
+          margin-bottom: 12px;
+        }
+        .ad-trust-strip strong { color: var(--major); }
+
+        /* Left Canvas Panel */
+        .ad-canvas-panel {
+          background: var(--bg-panel);
+          border-radius: 16px;
+          border: 1px solid var(--border-subtle);
+          padding: 24px;
+          min-height: 720px;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 16px 40px rgba(0,0,0,0.15);
+          /* Same fix as the outline rail: pin the canvas column to the
+             viewport and cap its height, so the toolbar/header stay put
+             while .ad-document-canvas (flex:1 below) becomes the actual
+             scroll region for a long draft — previously nothing on this
+             column had a height limit, so a synthesized document just
+             grew the whole page instead of scrolling in place. */
+          position: sticky;
+          top: 16px;
+          max-height: calc(100vh - 32px);
+          overflow: hidden;
+        }
+
+        .ad-canvas-header {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid var(--border-subtle);
+          margin-bottom: 16px;
+        }
+
+        .ad-canvas-header-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        /* Wraps onto a second line instead of overlapping the title —
+           at anything less than a very wide viewport, 6 action buttons
+           plus the title never actually fit on one row. */
+        .ad-toolbar-row {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .ad-metric-pill {
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--text-muted);
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          padding: 4px 10px;
+          border-radius: 6px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .ad-action-btn {
+          font-size: 12px;
+          font-weight: 600;
+          padding: 7px 14px;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border: none;
+        }
+
+        .ad-btn-primary {
+          background: var(--accent-primary, #3B82F6);
+          color: #FFFFFF !important;
+          box-shadow: 0 4px 12px rgba(37,99,235,0.25);
+        }
+        .ad-btn-primary:hover {
+          background: var(--accent-hover, #2563EB);
+          transform: translateY(-1px);
+        }
+
+        .ad-btn-secondary {
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
+        }
+        .ad-btn-secondary:hover {
+          background: var(--accent-muted);
+          border-color: var(--accent-primary);
+        }
+
+        .ad-btn-purple {
+          background: rgba(139,92,246,0.14);
+          border: 1px solid rgba(139,92,246,0.35);
+          color: #8B5CF6;
+        }
+        .ad-btn-purple:hover {
+          background: rgba(139,92,246,0.25);
+        }
+
+        /* Letterhead & export bar — permanently visible (no modal) so the
+           letterhead option is actually discoverable, not a click away. */
+        .ad-letterhead-bar {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 10px;
+          padding: 12px 14px;
+          margin-bottom: 20px;
+          border-radius: 10px;
+          background: rgba(139,92,246,0.07);
+          border: 1px solid rgba(139,92,246,0.2);
+        }
+        .ad-letterhead-label {
+          font-size: 12.5px;
+          font-weight: 700;
+          color: var(--text-primary);
+          white-space: nowrap;
+        }
+        .ad-letterhead-select {
+          flex: 1 1 200px;
+          min-width: 180px;
+          padding: 7px 10px;
+          border-radius: 7px;
+          font-size: 12.5px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
+        }
+        .ad-letterhead-error {
+          flex-basis: 100%;
+          font-size: 12px;
+          color: #EF4444;
+        }
+
+        /* Multi-format export split-button */
+        .ad-export-menu-wrap {
+          position: relative;
+          display: inline-flex;
+        }
+        .ad-export-menu {
+          position: absolute;
+          top: calc(100% + 6px);
+          right: 0;
+          z-index: 40;
+          background: var(--bg-panel, var(--bg-card));
+          border: 1px solid var(--border-subtle);
+          border-radius: 10px;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+          display: flex;
+          flex-direction: column;
+          min-width: 180px;
+          padding: 6px;
+          gap: 2px;
+        }
+        .ad-export-menu-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 6px;
+          font-size: 12.5px;
+          font-weight: 500;
+          color: var(--text-primary);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          text-align: left;
+          width: 100%;
+        }
+        .ad-export-menu-item:hover {
+          background: var(--accent-muted, rgba(59,130,246,0.08));
+        }
+
+        /* Create-letterhead modal */
+        .ad-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+          z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 24px;
+        }
+        .ad-modal {
+          background: var(--bg-panel, var(--bg-card)); border: 1px solid var(--border-subtle);
+          border-radius: 14px; width: 100%; max-width: 440px; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        }
+        .ad-modal-header {
+          padding: 18px 20px; border-bottom: 1px solid var(--border-subtle);
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .ad-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+        .ad-modal-footer {
+          padding: 14px 20px; border-top: 1px solid var(--border-subtle);
+          display: flex; gap: 10px; justify-content: flex-end;
+        }
+        .ad-modal-label {
+          font-size: 12px; font-weight: 600; color: var(--text-muted);
+          display: block; margin-bottom: 6px;
+        }
+        .ad-modal-input {
+          width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+          background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-primary);
+          box-sizing: border-box;
+        }
+
+        /* Adaptive-fallback notice shown when Auto-Detect found nothing */
+        .ad-letterhead-notice {
+          font-size: 12.5px; line-height: 1.5; color: var(--text-primary);
+          background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.28);
+          border-radius: 8px; padding: 10px 12px;
+        }
+
+        /* Manage / delete saved letterheads, inside the same modal */
+        .ad-letterhead-manage {
+          border-top: 1px solid var(--border-subtle); padding-top: 14px; margin-top: 2px;
+          display: flex; flex-direction: column; gap: 8px;
+        }
+        .ad-letterhead-manage-title {
+          font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+          color: var(--text-muted);
+        }
+        .ad-letterhead-manage-list {
+          display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto;
+        }
+        .ad-letterhead-manage-row {
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          padding: 7px 10px; border-radius: 7px;
+          background: var(--bg-card); border: 1px solid var(--border-subtle);
+        }
+        .ad-letterhead-manage-name {
+          font-size: 12.5px; color: var(--text-primary);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .ad-letterhead-delete-btn {
+          font-size: 11.5px; font-weight: 600; color: #EF4444;
+          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+          border-radius: 6px; padding: 4px 10px; cursor: pointer; flex-shrink: 0;
+        }
+        .ad-letterhead-delete-btn:hover { background: rgba(239,68,68,0.16); }
+
+        /* Letterhead auto-detect toast */
+        .ad-toast {
+          position: fixed; bottom: 24px; right: 24px; z-index: 1300;
+          max-width: 340px;
+          background: var(--bg-panel, var(--bg-card)); border: 1px solid rgba(139,92,246,0.4); color: var(--text-primary);
+          padding: 11px 18px; border-radius: 9px; font-size: 13px; font-weight: 600;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+          animation: ad-toast-in 0.25s ease;
+        }
+        @keyframes ad-toast-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Print-only letterhead — invisible on screen, drawn only when
+           window.print() (the PDF export path) is active. */
+        .print-only-letterhead { display: none; }
+
+        @media print {
+          /* Hide everything except the letterhead + the actual document
+             body: global app chrome (rendered by AppRouter's Layout, not
+             this component, but this <style> tag is a plain unscoped
+             global style like the rest of this file's CSS), this page's
+             own hero header / toolbar / letterhead controls / right
+             panel, and the editor's own formatting toolbar. */
+          .sidebar, .topbar,
+          .ad-header-card, .ad-canvas-header, .ad-letterhead-bar,
+          .ad-controls-panel, .ad-variables-panel,
+          .rich-text-toolbar {
+            display: none !important;
+          }
+          .ad-workspace-grid { display: block !important; }
+          .ad-canvas-panel {
+            box-shadow: none !important;
+            border: none !important;
+            padding: 0 !important;
+            min-height: 0 !important;
+          }
+          .tiptap-editor-shell, .scanner-body {
+            border: none !important;
+            box-shadow: none !important;
+            background: #fff !important;
+            color: #000 !important;
+          }
+          body, html { background: #fff !important; }
+
+          .print-only-letterhead {
+            display: block;
+            text-align: center;
+            font-family: Georgia, 'Times New Roman', serif;
+            padding-bottom: 14px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #333;
+          }
+          .print-lh-firm { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; color: #000; }
+          .print-lh-tagline { font-size: 12px; color: #333; margin-top: 4px; }
+          .print-lh-contact { font-size: 10.5px; color: #444; margin-top: 6px; }
+        }
+
+        /* Right Control Panel */
+        .ad-controls-panel {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+          min-width: 0;
+          overflow-y: auto;
+          /* Same pinned-column treatment as the outline rail and canvas —
+             the Instructions/Playbook panel now scrolls internally instead
+             of stretching the whole grid taller than the viewport. */
+          position: sticky;
+          top: 16px;
+          max-height: calc(100vh - 32px);
+        }
+        .ad-controls-panel-collapsed {
+          background: var(--bg-panel);
+          border: 1px solid var(--border-subtle);
+          border-radius: 16px;
+          min-height: 720px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          padding: 14px 0;
+        }
+        .ad-outline-flash {
+          animation: ad-outline-flash-kf 0.9s ease;
+        }
+        @keyframes ad-outline-flash-kf {
+          0%, 100% { background: transparent; }
+          30% { background: var(--major-soft); }
+        }
+
+        .ad-card {
+          background: var(--bg-panel);
+          border-radius: 16px;
+          border: 1px solid var(--border-subtle);
+          padding: 20px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+        }
+
+        .ad-intel-tabs {
+          display: flex;
+          gap: 4px;
+          padding: 4px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: 12px;
+          margin-bottom: 4px;
+        }
+        .ad-intel-tab {
+          flex: 1;
+          padding: 8px 10px;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: var(--text-muted);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .ad-intel-tab.active {
+          background: var(--bg-panel);
+          color: var(--text-primary);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .ad-intel-tab:not(.active):hover {
+          color: var(--text-primary);
+        }
+
+        .ad-card-highlight {
+          border-color: var(--accent);
+          background: linear-gradient(180deg, var(--bg-panel), var(--accent-soft));
+        }
+
+        .ad-card-title {
+          font-size: 12.5px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--text-primary);
+          margin-bottom: 14px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .ad-precedent-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+          max-height: 480px;
+          overflow-y: auto;
+          padding-right: 2px;
+        }
+
+        .ad-precedent-card {
+          display: flex;
+          flex-direction: column;
+          text-align: left;
+          padding: 11px 13px;
+          border-radius: 10px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .ad-precedent-card:hover {
+          background: var(--accent-muted);
+          border-color: var(--accent-primary);
+          transform: translateX(3px);
+        }
+
+        .ad-precedent-title {
+          font-size: 12.5px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .ad-precedent-desc {
+          font-size: 11px;
+          color: var(--text-muted);
+          line-height: 1.4;
+          margin-top: 3px;
+        }
+
+        .ad-precedent-badge {
+          font-size: 9.5px;
+          font-weight: 700;
+          background: var(--accent-soft);
+          color: var(--accent-primary);
+          padding: 2px 7px;
+          border-radius: 4px;
+          border: 1px solid var(--accent);
+        }
+
+        .ad-chip-btn {
+          font-size: 11px;
+          font-weight: 600;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
+          padding: 5px 10px;
+          border-radius: 14px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .ad-chip-btn:hover {
+          background: var(--accent-muted);
+          color: var(--accent-primary);
+          border-color: var(--accent-primary);
+        }
+
+        /* ── ELEGANT AI SYNTHESIS SUITE ANIMATION ── */
+        .ad-synthesis-suite {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 48px 24px;
+          flex: 1;
+          text-align: center;
+        }
+
+        .ad-orbit-wrapper {
+          position: relative;
+          width: 90px;
+          height: 90px;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .ad-orbit-pulse {
+          position: absolute;
+          inset: -8px;
+          border-radius: 50%;
+          background: radial-gradient(circle, var(--accent-soft) 0%, rgba(0,0,0,0) 70%);
+          animation: orbGlow 2.4s ease-in-out infinite alternate;
+        }
+
+        .ad-orbit-ring-outer {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          border: 2px dashed var(--accent);
+          animation: spin 10s linear infinite;
+        }
+
+        .ad-orbit-ring-inner {
+          position: absolute;
+          inset: 10px;
+          border-radius: 50%;
+          border: 2.5px solid transparent;
+          border-top-color: var(--accent);
+          border-right-color: var(--major);
+          animation: spin 1.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+        }
+
+        .ad-orbit-core {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, var(--accent), var(--major));
+          color: var(--on-accent);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 18px var(--accent-soft);
+          position: relative;
+          z-index: 2;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes orbGlow {
+          0% { transform: scale(0.9); opacity: 0.4; }
+          100% { transform: scale(1.15); opacity: 0.9; }
+        }
+
+        .ad-synthesis-heading {
+          font-size: 16px;
+          font-weight: 750;
+          color: var(--text-primary);
+          margin-bottom: 6px;
+          letter-spacing: -0.01em;
+        }
+
+        .ad-synthesis-subtext {
+          font-size: 12.5px;
+          color: var(--text-muted);
+          max-width: 460px;
+          line-height: 1.5;
+          margin-bottom: 24px;
+        }
+
+        /* Progress Laser Bar */
+        .ad-progress-container {
+          width: 100%;
+          max-width: 440px;
+          margin-bottom: 28px;
+        }
+
+        .ad-progress-track {
+          width: 100%;
+          height: 6px;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid var(--border-subtle);
+          border-radius: 10px;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .ad-progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, var(--accent), var(--major));
+          border-radius: 10px;
+          transition: width 0.35s ease;
+          position: relative;
+        }
+
+        .ad-progress-fill::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+          animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+
+        .ad-progress-meta {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 8px;
+          font-size: 11.5px;
+          font-weight: 600;
+        }
+
+        .ad-stage-name {
+          color: var(--accent-primary, #3B82F6);
+        }
+
+        .ad-stage-pct {
+          color: var(--text-muted);
+          font-variant-numeric: tabular-nums;
+        }
+
+        /* 4-Step Interactive Pipeline Tracker */
+        .ad-pipeline-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+          width: 100%;
+          max-width: 520px;
+          text-align: left;
+        }
+
+        .ad-step-card {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          opacity: 0.5;
+          transition: all 0.25s ease;
+        }
+
+        .ad-step-card.active {
+          opacity: 1;
+          border-color: var(--accent-primary);
+          background: var(--accent-soft);
+          box-shadow: 0 4px 14px var(--accent-soft);
+        }
+
+        .ad-step-card.done {
+          opacity: 0.9;
+          border-color: rgba(16,185,129,0.4);
+          background: rgba(16,185,129,0.06);
+        }
+
+        .ad-step-badge {
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 10px;
+          font-weight: 700;
+          background: var(--bg-panel);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-muted);
+          flex-shrink: 0;
+        }
+
+        .ad-step-card.active .ad-step-badge {
+          background: var(--accent);
+          color: var(--on-accent);
+          border-color: var(--accent);
+          box-shadow: 0 0 8px var(--accent-soft);
+        }
+
+        .ad-step-card.done .ad-step-badge {
+          background: #10B981;
+          color: #FFFFFF;
+          border-color: #10B981;
+        }
+
+        .ad-step-info {
+          min-width: 0;
+        }
+
+        .ad-step-title {
+          font-size: 11.5px;
+          font-weight: 700;
+          color: var(--text-primary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .ad-step-desc {
+          font-size: 10px;
+          color: var(--text-muted);
+          line-height: 1.35;
+          margin-top: 2px;
+        }
+
+        .ad-document-canvas {
+          position: relative;
+          /* The actual scroll region for the drafted document — the
+             canvas panel around it is now height-capped (see
+             .ad-canvas-panel), so this is what scrolls, while the
+             title/toolbar/trust-strip above it (siblings in
+             .ad-canvas-panel, not inside this element) stay pinned. */
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+        }
+
+        /* Non-blocking upload overlay — shown while parsing an uploaded
+           draft, without hiding or unmounting the editor underneath. */
+        .ad-upload-overlay {
+          position: absolute;
+          inset: 0;
+          z-index: 5;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--bg-dark-card, rgba(15,23,42,0.7));
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.2s ease;
+          border-radius: 12px;
+        }
+        .ad-upload-overlay.visible {
+          opacity: 1;
+          pointer-events: auto;
+        }
+        .ad-upload-spinner {
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          border: 3px solid rgba(255,255,255,0.25);
+          border-top-color: #3B82F6;
+          animation: spin 0.8s linear infinite;
+        }
+
+        .ad-variables-panel {
+          margin-top: 12px;
+          padding: 14px 16px;
+          border-radius: 10px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+        }
+        .ad-variable-chip {
+          display: inline-flex;
+          align-items: center;
+          font-size: 11.5px;
+          font-weight: 600;
+          background: var(--major-soft);
+          color: var(--major);
+          border: 1px solid var(--major);
+          border-radius: 5px;
+          padding: 3px 8px;
+          margin: 0 6px 6px 0;
+        }
+
+        /* TipTap Document Canvas Styling */
+        .ad-document-canvas .scanner-body .ProseMirror {
+          min-height: 520px;
+          padding: 28px 32px;
+          background: var(--bg-card);
+          border-radius: 12px;
+          border: 1px solid var(--border-subtle);
+          font-size: 14px;
+          line-height: 1.8;
+          color: var(--text-primary);
+          outline: none;
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror h1,
+        .ad-document-canvas .scanner-body .ProseMirror h2,
+        .ad-document-canvas .scanner-body .ProseMirror h3,
+        .ad-document-canvas .scanner-body .ProseMirror h4 {
+          font-size: 1.25rem;
+          font-weight: 750;
+          color: var(--text-primary);
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: 6px;
+          margin-top: 1.8rem;
+          margin-bottom: 1.1rem;
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror p {
+          margin-bottom: 1.25rem;
+          line-height: 1.8;
+          text-align: justify;
+          color: var(--text-primary);
+        }
+
+        .ad-document-canvas .scanner-body .ProseMirror strong,
+        .ad-document-canvas .scanner-body .ProseMirror b {
+          color: var(--accent-primary, #3B82F6);
+          font-weight: 700;
+        }
+
+        /* ── TipTap Toolbar Font & Size Select Overrides ── */
+        .toolbar-select {
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-primary);
+          font-size: 12.5px;
+          font-weight: 550;
+          border-radius: 6px;
+          padding: 4px 8px;
+          height: 32px;
+          cursor: pointer;
+          font-family: inherit;
+          flex-shrink: 0;
+          box-sizing: border-box;
+          display: inline-flex;
+          align-items: center;
+          appearance: auto;
+          -webkit-appearance: auto;
+          outline: none;
+          vertical-align: middle;
+        }
+        .toolbar-select-font { min-width: 155px; width: auto; }
+        .toolbar-select-size { min-width: 110px; width: auto; }
+        .toolbar-select option {
+          background: #111827;
+          color: #F8FAFC;
+          font-size: 12.5px;
+          padding: 6px 10px;
+        }
+        .toolbar-select:hover { border-color: var(--accent-primary); }
+        .toolbar-select:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59,130,246,0.25); }
+
+        /* ── LIGHT THEME COMPLETE HIGH-CONTRAST OVERRIDES ── */
+        :root[data-theme="light"] .ad-header-card {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+        }
+
+        :root[data-theme="light"] .ad-title-gradient {
+          color: #0F172A !important;
+        }
+
+        :root[data-theme="light"] .ad-sovereign-badge {
+          background: var(--accent-soft) !important;
+          color: var(--accent) !important;
+          border-color: var(--accent) !important;
+        }
+
+        :root[data-theme="light"] .ad-card {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+        }
+
+        :root[data-theme="light"] .ad-card-highlight {
+          border-color: #93C5FD !important;
+          background: #FFFFFF !important;
+        }
+
+        :root[data-theme="light"] .ad-card-title {
+          color: #0F172A !important;
+          font-weight: 800 !important;
+        }
+
+        :root[data-theme="light"] .ad-canvas-panel {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-card {
+          background: #F8FAFC !important;
+          border-color: #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-card:hover {
+          background: var(--accent-soft) !important;
+          border-color: var(--accent) !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-title {
+          color: #0F172A !important;
+          font-weight: 700 !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-desc {
+          color: #334155 !important;
+        }
+
+        :root[data-theme="light"] .ad-precedent-badge {
+          background: var(--accent-soft) !important;
+          color: var(--accent) !important;
+          border-color: var(--accent) !important;
+        }
+
+        :root[data-theme="light"] .ad-chip-btn {
+          background: #F1F5F9 !important;
+          border-color: #CBD5E1 !important;
+          color: #0F172A !important;
+          font-weight: 600 !important;
+        }
+
+        :root[data-theme="light"] .ad-chip-btn:hover {
+          background: var(--accent-soft) !important;
+          color: var(--accent) !important;
+          border-color: var(--accent) !important;
+        }
+
+        :root[data-theme="light"] .ad-progress-track {
+          background: #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-step-card {
+          background: #F8FAFC !important;
+          border-color: #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-step-card.active {
+          background: var(--accent-soft) !important;
+          border-color: var(--accent) !important;
+        }
+
+        :root[data-theme="light"] .ad-step-card.done {
+          background: #F0FDF4 !important;
+          border-color: #86EFAC !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select {
+          background-color: #FFFFFF !important;
+          border: 1px solid #CBD5E1 !important;
+          color: #0F172A !important;
+          font-weight: 600 !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select option {
+          background-color: #FFFFFF !important;
+          color: #0F172A !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select:hover {
+          background-color: #F8FAFC !important;
+          border-color: #94A3B8 !important;
+        }
+
+        :root[data-theme="light"] .toolbar-select:focus {
+          border-color: var(--accent) !important;
+          box-shadow: 0 0 0 2px var(--accent-soft) !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body {
+          background: #F8FAFC !important;
+          border: 1px solid #CBD5E1 !important;
+          border-radius: 12px !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror {
+          background: #FFFFFF !important;
+          color: #0F172A !important;
+          border: none !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror p {
+          color: #1E293B !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h1,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h2,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h3,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror h4 {
+          color: #0F172A !important;
+          border-bottom: 1px solid #E2E8F0 !important;
+        }
+
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror strong,
+        :root[data-theme="light"] .ad-document-canvas .scanner-body .ProseMirror b {
+          color: var(--accent) !important;
+          font-weight: 700 !important;
+        }
+
+        :root[data-theme="light"] textarea,
+        :root[data-theme="light"] select {
+          background: #FFFFFF !important;
+          border-color: #CBD5E1 !important;
+          color: #0F172A !important;
+        }
+
+        :root[data-theme="light"] .ad-metric-pill {
+          background: #F1F5F9 !important;
+          border-color: #CBD5E1 !important;
+          color: #334155 !important;
+        }
+
+        :root[data-theme="light"] .ad-btn-secondary {
+          background: #F8FAFC !important;
+          border-color: #CBD5E1 !important;
+          color: #0F172A !important;
+        }
+
+        /* OVERRIDE FOR MOBILE OPTIMIZATIONS */
+        @media (max-width: 768px) {
+          .ad-header-card {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 8px !important;
+          }
+          .ad-sovereign-badge, .ad-active-contract-status {
+            position: static !important;
+            margin: 8px 0 0 0 !important;
+            width: 100% !important;
+          }
+          .ad-pipeline-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .ad-draft-scope-grid {
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            gap: 8px !important;
+          }
+          .ad-synthesize-btn {
+            width: 100% !important;
+            min-height: 48px !important;
+            font-size: 14px !important;
+          }
+          .autodraft-page-wrapper {
+            padding-bottom: 96px !important;
+            overflow-x: hidden !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+          }
+        }
       `}</style>
 
-      <div className="ads-main">
-        <header className="ads-commandbar">
-          <div className="ads-title-wrap">
-            <div className="ads-icon">
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"></path></svg>
-            </div>
-            <div>
-              <h1 className="ads-title serif">Auto-Draft Studio</h1>
-            </div>
-            <span className="badge ads-jbadge">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5l8 3.2v6c0 5-3.4 8.4-8 9.8-4.6-1.4-8-4.8-8-9.8v-6z"></path><path d="M9.5 12l2 2 3.2-3.6"></path></svg>
-              Sovereign Legal Engine
+      {/* ── TOP HEADER & NAVIGATION ── */}
+      <div className="ad-header-card">
+        <div>
+          <div className="ad-header-title-row">
+            <span style={{ fontSize: '22px' }}>⚡</span>
+            <h1 className="ad-title-gradient">Auto-Draft Studio</h1>
+            <span className="ad-sovereign-badge">Sovereign Legal Engine · Indian Law</span>
+          </div>
+          <p className="ad-header-desc" style={{ fontSize: '12.5px', margin: '4px 0 0', color: 'var(--text-muted)' }}>
+            Synthesize execution-ready Indian legal agreements, clauses, and precedents with AI statutory reasoning
+          </p>
+        </div>
+
+        {/* Active Contract & Toolbar Shortcuts */}
+        <div className="ad-active-contract-status" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div
+            style={{
+              padding: '8px 14px',
+              background: rawText.trim() ? 'rgba(16,185,129,0.08)' : 'var(--bg-card)',
+              border: rawText.trim() ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border-subtle)',
+              borderRadius: '8px',
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: rawText.trim() ? '#10B981' : '#94A3B8' }} />
+            <span>
+              {rawText.trim() ? (
+                <>Active Contract Loaded: <strong style={{ color: 'var(--text-primary)' }}>{rawText.length.toLocaleString()} chars</strong></>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>No Active Contract (Standalone Clause Synthesis)</span>
+              )}
             </span>
           </div>
-          <div className="ads-commandbar-actions">
-            <div className={`context-chip ${!rawText ? 'empty' : ''}`}>
-              <span className="dot"></span>
-              {rawText ? 
-                <>`Active Contract: `<b>{rawText.length.toLocaleString()} chars</b></> :
-                <>`No Active Contract `<span style={{color:'var(--muted)'}}>&middot; Standalone Synthesis</span></>
-              }
-            </div>
-            <button className="btn btn-sm" onClick={() => openDraftsModal()}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5.5S5 4 8 4s5 1.5 5 1.5v14S11 18 8 18s-5 1.5-5 1.5z"></path><path d="M21 5.5S19 4 16 4s-5 1.5-5 1.5v14S13 18 16 18s5 1.5 5 1.5z"></path></svg>
-              Saved Drafts
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={handlePushToAnalyzer}>
-              Open Contract Analyzer
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>
-            </button>
-          </div>
-        </header>
 
-        <div className={`ads-workbench ${outlineCollapsed ? 'outline-collapsed' : ''} ${panelCollapsed ? 'panel-collapsed' : ''}`}>
-          
-          {/* Outline rail */}
-          <div className="outline-rail">
-            <div className="outline-rail-inner">
-              <div className="outline-head">
-                <span className="outline-head-label">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13M8 12h13M8 18h13"></path><path d="M3 6h.01M3 12h.01M3 18h.01"></path></svg>
-                  Outline
-                </span>
+          <button onClick={openDraftsModal} className="ad-action-btn ad-btn-purple">
+            📁 Saved Drafts
+          </button>
+
+          <Link to="/contract-analyzer" style={{ textDecoration: 'none' }}>
+            <button className="ad-action-btn ad-btn-primary">
+              🔍 Open Contract Analyzer →
+            </button>
+          </Link>
+        </div>
+      </div>
+
+      {/* ── MAIN WORKSPACE GRID ── */}
+      <div className={`ad-workspace-grid${outlineCollapsed ? ' ad-outline-collapsed' : ''}${panelCollapsed ? ' ad-panel-collapsed' : ''}`}>
+
+        {/* OUTLINE RAIL — client-side heading scan (see the effect above);
+            no backend/store section model, purely a derived, read-only
+            view of the rendered document's own heading nodes. */}
+        <div className="ad-outline-rail">
+          <button
+            type="button"
+            className="ad-outline-rail-toggle"
+            onClick={() => setOutlineCollapsed((v) => !v)}
+            title={outlineCollapsed ? 'Expand outline' : 'Collapse outline'}
+          >
+            {outlineCollapsed ? '»' : '«'}
+          </button>
+          {!outlineCollapsed && (
+            <>
+              <div className="ad-health-block">
+                <div className="ad-health-title">Document Health</div>
+                <div className="ad-health-row"><span>Words</span><strong>{wordCount}</strong></div>
+                <div className="ad-health-row"><span>Characters</span><strong>{charCount}</strong></div>
+                <div className="ad-health-row"><span>Open placeholders</span><strong>{openPlaceholderCount}</strong></div>
+                <div className="ad-health-row"><span>Status</span><strong>{drafting ? 'Synthesizing…' : autoDraftText ? 'Ready' : 'Empty'}</strong></div>
               </div>
-              <div className="outline-list">
-                {!autoDraftText ? (
-                  <div className="outline-empty">Synthesize or upload a draft to see its section outline here.</div>
+              <div className="ad-outline-scroll">
+                <div className="ad-outline-list-title" style={{ marginBottom: '6px' }}>Outline</div>
+                {outlineHeadings.length === 0 ? (
+                  <div className="ad-outline-empty">
+                    {autoDraftText ? 'No headings detected yet.' : 'Synthesize a document to see its outline.'}
+                  </div>
                 ) : (
-                  outlineHeadings.map(h => (
-                    <button key={h.id} className={`outline-item`} onClick={() => jumpToHeading(h.id)}>
-                      <span className="num mono">{h.level}</span>
-                      <span>{h.text}</span>
+                  outlineHeadings.map((h) => (
+                    <button
+                      key={h.id}
+                      type="button"
+                      className={`ad-outline-item level-${h.level}`}
+                      onClick={() => jumpToHeading(h.id)}
+                      title={h.text}
+                    >
+                      {h.text}
                     </button>
                   ))
                 )}
               </div>
-              <div className="outline-health">
-                {!autoDraftText ? (
-                  <div className="health-row"><span>Document</span><b className="mono">&mdash;</b></div>
-                ) : (
-                  <>
-                    <div className="health-row"><span>Sections</span><b className="mono">{outlineHeadings.length}</b></div>
-                    <div className="health-row"><span>Words</span><b className="mono">{wordCount.toLocaleString()}</b></div>
-                    <div className={`health-row ${openPlaceholderCount > 0 ? 'warn' : 'ok'}`}>
-                      <span>Placeholders open</span><b className="mono">{openPlaceholderCount}</b>
-                    </div>
-                  </>
+            </>
+          )}
+        </div>
+
+        {/* CENTER COLUMN — Live Editor & Document Canvas */}
+        <div className="ad-canvas-panel">
+          {/* Invisible on screen, shown only under @media print (see
+              styles below) — the PDF export path is window.print() with
+              no backend rendering engine, so this is the only place the
+              letterhead is actually drawn for a PDF. */}
+          <div className="print-only-letterhead">
+            {activeLetterhead && (
+              <>
+                <div className="print-lh-firm">{activeLetterhead.firmName}</div>
+                {activeLetterhead.tagline && <div className="print-lh-tagline">{activeLetterhead.tagline}</div>}
+                {(activeLetterhead.address || activeLetterhead.contact) && (
+                  <div className="print-lh-contact">
+                    {[activeLetterhead.address, activeLetterhead.contact].filter(Boolean).join('   ·   ')}
+                  </div>
                 )}
-              </div>
-            </div>
+              </>
+            )}
           </div>
-          <button className="rail-toggle" onClick={() => setOutlineCollapsed(!outlineCollapsed)} aria-label="Toggle outline">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: outlineCollapsed ? 'rotate(180deg)' : '' }}><path d="M15 6l-6 6 6 6"></path></svg>
-          </button>
 
-          {/* Canvas column */}
-          <div className="canvas-col">
-            <div className="canvas-toolbar">
-              <div className="doc-meta">
-                <span className="doc-meta-title">Synthesized Document</span>
-                <span className="doc-meta-count mono">{autoDraftText ? `${wordCount.toLocaleString()} words · ${charCount.toLocaleString()} chars` : ''}</span>
-                {autoDraftText && <span className="autosave-chip"><span className="autosave-dot"></span>Active Session</span>}
-              </div>
-              <div className="toolbar-actions">
-                <button className="btn btn-sm" onClick={handleCopyDraft}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"></path></svg>
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-                <button className="btn btn-sm" onClick={handleSaveToDrafts}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><path d="M17 21v-8H7v8"></path><path d="M7 3v5h8"></path></svg>
-                  {savedSuccess ? 'Saved!' : 'Save Draft'}
-                </button>
-                <div className="overflow-wrap" ref={overflowRef}>
-                  <button className="icon-btn" onClick={() => setShowOverflowMenu(!showOverflowMenu)}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
-                  </button>
-                  <div className={`overflow-menu ${showOverflowMenu ? 'open' : ''}`}>
-                    <button className="overflow-item" onClick={() => { setShowOverflowMenu(false); handleAppendToContract(); }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>
-                      Append clause
-                    </button>
-                    <button className="overflow-item" onClick={() => { setShowOverflowMenu(false); setShowVariablesPanel(true); }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18M3 15v4a2 2 0 0 0 2 2h4"></path></svg>
-                      Extract variables
-                    </button>
-                    <button className="overflow-item" onClick={() => { setShowOverflowMenu(false); handlePushToAnalyzer(); }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7z"></path></svg>
-                      Push to Analyzer
-                    </button>
-                    <div className="overflow-divider"></div>
-                    <button className="overflow-item danger" onClick={() => { setShowOverflowMenu(false); setShowClearConfirm(true); }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
-                      Clear document
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="format-row">
-              <div ref={setToolbarRef} style={{ display: 'flex', alignItems: 'center' }} />
-              <div className="format-group" style={{ flexGrow:1, justifyContent:'flex-end', borderRight:0, gap:'8px' }}>
-                <select className="select-compact" style={{ width: '200px' }} value={selectedLetterheadId} onChange={(e) => {
-                  if (e.target.value === '__create') { setShowLetterheadModal(true); return; }
-                  setSelectedLetterheadId(e.target.value);
-                }}>
-                  <option value="none">No Letterhead (Plain)</option>
-                  <option value="standard">Standard Firm Letterhead (Mock)</option>
-                  {savedLetterheads.map(lh => (
-                    <option key={lh.id} value={lh.id}>{lh.name}</option>
-                  ))}
-                  <option value="autodetect">Auto-Detect from Draft</option>
-                  <option value="__create">+ Create Custom Letterhead&hellip;</option>
-                </select>
-                <div className="overflow-wrap" ref={exportMenuRef}>
-                  <button className="btn btn-sm" onClick={() => setShowExportMenu(!showExportMenu)} disabled={exportingDocx}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
-                    {exportingDocx ? 'Exporting...' : 'Export'}
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
-                  </button>
-                  <div className={`overflow-menu ${showExportMenu ? 'open' : ''}`} style={{ width: '160px' }}>
-                    <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportDocx(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Word (.docx)</button>
-                    <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportPdf(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>PDF</button>
-                    <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportTxt(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Plain text</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="trust-strip">
-              <div className="trust-left">
-                {!statutes.length ? (
-                  <span className="trust-empty">No statutes referenced yet</span>
-                ) : (
-                  statutes.map(s => <span key={s} className="statute-chip">{s}</span>)
+          <div className="ad-canvas-header">
+            {/* Title row */}
+            <div className="ad-canvas-header-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 750, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
+                  Synthesized Document
+                </h3>
+                {autoDraftText && (
+                  <span className="ad-metric-pill" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    ⚡ {wordCount} words · {charCount} chars
+                  </span>
                 )}
               </div>
-              <div className="trust-disclaimer">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4M12 16.5h.01"></path></svg>
-                AI-synthesized — review before use
-              </div>
             </div>
 
-            <div className="canvas-scroll" ref={canvasContainerRef}>
-              {drafting ? (
-                <div className="doc-page">
-                  <div className="synth-loading">
-                    <div className="synth-loading-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin .9s linear infinite' }}><path d="M12 2a10 10 0 0 1 10 10"></path></svg>Synthesizing against Indian statutory precedent...</div>
-                    <div className="shimmer" style={{ height: '22px', width: '40%' }}></div>
-                    <div className="shimmer" style={{ height: '14px', width: '92%' }}></div>
-                    <div className="shimmer" style={{ height: '14px', width: '86%' }}></div>
-                    <div className="shimmer" style={{ height: '14px', width: '70%' }}></div>
-                    <div className="shimmer" style={{ height: '22px', width: '32%', marginTop: '14px' }}></div>
-                    <div className="shimmer" style={{ height: '14px', width: '94%' }}></div>
-                    <div className="shimmer" style={{ height: '14px', width: '60%' }}></div>
+            {/* Action toolbar — wraps onto its own line(s) instead of
+                squeezing into the title row and overlapping it, which is
+                what a hard nowrap here used to do at anything less than a
+                very wide viewport. */}
+            {autoDraftText && (
+              <div className="ad-toolbar-row">
+                <button type="button" onClick={handleCopyDraft} className="ad-action-btn ad-btn-secondary" style={{ padding: '6px 12px' }}>
+                  {copied ? '✓ Copied!' : '📋 Copy'}
+                </button>
+                <button type="button" onClick={handleSaveToDrafts} className="ad-action-btn ad-btn-purple" style={{ padding: '6px 12px' }}>
+                  {savedSuccess ? '✓ Saved!' : '💾 Save Draft'}
+                </button>
+                {rawText.trim() && (
+                  <button type="button" onClick={handleAppendToContract} className="ad-action-btn ad-btn-primary" style={{ padding: '6px 12px' }}>
+                    {appended ? '✓ Appended!' : '➕ Append'}
+                  </button>
+                )}
+                <button type="button" onClick={handleExtractVariables} className="ad-action-btn ad-btn-secondary" style={{ padding: '6px 12px' }}>
+                  🔎 Extract Variables
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePushToAnalyzer}
+                  className="ad-action-btn ad-btn-secondary"
+                  title="Load this document into Contract Analyzer and open it there"
+                  style={{ padding: '6px 12px' }}
+                >
+                  🔍 Push to Analyzer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoDraftText('');
+                    setAutoDraftHtml('');
+                    setShowVariablesPanel(false);
+                    try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
+                  }}
+                  style={{
+                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', background: 'rgba(239,68,68,0.1)',
+                    border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', cursor: 'pointer', fontWeight: 600,
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Letterhead & export — a founder-requested feature that used to
+              live behind a generically-labeled "Export" button opening a
+              modal, which meant it wasn't actually discoverable as "the
+              letterhead option." Now a permanently visible strip: pick the
+              letterhead, hit download, no modal in between. */}
+          {autoDraftText && (
+            <div className="ad-letterhead-bar">
+              <span className="ad-letterhead-label">🖨️ Draft on Letterhead</span>
+              <select
+                className="ad-letterhead-select"
+                value={selectedLetterheadId}
+                onChange={handleLetterheadSelectChange}
+                disabled={exportingDocx || isExtracting}
+                title="Choose which firm letterhead to apply to the exported document"
+              >
+                <option value="none">No Letterhead (Plain)</option>
+                <option value={AUTO_DETECT_SENTINEL}>✨ Auto-Detect from Draft</option>
+                {savedLetterheads.length > 0 && (
+                  <optgroup label="Saved Letterheads">
+                    {savedLetterheads.map((lh) => (
+                      <option key={lh.id} value={lh.id}>{lh.name || lh.firmName}</option>
+                    ))}
+                  </optgroup>
+                )}
+                <option value={CREATE_LETTERHEAD_SENTINEL}>+ Add / Manage Letterheads...</option>
+              </select>
+
+              <div className="ad-export-menu-wrap" ref={exportMenuRef}>
+                <button
+                  type="button"
+                  className="ad-action-btn ad-btn-primary"
+                  onClick={() => setShowExportMenu((v) => !v)}
+                  disabled={exportingDocx || isExtracting}
+                  style={{ padding: '7px 14px' }}
+                >
+                  {isExtracting ? 'Extracting Firm Data…' : exportingDocx ? 'Exporting…' : exportedSuccess ? '✓ Downloaded!' : '⬇ Export ▾'}
+                </button>
+                {showExportMenu && (
+                  <div className="ad-export-menu">
+                    <button type="button" className="ad-export-menu-item" onClick={() => { setShowExportMenu(false); handleExportDocx(); }}>
+                      📄 Export as .docx
+                    </button>
+                    <button type="button" className="ad-export-menu-item" onClick={() => { setShowExportMenu(false); handleExportPdf(); }}>
+                      🖨️ Export as .pdf
+                    </button>
+                    <button type="button" className="ad-export-menu-item" onClick={() => { setShowExportMenu(false); handleExportTxt(); }}>
+                      📝 Export as .txt
+                    </button>
                   </div>
-                </div>
-              ) : autoDraftText ? (
-                <div className="doc-page" style={{ padding: '0', display: 'flex', flexDirection: 'column' }}>
-                  <ContractTiptapEditor
-                    documentKey={autoDraftVersion}
-                    initialRawText={autoDraftText}
-                    initialHtml={autoDraftHtml}
-                    onTextChange={setAutoDraftText}
-                    onHtmlChange={setAutoDraftHtml}
-                    clauses={[]}
-                    toolbarPortalTarget={toolbarRef}
-                  />
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg></div>
-                  <h3 className="serif">Enterprise Auto-Draft Canvas Ready</h3>
-                  <p>Describe what you need, pick a Playbook precedent, or upload a draft to extract and append — the canvas will fill in as a real, navigable document.</p>
-                  <div className="quickstart-grid">
-                    <button className="quickstart-card" onClick={() => { setIntelTab('instructions'); promptTextareaRef.current?.focus(); }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg><span className="qc-title">Describe what you need</span><span className="qc-desc">Write drafting instructions and let the engine synthesize a full agreement.</span></button>
-                    <button className="quickstart-card" onClick={() => setIntelTab('playbook')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5.5S5 4 8 4s5 1.5 5 1.5v14S11 18 8 18s-5 1.5-5 1.5z"></path><path d="M21 5.5S19 4 16 4s-5 1.5-5 1.5v14S13 18 16 18s5 1.5 5 1.5z"></path></svg><span className="qc-title">Start from a precedent</span><span className="qc-desc">Insert an Indian Playbook clause and build outward from it.</span></button>
-                    <button className="quickstart-card" onClick={() => draftUploadInputRef.current?.click()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21V9"></path><path d="M7 14l5-5 5 5"></path><path d="M5 21h14"></path></svg><span className="qc-title">Upload a draft</span><span className="qc-desc">Extract deadlines, defined terms and structure from an existing file.</span></button>
-                  </div>
-                  <input type="file" ref={draftUploadInputRef} style={{ display: 'none' }} accept=".pdf,.docx,.txt" onChange={(e) => handleUploadDraft(e.target.files)} />
+                )}
+              </div>
+
+              {exportError && <span className="ad-letterhead-error">{exportError}</span>}
+            </div>
+          )}
+
+          {autoDraftText && (
+            <div className="ad-trust-strip">
+              <span>⚠️</span>
+              <span><strong>AI-drafted, not filed.</strong> Review every clause and bracketed placeholder before sending to a party or the court.</span>
+            </div>
+          )}
+
+          {showVariablesPanel && (
+            <div className="ad-variables-panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {extractedVariables.length > 0
+                    ? `${extractedVariables.length} placeholder${extractedVariables.length === 1 ? '' : 's'} found`
+                    : 'No bracketed placeholders found'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowVariablesPanel(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '13px' }}
+                >
+                  ✕
+                </button>
+              </div>
+              {extractedVariables.length > 0 && (
+                <div>
+                  {extractedVariables.map((v) => (
+                    <span key={v} className="ad-variable-chip">[{v}]</span>
+                  ))}
                 </div>
               )}
             </div>
-          </div>
+          )}
 
-          {/* Intelligence Panel */}
-          <button className="rail-toggle right-edge" onClick={() => setPanelCollapsed(!panelCollapsed)} aria-label="Toggle draft intelligence panel">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: panelCollapsed ? 'rotate(180deg)' : '' }}><path d="M9 6l6 6-6 6"></path></svg>
-          </button>
-          <div className="intel-panel">
-            <div className="intel-panel-inner">
-              <div className="intel-tabs">
-                <button className={`intel-tab ${intelTab === 'instructions' ? 'active' : ''}`} onClick={() => setIntelTab('instructions')}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
-                  Instructions
-                </button>
-                <button className={`intel-tab ${intelTab === 'playbook' ? 'active' : ''}`} onClick={() => setIntelTab('playbook')}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5.5S5 4 8 4s5 1.5 5 1.5v14S11 18 8 18s-5 1.5-5 1.5z"></path><path d="M21 5.5S19 4 16 4s-5 1.5-5 1.5v14S13 18 16 18s5 1.5 5 1.5z"></path></svg>
-                  Playbook
-                </button>
-              </div>
-
-              <div className={`intel-body ${intelTab === 'instructions' ? 'active' : ''}`}>
-                <div>
-                  <span className="field-label">Custom Drafting Instructions</span>
-                  <textarea 
-                    className="instructions-textarea" 
-                    ref={promptTextareaRef}
-                    placeholder="e.g. Synthesize a complete Non-Disclosure & Non-Circumvention Agreement under the Indian Contract Act, 1872..."
-                    value={autoDraftPrompt}
-                    onChange={(e) => setAutoDraftPrompt(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <span className="field-label">Quick Provision Insert Modifiers</span>
-                  <div className="modifier-chips">
-                    <button className={`modifier-chip ${activeMods.cure ? 'active' : ''}`} onClick={() => toggleMod('cure', 'Include 30-day written cure period before escalation.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>30-Day Cure</button>
-                    <button className={`modifier-chip ${activeMods.feecap ? 'active' : ''}`} onClick={() => toggleMod('feecap', 'Cap aggregate liability at 100% of fees paid.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>100% Fee Cap</button>
-                    <button className={`modifier-chip ${activeMods.seat ? 'active' : ''}`} onClick={() => toggleMod('seat', 'Seat of arbitration shall be New Delhi under Arbitration Act 1996.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>New Delhi Seat</button>
-                    <button className={`modifier-chip ${activeMods.carveout ? 'active' : ''}`} onClick={() => toggleMod('carveout', 'Include Section 27 Indian Contract Act exception for trade secrets.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>Sec 27 Carve-out</button>
-                  </div>
-                </div>
-                <div className="field-row">
-                  <div>
-                    <span className="field-label">Reference Context</span>
-                    <select className="select-compact" style={{ width: '100%' }} value={selectedContextMode} onChange={(e) => setSelectedContextMode(e.target.value)}>
-                      <option value="active_contract">Active Contract</option>
-                      <option value="none">Standalone (no reference)</option>
-                      {vaultDocs.map(doc => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <span className="field-label">Scope Depth</span>
-                    <select className="select-compact" style={{ width: '100%' }} value={draftDepth} onChange={(e) => setDraftDepth(e.target.value)}>
-                      <option value="essential">Essential</option>
-                      <option value="standard">Standard</option>
-                      <option value="comprehensive">Comprehensive</option>
-                    </select>
-                  </div>
-                </div>
-                <button className="btn btn-primary cta-primary" onClick={handleSynthesize} disabled={drafting}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"></path></svg>
-                  {drafting ? 'Synthesizing...' : 'Synthesize Enterprise Clause'}
-                </button>
-                <button className="btn cta-secondary" onClick={() => draftUploadInputRef.current?.click()} disabled={uploadingDraft}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21V9"></path><path d="M7 14l5-5 5 5"></path><path d="M5 21h14"></path></svg>
-                  {uploadingDraft ? 'Uploading...' : 'Upload Draft'}
-                </button>
-              </div>
-
-              <div className={`intel-body ${intelTab === 'playbook' ? 'active' : ''}`}>
-                <div className="precedent-search">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
-                  <input placeholder="Search Indian Playbook precedents…" value={precedentSearch} onChange={e => setPrecedentSearch(e.target.value)} />
-                </div>
-                <div className="precedent-list">
-                  {PRECEDENTS.filter(p => !precedentSearch || p.label.toLowerCase().includes(precedentSearch.toLowerCase()) || p.badge.toLowerCase().includes(precedentSearch.toLowerCase()) || p.prompt.toLowerCase().includes(precedentSearch.toLowerCase())).map(p => (
-                    <div key={p.label} className="precedent-card">
-                      <div className="precedent-card-head">
-                        <span className="precedent-title">{p.label}</span>
-                        <span className="precedent-act mono">{p.badge}</span>
-                      </div>
-                      <div className="precedent-desc">{p.prompt}</div>
-                      <button className="precedent-insert" onClick={() => {
-                        setAutoDraftPrompt(v => v.trim() ? `${v.trim()}\n\n${p.prompt}` : p.prompt);
-                        setIntelTab('instructions');
-                        setTimeout(() => promptTextareaRef.current?.focus(), 10);
-                      }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>
-                        Insert into instructions
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          {/* Editor Canvas / In-Flight Reasoning State / Standby Hero */}
+          <div className="ad-document-canvas" ref={canvasContainerRef} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div className={`ad-upload-overlay${uploadingDraft ? ' visible' : ''}`}>
+              <div className="ad-upload-spinner" />
             </div>
+            {drafting ? (
+              <div className="ad-synthesis-suite">
+                {/* Glowing Orbit Radar Rings */}
+                <div className="ad-orbit-wrapper">
+                  <div className="ad-orbit-pulse" />
+                  <div className="ad-orbit-ring-outer" />
+                  <div className="ad-orbit-ring-inner" />
+                  <div className="ad-orbit-core">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Status Heading & Active Stage Description */}
+                <div className="ad-synthesis-heading">
+                  Synthesizing Execution-Ready Legal Agreement
+                </div>
+                <div className="ad-synthesis-subtext">
+                  {DRAFT_STAGES[draftStep]?.desc || 'Cross-referencing Indian Contract Act, statutory enforceability parameters, and precedents…'}
+                </div>
+
+                {/* Smooth Progress Laser Bar */}
+                <div className="ad-progress-container">
+                  <div className="ad-progress-track">
+                    <div className="ad-progress-fill" style={{ width: `${draftProgress}%` }} />
+                  </div>
+                  <div className="ad-progress-meta">
+                    <span className="ad-stage-name">{DRAFT_STAGES[draftStep]?.title}</span>
+                    <span className="ad-stage-pct">{Math.round(draftProgress)}% Completed</span>
+                  </div>
+                </div>
+
+                {/* 4-Step Interactive Pipeline Tracker */}
+                <div className="ad-pipeline-grid">
+                  {DRAFT_STAGES.map((stg, sIdx) => {
+                    const isDone = sIdx < draftStep;
+                    const isCurrent = sIdx === draftStep;
+                    return (
+                      <div key={stg.title} className={`ad-step-card ${isDone ? 'done' : isCurrent ? 'active' : ''}`}>
+                        <div className="ad-step-badge">
+                          {isDone ? '✓' : `0${sIdx + 1}`}
+                        </div>
+                        <div className="ad-step-info">
+                          <div className="ad-step-title">{stg.title}</div>
+                          <div className="ad-step-desc">{stg.desc}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : draftError ? (
+              <div style={{ padding: '24px', borderRadius: '12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', marginBottom: '16px' }}>
+                <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>⚠️</span> Synthesis Error
+                </div>
+                <div style={{ fontSize: '13px', lineHeight: 1.6, color: '#FCA5A5' }}>{draftError}</div>
+                <button onClick={() => setDraftError('')} style={{ marginTop: '14px', padding: '6px 14px', borderRadius: '6px', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#EF4444', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
+              </div>
+            ) : autoDraftText ? (
+              <ContractTiptapEditor
+                documentKey={autoDraftVersion}
+                initialRawText={autoDraftText}
+                initialHtml={autoDraftHtml}
+                onTextChange={setAutoDraftText}
+                onHtmlChange={setAutoDraftHtml}
+                clauses={[]}
+              />
+            ) : (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'var(--accent-soft)', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                </div>
+                <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>Enterprise Auto-Draft Canvas Ready</div>
+                <div style={{ fontSize: '13px', maxWidth: '420px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
+                  Enter drafting instructions in the top right console or select an Indian Playbook Precedent to synthesize structured, execution-ready contract clauses.
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* RIGHT COLUMN — Draft Intelligence (tabbed Instructions/Playbook) */}
+        {panelCollapsed ? (
+          <div className="ad-controls-panel-collapsed">
+            <button
+              type="button"
+              className="ad-outline-rail-toggle"
+              onClick={() => setPanelCollapsed(false)}
+              title="Expand Draft Intelligence panel"
+            >
+              «
+            </button>
+          </div>
+        ) : (
+        <div className="ad-controls-panel">
+
+          <div className="ad-intel-tabs">
+            <button
+              type="button"
+              className={`ad-intel-tab${intelTab === 'instructions' ? ' active' : ''}`}
+              onClick={() => setIntelTab('instructions')}
+            >
+              ✍️ Instructions
+            </button>
+            <button
+              type="button"
+              className={`ad-intel-tab${intelTab === 'playbook' ? ' active' : ''}`}
+              onClick={() => setIntelTab('playbook')}
+            >
+              📜 Playbook
+            </button>
+            <button
+              type="button"
+              className="ad-outline-rail-toggle"
+              onClick={() => setPanelCollapsed(true)}
+              title="Collapse Draft Intelligence panel"
+              style={{ flexShrink: 0 }}
+            >
+              »
+            </button>
+          </div>
+
+          {/* CARD 1: AI Synthesis Instructions & Engine */}
+          <div className="ad-card ad-card-highlight" style={{ display: intelTab === 'instructions' ? 'block' : 'none' }}>
+            <div className="ad-card-title">
+              <span>✍️</span> Custom Drafting Instructions
+            </div>
+
+            <form onSubmit={handleSynthesize} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <textarea
+                  ref={promptTextareaRef}
+                  required
+                  rows={4}
+                  placeholder="e.g. Synthesize a complete Non-Disclosure & Non-Circumvention Agreement under the Indian Contract Act, 1872 with 3-year survival, confidential definitions, mutual indemnity, and New Delhi arbitration..."
+                  value={autoDraftPrompt}
+                  onChange={(e) => setAutoDraftPrompt(e.target.value)}
+                  style={{
+                    width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: '10px',
+                    background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-primary)', fontSize: '13.5px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5,
+                  }}
+                />
+              </div>
+
+              {/* Quick Modifier Chips */}
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Quick Provision Insert Modifiers:
+                </div>
+                <div className="ad-modifiers-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include 30-day written cure period before escalation.')}>
+                    + 30-Day Cure
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Cap aggregate liability at 100% of fees paid.')}>
+                    + 100% Fee Cap
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Seat of arbitration shall be New Delhi under Arbitration Act 1996.')}>
+                    + New Delhi Seat
+                  </button>
+                  <button type="button" className="ad-chip-btn" onClick={() => handleAddModifier('Include Section 27 Indian Contract Act exception for trade secrets.')}>
+                    + Sec 27 Carve-out
+                  </button>
+                </div>
+              </div>
+
+              {/* Synthesis Depth & Context Controls */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px', marginTop: '2px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Reference Context
+                  </label>
+                  <select
+                    value={selectedContextMode}
+                    onChange={(e) => setSelectedContextMode(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '12px' }}
+                  >
+                    <option value="active_contract">Active Contract ({rawText.length} chars)</option>
+                    <option value="none">No Context (Standalone)</option>
+                    {vaultDocs.length > 0 && (
+                      <optgroup label="Vault Documents">
+                        {vaultDocs.map((doc) => (
+                          <option key={doc.id} value={doc.id}>{doc.filename}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Scope Depth
+                  </label>
+                  <select
+                    value={draftDepth}
+                    onChange={(e) => setDraftDepth(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '12px' }}
+                  >
+                    <option value="comprehensive">Comprehensive</option>
+                    <option value="standard">Standard Clause</option>
+                    <option value="essential">Essential</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                <button
+                  type="submit"
+                  disabled={drafting}
+                  className="ad-action-btn ad-btn-primary ad-synthesize-btn"
+                  style={{ flex: 1, padding: '13px', fontSize: '14px', fontWeight: 700, borderRadius: '10px', justifyContent: 'center' }}
+                >
+                  {drafting ? 'Synthesizing Legal Clause…' : '⚡ Synthesize Enterprise Clause'}
+                </button>
+                <button
+                  type="button"
+                  disabled={uploadingDraft}
+                  onClick={() => draftUploadInputRef.current?.click()}
+                  className="ad-action-btn ad-btn-secondary"
+                  title="Upload an existing draft (PDF, DOCX, or TXT) directly into the editor"
+                  style={{ padding: '13px 16px', fontSize: '13px', fontWeight: 600, borderRadius: '10px', justifyContent: 'center', flexShrink: 0 }}
+                >
+                  {uploadingDraft ? '…' : '📤 Upload Draft'}
+                </button>
+                <input
+                  type="file"
+                  ref={draftUploadInputRef}
+                  style={{ display: 'none' }}
+                  accept=".pdf,.docx,.txt"
+                  onChange={(e) => handleUploadDraft(e.target.files)}
+                />
+              </div>
+              {draftUploadError && (
+                <div style={{ fontSize: '11.5px', color: '#EF4444', marginTop: '-4px' }}>
+                  {draftUploadError}
+                </div>
+              )}
+            </form>
+          </div>
+
+          {/* CARD 2: Indian Playbook Precedent Inserts */}
+          <div className="ad-card" style={{ display: intelTab === 'playbook' ? 'block' : 'none' }}>
+            <div className="ad-card-title">
+              <span>📜</span> Indian Playbook Precedent Inserts
+            </div>
+            <input
+              type="text"
+              value={precedentSearch}
+              onChange={(e) => setPrecedentSearch(e.target.value)}
+              placeholder="Search precedents…"
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', marginBottom: '10px',
+                background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: '12.5px',
+              }}
+            />
+            <div className="ad-precedent-grid">
+              {PRECEDENTS.filter(({ label, badge, prompt }) => {
+                const q = precedentSearch.trim().toLowerCase();
+                if (!q) return true;
+                return label.toLowerCase().includes(q) || badge.toLowerCase().includes(q) || prompt.toLowerCase().includes(q);
+              }).map(({ label, badge, prompt }) => (
+                <div
+                  key={label}
+                  className="ad-precedent-card"
+                  title="Insert into Instructions"
+                  onClick={() => {
+                    // Was setAutoDraftPrompt(prompt) — a silent full
+                    // REPLACE of whatever the lawyer had already typed,
+                    // fired while still sitting on the Playbook tab, so
+                    // clicking a precedent looked like it did nothing:
+                    // the textarea changed off-screen and any existing
+                    // instructions were wiped without any visible sign.
+                    // "Insert" now appends onto what's there and jumps
+                    // back to the Instructions tab so the change is
+                    // immediately visible.
+                    setAutoDraftPrompt((prev) => {
+                      const existing = (prev || '').trim();
+                      return existing ? `${existing}\n\n${prompt}` : prompt;
+                    });
+                    setIntelTab('instructions');
+                    if (promptTextareaRef.current) {
+                      promptTextareaRef.current.focus();
+                      promptTextareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }}
+                >
+                  <div className="ad-precedent-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                    <span className="ad-precedent-title">{label}</span>
+                    <span className="ad-precedent-badge">
+                      {badge}
+                    </span>
+                  </div>
+                  <span className="ad-precedent-desc" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {prompt}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+        )}
+
       </div>
 
       <DraftsModal />
 
-      {/* Modals */}
-      {showClearConfirm && createPortal(
-        <div className="modal-overlay open" onClick={() => setShowClearConfirm(false)}>
-          <div className="modal" style={{ maxWidth: '420px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Clear this document?</h3>
-              <button className="icon-btn" onClick={() => setShowClearConfirm(false)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"></path><path d="M6 6l12 12"></path></svg></button>
-            </div>
-            <div className="modal-body">
-              <p style={{ fontSize:'13px', color:'var(--ink-soft)', margin:0, lineHeight:1.55 }}>This removes the synthesized document from the canvas. This can't be undone — save or export first if you want to keep it.</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setShowClearConfirm(false)}>Cancel</button>
-              <button className="btn btn-primary" style={{ background: 'var(--accent)' }} onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); setShowClearConfirm(false); }}>Clear document</button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {showVariablesPanel && createPortal(
-        <div className="modal-overlay open" onClick={() => setShowVariablesPanel(false)}>
-          <div className="modal modal-wide" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Extract Variables</h3>
-              <button className="icon-btn" onClick={() => setShowVariablesPanel(false)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"></path><path d="M6 6l12 12"></path></svg></button>
-            </div>
-            <div className="modal-body">
-              <p style={{ fontSize: '12.5px', color: 'var(--ink-soft)', margin: 0, lineHeight: 1.55 }}>Every bracketed placeholder found in the current draft. Click one to jump to its first occurrence in the document.</p>
-              <div className="extract-list">
-                {!extractedVariables.length ? (
-                  <div className="precedent-empty">No open placeholders — this draft is fully filled in.</div>
-                ) : (
-                  extractedVariables.map(p => (
-                    <button key={p.token} className="extract-item" onClick={() => {
-                      setShowVariablesPanel(false);
-                      setTimeout(() => {
-                        const nodes = canvasContainerRef.current?.querySelectorAll('.doc-placeholder, .placeholder, span');
-                        let target = null;
-                        nodes?.forEach(n => { if (n.textContent === p.token) target = n; });
-                        if (target) {
-                          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                          target.classList.add('flash');
-                          setTimeout(() => target.classList.remove('flash'), 950);
-                        }
-                      }, 100);
-                    }}>
-                      <span className="extract-token mono">{p.token}</span>
-                      <span className="extract-count">{p.count} {p.count === 1 ? 'occurrence' : 'occurrences'}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setShowVariablesPanel(false)}>Close</button>
-              <button className="btn btn-primary" onClick={() => {
-                const text = extractedVariables.map(v => v.token).join('\n');
-                navigator.clipboard.writeText(text);
-              }}>Copy list</button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
+      {/* Portaled straight to document.body — AppRouter.jsx's page-transition
+          wrapper (.page-enter) applies a CSS transform to every route's
+          root, and a transformed ancestor becomes the containing block for
+          any position:fixed descendant, so without the portal this overlay
+          would resolve "fixed" relative to that in-flow page wrapper
+          instead of the viewport. Same bug/fix already applied to
+          FirmLibrary's document viewer and (previously) this component's
+          own export modal. */}
       {showLetterheadModal && createPortal(
-        <div className="modal-overlay open" onClick={closeLetterheadModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Create Custom Letterhead</h3>
-              <button className="icon-btn" onClick={closeLetterheadModal}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"></path><path d="M6 6l12 12"></path></svg></button>
+        <div className="ad-modal-overlay" onClick={closeLetterheadModal}>
+          <div className="ad-modal" onClick={(ev) => ev.stopPropagation()}>
+            <div className="ad-modal-header">
+              <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Add / Manage Letterheads</span>
+              <button
+                onClick={closeLetterheadModal}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', lineHeight: 1 }}
+              >
+                &times;
+              </button>
             </div>
-            <div className="modal-body">
-              <div className="field"><span className="field-label">Firm Name *</span><input value={newLetterheadFirmName} onChange={e => setNewLetterheadFirmName(e.target.value)} placeholder="e.g. Sharma & Associates" /></div>
-              <div className="field"><span className="field-label">Tagline</span><input value={newLetterheadTagline} onChange={e => setNewLetterheadTagline(e.target.value)} placeholder="e.g. Advocates & Solicitors, Mumbai" /></div>
-              <div className="field"><span className="field-label">Address</span><input value={newLetterheadAddress} onChange={e => setNewLetterheadAddress(e.target.value)} placeholder="e.g. 4th Floor, Nariman Point, Mumbai 400021" /></div>
-              <div className="field"><span className="field-label">Contact (Email / Phone)</span><input value={newLetterheadContact} onChange={e => setNewLetterheadContact(e.target.value)} placeholder="e.g. contact@firm.com · +91 98765 43210" /></div>
-              {letterheadFormError && <div style={{ fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>{letterheadFormError}</div>}
+            <div className="ad-modal-body">
+              {letterheadModalNotice && (
+                <div className="ad-letterhead-notice">{letterheadModalNotice}</div>
+              )}
+              <div>
+                <label className="ad-modal-label">Firm Name *</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadFirmName}
+                  onChange={(e) => setNewLetterheadFirmName(e.target.value)}
+                  placeholder="e.g. Sharma & Associates"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="ad-modal-label">Tagline</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadTagline}
+                  onChange={(e) => setNewLetterheadTagline(e.target.value)}
+                  placeholder="e.g. Advocates & Solicitors, Mumbai"
+                />
+              </div>
+              <div>
+                <label className="ad-modal-label">Address</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadAddress}
+                  onChange={(e) => setNewLetterheadAddress(e.target.value)}
+                  placeholder="e.g. 4th Floor, Nariman Point, Mumbai 400021"
+                />
+              </div>
+              <div>
+                <label className="ad-modal-label">Contact (Email / Phone)</label>
+                <input
+                  className="ad-modal-input"
+                  value={newLetterheadContact}
+                  onChange={(e) => setNewLetterheadContact(e.target.value)}
+                  placeholder="e.g. contact@firm.com · +91 98765 43210"
+                />
+              </div>
+              {letterheadFormError && (
+                <div style={{ fontSize: '12px', color: '#EF4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: '8px', padding: '10px 12px' }}>
+                  {letterheadFormError}
+                </div>
+              )}
+
+              {/* Native <select> can't render a clickable delete button per
+                  option, so multi-letterhead management lives here instead. */}
+              {savedLetterheads.length > 0 && (
+                <div className="ad-letterhead-manage">
+                  <div className="ad-letterhead-manage-title">Manage Saved Letterheads</div>
+                  <div className="ad-letterhead-manage-list">
+                    {savedLetterheads.map((lh) => (
+                      <div key={lh.id} className="ad-letterhead-manage-row">
+                        <span className="ad-letterhead-manage-name">{lh.name || lh.firmName}</span>
+                        <button
+                          type="button"
+                          className="ad-letterhead-delete-btn"
+                          onClick={() => handleDeleteLetterhead(lh.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={closeLetterheadModal}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSaveLetterhead}>Save Letterhead</button>
+            <div className="ad-modal-footer">
+              <button type="button" className="ad-action-btn ad-btn-secondary" onClick={closeLetterheadModal}>
+                Cancel
+              </button>
+              <button type="button" className="ad-action-btn ad-btn-primary" onClick={handleSaveLetterhead}>
+                Save Letterhead
+              </button>
             </div>
           </div>
         </div>,
         document.body
       )}
-      
+
+      {/* Also portaled — a plain fixed-position div here would resolve
+          relative to .page-enter's transformed box like everything else
+          in this file, not the true viewport corner. */}
       {toast && createPortal(
-        <div className="toast open">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
-          <span id="toastMsg">{toast}</span>
-        </div>,
+        <div className="ad-toast">{toast}</div>,
         document.body
       )}
     </div>
