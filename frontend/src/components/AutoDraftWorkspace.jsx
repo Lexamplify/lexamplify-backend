@@ -74,6 +74,50 @@ export default function AutoDraftWorkspace() {
   const [showVariablesPanel, setShowVariablesPanel] = useState(false);
   const [extractedVariables, setExtractedVariables] = useState([]);
 
+  const [activeMods, setActiveMods] = useState({ cure: false, feecap: false, seat: false, carveout: false });
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [toolbarRef, setToolbarRef] = useState(null);
+
+  const toggleMod = (modKey, text) => {
+    setActiveMods(prev => {
+      const next = !prev[modKey];
+      let currentPrompt = autoDraftPrompt || '';
+      if (next) {
+        if (!currentPrompt.includes(text)) {
+           setAutoDraftPrompt(currentPrompt.trim() ? `${currentPrompt.trim()}\n- ${text}` : `- ${text}`);
+        }
+      } else {
+        const regex = new RegExp(`\\n?- ${text.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g');
+        setAutoDraftPrompt(currentPrompt.replace(regex, '').trim());
+      }
+      return { ...prev, [modKey]: next };
+    });
+  };
+
+  const getStatutes = () => {
+    const set = new Set();
+    if (autoDraftText) {
+      set.add('Indian Contract Act, 1872');
+      if (autoDraftText.toLowerCase().includes('arbitration') || activeMods.carveout) set.add('Arbitration and Conciliation Act, 1996');
+      if (autoDraftText.toLowerCase().includes('company')) set.add('Companies Act, 2013');
+      if (autoDraftText.toLowerCase().includes('copyright')) set.add('Copyright Act, 1957');
+    }
+    return Array.from(set);
+  };
+  const statutes = getStatutes();
+
+  const overflowRef = useRef(null);
+  useEffect(() => {
+    const handler = (e) => {
+      if (showOverflowMenu && overflowRef.current && !overflowRef.current.contains(e.target)) {
+        setShowOverflowMenu(false);
+      }
+    };
+    document.addEventListener('click', handler);
+  
+
   // ── Workbench layout: outline rail + collapsible panels ──────────────────
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -826,49 +870,7 @@ export default function AutoDraftWorkspace() {
   const paragraphCount = autoDraftText.trim() ? autoDraftText.split(/\n\s*\n/).length : 0;
 
 
-  const [activeMods, setActiveMods] = useState({ cure: false, feecap: false, seat: false, carveout: false });
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [showOverflowMenu, setShowOverflowMenu] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [toolbarRef, setToolbarRef] = useState(null);
-
-  const toggleMod = (modKey, text) => {
-    setActiveMods(prev => {
-      const next = !prev[modKey];
-      let currentPrompt = autoDraftPrompt || '';
-      if (next) {
-        if (!currentPrompt.includes(text)) {
-           setAutoDraftPrompt(currentPrompt.trim() ? `${currentPrompt.trim()}\n- ${text}` : `- ${text}`);
-        }
-      } else {
-        const regex = new RegExp(`\\n?- ${text.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g');
-        setAutoDraftPrompt(currentPrompt.replace(regex, '').trim());
-      }
-      return { ...prev, [modKey]: next };
-    });
-  };
-
-  const getStatutes = () => {
-    const set = new Set();
-    if (autoDraftText) {
-      set.add('Indian Contract Act, 1872');
-      if (autoDraftText.toLowerCase().includes('arbitration') || activeMods.carveout) set.add('Arbitration and Conciliation Act, 1996');
-      if (autoDraftText.toLowerCase().includes('company')) set.add('Companies Act, 2013');
-      if (autoDraftText.toLowerCase().includes('copyright')) set.add('Copyright Act, 1957');
-    }
-    return Array.from(set);
-  };
-  const statutes = getStatutes();
-
-  const overflowRef = useRef(null);
-  useEffect(() => {
-    const handler = (e) => {
-      if (showOverflowMenu && overflowRef.current && !overflowRef.current.contains(e.target)) {
-        setShowOverflowMenu(false);
-      }
-    };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
+  return () => document.removeEventListener('click', handler);
   }, [showOverflowMenu]);
 
   useEffect(() => {
