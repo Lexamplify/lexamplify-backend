@@ -1,831 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
-import ContractTiptapEditor from './ContractTiptapEditor.jsx';
-import DraftsModal from './DraftsModal.jsx';
-import { useContractStore } from '../store/useContractStore.js';
-import { fetchDocuments, extractContractText } from '../services/api.js';
-import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
-import { useLetterheads } from '../hooks/useLetterheads.js';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-
-const LETTERHEAD_STORAGE_KEY = 'userLetterheads';
-const SCRATCHPAD_STORAGE_KEY = 'autodraft_active_scratchpad';
-const CREATE_LETTERHEAD_SENTINEL = 'create_custom';
-const AUTO_DETECT_SENTINEL = 'auto_detect';
-// Firm branding lives at the very top (cover page/header) or the very
-// end (signature block) of a document, never the middle — slicing to
-// just those two windows before sending to the LLM keeps a long draft
-// well under Groq's per-request TPM budget (see utils/ai_helper.py)
-// instead of shipping the whole document for a detail that's never
-// actually buried in its body text.
-const LETTERHEAD_SLICE_CHARS = 3000;
-// Mirrors the backend's own defense-in-depth check (routes/contract_routes.py's
-// _BRACKET_PLACEHOLDER_RE) — belt and suspenders in case a future backend
-// change ever lets a raw "[Party A]"-shaped placeholder back through
-// unfiltered; the frontend shouldn't silently accept that as a real firm.
-const BRACKET_PLACEHOLDER_RE = /^\s*\[.*\]\s*$/;
-
-const DRAFT_STAGES = [
-  { title: 'Statutory Interpretation', desc: 'Analyzing instructions and Indian legal framework bounds' },
-  { title: 'Statutory Alignment', desc: 'Cross-referencing Indian Contract Act, 1872 & landmark case law' },
-  { title: 'Operative Clause Synthesis', desc: 'Drafting structured, multi-tier terms, remedies & obligations' },
-  { title: 'Execution Finalization', desc: 'Formatting numbered clauses, statutory indents & signature blocks' },
-];
-
-export default function AutoDraftWorkspace() {
-  const navigate = useNavigate();
-  const isMountedRef = useRef(true);
-  const promptTextareaRef = useRef(null);
-  const draftUploadInputRef = useRef(null);
-
-  // Shared contract state lifted from store
-  const {
-    rawText,
-    setRawText,
-    setRawHtml,
-    setClauses,
-    setSummary,
-    autoDraftText,
-    setAutoDraftText,
-    autoDraftHtml,
-    setAutoDraftHtml,
-    autoDraftPrompt,
-    setAutoDraftPrompt,
-    autoDraftVersion,
-    setAutoDraftVersion,
-    openDraftsModal,
-  } = useContractStore();
-
-  // Local synthesis studio state
-  const [drafting, setDrafting] = useState(false);
-  const [draftStep, setDraftStep] = useState(0);
-  const [draftProgress, setDraftProgress] = useState(0);
-  const [draftError, setDraftError] = useState('');
-  const [vaultDocs, setVaultDocs] = useState([]);
-  const [selectedContextMode, setSelectedContextMode] = useState('active_contract');
-  const [draftDepth, setDraftDepth] = useState('comprehensive');
-  const [copied, setCopied] = useState(false);
-  const [appended, setAppended] = useState(false);
-  const [savedSuccess, setSavedSuccess] = useState(false);
-  const [uploadingDraft, setUploadingDraft] = useState(false);
-  const [draftUploadError, setDraftUploadError] = useState('');
-  const [showVariablesPanel, setShowVariablesPanel] = useState(false);
-  const [extractedVariables, setExtractedVariables] = useState([]);
-
-  // ── Workbench layout: outline rail + collapsible panels ──────────────────
-  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [outlineHeadings, setOutlineHeadings] = useState([]);
-  const canvasContainerRef = useRef(null);
-  const [intelTab, setIntelTab] = useState('instructions');
-  const [precedentSearch, setPrecedentSearch] = useState('');
-
-  // Client-side heading scan (no backend/section data model — see plan) —
-  // the synthesized document is a flat string/HTML blob, so the outline is
-  // derived by reading the rendered TipTap document's own heading nodes
-  // rather than any structured {sections:[...]} the backend doesn't
-  // produce. A MutationObserver (not just a re-scan on autoDraftText
-  // change) is needed because the canvas is a contenteditable ProseMirror
-  // tree — headings can be added/edited/removed by the user typing
-  // directly into it without ever calling setAutoDraftText synchronously.
-  //
-  // Debounced via setTimeout (a macrotask) rather than scanning inside the
-  // MutationObserver callback directly (a microtask) — TipTap/ProseMirror
-  // mutates its own DOM on essentially every internal update (cursor
-  // decorations, widget nodes), and calling setState synchronously from
-  // that microtask risked a render -> DOM-touch -> new MutationRecord ->
-  // microtask loop that never yields back to the event loop (confirmed
-  // live: the tab hard-hung after Synthesize until reloaded). The
-  // setTimeout hop plus a content-signature check before setState breaks
-  // that cycle. Only childList/subtree is observed, not characterData —
-  // a live rename of heading text is picked up on the next structural
-  // edit or autoDraftText change rather than instantly, which is an
-  // acceptable trade for never re-entering this loop.
-  useEffect(() => {
-    const container = canvasContainerRef.current;
-    if (!container) return;
-    let timeoutId = null;
-    let lastSignature = null;
-
-    const scan = () => {
-      const nodes = container.querySelectorAll('.ProseMirror h1, .ProseMirror h2, .ProseMirror h3');
-      const next = Array.from(nodes).map((el, i) => ({
-        id: `ad-outline-heading-${i}`,
-        text: el.textContent || `Untitled ${i + 1}`,
-        level: Number(el.tagName.slice(1)),
-      }));
-      const signature = next.map((h) => `${h.level}:${h.text}`).join('|');
-      if (signature === lastSignature) return;
-      lastSignature = signature;
-      setOutlineHeadings(next);
-    };
-
-    const scheduleScan = () => {
-      if (timeoutId) return;
-      timeoutId = setTimeout(() => {
-        timeoutId = null;
-        scan();
-      }, 400);
-    };
-
-    scan();
-    const observer = new MutationObserver(scheduleScan);
-    observer.observe(container, { childList: true, subtree: true });
-    return () => {
-      observer.disconnect();
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [autoDraftText, autoDraftVersion]);
-
-  const jumpToHeading = (headingId) => {
-    const container = canvasContainerRef.current;
-    if (!container) return;
-    const index = Number(headingId.replace('ad-outline-heading-', ''));
-    const nodes = container.querySelectorAll('.ProseMirror h1, .ProseMirror h2, .ProseMirror h3');
-    const el = nodes[index];
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    el.classList.add('ad-outline-flash');
-    setTimeout(() => el.classList.remove('ad-outline-flash'), 900);
-  };
-
-  // Document Health — derived from state that already exists elsewhere in
-  // this component (wordCount below, extractedVariables from Extract
-  // Variables), not a new data source.
-  const openPlaceholderCount = (autoDraftText.match(/\[([^\]\n]{1,80})\]/g) || []).length;
-
-  // ── Letterhead export ────────────────────────────────────────────────────
-  // Previously lived behind a generic "Export" button that opened a modal
-  // containing the letterhead picker — confirmed with the founder that this
-  // buried the one thing lawyers actually asked for (drafting on the firm's
-  // letterhead) behind a click that didn't read as "letterhead" at all. Now
-  // an always-visible bar under the toolbar, no modal, no extra click.
-  //
-  // Real per-user persistence (routes/letterhead_routes.py, `letterheads`
-  // table) replaces the old localStorage-only `userLetterheads` array —
-  // this hook owns the network calls; `savedLetterheads` below is a local
-  // view shaped exactly like the old localStorage array (`id`/`name`/
-  // `firmName`/`tagline`/`address`/`contact`) so the rest of this
-  // component's logic (dedupe-by-firmName, activeLetterhead lookup, the
-  // <select>/modal JSX) is unchanged.
-  const { letterheads: serverLetterheads, loading: letterheadsLoading, createLetterhead, deleteLetterhead: deleteLetterheadRemote } = useLetterheads();
-  const savedLetterheads = serverLetterheads.map((lh) => ({
-    id: String(lh.id),
-    name: lh.auto_detected ? `${lh.name} (Auto-Detected)` : lh.name,
-    firmName: lh.name,
-    tagline: lh.tagline || '',
-    address: lh.address || '',
-    contact: lh.contact || '',
-  }));
-  const [selectedLetterheadId, setSelectedLetterheadId] = useState('none');
-  const [showLetterheadModal, setShowLetterheadModal] = useState(false);
-  const [newLetterheadFirmName, setNewLetterheadFirmName] = useState('');
-  const [newLetterheadTagline, setNewLetterheadTagline] = useState('');
-  const [newLetterheadAddress, setNewLetterheadAddress] = useState('');
-  const [newLetterheadContact, setNewLetterheadContact] = useState('');
-  const [letterheadFormError, setLetterheadFormError] = useState('');
-  // One-time carry-forward: real letterheads created before this backend
-  // existed live only in localStorage. Unlike Home Gateway's seed/demo
-  // placeholders, these are genuine user-created data worth keeping — so
-  // if the server list comes back empty and an old localStorage array is
-  // still there, push each entry to the server exactly once (guarded by a
-  // ref, not state, so this can't re-fire on every serverLetterheads
-  // refresh) rather than silently dropping them or migrating repeatedly.
-  const letterheadCarryForwardDone = useRef(false);
-  useEffect(() => {
-    if (letterheadCarryForwardDone.current || letterheadsLoading) return;
-    if (serverLetterheads.length > 0) { letterheadCarryForwardDone.current = true; return; }
-    let stored = [];
-    try {
-      stored = JSON.parse(localStorage.getItem(LETTERHEAD_STORAGE_KEY) || '[]');
-    } catch {
-      stored = [];
-    }
-    if (!Array.isArray(stored) || stored.length === 0) { letterheadCarryForwardDone.current = true; return; }
-    letterheadCarryForwardDone.current = true;
-    (async () => {
-      for (const lh of stored) {
-        if (!lh || !lh.firmName) continue;
-        try {
-          await createLetterhead({
-            name: lh.firmName,
-            tagline: lh.tagline || '',
-            address: lh.address || '',
-            contact: lh.contact || '',
-            autoDetected: /\(Auto-Detected\)$/.test(lh.name || ''),
-          });
-        } catch {}
-      }
-      try { localStorage.removeItem(LETTERHEAD_STORAGE_KEY); } catch {}
-    })();
-  }, [serverLetterheads, letterheadsLoading, createLetterhead]);
-  // Contextual guidance shown above the creation form when Auto-Detect
-  // comes back empty/placeholder-only — opening the modal WITH an
-  // explanation instead of a dead-end toast the lawyer has to separately
-  // notice and then go find "+ Add / Manage Letterheads..." themselves.
-  const [letterheadModalNotice, setLetterheadModalNotice] = useState('');
-  
-  const [exportingDocx, setExportingDocx] = useState(false);
-  const [exportError, setExportError] = useState('');
-  const [exportedSuccess, setExportedSuccess] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [toast, setToast] = useState('');
-  const exportMenuRef = useRef(null);
-
-  // Guards the sessionStorage scratchpad sync below against the mount-order
-  // race: autoDraftHtml starts as '' on every fresh mount (a hard reload
-  // resets the whole in-memory Zustand store), and a naive effect syncing
-  // on every change would fire with that empty value BEFORE the rehydration
-  // effect below has had a chance to read anything back — silently wiping
-  // out whatever was saved from the previous session. Nothing is allowed to
-  // write until rehydration has explicitly run once.
-  const isRehydrated = useRef(false);
-
-  // Mount-only rehydration. Only restores from sessionStorage when the
-  // in-memory canvas is still empty — if autoDraftText already has content
-  // (e.g. the user navigated to another route and back within the same SPA
-  // session, so the Zustand store never reset), that live content is
-  // authoritative and a possibly-older sessionStorage snapshot must not
-  // clobber it. autoDraftText (not just autoDraftHtml) has to come back too
-  // — the canvas below only mounts <ContractTiptapEditor> at all when
-  // autoDraftText is non-empty, so restoring the HTML alone would leave the
-  // rehydrated content sitting in the store with the placeholder still on
-  // screen.
-  useEffect(() => {
-    try {
-      const cached = sessionStorage.getItem(SCRATCHPAD_STORAGE_KEY);
-      if (cached && !autoDraftText.trim()) {
-        const scratch = document.createElement('div');
-        scratch.innerHTML = cached;
-        const plainText = scratch.textContent || '';
-        if (plainText.trim()) {
-          setAutoDraftText(plainText);
-          setAutoDraftHtml(cached);
-        }
-      }
-    } catch {}
-    // Marked rehydrated either way — a brand-new session with nothing cached
-    // still needs to start persisting from here on, not stay permanently
-    // disabled just because there was nothing to restore this time.
-    isRehydrated.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Debounced sync: every edit lands in sessionStorage a moment after typing
-  // settles, not on every keystroke.
-  useEffect(() => {
-    if (!isRehydrated.current || !autoDraftHtml.trim()) return;
-    const timer = setTimeout(() => {
-      try {
-        sessionStorage.setItem(SCRATCHPAD_STORAGE_KEY, autoDraftHtml);
-      } catch {}
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [autoDraftHtml]);
-
-  // Close the export format menu on any outside click.
-  useEffect(() => {
-    if (!showExportMenu) return;
-    const handler = (e) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
-        setShowExportMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showExportMenu]);
-
-  const activeLetterhead = savedLetterheads.find((l) => l.id === selectedLetterheadId) || null;
-
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 3000);
-  };
-
-  const closeLetterheadModal = () => {
-    setShowLetterheadModal(false);
-    setLetterheadModalNotice('');
-    setLetterheadFormError('');
-  };
-
-  const openLetterheadModalWithNotice = (notice) => {
-    setLetterheadFormError('');
-    setLetterheadModalNotice(notice);
-    setShowLetterheadModal(true);
-  };
-
-  const handleLetterheadSelectChange = (e) => {
-    const selectEl = e.target;
-    const val = selectEl.value;
-    // Cached before either branch below runs anything async — both
-    // auto_detect and create_custom are actions, not real selections.
-    const cachedActiveId = selectedLetterheadId;
-
-    if (val === CREATE_LETTERHEAD_SENTINEL) {
-      // The controlled `value` prop already resets this <select> to
-      // cachedActiveId on the next render, but forcing the DOM value back
-      // synchronously too means a second click on the same action option
-      // is guaranteed to still register as a real change event even if
-      // some other render doesn't land in between.
-      selectEl.value = cachedActiveId;
-      openLetterheadModalWithNotice('');
-      return;
-    }
-    if (val === AUTO_DETECT_SENTINEL) {
-      selectEl.value = cachedActiveId;
-      handleAutoDetectLetterhead();
-      return;
-    }
-    setSelectedLetterheadId(val);
-    setExportError('');
-  };
-
-  // AI-assisted letterhead detection — reads the drafted document itself
-  // (rather than making the lawyer type in a firm's details it can
-  // already see on the page) and asks the backend's LLM gateway to pull
-  // out {firmName, tagline, address, contact}, if any firm — or, failing
-  // that, the primary corporate party — is actually named in the text.
-  const handleAutoDetectLetterhead = async () => {
-    if (!autoDraftText.trim() || isExtracting) return;
-    setIsExtracting(true);
-    setExportError('');
-    const NOTHING_FOUND_NOTICE = 'No explicit firm details found in this draft. Enter your firm or chamber details below to create this letterhead.';
-    try {
-      const head = autoDraftText.slice(0, LETTERHEAD_SLICE_CHARS);
-      const tail = autoDraftText.length > LETTERHEAD_SLICE_CHARS
-        ? autoDraftText.slice(-LETTERHEAD_SLICE_CHARS)
-        : '';
-      const sliced = tail ? `${head}\n...\n${tail}` : head;
-
-      const res = await fetch(`${API_BASE}/api/contract/extract-letterhead`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: sliced }),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      const rawFirmName = data.firmName ? String(data.firmName).trim() : '';
-      const isPlaceholder = BRACKET_PLACEHOLDER_RE.test(rawFirmName);
-
-      if (!res.ok || !rawFirmName || isPlaceholder) {
-        // Adaptive fallback: open the creation modal directly, with a
-        // contextual notice, instead of a dead-end toast the lawyer would
-        // have to separately notice and then go find "+ Add / Manage
-        // Letterheads..." themselves to actually act on.
-        openLetterheadModalWithNotice(NOTHING_FOUND_NOTICE);
-        return;
-      }
-
-      const firmName = rawFirmName;
-      // Dedupe by firm name (case-insensitive) rather than blindly
-      // appending — re-running Auto-Detect on the same draft, or on a
-      // second draft from the same firm, would otherwise pile up
-      // identical entries in localStorage every time.
-      const existing = savedLetterheads.find(
-        (l) => (l.firmName || '').trim().toLowerCase() === firmName.toLowerCase()
-      );
-      if (existing) {
-        setSelectedLetterheadId(existing.id);
-        showToast(`Using saved letterhead "${existing.firmName}".`);
-        return;
-      }
-
-      const created = await createLetterhead({
-        name: firmName,
-        tagline: data.tagline || '',
-        address: data.address || '',
-        contact: data.contact || '',
-        autoDetected: true,
-      });
-      setSelectedLetterheadId(String(created.id));
-      showToast(`Detected letterhead: "${firmName}".`);
-    } catch (err) {
-      openLetterheadModalWithNotice(NOTHING_FOUND_NOTICE);
-    } finally {
-      setIsExtracting(false);
-    }
-  };
-
-  const handleSaveLetterhead = async () => {
-    const firmName = newLetterheadFirmName.trim();
-    if (!firmName) {
-      setLetterheadFormError('Firm name is required.');
-      return;
-    }
-    try {
-      const created = await createLetterhead({
-        name: firmName,
-        tagline: newLetterheadTagline.trim(),
-        address: newLetterheadAddress.trim(),
-        contact: newLetterheadContact.trim(),
-      });
-      setSelectedLetterheadId(String(created.id));
-      setNewLetterheadFirmName('');
-      setNewLetterheadTagline('');
-      setNewLetterheadAddress('');
-      setNewLetterheadContact('');
-      closeLetterheadModal();
-    } catch (err) {
-      setLetterheadFormError(err.message || 'Failed to save letterhead.');
-    }
-  };
-
-  const handleDeleteLetterhead = async (id) => {
-    try {
-      await deleteLetterheadRemote(id);
-    } catch {}
-    // Deleting the currently-active letterhead falls back to plain —
-    // activeLetterhead's own .find() would already resolve to null for a
-    // dangling id, but resetting the <select> explicitly avoids leaving
-    // it visually pointed at an option that no longer exists.
-    setSelectedLetterheadId((prev) => (prev === id ? 'none' : prev));
-  };
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    const loadVault = async () => {
-      try {
-        const res = await fetchDocuments();
-        if (!isMountedRef.current) return;
-        if (Array.isArray(res)) {
-          setVaultDocs(res);
-        }
-      } catch (e) {}
-    };
-    loadVault();
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  // Smooth multi-stage animation & progress tracker during synthesis
-  useEffect(() => {
-    if (!drafting) {
-      setDraftStep(0);
-      setDraftProgress(0);
-      return;
-    }
-
-    setDraftStep(0);
-    setDraftProgress(12);
-
-    const stepInterval = setInterval(() => {
-      setDraftStep((prev) => (prev < DRAFT_STAGES.length - 1 ? prev + 1 : prev));
-    }, 2400);
-
-    const progressInterval = setInterval(() => {
-      setDraftProgress((prev) => {
-        if (prev >= 94) return prev;
-        const inc = Math.max(1, Math.floor((96 - prev) * 0.12));
-        return Math.min(94, prev + inc);
-      });
-    }, 350);
-
-    return () => {
-      clearInterval(stepInterval);
-      clearInterval(progressInterval);
-    };
-  }, [drafting]);
-
-  const handleSynthesize = async (e) => {
-    if (e) e.preventDefault();
-    if (!autoDraftPrompt.trim()) {
-      setDraftError('Please enter drafting instructions before synthesizing.');
-      if (promptTextareaRef.current) promptTextareaRef.current.focus();
-      return;
-    }
-
-    setDrafting(true);
-    setDraftError('');
-
-    try {
-      let contextValue = null;
-      if (selectedContextMode === 'active_contract' && rawText.trim()) {
-        contextValue = rawText.trim();
-      } else if (selectedContextMode !== 'none' && selectedContextMode !== 'active_contract') {
-        contextValue = selectedContextMode;
-      }
-
-      // Backend now resumes truncated drafts with up to 4 follow-up LLM
-      // calls (max_continuations in document_routes.py) AND retries any
-      // individual call that hits Groq's account-wide rolling rate limit,
-      // sleeping for however long Groq's own error says to wait (verified
-      // live up to ~32s for one retry) before trying again. A large
-      // reference-context draft can legitimately need several such waits
-      // across its call chain. 300s gives real room for that without
-      // waiting forever on a genuine hang — comfortably above the 90s
-      // floor this needs at minimum.
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000);
-
-      let response;
-      try {
-        response = await fetch(`${API_BASE}/api/documents/draft`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: autoDraftPrompt.trim(),
-            context: contextValue,
-            depth: draftDepth,
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      const data = await response.json();
-
-      if (!isMountedRef.current) return;
-      setDraftProgress(100);
-      setTimeout(() => {
-        if (!isMountedRef.current) return;
-        setDrafting(false);
-      }, 400);
-
-      if (response.ok && (data.draft || data.clause || data.content)) {
-        const generated = (data.draft || data.clause || data.content).replace(/^"|"$/g, '').trim();
-        setAutoDraftText(generated);
-        setAutoDraftHtml('');
-        setAutoDraftVersion((v) => v + 1);
-        // A freshly synthesized draft replaces the canvas wholesale — drop
-        // the old scratchpad snapshot so a stale one can't rehydrate over
-        // this new draft if the component remounts before the debounced
-        // sync above has had a chance to save it.
-        try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
-      } else {
-        setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
-      }
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      setDrafting(false);
-      setDraftError(
-        err?.name === 'AbortError'
-          ? 'The AI reasoning engine took too long to respond (300s). Please retry — a shorter or more focused instruction may complete faster.'
-          : 'Network timeout in the AI legal reasoning engine. Please retry.'
-      );
-    }
-  };
-
-  const handleUploadDraft = async (files) => {
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    const extension = file.name.split('.').pop().toLowerCase();
-    if (!['pdf', 'docx', 'txt'].includes(extension)) {
-      setDraftUploadError('Invalid format. Please upload a PDF, DOCX, or TXT file.');
-      return;
-    }
-    if (file.size > 104857600) {
-      setDraftUploadError('File exceeds 100MB. Please upload a smaller draft.');
-      return;
-    }
-
-    setUploadingDraft(true);
-    setDraftUploadError('');
-    try {
-      let extracted;
-      if (extension === 'txt') {
-        extracted = await file.text();
-      } else {
-        // Reuses the same /api/contract/extract-text route the Contract
-        // Analyzer upload already relies on (PyMuPDF/pdfplumber/PyPDF2 for
-        // PDF, python-docx for DOCX) — no new backend parsing needed.
-        const res = await extractContractText(file);
-        if (res?.error) throw new Error(res.message || 'Failed to extract document text.');
-        extracted = typeof res === 'string' ? res : (res?.text || '');
-      }
-
-      if (!extracted || !extracted.trim()) {
-        throw new Error('No readable text found in the uploaded file.');
-      }
-
-      // Same clause-numbering fixup ContractAnalyzer.jsx applies to its own
-      // extracted text ("1.1" mis-split across a sentence boundary by PDF
-      // extraction) — kept local since it's a one-line regex, not worth a
-      // shared util for.
-      const cleaned = extracted.replace(/(\w+)\.(\d+)\./g, '$1. $2.');
-      setAutoDraftText(cleaned);
-      // A plain extracted template has no markdown of its own (no ### or
-      // **), so rawTextToHtml's generic pass would just render flat <p>
-      // tags with no visual structure. smartFormatUploadedText detects
-      // clause headings and highlights [bracketed] placeholders instead.
-      setAutoDraftHtml(smartFormatUploadedText(cleaned));
-      // An uploaded file is a brand-new template loaded onto the canvas —
-      // same reasoning as the post-synthesis cleanup above.
-      try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
-      setAutoDraftVersion((v) => v + 1);
-    } catch (err) {
-      setDraftUploadError(err?.message || 'Failed to read the uploaded draft.');
-    } finally {
-      setUploadingDraft(false);
-      if (draftUploadInputRef.current) draftUploadInputRef.current.value = '';
-    }
-  };
-
-  const handleAppendToContract = () => {
-    if (!autoDraftText.trim()) return;
-    const separator = rawText.trim() ? '\n\n' : '';
-    setRawText(rawText + separator + autoDraftText);
-    setAppended(true);
-    setTimeout(() => setAppended(false), 2500);
-  };
-
-  // Distinct from Append above: this REPLACES whatever's currently loaded
-  // in Contract Analyzer with the Auto-Draft document and jumps straight
-  // there for a full risk scan, rather than merging into what's already
-  // there. rawText/rawHtml are the same Zustand store fields Contract
-  // Analyzer itself reads to hydrate its editor (confirmed by tracing its
-  // own code, not guessed) — a shared reactive store, not a one-time
-  // hydration key, so setting it here before navigating is sufficient; no
-  // localStorage or route-state handoff needed. clauses/summary are reset
-  // so a previous document's risk flags don't linger against this new text.
-  const handlePushToAnalyzer = () => {
-    if (!autoDraftText.trim()) return;
-    setRawText(autoDraftText);
-    setRawHtml(autoDraftHtml);
-    setClauses([]);
-    setSummary('');
-    navigate('/contract-analyzer');
-  };
-
-  const handleExtractVariables = () => {
-    const matches = Array.from(autoDraftText.matchAll(/\[([^\]\n]{1,80})\]/g)).map((m) => m[1]);
-    const unique = Array.from(new Set(matches));
-    setExtractedVariables(unique);
-    setShowVariablesPanel(true);
-  };
-
-  const handleCopyDraft = () => {
-    if (!autoDraftText.trim()) return;
-    navigator.clipboard.writeText(autoDraftText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleSaveToDrafts = async () => {
-    if (!autoDraftText.trim()) return;
-    const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
-    const title = titleMatch ? `Draft: ${titleMatch}…` : 'Synthesized Legal Clause Draft';
-
-    const newDraft = {
-      id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      title,
-      timestamp: new Date().toISOString(),
-      rawText: autoDraftText,
-      clauses: [],
-      summary: 'Auto-Draft Studio synthesized legal draft.',
-    };
-
-    try {
-      await fetch(`${API_BASE}/api/drafts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newDraft),
-      });
-    } catch (e) {}
-
-    window.dispatchEvent(new CustomEvent('lexamplify-drafts-updated'));
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
-  };
-
-  // Reuses the exact fetch->blob->anchor-click download pattern already
-  // proven working for Legal Forms' DOCX export (LegalForms.jsx) against
-  // this same /api/contract/export-form-docx endpoint — the letterhead
-  // param is new, but the transport mechanics are unchanged and known-good.
-  const getExportTitle = () => {
-    const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
-    return titleMatch || 'Auto-Draft Studio Document';
-  };
-
-  const downloadBlob = (blob, filename) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportDocx = async () => {
-    if (!autoDraftText.trim()) return;
-    setExportingDocx(true);
-    setExportError('');
-    setExportedSuccess(false);
-    try {
-      const title = getExportTitle();
-      // autoDraftHtml is kept live by ContractTiptapEditor's onHtmlChange,
-      // but stays '' for the brief window right after a fresh synthesis
-      // before the editor has mounted and synced once — fall back to a
-      // plain paragraph-per-line conversion so Export never sends empty
-      // HTML that the backend would reject as "no document content".
-      const html = autoDraftHtml.trim()
-        || autoDraftText.split('\n').filter((l) => l.trim()).map((l) => `<p>${l.trim()}</p>`).join('');
-
-      const res = await fetch(`${API_BASE}/api/contract/export-form-docx`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // activeLetterhead is null for "No Letterhead" — the backend
-        // treats a missing/empty firmName as "skip the header/footer
-        // entirely", so this doesn't need its own special-casing here.
-        body: JSON.stringify({ html, title, letterhead_data: activeLetterhead }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `Export failed (HTTP ${res.status})`);
-      }
-      const blob = await res.blob();
-      downloadBlob(blob, `${title.replace(/[^a-z0-9]+/gi, '_')}.docx`);
-      setExportedSuccess(true);
-      setTimeout(() => setExportedSuccess(false), 2500);
-    } catch (err) {
-      setExportError(err.message || 'DOCX export failed.');
-    } finally {
-      setExportingDocx(false);
-    }
-  };
-
-  // Client-side, no backend round-trip — autoDraftText is already the
-  // plain-text mirror ContractTiptapEditor keeps in sync via
-  // onTextChange, so there's no HTML to parse here at all.
-  const handleExportTxt = () => {
-    if (!autoDraftText.trim()) return;
-    setExportError('');
-    const title = getExportTitle();
-    const letterheadBlock = activeLetterhead
-      ? [activeLetterhead.firmName, activeLetterhead.tagline, activeLetterhead.address, activeLetterhead.contact]
-          .filter(Boolean)
-          .join('\n') + `\n${'-'.repeat(48)}\n\n`
-      : '';
-    const blob = new Blob([letterheadBlock + autoDraftText], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, `${title.replace(/[^a-z0-9]+/gi, '_')}.txt`);
-    setExportedSuccess(true);
-    setTimeout(() => setExportedSuccess(false), 2500);
-  };
-
-  // Native browser print -> "Save as PDF", zero backend rendering engine
-  // involved (no wkhtmltopdf/cairo dependency to keep alive in
-  // production). print-only-letterhead and the @media print rules below
-  // do the actual layout work; this just triggers the dialog and sets
-  // document.title so the browser's own "Save as PDF" suggests a sane
-  // filename instead of the page's normal title.
-  const handleExportPdf = () => {
-    if (!autoDraftText.trim()) return;
-    setExportError('');
-    const title = getExportTitle();
-    const originalTitle = document.title;
-    document.title = title;
-    window.print();
-    setTimeout(() => { document.title = originalTitle; }, 1000);
-  };
-
-  const handleAddModifier = (modifierText) => {
-    const currentPrompt = autoDraftPrompt;
-    if (currentPrompt.includes(modifierText)) return;
-    setAutoDraftPrompt(currentPrompt.trim() ? `${currentPrompt.trim()}\n- ${modifierText}` : modifierText);
-  };
-
-  const PRECEDENTS = [
-    {
-      label: 'Dispute Escalation & Arbitration',
-      badge: 'Arbitration Act 1996',
-      prompt: 'Draft a three-tier dispute escalation clause: (1) Good-faith executive negotiation within 15 business days, (2) Conciliation under Indian Mediation Rules, and (3) Binding arbitration under the Arbitration and Conciliation Act, 1996 before a sole arbitrator seated in New Delhi. Language of proceedings shall be English.',
-    },
-    {
-      label: 'Intellectual Property Assignment',
-      badge: 'Copyright Act 1957',
-      prompt: 'Draft a comprehensive IP Assignment & Work Made for Hire clause. All deliverables, software, documentation, and developments created by Party B shall vest exclusively in Party A under Section 17 of the Copyright Act, 1957. Include worldwide perpetual assignment, waiver of moral rights to the fullest extent permitted by Indian Law, and no residual vendor licenses.',
-    },
-    {
-      label: 'Severability & Statutory Validity',
-      badge: 'Contract Act s.24',
-      prompt: 'Draft a severability clause under Section 24 of the Indian Contract Act, 1872. If any provision is held invalid, illegal, or unenforceable by a court of competent jurisdiction, such provision shall be modified to the minimum extent necessary to make it enforceable, or severed if modification is impossible, without invalidating the remainder of this Agreement.',
-    },
-    {
-      label: 'Mutual Notice & Service Terms',
-      badge: 'General Clauses Act 1897',
-      prompt: 'Draft a comprehensive notice clause. All formal legal notices must be in writing and delivered by: (a) Hand delivery with signed receipt, (b) Registered Post AD to the registered office, or (c) Encrypted email with read-receipt. Deemed service dates: hand delivery on same day, registered post within 3 business days, email on acknowledgment.',
-    },
-    {
-      label: 'Indemnification & Third-Party Claims',
-      badge: 'Contract Act s.124',
-      prompt: 'Draft a mutual indemnification clause under Section 124 of the Indian Contract Act, 1872. Each party shall defend, indemnify, and hold harmless the other party, its directors, officers, and employees against any third-party claims, liabilities, losses, or legal expenses arising from gross negligence, willful misconduct, or breach of confidentiality.',
-    },
-    {
-      label: 'Non-Compete & Confidentiality',
-      badge: 'Contract Act s.27',
-      prompt: 'Draft a non-disclosure and non-compete provision compliant with Section 27 of the Indian Contract Act, 1872. Restrict disclosure of proprietary trade secrets during the term and for 3 years post-termination. For non-compete, scope shall be narrowly tailored to active client solicitation and misuse of proprietary know-how.',
-    },
-  ];
-
-  const wordCount = autoDraftText.trim() ? autoDraftText.trim().split(/\s+/).length : 0;
-  const charCount = autoDraftText.length;
-  const paragraphCount = autoDraftText.trim() ? autoDraftText.split(/\n\s*\n/).length : 0;
-
-
+const fs = require('fs');
+const path = require('path');
+
+const file = path.join(__dirname, '..', 'src', 'components', 'AutoDraftWorkspace.jsx');
+let content = fs.readFileSync(file, 'utf8');
+
+const splitIndex = content.indexOf('  return (\n    <div className="autodraft-page-wrapper">');
+let actualSplit = splitIndex;
+if (actualSplit === -1) {
+    actualSplit = content.indexOf('  return (\n    <div');
+}
+if (actualSplit === -1) {
+    actualSplit = content.indexOf('  return (');
+}
+if (actualSplit === -1) throw new Error('Could not find split index');
+
+let top = content.substring(0, actualSplit);
+
+const stateVars = `
   const [activeMods, setActiveMods] = useState({ cure: false, feecap: false, seat: false, carveout: false });
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showOverflowMenu, setShowOverflowMenu] = useState(false);
@@ -838,10 +29,10 @@ export default function AutoDraftWorkspace() {
       let currentPrompt = autoDraftPrompt || '';
       if (next) {
         if (!currentPrompt.includes(text)) {
-           setAutoDraftPrompt(currentPrompt.trim() ? `${currentPrompt.trim()}\n- ${text}` : `- ${text}`);
+           setAutoDraftPrompt(currentPrompt.trim() ? \`\${currentPrompt.trim()}\\n- \${text}\` : \`- \${text}\`);
         }
       } else {
-        const regex = new RegExp(`\\n?- ${text.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'g');
+        const regex = new RegExp(\`\\\\n?- \${text.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, '\\\\$&')}\`, 'g');
         setAutoDraftPrompt(currentPrompt.replace(regex, '').trim());
       }
       return { ...prev, [modKey]: next };
@@ -873,7 +64,7 @@ export default function AutoDraftWorkspace() {
 
   useEffect(() => {
     if (!autoDraftText) return;
-    const matches = autoDraftText.match(/\[([^\]\n]{1,80})\]/g) || [];
+    const matches = autoDraftText.match(/\\[([^\\]\\n]{1,80})\\]/g) || [];
     const counts = {};
     const order = [];
     matches.forEach(m => {
@@ -883,9 +74,23 @@ export default function AutoDraftWorkspace() {
     });
     setExtractedVariables(order.map(t => ({ token: t, count: counts[t] })));
   }, [autoDraftText]);
+`;
+
+// Remove duplicate variable definitions if the user had any
+top = top.replace(/const \[activeMods, setActiveMods\] = useState\([^)]*\);/g, '');
+top = top.replace(/const \[showClearConfirm, setShowClearConfirm\] = useState\([^)]*\);/g, '');
+top = top.replace(/const \[showOverflowMenu, setShowOverflowMenu\] = useState\([^)]*\);/g, '');
+top = top.replace(/const \[showExportMenu, setShowExportMenu\] = useState\([^)]*\);/g, '');
+top = top.replace(/const \[toolbarRef, setToolbarRef\] = useState\([^)]*\);/g, '');
+// Strip previous toggleMod or statutes logic if it exists
+top = top.replace(/const toggleMod = [\s\S]*?(?=const getStatutes)/, '');
+top = top.replace(/const getStatutes = [\s\S]*?(?=const statutes)/, '');
+top = top.replace(/const statutes = getStatutes\(\);/, '');
+
+const jsx = `
   return (
     <div className="autodraft-page-wrapper">
-      <style>{`
+      <style>{\`
         .autodraft-page-wrapper {
           --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
           --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
@@ -1048,13 +253,12 @@ export default function AutoDraftWorkspace() {
         .autodraft-page-wrapper .trust-empty { font-size: 11.5px; color: var(--muted); }
         .autodraft-page-wrapper .trust-disclaimer { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--major); white-space: nowrap; }
 
-        .autodraft-page-wrapper .canvas-scroll { flex-grow: 1; overflow-y: auto; padding: 40px 40px 90px; display: flex; justify-content: center; }
+        .autodraft-page-wrapper .canvas-scroll { flex-grow: 1; overflow-y: auto; padding: 40px 40px 90px; }
 
         /* The canvas styling that actually applies to ContractTiptapEditor's ProseMirror container
            so it behaves correctly like a physical page (Lawyer's styling) */
-        .autodraft-page-wrapper .tiptap-editor-shell { border: none !important; box-shadow: none !important; background: transparent !important; flex: 1; display: flex; flex-direction: column; }
+        .autodraft-page-wrapper .tiptap-editor-shell { border: none !important; box-shadow: none !important; background: transparent !important; }
         .autodraft-page-wrapper .scanner-body .ProseMirror {
-          width: 100%;
           max-width: 820px; 
           margin: 0 auto; 
           background: var(--page-bg); 
@@ -1114,7 +318,7 @@ export default function AutoDraftWorkspace() {
         .autodraft-page-wrapper .quickstart-card .qc-title { font-size: 13.5px; font-weight: 600; }
         .autodraft-page-wrapper .quickstart-card .qc-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
-        .autodraft-page-wrapper .synth-loading { display: flex; flex-direction: column; gap: 16px; padding: 8px 0 30px; width: 100%; max-width: 820px; margin: 0 auto; background: var(--page-bg); border-radius: 6px; box-shadow: var(--shadow); padding: 76px 84px; min-height: 1000px; }
+        .autodraft-page-wrapper .synth-loading { display: flex; flex-direction: column; gap: 16px; padding: 8px 0 30px; max-width: 820px; margin: 0 auto; background: var(--page-bg); border-radius: 6px; box-shadow: var(--shadow); padding: 76px 84px; min-height: 1000px; }
         .autodraft-page-wrapper .synth-loading-label { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
 
         /* ----- intelligence panel ----- */
@@ -1171,7 +375,7 @@ export default function AutoDraftWorkspace() {
         }
         
         .ad-outline-flash { animation: flash-highlight .9s ease; }
-      `}</style>
+      \`}</style>
 
       <div className="ads-main">
         <header className="ads-commandbar">
@@ -1188,11 +392,11 @@ export default function AutoDraftWorkspace() {
             </span>
           </div>
           <div className="ads-commandbar-actions">
-            <div className={`context-chip ${!rawText ? 'empty' : ''}`}>
+            <div className={\`context-chip \${!rawText ? 'empty' : ''}\`}>
               <span className="dot"></span>
               {rawText ? 
-                <>Active Contract: <b>{rawText.length.toLocaleString()} chars</b></> :
-                <>No Active Contract <span style={{color:'var(--muted)'}}>&middot; Standalone Synthesis</span></>
+                <>\`Active Contract: \`<b>{rawText.length.toLocaleString()} chars</b></> :
+                <>\`No Active Contract \`<span style={{color:'var(--muted)'}}>&middot; Standalone Synthesis</span></>
               }
             </div>
             <button className="btn btn-sm" onClick={() => openDraftsModal()}>
@@ -1206,7 +410,7 @@ export default function AutoDraftWorkspace() {
           </div>
         </header>
 
-        <div className={`ads-workbench ${outlineCollapsed ? 'outline-collapsed' : ''} ${panelCollapsed ? 'panel-collapsed' : ''}`}>
+        <div className={\`ads-workbench \${outlineCollapsed ? 'outline-collapsed' : ''} \${panelCollapsed ? 'panel-collapsed' : ''}\`}>
           
           {/* Outline rail */}
           <div className="outline-rail">
@@ -1222,7 +426,7 @@ export default function AutoDraftWorkspace() {
                   <div className="outline-empty">Synthesize or upload a draft to see its section outline here.</div>
                 ) : (
                   outlineHeadings.map(h => (
-                    <button key={h.id} className={`outline-item`} onClick={() => jumpToHeading(h.id)}>
+                    <button key={h.id} className={\`outline-item\`} onClick={() => jumpToHeading(h.id)}>
                       <span className="num mono">{h.level}</span>
                       <span>{h.text}</span>
                     </button>
@@ -1235,8 +439,8 @@ export default function AutoDraftWorkspace() {
                 ) : (
                   <>
                     <div className="health-row"><span>Sections</span><b className="mono">{outlineHeadings.length}</b></div>
-                    <div className="health-row"><span>Words</span><b className="mono">{(autoDraftText.split(/\s+/).filter(Boolean).length || 0).toLocaleString()}</b></div>
-                    <div className={`health-row ${extractedVariables.reduce((a,v) => a+v.count, 0) > 0 ? 'warn' : 'ok'}`}>
+                    <div className="health-row"><span>Words</span><b className="mono">{(autoDraftText.split(/\\s+/).filter(Boolean).length || 0).toLocaleString()}</b></div>
+                    <div className={\`health-row \${extractedVariables.reduce((a,v) => a+v.count, 0) > 0 ? 'warn' : 'ok'}\`}>
                       <span>Placeholders open</span><b className="mono">{extractedVariables.reduce((a,v) => a+v.count, 0)}</b>
                     </div>
                   </>
@@ -1253,7 +457,7 @@ export default function AutoDraftWorkspace() {
             <div className="canvas-toolbar">
               <div className="doc-meta">
                 <span className="doc-meta-title">Synthesized Document</span>
-                <span className="doc-meta-count mono">{autoDraftText ? `${(autoDraftText.split(/\s+/).filter(Boolean).length || 0).toLocaleString()} words` : ''}</span>
+                <span className="doc-meta-count mono">{autoDraftText ? \`\${(autoDraftText.split(/\\s+/).filter(Boolean).length || 0).toLocaleString()} words\` : ''}</span>
                 {autoDraftText && <span className="autosave-chip"><span className="autosave-dot"></span>Active Session</span>}
               </div>
               <div className="toolbar-actions">
@@ -1275,7 +479,7 @@ export default function AutoDraftWorkspace() {
                   <button className="icon-btn" onClick={() => setShowOverflowMenu(!showOverflowMenu)}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
                   </button>
-                  <div className={`overflow-menu ${showOverflowMenu ? 'open' : ''}`}>
+                  <div className={\`overflow-menu \${showOverflowMenu ? 'open' : ''}\`}>
                     <button className="overflow-item" onClick={() => { setShowOverflowMenu(false); }}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v8M8 12h8"></path></svg>
                       Append clause
@@ -1308,7 +512,7 @@ export default function AutoDraftWorkspace() {
                   <option value="none">No Letterhead (Plain)</option>
                   <option value="standard">Standard Firm Letterhead (Mock)</option>
                   {savedLetterheads.map(lh => (
-                    <option key={lh.id} value={lh.id}>{lh.name || lh.firmName}</option>
+                    <option key={lh.id} value={lh.id}>{lh.name}</option>
                   ))}
                   <option value="__create">+ Create Custom Letterhead&hellip;</option>
                 </select>
@@ -1318,7 +522,7 @@ export default function AutoDraftWorkspace() {
                     Export
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
                   </button>
-                  <div className={`overflow-menu ${showExportMenu ? 'open' : ''}`} style={{ width: '160px' }}>
+                  <div className={\`overflow-menu \${showExportMenu ? 'open' : ''}\`} style={{ width: '160px' }}>
                     <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportDocx(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Word (.docx)</button>
                     <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportPdf(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>PDF</button>
                     <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportTxt(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Plain text</button>
@@ -1386,17 +590,17 @@ export default function AutoDraftWorkspace() {
           <div className="intel-panel">
             <div className="intel-panel-inner">
               <div className="intel-tabs">
-                <button className={`intel-tab ${intelTab === 'instructions' ? 'active' : ''}`} onClick={() => setIntelTab('instructions')}>
+                <button className={\`intel-tab \${intelTab === 'instructions' ? 'active' : ''}\`} onClick={() => setIntelTab('instructions')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
                   Instructions
                 </button>
-                <button className={`intel-tab ${intelTab === 'playbook' ? 'active' : ''}`} onClick={() => setIntelTab('playbook')}>
+                <button className={\`intel-tab \${intelTab === 'playbook' ? 'active' : ''}\`} onClick={() => setIntelTab('playbook')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5.5S5 4 8 4s5 1.5 5 1.5v14S11 18 8 18s-5 1.5-5 1.5z"></path><path d="M21 5.5S19 4 16 4s-5 1.5-5 1.5v14S13 18 16 18s5 1.5 5 1.5z"></path></svg>
                   Playbook
                 </button>
               </div>
 
-              <div className={`intel-body ${intelTab === 'instructions' ? 'active' : ''}`}>
+              <div className={\`intel-body \${intelTab === 'instructions' ? 'active' : ''}\`}>
                 <div>
                   <span className="field-label">Custom Drafting Instructions</span>
                   <textarea 
@@ -1406,15 +610,14 @@ export default function AutoDraftWorkspace() {
                     value={autoDraftPrompt}
                     onChange={(e) => setAutoDraftPrompt(e.target.value)}
                   />
-                  {draftError && <div style={{ fontSize: '12.5px', color: '#EF4444', marginTop: '6px' }}>{draftError}</div>}
                 </div>
                 <div>
                   <span className="field-label">Quick Provision Insert Modifiers</span>
                   <div className="modifier-chips">
-                    <button className={`modifier-chip ${activeMods.cure ? 'active' : ''}`} onClick={() => toggleMod('cure', 'Include 30-day written cure period before escalation.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>30-Day Cure</button>
-                    <button className={`modifier-chip ${activeMods.feecap ? 'active' : ''}`} onClick={() => toggleMod('feecap', 'Cap aggregate liability at 100% of fees paid.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>100% Fee Cap</button>
-                    <button className={`modifier-chip ${activeMods.seat ? 'active' : ''}`} onClick={() => toggleMod('seat', 'Seat of arbitration shall be New Delhi under Arbitration Act 1996.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>New Delhi Seat</button>
-                    <button className={`modifier-chip ${activeMods.carveout ? 'active' : ''}`} onClick={() => toggleMod('carveout', 'Include Section 27 Indian Contract Act exception for trade secrets.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>Sec 27 Carve-out</button>
+                    <button className={\`modifier-chip \${activeMods.cure ? 'active' : ''}\`} onClick={() => toggleMod('cure', 'Include 30-day written cure period before escalation.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>30-Day Cure</button>
+                    <button className={\`modifier-chip \${activeMods.feecap ? 'active' : ''}\`} onClick={() => toggleMod('feecap', 'Cap aggregate liability at 100% of fees paid.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>100% Fee Cap</button>
+                    <button className={\`modifier-chip \${activeMods.seat ? 'active' : ''}\`} onClick={() => toggleMod('seat', 'Seat of arbitration shall be New Delhi under Arbitration Act 1996.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>New Delhi Seat</button>
+                    <button className={\`modifier-chip \${activeMods.carveout ? 'active' : ''}\`} onClick={() => toggleMod('carveout', 'Include Section 27 Indian Contract Act exception for trade secrets.')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"></path></svg>Sec 27 Carve-out</button>
                   </div>
                 </div>
                 <div className="field-row">
@@ -1423,7 +626,7 @@ export default function AutoDraftWorkspace() {
                     <select className="select-compact" style={{ width: '100%' }} value={selectedContextMode} onChange={(e) => setSelectedContextMode(e.target.value)}>
                       <option value="active_contract">Active Contract</option>
                       <option value="none">Standalone (no reference)</option>
-                      {vaultDocs && vaultDocs.map(doc => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
+                      {vaultDocs.map(doc => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1441,16 +644,16 @@ export default function AutoDraftWorkspace() {
                 </button>
               </div>
 
-              <div className={`intel-body ${intelTab === 'playbook' ? 'active' : ''}`}>
+              <div className={\`intel-body \${intelTab === 'playbook' ? 'active' : ''}\`}>
                 <div className="precedent-search">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
                   <input placeholder="Search Indian Playbook precedents…" value={precedentSearch} onChange={e => setPrecedentSearch(e.target.value)} />
                 </div>
                 <div className="precedent-list">
-                  {PRECEDENTS && PRECEDENTS.filter(p => !precedentSearch || p.label.toLowerCase().includes(precedentSearch.toLowerCase()) || p.badge.toLowerCase().includes(precedentSearch.toLowerCase()) || p.prompt.toLowerCase().includes(precedentSearch.toLowerCase())).map(p => (
+                  {PRECEDENTS.filter(p => !precedentSearch || p.label.toLowerCase().includes(precedentSearch.toLowerCase()) || p.badge.toLowerCase().includes(precedentSearch.toLowerCase()) || p.prompt.toLowerCase().includes(precedentSearch.toLowerCase())).map(p => (
                     <div key={p.label} className="precedent-card" onClick={() => {
                       const existing = (autoDraftPrompt || '').trim();
-                      const newPrompt = existing ? `${existing}\n\n${p.prompt}` : p.prompt;
+                      const newPrompt = existing ? \`\${existing}\\n\\n\${p.prompt}\` : p.prompt;
                       setAutoDraftPrompt(newPrompt);
                       setIntelTab('instructions');
                       setTimeout(() => {
@@ -1537,7 +740,7 @@ export default function AutoDraftWorkspace() {
             <div className="modal-footer">
               <button className="btn" onClick={() => setShowVariablesPanel(false)}>Close</button>
               <button className="btn btn-primary" onClick={() => {
-                const text = extractedVariables.map(v => v.token).join('\n');
+                const text = extractedVariables.map(v => v.token).join('\\n');
                 navigator.clipboard.writeText(text);
               }}>Copy list</button>
             </div>
@@ -1579,3 +782,12 @@ export default function AutoDraftWorkspace() {
     </div>
   );
 }
+\`;
+
+fs.writeFileSync(path.join(__dirname, 'update2.cjs'), 
+  "const fs=require('fs');\\n" +
+  "const file = '" + file.replace(/\\/g, '\\\\') + "';\\n" +
+  "let c=fs.readFileSync(file, 'utf8');\\n" +
+  "let res = " + JSON.stringify(top) + " + " + JSON.stringify(stateVars) + " + " + JSON.stringify(jsx) + ";\\n" +
+  "fs.writeFileSync(file, res);\\n"
+);
