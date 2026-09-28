@@ -141,7 +141,7 @@ const LEGAL_TOOLS = [
   { id: 't-contract', title: 'Commercial Contract', category: 'draft', desc: 'Master services agreement with warranties & SLA', prompt: 'Draft a commercial Master Services Agreement outlining scope of work, fee schedules, intellectual property assignment, limitation of liability, and dispute resolution via arbitration.', icon: 'draft' },
   { id: 't-bail', title: 'Bail Application', category: 'draft', desc: 'Regular bail under Section 439 CrPC / 483 BNSS', prompt: 'Draft a regular bail application under Section 439 CrPC / Section 483 BNSS highlighting cooperation with investigation, clean antecedents, and parity with co-accused.', icon: 'gavel' },
   { id: 't-sc', title: 'SC Judgments', category: 'research', desc: 'Search binding Supreme Court precedents & ratio', prompt: 'Find landmark Supreme Court and High Court precedents regarding the principles of specific performance, damages, and interim injunctions.', icon: 'scales' },
-  { id: 't-sec', title: 'Statutes & Codes', category: 'research', desc: 'Analyze IPC / BNS / CrPC statutory provisions', prompt: 'Research relevant statutory provisions, ingredients, and judicial interpretations under Section 420 IPC / Section 318 BNS for criminal breach of trust.', icon: 'search' },
+  { id: 't-sec', title: 'Statutes & Codes', category: 'research', desc: 'Analyze IPC / BNS / CrPC statutory provisions', prompt: 'Research relevant statutory provisions, ingredients, and judicial interpretations under Section 318 BNS (earlier Section 420 IPC) for cheating and dishonestly inducing delivery of property.', icon: 'search' },
   { id: 't-cite', title: 'Neutral Citations', category: 'research', desc: 'Retrieve neutral citation and bench composition', prompt: 'Retrieve the neutral citation, quorum, bench composition, and key ratio decidendi for leading judgments on Section 9 and Section 34 of the Arbitration and Conciliation Act, 1996.', icon: 'bookmark' },
   { id: 't-risk', title: 'Contract Risk Scan', category: 'analyze', desc: 'Audit indemnities, liabilities & termination terms', prompt: 'Analyze this contract for high-risk clauses, uncapped indemnities, one-sided termination terms, and compliance gaps under Indian contract law.', icon: 'shield' },
   { id: 't-clauses', title: 'Jurisdiction Audit', category: 'analyze', desc: 'Audit dispute resolution and governing law clauses', prompt: 'Perform an audit of the governing law, dispute resolution, limitation of liability, and jurisdiction clauses in this draft, highlighting any enforceability issues in Indian courts.', icon: 'alert' },
@@ -248,7 +248,9 @@ const extractGroundedStatutes = (docContent = '', citations = []) => {
   if (Array.isArray(citations)) {
     for (const c of citations) {
       const isObj = c && typeof c === 'object';
-      const label = isObj ? (c.title || c.statute || c.source || c.citation || '') : String(c || '');
+      // `citation` first: for Tavily-checked entries, `title` is the search
+      // result's page title, not the provision the draft actually cites.
+      const label = isObj ? (c.citation || c.title || c.statute || c.source || '') : String(c || '');
       if (label && !seen.has(label)) {
         seen.add(label);
         // url/verified only come from the real backend citation-verification
@@ -292,9 +294,45 @@ const applyInline = (s) =>
     // this only matches the exact escaped form of a genuine <br> tag and
     // emits a fixed, safe replacement, it reintroduces no injection risk.
     .replace(/&lt;br\s*\/?&gt;/gi, '<br/>')
+    .replace(/`([^`]+?)`/g, '<code class="md-code">$1</code>')
+    // [text](https://…) — http(s) only, and any quote in the URL is
+    // percent-encoded so it can't break out of the href attribute.
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, t, u) =>
+      `<a class="md-link" href="${u.replace(/"/g, '%22')}" target="_blank" rel="noopener noreferrer">${t}</a>`)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code class="md-code">$1</code>');
+    .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<em>$2</em>')
+    // A '**' left over after pairing means the model's markdown was
+    // unbalanced (the recorded session showed a literal "**ensuring") —
+    // drop the orphan marker rather than print asterisks at the lawyer.
+    .replace(/\*\*/g, '');
+
+// Groups consecutive "> " lines into one quote block (the recorded session
+// showed clause snippets printed with a literal leading "&gt;").
+const collectQuote = (lines, i) => {
+  const inner = [];
+  while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+    inner.push(lines[i].replace(/^\s*>\s?/, ''));
+    i++;
+  }
+  const html = inner.map(l => (l.trim() ? `<p>${applyInline(l)}</p>` : '')).join('');
+  return { html: `<blockquote class="md-quote">${html}</blockquote>`, nextIdx: i };
+};
+
+// Lists keep the model's own numbering — "<ol>" alone would restart at 1
+// after any interrupting paragraph and silently renumber clauses.
+const collectList = (lines, i, ordered, cls) => {
+  const re = ordered ? /^\d+\.\s/ : /^[*\-]\s/;
+  const start = ordered ? parseInt(lines[i].trim(), 10) : null;
+  const items = [];
+  while (i < lines.length && re.test(lines[i].trim())) {
+    items.push(`<li>${applyInline(lines[i].trim().replace(re, ''))}</li>`);
+    i++;
+  }
+  const html = ordered
+    ? `<ol class="${cls}"${start && start !== 1 ? ` start="${start}"` : ''}>${items.join('')}</ol>`
+    : `<ul class="${cls}">${items.join('')}</ul>`;
+  return { html, nextIdx: i };
+};
 
 const parseRowCells = (row) => {
   let clean = row.trim();
@@ -365,26 +403,14 @@ const renderMarkdown = (text) => {
       }
     }
 
-    if (/^### /.test(ln)) { out.push(`<h3 class="md-h3">${applyInline(ln.slice(4))}</h3>`); i++; }
-    else if (/^## /.test(ln)) { out.push(`<h2 class="md-h2">${applyInline(ln.slice(3))}</h2>`); i++; }
-    else if (/^# /.test(ln)) { out.push(`<h1 class="md-h1">${applyInline(ln.slice(2))}</h1>`); i++; }
-    else if (/^---+$/.test(trimmed)) { out.push('<hr class="md-hr">'); i++; }
-    else if (/^[*\-] /.test(trimmed)) {
-      const items = [];
-      while (i < lines.length && /^[*\-] /.test(lines[i].trim())) {
-        items.push(`<li>${applyInline(lines[i].trim().replace(/^[*\-] /, ''))}</li>`);
-        i++;
-      }
-      out.push(`<ul class="md-ul">${items.join('')}</ul>`);
-    }
-    else if (/^\d+\. /.test(trimmed)) {
-      const items = [];
-      while (i < lines.length && /^\d+\. /.test(lines[i].trim())) {
-        items.push(`<li>${applyInline(lines[i].trim().replace(/^\d+\. /, ''))}</li>`);
-        i++;
-      }
-      out.push(`<ol class="md-ol">${items.join('')}</ol>`);
-    }
+    if (/^#{4,6} /.test(trimmed)) { out.push(`<h4 class="md-h4">${applyInline(trimmed.replace(/^#{4,6} /, ''))}</h4>`); i++; }
+    else if (/^### /.test(trimmed)) { out.push(`<h3 class="md-h3">${applyInline(trimmed.slice(4))}</h3>`); i++; }
+    else if (/^## /.test(trimmed)) { out.push(`<h2 class="md-h2">${applyInline(trimmed.slice(3))}</h2>`); i++; }
+    else if (/^# /.test(trimmed)) { out.push(`<h1 class="md-h1">${applyInline(trimmed.slice(2))}</h1>`); i++; }
+    else if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) { out.push('<hr class="md-hr">'); i++; }
+    else if (/^>\s?/.test(trimmed)) { const r = collectQuote(lines, i); out.push(r.html); i = r.nextIdx; }
+    else if (/^[*\-] /.test(trimmed)) { const r = collectList(lines, i, false, 'md-ul'); out.push(r.html); i = r.nextIdx; }
+    else if (/^\d+\. /.test(trimmed)) { const r = collectList(lines, i, true, 'md-ol'); out.push(r.html); i = r.nextIdx; }
     else if (trimmed === '') { out.push('<div class="md-gap"></div>'); i++; }
     else { out.push(`<p class="md-p">${applyInline(ln)}</p>`); i++; }
   }
@@ -417,7 +443,14 @@ const renderDraftHtml = (text) => {
       || trimmed.match(/^(?:SECTION|CLAUSE)\s+(\d{1,2})[\.\s:]+([A-Za-z\s]{3,40})$/i);
     if (secMatch) {
       const p1 = trimmed.replace(/^#{1,3}\s*/, '');
-      const slug = p1.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+      // Same slug formula as extractSections(), so the Outline panel's
+      // "Jump →" actually finds its target (the two previously disagreed:
+      // "1__definitions" here vs "01_definitions" there).
+      const sm = p1.match(/^(\d{1,2})[\.\s:]+([A-Za-z\s]{3,40})$/i)
+        || p1.match(/^(?:SECTION|CLAUSE)\s+(\d{1,2})[\.\s:]+([A-Za-z\s]{3,40})$/i);
+      const slug = sm
+        ? `${String(sm[1]).padStart(2, '0')}_${sm[2].trim()}`.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
+        : p1.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
       out.push(`<div id="sec_${slug}" class="draft-section-head draft-h"><span class="draft-sec-num">§</span> ${applyInline(p1)}</div>`);
       i++;
       continue;
@@ -432,38 +465,40 @@ const renderDraftHtml = (text) => {
     }
 
     // Sub-headings
-    if (/^#{2,3}\s+/.test(trimmed)) {
-      out.push(`<div class="draft-h">${applyInline(trimmed.replace(/^#{2,3}\s+/, ''))}</div>`);
+    if (/^#{2,6}\s+/.test(trimmed)) {
+      out.push(`<div class="draft-h">${applyInline(trimmed.replace(/^#{2,6}\s+/, ''))}</div>`);
       i++;
       continue;
     }
 
     // Horizontal Rule
-    if (/^---+$/.test(trimmed)) {
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
       out.push('<hr class="draft-hr" />');
       i++;
       continue;
     }
 
+    // Quoted clause text
+    if (/^>\s?/.test(trimmed)) {
+      const r = collectQuote(lines, i);
+      out.push(r.html);
+      i = r.nextIdx;
+      continue;
+    }
+
     // Unordered List
     if (/^[*\-] /.test(trimmed)) {
-      const items = [];
-      while (i < lines.length && /^[*\-] /.test(lines[i].trim())) {
-        items.push(`<li>${applyInline(lines[i].trim().replace(/^[*\-] /, ''))}</li>`);
-        i++;
-      }
-      out.push(`<ul class="draft-ul">${items.join('')}</ul>`);
+      const r = collectList(lines, i, false, 'draft-ul');
+      out.push(r.html);
+      i = r.nextIdx;
       continue;
     }
 
     // Ordered List
     if (/^\d+\. /.test(trimmed)) {
-      const items = [];
-      while (i < lines.length && /^\d+\. /.test(lines[i].trim())) {
-        items.push(`<li>${applyInline(lines[i].trim().replace(/^\d+\. /, ''))}</li>`);
-        i++;
-      }
-      out.push(`<ol class="draft-ol">${items.join('')}</ol>`);
+      const r = collectList(lines, i, true, 'draft-ol');
+      out.push(r.html);
+      i = r.nextIdx;
       continue;
     }
 
@@ -582,6 +617,88 @@ const highlightPlaceholders = (html) =>
   html.replace(/\[([A-Za-z0-9\s'\/\-,\.&]{2,50})\]/g,
     '<span class="lex-placeholder" title="Click to fill field">[$1]</span>'
   );
+
+// The draft canvas is contentEditable. Its onBlur used to save
+// `innerText`, which silently flattened every heading, list and table to
+// plain text on the lawyer's first manual edit — and the canvas then
+// re-rendered that flattened text. This walks the DOM renderDraftHtml()
+// produces (plus whatever the browser inserts while typing) back into the
+// same markdown dialect, so a manual edit keeps the document's structure.
+const inlineToMarkdown = (node) => {
+  let out = '';
+  node.childNodes.forEach((c) => {
+    if (c.nodeType === 3) { out += c.nodeValue.replace(/ /g, ' '); return; }
+    if (c.nodeType !== 1) return;
+    const tag = c.tagName.toLowerCase();
+    const inner = inlineToMarkdown(c);
+    if (tag === 'strong' || tag === 'b') out += inner.trim() ? `**${inner}**` : inner;
+    else if (tag === 'em' || tag === 'i') out += inner.trim() ? `*${inner}*` : inner;
+    else if (tag === 'code') out += `\`${inner}\``;
+    else if (tag === 'br') out += '<br>';
+    else if (tag === 'a') {
+      const href = c.getAttribute('href') || '';
+      out += /^https?:\/\//.test(href) ? `[${inner}](${href})` : inner;
+    }
+    else out += inner;
+  });
+  return out;
+};
+
+const draftHtmlToMarkdown = (root) => {
+  const blocks = [];
+  const cellText = (el) => inlineToMarkdown(el).replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+  const walk = (parent) => {
+    parent.childNodes.forEach((el) => {
+      if (el.nodeType === 3) {
+        const t = el.nodeValue.trim();
+        if (t) blocks.push(t);
+        return;
+      }
+      if (el.nodeType !== 1) return;
+      const tag = el.tagName.toLowerCase();
+      const cls = el.className || '';
+      if (cls.includes('draft-gap')) { blocks.push(''); return; }
+      if (cls.includes('draft-doc-title') || tag === 'h1' || tag === 'h2') {
+        blocks.push(`# ${inlineToMarkdown(el).trim()}`); return;
+      }
+      if (cls.includes('draft-section-head')) {
+        blocks.push(`## ${inlineToMarkdown(el).replace(/^\s*§\s*/, '').trim()}`); return;
+      }
+      if (cls.includes('draft-h') || tag === 'h3' || tag === 'h4') {
+        blocks.push(`### ${inlineToMarkdown(el).trim()}`); return;
+      }
+      if (tag === 'hr') { blocks.push('---'); return; }
+      if (tag === 'ul' || tag === 'ol') {
+        let n = parseInt(el.getAttribute('start') || '1', 10) || 1;
+        el.querySelectorAll(':scope > li').forEach((li) => {
+          blocks.push(tag === 'ol' ? `${n++}. ${inlineToMarkdown(li).trim()}` : `- ${inlineToMarkdown(li).trim()}`);
+        });
+        return;
+      }
+      if (tag === 'blockquote') {
+        const inner = [];
+        el.childNodes.forEach(p => { const t = p.nodeType === 1 ? inlineToMarkdown(p).trim() : (p.nodeValue || '').trim(); if (t) inner.push(`> ${t}`); });
+        blocks.push(inner.join('\n')); return;
+      }
+      if (tag === 'table') {
+        const rows = Array.from(el.querySelectorAll('tr'));
+        if (rows.length) {
+          const head = Array.from(rows[0].children).map(cellText);
+          const lines = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`];
+          rows.slice(1).forEach(r => lines.push(`| ${Array.from(r.children).map(cellText).join(' | ')} |`));
+          blocks.push(lines.join('\n'));
+        }
+        return;
+      }
+      if (tag === 'div' && !cls && el.querySelector('p,ul,ol,table,div')) { walk(el); return; }
+      if (cls.includes('lex-table-responsive')) { walk(el); return; }
+      const t = inlineToMarkdown(el).trim();
+      blocks.push(t);
+    });
+  };
+  walk(root);
+  return blocks.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
 
 const extractPlaceholders = (text) => {
   if (!text) return [];
@@ -801,6 +918,48 @@ const Icon = ({ name, size = 16, className = '', style = {} }) => {
       return (
         <svg {...props}>
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      );
+    case 'arrow-right':
+      return (
+        <svg {...props}>
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+      );
+    case 'arrow-down':
+      return (
+        <svg {...props}>
+          <path d="M12 5v14M6 13l6 6 6-6" />
+        </svg>
+      );
+    case 'expand':
+      return (
+        <svg {...props}>
+          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+        </svg>
+      );
+    case 'refresh':
+      return (
+        <svg {...props}>
+          <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
+        </svg>
+      );
+    case 'edit':
+      return (
+        <svg {...props}>
+          <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      );
+    case 'quote':
+      return (
+        <svg {...props}>
+          <path d="M9 7H5v6h4l-2 4M19 7h-4v6h4l-2 4" />
+        </svg>
+      );
+    case 'chevron':
+      return (
+        <svg {...props}>
+          <path d="m9 6 6 6-6 6" />
         </svg>
       );
     default:
@@ -1139,6 +1298,28 @@ const AGENT_CSS = `
     font-size: 11.5px; font-weight: 500; cursor: pointer; transition: all 0.12s ease;
   }
   .lex-stop-btn:hover { border-color: var(--accent) !important; color: var(--accent) !important; }
+  .lex-stop-btn-compact { padding: 4px 10px; font-size: 10.5px; gap: 5px; }
+
+  /* Live-streaming indicator (replaces the thinking checklist once real
+     content is arriving) — reuses the same rust pulse-halo language as
+     .step-marker.active, so it reads as the same design system rather than
+     a new invented pattern. */
+  .lex-live-row {
+    display: flex; align-items: center; gap: 8px;
+    margin: 2px 0 10px 38px; padding: 2px 0;
+  }
+  .lex-live-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    position: relative; flex-shrink: 0;
+  }
+  .lex-live-dot::after {
+    content: ''; position: absolute; inset: -5px; border-radius: 50%;
+    border: 1px solid var(--accent-soft); animation: lex-pulse-halo 1.4s ease-out infinite;
+  }
+  .lex-live-label {
+    font-size: 11px; color: var(--muted); font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.02em;
+  }
 
   /* Slash Autocomplete Popup */
   .lex-slash-popup {
@@ -1347,6 +1528,364 @@ const AGENT_CSS = `
       box-shadow: var(--shadow);
     }
     .lex-sidebar.mobile-open { transform: translateX(0); }
+  }
+
+  /* ═════════════════════════════════════════════════════════════
+     CONVERSATION v2 — ChatGPT / Gemini / Claude-informed layout,
+     kept strictly inside the Slate & Rust two-accent contract:
+     rust = live / primary / active, amber = caution. Nothing else.
+  ═════════════════════════════════════════════════════════════ */
+  @keyframes lex-shimmer { 0% { background-position: 160% 0; } 100% { background-position: -60% 0; } }
+  @keyframes lex-blink { 50% { opacity: 0; } }
+  @keyframes lex-sway { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+  @keyframes lex-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+  .lex-tool-divider { display: inline-block; vertical-align: middle; }
+  .lex-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  .lex-thread {
+    max-width: 800px; margin: 0 auto; padding: 30px 24px 28px;
+    display: flex; flex-direction: column; gap: 28px;
+  }
+
+  /* ── Messages ── */
+  .lex-row-user { display: flex; justify-content: flex-end; animation: lex-in .25s ease both; }
+  .lex-user-msg {
+    max-width: 82%; background: var(--paper-2); border: 1px solid var(--rule); color: var(--ink);
+    border-radius: 20px 20px 6px 20px; padding: 11px 16px; font-size: 14.5px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .lex-user-quote {
+    display: flex; gap: 7px; align-items: flex-start; font-size: 12.5px; font-style: italic;
+    color: var(--ink-soft); padding: 7px 10px; margin: 0 0 9px; white-space: normal;
+    border-left: 2px solid var(--accent); background: var(--accent-soft); border-radius: 4px 10px 10px 4px;
+  }
+  .lex-user-quote svg { color: var(--accent); margin-top: 2px; }
+
+  .lex-row-ai { display: flex; gap: 14px; align-items: flex-start; animation: lex-in .25s ease both; }
+  .lex-ai-mark {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; position: relative;
+    display: grid; place-items: center; color: var(--accent); background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  .lex-ai-mark.is-live svg { animation: lex-sway 1.8s ease-in-out infinite; }
+  .lex-ai-mark.is-live::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 50%;
+    border: 1.5px solid var(--accent); animation: lex-pulse-halo 1.6s ease-out infinite;
+  }
+  .lex-ai-mark.is-warn { color: var(--major); background: var(--major-soft); border-color: transparent; }
+  .lex-ai-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding-top: 3px; }
+
+  /* ── Answer typography (every non-draft output) ── */
+  .lex-md { font-size: 15px; line-height: 1.72; color: var(--ink); overflow-wrap: anywhere; }
+  .lex-md > :first-child { margin-top: 0 !important; }
+  .lex-md > :last-child { margin-bottom: 0 !important; }
+  .lex-md .md-p { margin: 0 0 12px; }
+  .lex-md .md-gap { display: none; }
+  .lex-md .md-h1 { font-family: 'Fraunces', Georgia, serif; font-style: italic; font-size: 24px; font-weight: 600; margin: 20px 0 10px; letter-spacing: -0.01em; line-height: 1.25; }
+  .lex-md .md-h2 { font-size: 18px; font-weight: 650; margin: 24px 0 8px; line-height: 1.3; }
+  .lex-md .md-h3 { font-size: 15.5px; font-weight: 650; margin: 18px 0 6px; }
+  .lex-md .md-h4 { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin: 18px 0 6px; }
+  .lex-md .md-ul, .lex-md .md-ol { margin: 4px 0 14px; padding-left: 22px; }
+  .lex-md li { margin: 5px 0; padding-left: 3px; }
+  .lex-md li::marker { color: var(--accent); }
+  .lex-md strong { font-weight: 650; color: var(--ink); }
+  .lex-md em { color: var(--ink-soft); }
+  .md-code { font-family: 'IBM Plex Mono', monospace; font-size: .85em; background: var(--paper-2); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 5px; }
+  .md-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .md-quote {
+    margin: 10px 0 14px; padding: 10px 14px; border-left: 3px solid var(--accent);
+    background: var(--paper); border-radius: 0 10px 10px 0; color: var(--ink-soft);
+  }
+  .md-quote p { margin: 0 0 6px; }
+  .md-quote p:last-child { margin-bottom: 0; }
+  .md-hr { border: none; border-top: 1px solid var(--rule); margin: 20px 0; }
+  .lex-md .lex-table-responsive, .lex-doc-typeset .lex-table-responsive {
+    border: 1px solid var(--rule); border-radius: 12px; overflow-x: auto; margin: 12px 0 16px;
+  }
+  .lex-md table.lex-legal-table, .lex-doc-typeset table.lex-legal-table { margin: 0; border-style: hidden; font-size: 13px; }
+  .lex-md table.lex-legal-table td { color: var(--ink); vertical-align: top; }
+
+  /* Live caret at the head of a streaming answer */
+  .lex-answer.is-streaming > :last-child::after,
+  .lex-docblock.is-streaming .lex-docblock-body > :last-child::after {
+    content: ''; display: inline-block; width: 8px; height: 1.05em; margin-left: 4px;
+    vertical-align: -0.16em; background: var(--accent); border-radius: 2px;
+    animation: lex-blink 1s steps(1) infinite;
+  }
+
+  /* ── Thinking line (Claude pattern) ── */
+  .lex-thinking {
+    display: inline-flex; align-items: center; gap: 10px; align-self: flex-start;
+    background: none; border: none; padding: 4px 0; cursor: pointer;
+    font-family: inherit; font-size: 14.5px; color: var(--ink-soft);
+  }
+  .lex-shimmer {
+    font-weight: 500;
+    background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 38%, var(--accent) 50%, var(--muted) 62%, var(--muted) 100%);
+    background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: lex-shimmer 2.2s linear infinite;
+  }
+  .lex-thinking-time { font-size: 11px; color: var(--muted); }
+  .lex-thinking-chev { display: inline-flex; color: var(--muted); transition: transform .2s ease; }
+  .lex-thinking-chev.open { transform: rotate(90deg); }
+  .lex-steps-compact { padding: 2px 0 0 2px; }
+  .lex-steps-compact .step-row { padding: 5px 2px; }
+
+  /* ── Inline document block (ChatGPT canvas-in-chat) ── */
+  .lex-docblock {
+    border: 1px solid var(--rule); border-radius: 16px; background: var(--paper);
+    box-shadow: 0 18px 40px -26px rgba(0,0,0,.45); overflow: clip; position: relative;
+    transition: border-color .3s ease, box-shadow .3s ease;
+  }
+  .lex-docblock.is-streaming {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 11%, transparent), 0 18px 40px -26px rgba(0,0,0,.45);
+  }
+  .lex-docblock-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px 12px 11px 14px; border-bottom: 1px solid var(--rule); background: var(--paper-2);
+    position: sticky; top: 0; z-index: 3;
+  }
+  .lex-docblock-id { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .lex-docblock-icon {
+    width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .lex-docblock-title { font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lex-docblock-meta { font-size: 9.5px; letter-spacing: .09em; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 7px; }
+  .lex-docblock.is-streaming .lex-docblock-meta { color: var(--accent); font-weight: 700; }
+  .lex-docblock-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .lex-docblock-open {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 999px;
+    border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
+    font: 600 12px 'IBM Plex Sans', sans-serif; cursor: pointer; transition: all .15s ease;
+  }
+  .lex-docblock-open:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .lex-docblock-body { padding: 28px 38px 24px; }
+  .lex-docblock-body ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .lex-docblock-foot {
+    display: flex; gap: 8px; align-items: flex-start; padding: 10px 16px; line-height: 1.45;
+    font-size: 12px; color: var(--ink-soft); background: var(--major-soft); border-top: 1px solid var(--rule);
+  }
+  .lex-docblock-foot svg { color: var(--major); margin-top: 2px; flex-shrink: 0; }
+  .lex-docblock-foot b { color: var(--ink); }
+  .lex-muted { color: var(--muted) !important; font-style: italic; }
+
+  /* Document typesetting — a real document feel, not chat text */
+  .lex-doc-typeset { font-family: 'Source Serif 4', 'Charter', Georgia, serif; font-size: 15.5px; line-height: 1.78; color: var(--ink); }
+  .lex-doc-typeset .draft-doc-title {
+    font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 600; font-size: 27px;
+    text-align: center; letter-spacing: -0.01em; line-height: 1.2; margin: 2px 0 20px; color: var(--ink);
+  }
+  .lex-doc-typeset .draft-section-head {
+    font: 700 12.5px 'IBM Plex Sans', sans-serif; letter-spacing: .07em; text-transform: uppercase;
+    margin: 28px 0 10px; padding-bottom: 7px; border-bottom: 1px solid var(--rule); color: var(--ink);
+  }
+  .lex-doc-typeset .draft-h { font-size: 16px; font-weight: 700; border-bottom: none; margin: 22px 0 8px; padding: 0; }
+  .lex-doc-typeset .draft-p { font-size: 15.5px; line-height: 1.78; color: var(--ink); margin: 0 0 10px; }
+  .lex-doc-typeset .draft-gap { height: 4px; }
+  .lex-doc-typeset .draft-ul, .lex-doc-typeset .draft-ol { padding-left: 26px; margin: 4px 0 12px; }
+  .lex-doc-typeset li { margin: 5px 0; }
+  .lex-doc-typeset strong { font-weight: 700; color: var(--ink); }
+  .lex-doc-typeset .md-quote { font-style: italic; }
+  .lex-doc-typeset .lex-placeholder { display: inline !important; padding: 0 4px !important; }
+
+  /* ── Drafting notes (Claude pattern) ── */
+  .lex-notes { border: 1px solid var(--rule); border-radius: 14px; padding: 14px 18px 12px; background: var(--paper); }
+  .lex-notes-head {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+    font: 700 10.5px 'IBM Plex Mono', monospace; letter-spacing: .09em; text-transform: uppercase; color: var(--accent);
+  }
+  .lex-notes .lex-md { font-size: 14px; line-height: 1.65; }
+
+  /* ── Citations checked ── */
+  .lex-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+  .lex-sources-label { font-size: 9.5px; letter-spacing: .09em; color: var(--muted); font-weight: 600; margin-right: 2px; }
+  .lex-source-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+    font-size: 12px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
+    text-decoration: none; transition: all .15s ease;
+  }
+  .lex-source-chip.is-found svg { color: var(--accent); }
+  .lex-source-chip.is-found:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .lex-source-chip.is-missing {
+    background: var(--major-soft); border-color: color-mix(in srgb, var(--major) 40%, transparent);
+    color: var(--ink-soft); cursor: help;
+  }
+  .lex-source-chip.is-missing svg { color: var(--major); }
+  .lex-source-dom { color: var(--muted); font-size: 11px; }
+
+  /* ── Next steps (Gemini pattern) ── */
+  .lex-next-head { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
+  .lex-next-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+  .lex-next-card {
+    display: flex; flex-direction: column; justify-content: space-between; gap: 14px; min-height: 86px;
+    padding: 13px 14px; border-radius: 14px; background: var(--paper); border: 1px solid var(--rule);
+    color: var(--ink); font: 500 13px/1.4 'IBM Plex Sans', sans-serif; text-align: left; cursor: pointer;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+  .lex-next-card svg { color: var(--muted); transition: transform .18s ease, color .18s ease; }
+  .lex-next-card:hover:not(:disabled) {
+    border-color: var(--accent); transform: translateY(-2px);
+    box-shadow: 0 12px 26px -18px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  .lex-next-card:hover:not(:disabled) svg { color: var(--accent); transform: translateX(3px); }
+  .lex-next-card:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Message actions ── */
+  .lex-actions { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; margin-top: -6px; }
+  .lex-icon-btn {
+    width: 32px; height: 32px; border-radius: 10px; border: none; background: transparent; color: var(--muted);
+    display: inline-grid; place-items: center; cursor: pointer; transition: all .15s ease; flex-shrink: 0;
+  }
+  .lex-icon-btn:hover:not(:disabled) { background: var(--paper-2); color: var(--ink); }
+  .lex-icon-btn.is-on { color: var(--accent); background: var(--accent-soft); }
+  .lex-icon-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .lex-action-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--rule); background: transparent; color: var(--ink-soft);
+    font: 500 12px 'IBM Plex Sans', sans-serif; cursor: pointer; transition: all .15s ease;
+  }
+  .lex-action-pill:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ── Revisions, interruptions, stopped / failed ── */
+  .lex-revision {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 14px;
+    border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--rule)); border-radius: 12px;
+    background: var(--accent-soft); font-size: 13.5px; color: var(--ink);
+  }
+  .lex-revision-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .08em; font-weight: 700; color: var(--accent); }
+  .lex-revision-text i { color: var(--ink-soft); }
+  .lex-link-btn {
+    display: inline-flex; align-items: center; gap: 4px; background: none; border: none; padding: 0;
+    color: var(--accent); font: 600 13px 'IBM Plex Sans', sans-serif; cursor: pointer;
+  }
+  .lex-link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .lex-interrupted {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--ink-soft);
+    padding: 9px 12px; border-radius: 10px; background: var(--major-soft);
+  }
+  .lex-interrupted svg { color: var(--major); }
+  .lex-state-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin-left: 44px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 12px;
+    background: var(--paper); font-size: 13px; color: var(--ink-soft);
+  }
+  .lex-state-card.is-failed { background: var(--major-soft); border-color: color-mix(in srgb, var(--major) 40%, transparent); }
+  .lex-state-main { display: flex; align-items: center; gap: 9px; }
+  .lex-state-main b { color: var(--ink); }
+
+  /* ── Composer (docked + hero) ── */
+  .lex-dock { position: relative; padding: 6px 24px 12px; background: linear-gradient(to bottom, transparent, var(--bg) 26%); }
+  .lex-dock .lex-composer { max-width: 780px; margin: 0 auto; }
+  .lex-dock-note { max-width: 780px; margin: 7px auto 0; text-align: center; font-size: 11px; color: var(--muted); }
+  .lex-jump {
+    position: absolute; top: -48px; left: 50%; transform: translateX(-50%); z-index: 5;
+    width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--rule); background: var(--paper);
+    color: var(--ink); box-shadow: var(--shadow); display: grid; place-items: center; cursor: pointer;
+    animation: lex-fade-in .2s ease both;
+  }
+  .lex-jump:hover { color: var(--accent); border-color: var(--accent); }
+
+  .lex-composer {
+    position: relative; background: var(--paper); border: 1px solid var(--rule); border-radius: 24px;
+    padding: 12px 10px 8px 16px; transition: border-color .2s ease, box-shadow .2s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 18px 44px -28px rgba(0,0,0,.5);
+  }
+  .lex-composer:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--rule));
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 13%, transparent), 0 18px 44px -28px rgba(0,0,0,.5);
+  }
+  .lex-composer.is-editing { border-color: var(--accent); }
+  .lex-composer .lex-textarea {
+    border: none !important; outline: none !important; box-shadow: none !important;
+    background: transparent !important; border-radius: 0 !important;
+  }
+  .lex-composer .lex-textarea:focus, .lex-composer .lex-textarea:focus-visible { outline: none !important; border: none !important; box-shadow: none !important; }
+  .lex-doc-sticky-toolbar { flex-wrap: wrap; row-gap: 6px; }
+  .lex-composer .lex-textarea { min-height: 26px; max-height: 200px; font-size: 15px; line-height: 1.55; padding: 3px 4px 3px 0; }
+  .lex-composer.is-hero { border-radius: 26px; padding: 16px 12px 10px 20px; }
+  .lex-composer.is-hero .lex-textarea { min-height: 56px; font-size: 16px; }
+  .lex-composer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+  .lex-composer .lex-composer-tools { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-width: 0; margin-left: -8px; }
+  .lex-composer .tool-pill { padding: 6px 10px; border-radius: 999px; font-size: 12px; }
+  .lex-composer .lex-send-btn {
+    width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+    box-shadow: 0 8px 18px -10px var(--accent);
+  }
+  .lex-composer .lex-send-btn:disabled { box-shadow: none; }
+  .lex-composer .lex-send-btn.is-stop { background: var(--ink) !important; color: var(--bg) !important; box-shadow: none; }
+  .lex-quote-chip, .lex-attach-chip {
+    display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; margin: -4px 4px 9px -6px;
+    border-radius: 12px; font-size: 12.5px;
+  }
+  .lex-quote-chip { background: var(--accent-soft); color: var(--ink); border-left: 3px solid var(--accent); }
+  .lex-quote-chip svg { color: var(--accent); flex-shrink: 0; }
+  .lex-quote-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; color: var(--ink-soft); }
+  .lex-attach-chip { display: inline-flex; background: var(--paper-2); color: var(--ink-soft); border: 1px solid var(--rule); }
+  .lex-quote-chip button, .lex-attach-chip button {
+    border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 3px; border-radius: 6px; display: grid; place-items: center;
+  }
+  .lex-quote-chip button:hover, .lex-attach-chip button:hover { color: var(--ink); background: var(--paper); }
+
+  /* ── Landing hero ── */
+  .lex-hero {
+    position: relative; max-width: 900px; margin: 0 auto; padding: clamp(36px, 8vh, 92px) 24px 56px;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+  }
+  .lex-hero > * { position: relative; z-index: 1; }
+  .lex-hero > .lex-hero-glow {
+    position: absolute; z-index: 0; top: -60px; left: 50%; width: 760px; max-width: 120%; height: 460px;
+    transform: translateX(-50%); pointer-events: none;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 17%, transparent), transparent 72%);
+  }
+  .lex-hero-orb {
+    width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; margin-bottom: 18px;
+    color: var(--on-accent); background: linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 68%, #000));
+    box-shadow: 0 16px 34px -14px var(--accent), inset 0 1px 0 rgba(255,255,255,.25);
+    animation: lex-float 5s ease-in-out infinite;
+  }
+  .lex-hero-orb svg { animation: lex-sway 4.5s ease-in-out infinite; }
+  .lex-hero-eyebrow { font-size: 10.5px; letter-spacing: .18em; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
+  .lex-hero-greeting { font-size: clamp(34px, 5vw, 50px); font-weight: 600; color: var(--ink); margin: 0 0 12px; line-height: 1.06; }
+  .lex-hero-desc { font-size: 15px; color: var(--ink-soft); max-width: 560px; line-height: 1.6; margin: 0 0 28px; }
+  .lex-hero .lex-composer { width: 100%; max-width: 720px; text-align: left; }
+  .lex-hero-try { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 16px 0 16px; max-width: 720px; }
+  .lex-hero .trust-line { margin-bottom: 44px; }
+  .lex-wf-section { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .lex-hero .wf-grid { width: 100%; text-align: left; }
+  .lex-hero .wf-card { position: relative; transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease, background .2s ease; }
+  .lex-hero .wf-card:hover { transform: translateY(-3px); box-shadow: 0 16px 30px -22px color-mix(in srgb, var(--accent) 80%, transparent); }
+  .wf-go { position: absolute; right: 12px; bottom: 11px; color: var(--accent); opacity: 0; transform: translateX(-4px); transition: all .2s ease; }
+  .wf-card:hover .wf-go, .wf-card:focus-visible .wf-go { opacity: 1; transform: none; }
+
+  /* ── Selection toolbar (ChatGPT "Ask for changes") ── */
+  .lex-sel-toolbar {
+    position: fixed; z-index: 10050; transform: translate(-50%, -100%);
+    display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px;
+    background: var(--ink); color: var(--bg); box-shadow: 0 14px 32px -10px rgba(0,0,0,.55);
+    animation: lex-fade-in .12s ease both;
+  }
+  .lex-sel-toolbar.is-below { transform: translate(-50%, 0); }
+  .lex-sel-toolbar button {
+    border: none; background: transparent; color: inherit; cursor: pointer; border-radius: 8px;
+    padding: 6px 10px; font: 500 12.5px 'IBM Plex Sans', sans-serif; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .lex-sel-toolbar button:hover { background: color-mix(in srgb, var(--bg) 20%, transparent); }
+  .lex-sel-toolbar .lex-sel-primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .lex-sel-toolbar .lex-sel-primary:hover { background: var(--accent); filter: brightness(1.08); }
+  .lex-sel-toolbar .lex-tool-divider { background: color-mix(in srgb, var(--bg) 35%, transparent); height: 18px; }
+
+  @media (max-width: 768px) {
+    .lex-thread { padding: 18px 14px 20px; gap: 22px; }
+    .lex-row-ai { gap: 10px; }
+    .lex-docblock-body { padding: 18px 16px; }
+    .lex-docblock-open span { display: none; }
+    .tool-pill-label { display: none; }
+    .lex-dock { padding: 6px 12px 10px; }
+    .lex-hero { padding-top: 30px; }
+    .lex-user-msg { max-width: 92%; }
+    .lex-state-card { margin-left: 0; }
   }
 `;
 
@@ -1686,6 +2225,30 @@ export function CommandPalette() {
   const [lastQuery, setLastQuery] = useState('');
   const [streamError, setStreamError] = useState('');
   const [completedSteps, setCompletedSteps] = useState(0);
+  // True from the moment the FIRST real token/draft_token has actually
+  // arrived — distinct from `loading`, which stays true for the whole
+  // request. Before this flips, we're genuinely thinking with nothing to
+  // show yet, so the step checklist is honest. Once content starts, the
+  // checklist would just sit there stale (e.g. "Finalizing reviewable
+  // draft" still showing as pending while the document on the right is
+  // already half-written) — a real, confirmed redundant-state bug, not a
+  // cosmetic one — so we swap it for a compact live-streaming indicator
+  // that doesn't compete with the content actually filling in.
+  const [contentStarted, setContentStarted] = useState(false);
+
+  // ── Conversation v2 — patterns taken from the ChatGPT / Gemini / Claude
+  // recordings: select-to-edit (ChatGPT), a one-line timed thinking status
+  // (Claude), follow-the-stream scrolling with a jump button (all three).
+  const [selectionEdit, setSelectionEdit] = useState(null); // { text, docMsgId } — quoted in the composer
+  const [selToolbar, setSelToolbar] = useState(null);       // floating "Ask for changes" toolbar
+  const [showSteps, setShowSteps] = useState(false);
+  const [thinkElapsed, setThinkElapsed] = useState(0);
+  const [atBottom, setAtBottom] = useState(true);
+  const [copiedMsgId, setCopiedMsgId] = useState(null);
+  const [streamingMsgId, setStreamingMsgId] = useState(null);
+  const threadRef = useRef(null);
+  const stickToBottomRef = useRef(true);
+  const reqStartRef = useRef(0);
 
   // ── Intelligence & Refinements State ─────────────────
   const [sessSearch, setSessSearch] = useState('');
@@ -1895,9 +2458,46 @@ export function CommandPalette() {
     isListeningRef.current = isListening;
   });
 
+  // Follow the stream only while the lawyer is already at the bottom — if
+  // they scroll up to re-read a clause mid-generation, we stop yanking the
+  // page and show a "jump to latest" button instead (same as all three
+  // reference products).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, loading, lifecycleState]);
+    if (!stickToBottomRef.current) return;
+    const el = threadRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, loading, lifecycleState, contentStarted]);
+
+  const handleThreadScroll = () => {
+    const el = threadRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    stickToBottomRef.current = near;
+    setAtBottom(near);
+    if (selToolbar) setSelToolbar(null);
+  };
+
+  const jumpToLatest = () => {
+    const el = threadRef.current;
+    stickToBottomRef.current = true;
+    setAtBottom(true);
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  };
+
+  // Honest elapsed-time counter for the thinking line (Claude pattern).
+  useEffect(() => {
+    if (!loading) return;
+    const t = setInterval(() => setThinkElapsed(Math.floor((Date.now() - reqStartRef.current) / 1000)), 500);
+    return () => clearInterval(t);
+  }, [loading]);
+
+  // Dismiss the selection toolbar on any click outside it.
+  useEffect(() => {
+    if (!selToolbar) return;
+    const onDown = (e) => { if (!e.target.closest?.('.lex-sel-toolbar')) setSelToolbar(null); };
+    window.addEventListener('mousedown', onDown);
+    return () => window.removeEventListener('mousedown', onDown);
+  }, [selToolbar]);
 
   // Speech Recognition
   useEffect(() => {
@@ -2002,11 +2602,101 @@ export function CommandPalette() {
     setLifecycleState('stopped');
   };
 
+  // ── Select-to-edit (the ChatGPT "Ask for changes" flow) ─────────────
+  const handleDocSelection = (e, source, docMsgId) => {
+    const sel = window.getSelection ? window.getSelection() : null;
+    const text = sel ? sel.toString().trim() : '';
+    if (!sel || text.length < 2 || sel.rangeCount === 0 || !e.currentTarget.contains(sel.anchorNode)) {
+      setSelToolbar(null);
+      return;
+    }
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    setSelToolbar({
+      x: Math.min(Math.max(r.left + r.width / 2, 180), window.innerWidth - 180),
+      y: r.top < 90 ? r.bottom + 10 : r.top - 10,
+      below: r.top < 90,
+      text: text.slice(0, 1500),
+      source,
+      docMsgId,
+    });
+  };
+
+  // The backend must edit the document the text was selected FROM — which
+  // may be an earlier draft in the thread than the one currently active.
+  const focusDocFromMessage = (docMsgId) => {
+    if (!docMsgId || activeDocument?.msgId === docMsgId) return;
+    const m = messages.find(x => x.id === docMsgId);
+    if (m?.docCard) {
+      const doc = { ...m.docCard, msgId: docMsgId };
+      updateSession(currentId, s => ({ ...s, activeDocument: doc, pendingDraft: doc }));
+    }
+  };
+
+  const beginSelectionEdit = () => {
+    if (!selToolbar) return;
+    focusDocFromMessage(selToolbar.docMsgId);
+    setSelectionEdit({ text: selToolbar.text, docMsgId: selToolbar.docMsgId });
+    setSelToolbar(null);
+    window.getSelection()?.removeAllRanges();
+    setTimeout(() => inputRef.current?.focus(), 30);
+  };
+
+  const explainSelection = () => {
+    if (!selToolbar) return;
+    const q = `Explain this passage from the draft in plain English and flag any legal risk under Indian law: "${selToolbar.text.slice(0, 700)}"`;
+    focusDocFromMessage(selToolbar.docMsgId);
+    setSelToolbar(null);
+    window.getSelection()?.removeAllRanges();
+    setTimeout(() => searchRef.current?.(null, q), 40);
+  };
+
+  const copyText = (text, msgId) => {
+    const done = () => { setCopiedMsgId(msgId); setTimeout(() => setCopiedMsgId(c => (c === msgId ? null : c)), 1600); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => {});
+    else {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta); done();
+      } catch (_) {}
+    }
+  };
+
+  // Regenerate = re-ask the user message that produced this answer.
+  const regenerate = (msgIdx) => {
+    for (let j = msgIdx - 1; j >= 0; j--) {
+      if (messages[j].role === 'user') {
+        const t = (messages[j].text || '').replace(/^📎[^\n]+\n+/, '');
+        if (t) handleSearch(null, t);
+        return;
+      }
+    }
+  };
+
+  const openDocInEditor = (msg) => {
+    if (msg?.docCard) {
+      const doc = activeDocument?.msgId === msg.id ? activeDocument : { ...msg.docCard, msgId: msg.id };
+      updateSession(currentId, s => ({ ...s, activeDocument: doc, pendingDraft: doc }));
+    }
+    setDrawerOpen(true);
+  };
+
   // Core Search & Stream Handler
   async function handleSearch(e, directQuery = null) {
     if (e) e.preventDefault();
     const q = (directQuery !== null ? directQuery : query).trim();
     if (!q || loading || navRoute) return;
+
+    // A quoted selection only applies to what the lawyer typed in the
+    // composer — never to a next-step card or workflow shortcut.
+    const selText = directQuery === null && selectionEdit && activeDocument ? selectionEdit.text : null;
+    setSelectionEdit(null);
+    setSelToolbar(null);
+    stickToBottomRef.current = true;
+    setAtBottom(true);
+    reqStartRef.current = Date.now();
+    setThinkElapsed(0);
+    setShowSteps(false);
 
     let sid = currentId;
     if (!sid || !sessions.find(s => s.id === sid)) {
@@ -2021,14 +2711,16 @@ export function CommandPalette() {
       ? `[Attached document: ${attachedFile.name}]\n\n${attachedFile.content}\n\n---\n\nUser query: ${q}`
       : q;
 
-    pushMessage(sid, { id: `u_${Date.now()}`, role: 'user', text: displayText });
+    pushMessage(sid, { id: `u_${Date.now()}`, role: 'user', text: displayText, ...(selText ? { quote: selText } : {}) });
     setQuery('');
+    if (inputRef.current) inputRef.current.style.height = '';
     setLastQuery(q);
     setAttachedFile(null);
     setLoading(true);
     setLifecycleState('thinking');
     setCompletedSteps(1);
     setStreamError('');
+    setContentStarted(false);
 
     // Client-side Navigation Fast-Path
     if (isNavCommand(q) && !attachedFile) {
@@ -2052,6 +2744,7 @@ export function CommandPalette() {
     }
 
     // Backend SSE Stream
+    let msgId = null;
     const controller = new AbortController();
     abortControllerRef.current = controller;
     try {
@@ -2063,7 +2756,7 @@ export function CommandPalette() {
         body: JSON.stringify({
           query: fullQuery,
           currentPath: location.pathname,
-          params: {},
+          params: selText ? { selection_edit: selText } : {},
           ...(activeDocument && {
             current_draft_context: activeDocument.content,
             current_draft_title: activeDocument.title,
@@ -2099,10 +2792,37 @@ export function CommandPalette() {
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '', accText = '', draftAcc = '';
-      const msgId = `a_${Date.now()}`;
-      pushMessage(sid, { id: msgId, role: 'assistant', text: '', sources: [] });
+      msgId = `a_${Date.now()}`;
+      const thisMsgId = msgId;
+      pushMessage(sid, { id: thisMsgId, role: 'assistant', text: '', sources: [] });
+      setStreamingMsgId(thisMsgId);
       setLifecycleState('streaming');
       setCompletedSteps(3);
+
+      // Live tokens are batched to at most ~16 renders/sec. Every patch also
+      // re-persists the session store, so patching on every single token
+      // (as before) re-serialised all 30 sessions per token.
+      let textDirty = false, draftDirty = false, lastFlush = 0;
+      const flushLive = (force = false) => {
+        if (!textDirty && !draftDirty) return;
+        if (!force && Date.now() - lastFlush < 60) return;
+        lastFlush = Date.now();
+        if (textDirty) {
+          const t = accText;
+          textDirty = false;
+          patchMessage(sid, thisMsgId, m => ({ ...m, text: t }));
+        }
+        if (draftDirty) {
+          const d = draftAcc;
+          draftDirty = false;
+          updateSession(sid, s => ({
+            ...s,
+            pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: d } : s.pendingDraft,
+            activeDocument: s.activeDocument ? { ...s.activeDocument, content: d } : s.activeDocument,
+          }));
+          patchMessage(sid, thisMsgId, m => (m.docCard ? { ...m, docCard: { ...m.docCard, content: d } } : m));
+        }
+      };
 
       while (true) {
         const { value, done } = await reader.read();
@@ -2120,94 +2840,97 @@ export function CommandPalette() {
 
           try {
             const p = JSON.parse(json);
+            // Flip the thinking line off the moment any event carries real,
+            // visible content — never on metadata-only events.
+            if (p.action === 'update_document' || p.action === 'review_document_start' ||
+                typeof p.draft_token === 'string' || p.action === 'review_document_done' ||
+                p.action === 'review_document' || p.token) {
+              setContentStarted(true);
+            }
+
             if (p.action === 'update_document') {
+              // Canvas-style revision: the draft updates IN PLACE in the
+              // message it lives in (ChatGPT canvas behaviour); this reply
+              // just records what changed and which version it produced.
+              const base = activeDocument || {};
+              const targetId = base.msgId && messages.some(m => m.id === base.msgId) ? base.msgId : null;
+              const version = (base.version || 1) + 1;
               const updated = {
-                case_id: activeDocument?.case_id,
-                title: p.title || 'Updated Document',
+                ...base,
+                title: p.title || base.title || 'Updated Document',
                 content: p.updated_content,
-                doc_type: 'Draft Edit',
+                doc_type: base.doc_type || 'Draft Edit',
+                streaming: false,
+                version,
+                msgId: targetId || thisMsgId,
               };
-              updateSession(sid, s => ({
-                ...s,
-                pendingDraft: updated,
-                activeDocument: updated,
-              }));
-              patchMessage(sid, msgId, m => ({
-                ...m,
-                docCard: updated,
-              }));
-              setDrawerOpen(true);
+              updateSession(sid, s => ({ ...s, pendingDraft: updated, activeDocument: updated }));
+              const revision = { targetId: targetId || thisMsgId, version, summary: p.change_summary || '', selection: p.selection || '' };
+              if (targetId) {
+                patchMessage(sid, targetId, m => ({ ...m, docCard: updated }));
+                patchMessage(sid, thisMsgId, m => ({ ...m, revision }));
+              } else {
+                patchMessage(sid, thisMsgId, m => ({ ...m, docCard: updated, revision }));
+              }
             } else if (p.action === 'review_document_start' && p.draft) {
-              // Canvas opens NOW, empty — the draft fills in live as tokens
-              // arrive below, instead of appearing as one blocking blob.
+              // The draft streams INLINE in the conversation (all three
+              // reference products do this); the side editor is one click
+              // away via "Open in editor" instead of hijacking half the screen.
               draftAcc = '';
               const smart = generateSmartName(p.draft.doc_type, currentSession?.title);
-              const opening = { ...p.draft, content: '', smartTitle: smart, streaming: true };
-              updateSession(sid, s => ({
-                ...s,
-                pendingDraft: opening,
-                activeDocument: opening,
-              }));
-              patchMessage(sid, msgId, m => ({ ...m, docCard: opening }));
-              setDrawerOpen(true);
+              const opening = { ...p.draft, content: '', smartTitle: smart, streaming: true, msgId: thisMsgId };
+              updateSession(sid, s => ({ ...s, pendingDraft: opening, activeDocument: opening }));
+              patchMessage(sid, thisMsgId, m => ({ ...m, docCard: opening }));
             } else if (typeof p.draft_token === 'string') {
               draftAcc += p.draft_token;
-              const liveDraftAcc = draftAcc;
-              updateSession(sid, s => ({
-                ...s,
-                pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: liveDraftAcc } : s.pendingDraft,
-                activeDocument: s.activeDocument ? { ...s.activeDocument, content: liveDraftAcc } : s.activeDocument,
-              }));
-              patchMessage(sid, msgId, m => (
-                m.docCard ? { ...m, docCard: { ...m.docCard, content: liveDraftAcc } } : m
-              ));
+              draftDirty = true;
             } else if (p.action === 'review_document_done' && p.draft) {
-              // Authoritative final content — supersedes whatever the live
-              // stream reconstructed, so any streaming-timing edge case
-              // (trailing whitespace, a dropped chunk) self-corrects here.
+              // Authoritative final content — supersedes the live
+              // reconstruction, so any streaming edge case self-corrects.
+              draftDirty = false;
               const smart = generateSmartName(p.draft.doc_type, currentSession?.title);
-              const finished = { ...p.draft, smartTitle: smart, streaming: false };
-              updateSession(sid, s => ({
-                ...s,
-                pendingDraft: finished,
-                activeDocument: finished,
-              }));
-              patchMessage(sid, msgId, m => ({ ...m, docCard: finished }));
-              setDrawerOpen(true);
+              const finished = { ...p.draft, smartTitle: smart, streaming: false, msgId: thisMsgId };
+              updateSession(sid, s => ({ ...s, pendingDraft: finished, activeDocument: finished }));
+              patchMessage(sid, thisMsgId, m => ({ ...m, docCard: finished }));
             } else if (p.action === 'review_document' && p.draft) {
-              // Back-compat path — kept in case any server branch ever
-              // still emits a single non-streamed draft payload.
+              // Back-compat: a single non-streamed draft payload.
               const smart = generateSmartName(p.draft.doc_type, currentSession?.title);
-              const enriched = { ...p.draft, smartTitle: smart };
-              updateSession(sid, s => ({
-                ...s,
-                pendingDraft: enriched,
-                activeDocument: enriched,
-              }));
-              patchMessage(sid, msgId, m => ({
-                ...m,
-                docCard: enriched,
-              }));
-              setDrawerOpen(true);
+              const enriched = { ...p.draft, smartTitle: smart, streaming: false, msgId: thisMsgId };
+              updateSession(sid, s => ({ ...s, pendingDraft: enriched, activeDocument: enriched }));
+              patchMessage(sid, thisMsgId, m => ({ ...m, docCard: enriched }));
+            } else if (Array.isArray(p.citations)) {
+              patchMessage(sid, thisMsgId, m => ({ ...m, citations: p.citations }));
             } else if (Array.isArray(p.suggested_actions)) {
-              patchMessage(sid, msgId, m => ({ ...m, suggestedActions: p.suggested_actions }));
+              patchMessage(sid, thisMsgId, m => ({ ...m, suggestedActions: p.suggested_actions }));
+            } else if (p.error) {
+              flushLive(true);
+              patchMessage(sid, thisMsgId, m => ({ ...m, interrupted: true }));
             } else if (p.token) {
               accText += p.token;
-              patchMessage(sid, msgId, m => ({ ...m, text: accText }));
+              textDirty = true;
             }
           } catch (_) {}
         }
+        flushLive();
       }
+      flushLive(true);
       setCompletedSteps(4);
       setLifecycleState('idle');
     } catch (err) {
+      if (err.name !== 'AbortError') console.error('[AI Legal Associate] request failed:', err);
       if (err.name !== 'AbortError' && isMountedRef.current) {
         setLifecycleState('failed');
         setStreamError('Connection interrupted. Please verify your connection or retry.');
         pushMessage(sid, { id: `e_${Date.now()}`, role: 'error', text: 'Connection interrupted. Please try again.' });
       }
     } finally {
-      if (isMountedRef.current) setLoading(false);
+      // A stopped/interrupted draft must not keep claiming "Drafting live".
+      if (msgId && isMountedRef.current) {
+        const stoppedId = msgId;
+        patchMessage(sid, stoppedId, m => (m.docCard?.streaming ? { ...m, docCard: { ...m.docCard, streaming: false, partial: true } } : m));
+        updateSession(sid, s => (s.activeDocument?.streaming ? { ...s, activeDocument: { ...s.activeDocument, streaming: false, partial: true } } : s));
+      }
+      if (isMountedRef.current) { setLoading(false); setStreamingMsgId(null); }
       abortControllerRef.current = null;
     }
   }
@@ -2274,6 +2997,307 @@ export function CommandPalette() {
   };
 
   if (!isOpen) return null;
+
+  // ══════════════════════════════════════════════════════════════════
+  //  CONVERSATION v2 — render helpers
+  // ══════════════════════════════════════════════════════════════════
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const isDraftAsk = /^\s*(draft|write|prepare|create|generate|draw up|compose)\b/i.test(lastQuery || '');
+  const thinkingLabel = completedSteps < 2
+    ? 'Reading your request'
+    : completedSteps < 3
+      ? 'Checking your matter files and Indian statutes'
+      : isDraftAsk ? 'Preparing your draft' : 'Working on your answer';
+
+  const domainLabel = (url) => (url || '').includes('indiacode') ? 'India Code' : (url || '').includes('indiankanoon') ? 'Indian Kanoon' : 'Source';
+
+  // One composer, two homes: centred in the landing hero (Claude pattern),
+  // docked under the thread once the conversation starts.
+  const renderComposer = (hero) => (
+    <div className={`lex-composer ${hero ? 'is-hero' : ''} ${selectionEdit ? 'is-editing' : ''}`}>
+      {isSlashActive && filteredSlashCmds.length > 0 && (
+        <div className="lex-slash-popup">
+          {filteredSlashCmds.map((c, i) => (
+            <button
+              key={c.cmd}
+              className={`lex-slash-item ${i === slashIndex ? 'selected' : ''}`}
+              onClick={() => { setQuery(c.fill); inputRef.current?.focus(); }}
+            >
+              <span className="lex-slash-cmd">{c.cmd}</span>
+              <span className="lex-slash-label">{c.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectionEdit && (
+        <div className="lex-quote-chip">
+          <Icon name="edit" size={12} />
+          <span className="lex-quote-text">“{selectionEdit.text.length > 140 ? `${selectionEdit.text.slice(0, 140)}…` : selectionEdit.text}”</span>
+          <button type="button" aria-label="Cancel selection edit" onClick={() => setSelectionEdit(null)}><Icon name="close" size={11} /></button>
+        </div>
+      )}
+
+      {attachedFile && (
+        <div className="lex-attach-chip">
+          <Icon name="attach" size={12} />
+          <span>{attachedFile.name}</span>
+          <button type="button" aria-label="Remove attachment" onClick={() => setAttachedFile(null)}><Icon name="close" size={11} /></button>
+        </div>
+      )}
+
+      <textarea
+        ref={inputRef}
+        className="lex-textarea"
+        rows={1}
+        value={query}
+        onChange={e => {
+          setQuery(e.target.value);
+          e.target.style.height = 'auto';
+          e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+        }}
+        onKeyDown={e => {
+          if (isSlashActive && filteredSlashCmds.length > 0) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(prev => (prev + 1) % filteredSlashCmds.length); return; }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(prev => (prev - 1 + filteredSlashCmds.length) % filteredSlashCmds.length); return; }
+            if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); setQuery(filteredSlashCmds[slashIndex].fill); return; }
+          }
+          if (e.key === 'Escape' && selectionEdit) { e.stopPropagation(); setSelectionEdit(null); return; }
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSearch(null); }
+        }}
+        placeholder={selectionEdit
+          ? 'Describe changes to this selection…'
+          : hero ? 'Draft a notice, research a provision, or review a clause…' : 'Reply to LexAmplify… ( / for drafting commands )'}
+      />
+
+      <div className="lex-composer-row">
+        <div className="lex-composer-tools">
+          <button type="button" className="lex-icon-btn" onClick={() => fileInputRef.current?.click()} title="Attach a document (PDF, DOCX, TXT)" aria-label="Attach">
+            <Icon name="attach" size={15} />
+          </button>
+          <button type="button" className={`lex-icon-btn ${isListening ? 'is-on' : ''}`} onClick={toggleMic} title={isListening ? 'Listening… click to stop' : 'Voice input'} aria-label="Voice">
+            <Icon name="mic" size={15} />
+          </button>
+          <span className="lex-tool-divider" />
+          {ASSISTANT_TOOLS.map(t => (
+            <button
+              key={t.id}
+              type="button"
+              className="tool-pill"
+              onClick={() => { setQuery(t.prompt); setTimeout(() => searchRef.current?.(null, t.prompt), 30); }}
+            >
+              <Icon name={t.icon} size={12} />
+              <span className="tool-pill-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
+        {loading ? (
+          <button type="button" className="lex-send-btn is-stop" onClick={handleStopGeneration} aria-label="Stop generating" title="Stop generating">
+            <Icon name="stop" size={12} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="lex-send-btn"
+            aria-label="Send message"
+            disabled={!query.trim() && !attachedFile}
+            onClick={() => handleSearch(null)}
+          >
+            <Icon name="send" size={15} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  // ChatGPT-style document block — the draft lives inside the conversation,
+  // streams in live, and any passage can be selected to ask for changes.
+  const renderDocBlock = (msg, doc, isStreaming) => {
+    const sections = extractSections(doc.content).length;
+    const needed = extractPlaceholders(doc.content).length;
+    const headingTitle = ((doc.content || '').match(/^\s*#\s+(.+?)\s*$/m) || [])[1];
+    const title = (!doc.title || /^(new legal document|legal document|title)$/i.test(doc.title)) && headingTitle
+      ? headingTitle.replace(/\*/g, '')
+      : (doc.title || 'Legal Document Draft');
+    const bodyMd = isStreaming ? (doc.content || '').replace(/[*_]+$/, '') : (doc.content || '');
+    return (
+      <div className={`lex-docblock ${isStreaming ? 'is-streaming' : ''}`} id={`doc_${msg.id}`}>
+        <div className="lex-docblock-head">
+          <div className="lex-docblock-id">
+            <span className="lex-docblock-icon"><Icon name="draft" size={13} /></span>
+            <div style={{ minWidth: 0 }}>
+              <div className="lex-docblock-title serif">{title}</div>
+              <div className="lex-docblock-meta mono">
+                {isStreaming ? (
+                  <><span className="lex-live-dot" aria-hidden="true" /> DRAFTING LIVE</>
+                ) : (
+                  <>
+                    {doc.partial ? 'STOPPED EARLY · ' : ''}
+                    {doc.version > 1 ? `V${doc.version} · ` : ''}
+                    {sections} SECTIONS · {needed} DETAIL{needed === 1 ? '' : 'S'} TO FILL
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          {!isStreaming && (
+            <div className="lex-docblock-actions">
+              <button type="button" className="lex-icon-btn" title="Copy draft" onClick={() => copyText(doc.content || '', `doc_${msg.id}`)}>
+                <Icon name={copiedMsgId === `doc_${msg.id}` ? 'check' : 'copy'} size={14} />
+              </button>
+              <button type="button" className="lex-docblock-open" onClick={() => openDocInEditor(msg)}>
+                <Icon name="expand" size={12} /> Open in editor
+              </button>
+            </div>
+          )}
+        </div>
+        <div
+          className="lex-docblock-body lex-doc-typeset"
+          onMouseUp={e => !isStreaming && handleDocSelection(e, 'inline', msg.id)}
+          dangerouslySetInnerHTML={{ __html: highlightPlaceholders(renderDraftHtml(bodyMd)) || '<p class="draft-p lex-muted">Preparing the first clause…</p>' }}
+        />
+        {!isStreaming && (
+          <div className="lex-docblock-foot">
+            <Icon name="caution" size={12} />
+            <span><b>AI-drafted, not filed.</b> Check every bracketed field against your matter facts. Select any passage to ask for changes.</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderAssistant = (msg, idx) => {
+    const isStreaming = streamingMsgId === msg.id && loading;
+    // The inline block always shows the live version of its document —
+    // including manual edits made in the side editor.
+    const doc = msg.docCard
+      ? (activeDocument?.msgId === msg.id ? { ...msg.docCard, ...activeDocument } : msg.docCard)
+      : null;
+    const docStreaming = !!doc?.streaming && isStreaming;
+    const citations = (doc?.citations && doc.citations.length ? doc.citations : msg.citations) || [];
+    const checked = citations.filter(c => c && typeof c === 'object' && 'verified' in c);
+    const actions = Array.isArray(msg.suggestedActions) ? msg.suggestedActions : [];
+    const copyPayload = doc ? (doc.content || '') : (msg.text || '');
+    const empty = !msg.text && !doc && !msg.revision;
+    if (empty && isStreaming) return null;
+
+    return (
+      <div key={msg.id || idx} className="lex-row-ai" id={`msg_${msg.id}`}>
+        <div className={`lex-ai-mark ${isStreaming ? 'is-live' : ''}`} aria-hidden="true">
+          <Icon name="scales" size={14} />
+        </div>
+        <div className="lex-ai-body">
+          {msg.revision && (
+            <div className="lex-revision">
+              <span className="lex-revision-badge mono"><Icon name="edit" size={11} /> REVISED · V{msg.revision.version}</span>
+              <span className="lex-revision-text">
+                {msg.revision.selection
+                  ? <>Changed only the selected passage — <i>“{msg.revision.selection.length > 90 ? `${msg.revision.selection.slice(0, 90)}…` : msg.revision.selection}”</i></>
+                  : <>Applied: {msg.revision.summary}</>}
+              </span>
+              {msg.revision.targetId !== msg.id && (
+                <button type="button" className="lex-link-btn" onClick={() => document.getElementById(`doc_${msg.revision.targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  View updated draft <Icon name="arrow-right" size={11} />
+                </button>
+              )}
+            </div>
+          )}
+
+          {msg.text && (
+            <div
+              className={`lex-md lex-answer ${isStreaming && !doc ? 'is-streaming' : ''}`}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
+            />
+          )}
+
+          {doc && renderDocBlock(msg, doc, docStreaming)}
+
+          {msg.interrupted && (
+            <div className="lex-interrupted">
+              <Icon name="caution" size={13} /> This answer was cut off before it finished.
+              <button type="button" className="lex-link-btn" onClick={() => regenerate(idx)}>Retry</button>
+            </div>
+          )}
+
+          {!isStreaming && doc?.rationale && (
+            <div className="lex-notes">
+              <div className="lex-notes-head"><Icon name="sparkles" size={12} /> Drafting notes</div>
+              <div className="lex-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(doc.rationale) }} />
+            </div>
+          )}
+
+          {!isStreaming && checked.length > 0 && (
+            <div className="lex-sources">
+              <span className="lex-sources-label mono">CITATIONS CHECKED</span>
+              {checked.map((c, i) => {
+                const label = c.citation || c.title || 'Citation';
+                return c.verified && c.url ? (
+                  <a
+                    key={i}
+                    className="lex-source-chip is-found"
+                    href={c.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="A matching source was found — this confirms the provision exists. Open it to confirm it says what's relied on."
+                  >
+                    <Icon name="check" size={10} /> {label} <span className="lex-source-dom">· {domainLabel(c.url)}</span>
+                  </a>
+                ) : (
+                  <span
+                    key={i}
+                    className="lex-source-chip is-missing"
+                    title="No matching source was found on India Code or Indian Kanoon. Verify this provision before relying on it."
+                  >
+                    <Icon name="caution" size={10} /> {label} <span className="lex-source-dom">· verify</span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {!isStreaming && actions.length > 0 && (
+            <div className="lex-next">
+              <div className="lex-next-head">{doc ? 'Next steps to tailor this draft' : 'Suggested next steps'}</div>
+              <div className="lex-next-grid">
+                {actions.map((a, ai) => {
+                  const label = typeof a === 'string' ? a : (a.label || a.text || a.query || '');
+                  const q = typeof a === 'string' ? a : (a.query || a.label || a.text || '');
+                  if (!label) return null;
+                  return (
+                    <button key={ai} type="button" className="lex-next-card" disabled={loading} onClick={() => handleSearch(null, q)}>
+                      <span>{label}</span>
+                      <Icon name="arrow-right" size={13} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!isStreaming && !empty && (
+            <div className="lex-actions">
+              <button type="button" className="lex-icon-btn" title="Copy" onClick={() => copyText(copyPayload, msg.id)}>
+                <Icon name={copiedMsgId === msg.id ? 'check' : 'copy'} size={14} />
+              </button>
+              {!msg.revision && (
+                <button type="button" className="lex-icon-btn" title="Regenerate" disabled={loading} onClick={() => regenerate(idx)}>
+                  <Icon name="refresh" size={14} />
+                </button>
+              )}
+              {doc && (
+                <>
+                  <span className="lex-tool-divider" />
+                  <button type="button" className="lex-action-pill" onClick={() => openDocInEditor(msg)}><Icon name="expand" size={12} /> Open in editor</button>
+                  <button type="button" className="lex-action-pill" onClick={() => { openDocInEditor(msg); setShowSaveModal(true); }}><Icon name="folder" size={12} /> Save to Case Vault</button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -2370,7 +3394,7 @@ export function CommandPalette() {
           {/* ══════════════════════════════════════════════
                CENTER: AI CONVERSATION & WORKSPACE CANVAS
           ══════════════════════════════════════════════ */}
-          <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
+          <main className="lex-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden', position: 'relative' }}>
 
             {/* Professional Top Navigation Bar */}
             <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)', flexShrink: 0, gap: 12 }}>
@@ -2422,431 +3446,214 @@ export function CommandPalette() {
               </div>
             </header>
 
-            {/* Scrollable Conversation Stream */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* ══════════════════════════════════════════════
+                 CONVERSATION (v2) — centred reading column, no heavy
+                 bubbles, live streaming in place
+            ══════════════════════════════════════════════ */}
+            <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept=".pdf,.docx,.doc,.txt,.md" onChange={handleFileAttach} />
 
-              {/* ── View 1: Landing / Empty State ── */}
-              {messages.length === 0 && (
-                <div className="landing-wrap">
-                  <div className="hero-mark">
-                    <Icon name="scales" size={26} />
+            <div className="lex-scroll" ref={threadRef} onScroll={handleThreadScroll}>
+              {messages.length === 0 ? (
+                /* ── Landing: greeting + centred composer + workflows ── */
+                <div className="lex-hero">
+                  <div className="lex-hero-glow" aria-hidden="true" />
+                  <div className="lex-hero-orb" aria-hidden="true">
+                    <Icon name="scales" size={24} />
                   </div>
-                  <h2 className="hero-title serif">AI Legal Associate</h2>
-                  <p className="hero-desc">
+                  <div className="lex-hero-eyebrow mono">AI LEGAL ASSOCIATE · INDIAN LAW</div>
+                  <h1 className="lex-hero-greeting serif">{greeting}, Counsel.</h1>
+                  <p className="lex-hero-desc">
                     Drafting, statutory research, and contract analysis — grounded in Indian law, scoped to whichever matter you're working in.
                   </p>
+
+                  {renderComposer(true)}
+
+                  <div className="lex-hero-try">
+                    {PROMPT_SUGGESTIONS.map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="try-chip"
+                        onClick={() => { setQuery(s.prompt); setTimeout(() => searchRef.current?.(null, s.prompt), 30); }}
+                      >
+                        {s.label.replace(/^✦\s*/, '')}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="trust-line">
                     <Icon name="check" size={11} style={{ color: 'var(--accent)' }} />
-                    <span><b>Draft-only, not legal advice.</b> Every citation is checked against the statute before it's shown to you.</span>
+                    <span><b>Draft-only, not legal advice.</b> Statute citations are cross-checked against India Code and Indian Kanoon, and flagged when no source is found.</span>
                   </div>
 
-                  {/* Category Filter Tabs */}
-                  <div className="wf-tabs">
-                    {LEGAL_TOOL_CATEGORIES.map(c => (
-                      <button
-                        key={c.id}
-                        className={`wf-tab ${toolCategory === c.id ? 'active' : ''}`}
-                        onClick={() => setToolCategory(c.id)}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* 9 Workflow Cards */}
-                  <div className="wf-grid">
-                    {(toolCategory === 'all'
-                      ? LEGAL_TOOLS
-                      : LEGAL_TOOLS.filter(t => t.category === toolCategory)
-                    ).map(t => (
-                      <div
-                        key={t.id}
-                        className="wf-card"
-                        onClick={() => {
-                          setQuery(t.prompt);
-                          setTimeout(() => searchRef.current?.(null, t.prompt), 30);
-                        }}
-                      >
-                        <div className="wf-icon">
-                          <Icon name={t.icon} size={16} />
-                        </div>
-                        <div className="wf-body">
-                          <div className="wf-top-row">
-                            <span className="wf-title">{t.title}</span>
-                            <span className="wf-cat mono">
-                              {t.category === 'draft' ? 'Drafting' : t.category === 'research' ? 'Research' : 'Analysis'}
-                            </span>
-                          </div>
-                          <div className="wf-desc">{t.desc}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Message Bubbles ── */}
-              {messages.map((msg, idx) => {
-                if (msg.role === 'user') {
-                  return (
-                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <span className="msg-user-label mono">YOU</span>
-                      <div className="msg-user-bubble">
-                        {msg.text}
-                      </div>
+                  <div className="lex-wf-section">
+                    <div className="wf-tabs">
+                      {LEGAL_TOOL_CATEGORIES.map(c => (
+                        <button key={c.id} className={`wf-tab ${toolCategory === c.id ? 'active' : ''}`} onClick={() => setToolCategory(c.id)}>
+                          {c.label}
+                        </button>
+                      ))}
                     </div>
-                  );
-                }
-
-                if (msg.role === 'error') {
-                  return (
-                    <div key={idx} className="failed-card" style={{ margin: '4px 0' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--major)', fontSize: 12.5 }}>
-                        <Icon name="caution" size={14} />
-                        <span><strong>Error:</strong> {msg.text}</span>
-                      </div>
-                    </div>
-                  );
-                }
-
-                // AI Associate Output
-                return (
-                  <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--accent-soft)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
-                      <Icon name="sparkles" size={14} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: '2px 12px 12px 12px', padding: '14px 18px', boxShadow: 'var(--shadow)' }}>
-                      {msg.text && (
-                        <div className="lex-md" style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
-                      )}
-
-                      {/* Clean Document Artifact Card */}
-                      {msg.docCard && (
-                        <div className="lex-artifact-card">
-                          <div className="lex-artifact-tag">
-                            <Icon name="draft" size={12} />
-                            <span>DOCUMENT GENERATED</span>
-                          </div>
-                          <div className="lex-artifact-head">
-                            <div>
-                              <div className="lex-artifact-title serif" style={{ fontSize: 15, fontWeight: 600 }}>
-                                {msg.docCard.title || 'Legal Document Draft'}
-                              </div>
-                              <div className="lex-artifact-sub mono">Indian Law Compliance · Matter Drafting</div>
+                    <div className="wf-grid">
+                      {(toolCategory === 'all' ? LEGAL_TOOLS : LEGAL_TOOLS.filter(t => t.category === toolCategory)).map(t => (
+                        <div
+                          key={t.id}
+                          className="wf-card"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => { setQuery(t.prompt); setTimeout(() => searchRef.current?.(null, t.prompt), 30); }}
+                          onKeyDown={e => { if (e.key === 'Enter') { setQuery(t.prompt); setTimeout(() => searchRef.current?.(null, t.prompt), 30); } }}
+                        >
+                          <div className="wf-icon"><Icon name={t.icon} size={16} /></div>
+                          <div className="wf-body">
+                            <div className="wf-top-row">
+                              <span className="wf-title">{t.title}</span>
+                              <span className="wf-cat mono">
+                                {t.category === 'draft' ? 'Drafting' : t.category === 'research' ? 'Research' : 'Analysis'}
+                              </span>
                             </div>
-                            <span className="lex-artifact-badge">AI Generated · Draft</span>
+                            <div className="wf-desc">{t.desc}</div>
                           </div>
-                          <div className="lex-artifact-meta">
-                            <span>§ {extractSections(msg.docCard.content).length} Sections</span>
-                            <span>·</span>
-                            <span>{extractPlaceholders(msg.docCard.content).length} Details Required</span>
-                          </div>
-                          <div className="lex-artifact-actions">
-                            <button
-                              className="lex-artifact-open-btn"
-                              onClick={() => {
-                                updateSession(currentId, s => ({ ...s, activeDocument: msg.docCard }));
-                                setDrawerOpen(true);
-                              }}
-                            >
-                              <Icon name="draft" size={13} />
-                              Open Draft in Workspace →
-                            </button>
-                            <button
-                              className="lex-artifact-save-btn"
-                              onClick={() => {
-                                updateSession(currentId, s => ({ ...s, activeDocument: msg.docCard }));
-                                setShowSaveModal(true);
-                              }}
-                            >
-                              <Icon name="folder" size={12} />
-                              Save to Case Vault
-                            </button>
+                          <span className="wf-go" aria-hidden="true"><Icon name="arrow-right" size={13} /></span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="lex-thread">
+                  {messages.map((msg, idx) => {
+                    if (msg.role === 'user') {
+                      return (
+                        <div key={msg.id || idx} className="lex-row-user">
+                          <div className="lex-user-msg">
+                            {msg.quote && (
+                              <div className="lex-user-quote">
+                                <Icon name="edit" size={11} />
+                                <span>“{msg.quote.length > 160 ? `${msg.quote.slice(0, 160)}…` : msg.quote}”</span>
+                              </div>
+                            )}
+                            {msg.text}
                           </div>
                         </div>
-                      )}
-
-                      {/* Suggested Next Steps — populated server-side by
-                          rag_pipeline.py's _generate_suggested_actions();
-                          clicking one re-runs handleSearch with that exact
-                          text, same as typing and sending it. */}
-                      {Array.isArray(msg.suggestedActions) && msg.suggestedActions.length > 0 && (
-                        <div className="try-row" style={{ marginTop: 12, marginBottom: 0 }}>
-                          <span className="try-label">NEXT STEPS</span>
-                          {msg.suggestedActions.map((action, ai) => {
-                            const label = typeof action === 'string' ? action : (action.label || action.text || action.query || '');
-                            if (!label) return null;
-                            return (
-                              <button
-                                key={ai}
-                                type="button"
-                                className="try-chip"
-                                disabled={loading}
-                                onClick={() => handleSearch(null, label)}
-                              >
-                                <Icon name="sparkles" size={11} />
-                                {label}
-                              </button>
-                            );
-                          })}
+                      );
+                    }
+                    if (msg.role === 'error') {
+                      return (
+                        <div key={msg.id || idx} className="lex-row-ai">
+                          <div className="lex-ai-mark is-warn" aria-hidden="true"><Icon name="caution" size={14} /></div>
+                          <div className="lex-ai-body">
+                            <div className="lex-interrupted"><Icon name="caution" size={13} /> {msg.text}</div>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                      );
+                    }
+                    return renderAssistant(msg, idx);
+                  })}
 
-              {/* ── View 2: Thinking & Streaming Card (Five-State Lifecycle) ── */}
-              {loading && (
-                <div className="work-card">
-                  <div className="work-head">
-                    <div className="work-head-left">
-                      <div className="work-spinner" />
-                      <div>
-                        <div className="work-title">AI Legal Associate is working…</div>
-                        <div className="work-sub">Analyzing statutory provisions &amp; drafting clause structure</div>
+                  {/* ── Thinking: one honest line with a timer (Claude pattern);
+                       the step detail is still one click away ── */}
+                  {loading && !contentStarted && (
+                    <div className="lex-row-ai">
+                      <div className="lex-ai-mark is-live" aria-hidden="true"><Icon name="scales" size={14} /></div>
+                      <div className="lex-ai-body">
+                        <button type="button" className="lex-thinking" onClick={() => setShowSteps(v => !v)} aria-expanded={showSteps}>
+                          <span className="lex-shimmer">{thinkingLabel}</span>
+                          <span className="lex-thinking-time mono">{thinkElapsed}s</span>
+                          <span className={`lex-thinking-chev ${showSteps ? 'open' : ''}`}><Icon name="chevron" size={12} /></span>
+                        </button>
+                        {showSteps && (
+                          <div className="step-list lex-steps-compact">
+                            {[
+                              'Understanding legal context & statutory scope',
+                              'Analyzing provisions & Indian legal precedents',
+                              isDraftAsk ? 'Structuring enforceable clauses' : 'Composing a grounded answer',
+                              isDraftAsk ? 'Finalizing reviewable legal draft' : 'Checking cited provisions',
+                            ].map((label, si) => {
+                              const state = completedSteps > si + 1 ? 'done' : completedSteps === si + 1 ? 'active' : 'pending';
+                              return (
+                                <div key={si} className={`step-row ${state}`}>
+                                  <div className={`step-marker ${state}`}>{state === 'done' ? <Icon name="check" size={10} /> : null}</div>
+                                  <span className="step-text">{label}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
-                      <Icon name="stop" size={11} /> Stop
-                    </button>
-                  </div>
-                  <div className="step-list">
-                    <div className={`step-row ${completedSteps >= 1 ? 'done' : 'active'}`}>
-                      <div className={`step-marker ${completedSteps >= 1 ? 'done' : 'active'}`}>
-                        {completedSteps >= 1 ? <Icon name="check" size={10} /> : null}
+                  )}
+
+                  {/* ── Stopped (replaces the live state in place) ── */}
+                  {!loading && lifecycleState === 'stopped' && (
+                    <div className="lex-state-card">
+                      <div className="lex-state-main">
+                        <Icon name="stop" size={13} style={{ color: 'var(--ink-soft)' }} />
+                        <span><b>You stopped this response.</b> Anything already written is kept above.</span>
                       </div>
-                      <span className="step-text">Understanding legal context &amp; statutory scope</span>
-                    </div>
-                    <div className={`step-row ${completedSteps >= 2 ? 'done' : completedSteps === 1 ? 'active' : 'pending'}`}>
-                      <div className={`step-marker ${completedSteps >= 2 ? 'done' : completedSteps === 1 ? 'active' : 'pending'}`}>
-                        {completedSteps >= 2 ? <Icon name="check" size={10} /> : null}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-sm" onClick={() => { if (lastQuery) handleSearch(null, lastQuery); }}>Resume</button>
+                        <button className="btn btn-sm" onClick={() => setLifecycleState('idle')}>Dismiss</button>
                       </div>
-                      <span className="step-text">Analyzing provisions &amp; Indian legal precedents</span>
                     </div>
-                    <div className={`step-row ${completedSteps >= 3 ? 'done' : completedSteps === 2 ? 'active' : 'pending'}`}>
-                      <div className={`step-marker ${completedSteps >= 3 ? 'done' : completedSteps === 2 ? 'active' : 'pending'}`}>
-                        {completedSteps >= 3 ? <Icon name="check" size={10} /> : null}
+                  )}
+
+                  {/* ── Failed (amber, never red) ── */}
+                  {!loading && lifecycleState === 'failed' && (
+                    <div className="lex-state-card is-failed">
+                      <div className="lex-state-main">
+                        <Icon name="caution" size={14} style={{ color: 'var(--major)' }} />
+                        <span>
+                          <b>Couldn't reach the drafting model.</b>{' '}
+                          {streamError || 'Connection interrupted or server unavailable.'}
+                        </span>
                       </div>
-                      <span className="step-text">Structuring enforceable agreement clauses</span>
+                      <button className="btn btn-sm btn-primary" onClick={() => { if (lastQuery) handleSearch(null, lastQuery); }}>Retry</button>
                     </div>
-                    <div className={`step-row ${completedSteps >= 4 ? 'done' : completedSteps === 3 ? 'active' : 'pending'}`}>
-                      <div className={`step-marker ${completedSteps >= 4 ? 'done' : completedSteps === 3 ? 'active' : 'pending'}`}>
-                        {completedSteps >= 4 ? <Icon name="check" size={10} /> : null}
-                      </div>
-                      <span className="step-text">Finalizing reviewable legal draft</span>
-                    </div>
-                  </div>
+                  )}
+
+                  <div ref={messagesEndRef} style={{ height: 1 }} />
                 </div>
               )}
-
-              {/* ── Stopped State Card (Replaces work-card in place) ── */}
-              {!loading && lifecycleState === 'stopped' && (
-                <div className="stopped-card">
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Icon name="stop" size={14} style={{ color: 'var(--ink-soft)' }} />
-                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>You stopped this response</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        className="btn btn-sm"
-                        onClick={() => {
-                          if (lastQuery) handleSearch(null, lastQuery);
-                        }}
-                      >
-                        Resume
-                      </button>
-                      <button
-                        className="btn btn-sm"
-                        onClick={() => setLifecycleState('idle')}
-                      >
-                        Start over
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                    Generation was halted. Completed clauses and statutory context have been preserved.
-                  </div>
-                </div>
-              )}
-
-              {/* ── Failed State Card (Amber Alert Icon, Never Red) ── */}
-              {!loading && lifecycleState === 'failed' && (
-                <div className="failed-card">
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <Icon name="caution" size={16} style={{ color: 'var(--major)', marginTop: 2, flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>
-                        Couldn't reach the drafting model
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', lineHeight: 1.5, marginBottom: 8 }}>
-                        {streamError || 'Connection interrupted or server unavailable. Please check connection or retry.'}
-                      </div>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => {
-                          if (lastQuery) handleSearch(null, lastQuery);
-                        }}
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
             </div>
 
-            {/* ══════════════════════════════════════════════
-                 COMPOSER ZONE (Slate & Rust Architecture)
-            ══════════════════════════════════════════════ */}
-            <div style={{ padding: '6px 20px 14px', background: 'var(--bg)' }}>
-
-              {/* Attached file preview badge */}
-              {attachedFile && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 16, fontSize: 11, color: 'var(--accent)', marginBottom: 6 }}>
-                  <Icon name="draft" size={12} />
-                  <span>{attachedFile.name}</span>
-                  <button onClick={() => setAttachedFile(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px' }}>×</button>
-                </div>
-              )}
-
-              <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept=".pdf,.docx,.doc,.txt,.md" onChange={handleFileAttach} />
-
-              <div className="lex-unified-command-center">
-                {/* Slash Commands Autocomplete Popup */}
-                {isSlashActive && filteredSlashCmds.length > 0 && (
-                  <div className="lex-slash-popup">
-                    {filteredSlashCmds.map((c, i) => (
-                      <button
-                        key={c.cmd}
-                        className={`lex-slash-item ${i === slashIndex ? 'selected' : ''}`}
-                        onClick={() => {
-                          setQuery(c.fill);
-                          inputRef.current?.focus();
-                        }}
-                      >
-                        <span className="lex-slash-cmd">{c.cmd}</span>
-                        <span className="lex-slash-label">{c.label}</span>
-                      </button>
-                    ))}
-                  </div>
+            {messages.length > 0 && (
+              <div className="lex-dock">
+                {!atBottom && (
+                  <button type="button" className="lex-jump" onClick={jumpToLatest} aria-label="Jump to latest">
+                    <Icon name="arrow-down" size={15} />
+                  </button>
                 )}
-
-                {/* TRY Prompt Suggestions Strip */}
-                <div style={{ padding: '8px 12px 4px', display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto' }}>
-                  <span className="try-label mono">TRY:</span>
-                  {PROMPT_SUGGESTIONS.map((s, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      className="try-chip"
-                      onClick={() => {
-                        setQuery(s.prompt);
-                        setTimeout(() => searchRef.current?.(null, s.prompt), 30);
-                      }}
-                    >
-                      <Icon name="sparkles" size={11} />
-                      <span>{s.label}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Composer Textarea */}
-                <div className="lex-composer-body">
-                  <textarea
-                    ref={inputRef}
-                    className="lex-textarea"
-                    rows={2}
-                    value={query}
-                    onChange={e => {
-                      setQuery(e.target.value);
-                      e.target.style.height = 'auto';
-                      e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
-                    }}
-                    onKeyDown={e => {
-                      if (isSlashActive && filteredSlashCmds.length > 0) {
-                        if (e.key === 'ArrowDown') {
-                          e.preventDefault();
-                          setSlashIndex(prev => (prev + 1) % filteredSlashCmds.length);
-                          return;
-                        }
-                        if (e.key === 'ArrowUp') {
-                          e.preventDefault();
-                          setSlashIndex(prev => (prev - 1 + filteredSlashCmds.length) % filteredSlashCmds.length);
-                          return;
-                        }
-                        if (e.key === 'Enter' || e.key === 'Tab') {
-                          e.preventDefault();
-                          setQuery(filteredSlashCmds[slashIndex].fill);
-                          return;
-                        }
-                      }
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSearch(null);
-                      }
-                    }}
-                    placeholder="Ask LexAmplify anything… type / for drafting commands (Shift+Enter for new line)"
-                  />
-                </div>
-
-                {/* Integrated Bottom Toolbar (5 Tools + Send Button) */}
-                <div className="lex-composer-bottom">
-                  <div className="lex-composer-tools">
-                    <button type="button" className="tool-pill" onClick={() => fileInputRef.current?.click()} title="Attach Document (PDF, DOCX, TXT)">
-                      <Icon name="attach" size={13} /> Attach
-                    </button>
-                    <button type="button" className="tool-pill" onClick={toggleMic} style={{ color: isListening ? 'var(--major)' : undefined }} title="Voice Command">
-                      <Icon name="mic" size={13} /> {isListening ? 'Listening…' : 'Voice'}
-                    </button>
-
-                    <div className="lex-tool-divider" />
-
-                    {/* Integrated Assistant Tools */}
-                    {ASSISTANT_TOOLS.map(t => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        className="tool-pill"
-                        onClick={() => {
-                          setQuery(t.prompt);
-                          setTimeout(() => searchRef.current?.(null, t.prompt), 30);
-                        }}
-                      >
-                        <Icon name={t.icon} size={12} />
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div>
-                    {loading ? (
-                      <button type="button" className="lex-stop-btn" onClick={handleStopGeneration}>
-                        <Icon name="stop" size={11} /> Stop
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="lex-send-btn"
-                        aria-label="Send message"
-                        disabled={!query.trim() && !attachedFile}
-                        onClick={() => handleSearch(null)}
-                      >
-                        <Icon name="send" size={14} />
-                      </button>
-                    )}
-                  </div>
+                {renderComposer(false)}
+                <div className="lex-dock-note">
+                  LexAmplify provides AI-assisted legal drafting. Always verify critical statutory information independently.
                 </div>
               </div>
+            )}
 
-              {/* Standing Footer Disclaimer */}
-              <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--muted)', textAlign: 'center' }}>
-                LexAmplify provides AI-assisted legal drafting. Always verify critical statutory information independently.
+            {/* Floating "Ask for changes" toolbar for a text selection */}
+            {selToolbar && (
+              <div
+                className={`lex-sel-toolbar ${selToolbar.below ? 'is-below' : ''}`}
+                style={{ left: selToolbar.x, top: selToolbar.y }}
+                onMouseDown={e => e.preventDefault()}
+              >
+                <button type="button" className="lex-sel-primary" onClick={beginSelectionEdit}>
+                  <Icon name="edit" size={12} /> Ask for changes
+                </button>
+                <button type="button" onClick={explainSelection}>Explain</button>
+                {selToolbar.source === 'drawer' && (
+                  <>
+                    <span className="lex-tool-divider" />
+                    <button type="button" title="Bold" onClick={() => document.execCommand('bold')}><b>B</b></button>
+                    <button type="button" title="Italic" onClick={() => document.execCommand('italic')}><i>I</i></button>
+                  </>
+                )}
+                <button type="button" title="Copy" onClick={() => { copyText(selToolbar.text, 'sel'); setSelToolbar(null); }}>
+                  <Icon name="copy" size={12} />
+                </button>
               </div>
-            </div>
+            )}
           </main>
 
           {/* ══════════════════════════════════════════════
@@ -2945,7 +3752,7 @@ export function CommandPalette() {
                             {stat.label}
                             {stat.verified && (
                               <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '.04em', opacity: 0.85 }}>
-                                ✓ VERIFIED
+                                SOURCE FOUND
                               </span>
                             )}
                           </>
@@ -2959,8 +3766,8 @@ export function CommandPalette() {
                             className="ground-chip"
                             style={{ textDecoration: 'none', cursor: 'pointer' }}
                             title={stat.verified
-                              ? 'Verified against a real source — opens it in a new tab'
-                              : 'Source link found for this citation — not independently verified, opens in a new tab'}
+                              ? 'Found on India Code / Indian Kanoon — confirms the provision exists. Open it to confirm it says what the draft relies on.'
+                              : 'Source link found for this citation — not independently checked. Opens in a new tab.'}
                           >
                             {inner}
                           </a>
@@ -3099,13 +3906,16 @@ export function CommandPalette() {
                     className="lex-doc-paper"
                     contentEditable
                     suppressContentEditableWarning
+                    onMouseUp={e => handleDocSelection(e, 'drawer', activeDocument?.msgId)}
+                    onKeyUp={e => { if (e.shiftKey) handleDocSelection(e, 'drawer', activeDocument?.msgId); }}
                     onBlur={e => {
-                      const plain = e.currentTarget.innerText || '';
-                      lastDocKeyRef.current = `${activeDocument?.title}::${plain.length}`;
+                      const md = draftHtmlToMarkdown(e.currentTarget);
+                      if (md === (activeDocument?.content || '').trim()) return;
+                      lastDocKeyRef.current = `${activeDocument?.title}::${md.length}`;
                       updateSession(currentId, s => ({
                         ...s,
-                        pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: plain } : null,
-                        activeDocument: s.activeDocument ? { ...s.activeDocument, content: plain } : null,
+                        pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: md } : null,
+                        activeDocument: s.activeDocument ? { ...s.activeDocument, content: md } : null,
                       }));
                     }}
                   />

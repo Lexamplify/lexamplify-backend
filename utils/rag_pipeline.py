@@ -298,6 +298,45 @@ def _is_draft_query(query: str) -> bool:
     return False
 
 
+# Verbs that, as the very first word(s) of a query, unambiguously signal a
+# request to create a brand-new document from scratch — checked as a
+# deterministic pre-filter before the LLM intent router gets a vote. Added
+# after live-testing surfaced a real misclassification: a detailed,
+# realistically-phrased drafting request ("Draft a comprehensive mutual
+# Non-Disclosure Agreement compliant with the Indian Contract Act, 1872,
+# including confidentiality covenants, permitted disclosures, non-
+# circumvention, and injunctive relief.") was classified as plain "chat" by
+# the fast router model (llama-3.1-8b-instant) instead of "review_document"
+# — so the lawyer got an unstructured wall of chat text with none of the
+# streamed canvas, citation verification, or rationale that review_document
+# provides, even though the query opens with exactly the same pattern the
+# router's own prompt gives as a worked example ("write an NDA"). The
+# router is a single zero-shot call from a small fast model with no
+# few-shot examples grounding it, so it can misfire on real, detailed
+# requests precisely like the ones this product exists to handle well.
+# This pre-filter only ever narrows toward the correct answer for the
+# unambiguous cases (a query that starts with an explicit drafting verb) —
+# it never overrides an edit or draft-Q&A request, both of which are
+# checked earlier and return before this is reached.
+_NEW_DRAFT_VERBS = ('draft ', 'write ', 'prepare ', 'create ', 'generate ', 'draw up ', 'compose ')
+
+_NUMBERED_PART_REF = re.compile(r'\b(?:clause|para(?:graph)?)\s+\d+')
+
+def _is_new_draft_request(query: str) -> bool:
+    """Return True if the query unambiguously asks to create a brand-new
+    document from scratch: it opens with a drafting verb AND doesn't point
+    back at an existing document ("this draft", "clause 5", "a summary of
+    the agreement") — those are edits or questions, not new drafts."""
+    ql = query.lower().lstrip()
+    if any(ql.startswith(p) for p in _NAV_PREFIXES):
+        return False
+    if not any(ql.startswith(v) for v in _NEW_DRAFT_VERBS):
+        return False
+    if any(ref in ql for ref in _DRAFT_REFS) or 'summar' in ql or _NUMBERED_PART_REF.search(ql):
+        return False
+    return True
+
+
 def _generate_suggested_actions(client, query: str, response_snippet: str, draft_context: str = "") -> list:
     """Use the fast model to generate 3 context-aware next-step action pills."""
     snippet = response_snippet[:1500] if response_snippet else ""
@@ -373,6 +412,50 @@ FACT_FIDELITY_RULES = (
 )
 
 
+# Anchors for the specific provisions this product's drafts and answers
+# lean on most — added because the recorded LexAmplify session showed
+# concrete, checkable slips on exactly these (the DPDP Act 2023 described
+# as a "Bill ... once enacted", and Section 64 of the Contract Act cited for
+# penalty clauses where Section 74 is the operative provision). A short list
+# of known-correct anchors is far more reliable than a general "don't
+# hallucinate" instruction, and the closing rule tells the model what to do
+# for anything NOT on the list instead of guessing a number.
+LEGAL_ACCURACY_ANCHORS = (
+    "CURRENT-LAW ANCHORS (use these exactly; they override anything you remember differently):\n"
+    "- From 1 July 2024 the Bharatiya Nyaya Sanhita, 2023 (BNS), Bharatiya Nagarik Suraksha Sanhita, 2023 "
+    "(BNSS) and Bharatiya Sakshya Adhiniyam, 2023 (BSA) replaced the IPC, CrPC and Indian Evidence Act. "
+    "Cite the BNS/BNSS/BSA provision, adding the old IPC/CrPC section in brackets where it helps. "
+    "Bail: s.480 BNSS (earlier s.437 CrPC), s.483 BNSS (earlier s.439 CrPC); anticipatory bail s.482 BNSS "
+    "(earlier s.438 CrPC). Cheating: s.318 BNS (earlier s.420 IPC).\n"
+    "- The Digital Personal Data Protection Act, 2023 is an enacted Act — never call it a Bill.\n"
+    "- Indian Contract Act, 1872: s.10 (valid contracts), s.23 (lawful consideration and object), s.27 "
+    "(agreements in restraint of trade are void, save the sale-of-goodwill exception), s.28 (agreements "
+    "restraining legal proceedings), s.73 (compensation for breach), s.74 (named sum / penalty — this, not "
+    "s.64, governs liquidated damages).\n"
+    "- Specific Relief Act, 1963: injunctions are ss.36–42 (s.38 perpetual, s.41 bars, s.42 negative "
+    "covenants); interim injunctions are under Order XXXIX CPC.\n"
+    "- Arbitration and Conciliation Act, 1996: s.7 arbitration agreement, s.9 interim measures by court, "
+    "s.11 appointment of arbitrators, s.29A time limit for award.\n"
+    "- Commercial Courts Act, 2015: s.12A pre-institution mediation (dispensed with only where urgent "
+    "interim relief is contemplated).\n"
+    "- Negotiable Instruments Act, 1881, s.138: demand notice within 30 days of receiving the bank's "
+    "dishonour memo; drawer has 15 days from receipt of notice to pay.\n"
+    "- Stamp duty: Indian Stamp Act, 1899 as modified by each State's stamp law — never state a duty amount.\n"
+    "- For ANY provision not listed here whose number you are not certain of, state the legal rule "
+    "without a section number, or write the number followed by [verify] — never present a guess as fact.\n"
+)
+
+# How output must be formatted so the frontend's renderer shows it cleanly
+# — the recorded session showed literal "<br>" and ">" characters and
+# emoji section headings leaking into answers.
+OUTPUT_FORMAT_RULES = (
+    "FORMATTING: Use plain Markdown only — '#'/'##'/'###' headings, numbered clauses (1., 1.1), "
+    "'**bold**' for defined terms, '-' bullets, and pipe tables only for genuinely tabular content "
+    "(comparisons, signature blocks). Never emit raw HTML tags such as <br>; put separate points on "
+    "separate lines instead. Never prefix clause text with '>'. No emoji in headings.\n"
+)
+
+
 # Matches "Section 27 of the Indian Contract Act, 1872", "Section 138 of the Negotiable Instruments Act",
 # "Article 14 of the Constitution", "Sections 73 and 74 of the Contract Act", etc.
 _CITATION_PATTERN = re.compile(
@@ -400,6 +483,9 @@ def extract_statute_citations(text: str, max_citations: int = 4) -> list:
         if len(out) >= max_citations:
             break
     return out
+
+
+_TRUSTED_LAW_DOMAINS = ("indiacode.nic.in", "indiankanoon.org")
 
 
 def verify_citations_with_tavily(citations: list) -> list:
@@ -432,12 +518,19 @@ def verify_citations_with_tavily(citations: list) -> list:
 
     for citation in citations:
         try:
+            # include_domains is Tavily's real domain filter; a "site:a OR
+            # site:b" string inside the query is not guaranteed to be honoured,
+            # which could let an unrelated blog result count as "found". The
+            # domain check below double-guards that, so a hit only counts when
+            # it genuinely comes from one of the two primary-law sources.
             sr = tc.search(
-                query=f"{citation} site:indiacode.nic.in OR site:indiankanoon.org",
+                query=citation,
                 search_depth="basic",
-                max_results=2,
+                max_results=3,
+                include_domains=list(_TRUSTED_LAW_DOMAINS),
             )
             hits = sr.get("results", []) if isinstance(sr, dict) else []
+            hits = [h for h in hits if any(d in (h.get("url") or "") for d in _TRUSTED_LAW_DOMAINS)]
             if hits:
                 top = hits[0]
                 results.append({
@@ -634,19 +727,40 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
         yield f"data: {json.dumps({'token': '[System Error: GROQ_API_KEY is missing or invalid on server.]'})}\n\n"
         return
 
+    params = params or {}
+    # A clear "draft/write/prepare a <document>" request always means a NEW
+    # document, even when another draft is open in the session — otherwise
+    # "Draft a bail application, add grounds of parity" with an NDA open
+    # would be caught by the edit intercept below (it contains "add ") and
+    # silently rewrite the NDA instead.
+    new_draft_request = _is_new_draft_request(query)
+
+    # Selection-scoped edit — the ChatGPT-style "select text → Ask for
+    # changes" flow. The frontend sends the exact passage the lawyer
+    # highlighted; we change only that passage and return the full document.
+    selection = params.get("selection_edit") if isinstance(params, dict) else None
+    selection = selection.strip()[:4000] if isinstance(selection, str) else ""
+
     # ── DRAFT EDITING INTERCEPT (runs BEFORE the intent router) ────────────
     # When the lawyer has an active draft AND gives an editing command, we skip
     # the intent router entirely — it cannot hallucinate navigation or simulation.
-    if current_draft_context and _is_edit_intent(query):
-        _editing_msg = json.dumps({'token': '✏️ Applying changes to draft…\n'})
-        yield f"data: {_editing_msg}\n\n"
-
+    if current_draft_context and (selection or (_is_edit_intent(query) and not new_draft_request)):
+        if selection:
+            scope_rules = (
+                f"THE LAWYER SELECTED THIS EXACT PASSAGE:\n\"\"\"\n{selection}\n\"\"\"\n\n"
+                f"LAWYER'S INSTRUCTION FOR THAT PASSAGE: {query}\n\n"
+                "SCOPE RULE — CRITICAL: change ONLY the selected passage (and, if the instruction strictly "
+                "requires it, the minimum consequential wording elsewhere, e.g. a defined term used later). "
+                "Every other character of the document must be reproduced exactly as it is.\n"
+            )
+        else:
+            scope_rules = f"LAWYER'S INSTRUCTION: {query}\n"
         edit_prompt = (
             f"You are a senior Indian legal drafting counsel. "
             f"The lawyer wants you to revise their active draft.\n\n"
             f"CURRENT DRAFT — \"{current_draft_title or 'Legal Document'}\":\n"
             f"---\n{current_draft_context[:10000]}\n---\n\n"
-            f"LAWYER'S INSTRUCTION: {query}\n\n"
+            f"{scope_rules}\n"
             "DRAFTING RULES:\n"
             "1. Apply the instruction precisely and correctly under Indian Law.\n"
             "2. Return the COMPLETE updated document — not just the changed section.\n"
@@ -654,7 +768,7 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
             "4. Insert new clauses in the most logically appropriate position.\n"
             "5. Use proper legal English suitable for Indian courts and arbitral tribunals.\n"
             "6. Output ONLY the revised document text — no preamble, no explanation, no markdown code fences.\n\n"
-            f"{FACT_FIDELITY_RULES}"
+            f"{FACT_FIDELITY_RULES}\n{LEGAL_ACCURACY_ANCHORS}\n{OUTPUT_FORMAT_RULES}"
         )
         try:
             edit_res = client.chat.completions.create(
@@ -663,15 +777,23 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
                 temperature=0.2,
             )
             updated_content = edit_res.choices[0].message.content or ""
+            # Models occasionally wrap the whole document in a ``` fence
+            # despite rule 6 — strip it so the canvas never shows the fence.
+            updated_content = re.sub(r'^\s*```[a-zA-Z]*\s*\n', '', updated_content)
+            updated_content = re.sub(r'\n\s*```\s*$', '', updated_content).strip()
+            if not updated_content:
+                raise ValueError("empty revision")
             _edit_payload = json.dumps({
                 'action': 'update_document',
                 'updated_content': updated_content,
                 'title': current_draft_title,
-                'change_summary': query[:80],
+                'change_summary': query[:120],
+                'selection': selection[:160] if selection else '',
             })
             yield f"data: {_edit_payload}\n\n"
         except Exception as e:
-            _err_payload = json.dumps({'token': '[Edit error: ' + str(e) + ']\n'})
+            print(f"[Draft edit error]: {e}")
+            _err_payload = json.dumps({'token': "I couldn't apply that change — the drafting model didn't return a revision. Your draft is unchanged; please try again."})
             yield f"data: {_err_payload}\n\n"
         yield "data: [DONE]\n\n"
         return
@@ -680,7 +802,7 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
     # When the lawyer asks a question about or requests a summary of the active
     # draft, answer strictly from the injected draft text — not from the RAG
     # index or general knowledge.
-    if current_draft_context and _is_draft_query(query) and not _is_edit_intent(query):
+    if current_draft_context and not new_draft_request and _is_draft_query(query) and not _is_edit_intent(query):
         qa_prompt = (
             f"You are a senior Indian legal counsel reviewing an active draft document.\n\n"
             f"ACTIVE DRAFT — \"{current_draft_title or 'Legal Document'}\":\n"
@@ -691,7 +813,8 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
             "2. Cite specific clause numbers or headings from the draft where relevant.\n"
             "3. Be precise. Format clearly with headings or bullet points as appropriate.\n"
             "4. If asked for a summary, produce a structured executive summary covering: "
-            "parties, purpose, key obligations, confidentiality scope, term, and termination."
+            "parties, purpose, key obligations, confidentiality scope, term, and termination.\n\n"
+            f"{LEGAL_ACCURACY_ANCHORS}\n{OUTPUT_FORMAT_RULES}"
         )
         try:
             yield f"data: {json.dumps({'metadata': {'action': 'chat', 'sources': []}})}\n\n"
@@ -735,13 +858,28 @@ JSON formats:
 - chat:               {{"action": "chat"}}"""
 
     try:
-        intent_res = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": command_check_prompt}],
-            temperature=0.0,
-            response_format={"type": "json_object"}
-        )
-        intent_data = clean_and_parse_json(intent_res.choices[0].message.content)
+        if new_draft_request:
+            # Deterministic fast-path — see _is_new_draft_request's comment.
+            # Skips the router call entirely for the unambiguous cases, which
+            # also saves a full model round-trip on the most common request
+            # this product handles.
+            intent_data = {
+                "action": "review_document",
+                "draft": {
+                    "title": "New Legal Document",
+                    "doc_type": "Legal Draft",
+                    "content": "",
+                    "case_id": str(case_id) if case_id else "Unknown",
+                },
+            }
+        else:
+            intent_res = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": command_check_prompt}],
+                temperature=0.0,
+                response_format={"type": "json_object"}
+            )
+            intent_data = clean_and_parse_json(intent_res.choices[0].message.content)
 
         if intent_data:
             action = intent_data.get("action", "chat")
@@ -857,8 +995,9 @@ Return ONLY raw JSON matching this schema."""
                     f"Case Context:\n{context_str}\n\n"
                     f"Request: {query}\n\n"
                     "Generate a complete, professional legal document with proper headings, "
-                    "clauses, and formatting suitable for Indian courts.\n\n"
-                    f"{FACT_FIDELITY_RULES}\n"
+                    "clauses, and formatting suitable for Indian courts. Start directly with the "
+                    "document title as a '#' heading — no preamble.\n\n"
+                    f"{FACT_FIDELITY_RULES}\n{LEGAL_ACCURACY_ANCHORS}\n{OUTPUT_FORMAT_RULES}\n"
                     "After the complete document, on its own line write the exact delimiter "
                     f"{_RATIONALE_DELIMITER} followed by 3-5 short bullet points explaining the key "
                     "drafting choices you made and why (e.g. why a clause was scoped a certain way, "
@@ -965,10 +1104,18 @@ Return ONLY raw JSON matching this schema."""
                 except Exception as e:
                     print(f"[Citation verification error]: {e}")
 
+                # Title from the document's own '#' heading when the router /
+                # fast-path only had a placeholder — so the card reads
+                # "Mutual Non-Disclosure Agreement", not "New Legal Document".
+                final_title = doc_info.get("title") or "Legal Document"
+                _h = re.search(r'^\s*#\s+(.+?)\s*$', draft_content, re.MULTILINE)
+                if _h and final_title in ("New Legal Document", "Title", "Legal Document"):
+                    final_title = _h.group(1).strip().strip('*').strip()[:120]
+
                 done_payload = {
                     "action": "review_document_done",
                     "draft": {
-                        "title": doc_info.get("title", "Legal Document"),
+                        "title": final_title,
                         "doc_type": doc_info.get("doc_type", "Legal Document"),
                         "content": draft_content,
                         "case_id": str(case_id or "Unknown"),
@@ -997,7 +1144,10 @@ Return ONLY raw JSON matching this schema."""
         "If the provided context doesn't contain the answer, say so instead of filling the gap "
         "from unverified general knowledge presented with false confidence. "
         "When you cite a specific 'Section X of the Y Act', only do so when you are genuinely "
-        "confident that section exists and says what you say it says."
+        "confident that section exists and says what you say it says.\n\n"
+        "Answer shape: lead with the direct answer in one or two sentences, then the supporting "
+        "detail. Keep it as long as the question needs and no longer.\n\n"
+        f"{LEGAL_ACCURACY_ANCHORS}\n{OUTPUT_FORMAT_RULES}"
     )
     context_str = (
         "\n\n".join(f"[Source Chunk]:\n{c['text']}" for c in matched_chunks)
@@ -1028,6 +1178,17 @@ Return ONLY raw JSON matching this schema."""
                 token = chunk.choices[0].delta.content
                 full_text += token
                 yield f"data: {json.dumps({'token': token})}\n\n"
+
+        # Same source check drafts get — every answer's statute citations are
+        # looked up on India Code / Indian Kanoon, capped at 3 to respect the
+        # free-tier Tavily budget. Only runs when the answer actually cites
+        # something, so plain explanations cost nothing extra.
+        try:
+            cited = extract_statute_citations(full_text, max_citations=3)
+            if cited:
+                yield f"data: {json.dumps({'citations': verify_citations_with_tavily(cited)})}\n\n"
+        except Exception as e:
+            print(f"[Chat citation check error]: {e}")
 
         actions = _generate_suggested_actions(client, query, full_text, current_draft_context)
         yield f"data: {json.dumps({'suggested_actions': actions})}\n\n"
