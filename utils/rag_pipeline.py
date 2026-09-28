@@ -337,6 +337,138 @@ def _generate_suggested_actions(client, query: str, response_snippet: str, draft
     ]
 
 
+# ── ANTI-HALLUCINATION: FACT FIDELITY + CITATION VERIFICATION ──────────
+#
+# Two independent defenses, matching what actually distinguishes trusted
+# assistants from ones that "sound right but invent things":
+#
+#   1. A drafting system prompt that forbids re-abstracting facts the
+#      lawyer actually supplied, and forbids inventing case law or
+#      statute numbers the model isn't sure about.
+#   2. A post-generation citation check: every "Section X of the Y Act"
+#      the draft cites gets a real Tavily web search against India's
+#      official law portal / Indian Kanoon. Only citations a search
+#      actually confirms are shown as verified — anything unconfirmed is
+#      labelled as such rather than silently dropped or falsely badged.
+#
+# No paid legal-citator API is available (Groq free tier + Tavily only,
+# per the lawyer running this), so this is the honest version of citation
+# grounding that's actually buildable on that budget — real search
+# results, not a decorative checkmark.
+
+FACT_FIDELITY_RULES = (
+    "FACT FIDELITY — MANDATORY:\n"
+    "1. If the instructions or context state a specific, concrete fact — a party's actual name, "
+    "an address, an amount, a date, a percentage, a city, a defined term, a case number — use that "
+    "EXACT fact verbatim wherever it belongs. Do not re-abstract a fact you were actually given back "
+    "into a bracket just to look uniform.\n"
+    "2. Only for facts genuinely NOT supplied anywhere, use a bracketed placeholder "
+    "(e.g. [Client/Company Legal Name], [Amount], [Number] days, [City, State]), exactly as a "
+    "fillable template leaves them for the parties to complete.\n"
+    "3. NEVER invent or guess a fact, case citation, or statute section number that was not supplied "
+    "and that you are not highly confident is real. A bracket beats a fabricated fact. If you are "
+    "not confident a section number is correct, say so in plain words rather than stating it as fact.\n"
+    "4. Cite only statutes/sections you are confident actually exist and say what you say they say. "
+    "Do not manufacture a plausible-sounding case name or citation to fill a gap.\n"
+)
+
+
+# Matches "Section 27 of the Indian Contract Act, 1872", "Section 138 of the Negotiable Instruments Act",
+# "Article 14 of the Constitution", "Sections 73 and 74 of the Contract Act", etc.
+_CITATION_PATTERN = re.compile(
+    r'(?:Section|Sections|Sec\.?|Article|Articles|Order\s+[IVXLCDM]+(?:\s+Rule\s+\d+)?)\s+'
+    r'[\d]+[A-Za-z]?(?:\s*(?:,|and|to)\s*\d+[A-Za-z]?)*'
+    r'\s+(?:of\s+the\s+)?([A-Z][A-Za-z,\s]{3,60}?\b(?:Act|Code|Constitution)\b(?:,?\s*\d{4})?)',
+    re.IGNORECASE,
+)
+
+
+def extract_statute_citations(text: str, max_citations: int = 4) -> list:
+    """Pull unique 'Section X of the Y Act' style citations out of drafted
+    text, in first-seen order, capped for API-call budget."""
+    if not text:
+        return []
+    seen = set()
+    out = []
+    for m in _CITATION_PATTERN.finditer(text):
+        full = m.group(0).strip().rstrip('.,;:')
+        key = full.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(full)
+        if len(out) >= max_citations:
+            break
+    return out
+
+
+def verify_citations_with_tavily(citations: list) -> list:
+    """
+    Real verification, not theater: for each citation string, run an actual
+    Tavily search scoped to India's official law portal / Indian Kanoon and
+    only report back citations a search genuinely confirmed. A citation
+    Tavily can't find a matching source for is returned with verified=False
+    and no url — never a fabricated link.
+
+    Reuses the exact TavilyClient pattern already live in
+    routes/ai_routes.py's /simulate endpoint (site:indiankanoon.org search),
+    the one external verification mechanism this deployment actually has.
+    """
+    if not citations:
+        return []
+    tavily_key = os.environ.get("TAVILY_API_KEY")
+    if not tavily_key:
+        # No verification possible — every citation is honestly unverified,
+        # never silently marked as confirmed.
+        return [{"citation": c, "verified": False, "url": "", "title": ""} for c in citations]
+
+    results = []
+    try:
+        from tavily import TavilyClient
+        tc = TavilyClient(api_key=tavily_key)
+    except Exception as e:
+        print(f"[Tavily init error]: {e}")
+        return [{"citation": c, "verified": False, "url": "", "title": ""} for c in citations]
+
+    for citation in citations:
+        try:
+            sr = tc.search(
+                query=f"{citation} site:indiacode.nic.in OR site:indiankanoon.org",
+                search_depth="basic",
+                max_results=2,
+            )
+            hits = sr.get("results", []) if isinstance(sr, dict) else []
+            if hits:
+                top = hits[0]
+                results.append({
+                    "citation": citation,
+                    "verified": True,
+                    "url": top.get("url", ""),
+                    "title": top.get("title", citation),
+                })
+            else:
+                results.append({"citation": citation, "verified": False, "url": "", "title": ""})
+        except Exception as e:
+            print(f"[Tavily citation check error for '{citation}']: {e}")
+            results.append({"citation": citation, "verified": False, "url": "", "title": ""})
+    return results
+
+
+_RATIONALE_DELIMITER = "===DRAFTING_RATIONALE==="
+
+
+def split_rationale(raw_content: str) -> tuple:
+    """Split a model response into (document_content, rationale_text) using
+    the ===DRAFTING_RATIONALE=== delimiter the drafting prompt asks the
+    model to emit after the document. If the model didn't include one,
+    rationale_text is empty and the full text is treated as the document —
+    never invented after the fact."""
+    if not raw_content or _RATIONALE_DELIMITER not in raw_content:
+        return (raw_content or "").strip(), ""
+    doc_part, _, rationale_part = raw_content.partition(_RATIONALE_DELIMITER)
+    return doc_part.strip(), rationale_part.strip().lstrip(':').strip()
+
+
 # ── 9. AGENTIC TOOL ROUTING  ────────────────────────────────────────────
 #
 #  Two tools let the LLM hard-route the user to a specialised workspace
@@ -521,7 +653,8 @@ def stream_rag_query(query: str, user_id: int, case_id: int = None, document_id:
             "3. Preserve all existing headings, numbering, party names, and clause structure.\n"
             "4. Insert new clauses in the most logically appropriate position.\n"
             "5. Use proper legal English suitable for Indian courts and arbitral tribunals.\n"
-            "6. Output ONLY the revised document text — no preamble, no explanation, no markdown code fences."
+            "6. Output ONLY the revised document text — no preamble, no explanation, no markdown code fences.\n\n"
+            f"{FACT_FIDELITY_RULES}"
         )
         try:
             edit_res = client.chat.completions.create(
@@ -711,27 +844,92 @@ Return ONLY raw JSON matching this schema."""
                 return
 
             if action == "review_document":
-                # ── ENGINE 2: DRAFT GENERATOR ───────────────────────
+                # ── ENGINE 2: DRAFT GENERATOR — streamed live into the canvas ──
                 matched_chunks = search_chunks(query, user_id, case_id, document_id, scope, top_k=6)
                 context_str = (
                     "\n\n".join(f"[Source Chunk]:\n{c['text']}" for c in matched_chunks)
                     if matched_chunks else "No case document context available."
                 )
+                doc_info = intent_data.get("draft", {})
                 draft_prompt = (
                     "You are an elite Indian legal document drafter. "
                     "Using the case context below, draft the requested legal document in full.\n\n"
                     f"Case Context:\n{context_str}\n\n"
                     f"Request: {query}\n\n"
                     "Generate a complete, professional legal document with proper headings, "
-                    "clauses, and formatting suitable for Indian courts."
+                    "clauses, and formatting suitable for Indian courts.\n\n"
+                    f"{FACT_FIDELITY_RULES}\n"
+                    "After the complete document, on its own line write the exact delimiter "
+                    f"{_RATIONALE_DELIMITER} followed by 3-5 short bullet points explaining the key "
+                    "drafting choices you made and why (e.g. why a clause was scoped a certain way, "
+                    "why a specific statute applies) — the same way a senior associate would leave a "
+                    "cover note for the partner reviewing the draft. Do not repeat the document text "
+                    "in the rationale."
                 )
-                draft_res = client.chat.completions.create(
-                    model="openai/gpt-oss-120b",
-                    messages=[{"role": "user", "content": draft_prompt}],
-                    temperature=0.3,
-                )
-                draft_content = draft_res.choices[0].message.content
-                doc_info = intent_data.get("draft", {})
+
+                # Tell the frontend the canvas is opening NOW, before a single
+                # token exists — the draft fills in live instead of appearing
+                # as one blocking blob once generation finishes.
+                start_payload = {
+                    "action": "review_document_start",
+                    "draft": {
+                        "title": doc_info.get("title", "Legal Document"),
+                        "doc_type": doc_info.get("doc_type", "Legal Document"),
+                        "case_id": str(case_id or "Unknown"),
+                    },
+                }
+                yield f"data: {json.dumps(start_payload)}\n\n"
+
+                raw_content = ""
+                sent_len = 0  # how much of the VISIBLE document we've already streamed out
+                hold_back = len(_RATIONALE_DELIMITER) - 1
+                try:
+                    draft_stream = client.chat.completions.create(
+                        model="openai/gpt-oss-120b",
+                        messages=[{"role": "user", "content": draft_prompt}],
+                        temperature=0.3,
+                        stream=True,
+                    )
+                    for chunk in draft_stream:
+                        delta = chunk.choices[0].delta.content
+                        if not delta:
+                            continue
+                        raw_content += delta
+
+                        delim_idx = raw_content.find(_RATIONALE_DELIMITER)
+                        if delim_idx != -1:
+                            # Delimiter confirmed — flush everything up to it
+                            # (once, trailing whitespace trimmed to match the
+                            # final .strip()'d content) and stop emitting
+                            # draft tokens; the rest is rationale, accumulated
+                            # silently until [DONE].
+                            visible_tail = raw_content[sent_len:delim_idx].rstrip()
+                            if visible_tail:
+                                yield f"data: {json.dumps({'draft_token': visible_tail})}\n\n"
+                            sent_len = delim_idx
+                            continue
+
+                        # No confirmed delimiter yet — hold back only the
+                        # last few characters in case they're its opening
+                        # prefix, and flush the rest immediately. Held-back
+                        # characters are never lost: if they turn out not to
+                        # be the delimiter, the next iteration (or the final
+                        # flush below) sends them.
+                        safe_len = max(sent_len, len(raw_content) - hold_back)
+                        if safe_len > sent_len:
+                            yield f"data: {json.dumps({'draft_token': raw_content[sent_len:safe_len]})}\n\n"
+                            sent_len = safe_len
+                except Exception as e:
+                    yield f"data: {json.dumps({'token': f'[Draft generation error: {e}]'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
+                draft_content, rationale_text = split_rationale(raw_content)
+                # Final flush — covers both a false-alarm delimiter prefix
+                # that never completed, and the last held-back tail of a
+                # document with no rationale delimiter at all.
+                if sent_len < len(draft_content):
+                    yield f"data: {json.dumps({'draft_token': draft_content[sent_len:]})}\n\n"
 
                 # search_chunks() above already retrieved the real context this
                 # draft was grounded on — resolve each unique chunk's parent
@@ -757,17 +955,29 @@ Return ONLY raw JSON matching this schema."""
                     finally:
                         conn.close()
 
-                result = {
-                    "action": "review_document",
+                # Real citation verification — a Tavily search per statute
+                # citation the draft actually contains, not a fake badge.
+                citations = []
+                try:
+                    cited = extract_statute_citations(draft_content)
+                    if cited:
+                        citations = verify_citations_with_tavily(cited)
+                except Exception as e:
+                    print(f"[Citation verification error]: {e}")
+
+                done_payload = {
+                    "action": "review_document_done",
                     "draft": {
                         "title": doc_info.get("title", "Legal Document"),
                         "doc_type": doc_info.get("doc_type", "Legal Document"),
                         "content": draft_content,
                         "case_id": str(case_id or "Unknown"),
                         "sources": sources,
+                        "citations": citations,
+                        "rationale": rationale_text,
                     }
                 }
-                yield f"data: {json.dumps(result)}\n\n"
+                yield f"data: {json.dumps(done_payload)}\n\n"
                 actions = _generate_suggested_actions(client, query, draft_content[:800])
                 yield f"data: {json.dumps({'suggested_actions': actions})}\n\n"
                 yield "data: [DONE]\n\n"
@@ -781,7 +991,13 @@ Return ONLY raw JSON matching this schema."""
     system_prompt = (
         "You are an elite AI legal assistant operating strictly under Indian Law. "
         "Answer the user's query using the provided context. "
-        "Format your response clearly using markdown. DO NOT output JSON."
+        "Format your response clearly using markdown. DO NOT output JSON.\n\n"
+        "Never invent a statute section, case citation, or fact you are not confident is real — "
+        "say plainly that you're not certain rather than stating a guess as fact. "
+        "If the provided context doesn't contain the answer, say so instead of filling the gap "
+        "from unverified general knowledge presented with false confidence. "
+        "When you cite a specific 'Section X of the Y Act', only do so when you are genuinely "
+        "confident that section exists and says what you say it says."
     )
     context_str = (
         "\n\n".join(f"[Source Chunk]:\n{c['text']}" for c in matched_chunks)

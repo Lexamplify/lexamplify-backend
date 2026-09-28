@@ -247,10 +247,19 @@ const extractGroundedStatutes = (docContent = '', citations = []) => {
 
   if (Array.isArray(citations)) {
     for (const c of citations) {
-      const label = typeof c === 'string' ? c : (c.title || c.statute || c.source || '');
+      const isObj = c && typeof c === 'object';
+      const label = isObj ? (c.title || c.statute || c.source || c.citation || '') : String(c || '');
       if (label && !seen.has(label)) {
         seen.add(label);
-        real.push(label);
+        // url/verified only come from the real backend citation-verification
+        // pass (Tavily-checked in rag_pipeline.py) — a plain string entry or
+        // an object with no url never gets a link or a "verified" badge, so
+        // the chip never implies a check that didn't actually happen.
+        real.push({
+          label,
+          url: isObj && typeof c.url === 'string' && c.url ? c.url : null,
+          verified: isObj ? !!c.verified : false,
+        });
       }
     }
   }
@@ -260,7 +269,7 @@ const extractGroundedStatutes = (docContent = '', citations = []) => {
     for (const s of KNOWN_STATUTES) {
       if (s.pattern.test(docContent) && !seen.has(s.name)) {
         seen.add(s.name);
-        fallback.push(s.name);
+        fallback.push({ label: s.name, url: null, verified: false });
       }
     }
   }
@@ -276,6 +285,13 @@ const escHtml = (s) =>
 
 const applyInline = (s) =>
   escHtml(s)
+    // escHtml above turns a literal `<br>`/`<br/>`/`<br />` from LLM output
+    // into the entity text "&lt;br&gt;", which then rendered as visible
+    // literal characters instead of a line break (confirmed root cause of
+    // the broken table/cell line-wrapping seen in reviewed drafts). Since
+    // this only matches the exact escaped form of a genuine <br> tag and
+    // emits a fixed, safe replacement, it reintroduces no injection risk.
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br/>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code class="md-code">$1</code>');
@@ -1677,6 +1693,7 @@ export function CommandPalette() {
   const [showCompletionPanel, setShowCompletionPanel] = useState(false);
   const [missingFieldInputs, setMissingFieldInputs] = useState({});
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const [showRationale, setShowRationale] = useState(false);
   const [selectedSection, setSelectedSection] = useState(null);
   const [slashIndex, setSlashIndex] = useState(0);
 
@@ -2081,7 +2098,7 @@ export function CommandPalette() {
 
       const reader = res.body.getReader();
       const dec = new TextDecoder();
-      let buf = '', accText = '';
+      let buf = '', accText = '', draftAcc = '';
       const msgId = `a_${Date.now()}`;
       pushMessage(sid, { id: msgId, role: 'assistant', text: '', sources: [] });
       setLifecycleState('streaming');
@@ -2120,7 +2137,46 @@ export function CommandPalette() {
                 docCard: updated,
               }));
               setDrawerOpen(true);
+            } else if (p.action === 'review_document_start' && p.draft) {
+              // Canvas opens NOW, empty — the draft fills in live as tokens
+              // arrive below, instead of appearing as one blocking blob.
+              draftAcc = '';
+              const smart = generateSmartName(p.draft.doc_type, currentSession?.title);
+              const opening = { ...p.draft, content: '', smartTitle: smart, streaming: true };
+              updateSession(sid, s => ({
+                ...s,
+                pendingDraft: opening,
+                activeDocument: opening,
+              }));
+              patchMessage(sid, msgId, m => ({ ...m, docCard: opening }));
+              setDrawerOpen(true);
+            } else if (typeof p.draft_token === 'string') {
+              draftAcc += p.draft_token;
+              const liveDraftAcc = draftAcc;
+              updateSession(sid, s => ({
+                ...s,
+                pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: liveDraftAcc } : s.pendingDraft,
+                activeDocument: s.activeDocument ? { ...s.activeDocument, content: liveDraftAcc } : s.activeDocument,
+              }));
+              patchMessage(sid, msgId, m => (
+                m.docCard ? { ...m, docCard: { ...m.docCard, content: liveDraftAcc } } : m
+              ));
+            } else if (p.action === 'review_document_done' && p.draft) {
+              // Authoritative final content — supersedes whatever the live
+              // stream reconstructed, so any streaming-timing edge case
+              // (trailing whitespace, a dropped chunk) self-corrects here.
+              const smart = generateSmartName(p.draft.doc_type, currentSession?.title);
+              const finished = { ...p.draft, smartTitle: smart, streaming: false };
+              updateSession(sid, s => ({
+                ...s,
+                pendingDraft: finished,
+                activeDocument: finished,
+              }));
+              patchMessage(sid, msgId, m => ({ ...m, docCard: finished }));
+              setDrawerOpen(true);
             } else if (p.action === 'review_document' && p.draft) {
+              // Back-compat path — kept in case any server branch ever
+              // still emits a single non-streamed draft payload.
               const smart = generateSmartName(p.draft.doc_type, currentSession?.title);
               const enriched = { ...p.draft, smartTitle: smart };
               updateSession(sid, s => ({
@@ -2133,6 +2189,8 @@ export function CommandPalette() {
                 docCard: enriched,
               }));
               setDrawerOpen(true);
+            } else if (Array.isArray(p.suggested_actions)) {
+              patchMessage(sid, msgId, m => ({ ...m, suggestedActions: p.suggested_actions }));
             } else if (p.token) {
               accText += p.token;
               patchMessage(sid, msgId, m => ({ ...m, text: accText }));
@@ -2507,6 +2565,32 @@ export function CommandPalette() {
                           </div>
                         </div>
                       )}
+
+                      {/* Suggested Next Steps — populated server-side by
+                          rag_pipeline.py's _generate_suggested_actions();
+                          clicking one re-runs handleSearch with that exact
+                          text, same as typing and sending it. */}
+                      {Array.isArray(msg.suggestedActions) && msg.suggestedActions.length > 0 && (
+                        <div className="try-row" style={{ marginTop: 12, marginBottom: 0 }}>
+                          <span className="try-label">NEXT STEPS</span>
+                          {msg.suggestedActions.map((action, ai) => {
+                            const label = typeof action === 'string' ? action : (action.label || action.text || action.query || '');
+                            if (!label) return null;
+                            return (
+                              <button
+                                key={ai}
+                                type="button"
+                                className="try-chip"
+                                disabled={loading}
+                                onClick={() => handleSearch(null, label)}
+                              >
+                                <Icon name="sparkles" size={11} />
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -2848,34 +2932,96 @@ export function CommandPalette() {
                       <span className="mono" style={{ fontSize: 9.5, letterSpacing: '.08em', color: 'var(--muted)', fontWeight: 600 }}>
                         {isReal ? 'GROUNDED IN:' : 'STATUTES REFERENCED:'}
                       </span>
-                      {chips.map((stat, idx) => (
-                        <span
-                          key={idx}
-                          className="ground-chip"
-                          title={isReal ? 'Retrieved from a document in this matter' : 'Mentioned in this draft — not independently verified'}
-                        >
-                          <Icon name="bookmark" size={10} />
-                          {stat}
-                        </span>
-                      ))}
+                      {chips.map((stat, idx) => {
+                        // A citation is only ever labeled "verified" when the
+                        // backend actually ran it past Tavily and got a real
+                        // source back (see verify_citations_with_tavily in
+                        // rag_pipeline.py) — url-having-but-unverified and
+                        // fully-unverified chips are styled the same so
+                        // neither one visually borrows the checked badge.
+                        const inner = (
+                          <>
+                            <Icon name={stat.verified ? 'check' : 'bookmark'} size={10} />
+                            {stat.label}
+                            {stat.verified && (
+                              <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '.04em', opacity: 0.85 }}>
+                                ✓ VERIFIED
+                              </span>
+                            )}
+                          </>
+                        );
+                        return stat.url ? (
+                          <a
+                            key={idx}
+                            href={stat.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ground-chip"
+                            style={{ textDecoration: 'none', cursor: 'pointer' }}
+                            title={stat.verified
+                              ? 'Verified against a real source — opens it in a new tab'
+                              : 'Source link found for this citation — not independently verified, opens in a new tab'}
+                          >
+                            {inner}
+                          </a>
+                        ) : (
+                          <span
+                            key={idx}
+                            className="ground-chip"
+                            title={isReal ? 'Retrieved from a document in this matter' : 'Mentioned in this draft — not independently verified'}
+                          >
+                            {inner}
+                          </span>
+                        );
+                      })}
                     </div>
                   );
                 })()}
 
                 {/* Document Status & AI Review Badge */}
-                <div style={{ padding: '7px 14px', background: 'var(--paper)', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                <div style={{ padding: '7px 14px', background: 'var(--paper)', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, gap: 10 }}>
                   <span style={{ color: 'var(--ink-soft)' }}>
                     AI Generated · Draft · {missingPlaceholders.length} details required
                   </span>
-                  {missingPlaceholders.length > 0 && (
-                    <button
-                      onClick={() => setShowCompletionPanel(v => !v)}
-                      style={{ background: 'none', border: 'none', color: 'var(--major)', fontWeight: 600, cursor: 'pointer', fontSize: 11 }}
-                    >
-                      {showCompletionPanel ? 'Hide Form' : '⚡ Complete Draft Fields'}
-                    </button>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    {activeDocument.rationale && (
+                      <button
+                        onClick={() => setShowRationale(v => !v)}
+                        style={{ background: 'none', border: 'none', color: 'var(--accent)', fontWeight: 600, cursor: 'pointer', fontSize: 11 }}
+                        title="Why the AI drafted it this way"
+                      >
+                        {showRationale ? 'Hide Rationale' : '◆ Drafting Rationale'}
+                      </button>
+                    )}
+                    {missingPlaceholders.length > 0 && (
+                      <button
+                        onClick={() => setShowCompletionPanel(v => !v)}
+                        style={{ background: 'none', border: 'none', color: 'var(--major)', fontWeight: 600, cursor: 'pointer', fontSize: 11 }}
+                      >
+                        {showCompletionPanel ? 'Hide Form' : '⚡ Complete Draft Fields'}
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Drafting Rationale Panel — the "why", kept visually and
+                    structurally separate from the document body itself so
+                    the canvas never mixes generated legal text with the
+                    model's own commentary about its choices. Populated
+                    server-side from the ===DRAFTING_RATIONALE=== section
+                    rag_pipeline.py splits off the end of the stream. */}
+                {showRationale && activeDocument.rationale && (
+                  <div style={{ padding: '12px 16px', background: 'var(--accent-soft)', borderBottom: '1px solid var(--rule)' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.05em', fontFamily: 'IBM Plex Mono, monospace', marginBottom: 6 }}>
+                      Why This Draft
+                    </div>
+                    <div
+                      className="lex-md"
+                      style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink-soft)' }}
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(activeDocument.rationale) }}
+                    />
+                  </div>
+                )}
 
                 {/* Collapsible Document Outline Panel */}
                 {outlineOpen && docSections.length > 0 && (
