@@ -7,6 +7,9 @@ import { useContractStore } from '../store/useContractStore.js';
 import { fetchDocuments, extractContractText } from '../services/api.js';
 import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
 import { useLetterheads } from '../hooks/useLetterheads.js';
+import DisputeDesk from './DisputeDesk.jsx';
+import SaveDraftModal from './SaveDraftModal.jsx';
+import { buildDraftName } from '../utils/draftNaming.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -125,6 +128,8 @@ export default function AutoDraftWorkspace() {
   const [outlineHeadings, setOutlineHeadings] = useState([]);
   const canvasContainerRef = useRef(null);
   const [intelTab, setIntelTab] = useState('instructions');
+  const [activeDispute, setActiveDispute] = useState(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const [precedentSearch, setPrecedentSearch] = useState('');
 
   // Client-side heading scan (no backend/section data model — see plan) —
@@ -347,6 +352,17 @@ export default function AutoDraftWorkspace() {
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
+  };
+
+  // A dispute from the library becomes the live document in the same editor
+  // (same Word-style toolbar, same export, same undo history from here on).
+  const handleInsertDispute = ({ dispute, facts, html, text, notes, catLabel }) => {
+    setAutoDraftText(text);
+    setAutoDraftHtml(html);
+    try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
+    setAutoDraftVersion((v) => v + 1);
+    setActiveDispute({ id: dispute.id, title: dispute.title, catId: dispute.cat, catLabel, facts, notes });
+    showToast(notes && notes.usedAI ? 'Drafted from your facts. Amber items need checking.' : 'Skeleton ready. Blue items are for you to fill in.');
   };
 
   const closeLetterheadModal = () => {
@@ -594,6 +610,7 @@ export default function AutoDraftWorkspace() {
         setAutoDraftText(generated);
         setAutoDraftHtml('');
         setAutoDraftVersion((v) => v + 1);
+        setActiveDispute(null);
         // A freshly synthesized draft replaces the canvas wholesale — drop
         // the old scratchpad snapshot so a stale one can't rehydrate over
         // this new draft if the component remounts before the debounced
@@ -660,6 +677,7 @@ export default function AutoDraftWorkspace() {
       // same reasoning as the post-synthesis cleanup above.
       try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
       setAutoDraftVersion((v) => v + 1);
+      setActiveDispute(null);
     } catch (err) {
       setDraftUploadError(err?.message || 'Failed to read the uploaded draft.');
     } finally {
@@ -739,7 +757,9 @@ export default function AutoDraftWorkspace() {
   // proven working for Legal Forms' DOCX export (LegalForms.jsx) against
   // this same /api/contract/export-form-docx endpoint — the letterhead
   // param is new, but the transport mechanics are unchanged and known-good.
-  const getExportTitle = () => {
+  const getExportTitle = (override) => {
+    if (typeof override === 'string' && override.trim()) return override.trim();
+    if (activeDispute) return buildDraftName({ dispute: activeDispute, facts: activeDispute.facts });
     const titleMatch = autoDraftPrompt.slice(0, 45).replace(/[^\w\s]/g, '').trim();
     return titleMatch || 'Auto-Draft Studio Document';
   };
@@ -755,13 +775,13 @@ export default function AutoDraftWorkspace() {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportDocx = async () => {
-    if (!autoDraftText.trim()) return;
+  const handleExportDocx = async (titleOverride) => {
+    if (!autoDraftText.trim()) return false;
     setExportingDocx(true);
     setExportError('');
     setExportedSuccess(false);
     try {
-      const title = getExportTitle();
+      const title = getExportTitle(titleOverride);
       // autoDraftHtml is kept live by ContractTiptapEditor's onHtmlChange,
       // but stays '' for the brief window right after a fresh synthesis
       // before the editor has mounted and synced once — fall back to a
@@ -786,8 +806,10 @@ export default function AutoDraftWorkspace() {
       downloadBlob(blob, `${title.replace(/[^a-z0-9]+/gi, '_')}.docx`);
       setExportedSuccess(true);
       setTimeout(() => setExportedSuccess(false), 2500);
+      return true;
     } catch (err) {
       setExportError(err.message || 'DOCX export failed.');
+      return false;
     } finally {
       setExportingDocx(false);
     }
@@ -796,10 +818,10 @@ export default function AutoDraftWorkspace() {
   // Client-side, no backend round-trip — autoDraftText is already the
   // plain-text mirror ContractTiptapEditor keeps in sync via
   // onTextChange, so there's no HTML to parse here at all.
-  const handleExportTxt = () => {
-    if (!autoDraftText.trim()) return;
+  const handleExportTxt = (titleOverride) => {
+    if (!autoDraftText.trim()) return false;
     setExportError('');
-    const title = getExportTitle();
+    const title = getExportTitle(titleOverride);
     const letterheadBlock = activeLetterhead
       ? [activeLetterhead.firmName, activeLetterhead.tagline, activeLetterhead.address, activeLetterhead.contact]
           .filter(Boolean)
@@ -809,6 +831,7 @@ export default function AutoDraftWorkspace() {
     downloadBlob(blob, `${title.replace(/[^a-z0-9]+/gi, '_')}.txt`);
     setExportedSuccess(true);
     setTimeout(() => setExportedSuccess(false), 2500);
+    return true;
   };
 
   // Native browser print -> "Save as PDF", zero backend rendering engine
@@ -817,14 +840,15 @@ export default function AutoDraftWorkspace() {
   // do the actual layout work; this just triggers the dialog and sets
   // document.title so the browser's own "Save as PDF" suggests a sane
   // filename instead of the page's normal title.
-  const handleExportPdf = () => {
-    if (!autoDraftText.trim()) return;
+  const handleExportPdf = (titleOverride) => {
+    if (!autoDraftText.trim()) return false;
     setExportError('');
-    const title = getExportTitle();
+    const title = getExportTitle(titleOverride);
     const originalTitle = document.title;
     document.title = title;
     window.print();
     setTimeout(() => { document.title = originalTitle; }, 1000);
+    return true;
   };
 
   const handleAddModifier = (modifierText) => {
@@ -1016,13 +1040,13 @@ export default function AutoDraftWorkspace() {
         .autodraft-page-wrapper .rail-toggle svg { transition: transform .2s ease; }
 
         .autodraft-page-wrapper .canvas-col { min-width: 0; display: flex; flex-direction: column; background: var(--bg); position: relative; min-height: 0; }
-        .autodraft-page-wrapper .canvas-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--rule); flex-shrink: 0; flex-wrap: wrap; background: var(--paper); }
+        .autodraft-page-wrapper .canvas-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid var(--rule); flex-shrink: 0; flex-wrap: wrap; background: var(--paper); }
         .autodraft-page-wrapper .doc-meta { display: flex; align-items: center; gap: 12px; min-width: 0; }
-        .autodraft-page-wrapper .doc-meta-title { font-size: 14px; font-weight: 600; white-space: nowrap; }
+        .autodraft-page-wrapper .doc-meta-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
         .autodraft-page-wrapper .doc-meta-count { font-size: 11.5px; color: var(--muted); }
         .autodraft-page-wrapper .autosave-chip { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
         .autodraft-page-wrapper .autosave-dot { width: 6px; height: 6px; border-radius: 50%; background: #6FA97A; animation: pulse-ring 1.8s ease-out infinite; }
-        .autodraft-page-wrapper .toolbar-actions { display: flex; align-items: center; gap: 8px; }
+        .autodraft-page-wrapper .toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; min-width: 0; gap: 6px; }
 
         .autodraft-page-wrapper .overflow-wrap { position: relative; }
         .autodraft-page-wrapper .overflow-menu { position: absolute; top: calc(100% + 6px); right: 0; width: 210px; background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: none; flex-direction: column; gap: 1px; z-index: 40; }
@@ -1034,7 +1058,7 @@ export default function AutoDraftWorkspace() {
         .autodraft-page-wrapper .overflow-item.danger svg { color: var(--accent); }
         .autodraft-page-wrapper .overflow-divider { height: 1px; background: var(--rule); margin: 4px 2px; }
 
-        .autodraft-page-wrapper .format-row { display: flex; align-items: center; gap: 8px; padding: 9px 24px; border-bottom: 1px solid var(--rule); flex-shrink: 0; flex-wrap: wrap; background: var(--paper); }
+        .autodraft-page-wrapper .format-row { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--rule); flex-shrink: 0; flex-wrap: wrap; background: var(--paper); }
         .autodraft-page-wrapper .format-group { display: flex; align-items: center; gap: 4px; padding-right: 8px; border-right: 1px solid var(--rule); min-height: 34px; }
         .autodraft-page-wrapper .format-group:last-child { border-right: 0; }
 
@@ -1251,11 +1275,34 @@ export default function AutoDraftWorkspace() {
           <div className="canvas-col">
             <div className="canvas-toolbar">
               <div className="doc-meta">
-                <span className="doc-meta-title">Synthesized Document</span>
+                <span className="doc-meta-title" title={activeDispute ? activeDispute.title : undefined}>{activeDispute ? activeDispute.title : 'Synthesized Document'}</span>
                 <span className="doc-meta-count mono">{autoDraftText ? `${(autoDraftText.split(/\s+/).filter(Boolean).length || 0).toLocaleString()} words` : ''}</span>
                 {autoDraftText && <span className="autosave-chip"><span className="autosave-dot"></span>Active Session</span>}
               </div>
               <div className="toolbar-actions">
+              <select className="select-compact" aria-label="Letterhead" title="Letterhead used for Word export and print" style={{ width: '138px' }} value={selectedLetterheadId} onChange={(e) => {
+                if (e.target.value === '__create') { setShowLetterheadModal(true); return; }
+                setSelectedLetterheadId(e.target.value);
+              }}>
+                <option value="none">No Letterhead (Plain)</option>
+                <option value="standard">Standard Firm Letterhead (Mock)</option>
+                {savedLetterheads.map(lh => (
+                  <option key={lh.id} value={lh.id}>{lh.name || lh.firmName}</option>
+                ))}
+                <option value="__create">+ Create Custom Letterhead&hellip;</option>
+              </select>
+              <div className="overflow-wrap" ref={exportMenuRef}>
+                <button className="btn btn-sm" onClick={() => setShowExportMenu(!showExportMenu)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                  Export
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+                </button>
+                <div className={`overflow-menu ${showExportMenu ? 'open' : ''}`} style={{ width: '160px' }}>
+                  <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportDocx(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Word (.docx)</button>
+                  <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportPdf(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>PDF</button>
+                  <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportTxt(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Plain text</button>
+                </div>
+              </div>
                 <button className="btn btn-sm" onClick={() => {
                   if (navigator.clipboard && navigator.clipboard.writeText && autoDraftText) {
                     navigator.clipboard.writeText(autoDraftText);
@@ -1266,7 +1313,7 @@ export default function AutoDraftWorkspace() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"></path></svg>
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
-                <button className="btn btn-sm" onClick={() => {}}>
+                <button className="btn btn-sm btn-primary" onClick={() => setShowSaveModal(true)} disabled={!autoDraftText.trim()} title="Save to this computer, Saved Drafts, Case Vault, Firm Library or Legal Forms">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><path d="M17 21v-8H7v8"></path><path d="M7 3v5h8"></path></svg>
                   Save Draft
                 </button>
@@ -1299,31 +1346,6 @@ export default function AutoDraftWorkspace() {
 
             <div className="format-row">
               <div ref={setToolbarRef} style={{ display: 'flex', alignItems: 'center' }} />
-              <div className="format-group" style={{ flexGrow:1, justifyContent:'flex-end', borderRight:0, gap:'8px' }}>
-                <select className="select-compact" style={{ width: '200px' }} value={selectedLetterheadId} onChange={(e) => {
-                  if (e.target.value === '__create') { setShowLetterheadModal(true); return; }
-                  setSelectedLetterheadId(e.target.value);
-                }}>
-                  <option value="none">No Letterhead (Plain)</option>
-                  <option value="standard">Standard Firm Letterhead (Mock)</option>
-                  {savedLetterheads.map(lh => (
-                    <option key={lh.id} value={lh.id}>{lh.name || lh.firmName}</option>
-                  ))}
-                  <option value="__create">+ Create Custom Letterhead&hellip;</option>
-                </select>
-                <div className="overflow-wrap">
-                  <button className="btn btn-sm" onClick={() => setShowExportMenu(!showExportMenu)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
-                    Export
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
-                  </button>
-                  <div className={`overflow-menu ${showExportMenu ? 'open' : ''}`} style={{ width: '160px' }}>
-                    <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportDocx(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Word (.docx)</button>
-                    <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportPdf(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>PDF</button>
-                    <button className="overflow-item" onClick={() => { setShowExportMenu(false); handleExportTxt(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path></svg>Plain text</button>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="trust-strip">
@@ -1393,6 +1415,10 @@ export default function AutoDraftWorkspace() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5.5S5 4 8 4s5 1.5 5 1.5v14S11 18 8 18s-5 1.5-5 1.5z"></path><path d="M21 5.5S19 4 16 4s-5 1.5-5 1.5v14S13 18 16 18s5 1.5 5 1.5z"></path></svg>
                   Playbook
                 </button>
+                <button className={`intel-tab ${intelTab === 'disputes' ? 'active' : ''}`} onClick={() => setIntelTab('disputes')}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18"></path><path d="M5 7h14"></path><path d="M5 7l-3 7a3 3 0 0 0 6 0z"></path><path d="M19 7l-3 7a3 3 0 0 0 6 0z"></path></svg>
+                  Disputes
+                </button>
               </div>
 
               <div className={`intel-body ${intelTab === 'instructions' ? 'active' : ''}`}>
@@ -1440,6 +1466,16 @@ export default function AutoDraftWorkspace() {
                 </button>
               </div>
 
+              <div className={`intel-body ${intelTab === 'disputes' ? 'active' : ''}`}>
+                <DisputeDesk
+                  active={activeDispute}
+                  setActive={setActiveDispute}
+                  hasContent={!!autoDraftText.trim()}
+                  currentText={autoDraftText || ''}
+                  onInsert={(payload) => handleInsertDispute({ ...payload, catLabel: payload.catLabel })}
+                />
+              </div>
+
               <div className={`intel-body ${intelTab === 'playbook' ? 'active' : ''}`}>
                 <div className="precedent-search">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
@@ -1479,6 +1515,17 @@ export default function AutoDraftWorkspace() {
 
       <DraftsModal />
 
+      <SaveDraftModal
+        open={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        initialName={buildDraftName({ dispute: activeDispute, facts: activeDispute ? activeDispute.facts : {}, docText: autoDraftText, prompt: autoDraftPrompt })}
+        category={activeDispute ? activeDispute.catLabel : ''}
+        defaultMatter={activeDispute && activeDispute.facts && activeDispute.facts.p1_name ? `${activeDispute.facts.p1_name}${activeDispute.facts.p2_name ? ` v ${activeDispute.facts.p2_name}` : ''}` : 'General'}
+        getText={() => autoDraftText}
+        getHtml={() => autoDraftHtml}
+        onDownload={async (fmt, name) => (fmt === 'docx' ? handleExportDocx(name) : fmt === 'pdf' ? handleExportPdf(name) : handleExportTxt(name))}
+      />
+
       {/* Modals */}
       {showClearConfirm && createPortal(
         <div className="modal-overlay open" onClick={() => setShowClearConfirm(false)}>
@@ -1492,7 +1539,7 @@ export default function AutoDraftWorkspace() {
             </div>
             <div className="modal-footer">
               <button className="btn" onClick={() => setShowClearConfirm(false)}>Cancel</button>
-              <button className="btn btn-primary" style={{ background: 'var(--accent)' }} onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); setShowClearConfirm(false); }}>Clear document</button>
+              <button className="btn btn-primary" style={{ background: 'var(--accent)' }} onClick={() => { setAutoDraftText(''); setAutoDraftHtml(''); setActiveDispute(null); setShowClearConfirm(false); }}>Clear document</button>
             </div>
           </div>
         </div>,

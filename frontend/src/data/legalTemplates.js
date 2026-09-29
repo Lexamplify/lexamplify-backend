@@ -296,4 +296,111 @@ Through Counsel`,
   };
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// "My Saved Forms" - drafts a lawyer saved from Auto-Draft Studio as a
+// reusable form. There is no backend table for custom forms, so they live in
+// this browser's localStorage (per browser, per device). Bracketed
+// [placeholders] in the saved text become fillable {{fields}}.
+// ─────────────────────────────────────────────────────────────────────
+export const CUSTOM_CATEGORY = 'My Saved Forms';
+const CUSTOM_KEY = 'lexai_custom_legal_forms_v1';
+
+function readCustom() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCustom(list) {
+  try {
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function slug(label) {
+  return String(label).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'field';
+}
+
+/** Convert plain text with [placeholders] into { preview, fields }. */
+export function textToFormTemplate(text) {
+  const keyByLabel = new Map();
+  const used = new Set();
+  const fields = [];
+  const preview = String(text || '').replace(/\[([^\]\n]{2,80})\]/g, (m, label) => {
+    if (/^verify\b/i.test(label.trim()) || /removed - verify/i.test(label)) return m;
+    const clean = label.trim();
+    if (keyByLabel.has(clean)) return `{{${keyByLabel.get(clean)}}}`;
+    if (fields.length >= 60) return m;
+    let key = slug(clean);
+    let i = 2;
+    while (used.has(key)) key = `${slug(clean)}_${i++}`;
+    used.add(key);
+    keyByLabel.set(clean, key);
+    const type = /\bdate\b/i.test(clean) ? 'date' : /address|description|facts|grounds|details|particulars|allegation|brief/i.test(clean) ? 'textarea' : 'text';
+    fields.push({ key, field_id: key, label: clean.charAt(0).toUpperCase() + clean.slice(1), type, required: false });
+    return `{{${key}}}`;
+  });
+  return { preview, fields };
+}
+
+function decorate(tpl) {
+  const schema = tpl.fields.map((f) => ({ field_id: f.key, key: f.key, label: f.label, type: f.type, required: f.required }));
+  return {
+    ...tpl,
+    schema,
+    html_template: tpl.preview
+      .split('\n\n')
+      .map((p) => `<p>${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>')}</p>`)
+      .join(''),
+  };
+}
+
+export function refreshCustomTemplates() {
+  for (let i = TEMPLATES.length - 1; i >= 0; i -= 1) if (TEMPLATES[i].custom) TEMPLATES.splice(i, 1);
+  const list = readCustom();
+  list.forEach((c) => TEMPLATES.push(decorate({
+    id: c.id, aliases: [], title: c.title, category: CUSTOM_CATEGORY, custom: true,
+    fields: c.fields, preview: c.preview, demo: {},
+  })));
+  const idx = CATEGORIES.indexOf(CUSTOM_CATEGORY);
+  if (list.length && idx === -1) CATEGORIES.push(CUSTOM_CATEGORY);
+  if (!list.length && idx !== -1) CATEGORIES.splice(idx, 1);
+  return list.length;
+}
+
+/** Returns { ok, id, fields } - ok is false when browser storage is unavailable or full. */
+export function saveCustomTemplate({ title, text }) {
+  const { preview, fields } = textToFormTemplate(text);
+  const list = readCustom();
+  const name = String(title || '').trim() || 'Saved draft';
+  const existing = list.find((c) => c.title === name);
+  const id = existing ? existing.id : `custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const entry = { id, title: name, fields, preview, savedAt: new Date().toISOString() };
+  const next = existing ? list.map((c) => (c.id === id ? entry : c)) : [...list, entry];
+  const ok = writeCustom(next);
+  if (ok) {
+    refreshCustomTemplates();
+    try { window.dispatchEvent(new CustomEvent('lexai-custom-forms-updated')); } catch { /* non-browser */ }
+  }
+  return { ok, id, fields: fields.length, replaced: !!existing };
+}
+
+export function deleteCustomTemplate(id) {
+  const ok = writeCustom(readCustom().filter((c) => c.id !== id));
+  if (ok) {
+    refreshCustomTemplates();
+    try { window.dispatchEvent(new CustomEvent('lexai-custom-forms-updated')); } catch { /* non-browser */ }
+  }
+  return ok;
+}
+
+try { refreshCustomTemplates(); } catch { /* localStorage unavailable */ }
+
 export default TEMPLATES;

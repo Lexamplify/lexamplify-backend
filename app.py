@@ -3053,6 +3053,7 @@ def create_app():
     from routes.team_routes import team_bp
     from routes.matter_routes import matter_bp
     from routes.letterhead_routes import letterhead_bp
+    from routes.dispute_routes import dispute_bp
 
     app.register_blueprint(court_bp)
     app.register_blueprint(argument_bp)
@@ -3063,6 +3064,7 @@ def create_app():
     app.register_blueprint(team_bp)
     app.register_blueprint(matter_bp)
     app.register_blueprint(letterhead_bp)
+    app.register_blueprint(dispute_bp)  # url_prefix baked into dispute_bp: /api/disputes
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
     app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
