@@ -5,10 +5,12 @@ import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sh
 import { renderWithCitations } from './CitationLink';
 import useLibraryHeadnoteStream from '../hooks/useLibraryHeadnoteStream.js';
 import { uploadDocument } from '../services/api';
+import { searchDisputes, formFields } from '../utils/disputeDraft.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-const LS_KEY = 'lexai_firm_library_v2';
+const LS_KEY = 'lexai_firm_library_v3'; // the user's own entries only
+const LS_KEY_LEGACY = 'lexai_firm_library_v2';
 
 // ── Icons matching SVG specifications ──────────────────────────────────────────
 const ICONS = {
@@ -140,95 +142,44 @@ function exactDate(d) {
   return dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-// ── Realistic Initial Seed Entries (§2 Data Contract) ───────────────────────
-const INITIAL_ENTRIES = [
-  {
-    id: '1',
-    title: 'Standard Vendor Service Agreement — SaaS',
-    category: 'Template',
-    updated: daysAgo(7).toISOString(),
-    author: 'Firm Library',
-    aiAssisted: true,
-    validity: 'current',
-    tags: ['SaaS', 'Commercial', 'Payment Terms'],
-    description:
-      'General-purpose services agreement for SaaS vendor engagements, harmonized for Indian jurisdiction clauses and standard liability caps.',
-  },
-  {
-    id: '2',
-    title: 'Employment Agreement — Fixed Term (Chennai)',
-    category: 'Standard Form',
-    updated: daysAgo(21).toISOString(),
-    author: 'Priya Raman',
-    aiAssisted: false,
-    validity: 'current',
-    tags: ['Employment', 'Fixed Term', 'Tamil Nadu'],
-    description:
-      "The firm's standard fixed-term employment contract, compliant with the Tamil Nadu Shops and Establishments Act.",
-  },
-  {
-    id: '3',
-    title: 'Precedent — Commercial Lease Deed, Nungambakkam',
-    category: 'Precedent',
-    updated: daysAgo(128).toISOString(),
-    author: 'Saurabh K.',
-    aiAssisted: false,
-    validity: 'review',
-    tags: ['Lease', 'Commercial Property', 'Chennai'],
-    description:
-      'A closed commercial lease matter kept as a structural reference — rent-escalation and lock-in clauses may need updating against current market terms.',
-  },
-  {
-    id: '4',
-    title: 'Research Memo — Force Majeure under S.56, Indian Contract Act',
-    category: 'Research Memo',
-    updated: daysAgo(184).toISOString(),
-    author: 'Yogesh N.',
-    aiAssisted: false,
-    validity: 'current',
-    tags: ['Force Majeure', 'Contract Act', 'Litigation'],
-    description:
-      'Analysis of force majeure invocation standards post-2020, with citations to relevant High Court rulings.',
-  },
-  {
-    id: '5',
-    title: 'Practice Guide — Filing a Caveat under CPC O. XXXIX',
-    category: 'Practice Guide',
-    updated: daysAgo(392).toISOString(),
-    author: 'Firm Library',
-    aiAssisted: false,
-    validity: 'outdated',
-    tags: ['CPC', 'Caveat', 'Procedure'],
-    description:
-      'Step-by-step filing procedure — flagged for review following recent Madras High Court practice-direction updates to e-filing requirements.',
-  },
-  {
-    id: '6',
-    title: 'Precedent — Founders’ Agreement, Private Limited',
-    category: 'Precedent',
-    updated: daysAgo(241).toISOString(),
-    author: 'Priya Raman',
-    aiAssisted: false,
-    validity: 'review',
-    tags: ['Startup', 'Equity', 'Founders'],
-    description:
-      'Founders’ agreement from an early-stage private limited matter — vesting schedule and IP-assignment clauses worth revisiting for newer deals.',
-  },
-  {
-    id: '7',
-    title: 'Standard Non-Disclosure Agreement — Vendor',
-    category: 'Template',
-    updated: daysAgo(2).toISOString(),
-    author: 'Firm Library',
-    aiAssisted: true,
-    validity: 'current',
-    tags: ['NDA', 'Confidentiality', 'Vendor'],
-    description:
-      'Mutual NDA template pre-cleared for vendor onboarding, with a jurisdiction carve-out for Indian courts.',
-  },
+// The seven demo entries this page used to ship with. They are no longer shown; this list is only
+// used to drop them from a browser that had already saved them (matched on BOTH id and title so a
+// user's own entry is never touched).
+const LEGACY_DEMO = [
+  ['1', 'Standard Vendor Service Agreement — SaaS'],
+  ['2', 'Employment Agreement — Fixed Term (Chennai)'],
+  ['3', 'Precedent — Commercial Lease Deed, Nungambakkam'],
+  ['4', 'Research Memo — Force Majeure under S.56, Indian Contract Act'],
+  ['5', 'Practice Guide — Filing a Caveat under CPC O. XXXIX'],
+  ['6', 'Precedent — Founders’ Agreement, Private Limited'],
+  ['7', 'Standard Non-Disclosure Agreement — Vendor'],
 ];
 
-// Helper to determine validity when not provided explicitly
+function loadOwnEntries() {
+  try {
+    const v3 = localStorage.getItem(LS_KEY);
+    if (v3) {
+      const parsed = JSON.parse(v3);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    const v2 = localStorage.getItem(LS_KEY_LEGACY);
+    if (v2) {
+      const parsed = JSON.parse(v2);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((e) => !LEGACY_DEMO.some(([id, title]) => String(e.id) === id && e.title === title));
+      }
+    }
+  } catch {}
+  return [];
+}
+
+const FORM_TYPE_LABEL = {
+  petition: 'Petition / application',
+  notice: 'Legal notice',
+  reply: 'Reply to notice',
+  rti: 'RTI application',
+};
+
 function computeValidity(entry) {
   if (entry.validity) return entry.validity;
   if (entry.validity_status) {
@@ -495,6 +446,21 @@ const styles = `
   .empty-tag {
     font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); border: 1px solid var(--rule); padding: 3px 9px; border-radius: 5px;
   }
+
+  .forum-cell { color: var(--ink-soft); font-size: 12.5px; max-width: 240px; }
+  .limit-cell { color: var(--muted); font-size: 12px; max-width: 260px; }
+  .lib-root .limit-cell, .lib-root .forum-cell { line-height: 1.45; }
+  .drop-strip {
+    margin-top: 18px; border: 1.5px dashed var(--rule); border-radius: 10px; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--muted); background: var(--paper);
+  }
+  .drop-strip.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .drop-strip .lib-btn { padding: 7px 12px; }
+  .so-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
+  .so-list li { margin-bottom: 5px; }
+  .so-list .so-note { color: var(--muted); font-size: 12px; }
+  .so-caution { border: 1px solid var(--major); background: var(--major-soft); color: var(--ink); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5; }
 
   .demo-toggle {
     font-size: 11px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; background: none; border: none; margin-top: 18px; display: block; font-family: inherit;
@@ -1067,23 +1033,24 @@ export default function FirmLibrary() {
   const navigate = useNavigate();
 
   // ── State ───────────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState('internal');
-  const [entries, setEntries] = useState(() => {
-    try {
-      const saved = localStorage.getItem(LS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_ENTRIES;
-  });
+  const [activeTab, setActiveTab] = useState('internal'); // 'internal' = the Dispute Library tab
+  const [entries, setEntries] = useState(loadOwnEntries); // the user's own entries (no demo data)
 
-  const [filterCat, setFilterCat] = useState('All');
+  // Dispute catalog (the same 112 entries Auto-Draft Studio uses), loaded on demand.
+  const [catalog, setCatalog] = useState(null);
+  const [catalogError, setCatalogError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    import('../data/disputeCatalog.json')
+      .then((m) => { if (alive) setCatalog(m.default || m); })
+      .catch(() => { if (alive) setCatalogError(true); });
+    return () => { alive = false; };
+  }, []);
+
+  const [filterCat, setFilterCat] = useState('all'); // 'all' | dispute area id | '__mine'
   const [searchText, setSearchText] = useState('');
-  const [sortKey, setSortKey] = useState('updated');
-  const [sortDir, setSortDir] = useState('desc');
-  const [showEmptyDemo, setShowEmptyDemo] = useState(false);
+  const [sortKey, setSortKey] = useState('default'); // 'default' = library order / search relevance
+  const [sortDir, setSortDir] = useState('asc');
 
   // Slide-over detail state
   const [selectedEntry, setSelectedEntry] = useState(null);
@@ -1189,53 +1156,71 @@ export default function FirmLibrary() {
     } catch {}
   };
 
-  // ── Sorting & Filtering for Internal Files ────────────────────────────────
-  const filteredAndSortedEntries = useMemo(() => {
-    let list = entries.filter((e) => {
-      const matchCat = filterCat === 'All' || e.category === filterCat;
-      if (!matchCat) return false;
-      if (searchText.trim()) {
-        const query = searchText.trim().toLowerCase();
-        const tagString = Array.isArray(e.tags) ? e.tags.join(' ') : '';
-        const haystack = `${e.title || ''} ${e.author || ''} ${tagString} ${e.description || ''}`.toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
-      return true;
-    });
+  // ── Rows: the dispute library plus the user's own entries ─────────────────
+  const catLabelById = useMemo(() => {
+    const m = new Map();
+    if (catalog) catalog.categories.forEach((c) => m.set(c.id, c.label));
+    return m;
+  }, [catalog]);
 
-    list.sort((a, b) => {
-      let valA, valB;
-      if (sortKey === 'title') {
-        valA = (a.title || '').toLowerCase();
-        valB = (b.title || '').toLowerCase();
-      } else if (sortKey === 'author') {
-        valA = (a.author || '').toLowerCase();
-        valB = (b.author || '').toLowerCase();
-      } else {
-        valA = new Date(a.updated || 0).getTime();
-        valB = new Date(b.updated || 0).getTime();
-      }
-      if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return list;
-  }, [entries, filterCat, searchText, sortKey, sortDir]);
+  const rows = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    const out = [];
+    if (filterCat === 'all' || filterCat === '__mine') {
+      entries.forEach((e) => {
+        if (q) {
+          const tagString = Array.isArray(e.tags) ? e.tags.join(' ') : '';
+          if (!`${e.title || ''} ${e.author || ''} ${tagString} ${e.description || ''}`.toLowerCase().includes(q)) return;
+        }
+        out.push({ key: `own-${e.id}`, own: true, title: e.title, catLabel: 'Your entry', forum: e.author || '—', formType: e.category, limitation: '—', entry: e });
+      });
+    }
+    if (catalog && filterCat !== '__mine') {
+      searchDisputes(catalog.disputes, searchText, filterCat).forEach((d) => {
+        out.push({
+          key: d.id, own: false, title: d.title, blurb: d.blurb, catLabel: catLabelById.get(d.cat) || '',
+          forum: d.forum, formType: FORM_TYPE_LABEL[d.kind] || d.kind, limitation: d.limitation || '—', dispute: d,
+        });
+      });
+    }
+    if (sortKey !== 'default') {
+      const get = (r) => String(sortKey === 'title' ? r.title : sortKey === 'forum' ? r.forum : r.catLabel).toLowerCase();
+      out.sort((a, b) => (get(a) < get(b) ? -1 : get(a) > get(b) ? 1 : 0) * (sortDir === 'asc' ? 1 : -1));
+    }
+    return out;
+  }, [entries, catalog, catLabelById, filterCat, searchText, sortKey, sortDir]);
 
   const handleSort = (key) => {
     if (sortKey === key) {
-      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      if (sortDir === 'asc') setSortDir('desc');
+      else { setSortKey('default'); setSortDir('asc'); }
     } else {
       setSortKey(key);
-      setSortDir(key === 'updated' ? 'desc' : 'asc');
+      setSortDir('asc');
     }
   };
 
   // ── Row / Detail Slideover Handlers ───────────────────────────────────────
-  const openDetail = (entry) => {
-    setSelectedEntry(entry);
+  const openDetail = (row) => {
+    setSelectedEntry(row.dispute ? { _dispute: row.dispute } : row.entry);
     setIsSlideoverOpen(true);
+  };
+
+  // /firm-library?dispute=<id> opens that dispute's panel (used by "Copy Link").
+  useEffect(() => {
+    if (!catalog) return;
+    try {
+      const id = new URLSearchParams(window.location.search).get('dispute');
+      const d = id && catalog.disputes.find((x) => x.id === id);
+      if (d) { setSelectedEntry({ _dispute: d }); setIsSlideoverOpen(true); }
+    } catch {}
+  }, [catalog]);
+
+  const handleDraftDispute = (d) => navigate('/auto-draft', { state: { disputeId: d.id } });
+  const handleFillDispute = (d) => navigate('/firm-library/draft', { state: { templateId: `dp_${d.id}` } });
+  const handleCopyDisputeLink = (d) => {
+    const link = `${window.location.origin}/firm-library?dispute=${encodeURIComponent(d.id)}`;
+    navigator.clipboard.writeText(link).then(() => showToastNotification('Link copied to clipboard.'));
   };
 
   const closeDetail = () => {
@@ -1508,15 +1493,10 @@ Author: ${entry.author}
     printWindow.document.close();
   };
 
-  // Categories list for pills
-  const categoriesList = ['All', 'Template', 'Precedent', 'Research Memo', 'Standard Form', 'Practice Guide'];
-
-  // Stats calculation
-  const totalEntries = entries.length;
-  const reviewCount = entries.filter((e) => computeValidity(e) === 'review').length;
-  const outdatedCount = entries.filter((e) => computeValidity(e) === 'outdated').length;
-  const flaggedCount = reviewCount + outdatedCount;
-  const visibleCount = showEmptyDemo ? 0 : filteredAndSortedEntries.length;
+  // Stats
+  const disputeCount = catalog ? catalog.disputes.length : 0;
+  const ownCount = entries.length;
+  const visibleCount = rows.length;
 
   return (
     <div className="lib-root">
@@ -1527,7 +1507,7 @@ Author: ${entry.author}
           <div>
             <div className="lib-title">Firm Library</div>
             <div className="lib-sub">
-              Your firm's own templates, precedents, memos, and guides — built from real matters, kept current, ready to reuse with confidence.
+              Every dispute format your practice is likely to file — petitions, notices, replies and RTI applications — with the governing law, forum, limitation and pre-filing checklist. Open one to draft it, or search the external case-law database.
             </div>
           </div>
           <div className="lib-actions">
@@ -1547,12 +1527,16 @@ Author: ${entry.author}
 
         {/* ── Stats Bar ── */}
         <div className="lib-stats">
-          <b>{totalEntries}</b> entries in your library &nbsp;·&nbsp; showing <b>{visibleCount}</b>
-          {flaggedCount > 0 && (
+          {catalog ? (
             <>
-              {' '}
-              &nbsp;·&nbsp; <span className="flag">{flaggedCount} flagged for review</span>
+              <b>{disputeCount}</b> dispute formats across <b>{catalog.categories.length}</b> practice areas
+              {ownCount > 0 && <> &nbsp;·&nbsp; <b>{ownCount}</b> of your own {ownCount === 1 ? 'entry' : 'entries'}</>}
+              {' '}&nbsp;·&nbsp; showing <b>{visibleCount}</b>
             </>
+          ) : catalogError ? (
+            <span className="flag">The dispute library could not be loaded.</span>
+          ) : (
+            <>Loading the dispute library…</>
           )}
         </div>
 
@@ -1560,11 +1544,12 @@ Author: ${entry.author}
         <div className="lib-tabs">
           <button className={`lib-tab ${activeTab === 'internal' ? 'on' : ''}`} onClick={() => setActiveTab('internal')}>
             <svg className="icon" viewBox="0 0 24 24">
-              <rect x="3" y="7" width="18" height="13" rx="2" />
-              <path d="M3 7l2.5-4h13L21 7" />
-              <line x1="9" y1="12" x2="15" y2="12" />
+              <path d="M12 3v18" />
+              <path d="M5 7h14" />
+              <path d="M5 7l-3 7a3 3 0 0 0 6 0z" />
+              <path d="M19 7l-3 7a3 3 0 0 0 6 0z" />
             </svg>
-            Internal Firm Files
+            Dispute Library
           </button>
           <button className={`lib-tab ${activeTab === 'external' ? 'on' : ''}`} onClick={() => setActiveTab('external')}>
             <svg className="icon" viewBox="0 0 24 24">
@@ -1576,7 +1561,7 @@ Author: ${entry.author}
           </button>
         </div>
 
-        {/* ════ TAB 1: INTERNAL FIRM FILES ════ */}
+        {/* ════ TAB 1: DISPUTE LIBRARY ════ */}
         <div className={`tab-panel ${activeTab === 'internal' ? 'on' : ''}`}>
           {/* Search bar */}
           <div className="search-row">
@@ -1586,121 +1571,67 @@ Author: ${entry.author}
             </svg>
             <input
               className="search-input"
-              placeholder="Search titles, authors, tags, descriptions…"
+              placeholder="Search disputes — e.g. bail, cheque bounce, divorce, eviction, RTI, 138…"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
             />
           </div>
 
-          {/* Category Filter Pills */}
+          {/* Practice-area filter pills */}
           <div className="filter-row">
-            {categoriesList.map((cat) => {
-              const count = cat === 'All' ? entries.length : entries.filter((e) => e.category === cat).length;
-              return (
-                <button
-                  key={cat}
-                  className={`filter-pill ${filterCat === cat ? 'on' : ''}`}
-                  onClick={() => setFilterCat(cat)}
-                >
-                  {cat} <span className="count">{count}</span>
-                </button>
-              );
-            })}
+            <button className={`filter-pill ${filterCat === 'all' ? 'on' : ''}`} onClick={() => setFilterCat('all')}>
+              All <span className="count">{disputeCount + ownCount}</span>
+            </button>
+            {catalog && catalog.categories.map((c) => (
+              <button key={c.id} title={c.blurb} className={`filter-pill ${filterCat === c.id ? 'on' : ''}`} onClick={() => setFilterCat(c.id)}>
+                {c.label} <span className="count">{c.count}</span>
+              </button>
+            ))}
+            {ownCount > 0 && (
+              <button className={`filter-pill ${filterCat === '__mine' ? 'on' : ''}`} onClick={() => setFilterCat('__mine')}>
+                Your entries <span className="count">{ownCount}</span>
+              </button>
+            )}
           </div>
 
-          {/* Table Wrap or Empty State */}
-          {!showEmptyDemo && filteredAndSortedEntries.length > 0 ? (
+          {rows.length > 0 ? (
             <div className="lib-table-wrap">
               <table className="lib-table">
                 <thead>
                   <tr>
-                    <th onClick={() => handleSort('title')} className={sortKey === 'title' ? 'sorted' : ''}>
-                      <div className={`th-flex ${sortKey === 'title' ? 'sorted' : ''}`}>
-                        Document Title{' '}
-                        <svg
-                          className="icon sort-arrow"
-                          viewBox="0 0 24 24"
-                          style={{ transform: sortKey === 'title' && sortDir === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                        >
-                          <polyline points="7 10 12 15 17 10" />
-                        </svg>
-                      </div>
-                    </th>
-                    <th onClick={() => handleSort('updated')} className={sortKey === 'updated' ? 'sorted' : ''}>
-                      <div className={`th-flex ${sortKey === 'updated' ? 'sorted' : ''}`}>
-                        Last Updated{' '}
-                        <svg
-                          className="icon sort-arrow"
-                          viewBox="0 0 24 24"
-                          style={{ transform: sortKey === 'updated' && sortDir === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                        >
-                          <polyline points="7 10 12 15 17 10" />
-                        </svg>
-                      </div>
-                    </th>
-                    <th onClick={() => handleSort('author')} className={sortKey === 'author' ? 'sorted' : ''}>
-                      <div className={`th-flex ${sortKey === 'author' ? 'sorted' : ''}`}>
-                        Author / Source{' '}
-                        <svg
-                          className="icon sort-arrow"
-                          viewBox="0 0 24 24"
-                          style={{ transform: sortKey === 'author' && sortDir === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                        >
-                          <polyline points="7 10 12 15 17 10" />
-                        </svg>
-                      </div>
-                    </th>
-                    <th>Validity</th>
+                    {[['title', 'Dispute'], ['forum', 'Forum']].map(([key, label]) => (
+                      <th key={key} onClick={() => handleSort(key)} className={sortKey === key ? 'sorted' : ''}>
+                        <div className={`th-flex ${sortKey === key ? 'sorted' : ''}`}>
+                          {label}{' '}
+                          <svg className="icon sort-arrow" viewBox="0 0 24 24" style={{ transform: sortKey === key && sortDir === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                            <polyline points="7 10 12 15 17 10" />
+                          </svg>
+                        </div>
+                      </th>
+                    ))}
+                    <th>Document</th>
+                    <th>Limitation</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAndSortedEntries.map((entry) => {
-                    const cat = CAT_META[entry.category] || { icon: ICONS.template, desc: '' };
-                    const valid = computeValidity(entry);
+                  {rows.map((row) => {
+                    const cat = row.own ? (CAT_META[row.formType] || { icon: ICONS.template }) : { icon: ICONS.form };
                     return (
-                      <tr key={entry.id} className="lib-row" onClick={() => openDetail(entry)}>
+                      <tr key={row.key} className="lib-row" onClick={() => openDetail(row)}>
                         <td>
                           <div className="cat-cell">
                             <div className="cat-icon-wrap">{cat.icon}</div>
                             <div>
-                              <div className="row-title">{entry.title}</div>
+                              <div className="row-title">{row.title}</div>
                               <div className="row-cat-label">
-                                <span className="cat-pill">{entry.category}</span>
+                                <span className="cat-pill">{row.catLabel}</span>
                               </div>
                             </div>
                           </div>
                         </td>
-                        <td className="updated-cell">
-                          {relTime(entry.updated)}
-                          <div className="updated-exact">{exactDate(entry.updated)}</div>
-                        </td>
-                        <td>
-                          <div className={`author-cell ${entry.aiAssisted ? 'ai' : ''}`}>
-                            {entry.aiAssisted ? ICONS.sparkle : ICONS.person}
-                            <span>{entry.author}</span>
-                            {entry.aiAssisted && <span>· AI-assisted</span>}
-                          </div>
-                        </td>
-                        <td>
-                          {valid === 'current' && (
-                            <span className="valid-pill valid-current">
-                              {ICONS.check}
-                              Current
-                            </span>
-                          )}
-                          {valid === 'review' && (
-                            <span className="valid-pill valid-review">
-                              {ICONS.clock}
-                              Review Due
-                            </span>
-                          )}
-                          {valid === 'outdated' && (
-                            <span className="valid-pill valid-outdated">
-                              {ICONS.warn}
-                              Outdated
-                            </span>
-                          )}
-                        </td>
+                        <td className="forum-cell">{row.forum}</td>
+                        <td className="forum-cell">{row.formType}</td>
+                        <td className="limit-cell" title={row.limitation}>{row.limitation}</td>
                       </tr>
                     );
                   })}
@@ -1708,49 +1639,33 @@ Author: ${entry.author}
               </table>
             </div>
           ) : (
-            <div
-              className={`empty-zone ${isDropActive ? 'dragover' : ''}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDropActive(true);
-              }}
-              onDragLeave={() => setIsDropActive(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDropActive(false);
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                  openAddModal(e.dataTransfer.files[0]);
-                }
-              }}
-            >
-              <div className="empty-icon">
-                <svg className="icon" viewBox="0 0 24 24">
-                  <path d="M12 16V4" />
-                  <path d="M7 9l5-5 5 5" />
-                  <path d="M4 18v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-                </svg>
-              </div>
-              <div className="empty-title">No entries found</div>
-              <div className="empty-sub">Drag &amp; drop a PDF, DOCX, or TXT file here, or use the button below.</div>
-              <div className="empty-formats">
-                <span className="empty-tag">PDF</span>
-                <span className="empty-tag">DOCX</span>
-                <span className="empty-tag">TXT</span>
-              </div>
-              <button className="lib-btn lib-btn-primary" style={{ margin: '0 auto' }} onClick={() => openAddModal()}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Upload / Create Entry
-              </button>
+            <div className="empty-zone">
+              <div className="empty-title">{catalog ? 'No disputes match your search' : catalogError ? 'The dispute library could not be loaded' : 'Loading the dispute library…'}</div>
+              {catalog && (
+                <>
+                  <div className="empty-sub">Try a broader word — for example the kind of relief (bail, injunction, divorce) or a section number.</div>
+                  <button className="lib-btn lib-btn-ghost" style={{ margin: '0 auto' }} onClick={() => { setSearchText(''); setFilterCat('all'); }}>
+                    Clear search
+                  </button>
+                </>
+              )}
             </div>
           )}
 
-          {/* Demo state toggle */}
-          <button className="demo-toggle" onClick={() => setShowEmptyDemo(!showEmptyDemo)}>
-            {showEmptyDemo ? '← Show populated library' : 'Show empty-library state (demo) →'}
-          </button>
+          {/* Add your own document - drag & drop or button */}
+          <div
+            className={`drop-strip ${isDropActive ? 'dragover' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setIsDropActive(true); }}
+            onDragLeave={() => setIsDropActive(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDropActive(false);
+              if (e.dataTransfer.files && e.dataTransfer.files[0]) openAddModal(e.dataTransfer.files[0]);
+            }}
+          >
+            <span>Have your own precedent? Drop a PDF, DOCX or TXT here to add it to this library.</span>
+            <button className="lib-btn lib-btn-ghost" onClick={() => openAddModal()}>Add Entry</button>
+          </div>
         </div>
 
         {/* ════ TAB 2: EXTERNAL DATABASE ════ */}
@@ -1841,7 +1756,95 @@ Author: ${entry.author}
       {/* ════ Slide-over Detail Panel ════ */}
       <div className={`lib-overlay ${isSlideoverOpen ? 'on' : ''}`} onClick={closeDetail} />
       <div className={`slideover ${isSlideoverOpen ? 'on' : ''}`}>
-        {selectedEntry && (() => {
+        {selectedEntry && selectedEntry._dispute && (() => {
+          const d = selectedEntry._dispute;
+          const askFor = catalog ? formFields(d, catalog.bases).matter : [];
+          return (
+            <>
+              <div className="so-head">
+                <button className="so-close" onClick={closeDetail}>✕</button>
+                <div className="so-cat">
+                  {ICONS.form}
+                  <span>{catLabelById.get(d.cat) || 'Dispute'} · {FORM_TYPE_LABEL[d.kind] || d.kind}</span>
+                </div>
+                <div className="so-title">{d.title}</div>
+              </div>
+              <div className="so-body">
+                <div className="so-section">
+                  <div className="so-label">WHAT THIS IS</div>
+                  <div className="so-text">{d.blurb}</div>
+                </div>
+                <div className="so-section">
+                  <div className="so-meta-grid">
+                    <div className="so-meta-item">
+                      <div className="so-label">FORUM</div>
+                      <div className="so-text">{d.forum}</div>
+                    </div>
+                    <div className="so-meta-item">
+                      <div className="so-label">DOCUMENT</div>
+                      <div className="so-text">{d.doc}</div>
+                    </div>
+                  </div>
+                </div>
+                {d.statutes && d.statutes.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">GOVERNING PROVISIONS</div>
+                    <ul className="so-list">
+                      {d.statutes.map((st) => (
+                        <li key={st.ref}>{st.ref}{st.note ? <span className="so-note"> — {st.note}</span> : null}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div className="so-section">
+                  <div className="so-label">LIMITATION</div>
+                  <div className="so-text">{d.limitation || 'Not stated — check the governing statute.'}</div>
+                </div>
+                {d.pre && d.pre.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">BEFORE YOU FILE</div>
+                    <ul className="so-list">{d.pre.map((x) => <li key={x}>{x}</li>)}</ul>
+                  </div>
+                )}
+                {askFor.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">FACTS THE DRAFT ASKS FOR</div>
+                    <div className="so-tags">{askFor.map((f) => <span key={f.key} className="so-tag">{f.label}</span>)}</div>
+                  </div>
+                )}
+                {d.annex && d.annex.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">ANNEXURES TO ATTACH</div>
+                    <ul className="so-list">{d.annex.map((x) => <li key={x}>{x}</li>)}</ul>
+                  </div>
+                )}
+                {d.cautions && d.cautions.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">CAUTIONS</div>
+                    <div className="so-caution">{d.cautions.map((x) => <div key={x}>{x}</div>)}</div>
+                  </div>
+                )}
+                <div className="so-section">
+                  <div className="so-text" style={{ fontSize: '11.5px', color: 'var(--muted)' }}>
+                    {catalog && catalog.meta && catalog.meta.notice}
+                  </div>
+                </div>
+              </div>
+              <div className="so-actions">
+                <button className="so-btn primary" onClick={() => handleDraftDispute(d)}>
+                  {ICONS.draft} Draft in Auto-Draft Studio
+                </button>
+                <button className="so-btn" onClick={() => handleFillDispute(d)}>
+                  {ICONS.form} Fill as Legal Form
+                </button>
+                <button className="so-btn" onClick={() => handleCopyDisputeLink(d)}>
+                  {ICONS.link} Copy Link
+                </button>
+              </div>
+            </>
+          );
+        })()}
+        {selectedEntry && !selectedEntry._dispute && (() => {
           const cat = CAT_META[selectedEntry.category] || { icon: ICONS.template, desc: '' };
           const valid = computeValidity(selectedEntry);
           const validityNote =

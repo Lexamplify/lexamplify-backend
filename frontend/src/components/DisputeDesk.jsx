@@ -29,7 +29,7 @@ const ico = {
   info: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v5h1" /></svg>,
 };
 
-export default function DisputeDesk({ active, setActive, hasContent, currentText, onInsert }) {
+export default function DisputeDesk({ active, setActive, hasContent, currentText, onInsert, openRequest = null }) {
   const [catalog, setCatalog] = useState(null);
   const [loadErr, setLoadErr] = useState('');
   const [query, setQuery] = useState('');
@@ -47,6 +47,16 @@ export default function DisputeDesk({ active, setActive, hasContent, currentText
       .catch(() => { if (alive) setLoadErr('The dispute library could not be loaded.'); });
     return () => { alive = false; };
   }, []);
+
+  // Opens the facts form for a dispute requested from elsewhere (once the catalog has loaded).
+  const handledRequest = useRef(null);
+  useEffect(() => {
+    if (!openRequest || !catalog || handledRequest.current === openRequest.nonce) return;
+    if (catalog.disputes.some((d) => d.id === openRequest.id)) {
+      handledRequest.current = openRequest.nonce;
+      setOpenId(openRequest.id);
+    }
+  }, [openRequest, catalog]);
 
   const byId = useMemo(() => {
     const m = new Map();

@@ -122,7 +122,9 @@ const roman = (n) => {
 const letter = (i) => String.fromCharCode(65 + (i % 26)) + (i >= 26 ? Math.floor(i / 26) : '');
 
 // Block model -> html + text
-function render(blocks) {
+const ALIGN_MARK = { center: '>>c ', right: '>>r ', justify: '>>j ' };
+
+function render(blocks, md = false) {
   const html = [];
   const text = [];
   for (const b of blocks) {
@@ -132,7 +134,8 @@ function render(blocks) {
     const wrapped = b.b ? `<strong>${b.u ? `<u>${inner}</u>` : inner}</strong>` : (b.u ? `<u>${inner}</u>` : inner);
     const align = b.align ? ` style="text-align: ${b.align}"` : '';
     html.push(`<p${align}>${wrapped}</p>`);
-    text.push(t);
+    // md mode (Legal Forms): keep alignment + bold as light markers the form preview understands.
+    text.push(md ? `${ALIGN_MARK[b.align] || ''}${b.b ? t.split('\n').map((l) => (l.trim() ? `**${l}**` : l)).join('\n') : t}` : t);
   }
   return { html: html.join(''), text: text.join('\n\n') };
 }
@@ -146,7 +149,7 @@ const NO_LIMIT = /^(no limitation|not applicable)/i;
  * @param bases    catalog.bases
  * @param slots    optional { facts_narrative: string[], grounds: string[] } from the validated AI endpoint
  */
-export function buildDisputeDoc(dispute, facts = {}, bases, slots = null) {
+export function buildDisputeDoc(dispute, facts = {}, bases, slots = null, opts = {}) {
   const F = (t) => fill(t, dispute, facts, bases);
   const blocks = [];
   const kind = dispute.kind;
@@ -289,7 +292,9 @@ export function buildDisputeDoc(dispute, facts = {}, bases, slots = null) {
     if (dispute.annex.length) blocks.push({ t: 'p', text: `Enclosures: ${dispute.annex.join('; ')}`, align: 'left' });
   }
 
-  const out = render(blocks);
+  const out = render(blocks, !!opts.md);
+  // Upper-casing (court name, document title) also upper-cases {{keys}}; keys are lower-case by construction.
+  if (opts.md) out.text = out.text.replace(/\{\{([A-Z0-9_]+)\}\}/g, (m) => m.toLowerCase());
   return { ...out, paragraphs: n };
 }
 

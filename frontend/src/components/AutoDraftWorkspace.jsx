@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import DraftsModal from './DraftsModal.jsx';
 import { useContractStore } from '../store/useContractStore.js';
@@ -39,6 +39,7 @@ const DRAFT_STAGES = [
 
 export default function AutoDraftWorkspace() {
   const navigate = useNavigate();
+  const routeLocation = useLocation();
   const isMountedRef = useRef(true);
   const promptTextareaRef = useRef(null);
   const draftUploadInputRef = useRef(null);
@@ -128,6 +129,16 @@ export default function AutoDraftWorkspace() {
   const [outlineHeadings, setOutlineHeadings] = useState([]);
   const canvasContainerRef = useRef(null);
   const [intelTab, setIntelTab] = useState('instructions');
+  // Deep link from the Firm Library / Legal Forms: open a specific dispute's facts form.
+  const [deepLinkDispute, setDeepLinkDispute] = useState(null);
+  useEffect(() => {
+    const id = routeLocation.state && routeLocation.state.disputeId;
+    if (id) {
+      setIntelTab('disputes');
+      setPanelCollapsed(false);
+      setDeepLinkDispute({ id, nonce: routeLocation.key });
+    }
+  }, [routeLocation.state, routeLocation.key]);
   const [activeDispute, setActiveDispute] = useState(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [precedentSearch, setPrecedentSearch] = useState('');
@@ -1470,6 +1481,7 @@ export default function AutoDraftWorkspace() {
                 <DisputeDesk
                   active={activeDispute}
                   setActive={setActiveDispute}
+                  openRequest={deepLinkDispute}
                   hasContent={!!autoDraftText.trim()}
                   currentText={autoDraftText || ''}
                   onInsert={(payload) => handleInsertDispute({ ...payload, catLabel: payload.catLabel })}

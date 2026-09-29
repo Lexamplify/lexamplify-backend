@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TEMPLATES, { CATEGORIES } from '../data/legalTemplates.js';
+import { useDisputeTemplates, DISPUTE_CATEGORY } from '../data/disputeForms.js';
 
 const CAT_ICONS = {
   'Legal Notices': (
@@ -135,9 +136,32 @@ const styles = `
   }
 
   .ftl-tpl-footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--rule); padding-top: 12px; }
-  .ftl-tpl-fields-count { font-size: 11.5px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+  .ftl-tpl-fields-count { font-size: 11.5px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
   .ftl-tpl-go { font-size: 11.5px; color: var(--accent); font-weight: 600; opacity: 0; transition: opacity 0.15s; }
   .ftl-tpl-card:hover .ftl-tpl-go { opacity: 1; }
+
+  .ftl-subfilter-row {
+    display: flex; gap: 6px; flex-wrap: wrap; margin: -12px 0 24px; padding: 12px 14px;
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 12px;
+  }
+  .ftl-subfilter-row .ftl-sub-label {
+    width: 100%; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 2px;
+  }
+  .ftl-subfilter-row .ftl-filter-pill { padding: 4px 11px; font-size: 11.5px; background: var(--paper-2); }
+  .ftl-subfilter-row .ftl-filter-pill.on { background: var(--accent-soft); }
+  .ftl-loading-note { font-size: 12px; color: var(--muted); margin: -10px 0 18px; font-style: italic; }
+  .ftl-tpl-blurb {
+    font-size: 12px; line-height: 1.5; color: var(--muted); margin: -8px 0 14px;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .ftl-tpl-actions { display: flex; align-items: center; gap: 10px; }
+  .ftl-tpl-ai {
+    font-family: inherit; font-size: 11px; color: var(--ink-soft); background: var(--paper-2); white-space: nowrap;
+    border: 1px solid var(--rule); border-radius: 12px; padding: 3px 9px; cursor: pointer;
+  }
+  .ftl-tpl-ai:hover { border-color: var(--accent); color: var(--accent); }
+  .ftl-tpl-title.has-blurb { min-height: 0; margin-bottom: 10px; }
 
   .ftl-empty-state {
     grid-column: 1 / -1; text-align: center; padding: 60px 20px;
@@ -162,17 +186,31 @@ export default function FormTemplateLibrary() {
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchText, setSearchText] = useState('');
+  const [subCategory, setSubCategory] = useState('all');
+  const { ready: disputesReady, error: disputesError, catalog } = useDisputeTemplates();
 
   const filterCategories = ['All', ...CATEGORIES];
+  const inDisputes = activeCategory === DISPUTE_CATEGORY;
+
+  const pickCategory = (cat) => { setActiveCategory(cat); setSubCategory('all'); };
 
   const visibleTemplates = TEMPLATES.filter((t) => {
     const matchesCategory = activeCategory === 'All' || t.category === activeCategory;
-    const matchesSearch = !searchText || t.title.toLowerCase().includes(searchText.toLowerCase().trim());
-    return matchesCategory && matchesSearch;
+    if (!matchesCategory) return false;
+    if (inDisputes && subCategory !== 'all' && t.catId !== subCategory) return false;
+    const q = searchText.toLowerCase().trim();
+    if (!q) return true;
+    const hay = `${t.title} ${t.subcategory || ''} ${t.blurb || ''} ${t.forum || ''} ${t.keywords || ''}`.toLowerCase();
+    return q.split(/\s+/).every((w) => hay.includes(w));
   });
 
   const openTemplate = (template) => {
     navigate('/firm-library/draft', { state: { templateId: template.id } });
+  };
+
+  const openInStudio = (e, template) => {
+    e.stopPropagation();
+    navigate('/auto-draft', { state: { disputeId: template.disputeId } });
   };
 
   return (
@@ -191,7 +229,7 @@ export default function FormTemplateLibrary() {
           <div>
             <h1 className="ftl-title">Legal Forms Library</h1>
             <div className="ftl-sub">
-              Pick a template, fill it in — or let AI draft a first pass from client facts — then export or hand it to the Contract Analyzer.
+              Pick a template — including all 112 disputes from the Dispute Library — fill it in, or let AI draft a first pass from client facts, then export or hand it to the Contract Analyzer.
             </div>
           </div>
         </div>
@@ -207,7 +245,7 @@ export default function FormTemplateLibrary() {
             id="tplSearch"
             className="ftl-search-input"
             type="text"
-            placeholder="Search templates…"
+            placeholder="Search templates and disputes — e.g. bail, cheque bounce, divorce…"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
           />
@@ -222,7 +260,7 @@ export default function FormTemplateLibrary() {
                 key={cat}
                 type="button"
                 className={`ftl-filter-pill${isSelected ? ' on active' : ''}`}
-                onClick={() => setActiveCategory(cat)}
+                onClick={() => pickCategory(cat)}
               >
                 <span>{cat}</span>
                 <span className="count">{count}</span>
@@ -230,6 +268,22 @@ export default function FormTemplateLibrary() {
             );
           })}
         </div>
+
+        {inDisputes && catalog && (
+          <div className="ftl-subfilter-row">
+            <div className="ftl-sub-label">Dispute area</div>
+            <button type="button" className={`ftl-filter-pill${subCategory === 'all' ? ' on active' : ''}`} onClick={() => setSubCategory('all')}>
+              <span>All disputes</span><span className="count">{TEMPLATES.filter((t) => t.dispute).length}</span>
+            </button>
+            {catalog.categories.map((c) => (
+              <button key={c.id} type="button" title={c.blurb} className={`ftl-filter-pill${subCategory === c.id ? ' on active' : ''}`} onClick={() => setSubCategory(c.id)}>
+                <span>{c.label}</span><span className="count">{TEMPLATES.filter((t) => t.catId === c.id).length}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!disputesReady && !disputesError && <div className="ftl-loading-note">Loading the dispute library…</div>}
+        {disputesError && <div className="ftl-loading-note">The dispute library could not be loaded. Reload the page to try again.</div>}
 
         <div className="ftl-card-grid">
           {visibleTemplates.length > 0 ? (
@@ -244,13 +298,21 @@ export default function FormTemplateLibrary() {
                         </svg>
                       )}
                     </div>
-                    <span className="ftl-tpl-cat-label">{t.category}</span>
+                    <span className="ftl-tpl-cat-label">{t.dispute ? t.subcategory : t.category}</span>
                   </div>
-                  <div className="ftl-tpl-title">{t.title}</div>
+                  <div className={`ftl-tpl-title${t.dispute ? ' has-blurb' : ''}`}>{t.title}</div>
+                  {t.dispute && <div className="ftl-tpl-blurb">{t.blurb}</div>}
                 </div>
                 <div className="ftl-tpl-footer">
                   <span className="ftl-tpl-fields-count">{(t.fields || t.schema || []).length} fields</span>
-                  <span className="ftl-tpl-go">Start drafting →</span>
+                  <span className="ftl-tpl-actions">
+                    {t.dispute && (
+                      <button type="button" className="ftl-tpl-ai" title="Open this dispute in Auto-Draft Studio for an AI-assisted draft" onClick={(e) => openInStudio(e, t)}>
+                        AI draft ↗
+                      </button>
+                    )}
+                    {!t.dispute && <span className="ftl-tpl-go">Start drafting →</span>}
+                  </span>
                 </div>
               </div>
             ))

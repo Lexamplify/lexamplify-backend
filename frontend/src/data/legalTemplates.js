@@ -350,7 +350,7 @@ export function textToFormTemplate(text) {
   return { preview, fields };
 }
 
-function decorate(tpl) {
+export function decorate(tpl) {
   const schema = tpl.fields.map((f) => ({ field_id: f.key, key: f.key, label: f.label, type: f.type, required: f.required }));
   return {
     ...tpl,

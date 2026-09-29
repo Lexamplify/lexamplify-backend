@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import TEMPLATES from '../data/legalTemplates.js';
+import { useDisputeTemplates, isDisputeTemplateId } from '../data/disputeForms.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -13,12 +14,20 @@ function escapeHtml(s) {
     .replace(/'/g, '&#039;');
 }
 
-function generateExportHtml(previewText, fields, formValues) {
+// Dispute forms mark paragraph alignment with a leading ">>c " / ">>r " / ">>j " token.
+const ALIGN_TOKENS = { c: 'center', r: 'right', j: 'justify' };
+function splitAlign(para) {
+  const m = /^>>([crj]) /.exec(para || '');
+  return m ? { text: para.slice(m[0].length), align: ALIGN_TOKENS[m[1]] } : { text: para || '', align: '' };
+}
+
+function generateExportHtml(previewText, fields, formValues, marks = false) {
   const fieldsMap = new Map((fields || []).map((f) => [f.key, f]));
   const paragraphs = (previewText || '').split('\n\n');
 
   return paragraphs
-    .map((para) => {
+    .map((rawPara) => {
+      const { text: para, align } = splitAlign(rawPara);
       let htmlPara = para
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\{\{(\w+)\}\}/g, (_, key) => {
@@ -29,8 +38,10 @@ function generateExportHtml(previewText, fields, formValues) {
           }
           return `[${field ? field.label : key}]`;
         })
-        .replace(/\n/g, '<br/>');
-      return `<p>${htmlPara}</p>`;
+        .replace(/\n/g, '<br/>')
+        // Library "[fill this in]" prompts are highlighted so they are not missed before filing.
+        .replace(marks ? /\[([^\]<]{2,600})\]/g : /$^/g, (m) => `<mark data-color="rgba(59,130,246,0.16)" style="background-color: rgba(59,130,246,0.16); color: #1D4ED8; padding: 1px 4px; border-radius: 4px; font-weight: 600;">${m}</mark>`);
+      return `<p${align ? ` style="text-align: ${align}"` : ''}>${htmlPara}</p>`;
     })
     .join('');
 }
@@ -191,6 +202,9 @@ const styles = `
   }
   .lf-preview-para { margin: 0 0 16px; }
   .lf-preview-para:last-child { margin-bottom: 0; }
+  .lf-preview-para:empty { display: none; }
+  .lf-bracket { background: rgba(59,130,246,0.16); color: #1D4ED8; padding: 0 3px; border-radius: 3px; }
+  .dark .lf-bracket, [data-theme="dark"] .lf-bracket, body.theme-dark .lf-bracket { color: #93B4F5; background: rgba(59,130,246,0.22); }
   .lf-preview-para strong, .lf-preview-para b { color: var(--ink); font-weight: 700; }
 
   .ph-chip {
@@ -277,14 +291,17 @@ const styles = `
 `;
 
 function parseParagraphContent(text, fieldsMap, formValues, aiTouched) {
-  const tokenRegex = /(\*\*[^*]+?\*\*|\{\{[a-zA-Z0-9_]+?\}\})/g;
+  const tokenRegex = /(\*\*[^*]+?\*\*|\{\{[a-zA-Z0-9_]+?\}\}|\[[^\]\n]{2,600}\])/g;
   const parts = text.split(tokenRegex);
 
   return parts.map((part, idx) => {
     if (!part) return null;
     if (part.startsWith('**') && part.endsWith('**')) {
       const boldText = part.slice(2, -2);
-      return <strong key={idx}>{boldText}</strong>;
+      return <strong key={idx}>{parseParagraphContent(boldText, fieldsMap, formValues, aiTouched)}</strong>;
+    }
+    if (part.startsWith('[') && part.endsWith(']')) {
+      return <span key={idx} className="lf-bracket">{part}</span>;
     }
     if (part.startsWith('{{') && part.endsWith('}}')) {
       const key = part.slice(2, -2);
@@ -316,10 +333,11 @@ function renderPreviewDoc(previewText, fields, formValues, aiTouched) {
 
   return (
     <div className="lf-preview-doc" id="previewDoc">
-      {paragraphs.map((para, pIdx) => {
+      {paragraphs.map((rawPara, pIdx) => {
+        const { text: para, align } = splitAlign(rawPara);
         const lines = para.split('\n');
         return (
-          <p key={pIdx} className="lf-preview-para">
+          <p key={pIdx} className="lf-preview-para" style={align ? { textAlign: align } : undefined}>
             {lines.map((line, lIdx) => (
               <span key={lIdx}>
                 {parseParagraphContent(line, fieldsMap, formValues, aiTouched)}
@@ -337,6 +355,8 @@ export default function LegalForms({ showSaveBar } = {}) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const { ready: disputesReady, error: disputesError } = useDisputeTemplates();
+  const waitingForDisputes = isDisputeTemplateId((location.state || {}).templateId) && !disputesReady && !disputesError;
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [formValues, setFormValues] = useState({});
   const [aiTouched, setAiTouched] = useState(new Set());
@@ -474,9 +494,11 @@ export default function LegalForms({ showSaveBar } = {}) {
         return;
       }
     }
+    // A dispute form deep-linked before the dispute library finished loading: wait, then this re-runs.
+    if (waitingForDisputes) return;
     // Default to first template if none provided
     setSelectedTemplateId(TEMPLATES[0].id);
-  }, [location.state, runAutofill]);
+  }, [location.state, runAutofill, waitingForDisputes]);
 
   // Progress metrics
   const requiredFields = useMemo(() => (activeTemplate.fields || []).filter((f) => f.required), [activeTemplate]);
@@ -494,7 +516,7 @@ export default function LegalForms({ showSaveBar } = {}) {
     if (!activeTemplate) return;
     setDownloading(true);
     setDownloadStatus('Preparing DOCX…');
-    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues);
+    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues, !!activeTemplate.dispute);
 
     try {
       const res = await fetch(`${API_BASE}/api/contract/export-form-docx`, {
@@ -527,14 +549,14 @@ export default function LegalForms({ showSaveBar } = {}) {
 
   const handleOpenInAnalyzer = () => {
     if (!activeTemplate) return;
-    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues);
+    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues, !!activeTemplate.dispute);
     navigate('/contract-analyzer', { state: { importedDocument: docHtml } });
   };
 
   const handleSaveAndExit = async () => {
     if (!activeTemplate) return;
     setSaving(true);
-    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues);
+    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues, !!activeTemplate.dispute);
 
     try {
       await fetch(`${API_BASE}/api/firm-library`, {
@@ -556,6 +578,15 @@ export default function LegalForms({ showSaveBar } = {}) {
   };
 
   const backToLibrary = () => navigate('/legal-forms');
+
+  if (waitingForDisputes) {
+    return (
+      <div className="lf-root">
+        <style>{styles}</style>
+        <div className="lf-shell"><div className="lf-draft-cat" style={{ padding: '60px 0', textAlign: 'center' }}>Loading the dispute form…</div></div>
+      </div>
+    );
+  }
 
   return (
     <div className="lf-root">
@@ -593,7 +624,7 @@ export default function LegalForms({ showSaveBar } = {}) {
               {activeTemplate.title}
             </h1>
             <div className="lf-draft-cat" id="draftCat">
-              {activeTemplate.category}
+              {activeTemplate.category}{activeTemplate.subcategory ? ` · ${activeTemplate.subcategory}` : ''}{activeTemplate.forum ? ` · ${activeTemplate.forum}` : ''}
             </div>
           </div>
         </div>
@@ -650,7 +681,7 @@ export default function LegalForms({ showSaveBar } = {}) {
                       <textarea
                         id={`input-${f.key}`}
                         data-key={f.key}
-                        placeholder={f.label}
+                        placeholder={f.hint || f.label}
                         value={formValues[f.key] || ''}
                         onChange={(e) => handleFieldChange(f.key, e.target.value)}
                       />
@@ -689,7 +720,7 @@ export default function LegalForms({ showSaveBar } = {}) {
                         type="text"
                         id={`input-${f.key}`}
                         data-key={f.key}
-                        placeholder={f.label}
+                        placeholder={f.hint || f.label}
                         value={formValues[f.key] || ''}
                         onChange={(e) => handleFieldChange(f.key, e.target.value)}
                       />
