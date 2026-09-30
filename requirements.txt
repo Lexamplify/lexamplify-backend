@@ -27,3 +27,8 @@ redis
 chromadb
 sentence-transformers
 rank-bm25
+# Document Hub (routes/dms_routes.py, utils/dms_*.py)
+Pillow
+pytesseract
+openpyxl
+cryptography

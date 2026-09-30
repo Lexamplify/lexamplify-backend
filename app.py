@@ -1,6 +1,6 @@
 from flask import Flask, render_template, jsonify, request, redirect
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, verify_jwt_in_request
 from dotenv import load_dotenv
 from database import db as sqlalchemy_db
 from datetime import timedelta
@@ -16,6 +16,7 @@ import json
 import io
 import time
 import hashlib
+import threading
 import uuid
 import requests
 import urllib.parse
@@ -91,7 +92,10 @@ if _persistent_data_dir and os.path.isdir(_persistent_data_dir):
     _symlink_onto_persistent_disk('lex_assistant.db')
     _symlink_onto_persistent_disk(os.path.join('instance', 'client_data.db'))
 
-db = sqlite3.connect('lex_assistant.db', check_same_thread=False)
+# timeout: the Document Hub's extraction workers write to this same file from their own
+# connections, so a write here may have to wait a moment for one of theirs to finish. sqlite3's
+# default of 5 s is too short while a large batch is being indexed.
+db = sqlite3.connect('lex_assistant.db', check_same_thread=False, timeout=30)
 
 def init_db():
     conn = db
@@ -813,7 +817,7 @@ def _effective_permission(node_type, node_id, member_ids):
     return best
 
 
-def _visible_shared_vault_ids(current_user_id):
+def _visible_shared_vault_ids(current_user_id, include_nav=True, member_ids=None):
     """Additional folder/document ids a non-owner can see through sharing —
     composes with the existing `user_id = ? OR user_id IS NULL` filters via
     `OR id IN (...)` rather than replacing them, so every pre-Phase-2 query
@@ -827,8 +831,18 @@ def _visible_shared_vault_ids(current_user_id):
     that lives inside a folder the recipient otherwise can't see would
     dangle with no browsable path to it, so that document's whole ancestor
     chain is added too, read-only-visible for navigation even though the
-    share itself doesn't grant rights to the intermediate folders."""
-    member_ids = _current_user_team_member_ids(current_user_id)
+    share itself doesn't grant rights to the intermediate folders.
+
+    That ancestor chain is for showing the folder TREE only. Callers that
+    use the folder ids to decide which DOCUMENTS to return (document
+    lists, counts, the Document Hub) must pass include_nav=False: only
+    folders whose whole content was shared are returned then. Without it,
+    sharing one document also exposed every other document in the same
+    folder and in each parent folder. member_ids lets a caller that
+    already resolved the user's team-member ids (the hub caches them) skip
+    the account scan."""
+    if member_ids is None:
+        member_ids = _current_user_team_member_ids(current_user_id)
     if not member_ids:
         return set(), set()
     placeholders = ','.join('?' for _ in member_ids)
@@ -861,7 +875,7 @@ def _visible_shared_vault_ids(current_user_id):
                 visible_folder_ids.add(child)
                 stack.append(child)
 
-    if shared_doc_ids:
+    if shared_doc_ids and include_nav:
         doc_ph = ','.join('?' for _ in shared_doc_ids)
         doc_folder_rows = db.execute(
             f'SELECT DISTINCT folder_id FROM case_vault WHERE id IN ({doc_ph}) AND folder_id IS NOT NULL',
@@ -894,6 +908,9 @@ def _vault_access_ok(node_type, node_id, row_user_id, current_user_id, require_e
 
 
 # ── Case Vault Provenance Trail (Phase 3) ───────────────────────────────
+_PROVENANCE_LOCK = threading.Lock()
+
+
 def _write_provenance(node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail=None):
     """Appends one entry to the vault's global, linear, tamper-evident hash
     chain — one chain across the whole vault, not per-node (mirrored in how
@@ -912,19 +929,140 @@ def _write_provenance(node_type, node_id, node_name, action, actor_user_id, owne
     see everything a shared editor did inside it, not just their own
     actions — see GET /api/vault/provenance's scoping."""
     detail_json = json.dumps(detail or {}, sort_keys=True, default=str)
-    prev_row = db.execute('SELECT content_hash FROM vault_provenance ORDER BY id DESC LIMIT 1').fetchone()
-    prev_hash = prev_row[0] if prev_row else '0' * 64
-    payload = '|'.join(str(x) for x in (
-        prev_hash, node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json
-    ))
-    content_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
-    db.execute(
-        'INSERT INTO vault_provenance '
-        '(node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail, content_hash) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        (node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json, content_hash)
-    )
-    db.commit()
+    # Reading "the last hash" and inserting the next entry must be ONE step. Two writers that each read
+    # the same last hash both append after it and the chain forks, which /api/vault/provenance/verify
+    # then reports as tampering. The in-process lock covers this app's own threads; BEGIN IMMEDIATE takes
+    # SQLite's write lock up front, which is what also keeps the Document Hub's workers (separate
+    # connections, same file, same BEGIN IMMEDIATE) and any second server process in line.
+    with _PROVENANCE_LOCK:
+        if db.in_transaction:
+            db.commit()                     # the caller's pending change; this function always committed it anyway
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            prev_row = db.execute('SELECT content_hash FROM vault_provenance ORDER BY id DESC LIMIT 1').fetchone()
+            prev_hash = prev_row[0] if prev_row else '0' * 64
+            payload = '|'.join(str(x) for x in (
+                prev_hash, node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json
+            ))
+            content_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+            db.execute(
+                'INSERT INTO vault_provenance '
+                '(node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail, content_hash) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json, content_hash)
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+
+# ── Document Hub glue (/api/dms — routes/dms_routes.py) ─────────────────
+# The hub keeps its own tables (dms_*) next to case_vault: one dms_docs row per case_vault row, so the
+# old Case Vault screens keep working on the same documents. These helpers are what keeps the two
+# consistent. Everything here degrades to "the old behaviour" when the hub is not mounted.
+_DMS_BP = None                      # the mounted blueprint, set in create_app(); None = hub unavailable
+_dms_table_seen = [False]           # a cached "the hub tables exist" - they never disappear once created
+_DMS_MEMBER_CACHE = {}              # user id -> (monotonic time, [team_members ids])
+_DMS_MEMBER_LOCK = threading.Lock()
+_DMS_MEMBER_TTL = 30                # seconds
+
+
+def _dms_rate_key():
+    """Rate-limit bucket for hub requests: the signed-in user, else the client address."""
+    try:
+        verify_jwt_in_request(optional=True)
+        ident = get_jwt_identity()
+    except Exception:
+        ident = None
+    return f'dms-user:{ident}' if ident else f'dms-ip:{request.remote_addr}'
+
+
+def _dms_present():
+    """True once the hub's tables exist (they are created when the blueprint boots)."""
+    if _dms_table_seen[0]:
+        return True
+    row = db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dms_docs'").fetchone()
+    if row:
+        _dms_table_seen[0] = True
+    return bool(row)
+
+
+def _dms_hidden_sql(alias='cv'):
+    """SQL predicate for case_vault rows the OLD screens may show: everything except documents sitting
+    in the hub's trash (deleted there, restorable for 30 days, and not supposed to be listed, counted
+    or downloadable anywhere else meanwhile). `alias` is always a literal from this file."""
+    if not _dms_present():
+        return '1 = 1'
+    return f'NOT EXISTS (SELECT 1 FROM dms_docs _dd WHERE _dd.doc_id = {alias}.id AND _dd.deleted_at IS NOT NULL)'
+
+
+def _dms_legal_hold_titles(doc_id=None, folder_id=None, limit=200):
+    """Titles of documents under legal hold - either one document, or anything anywhere inside a folder
+    (the folder itself and every subfolder). The old Delete buttons call this first: legal hold has to
+    hold no matter which screen the delete comes from."""
+    if not _dms_present():
+        return []
+    if doc_id is not None:
+        rows = db.execute(
+            "SELECT COALESCE(cv.smart_title, cv.title, 'Document ' || cv.id) FROM dms_docs d "
+            "JOIN case_vault cv ON cv.id = d.doc_id WHERE d.legal_hold = 1 AND d.doc_id = ?", (doc_id,)).fetchall()
+    elif folder_id is not None:
+        rows = db.execute(
+            "WITH RECURSIVE sub(id) AS (SELECT ? UNION SELECT f.id FROM vault_folders f JOIN sub ON f.parent_id = sub.id) "
+            "SELECT COALESCE(cv.smart_title, cv.title, 'Document ' || cv.id) FROM dms_docs d "
+            "JOIN case_vault cv ON cv.id = d.doc_id WHERE d.legal_hold = 1 AND cv.folder_id IN (SELECT id FROM sub) "
+            "ORDER BY cv.id LIMIT ?", (folder_id, limit)).fetchall()
+    else:
+        return []
+    return [r[0] for r in rows]
+
+
+def _dms_adopt_best_effort(user_id, doc_id):
+    """Hand a row the OLD upload route just stored to the hub so it is searchable and classified straight
+    away. The old upload has already succeeded by now: nothing here may turn it into an error."""
+    try:
+        if _DMS_BP is not None:
+            _DMS_BP.adopt_rows(user_id, only_id=doc_id, limit=1)
+    except Exception as exc:
+        print(f'[dms] could not register vault document {doc_id} with the Document Hub: {exc}')
+
+
+def _dms_member_ids(user_id):
+    """team_members ids of this user, cached for a short time. Working them out compares every team
+    member's e-mail with every registered account (a query against Postgres), and the hub asks on every
+    request - lists, polling, thumbnails - so it must not be repeated each time. Shares themselves are
+    always read fresh; only "which roster entries are me" is cached."""
+    now = time.monotonic()
+    with _DMS_MEMBER_LOCK:
+        hit = _DMS_MEMBER_CACHE.get(user_id)
+        if hit and now - hit[0] < _DMS_MEMBER_TTL:
+            return hit[1]
+    ids = list(_current_user_team_member_ids(user_id))       # outside the lock: it talks to two databases
+    with _DMS_MEMBER_LOCK:
+        if len(_DMS_MEMBER_CACHE) > 2000:
+            _DMS_MEMBER_CACHE.clear()
+        _DMS_MEMBER_CACHE[user_id] = (now, ids)
+    return ids
+
+
+def _dms_shared(user_id):
+    """What the hub needs to know about sharing: (folders whose whole content is shared with this user,
+    documents shared directly, permission_of(doc_id) -> 'view' | 'edit' | None). Folders that only exist
+    to navigate to a shared document are not included - see _visible_shared_vault_ids."""
+    member_ids = _dms_member_ids(user_id)
+    if not member_ids:
+        return set(), set(), (lambda doc_id: None)
+    folders, docs = _visible_shared_vault_ids(user_id, include_nav=False, member_ids=member_ids)
+    return folders, docs, (lambda doc_id: _effective_permission('document', doc_id, member_ids))
+
+
+def _dms_folder_access(folder_id, user_id, require_edit=True):
+    """May this user put documents into this folder (or, with require_edit=False, look inside it)?"""
+    row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+    if not row:
+        return False
+    return bool(_vault_access_ok('folder', folder_id, row[0], user_id, require_edit=require_edit))
 
 
 def create_app():
@@ -960,7 +1098,13 @@ def create_app():
             # (SSE responses pre-set these; .add() would append a second value)
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Accept,X-Requested-With,X-CSRF-TOKEN'
-            response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+            # PATCH was missing: a cross-origin PATCH (folder rename/move, and every edit in the Document
+            # Hub) is preflighted, and the preflight was refused. Max-Age lets the browser remember the
+            # answer instead of preflighting every one of thousands of uploads. Content-Disposition has to
+            # be exposed or a cross-origin page cannot read the file name of a download.
+            response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,PATCH,DELETE,OPTIONS'
+            response.headers['Access-Control-Max-Age'] = '600'
+            response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition,Retry-After'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
 
@@ -1121,6 +1265,31 @@ def create_app():
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     init_sqlite_db()
 
+    # ── Document Hub (/api/dms) ─────────────────────────────────────────
+    # Bulk import, OCR, full-text search, classification and review for thousands of documents. It shares
+    # this app's database file, login and vault sharing rules (the _dms_* helpers above). A problem
+    # starting it must not take the rest of the application down, so a failure is logged loudly and the
+    # hub routes are simply absent (the hub screen then shows its own error).
+    global _DMS_BP
+    try:
+        from routes.dms_routes import create_dms_blueprint
+        _DMS_BP = create_dms_blueprint({
+            'db_path': os.path.realpath('lex_assistant.db'),
+            'shared': _dms_shared,
+            'folder_access': _dms_folder_access,
+            'log': lambda msg: print(f'[dms] {msg}'),
+        })
+        # Its own per-user allowance instead of the app-wide default (a bulk upload legitimately makes
+        # hundreds of requests, and one office often shares one IP). Preflights do not count.
+        limiter.limit(os.getenv('DMS_RATE_LIMIT', '1200 per minute'), key_func=_dms_rate_key,
+                      exempt_when=lambda: request.method == 'OPTIONS')(_DMS_BP)
+        app.register_blueprint(_DMS_BP)
+    except Exception as exc:
+        import traceback
+        _DMS_BP = None
+        print(f'[dms] Document Hub is NOT available: {exc}')
+        traceback.print_exc()
+
     @app.route('/api/ai/extract-file', methods=['POST', 'OPTIONS'])
     def extract_file_text():
         """Extract plain text from an uploaded PDF, DOCX, or TXT for the AI Legal Associate."""
@@ -1148,25 +1317,21 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            shared_folder_ids, shared_doc_ids = _visible_shared_vault_ids(uid)
+            # Two different sets: the folder TREE also shows the folders that merely lead to a shared
+            # document (navigation), but document COUNTS may only count documents this user can open.
+            member_ids = _current_user_team_member_ids(uid)
+            tree_folder_ids, _ = _visible_shared_vault_ids(uid, member_ids=member_ids)
+            content_folder_ids, shared_doc_ids = _visible_shared_vault_ids(uid, include_nav=False, member_ids=member_ids)
 
             conn = db
             old_rf = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
-                if shared_folder_ids:
-                    fph = ','.join('?' for _ in shared_folder_ids)
-                    rows = conn.execute(
-                        f'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
-                        f'WHERE user_id = ? OR user_id IS NULL OR id IN ({fph}) ORDER BY name ASC',
-                        (uid, *shared_folder_ids)
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
-                        'WHERE user_id = ? OR user_id IS NULL ORDER BY name ASC',
-                        (uid,)
-                    ).fetchall()
+                rows = conn.execute(
+                    'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
+                    'WHERE user_id = ? OR user_id IS NULL OR id IN (SELECT value FROM json_each(?)) ORDER BY name ASC',
+                    (uid, json.dumps(sorted(tree_folder_ids)))
+                ).fetchall()
 
                 # Direct (own, non-inherited) share counts per folder — the
                 # Share badge only ever reflects a node's OWN explicit
@@ -1193,23 +1358,19 @@ def create_app():
                 # `content`, so this stays fast regardless of table size and
                 # lets the frontend show folder counts without loading every
                 # document just to count them client-side. Scoped the same
-                # way as the folder list itself. This is each folder's OWN
-                # direct count — rolled up into a recursive count below, since
-                # the vault's document-count display must reflect nested
-                # contents too, not just direct children.
-                if shared_folder_ids:
-                    fph = ','.join('?' for _ in shared_folder_ids)
-                    count_rows = conn.execute(
-                        f'SELECT folder_id, COUNT(*) AS cnt FROM case_vault '
-                        f'WHERE user_id = ? OR user_id IS NULL OR folder_id IN ({fph}) GROUP BY folder_id',
-                        (uid, *shared_folder_ids)
-                    ).fetchall()
-                else:
-                    count_rows = conn.execute(
-                        'SELECT folder_id, COUNT(*) AS cnt FROM case_vault '
-                        'WHERE user_id = ? OR user_id IS NULL GROUP BY folder_id',
-                        (uid,)
-                    ).fetchall()
+                # way as the document list itself (own + legacy + shared, and
+                # never documents that are in the Document Hub's trash). This
+                # is each folder's OWN direct count — rolled up into a
+                # recursive count below, since the vault's document-count
+                # display must reflect nested contents too.
+                count_rows = conn.execute(
+                    'SELECT cv.folder_id, COUNT(*) AS cnt FROM case_vault cv '
+                    'WHERE (cv.user_id = ? OR cv.user_id IS NULL '
+                    '       OR cv.folder_id IN (SELECT value FROM json_each(?)) '
+                    '       OR cv.id IN (SELECT value FROM json_each(?))) '
+                    f'AND {_dms_hidden_sql("cv")} GROUP BY cv.folder_id',
+                    (uid, json.dumps(sorted(content_folder_ids)), json.dumps(sorted(shared_doc_ids)))
+                ).fetchall()
                 own_counts = {
                     ('root' if r['folder_id'] is None else str(r['folder_id'])): r['cnt']
                     for r in count_rows
@@ -1419,6 +1580,17 @@ def create_app():
                 return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be deleted.'}), 403
             top_folder_name = owner_row[2]
 
+            # Legal hold binds every route that can destroy a document. This check runs BEFORE anything is
+            # deleted: one held document anywhere inside stops the whole folder, and nothing is touched.
+            held = _dms_legal_hold_titles(folder_id=folder_id)
+            if held:
+                shown = ', '.join(f'"{t}"' for t in held[:3])
+                more = f' and {len(held) - 3} more' if len(held) > 3 else ''
+                return jsonify({'error': True, 'message': (
+                    f'This folder cannot be deleted: {len(held)} document{"s" if len(held) != 1 else ""} inside '
+                    f'{"are" if len(held) != 1 else "is"} under legal hold ({shown}{more}). '
+                    'Release the hold in the Document Hub first.')}), 409
+
             def recursive_delete(fid, fname, fowner, top=False):
                 # Delete every document and child folder nested here,
                 # unconditionally — the top-level folder's owner/edit-access
@@ -1556,6 +1728,9 @@ def create_app():
                 'document', doc_id, title, 'uploaded', uid, uid,
                 {'filename': f.filename, 'folder_id': folder_id, 'size_bytes': len(file_bytes)}
             )
+            # Also hand the file to the Document Hub (text extraction, OCR, search, classification). The
+            # row above stays exactly as it was, so this screen is unaffected either way.
+            _dms_adopt_best_effort(uid, doc_id)
             return jsonify({
                 'success': True,
                 'id': doc_id,
@@ -1576,10 +1751,13 @@ def create_app():
         uid = _current_vault_user_id()
         try:
             owner_row = db.execute(
-                'SELECT user_id, COALESCE(smart_title, title) FROM case_vault WHERE id = ?', (doc_id,)
+                'SELECT user_id, COALESCE(smart_title, title) FROM case_vault cv WHERE id = ? AND ' + _dms_hidden_sql('cv'), (doc_id,)
             ).fetchone()
             if not owner_row or not _vault_access_ok('document', doc_id, owner_row[0], uid, require_edit=True):
                 return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            if _dms_legal_hold_titles(doc_id=doc_id):
+                return jsonify({'error': True, 'message': (
+                    'This document is under legal hold and cannot be deleted. Release the hold in the Document Hub first.')}), 409
             doc_owner_uid = owner_row[0] if owner_row[0] is not None else uid
             doc_name = owner_row[1]
             db.execute("DELETE FROM document_vault_shares WHERE node_type = 'document' AND node_id = ?", (doc_id,))
@@ -2290,10 +2468,29 @@ def create_app():
         uid = _current_vault_user_id()
         try:
             row = db.execute(
-                'SELECT file_blob, file_format, smart_title, title, user_id FROM case_vault WHERE id = ?', (doc_id,)
+                'SELECT file_blob, file_format, smart_title, title, user_id FROM case_vault cv WHERE id = ? AND ' + _dms_hidden_sql('cv'),
+                (doc_id,)
             ).fetchone()
             if not row or not _vault_access_ok('document', doc_id, row[4], uid, require_edit=False):
                 return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            if not row[0] and _dms_present():
+                # A file that went in through the Document Hub is kept on disk (checksummed, optionally
+                # encrypted), not as a blob in this row - serve it from there, always as a download.
+                hub = db.execute('SELECT store_key, enc, original_name FROM dms_docs WHERE doc_id = ?', (doc_id,)).fetchone()
+                if hub:
+                    from flask import send_file
+                    from utils import dms_store as _dms_store
+                    cm = _dms_store.open_plain(hub[0], bool(hub[1]))
+                    try:
+                        path = cm.__enter__()
+                    except _dms_store.StoreError as exc:
+                        return jsonify({'error': True, 'message': str(exc)}), 410
+                    resp = send_file(path, mimetype='application/octet-stream', as_attachment=True,
+                                     download_name=hub[2] or row[2] or row[3] or f'document_{doc_id}', max_age=0)
+                    resp.headers['X-Content-Type-Options'] = 'nosniff'
+                    resp.headers['Cache-Control'] = 'private, no-store'
+                    resp.call_on_close(lambda: cm.__exit__(None, None, None))
+                    return resp
             if not row[0]:
                 return jsonify({'error': True, 'message': 'No binary file stored for this document.'}), 404
             fmt = (row[1] or 'native').lower()
@@ -2390,7 +2587,8 @@ def create_app():
             except (TypeError, ValueError):
                 offset = 0
 
-            where_clauses = ['(cv.user_id = ? OR cv.user_id IS NULL)']
+            # Never list what is in the Document Hub's trash.
+            where_clauses = ['(cv.user_id = ? OR cv.user_id IS NULL)', _dms_hidden_sql('cv')]
             params = [uid]
             if q:
                 like = f'%{q}%'
@@ -2422,9 +2620,17 @@ def create_app():
                 # has 900+ rows, so a plain fetchall() of everything (as the
                 # old query did) loads the entire vault's text into Python
                 # memory on every request regardless of what's on screen.
+                # Every column EXCEPT file_blob: that is raw bytes, which JSON cannot carry (any page
+                # containing an uploaded file used to fail with a 500) and which would also pull whole
+                # files through memory just to list them. The size is reported instead. Column names
+                # come from the table's own schema, never from the request.
+                all_cols = [r[1] for r in c.execute("PRAGMA table_info('case_vault')").fetchall()]
+                col_sql = ', '.join(f'cv."{col}"' for col in all_cols if col != 'file_blob')
+                size_sql = 'LENGTH(cv.file_blob)' if 'file_blob' in all_cols else 'NULL'
                 c.execute(
                     f"""
-                    SELECT cv.*,
+                    SELECT {col_sql},
+                           {size_sql}    AS size_bytes,
                            vf.name       AS folder_name,
                            vf.parent_id  AS folder_parent_id
                     FROM   case_vault cv
@@ -2460,26 +2666,31 @@ def create_app():
             return jsonify({}), 200
         uid = _current_vault_user_id()
         try:
-            shared_folder_ids, shared_doc_ids = _visible_shared_vault_ids(uid)
-            visible_ids = shared_folder_ids | shared_doc_ids
+            # Content folders only (never the navigation-only ancestors) and folder ids are compared with
+            # folder_id, document ids with id: they used to be merged into one set, so sharing folder #N
+            # also exposed document #N, and sharing one document exposed its whole folder.
+            shared_folder_ids, shared_doc_ids = _visible_shared_vault_ids(uid, include_nav=False)
 
             conn = db
             old_rf = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
-                base_sql = (
-                    'SELECT id, title, smart_title, doc_type, folder_id, file_format, tags, '
-                    'LENGTH(file_blob) AS size_bytes, created_at '
-                    'FROM case_vault WHERE user_id = ? OR user_id IS NULL'
-                )
-                if visible_ids:
-                    ph = ','.join('?' for _ in visible_ids)
-                    rows = conn.execute(
-                        f'{base_sql} OR folder_id IN ({ph}) OR id IN ({ph}) ORDER BY created_at DESC',
-                        (uid, *visible_ids, *visible_ids)
-                    ).fetchall()
+                # Files that went in through the Document Hub keep their bytes on disk, not in the row, so
+                # their size comes from the hub. Documents in the hub's trash are not listed.
+                if _dms_present():
+                    size_sql, join_sql = 'COALESCE(LENGTH(cv.file_blob), dd.size)', 'LEFT JOIN dms_docs dd ON dd.doc_id = cv.id'
                 else:
-                    rows = conn.execute(f'{base_sql} ORDER BY created_at DESC', (uid,)).fetchall()
+                    size_sql, join_sql = 'LENGTH(cv.file_blob)', ''
+                rows = conn.execute(
+                    'SELECT cv.id, cv.title, cv.smart_title, cv.doc_type, cv.folder_id, cv.file_format, cv.tags, '
+                    f'{size_sql} AS size_bytes, cv.created_at '
+                    f'FROM case_vault cv {join_sql} '
+                    'WHERE (cv.user_id = ? OR cv.user_id IS NULL '
+                    '       OR cv.folder_id IN (SELECT value FROM json_each(?)) '
+                    '       OR cv.id IN (SELECT value FROM json_each(?))) '
+                    f'AND {_dms_hidden_sql("cv")} ORDER BY cv.created_at DESC',
+                    (uid, json.dumps(sorted(shared_folder_ids)), json.dumps(sorted(shared_doc_ids)))
+                ).fetchall()
 
                 share_count_rows = conn.execute(
                     "SELECT node_id, COUNT(*) AS cnt FROM document_vault_shares "
@@ -2494,9 +2705,13 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/firm-library', methods=['GET', 'OPTIONS'])
+    @jwt_required()
     def get_firm_library():
+        # Needs a login and is scoped like the rest of the vault: a user's own entries plus the legacy
+        # (unowned) precedents. It used to be open to anyone and returned every user's saved documents.
         if request.method == 'OPTIONS':
             return jsonify({}), 200
+        uid = _current_vault_user_id()
         try:
             conn = db
             old_rf = conn.row_factory
@@ -2518,8 +2733,17 @@ def create_app():
                 for optional_col in ('validity_status', 'ratio_headnote', 'content'):
                     if optional_col in table_cols:
                         select_cols.append(optional_col)
-                query = f"SELECT {', '.join(select_cols)} FROM case_vault ORDER BY created_at DESC"
-                rows = conn.execute(query).fetchall()
+                where, params = [_dms_hidden_sql('case_vault')], []
+                if 'user_id' in table_cols:
+                    where.append('(user_id = ? OR user_id IS NULL)')
+                    params.append(uid)
+                if _dms_present() and 'file_blob' in table_cols:
+                    # Files that went in through the Document Hub have no text or blob in this row, so
+                    # there is nothing to read here - they live in the Document Hub, not the Firm Library.
+                    where.append("NOT (file_blob IS NULL AND COALESCE(content, '') = '' AND EXISTS "
+                                 "(SELECT 1 FROM dms_docs _dd WHERE _dd.doc_id = case_vault.id))")
+                query = f"SELECT {', '.join(select_cols)} FROM case_vault WHERE {' AND '.join(where)} ORDER BY created_at DESC"
+                rows = conn.execute(query, params).fetchall()
 
                 docs = []
                 for r in rows:
@@ -2552,12 +2776,15 @@ def create_app():
             return jsonify({'error': True, 'message': str(e)}), 500
 
     @app.route('/api/firm-library', methods=['POST'])
+    @jwt_required()
     def create_firm_library_entry():
         """Legal Forms Library -> Firm Library persistence ("Save to Library
         & Exit"). Writes the drafted TipTap HTML into case_vault — the same
         table GET /api/firm-library already reads from — so a saved draft
         shows up in the Firm Library list on the very next fetch, no
-        separate storage concept required."""
+        separate storage concept required. Needs a login; the entry belongs
+        to the user who saved it."""
+        uid = _current_vault_user_id()
         try:
             data = request.get_json(silent=True) or {}
             title = (data.get('title') or '').strip()
@@ -2573,8 +2800,8 @@ def create_app():
             conn = db
             c = conn.cursor()
             c.execute(
-                'INSERT INTO case_vault (case_id, title, doc_type, content) VALUES (?, ?, ?, ?)',
-                (case_id, title, f'Firm Library Draft — {category}', html),
+                'INSERT INTO case_vault (case_id, title, doc_type, content, user_id) VALUES (?, ?, ?, ?, ?)',
+                (case_id, title, f'Firm Library Draft — {category}', html, uid),
             )
             conn.commit()
             inserted_id = c.lastrowid

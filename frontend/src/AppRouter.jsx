@@ -17,6 +17,8 @@ import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
 import CalendarView from './components/CalendarView';
 import VaultView from './components/VaultView';
+import DocumentHub from './components/dochub/DocumentHub.jsx';
+import GlobalUploadDock from './components/dochub/GlobalDock.jsx';
 import CaseWorkspace from './components/CaseWorkspace';
 import DashboardView from './components/DashboardView';
 import WarRoomView from './components/WarRoomView';
@@ -191,6 +193,9 @@ const SidebarIcons = {
   search: () => (
     <svg className="icon" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" /><line x1="15.3" y1="15.3" x2="20" y2="20" /></svg>
   ),
+  cabinet: () => (
+    <svg className="icon" viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="10" y1="7.75" x2="14" y2="7.75" /><line x1="10" y1="16.25" x2="14" y2="16.25" /></svg>
+  ),
   library: () => (
     <svg className="icon" viewBox="0 0 24 24"><path d="M12 5.5C9.5 4.2 6.5 4.2 4 5.5V19C6.5 17.7 9.5 17.7 12 19Z" /><path d="M12 5.5C14.5 4.2 17.5 4.2 20 5.5V19C17.5 17.7 14.5 17.7 12 19Z" /></svg>
   ),
@@ -224,6 +229,7 @@ const NAVIGATION_GROUPS = [
     title: "Practice & vault",
     items: [
       { name: "Case Vault", path: "/vault", icon: SidebarIcons.lock() },
+      { name: "Document Hub", path: "/document-hub", icon: SidebarIcons.cabinet() },
       { name: "Conflict Engine", path: "/conflict-engine", icon: SidebarIcons.search() },
       { name: "Firm Library", path: "/firm-library", icon: SidebarIcons.library() },
       { name: "Legal Forms", path: "/legal-forms", icon: SidebarIcons.forms() },
@@ -594,6 +600,7 @@ const Breadcrumbs = () => {
   else if (p === '/conflict-engine') items.push({ label: 'Conflict Engine', url: p });
   else if (p === '/calendar') items.push({ label: 'Legal Calendar', url: p });
   else if (p === '/vault') items.push({ label: 'Case Vault', url: p });
+  else if (p === '/document-hub') items.push({ label: 'Document Hub', url: p });
   else if (p === '/war-room') items.push({ label: 'Virtual Courtroom', url: p });
   else if (p === '/firm-library') items.push({ label: 'Firm Library', url: p });
   else {
@@ -907,6 +914,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           </div>
         </main>
       </div>
+      {/* A Document Hub import keeps running when you move to another screen; this card shows it there. */}
+      <GlobalUploadDock />
     </div>
   );
 };
@@ -937,6 +946,7 @@ function AppRouterContent() {
         <Route path="/case/:caseId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />
         <Route path="/calendar" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CalendarView /></Layout>} />
         <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
+        <Route path="/document-hub" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><DocumentHub /></ErrorBoundary></Layout>} />
         <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
         <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />
         <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FormTemplateLibrary /></Layout>} />
