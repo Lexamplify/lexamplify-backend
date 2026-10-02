@@ -329,6 +329,8 @@ def gc_blobs(conn, min_age_seconds=86400):
     """Delete stored files that no document references any more (e.g. after the old vault route
     hard-deleted a row). Files younger than a day are never touched: an upload may be mid-flight."""
     referenced = {(r[0], r[1]) for r in conn.execute("SELECT sha256, enc FROM dms_docs")}
+    if I._table_exists(conn, "dms_bundles"):                      # court bundles built but not (yet) saved to the library
+        referenced |= {(r[0], r[1]) for r in conn.execute("SELECT built_sha, COALESCE(built_enc, 0) FROM dms_bundles WHERE built_sha IS NOT NULL")}
     root, removed, now = S.storage_root(), 0, _now()
     for base, dirs, files in os.walk(root):
         if os.path.basename(base) == "_incoming":
@@ -351,10 +353,11 @@ def gc_blobs(conn, min_age_seconds=86400):
 
 # ── the threads ─────────────────────────────────────────────────────────────────────
 class Worker:
-    def __init__(self, db_path, threads=None, on_purge=None, log=None):
+    def __init__(self, db_path, threads=None, on_purge=None, log=None, hooks=None):
         self.db_path = db_path
         self.n = int(threads if threads is not None else os.getenv("DMS_WORKERS", "2"))
         self.on_purge = on_purge
+        self.hooks = hooks if hooks is not None else {}         # e.g. hooks["processed"](conn, doc_id) - set by the hub's extensions
         self.log = log or (lambda msg: None)
         self._threads = []
         self._stop = threading.Event()
@@ -422,6 +425,14 @@ class Worker:
             try:
                 process_document(conn, job["doc_id"])
                 finish_job(conn, job["id"])
+                after = self.hooks.get("processed")
+                if after:
+                    try:
+                        after(conn, job["doc_id"])
+                    except Exception as exc:                      # an extension must never fail the document it follows
+                        self.log(f"[dms] after-process hook failed for {job['doc_id']}: {exc}")
+                        with contextlib.suppress(Exception):
+                            conn.rollback()
             except Exception as exc:
                 self.log(f"[dms] job {job['id']} failed: {exc}\n{traceback.format_exc()}")
                 with contextlib.suppress(Exception):

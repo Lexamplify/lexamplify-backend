@@ -2,25 +2,35 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import './dochub.css';
 import { ApiError, dh } from './api.js';
+import './files.css';
+import { AddToBundleModal, Bundles } from './Bundles.jsx';
 import { BulkBar } from './BulkBar.jsx';
 import { DocRow, Pager, Skeleton } from './DocList.jsx';
 import { FacetRail } from './FacetRail.jsx';
+import { fx } from './filesApi.js';
+import { FilingQueue } from './FilingQueue.jsx';
 import { Icon } from './icons.jsx';
 import { ImportPanel, UploadDock, useFileIntake, useUploader } from './ImportPanel.jsx';
+import { PaperFiles } from './PaperFiles.jsx';
 import { PreviewDrawer } from './PreviewDrawer.jsx';
 import { ReviewMode } from './ReviewMode.jsx';
+import { ScanStudio } from './ScanStudio.jsx';
 import { DuplicatesView, TrashView } from './SideViews.jsx';
 import { Chip, Confirm, EmptyState, Modal, Portal, Toasts, buildFolderIndex, rollUpFolderCounts, useDebounced, useHotkeys, useMedia, useToasts } from './ui.jsx';
-import { PER_PAGE, activeFilterCount, apiParams, applyPatch, filterSignature, readFilters, readView } from './hubState.js';
+import { FILE_VIEWS, PER_PAGE, activeFilterCount, apiParams, applyPatch, filterSignature, readFilters, readView } from './hubState.js';
 import { SORTS, fmtBytes, fmtNum, plural } from './format.js';
 import { uploader } from './uploader.js';
 
 const TABS = [
   { id: 'library', label: 'Library' },
-  { id: 'review', label: 'Review' },
-  { id: 'problems', label: 'Problems' },
-  { id: 'duplicates', label: 'Duplicates' },
-  { id: 'trash', label: 'Trash' },
+  { id: 'tofile', label: 'To file', group: 'files' },
+  { id: 'scan', label: 'Scan & file', group: 'files' },
+  { id: 'paper', label: 'Paper files', group: 'files' },
+  { id: 'bundles', label: 'Bundles', group: 'files' },
+  { id: 'review', label: 'Review', group: 'care' },
+  { id: 'problems', label: 'Problems', group: 'care' },
+  { id: 'duplicates', label: 'Duplicates', group: 'care' },
+  { id: 'trash', label: 'Trash', group: 'care' },
 ];
 const BULK_LABEL = { move: 'Moved', classify: 'Set the type of', tag_add: 'Tagged', tag_remove: 'Removed the tag from', link_matter: 'Updated the matter of', accept: 'Confirmed', hold: 'Updated the legal hold on', reprocess: 'Queued for reading:', trash: 'Moved to the trash:' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -75,6 +85,11 @@ function Spark({ days }) {
 export default function DocumentHub() {
   const [sp, setSp] = useSearchParams();
   const view = readView(sp);
+  const isFiles = FILE_VIEWS.includes(view);
+  const scanSid = sp.get('scan') || null;
+  const bundleId = Number(sp.get('bundle')) || null;
+  const pfToken = sp.get('pf') || null;
+  const caseRef = sp.get('case') || null;
   const filters = useMemo(() => readFilters(sp), [sp]);
   const openId = Number(sp.get('doc')) || null;
   const toasts = useToasts();
@@ -103,6 +118,9 @@ export default function DocumentHub() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [adopt, setAdopt] = useState(null);
+  const [fsum, setFsum] = useState(null);                 // numbers for the paper-to-digital tabs
+  const [caseLabel, setCaseLabel] = useState('');
+  const [addBundle, setAddBundle] = useState(null);       // document ids waiting to be put in a bundle
   const [hideOcr, setHideOcr] = useState(() => dismissed('ocr'));
   const [qInput, setQInput] = useState(filters.q);
   const searchRef = useRef(null);
@@ -116,12 +134,27 @@ export default function DocumentHub() {
 
   // ── URL helpers ──────────────────────────────────────────────────────────────────────
   const setFilters = useCallback((patch, opts = {}) => setSp((prev) => applyPatch(prev, patch), { replace: opts.push ? false : true }), [setSp]);
-  const setView = useCallback((v) => setSp((prev) => {
+  const setView = useCallback((v, extra = {}) => setSp((prev) => {
     const n = new URLSearchParams(prev);
     n.delete('page'); n.delete('doc');
+    ['scan', 'bundle', 'pf', 'case'].forEach((k) => n.delete(k));
     if (v === 'library') n.delete('view'); else n.set('view', v);
+    Object.entries(extra).forEach(([k, val]) => { if (val) n.set(k, String(val)); });
     return n;
   }), [setSp]);
+  // one parameter of a files tab (the scan being worked on, the bundle being built, the case being looked at)
+  const setParam = useCallback((k, val, replace = false) => setSp((prev) => {
+    const n = new URLSearchParams(prev);
+    if (val) n.set(k, String(val)); else n.delete(k);
+    // a tab opened by a link (?pf=, ?scan=, ?bundle=) must stay on that tab once the link's parameter is used up
+    if (!val && !n.get('view') && FILE_VIEWS.includes(view)) n.set('view', view);
+    return n;
+  }, { replace }), [setSp, view]);
+  const goCaseDocs = useCallback((ref) => {
+    if (!ref) { setParam('case', null, true); return; }
+    const [kind, id] = String(ref).split(':');
+    setSp(() => { const n = new URLSearchParams(); if (kind === 'lpms') n.set('lpms_case', id); else if (kind === 'matter') n.set('matter', id); return n; });
+  }, [setSp, setParam]);
   const openDoc = useCallback((id, opts = {}) => setSp((prev) => { const n = new URLSearchParams(prev); n.set('doc', String(id)); return n; }, { replace: !!opts.replace }), [setSp]);
   const closeDoc = useCallback(() => setSp((prev) => { const n = new URLSearchParams(prev); n.delete('doc'); return n; }, { replace: true }), [setSp]);
   const clearAll = useCallback(() => setSp((prev) => {
@@ -145,15 +178,31 @@ export default function DocumentHub() {
     try { const s = await dh.stats(); setStats(s); return s; } catch (e) { if (e instanceof ApiError && e.status === 404) setFatal(e); return null; }
   }, []);
   const bump = useCallback(() => setTick((t) => t + 1), []);
-  const afterChange = useCallback(() => { refreshStats(); bump(); }, [refreshStats, bump]);
+  const refreshFiles = useCallback(() => fx.summary().then(setFsum).catch(() => {}), []);
+  const afterChange = useCallback(() => { refreshStats(); refreshFiles(); bump(); }, [refreshStats, refreshFiles, bump]);
+  const onFilingSummary = useCallback((x) => { if (x) setFsum((f) => (f ? { ...f, filing: x } : f)); }, []);
+  const onPaperStats = useCallback((x) => { if (x) setFsum((f) => (f ? { ...f, paper: x } : f)); }, []);
 
   useEffect(() => {
     dh.config().then((c) => { setConfig(c); uploader.configure(c); }).catch((e) => setFatal(e));
     loadFolders();
     dh.matters().then(setMatters).catch(() => {});
     refreshStats();
-    if (sp.get('import')) { setImportOpen(true); setSp((prev) => { const n = new URLSearchParams(prev); n.delete('import'); return n; }, { replace: true }); }
+    refreshFiles();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!sp.get('import')) return;
+    setImportOpen(true);
+    setSp((prev) => { const n = new URLSearchParams(prev); n.delete('import'); return n; }, { replace: true });
+  }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (isFiles) refreshFiles(); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!caseRef) { setCaseLabel(''); return undefined; }
+    let dead = false;
+    fx.cases('', { ref: caseRef }).then((r) => { if (!dead) setCaseLabel(r[0]?.title || ''); }).catch(() => {});
+    return () => { dead = true; };
+  }, [caseRef]);
 
   // while anything is being read or uploaded, keep the numbers moving
   const working = (stats?.processing || 0) > 0 || snap.busy || snap.reading;
@@ -214,7 +263,7 @@ export default function DocumentHub() {
   const lastKey = useRef('');
   const hasFacets = useRef(false);
   useEffect(() => {
-    if (view === 'duplicates' || view === 'trash') return undefined;
+    if (view === 'duplicates' || view === 'trash' || isFiles) return undefined;
     const id = (reqId.current += 1);
     const ctrl = new AbortController();
     const key = JSON.stringify([listParams, filters.page]);
@@ -237,7 +286,7 @@ export default function DocumentHub() {
       setListState('error');
     });
     return () => ctrl.abort();
-  }, [listParams, filters.page, view, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [listParams, filters.page, view, tick, isFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setSel(new Set()); setAllInfo(null); lastClick.current = null; setCursor(null); }, [sig]);
   useEffect(() => { if (cursor) document.querySelector(`[data-doc-id="${cursor}"]`)?.scrollIntoView({ block: 'nearest' }); }, [cursor]);
@@ -315,7 +364,7 @@ export default function DocumentHub() {
   const destination = useMemo(() => ({ folderId: Number(filters.folder) || null, matterId: Number(filters.matter) || null }), [filters.folder, filters.matter]);
   const intake = useFileIntake(destination);
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
-  const dragProps = importOpen ? {} : {
+  const dragProps = importOpen || isFiles ? {} : {
     onDragEnter: (e) => { if (hasFiles(e)) { dragDepth.current += 1; setDragging(true); } },
     onDragOver: (e) => { if (hasFiles(e)) e.preventDefault(); },
     onDragLeave: (e) => { if (hasFiles(e)) { dragDepth.current -= 1; if (dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } } },
@@ -336,7 +385,7 @@ export default function DocumentHub() {
   }, []);
 
   // ── keyboard ─────────────────────────────────────────────────────────────────────────
-  const rowsList = view === 'duplicates' || view === 'trash' ? [] : list.docs;
+  const rowsList = view === 'duplicates' || view === 'trash' || isFiles ? [] : list.docs;
   const move = (d) => {
     if (!rowsList.length) return;
     const i = rowsList.findIndex((x) => x.id === cursor);
@@ -352,14 +401,15 @@ export default function DocumentHub() {
     u: () => setImportOpen(true),
     '?': () => setShortcuts(true),
     Escape: () => { if (sel.size) { setSel(new Set()); setAllInfo(null); } },
-  }, noOverlay);
+  }, noOverlay && !isFiles);
 
   // ── drawer neighbours ────────────────────────────────────────────────────────────────
   const neighbors = useMemo(() => {
+    if (isFiles) return { prev: null, next: null };
     const i = list.docs.findIndex((d) => d.id === openId);
     if (i < 0) return { prev: null, next: null };
     return { prev: list.docs[i - 1]?.id || null, next: list.docs[i + 1]?.id || null };
-  }, [list.docs, openId]);
+  }, [list.docs, openId, isFiles]);
   const viewBatch = (id) => { setImportOpen(false); setSp((prev) => { const n = applyPatch(prev, { batch: id }); n.delete('view'); return n; }); };
   const startReview = () => { setImportOpen(false); setReviewOpen(true); };
 
@@ -381,7 +431,9 @@ export default function DocumentHub() {
   const activeCount = activeFilterCount(filters, view);
   const isEmptyLibrary = stats && stats.documents === 0 && stats.trash === 0 && !activeCount && !filters.q && view === 'library' && listState === 'ready' && list.total === 0;
   const st = stats || {};
-  const perView = { review: st.review, problems: st.problems, trash: st.trash };
+  const fsm = fsum || {};
+  const perView = { review: st.review, problems: st.problems, trash: st.trash, tofile: fsm.filing?.pending, scan: fsm.scans, paper: fsm.paper?.overdue };
+  const alertTabs = { review: true, tofile: !!fsm.filing?.pending, paper: !!fsm.paper?.overdue };
   const q = filters.q;
   const sortValue = filters.sort && (filters.sort !== 'relevance' || q) ? filters.sort : (q ? 'relevance' : 'newest');
   const chips = [];
@@ -432,6 +484,7 @@ export default function DocumentHub() {
           ) : null}
         </div>
 
+        {!isFiles ? (
         <section className="dh-stats" aria-label="Library summary">
           <div className="dh-stat"><span className="n">{stats ? fmtNum(st.documents) : '—'}</span><span className="l">Documents</span><span className="sub">{stats ? `${fmtNum(st.pages)} pages · ${fmtBytes(st.bytes)}` : ' '}</span></div>
           <div className="dh-stat">{stats?.activity ? <Spark days={st.activity} /> : null}<span className="n">{stats ? fmtNum(st.added_7d) : '—'}</span><span className="l">Added this week</span><span className="sub">last 14 days</span></div>
@@ -440,24 +493,33 @@ export default function DocumentHub() {
           <button type="button" className={`dh-stat${filters.hold ? ' on' : ''}`} onClick={() => { setView('library'); setFilters({ hold: filters.hold ? '' : '1' }); }}><span className="n">{stats ? fmtNum(st.legal_hold) : '—'}</span><span className="l">Legal hold</span><span className="sub">cannot be deleted</span></button>
           <button type="button" className={`dh-stat${view === 'trash' ? ' on' : ''}`} onClick={() => setView('trash')}><span className="n">{stats ? fmtNum(st.trash) : '—'}</span><span className="l">In the trash</span><span className="sub">{config ? `kept ${config.trash_days} days` : ' '}</span></button>
         </section>
+        ) : null}
 
-        {st.processing > 0 ? (
+        {st.processing > 0 && !isFiles ? (
           <div className="dh-reading" role="status"><Icon name="refresh" className="dh-spin" /><span>Reading <b style={{ color: 'var(--ink)' }}>{fmtNum(st.processing)}</b> document{st.processing === 1 ? '' : 's'} in the background. You can keep searching — finished ones appear as they are done.</span></div>
         ) : null}
 
         <nav className="dh-tabs" aria-label="Document Hub sections">
-          {TABS.map((t) => (
-            <button key={t.id} type="button" className={`dh-tab${view === t.id ? ' on' : ''}`} onClick={() => setView(t.id)} aria-current={view === t.id ? 'page' : undefined}>
-              {t.label}
-              {perView[t.id] ? <span className={`ct${t.id === 'review' ? ' alert' : ''}`}>{fmtNum(perView[t.id])}</span> : null}
-            </button>
+          {TABS.map((t, i) => (
+            <span key={t.id} style={{ display: 'contents' }}>
+              {i > 0 && t.group !== TABS[i - 1].group ? <span className="dh-tabsep" aria-hidden="true" /> : null}
+              <button type="button" className={`dh-tab${view === t.id ? ' on' : ''}${t.group === 'files' ? ' files' : ''}`} onClick={() => setView(t.id)} aria-current={view === t.id ? 'page' : undefined}>
+                {t.label}
+                {perView[t.id] ? <span className={`ct${alertTabs[t.id] ? ' alert' : ''}`}>{fmtNum(perView[t.id])}</span> : null}
+              </button>
+            </span>
           ))}
         </nav>
+
+        {view === 'tofile' ? <FilingQueue summary={fsm.filing} onSummary={onFilingSummary} toast={toast} onOpenDoc={openDoc} onChanged={() => { refreshStats(); bump(); }} onGo={(v, extra) => setView(v, extra)} /> : null}
+        {view === 'scan' ? <ScanStudio sid={scanSid} onSid={(id) => { setParam('scan', id); if (!id) refreshFiles(); }} config={config} toast={toast} onOpenDoc={openDoc} onGo={(v) => { setView(v); if (v === 'library' || v === 'tofile') afterChange(); }} caseRef={caseRef} caseLabel={caseLabel} /> : null}
+        {view === 'paper' ? <PaperFiles toast={toast} onOpenDoc={openDoc} onGoCase={(r) => (r ? goCaseDocs(r) : setParam('case', null, true))} caseRef={caseRef} caseLabel={caseLabel} openToken={pfToken} onTokenHandled={() => setParam('pf', null, true)} onStats={onPaperStats} /> : null}
+        {view === 'bundles' ? <Bundles bundleId={bundleId} onBundleId={(id) => setParam('bundle', id)} caseRef={caseRef} caseLabel={caseLabel} onGoCase={(r) => (r ? goCaseDocs(r) : setParam('case', null, true))} toast={toast} onOpenDoc={openDoc} folderIndex={folderIndex} /> : null}
 
         {view === 'duplicates' ? <DuplicatesView onOpen={openDoc} onChanged={afterChange} toast={toast} folderLabel={folderLabel} /> : null}
         {view === 'trash' ? <TrashView onOpen={openDoc} onChanged={afterChange} toast={toast} folderLabel={folderLabel} /> : null}
 
-        {view !== 'duplicates' && view !== 'trash' ? (
+        {view !== 'duplicates' && view !== 'trash' && !isFiles ? (
           isEmptyLibrary ? (
             <EmptyState icon="inbox" title="Your library is empty"
               actions={<><button type="button" className="dh-btn primary" onClick={() => setImportOpen(true)}><Icon name="upload" />Import documents</button>
@@ -516,7 +578,7 @@ export default function DocumentHub() {
                 {sel.size > 0 ? (
                   <>
                     <BulkBar count={sel.size} folderIndex={folderIndex} matters={matters} classes={(config?.classes || [])} busy={bulkBusy}
-                      onAction={runBulk} onClear={() => { setSel(new Set()); setAllInfo(null); }} onZip={zip} onTrash={() => setConfirmTrash(true)} />
+                      onAction={runBulk} onClear={() => { setSel(new Set()); setAllInfo(null); }} onZip={zip} onTrash={() => setConfirmTrash(true)} onAddToBundle={() => setAddBundle([...sel])} />
                     {pageAllSelected && !allInfo && list.total > list.docs.length ? (
                       <div className="dh-allmatch">All {list.docs.length} on this page are selected. <button type="button" onClick={selectAllMatching}>Select all {fmtNum(list.total)} matching</button></div>
                     ) : null}
@@ -584,6 +646,7 @@ export default function DocumentHub() {
             afterChange();
           }}
           onRemoved={() => { closeDoc(); afterChange(); }}
+          onAddToBundle={(id) => setAddBundle([id])}
           onFilterCase={(n) => { setSp((prev) => { const nx = applyPatch(prev, { q: n }); nx.delete('doc'); nx.delete('view'); return nx; }, { replace: true }); }} />
       ) : null}
       {importOpen ? (
@@ -593,6 +656,8 @@ export default function DocumentHub() {
       {reviewOpen ? <ReviewMode config={config} toast={toast} onChanged={afterChange} onClose={() => { setReviewOpen(false); afterChange(); }} /> : null}
       {newFolder ? <NewFolderModal folderIndex={folderIndex} initialParent={Number(filters.folder) || null} onClose={() => setNewFolder(false)} onCreated={(n) => { setNewFolder(false); loadFolders(); toast(`Folder “${n}” created`); }} /> : null}
       {shortcuts ? <Shortcuts onClose={() => setShortcuts(false)} /> : null}
+      {addBundle ? <AddToBundleModal docIds={addBundle} toast={toast} onClose={() => setAddBundle(null)}
+        onDone={(id, msg) => { setAddBundle(null); toast(msg, { action: { label: 'Open the bundle', run: () => setView('bundles', { bundle: id }) } }); }} /> : null}
       {confirmTrash ? (
         <Confirm danger title="Move to trash?" confirmLabel="Move to trash" busy={bulkBusy} onConfirm={() => runBulk('trash')} onCancel={() => setConfirmTrash(false)}>
           {plural(sel.size, 'document')} (with all versions) will wait in the trash for {config?.trash_days ?? 30} days, then be removed for good. Documents under legal hold are skipped. You can undo this.

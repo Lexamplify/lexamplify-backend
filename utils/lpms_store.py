@@ -887,7 +887,7 @@ def record_document_event(db_path, case_id, doc_id, title, uid, action="upload",
         if not case or not m or m["firm_id"] != case["firm_id"]:
             return
         c.execute("BEGIN IMMEDIATE")
-        verb = {"upload": "Document uploaded", "version": "New version uploaded"}.get(action, "Document updated")
+        verb = {"upload": "Document uploaded", "version": "New version uploaded", "filed": "Document filed"}.get(action, "Document updated")
         timeline(c, case["firm_id"], case["id"], "document", f"{verb}: {title}", None, m["id"], doc_id)
         audit(c, case["firm_id"], uid, m["name"], "document_upload", "case", case["id"], f"{verb}: {title}", {"doc_id": doc_id, **(detail or {})})
         notify_case(c, case["firm_id"], case, m, "document", "document", f"{verb} on {case['title']}",

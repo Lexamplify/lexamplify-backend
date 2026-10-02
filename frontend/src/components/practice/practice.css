@@ -348,3 +348,11 @@ a.pr-item:hover, button.pr-item:hover, .pr-item.click:hover { background: var(--
 }
 @media (min-width: 641px) { .pr-cal .dots { display: none; } }
 @media print { .pr-nav, .pr-top .dh-btn, .pr-toolbar { display: none; } }
+
+/* the paper side of a case: links into the Document Hub's scan, paper-file and bundle tabs */
+.pr-paperstrip { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.pr-pstile { display: inline-flex; align-items: center; gap: 8px; padding: 8px 13px; border: 1px solid var(--rule); border-radius: 9px; background: var(--paper); color: var(--ink); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.pr-pstile:hover { border-color: var(--accent); color: var(--accent); }
+.pr-pstile.hot { border-color: var(--accent); background: var(--accent-soft, var(--paper-2)); }
+.pr-pstile .n { font-family: 'IBM Plex Mono', monospace; font-size: 11px; background: var(--paper-2); border-radius: 999px; padding: 1px 7px; color: var(--ink); }
+.pr-pstile em { font-style: normal; font-size: 11px; color: var(--accent); font-weight: 600; }

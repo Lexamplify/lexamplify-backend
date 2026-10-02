@@ -3,7 +3,7 @@
 
 .dh-root {
   --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
-  --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
+  --ink:#181B1D; --ink-soft:#494E51; --muted:#6B7173; --muted-2:#B3B8B9; --rule:#D2D5D4;
   --accent:#B24A2E; --accent-soft:#EFDCD1; --accent-hover:#9C3E26;
   --major:#9C7A2E; --major-soft:#F1E6C9;
   --on-accent:#FBF7EE;
@@ -18,7 +18,7 @@
 html[data-theme="dark"] .dh-root,
 :root[data-theme="dark"] .dh-root {
   --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
-  --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
+  --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#8A8F8E; --muted-2:#494E4D; --rule:#333939;
   --accent:#CC6B48; --accent-soft:#3B281F; --accent-hover:#B85A3B;
   --major:#D9AD5C; --major-soft:#35301C;
   --shadow: 0 18px 50px rgba(0,0,0,.55);
@@ -62,6 +62,10 @@ html[data-theme="dark"] .dh-root,
 .dh-input::placeholder, .dh-textarea::placeholder { color: var(--muted); }
 .dh-input:focus, .dh-select:focus, .dh-textarea:focus { outline: none; border-color: var(--accent); }
 .dh-select { appearance: none; padding-right: 30px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+/* the app-wide form rule in index.css forces padding with !important, which let the arrow sit on top of the text */
+.dh-root.dh-root select.dh-select, .dh-root.dh-root textarea.dh-textarea { background-color: var(--paper) !important; border: 1px solid var(--rule) !important; color: var(--ink) !important; }
+.dh-root.dh-root select.dh-select { padding-right: 30px !important; }
+.dh-root.dh-root select.dh-select:focus, .dh-root.dh-root textarea.dh-textarea:focus { border-color: var(--accent) !important; }
 .dh-textarea { resize: vertical; min-height: 64px; }
 .dh-field { display: block; margin-bottom: 12px; }
 .dh-field > span.lab { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
@@ -405,6 +409,7 @@ html[data-theme="dark"] .dh-root .dh-row.sel mark.dh-mark { background: var(--pa
 /* ── toasts + shortcuts ─────────────────────────────────────────────────── */
 .dh-toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1000; display: grid; gap: 8px; justify-items: center; pointer-events: none; width: min(560px, calc(100vw - 24px)); }
 .dh-toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; background: var(--ink); color: var(--paper); padding: 10px 14px; border-radius: 10px; font-size: 12.5px; box-shadow: var(--shadow); animation: dh-rise .18s ease both; max-width: 100%; }
+.dh-toast span { color: inherit; }
 .dh-toast.bad { background: var(--accent); color: var(--on-accent); }
 .dh-toast button { border: none; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; padding: 0 0 0 6px; }
 .dh-keys { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; align-items: center; }

@@ -62,7 +62,7 @@ function TagInput({ value, onChange, disabled }) {
   );
 }
 
-export function PreviewDrawer({ docId, q, terms, neighbors, folderIndex, matters, config, onClose, onNavigate, onChanged, onRemoved, onFilterCase, toast }) {
+export function PreviewDrawer({ docId, q, terms, neighbors, folderIndex, matters, config, onClose, onNavigate, onChanged, onRemoved, onFilterCase, onAddToBundle, toast }) {
   const ref = useRef(null);
   const [doc, setDoc] = useState(null);
   const [err, setErr] = useState(null);
@@ -402,6 +402,16 @@ export function PreviewDrawer({ docId, q, terms, neighbors, folderIndex, matters
                     <button type="button" className="dh-btn ghost sm" disabled={!!busy} onClick={() => quickPatch({ matter_id: doc.suggested_matter.id }, 'Linked to the matter')}>Link</button>
                   </div>
                 ) : null}
+                {(doc.paper || []).length ? (
+                  <div className="dh-field" style={{ marginTop: 12 }}><span className="lab">Paper original</span>
+                    <div className="fx-paperchips">
+                      {doc.paper.map((p) => (
+                        <span key={p.id} className={`dh-chip${p.overdue ? ' bad' : ''}`} title={p.title}><Icon name="cabinet" /><span className="mono">{p.file_no}</span>
+                          {p.status === 'out' ? ` · with ${p.holder}${p.overdue ? ' (overdue)' : ''}` : p.location ? ` · ${p.location}` : ''}</span>
+                      ))}
+                    </div>
+                    <span className="hint">The paper this scan came from is kept in this file.</span></div>
+                ) : null}
                 {level === 'own' && !doc.deleted_at ? (
                   <label className="dh-check" style={{ marginTop: 12 }}>
                     <input type="checkbox" checked={!!doc.legal_hold} disabled={!!busy} onChange={(e) => quickPatch({ legal_hold: e.target.checked }, e.target.checked ? 'Legal hold on' : 'Legal hold lifted')} />
@@ -515,6 +525,7 @@ export function PreviewDrawer({ docId, q, terms, neighbors, folderIndex, matters
                 {(closeMenu) => (
                   <>
                     <button type="button" className="item" disabled={!canEdit} onClick={async () => { closeMenu(); const r = await run('reprocess', () => dh.reprocess(docId), 'Reading again…'); if (r) { load(true); onChanged?.(); } }}><Icon name="refresh" />Read this document again</button>
+                    {onAddToBundle ? <button type="button" className="item" onClick={() => { closeMenu(); onAddToBundle(docId); }}><Icon name="bundle" />Add to a court bundle…</button> : null}
                     <hr />
                     <button type="button" className="item danger" disabled={!canEdit} onClick={() => { closeMenu(); setConfirm({ kind: 'trash' }); }}><Icon name="trash" />Move to trash</button>
                   </>

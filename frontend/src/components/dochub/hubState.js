@@ -1,6 +1,7 @@
 // URL <-> filters. Everything the person chose lives in the address bar, so a search or a filtered view can be
 // bookmarked, shared with a colleague, and survives a reload or the Back button.
-export const VIEWS = ['library', 'review', 'problems', 'duplicates', 'trash'];
+export const VIEWS = ['library', 'tofile', 'scan', 'paper', 'bundles', 'review', 'problems', 'duplicates', 'trash'];
+export const FILE_VIEWS = ['tofile', 'scan', 'paper', 'bundles'];
 export const PER_PAGE = 30;
 
 const MAP = {
@@ -17,7 +18,12 @@ export function readFilters(sp) {
 
 export function readView(sp) {
   const v = sp.get('view');
-  return VIEWS.includes(v) ? v : 'library';
+  if (VIEWS.includes(v)) return v;
+  // links from a QR label, a scan or a bundle open their own tab even without ?view=
+  if (sp.get('pf')) return 'paper';
+  if (sp.get('scan')) return 'scan';
+  if (sp.get('bundle')) return 'bundles';
+  return 'library';
 }
 
 // patch: {filterKey: value | ''}. Any filter change goes back to page 1 unless the patch says otherwise.

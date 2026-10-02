@@ -41,6 +41,8 @@ class Harness:
         from flask_jwt_extended import JWTManager, create_access_token
         monkeypatch.setenv("DMS_STORAGE_DIR", str(tmp_path / "files"))
         monkeypatch.setenv("DMS_WORKERS", str(workers))
+        monkeypatch.setenv("DMS_STRICT_MOUNT", "1")          # a failure to mount the paper-to-digital tools must fail the test, not be logged
+        monkeypatch.setenv("DMS_SCAN_WORKERS", "1")
         if encryption_key:
             monkeypatch.setenv("DMS_ENCRYPTION_KEY", encryption_key)
         else:
@@ -304,6 +306,8 @@ class PracticeHarness:
         from flask_jwt_extended import JWTManager, create_access_token
         monkeypatch.setenv("DMS_STORAGE_DIR", str(tmp_path / "files"))
         monkeypatch.setenv("DMS_WORKERS", "1")
+        monkeypatch.setenv("DMS_STRICT_MOUNT", "1")
+        monkeypatch.setenv("DMS_SCAN_WORKERS", "1")
         monkeypatch.setenv("LPMS_SCHEDULER", "0")
         self.db_path = str(tmp_path / "lex.db")
         boot = sqlite3.connect(self.db_path)

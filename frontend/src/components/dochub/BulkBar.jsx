@@ -31,7 +31,7 @@ function TagForm({ onApply, close }) {
   );
 }
 
-export function BulkBar({ count, folderIndex, matters, classes, busy, onAction, onClear, onZip, onTrash }) {
+export function BulkBar({ count, folderIndex, matters, classes, busy, onAction, onClear, onZip, onTrash, onAddToBundle }) {
   return (
     <div className="dh-bulk" role="toolbar" aria-label="Actions for the selected documents">
       <span className="n">{fmtNum(count)} selected</span>
@@ -67,6 +67,7 @@ export function BulkBar({ count, folderIndex, matters, classes, busy, onAction, 
       <span className="sep" />
       <button type="button" className="dh-btn ghost sm" disabled={busy} onClick={() => onAction('reprocess')}><Icon name="refresh" />Read again</button>
       <button type="button" className="dh-btn ghost sm" disabled={busy} onClick={onZip}><Icon name="zip" />Download .zip</button>
+      {onAddToBundle ? <button type="button" className="dh-btn ghost sm" disabled={busy} onClick={onAddToBundle}><Icon name="bundle" />Add to bundle</button> : null}
       <span className="grow" />
       <button type="button" className="dh-btn danger sm" disabled={busy} onClick={onTrash}><Icon name="trash" />Trash</button>
       <button type="button" className="dh-btn quiet sm" onClick={onClear} aria-label="Clear selection"><Icon name="close" />Clear</button>

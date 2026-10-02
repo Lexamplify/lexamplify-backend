@@ -1351,6 +1351,7 @@ def create_app():
             'shared': _dms_shared,
             'folder_access': _dms_folder_access,
             'on_lpms_document': _lpms_document_hook,
+            'user_name': lambda uid: (_lpms_user(uid) or {}).get('name'),
             'log': lambda msg: print(f'[dms] {msg}'),
         })
         # Its own per-user allowance instead of the app-wide default (a bulk upload legitimately makes

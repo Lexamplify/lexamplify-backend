@@ -76,6 +76,8 @@ async function download(path, fallbackName, opts) {
   saveBlob(blob, filenameFrom(res, fallbackName));
 }
 
+export { API_BASE, BASE, call, download, qs, raw };
+
 export const dh = {
   config: () => call('/config'),
   stats: () => call('/stats'),

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Confirm, EmptyState, Modal } from '../dochub/ui.jsx';
 import { dh } from '../dochub/api.js';
+import { fx } from '../dochub/filesApi.js';
 import { STATUS, fileBadge, fmtAgo, fmtBytes, fmtDate } from '../dochub/format.js';
 import { PIcon } from './icons.jsx';
 import { ApiError, doneWith, pr } from './api.js';
@@ -105,6 +106,23 @@ export function ProceedingsTab({ caseObj, version, onRecord, onChanged }) {
   );
 }
 
+// the paper side of a case: scan paper onto it, see its physical files, make a court bundle (all of it lives in the Document Hub)
+function PaperStrip({ caseObj, version }) {
+  const ref = `lpms:${caseObj.id}`;
+  const q = useAsync((signal) => fx.caseSummary(ref, signal), [ref, version]);
+  const s = q.data || {};
+  const to = (view) => `/document-hub?view=${view}&case=${encodeURIComponent(ref)}`;
+  const n = (v) => (v ? <b className="n">{v}</b> : null);
+  return (
+    <div className="pr-paperstrip" role="group" aria-label="Paper files and bundles for this case">
+      {s.to_file ? <Link className="pr-pstile hot" to="/document-hub?view=tofile"><PIcon name="inbox" /><span>{s.to_file} to put on this case</span></Link> : null}
+      {caseObj.can.upload ? <Link className="pr-pstile" to={to('scan')}><PIcon name="camera" /><span>Scan paper</span></Link> : null}
+      <Link className="pr-pstile" to={to('paper')}><PIcon name="cabinet" /><span>Paper files</span>{n(s.paper_files)}{s.paper_out ? <em>{s.paper_out} out</em> : null}</Link>
+      <Link className="pr-pstile" to={to('bundles')}><PIcon name="bundle" /><span>Court bundles</span>{n(s.bundles)}</Link>
+    </div>
+  );
+}
+
 // ── documents (they live in the Document Hub; this is the case's window onto them) ──────────
 export function DocumentsTab({ caseObj, onChanged, onAddHearing }) {
   const { toast } = usePractice();
@@ -189,6 +207,8 @@ export function DocumentsTab({ caseObj, onChanged, onAddHearing }) {
           ))}
         </Card>
       ) : null}
+
+      <PaperStrip caseObj={caseObj} version={q.data} />
 
       <Card title="Case documents" sub={q.data ? `${q.data.total} ${q.data.total === 1 ? 'file' : 'files'}` : null} flush
         actions={<Link className="dh-btn ghost sm" to={`/document-hub?lpms_case=${caseObj.id}`}><PIcon name="external" />Open in Document Hub</Link>}>

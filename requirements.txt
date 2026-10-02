@@ -33,3 +33,5 @@ pytesseract
 openpyxl
 cryptography
 segno
+numpy
+opencv-python-headless

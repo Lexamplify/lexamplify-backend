@@ -127,7 +127,8 @@ def create_dms_blueprint(deps):
         finally:
             c.close()
 
-    worker = W.Worker(db_path, on_purge=_on_purge, log=log)
+    hooks = {}                      # extensions (routes/dms_files.py) register callbacks here, e.g. hooks["processed"]
+    worker = W.Worker(db_path, on_purge=_on_purge, log=log, hooks=hooks)
     bp.worker = worker
     if os.getenv("DMS_WORKERS", "2") != "0":
         worker.start()
@@ -598,6 +599,7 @@ def create_dms_blueprint(deps):
             path.insert(0, fr["name"])
             fid = fr["parent_id"]
         d["folder_path"] = path
+        d["paper"] = _paper_for_doc(c, ctx.uid, doc_id)
         if d["matter_id"]:
             m = next((m for m in I.matter_ids_for(c, ctx.uid) if m["id"] == d["matter_id"]), None)
             d["matter"] = {"id": m["id"], "title": m["title"]} if m else None
@@ -1173,5 +1175,30 @@ def create_dms_blueprint(deps):
         resp.call_on_close(lambda: os.path.exists(tmp) and os.remove(tmp))
         resp.headers["X-Content-Type-Options"] = "nosniff"
         return resp
+
+    # ── paper-to-digital: filing queue, paper register, bundles, scan intake ───────────
+    def _paper_for_doc(c, uid, doc_id):
+        """The physical original(s) of a document, for its detail panel. Never fails the page."""
+        try:
+            from utils import dms_files as _F, dms_paper as _PF
+            return _PF.for_doc(c, _F.scope_of(c, uid), uid, doc_id)
+        except Exception as exc:
+            log(f"paper lookup failed: {exc}")
+            return []
+
+    try:
+        from types import SimpleNamespace
+        from routes import dms_files as _dms_files
+        _dms_files.mount(bp, SimpleNamespace(
+            db_path=db_path, conn=conn, ctx_now=ctx_now, uid_now=uid_now, Tx=Tx, begin=begin, prov=_prov, fetch_doc=fetch_doc, ingest=ingest,
+            ApiError=ApiError, docs_payload=docs_payload, title_of=title_of, tell_practice=tell_practice, check_folder=check_folder,
+            check_lpms_case=check_lpms_case, check_matter=check_matter, worker=worker, log=log, shared_fn=shared_fn,
+            user_name=_opt(deps, "user_name"), int_=_int, truthy=_truthy, safe_name=_safe_name, csv_safe=_csv_safe, err=_err, hooks=hooks,
+            now_iso=_now_iso))
+    except Exception as exc:                              # the library itself must keep working
+        import traceback
+        log(f"[dms] paper-to-digital tools failed to start: {exc}\n{traceback.format_exc()}")
+        if os.getenv("DMS_STRICT_MOUNT") == "1":
+            raise
 
     return bp

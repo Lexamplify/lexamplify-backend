@@ -186,6 +186,50 @@ def test_firm_library_needs_a_login_and_keeps_each_users_drafts_private(real, al
     assert title not in {d["title"] for d in other.get("/api/firm-library").get_json()}
 
 
+def test_paper_to_digital_tools_are_wired_into_the_real_app(real, alice):
+    """Filing queue, paper register, bundles and scan intake inside the real app: login, CSRF, CORS preflight for PUT, and a full round trip."""
+    flask_app, app_module = real
+    anon = flask_app.test_client()
+    for url in ("/api/dms/files/summary", "/api/dms/files/filing", "/api/dms/files/paper", "/api/dms/files/bundles", "/api/dms/files/scan", "/api/dms/files/cases"):
+        assert anon.get(url).status_code == 401, url
+        assert alice.get(url).status_code == 200, url
+    # changing data needs the CSRF header like everything else
+    assert alice.c.post("/api/dms/files/paper", json={"title": "No csrf"}).status_code in (401, 422)
+    r = alice.send("post", "/api/dms/files/paper", json={"title": "Real app file"})
+    assert r.status_code == 201 and r.get_json()["file"]["file_no"] == "PF-0001"
+    # the browser's preflight for PUT (layout, order) is allowed from the real site and refused for others
+    origin = "https://test.lexamplify.com"
+    pre = flask_app.test_client().open("/api/dms/files/scan/abc/layout", method="OPTIONS", headers={
+        "Origin": origin, "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type,x-csrf-token"})
+    assert pre.status_code == 200 and "PUT" in pre.headers["Access-Control-Allow-Methods"] and pre.headers["Access-Control-Allow-Origin"] == origin
+    # an upload from the user's own name for the account (no practice) can be put in a bundle, built and downloaded
+    did = alice.upload("order.pdf", make_pdf([ORDER_TEXT + "\nreal app bundle ibis"])).get_json()["doc"]["id"]
+    alice.wait(did)
+    b = alice.send("post", "/api/dms/files/bundles", json={"title": "Real bundle", "doc_ids": [did]})
+    assert b.status_code == 201
+    bid = b.get_json()["bundle"]["id"]
+    assert alice.send("post", f"/api/dms/files/bundles/{bid}/build", json={}).status_code == 202
+    t0 = time.time()
+    while time.time() - t0 < 30:
+        st = alice.get(f"/api/dms/files/bundles/{bid}").get_json()["bundle"]["build"]["state"]
+        if st != "building":
+            break
+        time.sleep(0.2)
+    assert st == "done"
+    dl = alice.get(f"/api/dms/files/bundles/{bid}/download", headers={"Origin": origin})
+    assert dl.status_code == 200 and dl.data[:4] == b"%PDF" and "Content-Disposition" in dl.headers
+    # a scan session round trip through the real app's cookie login
+    sid = alice.send("post", "/api/dms/files/scan", json={}).get_json()["scan"]["id"]
+    up = alice.c.post(f"/api/dms/files/scan/{sid}/pages", data={"file": (io.BytesIO(make_pdf(["scanned sheet one"])), "s.pdf")},
+                      content_type="multipart/form-data", headers=alice.csrf())
+    assert up.status_code == 201
+    assert alice.send("delete", f"/api/dms/files/scan/{sid}").status_code == 200
+    # the second account sees none of it
+    bob = Browser(flask_app)
+    assert bob.get("/api/dms/files/paper").get_json()["total"] == 0 and bob.get("/api/dms/files/bundles").get_json()["bundles"] == []
+    assert bob.get(f"/api/dms/files/bundles/{bid}/download").status_code == 404
+
+
 def test_the_hub_limit_is_per_user_and_never_counts_preflights(real, alice):
     flask_app, _ = real
     heavy = Browser(flask_app)
