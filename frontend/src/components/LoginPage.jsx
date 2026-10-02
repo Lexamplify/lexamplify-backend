@@ -797,33 +797,41 @@ export default function LoginPage() {
     e.preventDefault();
     if (!email || !password) return setError('Email and password are required.');
     setLoading(true); setError(''); setSlowConnection(false);
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
     const slowTimer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_THRESHOLD_MS);
+    // A sleeping Render service / Neon database answers the FIRST request slowly or not at all, and the
+    // next one a moment later is fast. So instead of showing "waking up, try again" and making the person
+    // press the button again, wake the server and retry here, up to LOGIN_ATTEMPTS times.
+    const LOGIN_ATTEMPTS = 4;
+    const wasWaking = (res, err) => err ? (err.name === 'AbortError' || err instanceof TypeError) : [502, 503, 504].includes(res.status);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({ email, password }),
-      });
-      // A 500/502 error page is HTML, not JSON — res.json() would throw
-      // "JSON.parse: unexpected character…" straight into the UI as the
-      // error message. .catch(() => ({})) makes that a clean {} instead,
-      // same defensive pattern already used by handlePasswordReset/
-      // handleResetConfirm below.
-      const data = await res.json().catch(() => ({}));
+      let res = null; let data = {};
+      for (let attempt = 1; attempt <= LOGIN_ATTEMPTS; attempt += 1) {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), attempt === 1 ? AUTH_REQUEST_TIMEOUT_MS : 20000);
+        let failure = null;
+        try {
+          res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({ email, password }),
+          });
+          // A 500/502 error page is HTML, not JSON - .catch makes that a clean {}.
+          data = await res.json().catch(() => ({}));
+        } catch (err) {
+          failure = err; res = null;
+        } finally {
+          clearTimeout(tid);
+        }
+        if (!wasWaking(res, failure)) break;               // a real answer (success, wrong password, ...) - stop retrying
+        if (attempt === LOGIN_ATTEMPTS) throw new Error(WAKING_UP_MESSAGE);
+        setSlowConnection(true);
+        try { await fetch(`${API_BASE_URL}/api/ping`, { signal: AbortSignal.timeout(15000) }); } catch { /* still waking */ }
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+      }
       if (!res.ok) {
-        // 401/400 are a real "wrong credentials" answer from a server that
-        // responded fine — must never be shown as a cold-start/timeout
-        // issue. 504 is Render's own edge timing out waiting on the
-        // backend, which in practice means the same thing an AbortError
-        // does here (a cold start taking too long), so it gets the same
-        // "waking up" message rather than a generic server-error one.
+        // 401/400 are a real "wrong credentials" answer from a server that responded fine.
         if (res.status === 401 || res.status === 400) {
           throw new Error(data.error || data.message || 'Invalid email or password.');
-        }
-        if (res.status === 504) {
-          throw new Error(WAKING_UP_MESSAGE);
         }
         throw new Error(
           data.error || data.message ||
@@ -834,13 +842,8 @@ export default function LoginPage() {
       localStorage.setItem('active_lex_user', email.trim());
       window.location.href = '/workspace/matters';
     } catch (err) {
-      if (err.name === 'AbortError') {
-        setError(WAKING_UP_MESSAGE);
-      } else {
-        setError(err.message);
-      }
+      setError(err.name === 'AbortError' ? WAKING_UP_MESSAGE : err.message);
     } finally {
-      clearTimeout(tid);
       clearTimeout(slowTimer);
       setLoading(false);
       setSlowConnection(false);

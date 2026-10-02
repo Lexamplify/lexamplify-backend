@@ -1142,6 +1142,11 @@ def create_app():
             'connect_args': {
                 'connect_timeout': 15,  # generous enough to ride out a Neon cold start
                 'sslmode': 'require',
+                # TCP keepalives so a connection Neon silently dropped is noticed instead of hanging.
+                'keepalives': 1,
+                'keepalives_idle': 30,
+                'keepalives_interval': 10,
+                'keepalives_count': 3,
             },
         }
     else:
@@ -3303,7 +3308,22 @@ def create_app():
     # The client clears its interval on 401/403 from other protected endpoints.
     @app.route('/api/ping')
     def api_ping():
-        return jsonify({'ok': True})
+        # Also touches the database. Render stays awake while something calls this URL, but Neon suspends
+        # its compute after ~5 idle minutes unless a QUERY arrives - a ping that never reaches the
+        # database leaves it asleep, and the next login then waits for it to wake. Point the cron job
+        # at this URL every 3-4 minutes and both stay warm. Never fails: the answer says whether the
+        # database replied.
+        db_ok = False
+        try:
+            from sqlalchemy import text as _sql_text
+            sqlalchemy_db.session.execute(_sql_text('SELECT 1'))
+            db_ok = True
+        except Exception as exc:
+            print(f'[ping] database not reachable yet: {exc}')
+            sqlalchemy_db.session.rollback()
+        finally:
+            sqlalchemy_db.session.remove()
+        return jsonify({'ok': True, 'db': db_ok})
 
     def force_pristine_groq_messages(messages):
         clean = []

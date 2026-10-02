@@ -40,6 +40,7 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity,
 )
+from sqlalchemy.exc import DBAPIError
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import db
 from models.user import User
@@ -144,7 +145,15 @@ def login_user():
         if not email or not password:
             return jsonify({"error": "Missing credentials"}), 400
 
-        user = User.query.filter_by(email=email).first()
+        # A Neon database that went to sleep (or dropped an idle pooled connection) fails the first query
+        # with an OperationalError; the same query a moment later succeeds. Retry once on a fresh
+        # connection before giving up, so the person never sees that first failure.
+        try:
+            user = User.query.filter_by(email=email).first()
+        except DBAPIError:
+            db.session.rollback()
+            db.session.remove()
+            user = User.query.filter_by(email=email).first()
 
         # No auto-creation on login — an unrecognized email is a straight
         # 401, same message as a wrong password, so a brute-forcer can't
@@ -156,6 +165,11 @@ def login_user():
             {"user": {"id": user.id, "email": user.email, "name": user.name}},
             user.id,
         )
+    except DBAPIError as e:
+        # The database is still waking up: say so (503), which the login page retries by itself.
+        db.session.rollback()
+        print(f"[login] database not ready: {e}")
+        return jsonify({"error": "The database is waking up. Please try again in a few seconds.", "code": "DB_WAKING"}), 503
     except Exception as e:
         print(f"[login] error: {e}")
         return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
