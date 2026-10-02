@@ -5,7 +5,7 @@ export const PER_PAGE = 30;
 
 const MAP = {
   q: 'q', folder: 'folder', cls: 'type', status: 'status', kind: 'kind', matter: 'matter', from: 'from', to: 'to',
-  addedFrom: 'af', addedTo: 'at', review: 'review', problems: 'problems', hold: 'hold', batch: 'batch', sort: 'sort', page: 'page',
+  addedFrom: 'af', addedTo: 'at', lpmsCase: 'lpms_case', review: 'review', problems: 'problems', hold: 'hold', batch: 'batch', sort: 'sort', page: 'page',
 };
 
 export function readFilters(sp) {
@@ -32,12 +32,12 @@ export function applyPatch(sp, patch) {
   return next;
 }
 
-export const FILTER_KEYS = ['folder', 'cls', 'status', 'kind', 'matter', 'from', 'to', 'addedFrom', 'addedTo', 'review', 'problems', 'hold', 'batch'];
+export const FILTER_KEYS = ['folder', 'cls', 'status', 'kind', 'matter', 'from', 'to', 'addedFrom', 'addedTo', 'review', 'problems', 'hold', 'batch', 'lpmsCase'];
 
 export function apiParams(f, view, perPage = PER_PAGE) {
   const p = {
     q: f.q, class: f.cls, status: f.status, kind: f.kind, matter_id: f.matter, date_from: f.from, date_to: f.to,
-    added_from: f.addedFrom, added_to: f.addedTo, legal_hold: f.hold, batch_id: f.batch, per_page: perPage,
+    added_from: f.addedFrom, added_to: f.addedTo, legal_hold: f.hold, batch_id: f.batch, lpms_case_id: f.lpmsCase, per_page: perPage,
   };
   const sort = f.sort && (f.sort !== 'relevance' || f.q) ? f.sort : (f.q ? 'relevance' : 'newest');
   p.sort = sort;
@@ -58,7 +58,7 @@ export function filterSignature(f, view) {
 
 export function activeFilterCount(f, view) {
   let n = 0;
-  ['folder', 'cls', 'status', 'kind', 'matter', 'hold', 'batch'].forEach((k) => { if (f[k]) n += 1; });
+  ['folder', 'cls', 'status', 'kind', 'matter', 'hold', 'batch', 'lpmsCase'].forEach((k) => { if (f[k]) n += 1; });
   if (f.from || f.to) n += 1;
   if (f.addedFrom || f.addedTo) n += 1;
   if (view === 'library') { if (f.review) n += 1; if (f.problems) n += 1; }

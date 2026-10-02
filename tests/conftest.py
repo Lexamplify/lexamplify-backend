@@ -291,3 +291,158 @@ def make_png_text(lines, size=(1300, 420)):
 def ocr_ok():
     from utils import dms_extract as X
     return bool(X.ocr_engine().get("available"))
+
+
+# ── Practice (Legal Practice Management) ────────────────────────────────────────────
+class PracticeHarness:
+    """The REAL Practice blueprint (and the Document Hub next to it, so case documents can be tested) on a small Flask app with
+    real JWT auth, a throw-away SQLite file, and an in-memory stand-in for the users database."""
+
+    def __init__(self, tmp_path, monkeypatch, email_configured=False):
+        import sqlite3
+        from flask import Flask
+        from flask_jwt_extended import JWTManager, create_access_token
+        monkeypatch.setenv("DMS_STORAGE_DIR", str(tmp_path / "files"))
+        monkeypatch.setenv("DMS_WORKERS", "1")
+        monkeypatch.setenv("LPMS_SCHEDULER", "0")
+        self.db_path = str(tmp_path / "lex.db")
+        boot = sqlite3.connect(self.db_path)
+        boot.executescript(VAULT_SCHEMA)
+        boot.commit()
+        boot.close()
+
+        self.users, self.passwords, self.sent = {}, {}, []
+        self.mail_ok = email_configured
+        self.mail_returns = True
+
+        def get_user(uid):
+            return self.users.get(int(uid))
+
+        def find_user(email):
+            return next((u for u in self.users.values() if u["email"] == email.lower()), None)
+
+        def create_user(name, email, password, phone=None):
+            return self.add_user(name, email, password, phone)["id"]
+
+        def set_password(uid, pw):
+            self.passwords[int(uid)] = pw
+
+        def send_email(to, subject, body):
+            self.sent.append({"to": to, "subject": subject, "body": body})
+            return self.mail_returns
+
+        from routes import dms_routes, lpms_routes
+        import importlib
+        importlib.reload(lpms_routes)
+        from utils import lpms_store
+        self.store = lpms_store
+        self.app = Flask(__name__)
+        self.app.config.update(JWT_SECRET_KEY="test-secret-key-that-is-long-enough-for-hs256", JWT_TOKEN_LOCATION=["headers"], TESTING=True,
+                               MAX_CONTENT_LENGTH=100 * 1024 * 1024)
+        JWTManager(self.app)
+        self.lpms = lpms_routes.create_lpms_blueprint({
+            "db_path": self.db_path, "get_user": get_user, "find_user": find_user, "create_user": create_user, "set_password": set_password,
+            "send_email": send_email, "email_configured": lambda: self.mail_ok, "sync_email": True, "no_scheduler": True})
+        self.app.register_blueprint(self.lpms)
+        self.dms = dms_routes.create_dms_blueprint({
+            "db_path": self.db_path, "shared": lambda uid: (set(), set(), lambda doc_id: None),
+            "folder_access": lambda folder_id, uid, require_edit=True: True,
+            "on_lpms_document": lambda case_id, doc_id, title, uid, action: lpms_store.record_document_event(self.db_path, case_id, doc_id, title, uid, action)})
+        self.app.register_blueprint(self.dms)
+
+        def _tok(uid):
+            with self.app.app_context():
+                return create_access_token(identity=str(uid))
+        self._tok = _tok
+        self.tmp = tmp_path
+
+    def add_user(self, name, email, password="TestPass123!", phone=None):
+        uid = len(self.users) + 1
+        self.users[uid] = {"id": uid, "name": name, "email": email.lower(), "phone": phone}
+        self.passwords[uid] = password
+        return self.users[uid]
+
+    def person(self, name, email=None, ip="10.1.1.1"):
+        u = self.add_user(name, email or f"{name.lower().replace(' ', '.')}@example.com")
+        return PracticeClient(self, u["id"], ip)
+
+    def sql(self, q, *a):
+        import sqlite3
+        c = sqlite3.connect(self.db_path)
+        c.row_factory = sqlite3.Row
+        try:
+            r = c.execute(q, a).fetchall()
+            c.commit()
+            return r
+        finally:
+            c.close()
+
+    def stop(self):
+        for bp in (self.dms,):
+            try:
+                bp.worker.stop(timeout=10)
+            except Exception:
+                pass
+
+
+class PracticeClient:
+    def __init__(self, h, uid, ip="10.1.1.1"):
+        self.h, self.uid, self.ip = h, uid, ip
+        self.c = h.app.test_client()
+        self.headers = {"Authorization": f"Bearer {h._tok(uid)}"}
+        self.env = {"REMOTE_ADDR": ip}
+        self.member_id = None
+
+    def _req(self, method, url, **kw):
+        return getattr(self.c, method)("/api/practice" + url if url.startswith("/") and not url.startswith("/api/") else url,
+                                       headers=self.headers, environ_overrides=self.env, **kw)
+
+    def get(self, url, **kw):
+        return self._req("get", url, **kw)
+
+    def post(self, url, json=None, **kw):
+        if "data" in kw:
+            return self._req("post", url, **kw)
+        return self._req("post", url, json=json if json is not None else {}, **kw)
+
+    def patch(self, url, json=None):
+        return self._req("patch", url, json=json or {})
+
+    def put(self, url, json=None):
+        return self._req("put", url, json=json or {})
+
+    def delete(self, url):
+        return self._req("delete", url)
+
+    def upload(self, name, data, **fields):
+        import io as _io
+        fields = {k: str(v) for k, v in fields.items() if v is not None}
+        return self._req("post", "/api/dms/upload", data={"file": (_io.BytesIO(data), name), **fields}, content_type="multipart/form-data")
+
+    def ok(self, resp, status=None):
+        assert resp.status_code == (status or 200), (resp.status_code, resp.get_json())
+        return resp.get_json()
+
+
+@pytest.fixture
+def practice(tmp_path, monkeypatch):
+    h = PracticeHarness(tmp_path, monkeypatch)
+    yield h
+    h.stop()
+
+
+@pytest.fixture
+def firm(practice):
+    """A practice with one Senior Advocate (Asha), one Junior (Ravi), one Office Staff member (Meena) and a second Junior (Kiran)."""
+    h = practice
+    asha = h.person("Asha Rao")
+    asha.ok(asha.post("/firm", {"name": "Rao & Associates"}), 201)
+    team = {"asha": asha}
+    for key, name, role in (("ravi", "Ravi Nair", "junior"), ("meena", "Meena Das", "staff"), ("kiran", "Kiran Shah", "junior")):
+        r = asha.ok(asha.post("/members", {"name": name, "email": f"{key}@example.com", "role": role, "password": "TempPass123!"}), 201)
+        p = PracticeClient(h, r["member"]["user_id"])
+        p.member_id = r["member"]["id"]
+        team[key] = p
+    asha.member_id = asha.ok(asha.get("/me"))["member"]["id"]
+    h.team = team
+    return h

@@ -99,11 +99,12 @@ export const dh = {
   batch: (id) => call(`/batches/${encodeURIComponent(id)}`),
   adopt: (limit = 60) => call('/adopt', { method: 'POST', json: { limit } }),
 
-  upload(file, { folderId, matterId, batchId, relPath, force } = {}, signal) {
+  upload(file, { folderId, matterId, lpmsCaseId, batchId, relPath, force } = {}, signal) {
     const fd = new FormData();
     fd.append('file', file, file.name);
     if (folderId) fd.append('folder_id', folderId);
     if (matterId) fd.append('matter_id', matterId);
+    if (lpmsCaseId) fd.append('lpms_case_id', lpmsCaseId);
     if (batchId) fd.append('batch_id', batchId);
     if (relPath) fd.append('rel_path', relPath);
     if (force) fd.append('force', '1');

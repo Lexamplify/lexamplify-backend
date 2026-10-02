@@ -375,6 +375,21 @@ def _has_matter_tables(conn):
     return _table_exists(conn, "matters") and _table_exists(conn, "team_memberships")
 
 
+def _has_lpms_tables(conn):
+    return _table_exists(conn, "lpms_cases") and _table_exists(conn, "lpms_members")
+
+
+def lpms_case_role(conn, uid, case_id):
+    """Role ('senior'|'junior'|'staff') this user holds in the firm that owns Practice case `case_id`, or None when they
+    may not see that case (not a member, or a restricted case they are not on)."""
+    if not _has_lpms_tables(conn):
+        return None
+    r = conn.execute(
+        "SELECT me.role FROM lpms_cases c JOIN lpms_members me ON me.firm_id = c.firm_id AND me.user_id = ? AND me.active = 1 "
+        "WHERE c.id = ? AND (c.restricted = 0 OR me.role = 'senior' OR c.advocate_id = me.id)", (int(uid), int(case_id))).fetchone()
+    return r[0] if r else None
+
+
 def visibility_sql(conn, ctx):
     """SQL predicate over `cv` (case_vault) for rows this user may see: their own uploads, documents
     shared with them, and documents in matters they own or whose team they belong to. Legacy
@@ -391,6 +406,10 @@ def visibility_sql(conn, ctx):
         parts.append(
             "cv.case_id IN (SELECT 'matter:' || m.id FROM matters m WHERE m.owner_user_id = :uid OR m.team_id IN "
             "(SELECT team_id FROM team_memberships WHERE user_id = :uid) OR m.team_id IN (SELECT id FROM teams WHERE owner_user_id = :uid))")
+    if _has_lpms_tables(conn):
+        parts.append(
+            "cv.case_id IN (SELECT 'lpms:' || c.id FROM lpms_cases c JOIN lpms_members me ON me.firm_id = c.firm_id AND me.user_id = :uid AND me.active = 1 "
+            "WHERE c.restricted = 0 OR me.role = 'senior' OR c.advocate_id = me.id)")
     return "(" + " OR ".join(parts) + ")"
 
 
@@ -418,6 +437,15 @@ def access_level(conn, ctx, doc_row, matter_roles=None):
     if doc_row["user_id"] is not None and int(doc_row["user_id"]) == ctx.uid:
         return "own"
     cid = doc_row["case_id"] or ""
+    if cid.startswith("lpms:"):
+        cache = ctx.__dict__.setdefault("_lpms_roles", {})
+        if cid not in cache:
+            try:
+                cache[cid] = lpms_case_role(conn, ctx.uid, int(cid.split(":", 1)[1]))
+            except ValueError:
+                cache[cid] = None
+        if cache[cid]:
+            return "own" if cache[cid] == "senior" else "edit"
     if matter_roles is not None and cid in matter_roles:
         return "own" if matter_roles[cid] == "owner" else "edit"
     if matter_roles is None and cid.startswith("matter:") and _has_matter_tables(conn):
@@ -490,6 +518,10 @@ def build_filters(f, params):
     elif _clean_int(mid) is not None:
         base.append("cv.case_id = :matter_case")
         params["matter_case"] = f"matter:{_clean_int(mid)}"
+    lpid = _clean_int(f.get("lpms_case_id"))
+    if lpid is not None:
+        base.append("cv.case_id = :lpms_case")
+        params["lpms_case"] = f"lpms:{lpid}"
     for key, col, op in (("date_from", "d.doc_date", ">="), ("date_to", "d.doc_date", "<="),
                          ("added_from", "date(d.created_at)", ">="), ("added_to", "date(d.created_at)", "<=")):
         v = f.get(key)
@@ -777,7 +809,10 @@ def doc_dict(r, level=None, detail=False):
     keys = r.keys()
     meta = _loads(r["meta"], {}) if "meta" in keys else {}
     case_id = r["cv_case_id"] if "cv_case_id" in keys else None
-    matter_id = None
+    matter_id, lpms_case_id = None, None
+    if case_id and str(case_id).startswith("lpms:"):
+        with contextlib.suppress(ValueError):
+            lpms_case_id = int(str(case_id).split(":", 1)[1])
     if case_id and str(case_id).startswith("matter:"):
         with contextlib.suppress(ValueError):
             matter_id = int(str(case_id).split(":", 1)[1])
@@ -789,7 +824,7 @@ def doc_dict(r, level=None, detail=False):
         "ocr_pages": r["ocr_pages"], "ocr_conf": r["ocr_conf"], "method": r["method"],
         "doc_class": r["doc_class"] or "Unclassified", "class_conf": r["class_conf"], "class_src": r["class_src"],
         "class_evidence": _loads(r["class_evidence"], []), "review": r["review"],
-        "folder_id": r["cv_folder_id"], "matter_id": matter_id, "tags": _loads(r["tags"], []),
+        "folder_id": r["cv_folder_id"], "matter_id": matter_id, "lpms_case_id": lpms_case_id, "tags": _loads(r["tags"], []),
         "doc_date": r["doc_date"], "next_hearing": r["next_hearing"], "parties": r["parties"], "court": r["court"],
         "case_numbers": meta.get("case_numbers") or [], "fir_numbers": meta.get("fir_numbers") or [],
         "created_at": r["created_at"], "updated_at": r["updated_at"], "version": r["version"], "group_id": r["group_id"],

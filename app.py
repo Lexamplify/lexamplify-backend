@@ -1065,6 +1065,74 @@ def _dms_folder_access(folder_id, user_id, require_edit=True):
     return bool(_vault_access_ok('folder', folder_id, row[0], user_id, require_edit=require_edit))
 
 
+# ── Practice (Legal Practice Management — /api/practice, routes/lpms_routes.py) ─────────────
+# Cases, hearings, daily proceedings, clients, RTI, calendar, reports and the firm's team. It keeps its own
+# tables (lpms_*) in this database file; accounts stay in the users database like everywhere else. These small
+# adapters are all it needs from the rest of the app.
+_LPMS_BP = None                     # the mounted blueprint, set in create_app(); None = Practice unavailable
+
+
+def _lpms_user(uid):
+    from models.user import User
+    u = sqlalchemy_db.session.get(User, int(uid))
+    return {'id': u.id, 'name': u.name, 'email': u.email, 'phone': u.phone} if u else None
+
+
+def _lpms_find_user(email):
+    from models.user import User
+    u = User.query.filter_by(email=(email or '').strip().lower()).first()
+    return {'id': u.id, 'name': u.name, 'email': u.email} if u else None
+
+
+def _lpms_create_user(name, email, password, phone=None):
+    from models.user import User
+    from werkzeug.security import generate_password_hash
+    u = User(name=name, email=email.strip().lower(), password=generate_password_hash(password), phone=phone or None)
+    try:
+        sqlalchemy_db.session.add(u)
+        sqlalchemy_db.session.commit()
+    except Exception:
+        sqlalchemy_db.session.rollback()
+        raise
+    return u.id
+
+
+def _lpms_set_password(uid, password):
+    from models.user import User
+    from werkzeug.security import generate_password_hash
+    u = sqlalchemy_db.session.get(User, int(uid))
+    if not u:
+        raise ValueError('No such account')
+    u.password = generate_password_hash(password)
+    sqlalchemy_db.session.commit()
+
+
+def _lpms_email_configured():
+    return bool(os.getenv('SMTP_HOST') and os.getenv('SMTP_USER') and os.getenv('SMTP_PASSWORD'))
+
+
+def _lpms_send_email(to, subject, body):
+    from utils.mailer import send_email
+    return send_email(to, subject, body)
+
+
+def _lpms_document_hook(case_id, doc_id, title, uid, action):
+    """The Document Hub reports a file added to a Practice case (timeline, audit log, notifications)."""
+    from utils.lpms_store import record_document_event
+    record_document_event(os.path.realpath('lex_assistant.db'), case_id, doc_id, title, uid, action)
+
+
+def _lpms_login_gate(user, otp):
+    """Two-step sign-in check, called by the login route once the password is right. None = carry on."""
+    from utils.lpms_store import login_gate
+    return login_gate(os.path.realpath('lex_assistant.db'), user.id, otp, request.remote_addr)
+
+
+def _lpms_login_event(user, ok, reason=None):
+    from utils.lpms_store import login_event
+    login_event(os.path.realpath('lex_assistant.db'), user.id if user else None, None, ok, reason, request.remote_addr, request.headers.get('User-Agent'))
+
+
 def create_app():
     app = Flask(__name__)
     # Render terminates TLS at its edge and proxies to this app over plain
@@ -1282,6 +1350,7 @@ def create_app():
             'db_path': os.path.realpath('lex_assistant.db'),
             'shared': _dms_shared,
             'folder_access': _dms_folder_access,
+            'on_lpms_document': _lpms_document_hook,
             'log': lambda msg: print(f'[dms] {msg}'),
         })
         # Its own per-user allowance instead of the app-wide default (a bulk upload legitimately makes
@@ -1293,6 +1362,28 @@ def create_app():
         import traceback
         _DMS_BP = None
         print(f'[dms] Document Hub is NOT available: {exc}')
+        traceback.print_exc()
+
+    # ── Practice (/api/practice) ────────────────────────────────────────
+    # Same rule as the hub: a problem starting it is logged loudly and must not take the app down.
+    global _LPMS_BP
+    try:
+        from routes.lpms_routes import create_lpms_blueprint
+        _LPMS_BP = create_lpms_blueprint({
+            'db_path': os.path.realpath('lex_assistant.db'),
+            'get_user': _lpms_user, 'find_user': _lpms_find_user, 'create_user': _lpms_create_user, 'set_password': _lpms_set_password,
+            'send_email': _lpms_send_email, 'email_configured': _lpms_email_configured,
+            'log': lambda msg: print(f'[practice] {msg}'),
+        })
+        limiter.limit(os.getenv('LPMS_RATE_LIMIT', '900 per minute'), key_func=_dms_rate_key,
+                      exempt_when=lambda: request.method == 'OPTIONS')(_LPMS_BP)
+        app.register_blueprint(_LPMS_BP)
+        app.extensions['lpms_login_gate'] = _lpms_login_gate
+        app.extensions['lpms_login_event'] = _lpms_login_event
+    except Exception as exc:
+        import traceback
+        _LPMS_BP = None
+        print(f'[practice] Practice module is NOT available: {exc}')
         traceback.print_exc()
 
     @app.route('/api/ai/extract-file', methods=['POST', 'OPTIONS'])

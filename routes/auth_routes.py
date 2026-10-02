@@ -30,7 +30,7 @@ trigger the browser into sending automatically) is never sufficient.
 """
 import os
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, request, jsonify
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -134,6 +134,16 @@ def register_user():
         return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
 
 
+def _practice_event(name, user, ok, reason=None):
+    """Tell the Practice module about a sign-in (it keeps the login history). Never raises."""
+    fn = current_app.extensions.get(name)
+    if fn and user is not None:
+        try:
+            fn(user, ok, reason)
+        except Exception as exc:
+            print(f"[login] practice log skipped: {exc}")
+
+
 @auth_bp.route('/login', methods=['POST'])
 @limiter.limit("10/minute")
 def login_user():
@@ -159,7 +169,21 @@ def login_user():
         # 401, same message as a wrong password, so a brute-forcer can't
         # use this endpoint to enumerate which emails have accounts.
         if not user or not check_password_hash(user.password, password):
+            _practice_event("lpms_login_event", user, False, "Wrong password")
             return jsonify({"error": "Invalid email or password."}), 401
+
+        # Practice module: two-step sign-in (TOTP) for accounts that turned it on. Only an explicit "code needed / wrong code"
+        # stops the login; a problem inside the Practice module never locks anyone out of the app.
+        gate = current_app.extensions.get("lpms_login_gate")
+        if gate:
+            try:
+                blocked = gate(user, data.get("otp"))
+            except Exception as exc:
+                print(f"[login] practice gate skipped: {exc}")
+                blocked = None
+            if blocked:
+                return jsonify(blocked[0]), blocked[1]
+        _practice_event("lpms_login_event", user, True)
 
         return _issue_session_response(
             {"user": {"id": user.id, "email": user.email, "name": user.name}},

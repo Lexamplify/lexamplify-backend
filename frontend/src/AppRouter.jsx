@@ -18,6 +18,7 @@ import LoginPage from './components/LoginPage';
 import CalendarView from './components/CalendarView';
 import VaultView from './components/VaultView';
 import DocumentHub from './components/dochub/DocumentHub.jsx';
+import PracticeApp from './components/practice/PracticeApp.jsx';
 import GlobalUploadDock from './components/dochub/GlobalDock.jsx';
 import CaseWorkspace from './components/CaseWorkspace';
 import DashboardView from './components/DashboardView';
@@ -202,6 +203,9 @@ const SidebarIcons = {
   forms: () => (
     <svg className="icon" viewBox="0 0 24 24"><path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M13 3v5h5" /><path d="M8.5 13.5l1.3 1.3L12.5 12" /><line x1="8.5" y1="17.5" x2="14" y2="17.5" /></svg>
   ),
+  practice: () => (
+    <svg className="icon" viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="17" height="11.5" rx="1.8" /><path d="M9 7.5V5.6A1.1 1.1 0 0 1 10.1 4.5h3.8A1.1 1.1 0 0 1 15 5.6v1.9" /><path d="M3.5 12.5h17" /></svg>
+  ),
   gateway: () => (
     <svg className="icon" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
   ),
@@ -228,6 +232,7 @@ const NAVIGATION_GROUPS = [
   {
     title: "Practice & vault",
     items: [
+      { name: "Practice", path: "/practice", icon: SidebarIcons.practice() },
       { name: "Case Vault", path: "/vault", icon: SidebarIcons.lock() },
       { name: "Document Hub", path: "/document-hub", icon: SidebarIcons.cabinet() },
       { name: "Conflict Engine", path: "/conflict-engine", icon: SidebarIcons.search() },
@@ -269,6 +274,18 @@ const SIDEBAR_STYLES = `
   }
   .sb-wrap *{ box-sizing:border-box; }
   .sb-wrap.collapsed{ width:96px; }
+  /* Phones: the sidebar becomes an off-canvas drawer opened by the hamburger (the older .sidebar rules in index.css no longer match this markup). */
+  @media (max-width: 768px){
+    .sb-wrap, .sb-wrap.collapsed{
+      position:fixed; top:0; left:0; bottom:0; height:100%;
+      width:min(86vw, 300px);
+      z-index:1000;
+      transform:translateX(-105%);
+      transition:transform 280ms cubic-bezier(.32, .72, 0, 1), box-shadow 280ms ease;
+    }
+    .sb-wrap.sb-mobile-open{ transform:translateX(0); box-shadow:6px 0 40px rgba(0,0,0,.4); }
+    .sb-wrap .sb-sidebar{ width:100%; }
+  }
   .sb-icon.icon, .sb-icon svg{ width:18px; height:18px; flex-shrink:0; }
   .sb-icon svg path, .sb-icon svg line, .sb-icon svg rect, .sb-icon svg circle{ stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
 
@@ -429,6 +446,10 @@ const SIDEBAR_STYLES = `
   :root[data-theme="dark"] .topbar {
     background: var(--sb-paper) !important;
     border-bottom: 1px solid var(--sb-rule) !important;
+  }
+  @media (max-width: 768px){
+    /* The title row may wrap onto a second line (the tagline) - let the bar grow instead of overlapping the page. */
+    .topbar{ height:auto; min-height:56px; flex-shrink:0; flex-wrap:wrap; row-gap:6px; padding:10px 16px; }
   }
 
   .breadcrumbs-container {
@@ -601,6 +622,7 @@ const Breadcrumbs = () => {
   else if (p === '/calendar') items.push({ label: 'Legal Calendar', url: p });
   else if (p === '/vault') items.push({ label: 'Case Vault', url: p });
   else if (p === '/document-hub') items.push({ label: 'Document Hub', url: p });
+  else if (p === '/practice' || p.startsWith('/practice/')) items.push({ label: 'Practice', url: '/practice' });
   else if (p === '/war-room') items.push({ label: 'Virtual Courtroom', url: p });
   else if (p === '/firm-library') items.push({ label: 'Firm Library', url: p });
   else {
@@ -657,7 +679,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   // Focus mode and manual collapse both render the same compact capsule —
   // building two different collapsed treatments for a distinction the
   // brief never draws would just be extra complexity for no real gain.
-  const isIconOnly = isCollapsed || focusMode;
+  const isIconOnly = (isCollapsed || focusMode) && window.innerWidth > 768; // the phone drawer is always the full sidebar
 
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef(null);
@@ -946,6 +968,7 @@ function AppRouterContent() {
         <Route path="/case/:caseId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />
         <Route path="/calendar" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CalendarView /></Layout>} />
         <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
+        <Route path="/practice/*" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><PracticeApp /></ErrorBoundary></Layout>} />
         <Route path="/document-hub" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><DocumentHub /></ErrorBoundary></Layout>} />
         <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
         <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />

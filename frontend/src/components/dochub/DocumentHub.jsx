@@ -394,6 +394,7 @@ export default function DocumentHub() {
   if (filters.addedFrom || filters.addedTo) chips.push({ k: ['addedFrom', 'addedTo'], label: `Added ${filters.addedFrom || '…'} → ${filters.addedTo || '…'}` });
   if (filters.hold) chips.push({ k: 'hold', label: 'Legal hold', icon: 'lock' });
   if (filters.batch) chips.push({ k: 'batch', label: 'One import', icon: 'upload' });
+  if (filters.lpmsCase) chips.push({ k: 'lpmsCase', label: 'One Practice case', icon: 'briefcase' });
   if (view === 'library' && filters.review) chips.push({ k: 'review', label: 'Type needs a check', icon: 'alert' });
   if (view === 'library' && filters.problems) chips.push({ k: 'problems', label: 'Could not be read fully', icon: 'alert' });
   const removeChip = (k) => setFilters(Object.fromEntries([].concat(k).map((x) => [x, ''])));

@@ -638,6 +638,7 @@ h1, h2, h3, h4, h5, h6 {
      line beneath that row instead of competing for space. */
   .topbar {
     height: auto;
+    flex-shrink: 0; /* keep its wrapped second line from being squeezed over the page below */
     min-height: 64px;
     flex-wrap: wrap;
     row-gap: 6px;

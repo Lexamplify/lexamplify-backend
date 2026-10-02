@@ -627,6 +627,11 @@ export default function LoginPage() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
+  // Two-step sign-in (Practice module): the server answers a correct password with code MFA_REQUIRED when the account
+  // has an authenticator app set up. We then ask for the 6-digit code (or a recovery code) and send the login again.
+  const [otpStep, setOtpStep] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [useRecovery, setUseRecovery] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   // True once an in-flight login/register request has taken longer than
@@ -675,7 +680,7 @@ export default function LoginPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // clear errors when switching tabs
-  useEffect(() => { setError(''); }, [tab]);
+  useEffect(() => { setError(''); setOtpStep(false); setOtp(''); setUseRecovery(false); }, [tab]);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -796,6 +801,7 @@ export default function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) return setError('Email and password are required.');
+    if (otpStep && !otp.trim()) return setError(useRecovery ? 'Enter one of your recovery codes.' : 'Enter the 6-digit code from your authenticator app.');
     setLoading(true); setError(''); setSlowConnection(false);
     const slowTimer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_THRESHOLD_MS);
     // A sleeping Render service / Neon database answers the FIRST request slowly or not at all, and the
@@ -813,7 +819,7 @@ export default function LoginPage() {
           res = await fetch(`${API_BASE_URL}/api/auth/login`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             signal: controller.signal,
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify(otpStep ? { email, password, otp: otp.trim() } : { email, password }),
           });
           // A 500/502 error page is HTML, not JSON - .catch makes that a clean {}.
           data = await res.json().catch(() => ({}));
@@ -829,6 +835,9 @@ export default function LoginPage() {
         await new Promise((r) => setTimeout(r, 1500 * attempt));
       }
       if (!res.ok) {
+        // Password was right but this account needs its second step: show the code box instead of an error.
+        if (data.code === 'MFA_REQUIRED' && !otpStep) { setOtpStep(true); setOtp(''); return; }
+        if (data.code === 'MFA_INVALID') setOtp('');
         // 401/400 are a real "wrong credentials" answer from a server that responded fine.
         if (res.status === 401 || res.status === 400) {
           throw new Error(data.error || data.message || 'Invalid email or password.');
@@ -994,6 +1003,8 @@ export default function LoginPage() {
               </div>
             )}
 
+            {!otpStep && (
+            <>
             {/* Email address */}
             <div className="lx-field">
               <label htmlFor="login-email" className="lx-label">Email address</label>
@@ -1017,6 +1028,8 @@ export default function LoginPage() {
                 />
               </div>
             </div>
+            </>
+            )}
 
             {/* Phone Number — rendered in Create Account mode */}
             {!isSignIn && (
@@ -1043,6 +1056,8 @@ export default function LoginPage() {
               </div>
             )}
 
+            {!otpStep && (
+            <>
             {/* Password — same stacked layout */}
             <div className="lx-field" style={{ marginBottom: isSignIn ? '8px' : '20px' }}>
               <div className="lx-field-row">
@@ -1094,6 +1109,44 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+            </>
+            )}
+
+            {isSignIn && otpStep && (
+              <div className="lx-field" style={{ marginBottom: '8px' }}>
+                <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.55, opacity: 0.85 }}>
+                  {useRecovery
+                    ? <>Enter one of your recovery codes for <b>{email}</b>. Each code works once.</>
+                    : <>Two-step sign-in is on for <b>{email}</b>. Open your authenticator app and enter the 6-digit code.</>}
+                </p>
+                <label htmlFor="login-otp" className="lx-label">{useRecovery ? 'Recovery code' : '6-digit code'}</label>
+                <div className="lx-input-wrap">
+                  <input
+                    id="login-otp"
+                    type="text"
+                    className="lx-input"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !loading) handleLogin(e); }}
+                    placeholder={useRecovery ? 'abcd-efgh' : '123456'}
+                    inputMode={useRecovery ? 'text' : 'numeric'}
+                    autoComplete="one-time-code"
+                    maxLength={20}
+                    disabled={loading}
+                    autoFocus
+                    style={{ paddingLeft: 14, letterSpacing: useRecovery ? '0.08em' : '0.3em', fontVariantNumeric: 'tabular-nums' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 10 }}>
+                  <button type="button" className="lx-forgot" onClick={() => { setUseRecovery((v) => !v); setOtp(''); setError(''); }}>
+                    {useRecovery ? 'Use my authenticator app' : 'Use a recovery code'}
+                  </button>
+                  <button type="button" className="lx-forgot" onClick={() => { setOtpStep(false); setOtp(''); setUseRecovery(false); setError(''); }}>
+                    Back
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* CTA */}
             {isSignIn ? (
@@ -1106,7 +1159,7 @@ export default function LoginPage() {
                 {loading ? (
                   <><span className="lx-spinner" /> {slowConnection ? 'Connecting to secure database…' : 'Authenticating…'}</>
                 ) : (
-                  <>Sign In
+                  <>{otpStep ? 'Verify and sign in' : 'Sign In'}
                     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                     </svg>

@@ -217,6 +217,22 @@ def create_dms_blueprint(deps):
         if f"matter:{matter_id}" not in roles:
             raise ApiError("Matter not found.", 404)
 
+    def check_lpms_case(c, uid, case_id, writing=False):
+        """A Practice case the caller may attach documents to (404 when they cannot see it, 409 when it is archived)."""
+        if I.lpms_case_role(c, uid, case_id) is None:
+            raise ApiError("Case not found.", 404)
+        if writing and c.execute("SELECT archived_at FROM lpms_cases WHERE id = ?", (case_id,)).fetchone()[0]:
+            raise ApiError("This case is archived. Restore it before adding documents.", 409)
+
+    def tell_practice(case_ref, doc_id, title, uid, action):
+        """Let the Practice module put the upload on the case timeline / audit log / notifications. Never fails the upload."""
+        hook = _opt(deps, "on_lpms_document")
+        if hook and case_ref and case_ref.startswith("lpms:"):
+            try:
+                hook(int(case_ref.split(":", 1)[1]), doc_id, title, uid, action)
+            except Exception as exc:
+                log(f"practice hook failed: {exc}")
+
     def check_folder(uid, folder_id, c=None):
         if folder_id is None:
             return
@@ -241,7 +257,7 @@ def create_dms_blueprint(deps):
 
     def filters_from(args):
         f = {}
-        for k in ("folder_id", "matter_id", "date_from", "date_to", "added_from", "added_to", "uploader", "batch_id", "kind", "case", "status", "group_id"):
+        for k in ("folder_id", "matter_id", "date_from", "date_to", "added_from", "added_to", "uploader", "batch_id", "kind", "case", "status", "group_id", "lpms_case_id"):
             v = args.get(k)
             if v not in (None, ""):
                 f[k] = v
@@ -406,7 +422,7 @@ def create_dms_blueprint(deps):
         return jsonify({"ok": True, "adopted": done, "failed": failed, "remaining": count_unadopted(c, ctx.uid)})
 
     # ── upload ──────────────────────────────────────────────────────────────────────
-    def ingest(c, ctx, fs, folder_id, matter_id, batch_id, rel_path, force, group_of=None, note=None, title=None):
+    def ingest(c, ctx, fs, folder_id, matter_id, batch_id, rel_path, force, group_of=None, note=None, title=None, case_ref=None):
         uid = ctx.uid
         filename = _safe_name(getattr(fs, "filename", ""))
         if not getattr(fs, "filename", ""):
@@ -420,7 +436,7 @@ def create_dms_blueprint(deps):
             sn = X.sniff(tmp, filename)
             if sn.blocked:
                 raise ApiError(sn.reason, 415, code="blocked_type")
-            matter_case = f"matter:{matter_id}" if matter_id else None
+            matter_case = case_ref or (f"matter:{matter_id}" if matter_id else None)
 
             def find_dup():
                 if group_of:            # a new version only conflicts with a version of the SAME document
@@ -477,7 +493,7 @@ def create_dms_blueprint(deps):
                         W.enqueue(c, doc_id, commit=False)
                         I.refresh_meta_fts(c, doc_id)
                         _prov(c, "new-version" if group_of else "upload", doc_id, (title or stem)[:180], uid, uid,
-                              {"file": shown_name, "sha256": sha[:16], "size": size, "batch": batch_id, "version": version, "matter": matter_id, "folder": folder_id})
+                              {"file": shown_name, "sha256": sha[:16], "size": size, "batch": batch_id, "version": version, "matter": matter_id or case_ref, "folder": folder_id})
                     worker.kick()
                     row = c.execute(f"SELECT {I._LIST_COLS} FROM dms_docs d JOIN case_vault cv ON cv.id = d.doc_id WHERE d.doc_id = ?", (doc_id,)).fetchone()
                     return None, row
@@ -499,13 +515,20 @@ def create_dms_blueprint(deps):
             raise ApiError("No file was sent.", 400)
         folder_id = _int(request.form.get("folder_id"))
         matter_id = _int(request.form.get("matter_id"))
+        lpms_id = _int(request.form.get("lpms_case_id"))
         check_folder(ctx.uid, folder_id, c)
         if matter_id:
             check_matter(c, ctx.uid, matter_id)
+        case_ref = None
+        if lpms_id:
+            check_lpms_case(c, ctx.uid, lpms_id, writing=True)
+            case_ref = f"lpms:{lpms_id}"
         dup, row = ingest(c, ctx, request.files["file"], folder_id, matter_id, request.form.get("batch_id"),
-                          request.form.get("rel_path"), _truthy(request.form.get("force")))
+                          request.form.get("rel_path"), _truthy(request.form.get("force")), case_ref=case_ref)
         if dup:
             return jsonify({"ok": True, **dup}), 200
+        if case_ref:
+            tell_practice(case_ref, row["doc_id"], title_of(row), ctx.uid, "upload")
         return jsonify({"ok": True, "doc": docs_payload(c, ctx, [row])[0]}), 201
 
     # ── list / search ───────────────────────────────────────────────────────────────
@@ -578,6 +601,9 @@ def create_dms_blueprint(deps):
         if d["matter_id"]:
             m = next((m for m in I.matter_ids_for(c, ctx.uid) if m["id"] == d["matter_id"]), None)
             d["matter"] = {"id": m["id"], "title": m["title"]} if m else None
+        if d.get("lpms_case_id") and I._has_lpms_tables(c):
+            pc = c.execute("SELECT id, title, case_no FROM lpms_cases WHERE id = ?", (d["lpms_case_id"],)).fetchone()
+            d["practice_case"] = {"id": pc["id"], "title": pc["title"], "case_no": pc["case_no"]} if pc else None
         d["days_left"] = None
         return jsonify({"doc": d})
 
@@ -693,6 +719,8 @@ def create_dms_blueprint(deps):
             _prov(c, "moved", did, name, uid, r["cv_user_id"], {"folder_id": fid, "from": r["cv_folder_id"]})
             done.append("folder")
         if "matter_id" in b:
+            if (r["cv_case_id"] or "").startswith("lpms:") and level != "own":
+                raise ApiError("This document belongs to a Practice case. Only a Senior Advocate (or whoever uploaded it) can move it.", 403)
             mid = _int(b["matter_id"])
             if mid:
                 check_matter(c, uid, mid)
@@ -795,15 +823,19 @@ def create_dms_blueprint(deps):
         r, _ = fetch_doc(c, ctx, doc_id, need="edit", allow_trashed=False)
         if "file" not in request.files:
             raise ApiError("No file was sent.", 400)
-        matter_id = None
+        matter_id, case_ref = None, None
         if (r["cv_case_id"] or "").startswith("matter:"):
             matter_id = _int(r["cv_case_id"].split(":", 1)[1])
+        elif (r["cv_case_id"] or "").startswith("lpms:"):
+            case_ref = r["cv_case_id"]
         cur = c.execute("SELECT doc_id FROM dms_docs WHERE group_id = ? AND is_current = 1", (r["group_id"],)).fetchone()
         base = c.execute(f"SELECT {I._LIST_COLS} FROM dms_docs d JOIN case_vault cv ON cv.id = d.doc_id WHERE d.doc_id = ?", (cur["doc_id"],)).fetchone() or r
         dup, row = ingest(c, ctx, request.files["file"], base["cv_folder_id"], matter_id, None, None, True, group_of=r["group_id"],
-                          note=request.form.get("note"), title=title_of(base))
+                          note=request.form.get("note"), title=title_of(base), case_ref=case_ref)
         if dup:
             raise ApiError("That file is identical to a version that already exists.", 409, code="identical_version")
+        if case_ref:
+            tell_practice(case_ref, row["doc_id"], title_of(base), ctx.uid, "version")
         return jsonify({"ok": True, "doc": docs_payload(c, ctx, [row])[0]}), 201
 
     @bp.route("/docs/<int:doc_id>/promote", methods=["POST", "OPTIONS"])
