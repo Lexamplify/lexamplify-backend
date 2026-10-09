@@ -84,7 +84,7 @@ def register(env):
 
     def dup_case(firm_id, case_no, court, except_id=None):
         r = L.one(env.conn(), "SELECT id FROM lpms_cases WHERE firm_id = ? AND case_key = ? AND LOWER(court) = LOWER(?) AND id != ?",
-                  (firm_id, L.norm_key(case_no), court, except_id or 0))
+                  (firm_id, L.case_key(case_no), court, except_id or 0))
         return r
 
     def new_client_inline(c, spec):
@@ -116,7 +116,7 @@ def register(env):
             a["advocate_id"] = str(m["id"])
         extra = R.case_filters_sql(a, params)
         per = min(max(as_int(a.get("per_page"), 25), 1), 100)
-        page = max(as_int(a.get("page"), 1), 1)
+        page = min(max(as_int(a.get("page"), 1), 1), 100000)
         total = c.execute(f"SELECT COUNT(*) FROM lpms_cases c LEFT JOIN lpms_clients cl ON cl.id = c.client_id LEFT JOIN lpms_members ad ON ad.id = c.advocate_id WHERE {vis} {extra}", params).fetchone()[0]
         order = SORTS.get(a.get("sort"), SORTS["updated"])
         rows_ = L.rows(c, f"{CASE_SELECT} WHERE {vis} {extra} ORDER BY {order} LIMIT :lim OFFSET :off", {**params, "lim": per, "off": (page - 1) * per})
@@ -144,7 +144,7 @@ def register(env):
             if isinstance(b.get("client"), dict) and not fields.get("client_id"):
                 fields["client_id"] = new_client_inline(c, b["client"])
             now = L.now_iso()
-            cols = {**fields, "firm_id": m["firm_id"], "case_key": L.norm_key(fields["case_no"]), "created_by": m["id"], "created_at": now, "updated_at": now}
+            cols = {**fields, "firm_id": m["firm_id"], "case_key": L.case_key(fields["case_no"]), "created_by": m["id"], "created_at": now, "updated_at": now}
             cid = c.execute(f"INSERT INTO lpms_cases ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})", list(cols.values())).lastrowid
             L.timeline(c, m["firm_id"], cid, "created", f"Case created — {fields['case_no']}", f"{fields['court']} · {fields['case_type']}", m["id"])
             env.audit("case_create", "case", cid, f"Case {fields['case_no']} created: {fields['title']}", {"court": fields["court"], "advocate_id": fields.get("advocate_id")})
@@ -188,6 +188,18 @@ def register(env):
         d["whatsapp"] = bool(env.settings["channels"].get("whatsapp", True))
         return jsonify({"case": d})
 
+    def _lock_vault_to_lead(c, case, actor):
+        """A restricted case's documents belong to its lead (or the Senior Advocate who restricted it): an upload made earlier by someone who is
+        not on the case must stop being 'their own' document, or they could keep reading and searching it."""
+        lead = L.one(c, "SELECT user_id FROM lpms_members WHERE id = ?", (case["advocate_id"],)) if case["advocate_id"] else None
+        owner = lead["user_id"] if lead else actor["user_id"]
+        try:
+            c.execute("UPDATE case_vault SET user_id = :o WHERE case_id = :cid AND user_id IS NOT NULL AND user_id != :o AND user_id NOT IN "
+                      "(SELECT user_id FROM lpms_members WHERE firm_id = :fid AND active = 1 AND role = 'senior')",
+                      {"o": owner, "cid": f"lpms:{case['id']}", "fid": case["firm_id"]})
+        except Exception as exc:                              # the Document Hub tables may not exist on a brand-new database
+            env.log(f"restricted-case document lock skipped: {exc}")
+
     @env.api("/cases/<int:case_id>", methods=("PATCH",))
     def update_case(case_id):
         case = env.get_case(case_id, write=True)
@@ -210,7 +222,7 @@ def register(env):
         with env.tx() as c:
             sets = dict(fields)
             if "case_no" in sets:
-                sets["case_key"] = L.norm_key(sets["case_no"])
+                sets["case_key"] = L.case_key(sets["case_no"])
             if "status" in changes:
                 if fields["status"] in L.CLOSED_STATUSES:
                     sets["closed_at"] = case["closed_at"] or L.now_iso()
@@ -235,6 +247,8 @@ def register(env):
             readable = {k: [v[0], v[1]] for k, v in changes.items() if k != "remarks"}
             env.audit("case_update", "case", case_id, f"Case {case['case_no']} updated: " + ", ".join(CASE_FIELDS_LABEL.get(k, k) for k in changes), {"changes": readable})
             updated = L.one(c, "SELECT * FROM lpms_cases WHERE id = ?", (case_id,))
+            if updated["restricted"] and ("restricted" in changes or "advocate_id" in changes):
+                _lock_vault_to_lead(c, updated, m)
             if ("status" in changes or other) and "advocate_id" not in changes:
                 L.notify_case(c, m["firm_id"], updated, m, "case_update", "case_update", f"Case updated: {case['title']}",
                               f"{m['name']} updated {case['case_no']}: " + ", ".join(CASE_FIELDS_LABEL.get(k, k) for k in changes) + ".",
@@ -352,6 +366,8 @@ def register(env):
     def add_hearing(case_id):
         case = env.get_case(case_id, write=True)
         b = request.get_json(silent=True) or {}
+        if case["status"] in L.CLOSED_STATUSES:
+            raise ApiError(f"This case is {case['status']}. Change its status back to Active before adding a hearing.", 409, code="CASE_CLOSED")
         if "advocate_id" in b and b["advocate_id"] not in (None, "") and not env.perms["assign_case"] and as_int(b["advocate_id"]) != (case["advocate_id"] or env.m["id"]):
             raise ApiError("Only a Senior Advocate can list a hearing under someone else.", 403, code="FORBIDDEN")
         with env.tx() as c:
@@ -512,7 +528,9 @@ def register(env):
                                                                   text(b.get("next_purpose"), 200, "Purpose"), m["id"], L.now_iso())).lastrowid
             if hearing and hearing["status"] == "scheduled":
                 tc.execute("UPDATE lpms_hearings SET status = ?, updated_at = ? WHERE id = ?", ("adjourned" if outcome == "adjourned" else "heard", L.now_iso(), hearing["id"]))
-            if next_date:
+            if next_date and next_date == day:
+                warns.append("The next date is the same day as this hearing, so no second hearing was listed.")
+            elif next_date:
                 existing = L.one(tc, "SELECT id FROM lpms_hearings WHERE case_id = ? AND hearing_date = ? AND status = 'scheduled'", (case_id, next_date))
                 if existing:
                     created = existing["id"]
@@ -603,6 +621,7 @@ def register(env):
         with env.tx() as c:
             nid = c.execute("INSERT INTO lpms_notes (firm_id, case_id, author_id, body, created_at) VALUES (?,?,?,?,?)", (env.m["firm_id"], case_id, env.m["id"], body, L.now_iso())).lastrowid
             L.timeline(c, env.m["firm_id"], case_id, "note", "Team note: " + (body[:90] + ("…" if len(body) > 90 else "")), None, env.m["id"], nid)
+            env.audit("case_note_add", "case", case_id, f"Note added on {case['case_no']}", {"note_id": nid})
         return jsonify({"ok": True, "note": note_dict(L.one(env.conn(), NOTE_SELECT + "WHERE n.id = ?", (nid,)))}), 201
 
     @env.api("/notes")
@@ -615,6 +634,7 @@ def register(env):
         body = text((request.get_json(silent=True) or {}).get("body"), 4000, "Note", required=True)
         with env.tx() as c:
             nid = c.execute("INSERT INTO lpms_notes (firm_id, author_id, body, created_at) VALUES (?,?,?,?)", (env.m["firm_id"], env.m["id"], body, L.now_iso())).lastrowid
+            env.audit("firm_note_add", "note", nid, "Practice note added", {"note_id": nid})
         return jsonify({"ok": True, "note": note_dict(L.one(env.conn(), NOTE_SELECT + "WHERE n.id = ?", (nid,)))}), 201
 
     def own_note(nid):
@@ -635,13 +655,18 @@ def register(env):
         pinned = 1 if truthy(b.get("pinned", n["pinned"])) else 0
         with env.tx() as c:
             c.execute("UPDATE lpms_notes SET body = ?, pinned = ?, edited_at = ? WHERE id = ?", (body, pinned, L.now_iso() if body != n["body"] else n["edited_at"], nid))
+            if body != n["body"] or pinned != n["pinned"]:
+                env.audit("case_note_update" if n["case_id"] else "firm_note_update", "case" if n["case_id"] else "note", n["case_id"] or nid,
+                          "Note " + ("edited" if body != n["body"] else "pinned or unpinned") + (" on a case" if n["case_id"] else ""), {"note_id": nid, "author_id": n["author_id"]})
         return jsonify({"ok": True, "note": note_dict(L.one(env.conn(), NOTE_SELECT + "WHERE n.id = ?", (nid,)))})
 
     @env.api("/notes/<int:nid>", methods=("DELETE",))
     def delete_note(nid):
-        own_note(nid)
+        n = own_note(nid)
         with env.tx() as c:
             c.execute("DELETE FROM lpms_notes WHERE id = ?", (nid,))
+            env.audit("case_note_delete" if n["case_id"] else "firm_note_delete", "case" if n["case_id"] else "note", n["case_id"] or nid,
+                      "Note deleted" + (" from a case" if n["case_id"] else ""), {"note_id": nid, "author_id": n["author_id"]})
         return jsonify({"ok": True})
 
     # ── client communication ────────────────────────────────────────────────────────
@@ -833,6 +858,7 @@ def register(env):
             raise ApiError("Follow-up not found.", 404)
         with env.tx() as c:
             c.execute("DELETE FROM lpms_followups WHERE id = ?", (fid,))
+            env.audit("followup_delete", "client", f["client_id"], f"Follow-up deleted: {(f['note'] or '')[:80]}", {"followup_id": fid, "case_id": f["case_id"]})
         return jsonify({"ok": True})
 
     env.fetch_case, env.case_dict, env.hearing_list = fetch_case, case_dict, hearing_list

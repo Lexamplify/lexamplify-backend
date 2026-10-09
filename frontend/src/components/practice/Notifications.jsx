@@ -13,15 +13,17 @@ export default function NotificationsPage() {
   const [only, setOnly] = useState('all');
   const [extra, setExtra] = useState([]);
   const [more, setMore] = useState(false);
-  const q = useAsync(async (signal) => { setExtra([]); const d = await pr.get('/notifications', { limit: 30, unread: only === 'unread' }, signal); setUnread(d.unread); setMore(d.more); return d; }, [only]);
+  const [unreadN, setUnreadN] = useState(0);              // unread count as the page last knew it
+  const [readIds, setReadIds] = useState(() => new Set());   // opened since the list was loaded
+  const q = useAsync(async (signal) => { setExtra([]); setReadIds(new Set()); const d = await pr.get('/notifications', { limit: 30, unread: only === 'unread' }, signal); setUnread(d.unread); setUnreadN(d.unread); setMore(d.more); return d; }, [only]);
   const d = q.data;
   const items = d ? [...d.items, ...extra] : [];
 
   const open = async (n) => {
-    if (!n.read_at) { pr.post(`/notifications/${n.id}/read`).catch(() => {}); setUnread((u) => Math.max(0, u - 1)); n.read_at = 'now'; }
+    if (!n.read_at && !readIds.has(n.id)) { pr.post(`/notifications/${n.id}/read`).catch(() => {}); setUnread((u) => Math.max(0, u - 1)); setUnreadN((u) => Math.max(0, u - 1)); setReadIds((s) => new Set(s).add(n.id)); }
     if (n.link) nav(n.link);
   };
-  const readAll = async () => { try { await pr.post('/notifications/read-all'); setUnread(0); q.reload(); } catch (e) { toast(doneWith(e), { tone: 'bad' }); } };
+  const readAll = async () => { try { await pr.post('/notifications/read-all'); setUnread(0); setUnreadN(0); q.reload(); } catch (e) { toast(doneWith(e), { tone: 'bad' }); } };
   const loadMore = async () => {
     const last = items[items.length - 1];
     try { const r = await pr.get('/notifications', { limit: 30, before: last.id, unread: only === 'unread' }); setExtra((x) => [...x, ...r.items]); setMore(r.more); } catch (e) { toast(doneWith(e), { tone: 'bad' }); }
@@ -31,7 +33,7 @@ export default function NotificationsPage() {
     <>
       <PageHead title="Notifications" sub="Hearing reminders, assignments, case updates and new documents.">
         <Segment label="Show" value={only} onChange={setOnly} options={[{ value: 'all', label: 'All' }, { value: 'unread', label: 'Unread' }]} />
-        <button type="button" className="dh-btn ghost" onClick={readAll} disabled={!d || !d.unread}><PIcon name="check" />Mark all read</button>
+        <button type="button" className="dh-btn ghost" onClick={readAll} disabled={!d || !unreadN}><PIcon name="check" />Mark all read</button>
       </PageHead>
       {!d ? (q.error ? <ErrorBox error={q.error} retry={q.reload} /> : <Loading />) : !items.length ? (
         <EmptyState icon="bell" title={only === 'unread' ? 'Nothing unread' : 'No notifications yet'}>{only === 'unread' ? 'You are all caught up.' : 'Reminders and updates will appear here as things happen.'}</EmptyState>
@@ -39,7 +41,7 @@ export default function NotificationsPage() {
         <Card flush>
           <div className="pr-list">
             {items.map((n) => (
-              <button type="button" key={n.id} className={`pr-item ${n.read_at ? '' : 'unread'}`} onClick={() => open(n)}>
+              <button type="button" key={n.id} className={`pr-item ${n.read_at || readIds.has(n.id) ? '' : 'unread'}`} onClick={() => open(n)}>
                 <span style={{ minWidth: 0 }}><span className="ttl">{n.title}</span>{n.body ? <span className="meta"><span>{n.body}</span></span> : null}</span>
                 <span className="side">{fmtAgo(n.created_at)}</span>
               </button>

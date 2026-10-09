@@ -340,6 +340,8 @@ def create_dms_blueprint(deps):
     _ADOPTABLE = ("cv.user_id = ? AND NOT EXISTS (SELECT 1 FROM dms_docs d WHERE d.doc_id = cv.id) "
                   "AND (cv.file_blob IS NOT NULL OR cv.content != '')")
 
+    _adopt_failed = {}              # cv_id -> time of the last failed try: unreadable rows are skipped for an hour so they cannot starve the rest
+
     def count_unadopted(c, uid):
         return c.execute(f"SELECT COUNT(*) FROM case_vault cv WHERE {_ADOPTABLE}", (uid,)).fetchone()[0]
 
@@ -351,7 +353,13 @@ def create_dms_blueprint(deps):
         if only_id:
             ids = [r[0] for r in c.execute(f"SELECT cv.id FROM case_vault cv WHERE cv.id = ? AND {_ADOPTABLE}", (only_id, uid))]
         else:
-            ids = [r[0] for r in c.execute(f"SELECT cv.id FROM case_vault cv WHERE {_ADOPTABLE} ORDER BY cv.id LIMIT ?", (uid, limit))]
+            now_t = time.time()
+            skip = [k for k, t in list(_adopt_failed.items()) if now_t - t < 3600][:500]
+            for k in [k for k, t in list(_adopt_failed.items()) if now_t - t >= 3600]:
+                _adopt_failed.pop(k, None)
+            ids = [r[0] for r in c.execute(
+                f"SELECT cv.id FROM case_vault cv WHERE {_ADOPTABLE}" + (f" AND cv.id NOT IN ({','.join('?' * len(skip))})" if skip else "") + " ORDER BY cv.id LIMIT ?",
+                (uid, *skip, limit))]
         done = failed = 0
         for cv_id in ids:
             row = c.execute("SELECT id, title, smart_title, file_blob, file_format, content, folder_id, created_at FROM case_vault WHERE id = ?", (cv_id,)).fetchone()
@@ -398,6 +406,7 @@ def create_dms_blueprint(deps):
                 done += 1
             except Exception as exc:                        # one unreadable row must not stop the rest
                 failed += 1
+                _adopt_failed[cv_id] = time.time()
                 log(f"adopt {cv_id}: {exc}")
         if done:
             worker.kick()
@@ -465,7 +474,13 @@ def create_dms_blueprint(deps):
                     warns = []
                     if sn.mismatch:
                         warns.append(f"The file is named .{sn.claimed_ext} but its content is {sn.ext.upper()}; it was stored as {sn.ext.upper()}.")
-                    key, enc = S.commit(tmp, sha)
+                    try:
+                        key, enc = S.commit(tmp, sha)
+                    except S.StoreError as exc:
+                        if S.encryption_error():
+                            raise ApiError("Uploads are switched off: the server's DMS_ENCRYPTION_KEY is invalid, so files cannot be encrypted and stored. "
+                                           "Ask the administrator to correct the encryption key. " + str(exc), 503, code="encryption_key_invalid")
+                        raise ApiError("The file could not be stored on the server: " + str(exc), 500, code="store_failed")
                     keep = True
                     with Tx():
                         again = find_dup()          # re-check under the write lock (covers several server processes)
@@ -1166,8 +1181,13 @@ def create_dms_blueprint(deps):
                 try:
                     with S.open_plain(r["store_key"], bool(r["enc"])) as path:
                         zf.write(path, name, compress_type=zipfile.ZIP_STORED if r["ext"] in ("pdf", "jpg", "png", "docx", "xlsx", "pptx") else zipfile.ZIP_DEFLATED)
-                except S.StoreError:
-                    zf.writestr(name + ".MISSING.txt", "This file is missing from the server's storage.")
+                except S.StoreError as exc:
+                    why = str(exc)
+                    zf.writestr(name + ".MISSING.txt",
+                                ("This file could not be decrypted: the server's DMS_ENCRYPTION_KEY does not match the key it was stored with."
+                                 if "does not match" in why else
+                                 "This file could not be read because the server's DMS_ENCRYPTION_KEY is missing or invalid." if "DMS_ENCRYPTION_KEY" in why else
+                                 "This file is missing from the server's storage."))
         with Tx() as tx:
             for r in rows:
                 _prov(tx, "download", r["doc_id"], title_of(r), ctx.uid, r["cv_user_id"], {"via": "zip"})

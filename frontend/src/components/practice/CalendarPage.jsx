@@ -141,7 +141,7 @@ export default function CalendarPage() {
       {q.error ? <ErrorBox error={q.error} retry={q.reload} /> : null}
 
       {view === 'month' ? (
-        <div className="pr-grid" style={{ gridTemplateColumns: 'minmax(0, 1.7fr) minmax(0, 1fr)' }}>
+        <div className="pr-grid cal">
           <div className="pr-card" style={{ padding: 0, overflow: 'hidden', opacity: q.loading && !q.data ? 0.6 : 1 }}>
             <div className="pr-cal" role="grid" aria-label={`${MONTHS_LONG[m - 1]} ${y}`}>
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div className="dow" key={d} role="columnheader">{d}</div>)}

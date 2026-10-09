@@ -1122,15 +1122,26 @@ def _lpms_document_hook(case_id, doc_id, title, uid, action):
     record_document_event(os.path.realpath('lex_assistant.db'), case_id, doc_id, title, uid, action)
 
 
+def _lpms_db_path():
+    """The very file the Practice blueprint was mounted on (fixed at start-up, so a changed working directory cannot point the gate elsewhere)."""
+    from flask import current_app
+    return current_app.extensions.get('lpms_db_path') or os.path.realpath('lex_assistant.db')
+
+
 def _lpms_login_gate(user, otp):
     """Two-step sign-in check, called by the login route once the password is right. None = carry on."""
     from utils.lpms_store import login_gate
-    return login_gate(os.path.realpath('lex_assistant.db'), user.id, otp, request.remote_addr)
+    return login_gate(_lpms_db_path(), user.id, otp, request.remote_addr)
+
+
+def _lpms_mfa_probe(user_id):
+    from utils.lpms_store import mfa_probe
+    return mfa_probe(_lpms_db_path(), user_id)
 
 
 def _lpms_login_event(user, ok, reason=None):
     from utils.lpms_store import login_event
-    login_event(os.path.realpath('lex_assistant.db'), user.id if user else None, None, ok, reason, request.remote_addr, request.headers.get('User-Agent'))
+    login_event(_lpms_db_path(), user.id if user else None, None, ok, reason, request.remote_addr, request.headers.get('User-Agent'))
 
 
 def create_app():
@@ -1370,8 +1381,9 @@ def create_app():
     global _LPMS_BP
     try:
         from routes.lpms_routes import create_lpms_blueprint
+        _lpms_db = os.path.realpath('lex_assistant.db')
         _LPMS_BP = create_lpms_blueprint({
-            'db_path': os.path.realpath('lex_assistant.db'),
+            'db_path': _lpms_db,
             'get_user': _lpms_user, 'find_user': _lpms_find_user, 'create_user': _lpms_create_user, 'set_password': _lpms_set_password,
             'send_email': _lpms_send_email, 'email_configured': _lpms_email_configured,
             'log': lambda msg: print(f'[practice] {msg}'),
@@ -1379,7 +1391,9 @@ def create_app():
         limiter.limit(os.getenv('LPMS_RATE_LIMIT', '900 per minute'), key_func=_dms_rate_key,
                       exempt_when=lambda: request.method == 'OPTIONS')(_LPMS_BP)
         app.register_blueprint(_LPMS_BP)
+        app.extensions['lpms_db_path'] = _lpms_db
         app.extensions['lpms_login_gate'] = _lpms_login_gate
+        app.extensions['lpms_mfa_probe'] = _lpms_mfa_probe
         app.extensions['lpms_login_event'] = _lpms_login_event
     except Exception as exc:
         import traceback

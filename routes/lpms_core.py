@@ -226,9 +226,16 @@ def register(env):
             env.audit("member_update", "member", member_id, f"{t['name']}: " + (", ".join(bits) or "details changed"), {"role": role, "active": active})
         return jsonify({"ok": True, "member": member_dict(L.one(env.conn(), "SELECT * FROM lpms_members WHERE id = ?", (member_id,)), True), "orphaned_cases": orphaned})
 
+    def _still_ours(t):
+        """An old membership row proves nothing: the person must be an active member of THIS firm right now (not removed, not moved to another practice)."""
+        cur = L.member_for_user(env.conn(), t["user_id"])
+        if not t["active"] or not cur or cur["id"] != t["id"] or cur["firm_id"] != env.m["firm_id"]:
+            raise ApiError("This person is no longer an active member of your practice.", 403, code="FORBIDDEN")
+
     @env.api("/members/<int:member_id>/password", methods=("POST",), perm="manage_team")
     def reset_member_password(member_id):
         t = _target_member(member_id)
+        _still_ours(t)
         if not t["managed"]:
             raise ApiError("This person had their own LexAmplify account before joining, so only they can change its password (use “Forgot password” on the sign-in page).", 403)
         pw = (request.get_json(silent=True) or {}).get("password") or ""
@@ -244,6 +251,7 @@ def register(env):
     @env.api("/members/<int:member_id>/mfa-reset", methods=("POST",), perm="manage_team")
     def reset_member_mfa(member_id):
         t = _target_member(member_id)
+        _still_ours(t)
         with env.tx() as tc:
             tc.execute("DELETE FROM lpms_mfa WHERE user_id = ?", (t["user_id"],))
             env.audit("mfa_reset", "member", member_id, f"Two-step sign-in reset for {t['name']}")
@@ -284,7 +292,10 @@ def register(env):
         cur = dict(env.settings)
         new = {k: (dict(v) if isinstance(v, dict) else v) for k, v in cur.items()}
         if "reminder_days" in b:
-            days = sorted({as_int(x) for x in (b["reminder_days"] or [])})
+            raw_days = b["reminder_days"] if b["reminder_days"] is not None else []
+            if not isinstance(raw_days, list) or any(isinstance(x, (bool, dict, list)) or as_int(x) is None for x in raw_days):
+                raise ApiError("Reminder days must be a list of numbers, like [7, 3, 1].", 400)
+            days = sorted({as_int(x) for x in raw_days})
             if any(d not in ALLOWED_REMINDER_DAYS for d in days):
                 raise ApiError(f"Reminder days can be any of: {', '.join(map(str, ALLOWED_REMINDER_DAYS))}.", 400)
             new["reminder_days"] = sorted(days, reverse=True)
@@ -309,6 +320,8 @@ def register(env):
             allow = b.get("ip_allow", new["ip_allow"])
             if isinstance(allow, str):
                 allow = [x for x in allow.replace(",", "\n").split() if x]
+            if allow is not None and (not isinstance(allow, list) or not all(isinstance(x, str) for x in allow)):
+                raise ApiError("The allowed addresses must be a list of IP addresses or ranges.", 400)
             clean = []
             for a in allow or []:
                 try:
@@ -471,7 +484,7 @@ def register(env):
         c = env.conn()
         where, params = audit_where()
         per = min(max(as_int(request.args.get("per_page"), 40), 1), 200)
-        page = max(as_int(request.args.get("page"), 1), 1)
+        page = min(max(as_int(request.args.get("page"), 1), 1), 100000)
         total = c.execute(f"SELECT COUNT(*) FROM lpms_audit WHERE {where}", params).fetchone()[0]
         items = L.rows(c, f"SELECT id, user_id, actor, action, entity, entity_id, summary, detail, ip, at FROM lpms_audit WHERE {where} ORDER BY id DESC LIMIT :lim OFFSET :off",
                        {**params, "lim": per, "off": (page - 1) * per})
@@ -490,7 +503,7 @@ def register(env):
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow(["When (UTC)", "Who", "Action", "What", "Address"])
-        safe = lambda v: ("'" + str(v)) if str(v or "")[:1] in ("=", "+", "-", "@") else ("" if v is None else str(v))
+        safe = lambda v: ("'" + str(v)) if str(v or "")[:1] in ("=", "+", "-", "@", "\t", "\r") else ("" if v is None else str(v))
         for r in c.execute(f"SELECT at, actor, action, summary, ip FROM lpms_audit WHERE {where} ORDER BY id DESC LIMIT 20000", params):
             w.writerow([safe(r["at"]), safe(r["actor"]), safe(r["action"]), safe(r["summary"]), safe(r["ip"])])
         with env.tx():
@@ -524,8 +537,9 @@ def register(env):
                             "ORDER BY name COLLATE NOCASE LIMIT 6", (m["firm_id"], lk, lk, lk))
         parties = L.rows(c, "SELECT pt.id, pt.name, pt.role, c.id AS case_id, c.case_no, c.title FROM lpms_parties pt JOIN lpms_cases c ON c.id = pt.case_id "
                             f"WHERE {vis} AND LOWER(pt.name) LIKE :lk ORDER BY pt.name COLLATE NOCASE LIMIT 6", {**vp, "lk": lk})
-        rti = L.rows(c, "SELECT id, subject, department, status FROM lpms_rti WHERE firm_id = ? AND (LOWER(subject) LIKE ? OR LOWER(department) LIKE ? OR LOWER(COALESCE(reference_no,'')) LIKE ?) LIMIT 4",
-                     (m["firm_id"], lk, lk, lk))
+        gate_r, gp = env.case_gate("r.case_id")
+        rti = L.rows(c, "SELECT r.id, r.subject, r.department, r.status FROM lpms_rti r WHERE r.firm_id = :fid AND (LOWER(r.subject) LIKE :lk OR LOWER(r.department) LIKE :lk OR LOWER(COALESCE(r.reference_no,'')) LIKE :lk) "
+                     f"AND {gate_r} LIMIT 4", {**gp, "lk": lk})
         members_ = L.rows(c, "SELECT id, name, role FROM lpms_members WHERE firm_id = ? AND active = 1 AND LOWER(name) LIKE ? LIMIT 4", (m["firm_id"], lk))
         return jsonify({"cases": cases, "clients": clients, "parties": parties, "rti": rti, "members": members_})
 
@@ -541,6 +555,8 @@ def register(env):
         mine_c = " AND c.advocate_id = :mid" if scope == "mine" else ""
         mine_h = " AND COALESCE(h.advocate_id, c.advocate_id) = :mid" if scope == "mine" else ""
         base = {**vp, "today": t_s}
+        gate_r, gp = env.case_gate("r.case_id")
+        gate_f, gpf = env.case_gate("f.case_id")
 
         today_h = R.hearing_rows(c, m, f"AND h.hearing_date = :d AND h.status != 'cancelled'{mine_h}", {"d": t_s, "mid": m["id"]},
                                  order="COALESCE(h.court, c.court), h.hall_no, CAST(h.serial_no AS INTEGER), h.hearing_time")
@@ -558,7 +574,7 @@ def register(env):
             "today": len(today_h),
             "week": c.execute(f"SELECT COUNT(*) FROM lpms_hearings h JOIN lpms_cases c ON c.id = h.case_id WHERE {vis} AND c.archived_at IS NULL AND h.status = 'scheduled' "
                               f"AND h.hearing_date BETWEEN :today AND :e{mine_h}", {**base, "e": (today + timedelta(days=6)).isoformat(), "mid": m["id"]}).fetchone()[0],
-            "rti_open": c.execute("SELECT COUNT(*) FROM lpms_rti WHERE firm_id = ? AND status NOT IN ('closed','draft')", (m["firm_id"],)).fetchone()[0],
+            "rti_open": c.execute(f"SELECT COUNT(*) FROM lpms_rti r WHERE r.firm_id = :fid AND r.status NOT IN ('closed','draft') AND {gate_r}", gp).fetchone()[0],
         }
 
         # pending actions: things somebody has to do
@@ -574,13 +590,13 @@ def register(env):
             late = cs["next_action_due"] < t_s
             pending.append({"kind": "action", "severity": "overdue" if late else "soon", "title": cs["next_action"], "sub": f"{cs['title']} · due {L.nice_date(cs['next_action_due'])}",
                             "link": f"/practice/cases/{cs['id']}", "date": cs["next_action_due"]})
-        for r in c.execute("SELECT id, subject, department, status, response_due, appeal_due FROM lpms_rti WHERE firm_id = ? AND status IN ('filed','replied','partial','rejected')", (m["firm_id"],)):
+        for r in c.execute(f"SELECT r.id, r.subject, r.department, r.status, r.response_due, r.appeal_due FROM lpms_rti r WHERE r.firm_id = :fid AND r.status IN ('filed','replied','partial','rejected') AND {gate_r}", gp):
             due = r["response_due"] if r["status"] == "filed" else r["appeal_due"]
             if due and due <= (today + timedelta(days=7)).isoformat():
                 pending.append({"kind": "rti", "severity": "overdue" if due < t_s else "soon", "title": ("RTI reply due: " if r["status"] == "filed" else "RTI appeal due: ") + r["subject"],
                                 "sub": f"{r['department']} · {L.nice_date(due)}", "link": "/practice/rti", "date": due})
         for f in c.execute("SELECT f.id, f.note, f.due_date, f.case_id, cl.name FROM lpms_followups f LEFT JOIN lpms_clients cl ON cl.id = f.client_id "
-                           "WHERE f.firm_id = ? AND f.status = 'open' AND f.due_date <= ? ORDER BY f.due_date LIMIT 6", (m["firm_id"], t_s)):
+                           f"WHERE f.firm_id = :fid AND f.status = 'open' AND f.due_date <= :t AND {gate_f} ORDER BY f.due_date LIMIT 6", {**gpf, "t": t_s}):
             pending.append({"kind": "followup", "severity": "overdue" if f["due_date"] < t_s else "soon", "title": f"Follow up{(' with ' + f['name']) if f['name'] else ''}",
                             "sub": f"{f['note']} · {L.nice_date(f['due_date'])}", "link": f"/practice/cases/{f['case_id']}" if f["case_id"] else "/practice/clients", "date": f["due_date"]})
         nodate = L.rows(c, f"SELECT c.id, c.case_no, c.title FROM lpms_cases c WHERE {vis} AND c.closed_at IS NULL AND c.archived_at IS NULL AND c.status = 'Active'{mine_c} "

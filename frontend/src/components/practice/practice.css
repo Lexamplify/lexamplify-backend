@@ -50,6 +50,7 @@
 .pr-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .pr-grid.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .pr-grid.detail { grid-template-columns: minmax(0, 1fr) 320px; }
+.pr-grid.cal { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
 .pr-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }
 .pr-stack { min-width: 0; }
 
@@ -76,6 +77,8 @@
 .pr-kv dt { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
 .pr-kv dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 .pr-kv dd.soft { color: var(--ink-soft); }
+.pr-kv.w96 { grid-template-columns: 96px minmax(0, 1fr); }
+.pr-kv.w130 { grid-template-columns: 130px minmax(0, 1fr); }
 .pr-note { font-size: 12px; color: var(--muted); margin: 6px 0 0; line-height: 1.55; }
 .pr-pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; margin: 0; font-family: inherit; color: var(--ink-soft); }
 .pr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -309,7 +312,7 @@ a.pr-item:hover, button.pr-item:hover, .pr-item.click:hover { background: var(--
 /* ── responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 1180px) {
   .pr-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .pr-grid, .pr-grid.detail { grid-template-columns: minmax(0, 1fr); }
+  .pr-grid, .pr-grid.detail, .pr-grid.cal { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
   .pr-reports, .pr-set { grid-template-columns: minmax(0, 1fr); }
@@ -332,7 +335,7 @@ a.pr-item:hover, button.pr-item:hover, .pr-item.click:hover { background: var(--
   .pr-cause .acts { grid-column: 1 / -1; justify-content: flex-start; }
   .pr-item { grid-template-columns: minmax(0, 1fr); }
   .pr-item .side { flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: wrap; text-align: left; }
-  .pr-kv { grid-template-columns: minmax(0, 1fr); gap: 1px; }
+  .pr-kv, .pr-kv.w96, .pr-kv.w130 { grid-template-columns: minmax(0, 1fr); gap: 1px; }
   .pr-kv dd { margin-bottom: 8px; }
   .pr-member { grid-template-columns: 40px minmax(0, 1fr); }
   .pr-member > .pr-actions { grid-column: 1 / -1; }

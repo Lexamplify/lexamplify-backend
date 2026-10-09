@@ -22,7 +22,7 @@ const KIND_LABEL = { proceeding: 'Proceeding', hearing: 'Hearing', document: 'Do
 
 export function TimelineTab({ caseId, version }) {
   const [kind, setKind] = useState('');
-  const q = useAsync((signal) => pr.get(`/cases/${caseId}/timeline`, { kind, limit: 200 }, signal), [caseId, kind, version]);
+  const q = useAsync((signal) => pr.get(`/cases/${caseId}/timeline`, { kind, limit: 200 }, signal), [caseId, kind, version], caseId);
   return (
     <Card title="Case timeline" sub="newest first" actions={(
       <select className="dh-select" style={{ width: 'auto' }} value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Filter timeline">
@@ -75,7 +75,7 @@ function EditProceeding({ p, onClose, onSaved }) {
 
 export function ProceedingsTab({ caseObj, version, onRecord, onChanged }) {
   const { me } = usePractice();
-  const q = useAsync((signal) => pr.get(`/cases/${caseObj.id}/proceedings`, null, signal), [caseObj.id, version]);
+  const q = useAsync((signal) => pr.get(`/cases/${caseObj.id}/proceedings`, null, signal), [caseObj.id, version], caseObj.id);
   const [edit, setEdit] = useState(null);
   const canWrite = caseObj.can.update;
   return (
@@ -109,7 +109,7 @@ export function ProceedingsTab({ caseObj, version, onRecord, onChanged }) {
 // the paper side of a case: scan paper onto it, see its physical files, make a court bundle (all of it lives in the Document Hub)
 function PaperStrip({ caseObj, version }) {
   const ref = `lpms:${caseObj.id}`;
-  const q = useAsync((signal) => fx.caseSummary(ref, signal), [ref, version]);
+  const q = useAsync((signal) => fx.caseSummary(ref, signal), [ref, version], ref);
   const s = q.data || {};
   const to = (view) => `/document-hub?view=${view}&case=${encodeURIComponent(ref)}`;
   const n = (v) => (v ? <b className="n">{v}</b> : null);
@@ -130,7 +130,7 @@ export function DocumentsTab({ caseObj, onChanged, onAddHearing }) {
   const [over, setOver] = useState(false);
   const [dismissed, setDismissed] = useState([]);
   const fileRef = useRef(null);
-  const q = useAsync((signal) => dh.list({ lpms_case_id: caseObj.id, per_page: 100, sort: 'newest', facets: false }, signal), [caseObj.id]);
+  const q = useAsync((signal) => dh.list({ lpms_case_id: caseObj.id, per_page: 100, sort: 'newest', facets: false }, signal), [caseObj.id], caseObj.id);
   const docs = q.data?.docs || [];
 
   // keep an eye on files the Hub is still reading
@@ -245,9 +245,9 @@ const COMM_ICON = { email: 'mail', whatsapp: 'chat', call: 'phone', meeting: 'us
 
 export function NotesTab({ caseObj, version, onChanged }) {
   const { toast, meta } = usePractice();
-  const notes = useAsync((signal) => pr.get(`/cases/${caseObj.id}/notes`, null, signal), [caseObj.id, version]);
-  const comms = useAsync((signal) => pr.get('/comms', { case_id: caseObj.id }, signal), [caseObj.id, version]);
-  const fus = useAsync((signal) => pr.get('/followups', { case_id: caseObj.id, status: 'open' }, signal), [caseObj.id, version]);
+  const notes = useAsync((signal) => pr.get(`/cases/${caseObj.id}/notes`, null, signal), [caseObj.id, version], caseObj.id);
+  const comms = useAsync((signal) => pr.get('/comms', { case_id: caseObj.id }, signal), [caseObj.id, version], caseObj.id);
+  const fus = useAsync((signal) => pr.get('/followups', { case_id: caseObj.id, status: 'open' }, signal), [caseObj.id, version], caseObj.id);
   const [body, setBody] = useState('');
   const [editing, setEditing] = useState(null);
   const [editText, setEditText] = useState('');

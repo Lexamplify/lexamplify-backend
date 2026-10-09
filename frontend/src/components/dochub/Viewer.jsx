@@ -153,5 +153,6 @@ export function useHits(docId, q) {
 }
 
 export function useTermsKey(terms) {
-  return useMemo(() => (terms || []).filter(Boolean), [(terms || []).join('\u0001')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const key = (terms || []).join('\u0001');      // the list is rebuilt only when its content changes, not when the array identity does
+  return useMemo(() => (terms || []).filter(Boolean), [key]); // eslint-disable-line react-hooks/exhaustive-deps
 }

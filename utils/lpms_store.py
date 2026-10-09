@@ -15,6 +15,7 @@ Nothing in here talks to a paid service. E-mail goes through utils.mailer (or wh
 WhatsApp is a wa.me link built for a person to press, and TOTP is done with hmac/hashlib only.
 """
 import base64
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -22,9 +23,11 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import struct
 import threading
 import time
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
 try:
@@ -86,19 +89,42 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
+# 'YYYY-MM-DD', optionally followed by a time ('2026-11-03T10:30', '2026-11-03 10:30:00', with seconds / fraction / Z / +05:30) - nothing else.
+_DATE_FULL_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?\s?(?:Z|[+-]\d{2}:?\d{2})?)?$")
+DATE_MIN_YEAR, DATE_MAX_YEAR = 1900, 2200          # a 9999-12-31 date overflows every "+30 days" calculation downstream
+
+
 def parse_date(v):
-    """'YYYY-MM-DD' -> date, or None for empty. Raises ValueError for anything else."""
+    """'YYYY-MM-DD' (or an ISO date-time, whose time is ignored) -> date, or None for empty. Raises ValueError for anything else."""
     if v in (None, ""):
         return None
-    s = str(v).strip()[:10]
-    if not _DATE_RE.match(s):
+    s = str(v).strip()
+    if not _DATE_FULL_RE.match(s):
         raise ValueError("bad date")
-    return date.fromisoformat(s)
+    d = date.fromisoformat(s[:10])
+    if not DATE_MIN_YEAR <= d.year <= DATE_MAX_YEAR:
+        raise ValueError("date out of range")
+    return d
 
 
 def norm_key(s):
-    """Case numbers are typed a hundred ways: 'WP(C) 1234 / 2023' = 'wpc1234/2023' = 'WPC-1234-2023'."""
-    return re.sub(r"[^0-9a-z]+", "", (s or "").lower())
+    """Case numbers are typed a hundred ways: 'WP(C) 1234 / 2023' = 'wpc1234/2023' = 'WPC-1234-2023'.
+    ASCII text gives exactly the key it always did; letters and digits of other scripts (Tamil, Hindi ...) are kept too."""
+    s = (s or "").lower()
+    if s.isascii():
+        return re.sub(r"[^0-9a-z]+", "", s)
+    s = unicodedata.normalize("NFKC", s).lower()
+    return "".join(ch for ch in s if ("0" <= ch <= "9" or "a" <= ch <= "z") or (ord(ch) > 127 and unicodedata.category(ch)[0] in "LNM"))
+
+
+def case_key(case_no):
+    """The de-duplication key stored with a case: norm_key, or - when the number has no letters or digits at all ('///') - a key derived from the
+    typed text, so unrelated odd numbers never collide with each other (the same text twice still does)."""
+    k = norm_key(case_no)
+    if k:
+        return k
+    raw = re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(case_no or "")).strip().lower())
+    return "~" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20] if raw else ""
 
 
 def jloads(s, default=None):
@@ -831,14 +857,36 @@ def ip_allowed(ip, allow):
 
 
 # ── hooks: sign-in and the Document Hub ──────────────────────────────────────────────
+MFA_UNAVAILABLE = {"error": "Two-step sign-in could not be checked. Please contact your administrator.", "code": "MFA_UNAVAILABLE"}
+
+
+def mfa_probe(db_path, user_id):
+    """True when this account has two-step sign-in switched on, False when it has not (or the Practice tables do not exist yet).
+    Any other failure raises - the caller must treat 'cannot tell' as 'on'."""
+    c = connect(db_path)
+    try:
+        try:
+            r = mfa_row(c, user_id)
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return False
+            raise
+        return bool(r and r["enabled"])
+    finally:
+        c.close()
+
+
 def login_gate(db_path, user_id, otp, ip=None):
     """Called by the login route once the password is right. -> None to let the person in, or (payload, http_status) to stop them.
-    A failure here (a broken database, say) never blocks sign-in on its own: only an explicit 'MFA needed / wrong code' does."""
+    For an account WITHOUT two-step a problem here never blocks sign-in (the caller decides). For an account WITH two-step, a code that cannot be
+    checked (secret will not decrypt, database error) is a refusal, never a free pass."""
     c = connect(db_path)
+    enabled = False
     try:
         r = mfa_row(c, user_id)
         if not r or not r["enabled"]:
             return None
+        enabled = True
         if not str(otp or "").strip():
             return {"error": "Enter the 6-digit code from your authenticator app.", "code": "MFA_REQUIRED"}, 401
         c.execute("BEGIN IMMEDIATE")
@@ -855,6 +903,13 @@ def login_gate(db_path, user_id, otp, ip=None):
         if res == "locked":
             return {"error": f"Too many wrong codes. Try again in {max(1, detail // 60)} minute(s).", "code": "MFA_LOCKED"}, 429
         return {"error": "That code is not right. Check the app and try again.", "code": "MFA_INVALID"}, 401
+    except Exception as exc:
+        if not enabled:
+            raise
+        print(f"[login] TWO-STEP CHECK FAILED for user {user_id}: {type(exc).__name__}: {exc} - sign-in refused")
+        with contextlib.suppress(Exception):
+            c.rollback()
+        return dict(MFA_UNAVAILABLE), 401
     finally:
         c.close()
 

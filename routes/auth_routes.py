@@ -179,8 +179,16 @@ def login_user():
             try:
                 blocked = gate(user, data.get("otp"))
             except Exception as exc:
-                print(f"[login] practice gate skipped: {exc}")
-                blocked = None
+                # An account WITHOUT two-step still signs in (logged loudly). One WITH two-step - or one we cannot tell about - is refused:
+                # a broken check must never be a way around the second factor.
+                print(f"[login] PRACTICE GATE ERROR for user {user.id}: {type(exc).__name__}: {exc}")
+                probe = current_app.extensions.get("lpms_mfa_probe")
+                try:
+                    has_mfa = bool(probe(user.id)) if probe else False
+                except Exception as exc2:
+                    print(f"[login] could not tell whether user {user.id} has two-step on ({exc2}) - refusing")
+                    has_mfa = True
+                blocked = ({"error": "Two-step sign-in could not be checked. Please contact your administrator.", "code": "MFA_UNAVAILABLE"}, 401) if has_mfa else None
             if blocked:
                 return jsonify(blocked[0]), blocked[1]
         _practice_event("lpms_login_event", user, True)

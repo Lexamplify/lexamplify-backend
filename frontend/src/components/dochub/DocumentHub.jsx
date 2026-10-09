@@ -16,7 +16,7 @@ import { PreviewDrawer } from './PreviewDrawer.jsx';
 import { ReviewMode } from './ReviewMode.jsx';
 import { ScanStudio } from './ScanStudio.jsx';
 import { DuplicatesView, TrashView } from './SideViews.jsx';
-import { Chip, Confirm, EmptyState, Modal, Portal, Toasts, buildFolderIndex, rollUpFolderCounts, useDebounced, useHotkeys, useMedia, useToasts } from './ui.jsx';
+import { Confirm, EmptyState, Modal, Portal, Toasts, buildFolderIndex, rollUpFolderCounts, useDebounced, useHotkeys, useMedia, useToasts } from './ui.jsx';
 import { FILE_VIEWS, PER_PAGE, activeFilterCount, apiParams, applyPatch, filterSignature, readFilters, readView } from './hubState.js';
 import { SORTS, fmtBytes, fmtNum, plural } from './format.js';
 import { uploader } from './uploader.js';
@@ -175,7 +175,7 @@ export default function DocumentHub() {
   // ── loading: config, folders, matters, stats ─────────────────────────────────────────
   const loadFolders = useCallback(() => dh.folders().then((f) => setFolders(f.flat)).catch(() => {}), []);
   const refreshStats = useCallback(async () => {
-    try { const s = await dh.stats(); setStats(s); return s; } catch (e) { if (e instanceof ApiError && e.status === 404) setFatal(e); return null; }
+    try { const s = await dh.stats(); setStats(s); return s; } catch (e) { if (e instanceof ApiError && e.status === 404) setFatal((prev) => (prev && prev.hubMissing ? prev : e)); return null; }
   }, []);
   const bump = useCallback(() => setTick((t) => t + 1), []);
   const refreshFiles = useCallback(() => fx.summary().then(setFsum).catch(() => {}), []);
@@ -184,7 +184,7 @@ export default function DocumentHub() {
   const onPaperStats = useCallback((x) => { if (x) setFsum((f) => (f ? { ...f, paper: x } : f)); }, []);
 
   useEffect(() => {
-    dh.config().then((c) => { setConfig(c); uploader.configure(c); }).catch((e) => setFatal(e));
+    dh.config().then((c) => { setConfig(c); uploader.configure(c); }).catch((e) => setFatal(e instanceof ApiError && e.status === 404 ? Object.assign(e, { hubMissing: true }) : e));
     loadFolders();
     dh.matters().then(setMatters).catch(() => {});
     refreshStats();
@@ -281,7 +281,7 @@ export default function DocumentHub() {
       setListErr('');
     }).catch((e) => {
       if (e?.name === 'AbortError' || id !== reqId.current) return;
-      if (e instanceof ApiError && e.status === 404) { setFatal(e); return; }
+      if (e instanceof ApiError && e.status === 404) { setFatal((prev) => (prev && prev.hubMissing ? prev : e)); return; }
       setListErr(e.message || 'Could not load your documents.');
       setListState('error');
     });
@@ -420,8 +420,8 @@ export default function DocumentHub() {
         <header className="dh-head"><div><h1 className="dh-title">Document Hub</h1></div></header>
         <div className="dh-errbox" role="alert">
           <Icon name="alert" />
-          <div className="body"><b style={{ color: 'var(--ink)' }}>{fatal.status === 404 ? 'The Document Hub is not running on the server yet.' : 'The Document Hub could not start.'}</b><br />
-            {fatal.status === 404 ? 'The backend needs the new code and a restart. Once it is running, reload this page.' : fatal.message}</div>
+          <div className="body"><b style={{ color: 'var(--ink)' }}>{fatal.hubMissing ? 'The Document Hub is not running on the server yet.' : fatal.status === 404 ? 'Something could not be found.' : 'The Document Hub could not start.'}</b><br />
+            {fatal.hubMissing ? 'The backend needs the new code and a restart. Once it is running, reload this page.' : (fatal.message || 'The page you asked for was not found. Try reloading.')}</div>
           <button type="button" className="dh-btn ghost sm" onClick={() => window.location.reload()}>Reload</button>
         </div>
       </div></div>

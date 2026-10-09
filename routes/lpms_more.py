@@ -63,17 +63,18 @@ def register(env):
             params["q"] = like(a["q"])
             where.append("(LOWER(cl.name) LIKE :q OR COALESCE(cl.phone,'') LIKE :q OR LOWER(COALESCE(cl.email,'')) LIKE :q)")
         per = min(max(as_int(a.get("per_page"), 40), 1), 200)
-        page = max(as_int(a.get("page"), 1), 1)
+        page = min(max(as_int(a.get("page"), 1), 1), 100000)
         total = c.execute(f"SELECT COUNT(*) FROM lpms_clients cl WHERE {' AND '.join(where)}", params).fetchone()[0]
         rows_ = L.rows(c, f"SELECT cl.* FROM lpms_clients cl WHERE {' AND '.join(where)} ORDER BY cl.name COLLATE NOCASE LIMIT :lim OFFSET :off", {**params, "lim": per, "off": (page - 1) * per})
         vis, vp = L.case_visible_sql(m, "c")
         out = []
+        gate_f, gpf = env.case_gate("f.case_id")
         for r in rows_:
             d = client_dict(r)
             cs = L.rows(c, f"SELECT c.closed_at, c.archived_at FROM lpms_cases c WHERE {vis} AND c.client_id = :cl", {**vp, "cl": r["id"]})
             d["cases"] = len(cs)
             d["active_cases"] = sum(1 for x in cs if not x["closed_at"] and not x["archived_at"])
-            d["open_followups"] = c.execute("SELECT COUNT(*) FROM lpms_followups WHERE client_id = ? AND status = 'open'", (r["id"],)).fetchone()[0]
+            d["open_followups"] = c.execute(f"SELECT COUNT(*) FROM lpms_followups f WHERE f.client_id = :cl AND f.status = 'open' AND {gate_f}", {**gpf, "cl": r["id"]}).fetchone()[0]
             out.append(d)
         return jsonify({"clients": out, "total": total, "page": page, "per_page": per})
 
@@ -140,7 +141,7 @@ def register(env):
     def plus(day, n):
         try:
             return (date.fromisoformat(day) + timedelta(days=n)).isoformat() if day else None
-        except ValueError:
+        except (ValueError, OverflowError):
             return None
 
     def rti_dict(r, names=None):
@@ -351,7 +352,10 @@ def register(env):
         for h in R.hearing_rows(c, m, "AND h.hearing_date BETWEEN :lo AND :hi AND h.status != 'cancelled'", {"lo": lo, "hi": hi}):
             items.append({"type": "hearing", "id": h["id"], "date": h["hearing_date"], "time": h["hearing_time"], "title": h["title"], "sub": f"{h['case_no']} · {h['court'] or h['case_court']}",
                           "link": f"/practice/cases/{h['case_id']}", "status": h["status"], "case_id": h["case_id"]})
-        for e in L.rows(c, EVENT_SELECT + "WHERE e.firm_id = :fid AND e.start_date <= :hi AND COALESCE(e.end_date, e.start_date) >= :lo", {"fid": m["firm_id"], "lo": lo, "hi": hi}):
+        gate_e, gpe = env.case_gate("e.case_id")
+        gate_r, gpr = env.case_gate("r.case_id")
+        gate_f, gpf = env.case_gate("f.case_id")
+        for e in L.rows(c, EVENT_SELECT + f"WHERE e.firm_id = :fid AND e.start_date <= :hi AND COALESCE(e.end_date, e.start_date) >= :lo AND {gate_e}", {**gpe, "lo": lo, "hi": hi}):
             first, last = max(e["start_date"], lo), min(e["end_date"] or e["start_date"], hi)
             d0 = date.fromisoformat(first)
             for i in range((date.fromisoformat(last) - d0).days + 1):
@@ -362,12 +366,12 @@ def register(env):
                             "AND c.next_action_due BETWEEN :lo AND :hi AND c.next_action IS NOT NULL AND c.next_action != ''", {**vp, "lo": lo, "hi": hi}):
             items.append({"type": "deadline", "id": cs["id"], "date": cs["next_action_due"], "time": None, "title": cs["next_action"], "sub": f"{cs['title']} · {cs['case_no']}",
                           "link": f"/practice/cases/{cs['id']}", "case_id": cs["id"], "source": "case"})
-        for r in L.rows(c, "SELECT * FROM lpms_rti WHERE firm_id = ? AND status IN ('filed','replied','partial','rejected','appeal1')", (m["firm_id"],)):
+        for r in L.rows(c, f"SELECT r.* FROM lpms_rti r WHERE r.firm_id = :fid AND r.status IN ('filed','replied','partial','rejected','appeal1') AND {gate_r}", gpr):
             field, label = ("response_due", "RTI reply due") if r["status"] == "filed" else (("appeal2_due", "RTI second appeal due") if r["status"] == "appeal1" else ("appeal_due", "RTI first appeal due"))
             if r[field] and lo <= r[field] <= hi:
                 items.append({"type": "rti", "id": r["id"], "date": r[field], "time": None, "title": f"{label}: {r['subject'][:80]}", "sub": r["department"], "link": "/practice/rti"})
-        for f in L.rows(c, "SELECT f.*, cl.name AS client_name FROM lpms_followups f LEFT JOIN lpms_clients cl ON cl.id = f.client_id WHERE f.firm_id = ? AND f.status = 'open' AND f.due_date BETWEEN ? AND ?",
-                        (m["firm_id"], lo, hi)):
+        for f in L.rows(c, "SELECT f.*, cl.name AS client_name FROM lpms_followups f LEFT JOIN lpms_clients cl ON cl.id = f.client_id WHERE f.firm_id = :fid AND f.status = 'open' AND f.due_date BETWEEN :lo AND :hi AND " + gate_f,
+                        {**gpf, "lo": lo, "hi": hi}):
             items.append({"type": "followup", "id": f["id"], "date": f["due_date"], "time": None, "title": f"Follow up{(' with ' + f['client_name']) if f['client_name'] else ''}", "sub": f["note"],
                           "link": f"/practice/cases/{f['case_id']}" if f["case_id"] else "/practice/clients"})
         items.sort(key=lambda i: (i["date"], i["time"] or "99:99", i["type"]))

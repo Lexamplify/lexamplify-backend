@@ -16,7 +16,7 @@ import sqlite3
 import secrets
 from urllib.parse import urlsplit, urlunsplit, urlencode
 
-from flask import Blueprint, redirect, url_for, session
+from flask import Blueprint, redirect, url_for, session, current_app
 from authlib.integrations.flask_client import OAuth
 from flask_jwt_extended import create_access_token, create_refresh_token, set_access_cookies, set_refresh_cookies
 
@@ -101,6 +101,22 @@ def _find_or_create_sso_user(email, name):
         conn.close()
 
 
+def _two_step_blocks_sso(provider, user_id):
+    """An account with two-step sign-in on must not be able to skip the code by coming in through Google/Microsoft: send it back to the
+    email + password + code form. Returns a redirect response to refuse with, or None to carry on. Cannot tell -> refuse."""
+    probe = current_app.extensions.get("lpms_mfa_probe")
+    if not probe:
+        return None
+    try:
+        has_mfa = bool(probe(user_id))
+    except Exception as exc:
+        print(f"[sso] could not tell whether user {user_id} has two-step on ({exc}) - refusing {provider} sign-in")
+        has_mfa = True
+    if has_mfa:
+        return _sso_redirect_with_error(provider, "mfa_required", "Two-step sign-in is on for this account. Please sign in with your email, password and the 6-digit code instead.", always_detail=True)
+    return None
+
+
 def _issue_cookie_redirect(user_id):
     resp = redirect(FRONTEND_REDIRECT)
     access_token = create_access_token(identity=str(user_id))
@@ -114,7 +130,7 @@ def _is_dev():
     return os.getenv('FLASK_ENV') != 'production'
 
 
-def _sso_redirect_with_error(provider, code, dev_detail):
+def _sso_redirect_with_error(provider, code, dev_detail, always_detail=False):
     # Every route in this file is reached by a real top-level browser
     # navigation (the login link, then Google/Microsoft's own redirect back
     # to our callback) — never by fetch/XHR. Returning a bare JSON body used
@@ -122,7 +138,7 @@ def _sso_redirect_with_error(provider, code, dev_detail):
     # back on the styled login screen. Redirecting with the error in the
     # query string lets LoginPage.jsx show it as a normal toast instead.
     params = {"sso_error": code, "provider": provider}
-    if _is_dev():
+    if _is_dev() or always_detail:
         params["detail"] = dev_detail
     return redirect(f"{FRONTEND_LOGIN_URL}?{urlencode(params)}")
 
@@ -161,6 +177,9 @@ def microsoft_callback():
         if not email:
             return _sso_redirect_with_error("Microsoft", "no_email", "Microsoft did not return an email claim.")
         user_id = _find_or_create_sso_user(email, name)
+        blocked = _two_step_blocks_sso("Microsoft", user_id)
+        if blocked:
+            return blocked
         return _issue_cookie_redirect(user_id)
     except Exception as e:
         return _sso_error_response("Microsoft", e)
@@ -186,6 +205,9 @@ def google_callback():
         if not email:
             return _sso_redirect_with_error("Google", "no_email", "Google did not return an email claim.")
         user_id = _find_or_create_sso_user(email, name)
+        blocked = _two_step_blocks_sso("Google", user_id)
+        if blocked:
+            return blocked
         return _issue_cookie_redirect(user_id)
     except Exception as e:
         return _sso_error_response("Google", e)

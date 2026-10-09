@@ -17,6 +17,7 @@ import contextlib
 import json
 import os
 import re
+import socket
 import threading
 import time
 import traceback
@@ -27,7 +28,12 @@ except ImportError:  # pragma: no cover
     import dms_classify as C, dms_extract as X, dms_index as I, dms_store as S
 
 MAX_ATTEMPTS = 3
-STALE_SECONDS = int(os.getenv("DMS_STALE_JOB_SECONDS", "1200"))
+# A running job's `locked_at` is a heartbeat: its worker process refreshes it every HEARTBEAT_SECONDS, so a job whose heartbeat is
+# older than STALE_SECONDS belongs to a process that is gone (a live worker is never requeued, however long the OCR takes).
+STALE_SECONDS = int(os.getenv("DMS_STALE_JOB_SECONDS", "90"))
+HEARTBEAT_SECONDS = 10
+_HOST = socket.gethostname()
+_WID_RE = re.compile(r"^(?P<host>.+):(?P<pid>\d+)-\d+$")
 TRASH_DAYS = int(os.getenv("DMS_TRASH_DAYS", "30"))
 PROBLEM_STATUSES = ("failed", "needs_ocr", "ready_partial", "empty", "unsupported")
 
@@ -76,10 +82,30 @@ def finish_job(conn, job_id, error=None):
     conn.commit()
 
 
-def recover_stale(conn):
-    """Jobs whose worker vanished (deploy, crash, OOM kill) go back in the queue, or fail after 3 tries."""
-    cutoff = _now() - STALE_SECONDS
-    stale = conn.execute("SELECT id, doc_id, attempts FROM dms_jobs WHERE status = 'running' AND locked_at < ?", (cutoff,)).fetchall()
+def _owner_is_dead(locked_by):
+    """True only when the job was claimed by a process on THIS machine that no longer exists (POSIX only: on Windows
+    os.kill(pid, 0) would terminate the process, so there we rely on the heartbeat alone)."""
+    m = _WID_RE.match(locked_by or "")
+    if not m or m.group("host") != _HOST or os.name != "posix":
+        return False
+    pid = int(m.group("pid"))
+    if pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+def recover_stale(conn, seconds=None):
+    """Jobs whose worker vanished (deploy, crash, OOM kill) go back in the queue, or fail after 3 tries.
+    A job counts as abandoned when its heartbeat is older than `seconds`, or its owner process is provably dead."""
+    cutoff = _now() - (STALE_SECONDS if seconds is None else seconds)
+    stale = [r for r in conn.execute("SELECT id, doc_id, attempts, locked_by, locked_at FROM dms_jobs WHERE status = 'running'").fetchall()
+             if (r["locked_at"] or 0) < cutoff or _owner_is_dead(r["locked_by"])]
     for j in stale:
         if j["attempts"] >= MAX_ATTEMPTS:
             conn.execute("UPDATE dms_jobs SET status = 'failed', error = 'Processing was interrupted repeatedly.' WHERE id = ?", (j["id"],))
@@ -364,6 +390,22 @@ class Worker:
         self._wake = threading.Event()
         self._lock = threading.Lock()
 
+    @property
+    def _wid_prefix(self):
+        return f"{_HOST}:{os.getpid()}"
+
+    def _heartbeat(self):
+        """Keeps `locked_at` fresh on this process's running jobs so that recover_stale() can use a short window."""
+        conn = I.connect(self.db_path)
+        try:
+            while not self._stop.wait(HEARTBEAT_SECONDS):
+                with contextlib.suppress(Exception):
+                    conn.execute("UPDATE dms_jobs SET locked_at = ? WHERE status = 'running' AND locked_by LIKE ?",
+                                 (_now(), self._wid_prefix + "-%"))
+                    conn.commit()
+        finally:
+            conn.close()
+
     def start(self):
         with self._lock:
             if self._threads or self.n <= 0:
@@ -372,6 +414,9 @@ class Worker:
                 t = threading.Thread(target=self._loop, args=(i,), name=f"dms-worker-{i}", daemon=True)
                 t.start()
                 self._threads.append(t)
+            t = threading.Thread(target=self._heartbeat, name="dms-heartbeat", daemon=True)
+            t.start()
+            self._threads.append(t)
 
     def stop(self, timeout=5):
         self._stop.set()
@@ -403,7 +448,7 @@ class Worker:
                 I.optimize(conn)
 
     def _loop(self, idx):
-        wid = f"{os.getpid()}-{idx}"
+        wid = f"{self._wid_prefix}-{idx}"
         with contextlib.suppress(Exception):
             os.nice(8)                     # OCR must not starve the web requests sharing this machine
         conn = I.connect(self.db_path)

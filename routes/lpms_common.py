@@ -233,6 +233,11 @@ class Env:
             raise ApiError("This case is archived. Restore it to make changes.", 409, code="ARCHIVED")
         return row
 
+    def case_gate(self, col):
+        """SQL (and params) that keeps rows tied to a case this member may not see out of a query: no case, or a visible case."""
+        vis, vp = L.case_visible_sql(self.m, "vc")
+        return f"({col} IS NULL OR {col} IN (SELECT vc.id FROM lpms_cases vc WHERE {vis}))", vp
+
     def member_in_firm(self, member_id, label="Advocate", advocates_only=False, required=False):
         if member_id in (None, ""):
             if required:

@@ -194,7 +194,7 @@ export default function CaseDetail() {
   const { toast } = usePractice();
   const [sp, setSp] = useSearchParams();
   const tab = TABS.some((t) => t.id === sp.get('tab')) ? sp.get('tab') : 'overview';
-  const q = useAsync((signal) => pr.get(`/cases/${id}`, null, signal).then((d) => d.case), [id]);
+  const q = useAsync((signal) => pr.get(`/cases/${id}`, null, signal).then((d) => d.case), [id], id);
   const [v, setV] = useState(0);
   const [edit, setEdit] = useState(false);
   const [rec, setRec] = useState(null);

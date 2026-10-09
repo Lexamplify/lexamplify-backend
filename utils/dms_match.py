@@ -149,12 +149,20 @@ def _side_matches(side, pool):
     return bool(distinct) and any(len(w) >= 6 for w in distinct)
 
 
+def _split_own(keys):
+    """(own, cited): a document has ONE case number of its own - the first court-case number (the caption, main number first).
+    Any further court-case numbers are citations of other proceedings and must not pull it onto those cases. FIR numbers stay own."""
+    court = [k for k in keys if not k.startswith("FIR ")]
+    firs = [k for k in keys if k.startswith("FIR ")]
+    return court[:1] + firs, court[1:]
+
+
 def doc_facts(conn, d, text_head=None):
     """What the matcher needs from one dms_docs row."""
     meta = F.loads(d["meta"], {})
     keys = [k for k in (d["case_keys"] or "").split("|") if k.strip()]
-    own = [k for k in keys]
-    mention_keys = []
+    own, cited = _split_own(keys)
+    mention_keys = list(cited)
     for shown in meta.get("case_mentions") or []:
         m = C.CASE_RE.search(shown)
         if m:
@@ -183,11 +191,11 @@ def keys_from_shown(shown_list):
 
 def facts_from_analysis(a, text):
     """The same facts, for a document that is not stored yet (a scanned stack being sorted): `a` is dms_scan.analyse_texts()."""
-    own = keys_from_shown(list(a.get("case_numbers") or []) + list(a.get("fir_numbers") or []))
+    own, cited = _split_own(keys_from_shown(list(a.get("case_numbers") or []) + list(a.get("fir_numbers") or [])))
     return {
         "doc_id": None, "own_keys": own, "own_tokens": {C.case_token(k) for k in own},
         "own_numyear": [x for x in (_numyear_of_key(k) for k in own) if x],
-        "mention_tokens": {C.case_token(k) for k in keys_from_shown(a.get("case_mentions"))}, "parties": a.get("parties"), "court": a.get("court"),
+        "mention_tokens": {C.case_token(k) for k in cited + keys_from_shown(a.get("case_mentions"))}, "parties": a.get("parties"), "court": a.get("court"),
         "text_tokens": name_tokens((text or "")[:6000]), "shown_numbers": a.get("case_numbers") or [],
     }
 
@@ -254,7 +262,7 @@ def score(facts, index, sib):
         s = noisy_or(ps)
         if s >= SHOW_AT:
             out.append({"ref": c["ref"], "score": s, "reasons": why, "label": c["label"], "case_no": c["case_no"], "court": c["court"],
-                        "client": c["client"], "kind": c["kind"]})
+                        "client": c["client"], "kind": c["kind"], "court_match": court_cmp == "match"})
     out.sort(key=lambda x: (-x["score"], x["ref"]))
     return out[:3]
 
@@ -264,7 +272,12 @@ def decide(cands):
     if not cands or cands[0]["score"] < SUGGEST_AT:
         return "nomatch", False
     second = cands[1]["score"] if len(cands) > 1 else 0.0
-    return "pending", (cands[0]["score"] >= AUTO_AT and cands[0]["score"] - second >= AUTO_MARGIN)
+    top = cands[0]
+    # A court case is only ever filed automatically when the document names its court AND it is the case's court. An unknown or
+    # different court leaves it as a suggestion. (Matters have no court. Candidates without the flag are bare dicts from callers/tests;
+    # verdicts stored before this rule are re-evaluated because _eval_sig changed.)
+    court_ok = top.get("kind") == "matter" or bool(top.get("court_match", True))
+    return "pending", (top["score"] >= AUTO_AT and top["score"] - second >= AUTO_MARGIN and court_ok)
 
 
 # ── persistence ──────────────────────────────────────────────────────────────────────
@@ -273,7 +286,7 @@ _UNREAD = ("queued", "processing")
 
 
 def _eval_sig(index, d):
-    return f"{index.sig}|{d['processed_at']}|{d['case_keys']}|{d['parties']}|{d['court']}"
+    return f"v2|{index.sig}|{d['processed_at']}|{d['case_keys']}|{d['parties']}|{d['court']}"
 
 
 def evaluate(conn, uid, d, index):

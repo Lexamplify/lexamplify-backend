@@ -34,6 +34,14 @@ _WIDE = [       # scripts the first choice may lack (Devanagari, Tamil, ...): tr
     "/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf", "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
     "C:\\Windows\\Fonts\\Nirmala.ttf", "C:\\Windows\\Fonts\\mangal.ttf", "/Library/Fonts/Arial Unicode.ttf",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    # more places Indic-capable fonts live: Windows (Arial Unicode MS, Latha for Tamil), Debian/Ubuntu/Fedora/Arch Noto + Lohit
+    "C:\\Windows\\Fonts\\ARIALUNI.TTF", "C:\\Windows\\Fonts\\latha.ttf", "C:\\Windows\\Fonts\\Nirmala.ttc",
+    "/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf", "/usr/share/fonts/noto/NotoSansTamil-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansTamilUI-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSansDevanagariUI-Regular.ttf",
+    "/usr/share/fonts/google-noto/NotoSansDevanagari-Regular.ttf", "/usr/share/fonts/google-noto/NotoSansTamil-Regular.ttf",
+    "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf", "/usr/share/fonts/TTF/NotoSansDevanagari-Regular.ttf",
+    "/usr/share/fonts/TTF/NotoSansTamil-Regular.ttf", "/usr/share/fonts/opentype/noto/NotoSansDevanagari-Regular.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansTamil-Regular.ttf",
 ]
 _MONO = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",

@@ -5,25 +5,28 @@ import { doneWith } from './api.js';
 
 // ── data loading ───────────────────────────────────────────────────────────────────────
 // Keeps the last good data on screen while a reload runs, so lists never flash empty.
-export function useAsync(fn, deps) {
-  const [st, setSt] = useState({ data: null, error: null, loading: true });
+// `resetKey` (optional): the identity of what is shown (a case id, a client id ...). When it changes the previous data is dropped
+// at once and `loading` is true, so opening case B never shows case A's content under B's address.
+export function useAsync(fn, deps, resetKey) {
+  const [st, setSt] = useState({ data: null, error: null, loading: true, rk: resetKey });
   const [n, setN] = useState(0);
   const fnRef = useRef(fn);
   fnRef.current = fn;
   useEffect(() => {
     let dead = false;
     const ac = new AbortController();
-    setSt((s) => ({ ...s, loading: true, error: null }));
+    setSt((s) => (Object.is(s.rk, resetKey) ? { ...s, loading: true, error: null } : { data: null, error: null, loading: true, rk: resetKey }));
     Promise.resolve(fnRef.current(ac.signal)).then((data) => {
-      if (!dead) setSt({ data, error: null, loading: false });
+      if (!dead) setSt({ data, error: null, loading: false, rk: resetKey });
     }).catch((e) => {
       if (dead || e?.name === 'AbortError') return;
-      setSt((s) => ({ data: s.data, error: e, loading: false }));
+      setSt((s) => ({ data: s.data, error: e, loading: false, rk: resetKey }));
     });
     return () => { dead = true; ac.abort(); };
   }, [...deps, n]); // eslint-disable-line react-hooks/exhaustive-deps
   const reload = useCallback(() => setN((x) => x + 1), []);
-  return { ...st, reload };
+  if (!Object.is(st.rk, resetKey)) return { data: null, error: null, loading: true, reload };   // the very render in which the key changed
+  return { data: st.data, error: st.error, loading: st.loading, reload };
 }
 
 export function Spinner() { return <PIcon name="refresh" className="dh-spin" />; }

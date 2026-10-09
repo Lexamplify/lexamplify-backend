@@ -85,6 +85,7 @@ class Extracted:
     warnings: list = field(default_factory=list)
     error: str | None = None
     fixable_by_ocr: bool = False
+    ocr_texts: list = field(default_factory=list, repr=False)   # text that came from OCR (for the language sanity check)
 
     @property
     def text(self):
@@ -360,6 +361,7 @@ def _extract_pdf(path, use_ocr, started):
                     if usable_text(otext) or len(otext.strip()) >= 25 or (alnum >= 4 and conf >= 55):
                         res.pages.append((i + 1, otext))
                         res.ocr_pages += 1
+                        res.ocr_texts.append(otext)
                         confs.append(conf)
                     else:
                         res.blank_pages += 1          # a blank back-side is not a failure
@@ -369,7 +371,13 @@ def _extract_pdf(path, use_ocr, started):
             res.unreadable_pages += 1
         if confs:
             res.ocr_confidence = round(sum(confs) / len(confs), 1)
+        repaired = bool(getattr(doc, "is_repaired", False))      # the file's structure was broken (cut off / damaged) and MuPDF rebuilt it
     _finish_pages(res, eng if use_ocr else {"available": False})
+    if repaired and res.status != "failed":
+        res.warnings.append("This PDF is damaged (possibly cut off during copying or upload) and was repaired while reading. "
+                            "Some pages or text may be missing - compare it with the original and upload a complete copy.")
+        if res.status == "ready" and len(res.pages) < (res.page_count or 0):
+            res.status = "ready_partial"
     return res
 
 
@@ -399,6 +407,34 @@ def _extract_pdf_fallback(path, res):
     return res
 
 
+_EN_STOP = frozenset("the of and to in is that for on with as by be this at or are was it from which not shall any an has have been his her their "
+                     "he she they we you will would may under before after case court order date said notice petitioner respondent".split())
+
+
+def looks_like_latin_garbage(text):
+    """True only when a fair amount of text is clearly NOT English words: almost no common English words AND mostly
+    one/two-letter or vowel-less fragments. Conservative on purpose - a numbers-heavy or short English page never trips it."""
+    toks = re.findall(r"[^\W\d_]+", text or "")
+    if len(toks) < 40:
+        return False
+    low = [t.lower() for t in toks]
+    stop = sum(1 for t in low if t in _EN_STOP) / len(low)
+    tiny = sum(1 for t in low if len(t) <= 2) / len(low)
+    wordlike = sum(1 for t in low if len(t) >= 3 and re.search(r"[aeiouy]", t) and not re.search(r"[^aeiouy]{5,}", t)) / len(low)
+    return stop < 0.04 and tiny > 0.40 and wordlike < 0.45
+
+
+def _indic_ocr_warning(res, eng):
+    if not res.ocr_texts or not eng.get("available"):
+        return
+    have = set((eng.get("langs") or "").split("+"))
+    missing = [n for code, n in (("hin", "Hindi"), ("tam", "Tamil")) if code not in have]
+    if missing and looks_like_latin_garbage("\n".join(res.ocr_texts)):
+        res.warnings.append(f"The text read from this scan looks like gibberish. If the document is in {' or '.join(missing)} or another Indian language, "
+                            f"the server's OCR has no {'/'.join(missing)} language data installed (it only reads {eng.get('langs') or 'English'}), "
+                            f"so the extracted text and search results are not reliable. Ask the administrator to install the Tesseract language packs.")
+
+
 def _finish_pages(res, eng):
     real = [(n, t) for n, t in res.pages if t.strip()]
     res.pages = real
@@ -423,6 +459,8 @@ def _finish_pages(res, eng):
         res.warnings.append(f"{res.unreadable_pages} page(s) could not be read even with OCR (blank, too faint or handwritten).")
     if res.ocr_confidence is not None and res.ocr_confidence < 60:
         res.warnings.append(f"OCR confidence is low ({res.ocr_confidence:.0f}%). Check important passages against the original.")
+    with contextlib.suppress(Exception):
+        _indic_ocr_warning(res, eng)
 
 
 def _zip_guard(path):
@@ -627,6 +665,7 @@ def _extract_image(path, use_ocr, started):
             if len(otext.strip()) >= 8 or (alnum >= 4 and conf >= 55):
                 res.pages.append((i + 1, otext))
                 res.ocr_pages += 1
+                res.ocr_texts.append(otext)
                 confs.append(conf)
             else:
                 res.blank_pages += 1

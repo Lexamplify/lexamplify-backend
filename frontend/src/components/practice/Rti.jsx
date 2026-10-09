@@ -129,7 +129,7 @@ function RtiForm({ existing, onClose, onSaved }) {
 
 function RtiDetail({ id, onClose, onEdit, onChanged }) {
   const { perms, toast } = usePractice();
-  const q = useAsync((signal) => pr.get(`/rti/${id}`, null, signal), [id]);
+  const q = useAsync((signal) => pr.get(`/rti/${id}`, null, signal), [id], id);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState(false);

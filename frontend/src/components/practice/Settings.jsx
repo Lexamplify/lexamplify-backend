@@ -129,7 +129,7 @@ function Notifications({ s, refresh }) {
       </Card>
       <Card title="Reminder engine" actions={<button type="button" className="dh-btn ghost sm" onClick={run} disabled={running}><PIcon name="refresh" />{running ? 'Checking…' : 'Run check now'}</button>}>
         <p className="pr-note" style={{ marginTop: 0 }}>The check runs by itself every few minutes while the server is awake, and again whenever someone opens the dashboard.</p>
-        <dl className="pr-kv" style={{ gridTemplateColumns: '130px minmax(0,1fr)' }}>
+        <dl className="pr-kv w130">
           <dt>Last check</dt><dd>{s.last_run ? fmtAgo(s.last_run.at && new Date(s.last_run.at * 1000).toISOString().slice(0, 19).replace('T', ' ')) : 'Not yet'}</dd>
           <dt>E-mails</dt><dd>{Object.keys(ob).length ? Object.entries(ob).map(([k, v]) => `${v} ${human(k).toLowerCase()}`).join(' · ') : 'None queued'}</dd>
         </dl>
@@ -178,7 +178,7 @@ function Logins() {
   return (
     <Card title="Recent sign-in activity" flush>
       {!q.data ? (q.error ? <ErrorBox error={q.error} retry={q.reload} compact /> : <Loading />) : !q.data.items.length ? <p className="pr-note" style={{ textAlign: 'center', padding: 20 }}>No sign-ins recorded yet.</p> : q.data.items.map((it, i) => (
-        <div key={i} className="pr-audit" style={{ gridTemplateColumns: '150px minmax(0,1fr) auto' }}>
+        <div key={i} className="pr-audit">
           <span className="when">{fmtAgo(it.at)}</span>
           <span className="what">{it.summary || human(it.action)}</span>
           <span className="ip">{it.ip}</span>

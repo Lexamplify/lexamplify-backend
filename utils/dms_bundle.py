@@ -504,7 +504,7 @@ def build(items, options, out_path, progress=None, workdir=None):
             shutil.rmtree(workdir, ignore_errors=True)
     warnings = []
     if face.lost:
-        warnings.append("Some characters in the titles could not be printed with the fonts on this server and appear as “?”. Install a Unicode font (set DMS_PDF_FONT) to print them.")
+        warnings.append("Some characters in the titles could not be printed with the fonts on this server and appear as “?”. Install a Unicode font that covers the script (for Tamil or Hindi: Noto Sans Tamil / Devanagari, or Nirmala UI on Windows) and set DMS_PDF_FONT to its .ttf path, then restart the server.")
     progress(1.0, "Done")
     return {"pages": cover_n + index_n + len(nums), "numbered": total_numbered, "index_pages": index_n, "cover_pages": cover_n,
             "entries": [{k: v for k, v in e.items() if k not in ("plan", "pages")} for e in entries], "warnings": warnings}

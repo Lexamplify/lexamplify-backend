@@ -19,7 +19,7 @@ Rules it keeps:
 """
 import os
 
-from flask import Blueprint
+from flask import Blueprint, request
 
 from routes import lpms_cases, lpms_core, lpms_more
 from routes.lpms_common import ApiError, Env, err
@@ -44,6 +44,18 @@ def create_lpms_blueprint(deps):
     @bp.teardown_request
     def _close(_exc):
         env.close()
+
+    @bp.before_request
+    def _json_body_must_be_an_object():
+        # every route reads its body as a JSON object; `[1]`, `"x"` or `5` used to crash them with a 500
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.is_json:
+            body = request.get_json(silent=True)
+            if body is not None and not isinstance(body, dict):
+                return err("The request body must be a JSON object.", 400)
+
+    @bp.errorhandler(OverflowError)
+    def _overflow(_e):
+        return err("A number or date in the request is too large.", 400)
 
     @bp.errorhandler(ApiError)
     def _api_error(e):

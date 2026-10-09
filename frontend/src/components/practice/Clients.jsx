@@ -70,9 +70,9 @@ function ClientList() {
 
 function ClientDetail({ id }) {
   const { perms, toast } = usePractice();
-  const q = useAsync((signal) => pr.get(`/clients/${id}`, null, signal).then((d) => d.client), [id]);
-  const comms = useAsync((signal) => pr.get('/comms', { client_id: id }, signal), [id]);
-  const fus = useAsync((signal) => pr.get('/followups', { client_id: id, status: 'open' }, signal), [id]);
+  const q = useAsync((signal) => pr.get(`/clients/${id}`, null, signal).then((d) => d.client), [id], id);
+  const comms = useAsync((signal) => pr.get('/comms', { client_id: id }, signal), [id], id);
+  const fus = useAsync((signal) => pr.get('/followups', { client_id: id, status: 'open' }, signal), [id], id);
   const [edit, setEdit] = useState(false);
   const [fu, setFu] = useState(false);
   const [arch, setArch] = useState(false);
@@ -94,7 +94,7 @@ function ClientDetail({ id }) {
   return (
     <>
       <Link className="pr-back" to="/practice/clients"><PIcon name="back" />All clients</Link>
-      <div className="pr-hero" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
+      <div className="pr-hero">
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
           <Avatar name={c.name} large />
           <div style={{ minWidth: 0 }}>
@@ -144,7 +144,7 @@ function ClientDetail({ id }) {
             ))}
           </Card>
           <Card title="Details">
-            <dl className="pr-kv" style={{ gridTemplateColumns: '96px minmax(0,1fr)' }}>
+            <dl className="pr-kv w96">
               <dt>Prefers</dt><dd>{human(c.comm_pref || 'whatsapp')}</dd>
               {c.occupation ? (<><dt>Occupation</dt><dd>{c.occupation}</dd></>) : null}
               {c.address ? (<><dt>Address</dt><dd className="soft pr-pre">{c.address}</dd></>) : null}

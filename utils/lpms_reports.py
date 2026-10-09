@@ -420,7 +420,7 @@ def to_xlsx(rep):
         for i, row in enumerate(t["rows"], 2):
             for j, col in enumerate(t["columns"], 1):
                 v = _cell(row.get(col["key"]))
-                if isinstance(v, str) and v[:1] in ("=", "+", "-", "@"):
+                if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
                     v = "'" + v                           # a case title must never run as a formula
                 cell = sheet.cell(i, j, v)
                 cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="right" if col.get("align") == "r" else "left")

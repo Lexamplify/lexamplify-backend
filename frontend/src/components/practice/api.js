@@ -34,10 +34,10 @@ async function raw(path, { method = 'GET', json, signal } = {}) {
     let data = {};
     try { data = await res.json(); } catch { /* not JSON */ }
     const fallback = res.status === 401 ? 'Your session has expired. Please sign in again.'
-      : res.status === 429 ? 'Too many requests just now. Please wait a moment.'
+      : res.status === 429 ? 'Too many requests, please wait a moment.'
       : res.status >= 500 ? 'The server had a problem. Please try again.'
       : `Something went wrong (${res.status}).`;
-    throw new ApiError(data.message || fallback, res.status, data);
+    throw new ApiError((res.status === 429 ? '' : data.message) || fallback, res.status, data);
   }
   return res;
 }
