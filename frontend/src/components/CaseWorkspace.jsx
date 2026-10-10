@@ -11,6 +11,9 @@ import ShareModal from './vault/ShareModal';
 import MoveModal from './vault/MoveModal';
 import ConfirmDeleteDialog from './vault/ConfirmDeleteDialog';
 import SyncToast from './vault/SyncToast';
+import VaultDocViewer from './vault/VaultDocViewer';
+import { vaultApi } from './vault/vaultApi';
+import { pr } from './practice/api';
 import { Folder, FileText, MoreVertical, Users, Lock, Search, FileImage, FileSpreadsheet, FileCode, FileArchive } from 'lucide-react';
 
 // File-type-aware icon for a document card, keyed off case_vault.file_format
@@ -39,61 +42,72 @@ function formatBreadcrumbs(path) {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// ── Initial Mock / Fallback Matters ───────────────────────────────────────
-const INITIAL_MATTERS = [
-  {
-    id: 'm1',
-    caseName: 'Sharma Textiles Pvt. Ltd. vs. State Bank of India',
-    caseNumber: 'CRA/142/2026',
-    cnr: 'TNMD010012342026',
-    court: 'Madras High Court',
-    judge: 'Hon. Justice R. Nariman',
-    caseType: 'Commercial Appeal',
-    petitioner: 'Sharma Textiles Pvt. Ltd.',
-    respondent: 'State Bank of India',
-    petitionerCounsel: 'Adv. Ramesh Rao',
-    respondentCounsel: 'Adv. S. K. Sundaram',
-    clientName: 'Sharma Textiles Pvt. Ltd.',
-    filingDate: '2026-09-02',
-    nextHearing: '2026-09-24',
-    lastHearing: '2026-09-10',
-    status: 'Active',
-    summary: 'Dispute over commercial credit line and recovery notice under SARFAESI.',
-    notes: 'Reply to bank counter-affidavit pending.',
-    urgent: 'Hearing in 7 days',
-    docsLinked: 9,
-  },
-  {
-    id: 'm2',
-    caseName: 'Rajan Kumar vs. Union of India',
-    caseNumber: 'WP/3391/2026',
-    cnr: 'TNMD020056782026',
-    court: 'Madurai Bench, Madras HC',
-    judge: 'Hon. Justice M. Jaichandren',
-    caseType: 'Writ Petition',
-    petitioner: 'Rajan Kumar',
-    respondent: 'Union of India',
-    petitionerCounsel: 'Adv. K. Swaminathan',
-    respondentCounsel: 'Additional Solicitor General',
-    clientName: 'Rajan Kumar',
-    filingDate: '2026-08-15',
-    nextHearing: null,
-    lastHearing: '2026-09-01',
-    status: 'Stayed',
-    summary: 'Challenge to statutory notification under environmental clearance rules.',
-    notes: 'Stay granted; no immediate filing required.',
-    urgent: null,
-    docsLinked: 4,
-  },
-];
-
-// ── Initial Timeline Events ──────────────────────────────────────────────
-const INITIAL_TIMELINE = [
-  { id: 't1', date: '02 Sep 2026', label: 'Petition filed before Madras High Court', source: 'Plaint_TN_HC_2026.pdf' },
-  { id: 't2', date: '10 Sep 2026', label: 'Notice issued to respondent bank', source: 'Court order dated 10 Sep' },
-  { id: 't3', date: '18 Sep 2026', label: "Respondent's counter-affidavit received", source: 'Counter_Affidavit_SBI.pdf' },
-  { id: 't4', date: '24 Sep 2026', label: 'Next hearing scheduled', source: 'Cause list entry' },
-];
+// ── Practice case -> Case Tracker card ───────────────────────────────────
+// The Case Tracker has no data of its own: it shows the cases from Practice (the same rows, the same permissions),
+// so a case created in Practice appears here and a case added here appears in Practice.
+const MS_DAY = 86400000;
+function daysUntil(iso) {
+  if (!iso) return null;
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((d - t) / MS_DAY);
+}
+function hearingNote(iso) {
+  const n = daysUntil(iso);
+  if (n === null || n < 0) return null;
+  if (n === 0) return 'Hearing today';
+  if (n === 1) return 'Hearing tomorrow';
+  return n <= 14 ? `Hearing in ${n} days` : null;
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+function caseToMatter(c, docsByCase) {
+  return {
+    id: c.id,
+    caseName: c.title,
+    caseNumber: c.case_no,
+    court: c.court,
+    judge: c.judge,
+    caseType: c.case_type,
+    clientName: c.client_name,
+    oppositeParty: c.opposite_party,
+    advocate: c.advocate_name,
+    filingDate: c.filing_date,
+    nextHearing: c.next_hearing,
+    lastHearing: c.last_hearing,
+    status: c.status,
+    priority: c.priority,
+    closed: c.closed,
+    urgent: c.closed ? null : hearingNote(c.next_hearing),
+    docsLinked: (docsByCase || {})[String(c.id)] || 0,
+  };
+}
+// Plain-language brief built only from what is really in the vault (used when the AI service does not answer).
+function buildSynopsis(matters, docs, overview) {
+  const paras = [];
+  if (matters.length) {
+    const open = matters.filter((m) => !m.closed);
+    const upcoming = open.filter((m) => m.nextHearing && daysUntil(m.nextHearing) >= 0)
+      .sort((a, b) => String(a.nextHearing).localeCompare(String(b.nextHearing)));
+    let t = `You are tracking ${matters.length} matter${matters.length === 1 ? '' : 's'}, ${open.length} of them open.`;
+    if (upcoming.length) {
+      t += ' Next on the list: ' + upcoming.slice(0, 3).map((m) => `${m.caseName} (${m.caseNumber}) on ${fmtDate(m.nextHearing)}`).join('; ') + '.';
+    } else if (open.length) {
+      t += ' None of the open matters has an upcoming hearing listed.';
+    }
+    paras.push(t);
+  }
+  if (docs.length) {
+    const classes = (overview?.category_names || []).slice(0, 5);
+    paras.push(`The vault holds ${docs.length} document${docs.length === 1 ? '' : 's'}` + (classes.length ? `, including ${classes.join(', ')}.` : '.')
+      + ((overview?.documents_this_week || 0) ? ` ${overview.documents_this_week} arrived in the last 7 days.` : ''));
+  }
+  return paras.join('\n\n');
+}
 
 // ── Provenance Trail formatting helpers ──────────────────────────────────
 // The action strings here match app.py's _write_provenance call sites
@@ -548,8 +562,15 @@ export default function CaseWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Matters State
-  const [matters, setMatters] = useState(INITIAL_MATTERS);
-  const [mattersEmptyView, setMattersEmptyView] = useState(false);
+  const [matters, setMatters] = useState([]);
+  const [mattersState, setMattersState] = useState({ loading: true, error: null, noPractice: false });
+  const [overview, setOverview] = useState(null);
+  const [practiceMeta, setPracticeMeta] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [viewer, setViewer] = useState(null);
+  const [cnrError, setCnrError] = useState(null);
+  const [matterSaving, setMatterSaving] = useState(false);
+  const [matterError, setMatterError] = useState(null);
   const [addMatterOpen, setAddMatterOpen] = useState(false);
   const [cnrSearchInput, setCnrSearchInput] = useState('');
   const [cnrResult, setCnrResult] = useState(null);
@@ -559,7 +580,7 @@ export default function CaseWorkspace() {
   const [matterForm, setMatterForm] = useState({
     caseName: '',
     caseNumber: '',
-    caseType: '',
+    caseType: 'Civil',
     cnr: '',
     court: '',
     judge: '',
@@ -589,9 +610,10 @@ export default function CaseWorkspace() {
     if (activeTab === 'trail') provenance.refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
-  const [timelineEvents, setTimelineEvents] = useState(INITIAL_TIMELINE);
-  const [timelineLoading, setTimelineLoading] = useState(false);
-  const [timelineGenerated, setTimelineGenerated] = useState(false);
+  const [timelineEvents, setTimelineEvents] = useState([]);
+  const [timelineState, setTimelineState] = useState({ loading: true, error: null, deep: false });
+  const timelineSeq = useRef(0);
+  const mattersSeq = useRef(0);
 
   // Upload State
   const [uploading, setUploading] = useState(false);
@@ -629,111 +651,149 @@ export default function CaseWorkspace() {
     setActiveTab(tabName);
   };
 
-  // Quick CNR Lookup
+  // ── Live data ────────────────────────────────────────────────────────────
+  const loadMatters = useCallback(async () => {
+    const seq = ++mattersSeq.current;
+    try {
+      const [cases, ov] = await Promise.all([
+        pr.get('/cases', { per_page: 100, sort: 'next_hearing' }),
+        vaultApi.overview().catch(() => null),
+      ]);
+      if (seq !== mattersSeq.current) return;
+      setMatters((cases.cases || []).map((c) => caseToMatter(c, ov?.case_docs)));
+      setOverview(ov);
+      setMattersState({ loading: false, error: null, noPractice: false });
+    } catch (e) {
+      if (seq !== mattersSeq.current) return;
+      const noFirm = e?.extra?.code === 'NO_FIRM';
+      vaultApi.overview().then((ov) => { if (seq === mattersSeq.current) setOverview(ov); }).catch(() => {});
+      setMatters([]);
+      setMattersState({ loading: false, error: noFirm ? null : (e?.message || 'Could not load your matters.'), noPractice: noFirm });
+    }
+  }, []);
+
+  const loadTimeline = useCallback(async (deep = false) => {
+    const seq = ++timelineSeq.current;
+    setTimelineState((st) => ({ ...st, loading: true, error: null }));
+    try {
+      const r = await vaultApi.timeline(deep);
+      if (seq !== timelineSeq.current) return;
+      setTimelineEvents(r.events || []);
+      setTimelineState({ loading: false, error: null, deep });
+    } catch (e) {
+      if (seq !== timelineSeq.current) return;
+      setTimelineState((st) => ({ ...st, loading: false, error: e?.message || 'Could not build the timeline.' }));
+    }
+  }, []);
+
+  const refreshAll = useCallback(() => {
+    loadMatters();
+    loadTimeline(timelineState.deep);
+  }, [loadMatters, loadTimeline, timelineState.deep]);
+
+  useEffect(() => { loadMatters(); loadTimeline(false); }, [loadMatters, loadTimeline]);
+  // Practice case types / statuses for the Add-matter form
+  useEffect(() => { pr.get('/me').then((me) => setPracticeMeta(me?.meta || null)).catch(() => {}); }, []);
+  // Numbers and the timeline are re-read whenever you open those tabs, return to this window, or the document list changes.
+  useEffect(() => {
+    if (activeTab === 'overview' || activeTab === 'matters') loadMatters();
+    if (activeTab === 'timeline') loadTimeline(timelineState.deep);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshAll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [refreshAll]);
+  const docCountSeen = useRef(null);
+  useEffect(() => {
+    const n = (vault.documents || []).length;
+    if (docCountSeen.current !== null && docCountSeen.current !== n) refreshAll();
+    docCountSeen.current = n;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vault.documents]);
+  // The sidebar's "N tracked matters" reads the same number.
+  useEffect(() => {
+    if (mattersState.loading) return;
+    window.dispatchEvent(new CustomEvent('lex:vault-matters', { detail: { count: matters.length } }));
+  }, [matters, mattersState.loading]);
+
+  const openViewer = (item) => setViewer({ id: item.id, name: item.name || item.title });
+  const fail = (e, fallback) => setActionError((e && e.message) || fallback);
+
+  // Quick CNR lookup — shows exactly what eCourts returned; nothing is filled in on its behalf.
   const handleFetchCnr = async () => {
-    if (!cnrSearchInput.trim()) return;
-    setCnrLoading(true);
+    const cnr = cnrSearchInput.trim();
+    if (!cnr) return;
+    setCnrLoading(true); setCnrResult(null); setCnrError(null);
     try {
       const res = await fetch(`${API_BASE}/api/causelist/fetch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cnr_number: cnrSearchInput.trim() }),
+        body: JSON.stringify({ cnr_number: cnr }),
       });
       const data = await res.json().catch(() => ({}));
-      if (data && (data.case_title || data.case_number)) {
+      if (res.ok && data && (data.case_title || data.case_number)) {
         setCnrResult({
-          title: data.case_title || 'Vetrivel Constructions vs. TN Highways Dept.',
-          meta: `${data.case_number || cnrSearchInput.trim()} · Next hearing ${data.next_hearing || '30 Sep 2026'} · ${data.court || 'District Court'}`,
+          cnr,
+          title: data.case_title || data.case_number,
+          meta: [data.case_number || cnr, data.next_hearing && `Next hearing ${data.next_hearing}`, data.court].filter(Boolean).join(' · '),
           raw: data,
         });
       } else {
-        // High-fidelity demo fallback
-        setCnrResult({
-          title: 'Vetrivel Constructions vs. TN Highways Dept.',
-          meta: `${cnrSearchInput.trim()} · Next hearing 30 Sep 2026 · Coimbatore District Court`,
-        });
+        setCnrError((typeof data?.message === 'string' && data.message) || 'No case was found for that CNR. Check the number, or add the matter manually.');
       }
     } catch {
-      setCnrResult({
-        title: 'Vetrivel Constructions vs. TN Highways Dept.',
-        meta: `${cnrSearchInput.trim()} · Next hearing 30 Sep 2026 · Coimbatore District Court`,
-      });
+      setCnrError('Could not reach eCourts just now. Try again in a moment, or add the matter manually.');
     } finally {
       setCnrLoading(false);
     }
   };
 
+  const openAddMatter = (prefill = {}) => {
+    setMatterError(null);
+    setMatterForm((f) => ({ ...f, ...prefill }));
+    setAddMatterOpen(true);
+  };
+
   const handleAddCnrToTracker = () => {
     if (!cnrResult) return;
-    const newMatter = {
-      id: `m-${Date.now()}`,
-      caseName: cnrResult.title,
-      caseNumber: cnrSearchInput.trim(),
-      cnr: cnrSearchInput.trim(),
-      court: 'Coimbatore District Court',
-      status: 'Active',
-      urgent: 'Hearing in 13 days',
-      petitioner: 'Vetrivel Constructions',
-      respondent: 'TN Highways Dept.',
-      nextHearing: '2026-09-30',
-      docsLinked: 0,
-    };
-    setMatters(prev => [newMatter, ...prev]);
+    const d = cnrResult.raw || {};
+    openAddMatter({
+      caseName: d.case_title || '',
+      caseNumber: d.case_number || '',
+      court: d.court || '',
+      cnr: cnrResult.cnr,
+      nextHearing: /^\d{4}-\d{2}-\d{2}$/.test(String(d.next_hearing || '')) ? d.next_hearing : '',
+    });
     setCnrResult(null);
     setCnrSearchInput('');
   };
 
-  // AI Synopsis Generation
+  // AI synopsis — grounded in the real matters and documents; the fallback is built from the same data.
   const handleGenerateSynopsis = async () => {
+    if (!matters.length && !allDocs.length) {
+      setSynopsis('There is nothing to summarise yet. Add a matter in Case Tracker or upload a document, and this brief will be built from them.');
+      return;
+    }
     setSynopsisLoading(true);
-    const combinedTexts = allDocs.map(d => d.name).join(', ');
+    const fallback = buildSynopsis(matters, allDocs, overview);
+    const matterLines = matters.map((m) => `- ${m.caseName} (${m.caseNumber}, ${m.court}); status ${m.status}; next hearing ${m.nextHearing || 'none listed'}; ${m.docsLinked} linked documents`).join('\n');
+    const docLines = allDocs.slice(0, 60).map((d) => `- ${d.name} [${d.tag}]`).join('\n');
     try {
       const res = await fetch(`${API_BASE}/api/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `[Case Vault Analysis]\n\nDocuments: ${combinedTexts}\nMatters: Sharma Textiles vs SBI (CRA/142/2026), Rajan Kumar vs UOI.\n\nSummarize the active status, upcoming hearings, and review requirements across this vault in 2 concise paragraphs.`,
+          message: `[Case Vault Analysis]\n\nMatters:\n${matterLines || '(none)'}\n\nDocuments:\n${docLines || '(none)'}\n\nSummarize the active status, upcoming hearings, and review requirements across this vault in 2 concise paragraphs. Use only the matters and documents listed above and do not invent anything else.`,
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (data && data.response) {
-        setSynopsis(data.response);
-      } else {
-        setSynopsis(
-          'Two matters are active. Sharma Textiles Pvt. Ltd. vs. State Bank of India (CRA/142/2026) has a hearing on 24 Sep before the Madras High Court — the vault holds the signed vakalatnama and plaint, but the reply to the bank\'s counter-affidavit is not yet on file.\n\nRajan Kumar vs. Union of India (WP/3391/2026) is currently stayed; no action is required until the stay is vacated.'
-        );
-      }
+      setSynopsis(res.ok && data && typeof data.response === 'string' && data.response.trim() ? data.response : fallback);
     } catch {
-      setSynopsis(
-        'Two matters are active. Sharma Textiles Pvt. Ltd. vs. State Bank of India (CRA/142/2026) has a hearing on 24 Sep before the Madras High Court — the vault holds the signed vakalatnama and plaint, but the reply to the bank\'s counter-affidavit is not yet on file.\n\nRajan Kumar vs. Union of India (WP/3391/2026) is currently stayed; no action is required until the stay is vacated.'
-      );
+      setSynopsis(fallback);
     } finally {
       setSynopsisLoading(false);
-    }
-  };
-
-  // AI Timeline Extraction
-  const handleExtractTimeline = async () => {
-    setTimelineLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/ai/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `Extract chronological case events with dates from the active litigation records. Return a JSON array with 'date', 'label', and 'source'.`,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data && Array.isArray(data.timeline)) {
-        setTimelineEvents(data.timeline);
-      } else {
-        setTimelineEvents(INITIAL_TIMELINE);
-      }
-    } catch {
-      setTimelineEvents(INITIAL_TIMELINE);
-    } finally {
-      setTimelineLoading(false);
-      setTimelineGenerated(true);
     }
   };
 
@@ -745,18 +805,21 @@ export default function CaseWorkspace() {
   const handleDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const items = e.dataTransfer.items;
-    if (!items || items.length === 0) return;
-
-    setSyncProgress({ isSyncing: true, current: 0, total: items.length });
+    const dt = e.dataTransfer;
+    // Collect everything NOW: the browser empties dataTransfer as soon as this handler first awaits.
+    const entries = Array.from(dt?.items || []).map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null)).filter(Boolean);
+    const loose = entries.length ? [] : Array.from(dt?.files || []);
+    if (!entries.length && !loose.length) return;
+    setSyncProgress({ isSyncing: true, current: 0, total: entries.length || loose.length, currentName: '' });
     let count = 0;
-    for (let i = 0; i < items.length; i++) {
-      const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
-      if (entry) {
-        count = await traverseFileTree(entry, activeFolderId, count);
-      }
+    try {
+      for (const entry of entries) count = await traverseFileTree(entry, activeFolderId, count);
+      for (const file of loose) { await vault.uploadFile(file, activeFolderId); count += 1; setSyncProgress({ current: count }); }
+    } catch (err) {
+      fail(err, 'Some items could not be uploaded.');
+    } finally {
+      setSyncProgress({ isSyncing: false, current: count, total: count });
     }
-    setSyncProgress({ isSyncing: false, current: count, total: count });
   };
 
   // Recreates a dropped OS folder structure against the real backend —
@@ -795,113 +858,108 @@ export default function CaseWorkspace() {
   };
 
   const handleFolderUpload = async (e) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setSyncProgress({ isSyncing: true, current: 0, total: files.length });
-    // <input webkitdirectory> gives a flat file list with webkitRelativePath
-    // ("TopFolder/Sub/file.pdf") — real folders are created on first sight
-    // of each path segment and cached by path so siblings share the same
-    // real parent id instead of creating duplicates.
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setSyncProgress({ isSyncing: true, current: 0, total: files.length, currentName: '' });
+    // <input webkitdirectory> gives a flat file list with webkitRelativePath ("TopFolder/Sub/file.pdf") — real folders
+    // are created on first sight of each path segment and cached by path so siblings share the same real parent id.
     const folderCache = {};
     let count = 0;
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const pathParts = file.webkitRelativePath.split('/');
-      let currentParentId = activeFolderId;
-      let cacheKeyPrefix = '';
-
-      for (let j = 0; j < pathParts.length - 1; j++) {
-        const folderName = pathParts[j];
-        cacheKeyPrefix += `/${folderName}`;
-        if (!(cacheKeyPrefix in folderCache)) {
-          const created = await vault.createFolder(currentParentId, folderName);
-          folderCache[cacheKeyPrefix] = created.id;
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const pathParts = (file.webkitRelativePath || file.name).split('/');
+        let currentParentId = activeFolderId;
+        let cacheKeyPrefix = '';
+        for (let j = 0; j < pathParts.length - 1; j++) {
+          cacheKeyPrefix += `/${pathParts[j]}`;
+          if (!(cacheKeyPrefix in folderCache)) {
+            const created = await vault.createFolder(currentParentId, pathParts[j]);
+            folderCache[cacheKeyPrefix] = created.id;
+          }
+          currentParentId = folderCache[cacheKeyPrefix];
         }
-        currentParentId = folderCache[cacheKeyPrefix];
+        setSyncProgress({ current: i + 1, currentName: file.name });
+        await vault.uploadFile(file, currentParentId);
+        count += 1;
       }
-
-      setSyncProgress({ current: i + 1, currentName: file.name });
-      await vault.uploadFile(file, currentParentId);
-      count += 1;
+    } catch (err) {
+      fail(err, 'The folder could not be uploaded completely.');
+    } finally {
+      setSyncProgress({ isSyncing: false, current: count, total: count });
+      if (folderInputRef.current) folderInputRef.current.value = '';
     }
-
-    setSyncProgress({ isSyncing: false, current: count, total: count });
-    if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   const handleFileUpload = async (e) => {
-    const files = e.target ? e.target.files : e;
-    if (!files || files.length === 0) return;
+    const files = Array.from(e.target ? e.target.files : e || []);
     const targetFolderId = uploadHereFolderIdRef.current !== null ? uploadHereFolderIdRef.current : activeFolderId;
     uploadHereFolderIdRef.current = null;
+    if (!files.length) return;
     setUploading(true);
+    setSyncProgress({ isSyncing: true, current: 0, total: files.length, currentName: '' });
+    let done = 0;
     try {
-      for (let i = 0; i < files.length; i++) {
-        await vault.uploadFile(files[i], targetFolderId);
+      for (const f of files) {
+        setSyncProgress({ currentName: f.name });
+        await vault.uploadFile(f, targetFolderId);
+        done += 1;
+        setSyncProgress({ current: done });
       }
     } catch (err) {
-      // Surfaced via the vault's own error state on next refresh rather
-      // than a fabricated success trail entry — the old code here added a
-      // "Document auto-classified & hashed" Provenance entry even on
-      // failure, which is exactly the kind of silent-success-on-error the
-      // vault's tamper-evident framing shouldn't allow.
-      console.error('[Vault Upload]', err);
+      fail(err, 'The upload did not finish.');
     } finally {
       setUploading(false);
+      setSyncProgress({ isSyncing: false, current: done, total: done });
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // Add Matter Modal Save
-  const handleSaveMatterModal = (e) => {
-    e.preventDefault();
-    if (!matterForm.caseName.trim()) return;
+  // Add Matter: creates a real Practice case (so it shows in Practice, Calendar, reminders and reports as well).
+  const resetMatterForm = () => setMatterForm({
+    caseName: '', caseNumber: '', caseType: 'Civil', cnr: '', court: '', judge: '', petitioner: '', respondent: '',
+    petitionerCounsel: '', respondentCounsel: '', filingDate: '', nextHearing: '', lastHearing: '', status: 'Active',
+    clientName: '', summary: '', notes: '',
+  });
 
-    const newMatter = {
-      id: `m-${Date.now()}`,
-      caseName: matterForm.caseName.trim(),
-      caseNumber: matterForm.caseNumber.trim() || 'CRA/NEW/2026',
-      cnr: matterForm.cnr.trim() || 'TNMD010099992026',
-      court: matterForm.court.trim() || 'High Court of Judicature',
-      judge: matterForm.judge.trim(),
-      caseType: matterForm.caseType.trim() || 'Civil Action',
-      petitioner: matterForm.petitioner.trim() || 'Client',
-      respondent: matterForm.respondent.trim() || 'Respondent Party',
-      petitionerCounsel: matterForm.petitionerCounsel.trim(),
-      respondentCounsel: matterForm.respondentCounsel.trim(),
-      clientName: matterForm.clientName.trim(),
-      filingDate: matterForm.filingDate || '2026-09-17',
-      nextHearing: matterForm.nextHearing || '2026-10-15',
-      lastHearing: matterForm.lastHearing,
-      status: matterForm.status || 'Active',
-      summary: matterForm.summary.trim(),
-      notes: matterForm.notes.trim(),
-      urgent: matterForm.nextHearing ? 'Upcoming hearing' : null,
-      docsLinked: 0,
+  const handleSaveMatterModal = async (e, force = false) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const f = matterForm;
+    if (!f.caseName.trim() || !f.caseNumber.trim() || !f.court.trim()) {
+      setMatterError('Case name, case number and court are required.');
+      return;
+    }
+    const remarks = [
+      f.summary.trim(), f.notes.trim(),
+      f.petitioner.trim() && `Petitioner: ${f.petitioner.trim()}`,
+      f.petitionerCounsel.trim() && `Petitioner counsel: ${f.petitionerCounsel.trim()}`,
+      f.respondentCounsel.trim() && `Respondent counsel: ${f.respondentCounsel.trim()}`,
+      f.cnr.trim() && `CNR: ${f.cnr.trim()}`,
+    ].filter(Boolean).join('\n');
+    const body = {
+      case_no: f.caseNumber.trim(), court: f.court.trim(), title: f.caseName.trim(),
+      case_type: f.caseType || 'Civil', status: f.status || 'Active',
     };
-
-    setMatters(prev => [newMatter, ...prev]);
-    setAddMatterOpen(false);
-    setMatterForm({
-      caseName: '',
-      caseNumber: '',
-      caseType: '',
-      cnr: '',
-      court: '',
-      judge: '',
-      petitioner: '',
-      respondent: '',
-      petitionerCounsel: '',
-      respondentCounsel: '',
-      filingDate: '',
-      nextHearing: '',
-      lastHearing: '',
-      status: 'Active',
-      clientName: '',
-      summary: '',
-      notes: '',
-    });
+    if (f.judge.trim()) body.judge = f.judge.trim();
+    if (f.respondent.trim()) body.opposite_party = f.respondent.trim();
+    if (f.filingDate) body.filing_date = f.filingDate;
+    if (remarks) body.remarks = remarks;
+    const clientName = (f.clientName || f.petitioner).trim();
+    if (clientName) body.client = { name: clientName };
+    if (f.nextHearing) body.first_hearing = { date: f.nextHearing };
+    if (force) body.force = true;
+    setMatterSaving(true); setMatterError(null);
+    try {
+      await pr.post('/cases', body);
+      setAddMatterOpen(false);
+      resetMatterForm();
+      await loadMatters();
+      loadTimeline(timelineState.deep);
+    } catch (err) {
+      setMatterError({ text: err?.message || 'Could not save the matter.', duplicate: err?.extra?.code === 'DUPLICATE_CASE', noFirm: err?.extra?.code === 'NO_FIRM' });
+    } finally {
+      setMatterSaving(false);
+    }
   };
 
   return (
@@ -1023,6 +1081,12 @@ export default function CaseWorkspace() {
 
       {/* ── CONTENT CONTAINER ── */}
       <main className="cv-content">
+        {actionError && (
+          <div className="cv-verify-banner broken" role="alert" style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <span>{actionError}</span>
+            <button type="button" className="cv-link-toggle" onClick={() => setActionError(null)}>Dismiss</button>
+          </div>
+        )}
 
         {/* ── 1. OVERVIEW PANEL ── */}
         {activeTab === 'overview' && (
@@ -1039,7 +1103,7 @@ export default function CaseWorkspace() {
                   <div className="cv-stat-value">{totalDocCount}</div>
                   <div className="cv-stat-label">Documents in vault</div>
                 </div>
-                <div className="cv-stat-sub">+3 THIS WEEK</div>
+                <div className="cv-stat-sub">{totalDocCount === 0 ? 'NO DOCUMENTS YET' : (overview?.documents_this_week ? `+${overview.documents_this_week} THIS WEEK` : 'NONE ADDED THIS WEEK')}</div>
               </div>
 
               <div className="cv-stat-tile">
@@ -1052,7 +1116,7 @@ export default function CaseWorkspace() {
                   <div className="cv-stat-value">{matters.length}</div>
                   <div className="cv-stat-label">Matters tracked</div>
                 </div>
-                <div className="cv-stat-sub flag">1 HEARING THIS WEEK</div>
+                <div className={`cv-stat-sub${overview?.hearings_this_week ? ' flag' : ''}`}>{mattersState.noPractice ? 'SET UP PRACTICE TO TRACK' : matters.length === 0 ? 'NO MATTERS YET' : overview?.hearings_this_week ? `${overview.hearings_this_week} HEARING${overview.hearings_this_week === 1 ? '' : 'S'} THIS WEEK` : 'NO HEARINGS THIS WEEK'}</div>
               </div>
 
               <div className="cv-stat-tile">
@@ -1065,10 +1129,10 @@ export default function CaseWorkspace() {
                   </svg>
                 </div>
                 <div>
-                  <div className="cv-stat-value">5</div>
+                  <div className="cv-stat-value">{overview?.categories ?? 0}</div>
                   <div className="cv-stat-label">Document categories</div>
                 </div>
-                <div className="cv-stat-sub">STANDARD BLUEPRINT</div>
+                <div className="cv-stat-sub">{(overview?.category_names || []).slice(0, 2).join(' · ').toUpperCase() || 'NONE YET'}</div>
               </div>
 
               <div className="cv-stat-tile">
@@ -1081,7 +1145,7 @@ export default function CaseWorkspace() {
                   <div className="cv-stat-value">{draftCount}</div>
                   <div className="cv-stat-label">Drafts in progress</div>
                 </div>
-                <div className="cv-stat-sub">VIA AUTO-DRAFT STUDIO</div>
+                <div className="cv-stat-sub">{draftCount === 0 ? 'NO DRAFTS YET' : 'VIA AUTO-DRAFT STUDIO'}</div>
               </div>
             </div>
 
@@ -1136,7 +1200,7 @@ export default function CaseWorkspace() {
                   <div className="cv-quick-label">Upload document</div>
                 </button>
 
-                <button type="button" className="cv-quick-btn" onClick={() => { goTab('matters'); setAddMatterOpen(true); }}>
+                <button type="button" className="cv-quick-btn" onClick={() => { goTab('matters'); openAddMatter(); }}>
                   <div className="cv-quick-icon">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
                       <path d="M12 5v14M5 12h14" />
@@ -1183,6 +1247,9 @@ export default function CaseWorkspace() {
 
           return (
             <section className="cv-panel" id="panel-vault">
+              {/* The file pickers every "Upload" control clicks. They were never rendered, which is why uploads did nothing. */}
+              <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} aria-label="Choose documents to upload" />
+              <input ref={folderInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleFolderUpload} aria-label="Choose a folder to upload" {...{ webkitdirectory: '', directory: '' }} />
               <div className="cv-section-head">
                 <div>
                   <h2 className="cv-section-title cv-serif">Document Vault</h2>
@@ -1195,9 +1262,13 @@ export default function CaseWorkspace() {
                     type="button"
                     className="cv-btn"
                     onClick={async () => {
-                      const created = await vault.createFolder(activeFolderId, 'Untitled folder');
-                      setRenamingId(`folder-${created.id}`);
-                      setRenameValue('Untitled folder');
+                      try {
+                        const created = await vault.createFolder(activeFolderId, 'New folder');
+                        setRenamingId(`folder-${created.id}`);
+                        setRenameValue('New folder');
+                      } catch (err) {
+                        fail(err, 'The folder could not be created.');
+                      }
                     }}
                   >
                     + New folder
@@ -1209,8 +1280,9 @@ export default function CaseWorkspace() {
                     type="button"
                     className="cv-btn cv-btn-primary"
                     onClick={() => { uploadHereFolderIdRef.current = activeFolderId; fileInputRef.current?.click(); }}
+                    disabled={uploading}
                   >
-                    Upload document
+                    {uploading ? 'Uploading…' : 'Upload document'}
                   </button>
                 </div>
               </div>
@@ -1246,7 +1318,7 @@ export default function CaseWorkspace() {
 
               <div
                 className={`cv-dropzone${isVaultDragOver ? ' dragover' : ''}`}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => { uploadHereFolderIdRef.current = activeFolderId; fileInputRef.current?.click(); }}
                 onDragOver={(e) => { handleDragOver(e); setIsVaultDragOver(true); }}
                 onDragLeave={() => setIsVaultDragOver(false)}
                 onDrop={(e) => { setIsVaultDragOver(false); handleDrop(e); }}
@@ -1263,7 +1335,14 @@ export default function CaseWorkspace() {
                 </div>
               </div>
 
-              {isEmpty ? (
+              {vault.loading && vault.documents.length === 0 && vault.flatFolders.length === 0 ? (
+                <div className="cv-card cv-empty"><p className="cv-empty-sub">Loading your vault…</p></div>
+              ) : vault.error ? (
+                <div className="cv-card cv-empty">
+                  <p className="cv-empty-sub">{vault.error}</p>
+                  <button type="button" className="cv-btn" onClick={() => vault.refresh()}>Try again</button>
+                </div>
+              ) : isEmpty ? (
                 <div className="cv-card cv-empty">
                   <div className="cv-empty-icon">
                     <Folder size={22} />
@@ -1291,7 +1370,11 @@ export default function CaseWorkspace() {
                     return (
                       <div
                         key={`${item.type}-${item.id}`}
-                        onDoubleClick={() => isFolder && setActiveFolderId(item.id)}
+                        onClick={() => { if (renamingId !== `${item.type}-${item.id}`) { isFolder ? setActiveFolderId(item.id) : openViewer(item); } }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) { isFolder ? setActiveFolderId(item.id) : openViewer(item); } }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={isFolder ? `Open folder ${item.name}` : `Open document ${item.name}`}
                         onContextMenu={(e) => openContextMenu(e, item)}
                         className="cv-vault-card"
                         title={item.protected ? 'Standard blueprint folder' : undefined}
@@ -1345,7 +1428,11 @@ export default function CaseWorkspace() {
                                 const val = renameValue.trim();
                                 setRenamingId(null);
                                 if (val && val !== item.name) {
-                                  isFolder ? await vault.renameFolder(item.id, val) : await vault.renameDocument(item.id, val);
+                                  try {
+                    isFolder ? await vault.renameFolder(item.id, val) : await vault.renameDocument(item.id, val);
+                  } catch (err) {
+                    fail(err, 'Could not rename it.');
+                  }
                                 }
                               }}
                               onKeyDown={async (e) => {
@@ -1386,7 +1473,7 @@ export default function CaseWorkspace() {
               <button
                 type="button"
                 className="cv-btn cv-btn-primary"
-                onClick={() => setAddMatterOpen(true)}
+                onClick={() => openAddMatter()}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M12 5v14M5 12h14" />
@@ -1426,6 +1513,7 @@ export default function CaseWorkspace() {
                 </button>
               </div>
 
+              {cnrError && <div className="cv-verify-banner broken" role="alert" style={{ marginTop: 12 }}>{cnrError}</div>}
               {cnrResult && (
                 <div className="cv-cnr-result">
                   <div>
@@ -1437,24 +1525,31 @@ export default function CaseWorkspace() {
                     className="cv-btn cv-btn-sm"
                     onClick={handleAddCnrToTracker}
                   >
-                    Add to tracker
+                    Review &amp; add to tracker
                   </button>
                 </div>
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="cv-link-toggle"
-                onClick={() => setMattersEmptyView(prev => !prev)}
-              >
-                {mattersEmptyView ? 'View populated state' : 'View empty state'}
-              </button>
-            </div>
-
-            {/* Matter List */}
-            {!mattersEmptyView && matters.length > 0 ? (
+            {mattersState.loading && matters.length === 0 ? (
+              <div className="cv-card cv-empty"><p className="cv-empty-sub">Loading your matters…</p></div>
+            ) : mattersState.noPractice ? (
+              <div className="cv-card cv-empty">
+                <div className="cv-empty-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
+                  </svg>
+                </div>
+                <h3 className="cv-empty-title cv-serif">Set up your practice to track matters</h3>
+                <p className="cv-empty-sub">Matters here are the cases in Practice. Create your practice once and every case you add — there or here — shows up in both places.</p>
+                <button type="button" className="cv-btn cv-btn-primary" onClick={() => navigate('/practice')}>Open Practice</button>
+              </div>
+            ) : mattersState.error ? (
+              <div className="cv-card cv-empty">
+                <p className="cv-empty-sub">{mattersState.error}</p>
+                <button type="button" className="cv-btn" onClick={loadMatters}>Try again</button>
+              </div>
+            ) : matters.length > 0 ? (
               <div className="cv-matter-list">
                 {matters.map((m) => (
                   <div key={m.id} className="cv-matter-card">
@@ -1479,16 +1574,16 @@ export default function CaseWorkspace() {
 
                     <div className="cv-matter-grid">
                       <div>
-                        <div className="cv-matter-field-label">Petitioner</div>
-                        <div className="cv-matter-field-value">{m.petitioner || '—'}</div>
+                        <div className="cv-matter-field-label">Client</div>
+                        <div className="cv-matter-field-value">{m.clientName || '—'}</div>
                       </div>
                       <div>
-                        <div className="cv-matter-field-label">Respondent</div>
-                        <div className="cv-matter-field-value">{m.respondent || '—'}</div>
+                        <div className="cv-matter-field-label">Opposite party</div>
+                        <div className="cv-matter-field-value">{m.oppositeParty || '—'}</div>
                       </div>
                       <div>
                         <div className="cv-matter-field-label">Next hearing</div>
-                        <div className="cv-matter-field-value">{m.nextHearing || '—'}</div>
+                        <div className="cv-matter-field-value">{m.nextHearing ? fmtDate(m.nextHearing) : '—'}</div>
                       </div>
                       <div>
                         <div className="cv-matter-field-label">Linked documents</div>
@@ -1500,6 +1595,9 @@ export default function CaseWorkspace() {
                           {m.docsLinked || 0} in vault
                         </div>
                       </div>
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <button type="button" className="cv-link-toggle" onClick={() => navigate(`/practice/cases/${m.id}`)}>Open in Practice →</button>
                     </div>
                   </div>
                 ))}
@@ -1513,8 +1611,9 @@ export default function CaseWorkspace() {
                 </div>
                 <h3 className="cv-empty-title cv-serif">No matters tracked yet</h3>
                 <p className="cv-empty-sub">
-                  Fetch a case via CNR above, or add one manually — every matter you track can then be linked to documents in the vault.
+                  Add a matter here or create a case in Practice — it appears in both places. Documents you file to that case in the Document Hub are linked here automatically.
                 </p>
+                <button type="button" className="cv-btn cv-btn-primary" onClick={() => openAddMatter()}>Add your first matter</button>
               </div>
             )}
           </section>
@@ -1670,42 +1769,61 @@ export default function CaseWorkspace() {
               <div>
                 <h2 className="cv-section-title cv-serif">Case Timeline</h2>
                 <div className="cv-section-sub">
-                  A chronological read of every dated event across your vault documents.
+                  Built from your Practice matters (filing, hearings, daily proceedings) and the dates in your vault documents — nothing here is typed in by hand.
                 </div>
               </div>
               <button
                 type="button"
                 className="cv-btn cv-btn-primary"
-                onClick={handleExtractTimeline}
-                disabled={timelineLoading}
+                onClick={() => loadTimeline(true)}
+                disabled={timelineState.loading}
+                title="Reads the text of your documents and adds the dated events it finds (orders, notices, next hearings…)"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <rect x="3" y="4.5" width="18" height="16" rx="2" />
                   <path d="M3 9.5h18" />
                 </svg>
-                <span>{timelineLoading ? 'Extracting…' : timelineGenerated ? 'Re-extract dates' : 'Extract dates via AI'}</span>
+                <span>{timelineState.loading ? 'Reading…' : timelineState.deep ? 'Re-scan documents' : 'Extract dates from documents'}</span>
               </button>
             </div>
 
-            {timelineGenerated || timelineEvents.length > 0 ? (
+            {timelineState.error ? (
+              <div className="cv-card cv-empty">
+                <p className="cv-empty-sub">{timelineState.error}</p>
+                <button type="button" className="cv-btn" onClick={() => loadTimeline(timelineState.deep)}>Try again</button>
+              </div>
+            ) : timelineEvents.length > 0 ? (
               <div className="cv-card">
                 {timelineEvents.map((ev, idx) => {
                   const isLast = idx === timelineEvents.length - 1;
+                  const upcoming = daysUntil(ev.date) !== null && daysUntil(ev.date) >= 0 && (ev.kind === 'hearing' || ev.kind === 'deadline');
                   return (
                     <div key={ev.id || idx} className="cv-tl-item">
-                      <div className="cv-tl-date">{ev.date}</div>
+                      <div className="cv-tl-date">{fmtDate(ev.date)}</div>
                       <div className="cv-tl-rail">
                         <div className="cv-tl-dot" />
                         {!isLast && <div className="cv-tl-line" />}
                       </div>
                       <div className="cv-tl-body">
-                        <div className="cv-tl-label">{ev.label}</div>
-                        <div className="cv-tl-source">SOURCE: {ev.source}</div>
+                        <div className="cv-tl-label">
+                          {ev.label}
+                          {upcoming && <span className="cv-chip cv-chip-neutral" style={{ marginLeft: 8 }}>UPCOMING</span>}
+                          {ev.extracted && <span className="cv-chip cv-chip-neutral" style={{ marginLeft: 8 }}>FROM DOCUMENT TEXT</span>}
+                        </div>
+                        <div className="cv-tl-source">
+                          SOURCE:{' '}
+                          {ev.doc_id
+                            ? <button type="button" className="cv-link-toggle" onClick={() => setViewer({ id: ev.doc_id, name: ev.source })}>{ev.source}</button>
+                            : ev.source}
+                          {ev.case_title && <> · {ev.case_title}</>}
+                        </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
+            ) : timelineState.loading ? (
+              <div className="cv-card cv-empty"><p className="cv-empty-sub">Building the timeline…</p></div>
             ) : (
               <div className="cv-card cv-empty">
                 <div className="cv-empty-icon">
@@ -1714,9 +1832,9 @@ export default function CaseWorkspace() {
                     <path d="M12 7.5V12l3 2" />
                   </svg>
                 </div>
-                <h3 className="cv-empty-title cv-serif">No timeline generated yet</h3>
+                <h3 className="cv-empty-title cv-serif">Nothing on the timeline yet</h3>
                 <p className="cv-empty-sub">
-                  LexAmplify reads every document in this vault, pulls every date it finds, and lays them out chronologically — each entry links straight back to its source page.
+                  Add a matter in Case Tracker or upload documents. Filing dates, hearings, proceedings and the dates found in your documents appear here on their own.
                 </p>
               </div>
             )}
@@ -1731,7 +1849,7 @@ export default function CaseWorkspace() {
           <div className="cv-modal" onClick={(e) => e.stopPropagation()}>
             <div className="cv-modal-header">
               <div>
-                <div className="cv-card-eyebrow">Case Tracker</div>
+                <div className="cv-card-eyebrow">Case Tracker · saved to Practice</div>
                 <h3 className="cv-modal-title cv-serif">Add a matter</h3>
               </div>
               <button
@@ -1747,20 +1865,6 @@ export default function CaseWorkspace() {
 
             <form onSubmit={handleSaveMatterModal}>
               <div className="cv-modal-body">
-                {/* Filing Dropzone */}
-                <div className="cv-modal-dropzone">
-                  <div className="cv-dropzone-icon" style={{ width: '36px', height: '36px', borderRadius: '10px' }}>
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-                      <path d="M12 16V4M7 9l5-5 5 5" />
-                      <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="cv-dropzone-title" style={{ fontSize: '13.5px' }}>Drop a filing for ML triage</div>
-                    <div className="cv-dropzone-sub">LexAmplify pre-fills case name, parties and court from the document — or fill it in manually below.</div>
-                  </div>
-                </div>
-
                 {/* Section 1: Case Identity */}
                 <div>
                   <div className="cv-field-section-title">Case identity</div>
@@ -1778,24 +1882,27 @@ export default function CaseWorkspace() {
                       />
                     </div>
                     <div className="cv-field">
-                      <label htmlFor="mf-caseNumber">Case number</label>
+                      <label htmlFor="mf-caseNumber">Case number <span className="cv-req">*</span></label>
                       <input
                         id="mf-caseNumber"
                         type="text"
                         placeholder="e.g., CRA/123/2026"
                         value={matterForm.caseNumber}
                         onChange={(e) => setMatterForm(prev => ({ ...prev, caseNumber: e.target.value }))}
+                        required
                       />
                     </div>
                     <div className="cv-field">
                       <label htmlFor="mf-caseType">Case type</label>
-                      <input
+                      <select
                         id="mf-caseType"
-                        type="text"
-                        placeholder="Civil / Criminal / IP…"
                         value={matterForm.caseType}
                         onChange={(e) => setMatterForm(prev => ({ ...prev, caseType: e.target.value }))}
-                      />
+                      >
+                        {(practiceMeta?.case_types || ['Civil', 'Criminal', 'MCOP', 'RTI', 'Family', 'Corporate', 'Consumer', 'Other']).map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="cv-field">
                       <label htmlFor="mf-cnr">CNR number</label>
@@ -1816,13 +1923,14 @@ export default function CaseWorkspace() {
                   <div className="cv-field-section-title">Court details</div>
                   <div className="cv-field-grid">
                     <div className="cv-field">
-                      <label htmlFor="mf-court">Court name</label>
+                      <label htmlFor="mf-court">Court name <span className="cv-req">*</span></label>
                       <input
                         id="mf-court"
                         type="text"
                         placeholder="e.g., Delhi High Court"
                         value={matterForm.court}
                         onChange={(e) => setMatterForm(prev => ({ ...prev, court: e.target.value }))}
+                        required
                       />
                     </div>
                     <div className="cv-field">
@@ -1923,10 +2031,9 @@ export default function CaseWorkspace() {
                         value={matterForm.status}
                         onChange={(e) => setMatterForm(prev => ({ ...prev, status: e.target.value }))}
                       >
-                        <option value="Active">Active</option>
-                        <option value="Stayed">Stayed</option>
-                        <option value="Disposed">Disposed</option>
-                        <option value="Withdrawn">Withdrawn</option>
+                        {(practiceMeta?.statuses || ['Active', 'Awaiting Orders', 'Stayed', 'Disposed', 'Withdrawn', 'Settled']).map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -1968,6 +2075,17 @@ export default function CaseWorkspace() {
                 </div>
               </div>
 
+              {matterError && (
+                <div className="cv-verify-banner broken" role="alert" style={{ margin: '0 24px 12px' }}>
+                  {typeof matterError === 'string' ? matterError : matterError.text}
+                  {typeof matterError !== 'string' && matterError.duplicate && (
+                    <> <button type="button" className="cv-link-toggle" onClick={() => handleSaveMatterModal(null, true)}>Save anyway</button></>
+                  )}
+                  {typeof matterError !== 'string' && matterError.noFirm && (
+                    <> <button type="button" className="cv-link-toggle" onClick={() => navigate('/practice')}>Open Practice</button></>
+                  )}
+                </div>
+              )}
               <div className="cv-modal-footer">
                 <button
                   type="button"
@@ -1979,8 +2097,9 @@ export default function CaseWorkspace() {
                 <button
                   type="submit"
                   className="cv-btn cv-btn-primary"
+                  disabled={matterSaving}
                 >
-                  Save matter
+                  {matterSaving ? 'Saving…' : 'Save matter'}
                 </button>
               </div>
             </form>
@@ -1997,10 +2116,14 @@ export default function CaseWorkspace() {
         y={contextMenu.y}
         onOpen={(item) => setActiveFolderId(item.id)}
         onNewSubfolder={async (item) => {
-          const created = await vault.createFolder(item.id, 'Untitled folder');
-          setActiveFolderId(item.id);
-          setRenamingId(`folder-${created.id}`);
-          setRenameValue('Untitled folder');
+          try {
+            const created = await vault.createFolder(item.id, 'New folder');
+            setActiveFolderId(item.id);
+            setRenamingId(`folder-${created.id}`);
+            setRenameValue('New folder');
+          } catch (err) {
+            fail(err, 'The folder could not be created.');
+          }
         }}
         onUploadHere={(item) => {
           uploadHereFolderIdRef.current = item.id;
@@ -2012,8 +2135,8 @@ export default function CaseWorkspace() {
         }}
         onMove={(item) => setItemToMove(item)}
         onShare={(item) => setItemToShare(item)}
-        onPreview={(item) => window.open(`${API_BASE}/api/vault/documents/${item.id}/download`, '_blank')}
-        onDownload={(item) => window.open(`${API_BASE}/api/vault/documents/${item.id}/download`, '_blank')}
+        onPreview={(item) => openViewer(item)}
+        onDownload={(item) => vaultApi.downloadOriginal(item.id, item.name).catch((err) => fail(err, 'Could not download the file.'))}
         onDelete={(item) => setItemToDelete(item)}
       />
 
@@ -2031,10 +2154,14 @@ export default function CaseWorkspace() {
         onMove={async (newParentId) => {
           const item = itemToMove;
           setItemToMove(null);
-          if (item.type === 'folder') {
-            await vault.moveFolder(item.id, newParentId);
-          } else {
-            await vault.moveDocument(item.id, newParentId);
+          try {
+            if (item.type === 'folder') {
+              await vault.moveFolder(item.id, newParentId);
+            } else {
+              await vault.moveDocument(item.id, newParentId);
+            }
+          } catch (err) {
+            fail(err, 'Could not move it.');
           }
         }}
       />
@@ -2044,16 +2171,29 @@ export default function CaseWorkspace() {
         item={itemToDelete}
         onCancel={() => setItemToDelete(null)}
         onConfirm={async (item) => {
-          if (item.type === 'folder') {
-            await vault.deleteFolder(item.id);
-          } else {
-            await vault.deleteDocument(item.id);
+          try {
+            if (item.type === 'folder') {
+              await vault.deleteFolder(item.id);
+            } else {
+              await vault.deleteDocument(item.id);
+            }
+          } catch (err) {
+            fail(err, 'Could not delete it.');
           }
           setItemToDelete(null);
         }}
       />
 
       <SyncToast progress={syncProgress} />
+
+      {viewer && (
+        <VaultDocViewer
+          docId={viewer.id}
+          fallbackName={viewer.name}
+          onClose={() => setViewer(null)}
+          onChanged={() => { vault.refresh(); refreshAll(); }}
+        />
+      )}
     </div>
   );
 }

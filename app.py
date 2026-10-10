@@ -1401,6 +1401,38 @@ def create_app():
         print(f'[practice] Practice module is NOT available: {exc}')
         traceback.print_exc()
 
+    # ── Case Vault workspace (/api/vault/overview, /timeline, /documents/<id>/view|content|save-edit|assistant) ──
+    # Live numbers, a timeline built from real Practice/Hub records, and the in-app viewer/editor. A problem starting
+    # it is logged loudly and must not take the app down (the vault screens then show their own error).
+    try:
+        from routes.vault_workspace_routes import create_vault_workspace_blueprint
+
+        def _vw_scope(user_id):
+            sf, sd = _visible_shared_vault_ids(user_id, include_nav=False)
+            return (
+                '(cv.user_id = ? OR cv.user_id IS NULL OR cv.folder_id IN (SELECT value FROM json_each(?)) '
+                'OR cv.id IN (SELECT value FROM json_each(?))) AND ' + _dms_hidden_sql('cv'),
+                [user_id, json.dumps(sorted(sf)), json.dumps(sorted(sd))],
+            )
+
+        def _vw_access(user_id, doc_id, require_edit=False):
+            row = db.execute('SELECT user_id FROM case_vault cv WHERE id = ? AND ' + _dms_hidden_sql('cv'), (doc_id,)).fetchone()
+            return bool(row and _vault_access_ok('document', doc_id, row[0], user_id, require_edit=require_edit))
+
+        app.register_blueprint(create_vault_workspace_blueprint({
+            'db_path': os.path.realpath('lex_assistant.db'),
+            'scope': _vw_scope,
+            'access': _vw_access,
+            'folder_ok': lambda folder_id, user_id: _dms_folder_access(folder_id, user_id, require_edit=True),
+            'adopt': _dms_adopt_best_effort,
+            'provenance': _write_provenance,
+            'log': lambda msg: print(f'[vault] {msg}'),
+        }))
+    except Exception as exc:
+        import traceback
+        print(f'[vault] Case Vault workspace routes are NOT available: {exc}')
+        traceback.print_exc()
+
     @app.route('/api/ai/extract-file', methods=['POST', 'OPTIONS'])
     def extract_file_text():
         """Extract plain text from an uploaded PDF, DOCX, or TXT for the AI Legal Associate."""

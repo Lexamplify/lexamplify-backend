@@ -709,6 +709,13 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
       .then(data => { if (Array.isArray(data)) setSidebarCases(data); })
       .catch(() => { });
   }, []);
+  // The Case Vault reports its live matter count (the cases in Practice) so the sidebar never shows a stale number.
+  const [vaultMatterCount, setVaultMatterCount] = useState(null);
+  useEffect(() => {
+    const onCount = (e) => { if (typeof e.detail?.count === 'number') setVaultMatterCount(e.detail.count); };
+    window.addEventListener('lex:vault-matters', onCount);
+    return () => window.removeEventListener('lex:vault-matters', onCount);
+  }, []);
 
   useEffect(() => {
     const handler = (e) => {
@@ -788,7 +795,8 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                   const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
                   let activeStatus;
                   if (isActive && item.path === '/vault') {
-                    activeStatus = `${sidebarCases.length} tracked matter${sidebarCases.length !== 1 ? 's' : ''}`;
+                    const trackedCount = vaultMatterCount ?? sidebarCases.length;
+                    activeStatus = `${trackedCount} tracked matter${trackedCount !== 1 ? 's' : ''}`;
                   } else if (isActive && item.badge?.type === 'live') {
                     activeStatus = 'Live';
                   }
