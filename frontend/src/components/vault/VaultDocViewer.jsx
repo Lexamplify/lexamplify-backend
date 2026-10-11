@@ -38,7 +38,7 @@ export default function VaultDocViewer({ docId, fallbackName, onClose, onChanged
   const [confirmClose, setConfirmClose] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(() => (typeof window === 'undefined' ? true : window.innerWidth >= 1100));
+  const [aiOpen, setAiOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [banner, setBanner] = useState(null);
   const [selection, setSelection] = useState('');
@@ -97,6 +97,7 @@ export default function VaultDocViewer({ docId, fallbackName, onClose, onChanged
     return () => ac.abort();
   }, [docId]);
 
+  useEffect(() => { if (!banner) return undefined; const t = setTimeout(() => setBanner(null), 9000); return () => clearTimeout(t); }, [banner]);
   const doc = load.doc;
   const title = doc?.title || fallbackName || 'Document';
   const isImage = IMAGE_EXT.includes(doc?.ext);
@@ -117,10 +118,10 @@ export default function VaultDocViewer({ docId, fallbackName, onClose, onChanged
     const el = deskRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const ro = new ResizeObserver(() => {
-      if (fitting) setZoom(Math.max(0.4, Math.min(1, (el.clientWidth - 48) / PAGE_W)));
+      if (fitting) setZoom(Math.max(0.4, Math.min(1.45, (el.clientWidth - 36) / PAGE_W)));
     });
     ro.observe(el);
-    if (fitting) setZoom(Math.max(0.4, Math.min(1, (el.clientWidth - 48) / PAGE_W)) || 1);
+    if (fitting) setZoom(Math.max(0.4, Math.min(1.45, (el.clientWidth - 36) / PAGE_W)) || 1);
     return () => ro.disconnect();
   }, [fitting, aiOpen, load.loading]);
   const onDeskScroll = () => {

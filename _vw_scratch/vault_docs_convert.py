@@ -427,13 +427,15 @@ def _family_of(fontname):
     return None
 
 
-def pdf_to_html(data, max_pages=150):
+def pdf_to_html(data, max_pages=60):
     """Re-creates the page layout as editable HTML. Returns '' for scanned PDFs (no text layer) so the caller can use OCR text."""
     import pdfplumber
     items_all = []          # per page: list of dict items sorted top->bottom
     sizes = Counter()
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        for pi, page in enumerate(pdf.pages[:max_pages]):
+        if len(pdf.pages) > max_pages:
+            return ""       # too long to rebuild safely on a small server; the caller falls back to the full extracted text
+        for pi, page in enumerate(pdf.pages):
             tables, tboxes = [], []
             try:
                 tables = [t for t in page.find_tables() if t.bbox]
@@ -507,6 +509,14 @@ def pdf_to_html(data, max_pages=150):
             for l in lines:
                 l["L"], l["R"] = L, R
             items_all.extend(lines)
+            # keep memory flat on long PDFs (the web server has a small RAM budget)
+            try:
+                page.flush_cache()
+                if hasattr(page, "close"):
+                    page.close()
+            except Exception:
+                pass
+            del tables, tboxes, words, strokes
     if not sizes or sum(sizes.values()) < 15:
         return ""
     body_pt = sizes.most_common(1)[0][0]

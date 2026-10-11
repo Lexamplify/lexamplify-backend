@@ -124,6 +124,7 @@ async function fileToDataUrl(file, maxW = 1200) {
 
 export default function Ribbon({ editor, onFind, zoom, onZoom, onFit, fitting, guides, onGuides, spell, onSpell, onError }) {
   const [tab, setTab] = useState('home');
+  const [collapsed, setCollapsed] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const fileRef = useRef(null);
   const s = useEditorState({
@@ -156,7 +157,7 @@ export default function Ribbon({ editor, onFind, zoom, onZoom, onFit, fitting, g
     setSize(idx === -1 && dir > 0 ? size + 2 : next);
   };
   const T = ({ id, children }) => (
-    <button type="button" role="tab" id={`vw-tab-${id}`} aria-selected={tab === id} className={`vw-tab${tab === id ? ' on' : ''}`} onClick={() => setTab(id)}>{children}</button>
+    <button type="button" role="tab" id={`vw-tab-${id}`} aria-selected={tab === id} className={`vw-tab${tab === id ? ' on' : ''}`} onClick={() => { setTab(id); setCollapsed(false); }} onDoubleClick={() => setCollapsed((v) => !v)}>{children}</button>
   );
   const onImage = async (e) => {
     const f = e.target.files?.[0];
@@ -172,8 +173,9 @@ export default function Ribbon({ editor, onFind, zoom, onZoom, onFit, fitting, g
       <div className="vw-tabs" role="tablist" aria-label="Editor ribbon">
         <T id="home">Home</T><T id="insert">Insert</T><T id="review">Review</T><T id="view">View</T>
         {s.inTable && <T id="table">Table</T>}
+        <button type="button" className="vw-tab vw-collapse" onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Show the toolbar' : 'Hide the toolbar for more room'} aria-label={collapsed ? 'Show the toolbar' : 'Hide the toolbar'} aria-pressed={collapsed}>{collapsed ? 'Show toolbar ▾' : 'Hide toolbar ▴'}</button>
       </div>
-      <div className="vw-panel" role="tabpanel" aria-labelledby={`vw-tab-${tab}`}>
+      <div className="vw-panel" hidden={collapsed} role="tabpanel" aria-labelledby={`vw-tab-${tab}`}>
         {tab === 'home' && (
           <>
             <Group label="Undo">

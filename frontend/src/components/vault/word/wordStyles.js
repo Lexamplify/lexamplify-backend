@@ -38,6 +38,8 @@ export const wordStyles = `
 .vw-ribbon { background: var(--vw-surface); border-bottom: 1px solid var(--vw-line); flex-shrink: 0; }
 .vw-tabs { display: flex; gap: 2px; padding: 0 12px; }
 .vw-tab { border: 0; background: transparent; color: var(--vw-soft); font: inherit; font-weight: 600; padding: 9px 14px 8px; cursor: pointer; border-bottom: 2px solid transparent; }
+.vw-collapse { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--vw-muted); }
+.vw-panel[hidden] { display: none !important; }
 .vw-tab:hover { color: var(--vw-ink); } .vw-tab.on { color: var(--vw-accent); border-bottom-color: var(--vw-accent); }
 .vw-panel { display: flex; align-items: stretch; gap: 0; padding: 6px 10px 6px; border-top: 1px solid var(--vw-line); background: var(--vw-surface2); overflow-x: auto; min-height: 84px; }
 .vw-group { display: flex; flex-direction: column; justify-content: space-between; padding: 0 12px; border-right: 1px solid var(--vw-line); flex-shrink: 0; }
@@ -84,16 +86,21 @@ export const wordStyles = `
 .vw-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--vw-soft); cursor: pointer; } .vw-check.block { margin-top: 2px; }
 
 /* stage */
-.vw-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 390px; position: relative; }
+.vw-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; }
+.vw-main .vw-ai { position: absolute; top: 0; right: 0; bottom: 0; width: min(400px, 100%); z-index: 6; box-shadow: -18px 0 40px rgba(0,0,0,.3); }
 .vw-main.noai { grid-template-columns: minmax(0, 1fr); }
 .vw-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.vw-desk { flex: 1; min-height: 0; overflow: auto; padding: 28px 24px 70px; background:
+.vw-desk { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px 60px; background:
   radial-gradient(1200px 500px at 50% -10%, rgba(127,127,127,.10), transparent 60%), var(--vw-bg); }
 .vw-sheet { width: 794px; margin: 0 auto; }
 .vw-paper .ProseMirror { width: 794px; min-height: 1123px; background: #fff; color: #111; padding: 96px; border-radius: 3px; outline: none;
   box-shadow: 0 1px 2px rgba(0,0,0,.25), 0 18px 48px rgba(0,0,0,.22); font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.15; overflow-wrap: anywhere; caret-color: #111; }
 .vw-paper.guides .ProseMirror { background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1121px, rgba(120,120,120,.35) 1121px, rgba(120,120,120,.35) 1123px); background-origin: border-box; }
 .vw-paper .ProseMirror p { margin: 0 0 8pt; min-height: 1em; }
+/* the page is always white paper: text stays dark in every app theme, unless the text carries its own colour */
+.vw-paper .ProseMirror, .vw-paper .ProseMirror *:not([style*=" color:"]):not([style^="color:"]):not(a) { color: #111 !important; -webkit-text-fill-color: #111; }
+.vw-paper .ProseMirror a { color: #0563c1 !important; -webkit-text-fill-color: #0563c1; }
+.vw-paper .ProseMirror [style*=" color:"], .vw-paper .ProseMirror [style^="color:"] { -webkit-text-fill-color: currentColor; }
 .vw-paper .ProseMirror h1 { font-size: 20pt; margin: 16pt 0 6pt; } .vw-paper .ProseMirror h2 { font-size: 16pt; margin: 14pt 0 6pt; } .vw-paper .ProseMirror h3 { font-size: 14pt; margin: 12pt 0 4pt; } .vw-paper .ProseMirror h4 { font-size: 12pt; margin: 10pt 0 4pt; }
 .vw-paper .ProseMirror ul, .vw-paper .ProseMirror ol { margin: 0 0 8pt; padding-left: 30px; }
 .vw-paper .ProseMirror ul { list-style: disc outside !important; } .vw-paper .ProseMirror ul ul { list-style: circle outside !important; } .vw-paper .ProseMirror ul ul ul { list-style: square outside !important; }
@@ -182,6 +189,10 @@ export const wordStyles = `
   .vw-main { grid-template-columns: minmax(0, 1fr); }
   .vw-ai { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 100%); z-index: 6; box-shadow: -18px 0 40px rgba(0,0,0,.3); }
   .vw-doc-title { max-width: 32vw; } .vw-tiles, .vw-dests { grid-template-columns: 1fr; }
+}
+@media (min-width: 1200px) {
+  .vw-main:not(.noai) { grid-template-columns: minmax(0, 1fr) 400px; }
+  .vw-main .vw-ai { position: static; width: auto; box-shadow: none; }
 }
 @media (prefers-reduced-motion: reduce) { .vw-spin, .vw-skeleton i { animation: none; } .vw-quick { transition: none; } }
 `;
