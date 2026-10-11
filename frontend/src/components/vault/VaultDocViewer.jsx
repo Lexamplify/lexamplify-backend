@@ -1,267 +1,260 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { marked } from 'marked';
-import ContractTiptapEditor from '../ContractTiptapEditor.jsx';
-import { rawTextToHtml, sanitizeHtml } from '../../tiptap/textToHtml.js';
-import { vaultApi } from './vaultApi.js';
+import { useEditor, EditorContent } from '@tiptap/react';
+import { ArrowLeft, FileText, Save, ChevronDown, Download, Sparkles, FileType2, FileCode2, ExternalLink, Check, X, Loader2, ImageIcon } from 'lucide-react';
+import { vaultApi, saveBlob } from './vaultApi.js';
+import { wordExtensions } from './word/wordExtensions.js';
+import Ribbon from './word/Ribbon.jsx';
+import FindBar from './word/FindBar.jsx';
+import SaveAsDialog from './word/SaveAsDialog.jsx';
+import AssistantPanel from './word/AssistantPanel.jsx';
+import { wordStyles } from './word/wordStyles.js';
 
-// In-app viewer for a Case Vault document: Preview (the real file, never a download) and Edit (the same Tiptap
-// editor Auto-Draft Studio uses), with a separate assistant that reads only this document. Edits are saved as a
-// new DOCX copy in the vault - the original file is never overwritten.
+// The Case Vault's document workspace: ONE mode. The document opens as an editable page that keeps its layout (centred
+// headings, signatures, tables, lists, fonts), with a Word-style ribbon, find & replace, and a separate assistant that reads
+// only this document. Saving always makes a copy - Word, PDF or text - on this computer, in the vault, the Document Hub,
+// a Practice matter or the Firm Library. The original file is never overwritten.
 
-const QUICK = [
-  { label: 'Summarise', prompt: 'Summarise this document for me in plain language: what it is, who is involved, and what it asks for or decides.' },
-  { label: 'Key dates & deadlines', prompt: 'List every date, deadline and next step mentioned in this document, in order, with what happens on each.' },
-  { label: 'Parties & claims', prompt: 'Who are the parties, their counsel, and what does each side claim or admit in this document?' },
-  { label: 'Next steps', prompt: 'Based only on this document, what should the advocate do next on this matter, and by when?' },
-  { label: 'Client update', prompt: 'Draft a short, plain-language update for the client about this document (no legal jargon, 120 words).' },
-  { label: 'Spot gaps', prompt: 'Point out anything missing, inconsistent or risky in this document that the advocate should check.' },
-];
-const SELECTION_QUICK = [
-  { label: 'Improve wording', prompt: 'Rewrite my selected text to be clearer and more precise, keeping the legal meaning. Return only the rewritten text.' },
-  { label: 'More formal', prompt: 'Rewrite my selected text in formal legal drafting language. Return only the rewritten text.' },
-  { label: 'Explain selection', prompt: 'Explain my selected text in plain language and say what to watch out for.' },
-];
+const EXT = { docx: '.docx', pdf: '.pdf', txt: '.txt' };
+const MIME = { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pdf: 'application/pdf', txt: 'text/plain' };
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const PAGE_W = 794;
+const PAGE_H = 1123;
 
-const styles = `
-  .vdv-root { --vdv-page:#FFFFFF; --vdv-page-ink:#23262A; position: fixed; inset: 0; z-index: 10000; display: flex; flex-direction: column; background: var(--paper, #FBFAF7); color: var(--ink, #1B1D1F); font-family: 'IBM Plex Sans', sans-serif; }
-  :root[data-theme="dark"] .vdv-root { --vdv-page:#26292B; --vdv-page-ink:#EDEBE5; }
-  .vdv-head { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--rule, #E5E1D8); flex-shrink: 0; flex-wrap: wrap; }
-  .vdv-title { font-family: 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 600; margin: 0; max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .vdv-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .vdv-chip { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--rule, #E5E1D8); background: var(--paper-2, #F3F0E9); color: var(--ink-soft, #55595C); cursor: default; }
-  .vdv-chip.link { cursor: pointer; color: var(--accent, #C8553D); border-color: var(--accent, #C8553D); background: transparent; }
-  .vdv-spacer { flex: 1; }
-  .vdv-seg { display: inline-flex; border: 1px solid var(--rule, #E5E1D8); border-radius: 9px; overflow: hidden; }
-  .vdv-seg button { border: 0; background: transparent; color: var(--ink-soft, #55595C); padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-  .vdv-seg button.on { background: var(--accent, #C8553D); color: #fff; }
-  .vdv-seg button:disabled { opacity: .45; cursor: not-allowed; }
-  .vdv-btn { border: 1px solid var(--rule, #E5E1D8); background: var(--paper, #FBFAF7); color: var(--ink, #1B1D1F); border-radius: 9px; padding: 7px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-  .vdv-btn:hover:not(:disabled) { background: var(--paper-2, #F3F0E9); }
-  .vdv-btn.primary { background: var(--accent, #C8553D); border-color: var(--accent, #C8553D); color: #fff; }
-  .vdv-btn.primary:hover:not(:disabled) { filter: brightness(1.06); background: var(--accent, #C8553D); }
-  .vdv-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .vdv-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 392px; }
-  .vdv-main.noai { grid-template-columns: minmax(0, 1fr); }
-  .vdv-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--paper-2, #F3F0E9); }
-  .vdv-toolbar-slot { flex-shrink: 0; border-bottom: 1px solid var(--rule, #E5E1D8); background: var(--paper, #FBFAF7); padding: 4px 12px; min-height: 0; overflow-x: auto; }
-  .vdv-toolbar-slot:empty { display: none; }
-  .vdv-banner { flex-shrink: 0; padding: 9px 18px; font-size: 12.5px; border-bottom: 1px solid var(--rule, #E5E1D8); background: var(--accent-soft, #F7E3DC); color: var(--ink, #1B1D1F); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .vdv-banner.ok { background: rgba(46,125,50,.12); }
-  .vdv-banner.err { background: rgba(198,40,40,.12); }
-  .vdv-banner button { border: 0; background: transparent; color: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; font-size: 12.5px; }
-  .vdv-scroll { flex: 1; min-height: 0; overflow: auto; padding: 28px 24px 60px; }
-  .vdv-frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
-  .vdv-img-wrap { display: flex; justify-content: center; }
-  .vdv-img-wrap img { max-width: 100%; height: auto; box-shadow: var(--shadow, 0 10px 30px rgba(0,0,0,.2)); background: #fff; }
-  .vdv-page { max-width: 820px; margin: 0 auto; background: var(--vdv-page); color: var(--vdv-page-ink); border-radius: 6px; box-shadow: var(--shadow, 0 10px 30px rgba(0,0,0,.18)); padding: 64px 72px; min-height: 900px; font-family: 'Source Serif 4', Georgia, serif; font-size: 11pt; line-height: 1.7; }
-  .vdv-page h1, .vdv-page h2, .vdv-page h3, .vdv-page h4 { font-size: 1.2em; margin: 26px 0 8px; }
-  .vdv-page h1:first-child, .vdv-page h2:first-child, .vdv-page h3:first-child { margin-top: 0; }
-  .vdv-page p { margin: 0 0 12px; }
-  .vdv-edit-wrap .ProseMirror { max-width: 820px; margin: 0 auto; background: var(--vdv-page); color: var(--vdv-page-ink); border-radius: 6px; box-shadow: var(--shadow, 0 10px 30px rgba(0,0,0,.18)); padding: 64px 72px; min-height: 900px; font-family: 'Source Serif 4', Georgia, serif; font-size: 11pt; line-height: 1.7; outline: none; }
-  .vdv-edit-wrap .ProseMirror p { margin: 0 0 12px; }
-  .vdv-edit-wrap .ProseMirror h1, .vdv-edit-wrap .ProseMirror h2, .vdv-edit-wrap .ProseMirror h3 { font-size: 1.2em; margin: 24px 0 8px; }
-  .vdv-edit-wrap .tiptap-editor-shell { border: none !important; box-shadow: none !important; background: transparent !important; }
-  .vdv-edit-wrap .rich-text-toolbar { border: 0 !important; background: transparent !important; padding: 0 !important; }
-  .vdv-state { margin: auto; text-align: center; color: var(--ink-soft, #55595C); font-size: 14px; max-width: 420px; padding: 40px 20px; line-height: 1.6; }
-  .vdv-ai { border-left: 1px solid var(--rule, #E5E1D8); background: var(--paper, #FBFAF7); display: flex; flex-direction: column; min-height: 0; }
-  .vdv-ai-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--rule, #E5E1D8); flex-shrink: 0; }
-  .vdv-ai-title { font-family: 'Source Serif 4', Georgia, serif; font-size: 16px; font-weight: 600; margin: 0 0 3px; display: flex; align-items: center; gap: 8px; }
-  .vdv-ai-sub { font-size: 11.5px; color: var(--muted, #7A7E80); line-height: 1.5; }
-  .vdv-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--rule, #E5E1D8); flex-shrink: 0; }
-  .vdv-quick button { border: 1px solid var(--rule, #E5E1D8); background: var(--paper-2, #F3F0E9); color: var(--ink, #1B1D1F); border-radius: 999px; padding: 5px 11px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
-  .vdv-quick button:hover:not(:disabled) { border-color: var(--accent, #C8553D); color: var(--accent, #C8553D); }
-  .vdv-quick button:disabled { opacity: .5; cursor: not-allowed; }
-  .vdv-chat { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-  .vdv-empty { font-size: 12.5px; color: var(--muted, #7A7E80); line-height: 1.6; }
-  .vdv-msg { max-width: 100%; font-size: 13px; line-height: 1.6; border-radius: 12px; padding: 10px 12px; word-break: break-word; }
-  .vdv-msg.user { align-self: flex-end; background: var(--accent-soft, #F7E3DC); border: 1px solid transparent; }
-  .vdv-msg.assistant { background: var(--paper-2, #F3F0E9); border: 1px solid var(--rule, #E5E1D8); }
-  .vdv-msg p { margin: 0 0 8px; } .vdv-msg p:last-child { margin-bottom: 0; }
-  .vdv-msg ul, .vdv-msg ol { margin: 4px 0 8px 18px; padding: 0; }
-  .vdv-msg-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-  .vdv-msg-actions button { border: 0; background: transparent; color: var(--accent, #C8553D); font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 0; }
-  .vdv-warn { font-size: 11px; color: var(--muted, #7A7E80); margin-top: 6px; }
-  .vdv-typing { font-size: 12px; color: var(--muted, #7A7E80); }
-  .vdv-compose { border-top: 1px solid var(--rule, #E5E1D8); padding: 10px 14px 14px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
-  .vdv-sel { font-size: 11.5px; color: var(--accent, #C8553D); font-weight: 600; display: flex; gap: 8px; align-items: center; }
-  .vdv-compose textarea { width: 100%; resize: none; border: 1px solid var(--rule, #E5E1D8); border-radius: 10px; padding: 9px 11px; font: inherit; font-size: 13px; background: var(--paper, #FBFAF7); color: inherit; outline: none; }
-  .vdv-compose textarea:focus { border-color: var(--accent, #C8553D); }
-  @media (max-width: 960px) {
-    .vdv-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 46vh); }
-    .vdv-ai { border-left: 0; border-top: 1px solid var(--rule, #E5E1D8); }
-    .vdv-page, .vdv-edit-wrap .ProseMirror { padding: 36px 24px; }
-    .vdv-title { max-width: 60vw; }
-  }
-`;
-
-function mdToHtml(text) {
-  try {
-    return sanitizeHtml(marked.parse(String(text || ''), { async: false }));
-  } catch {
-    return sanitizeHtml(rawTextToHtml(text));
-  }
+function baseName(title) {
+  return String(title || 'Document').replace(/\.(pdf|docx?|txt|rtf|png|jpe?g|gif|webp)$/i, '').trim() || 'Document';
 }
 
 export default function VaultDocViewer({ docId, fallbackName, onClose, onChanged }) {
   const navigate = useNavigate();
   const [load, setLoad] = useState({ loading: true, error: null, doc: null });
-  const [mode, setMode] = useState('preview');
-  const [fileUrl, setFileUrl] = useState(null);
-  const [html, setHtml] = useState('');
-  const [liveText, setLiveText] = useState('');
   const [dirty, setDirty] = useState(false);
-  const [savedId, setSavedId] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState(null);
-  const [toolbarEl, setToolbarEl] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [pendingClose, setPendingClose] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
-  const [aiOpen, setAiOpen] = useState(true);
-  const [msgs, setMsgs] = useState([]);
-  const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(() => (typeof window === 'undefined' ? true : window.innerWidth >= 1100));
+  const [toast, setToast] = useState(null);
+  const [banner, setBanner] = useState(null);
   const [selection, setSelection] = useState('');
-  const editorRef = useRef(null);
-  const chatRef = useRef(null);
-  const abortRef = useRef(null);
+  const [zoom, setZoom] = useState(1);
+  const [fitting, setFitting] = useState(true);
+  const [guides, setGuides] = useState(true);
+  const [spell, setSpell] = useState(true);
+  const [counts, setCounts] = useState({ words: 0, chars: 0, pages: 1, page: 1 });
+  const deskRef = useRef(null);
+  const sheetRef = useRef(null);
+  const menuRef = useRef(null);
+  const loadedRef = useRef(false);
+  const toastTimer = useRef(null);
 
-  // ── load the document ──
+  const notify = useCallback((kind, text, ms = 6500) => {
+    setToast({ kind, text });
+    clearTimeout(toastTimer.current);
+    if (ms) toastTimer.current = setTimeout(() => setToast(null), ms);
+  }, []);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  const measure = useCallback((ed) => {
+    if (!ed || ed.isDestroyed) return;
+    const text = ed.getText();
+    const dom = ed.view.dom;
+    const ratio = dom.offsetWidth ? dom.offsetHeight / (dom.offsetWidth * (PAGE_H / PAGE_W)) : 1;
+    setCounts((c) => ({ ...c, words: text.trim() ? text.trim().split(/\s+/).length : 0, chars: text.length, pages: Math.max(1, Math.ceil(ratio - 0.001)) }));
+  }, []);
+
+  const editor = useEditor({
+    extensions: wordExtensions(),
+    content: '<p></p>',
+    editorProps: { attributes: { spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Document text' } },
+    onUpdate: ({ editor: ed }) => { if (loadedRef.current) setDirty(true); measure(ed); },
+    onSelectionUpdate: ({ editor: ed }) => {
+      const { from, to } = ed.state.selection;
+      setSelection(from === to ? '' : ed.state.doc.textBetween(from, to, '\n').slice(0, 4000));
+    },
+  });
+
+  // ── open the document ──
   useEffect(() => {
     const ac = new AbortController();
-    let url = null;
+    loadedRef.current = false;
     setLoad({ loading: true, error: null, doc: null });
-    setMode('preview'); setFileUrl(null); setMsgs([]); setDirty(false); setSavedId(null); setNotice(null);
+    setDirty(false); setLastSaved(null); setBanner(null); setSelection('');
     (async () => {
       try {
         const doc = await vaultApi.content(docId, ac.signal);
-        if (ac.signal.aborted) return;
-        setHtml(doc.html || ''); setLiveText(doc.text || '');
-        setLoad({ loading: false, error: null, doc });
-        if (doc.previewable) {
-          try {
-            const blob = await vaultApi.viewBlob(docId, ac.signal);
-            if (ac.signal.aborted) return;
-            url = URL.createObjectURL(blob);
-            setFileUrl(url);
-          } catch (e) {
-            if (e?.name !== 'AbortError') setNotice({ kind: 'err', text: e.message || 'The file could not be shown; its text is available in Edit.' });
-          }
-        }
+        if (!ac.signal.aborted) setLoad({ loading: false, error: null, doc });
       } catch (e) {
         if (e?.name === 'AbortError') return;
         setLoad({ loading: false, error: e.message || 'Could not open this document.', doc: null });
       }
     })();
-    return () => { ac.abort(); if (url) URL.revokeObjectURL(url); };
+    return () => ac.abort();
   }, [docId]);
 
   const doc = load.doc;
   const title = doc?.title || fallbackName || 'Document';
-  const isFile = doc?.previewable;                       // pdf / image / txt: preview shows the file itself
-  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(doc?.ext);
-  const canEdit = !!doc && doc.can_edit !== false;
+  const isImage = IMAGE_EXT.includes(doc?.ext);
 
-  const requestClose = useCallback(() => {
-    if (dirty) setConfirmClose(true); else onClose();
-  }, [dirty, onClose]);
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || !doc) return;
+    loadedRef.current = false;
+    editor.commands.setContent(doc.html && doc.html.trim() ? doc.html : '<p></p>', { emitUpdate: false });
+    editor.commands.setTextSelection(0);
+    requestAnimationFrame(() => { measure(editor); loadedRef.current = true; });
+    setBanner(doc.note ? { text: doc.note } : (!doc.html || !doc.html.trim()) ? { text: 'No readable text was found in this file, so the page starts empty. You can type here or ask the assistant for help.' } : null);
+  }, [editor, doc, measure]);
 
-  // The editor reports changes on a short debounce; read it directly so a quick Save never misses the last keystrokes.
-  const currentHtml = useCallback(() => {
-    const ed = editorRef.current;
-    return mode === 'edit' && ed && !ed.isDestroyed ? ed.getHTML() : html;
-  }, [mode, html]);
+  useEffect(() => { if (editor && !editor.isDestroyed) editor.view.dom.setAttribute('spellcheck', String(spell)); }, [editor, spell]);
 
-  const save = useCallback(async () => {
-    if (!doc || saving) return;
-    setSaving(true); setNotice(null);
-    try {
-      const target = savedId || (doc.edited_copy ? docId : undefined);
-      const r = await vaultApi.saveEdit(docId, { html: currentHtml(), target_id: target });
-      setSavedId(r.id); setDirty(false);
-      setNotice({ kind: 'ok', text: r.created ? `Saved as a new DOCX in your vault: “${r.title}”. The original is unchanged.` : `Saved changes to “${r.title}”.` });
-      onChanged?.();
-    } catch (e) {
-      setNotice({ kind: 'err', text: e.message || 'Could not save.' });
-    } finally {
-      setSaving(false);
+  // ── zoom to fit + page indicator ──
+  useEffect(() => {
+    const el = deskRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      if (fitting) setZoom(Math.max(0.4, Math.min(1, (el.clientWidth - 48) / PAGE_W)));
+    });
+    ro.observe(el);
+    if (fitting) setZoom(Math.max(0.4, Math.min(1, (el.clientWidth - 48) / PAGE_W)) || 1);
+    return () => ro.disconnect();
+  }, [fitting, aiOpen, load.loading]);
+  const onDeskScroll = () => {
+    const d = deskRef.current;
+    const s = sheetRef.current;
+    if (!d || !s) return;
+    const top = d.scrollTop + d.clientHeight / 2 - (s.offsetTop || 0) * zoom;
+    setCounts((c) => ({ ...c, page: Math.max(1, Math.min(c.pages, Math.floor(top / (PAGE_H * zoom)) + 1)) }));
+  };
+
+  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const off = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener('mousedown', off);
+    return () => document.removeEventListener('mousedown', off);
+  }, [menuOpen]);
+
+  // ── saving ──
+  const currentHtml = () => (editor && !editor.isDestroyed ? editor.getHTML() : '<p></p>');
+  const defaultName = useMemo(() => (lastSaved?.name || (doc?.edited_copy ? baseName(title) : `${baseName(title)} (edited)`)), [lastSaved, doc, title]);
+
+  const saveLocal = useCallback(async (name, format) => {
+    const filename = `${name}${EXT[format]}`;
+    let handle = null;
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        handle = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: { docx: 'Word document', pdf: 'PDF document', txt: 'Text file' }[format], accept: { [MIME[format]]: [EXT[format]] } }] });
+      } catch (e) {
+        if (e?.name === 'AbortError') return false;       // the lawyer closed the browser's Save dialog
+        handle = null;                                       // not allowed here: fall back to a normal download
+      }
     }
-  }, [doc, saving, savedId, docId, currentHtml, onChanged]);
+    const { blob } = await vaultApi.exportBlob(docId, { html: currentHtml(), format, title: name }, filename);
+    if (handle) {
+      const w = await handle.createWritable();
+      await w.write(blob);
+      await w.close();
+    } else {
+      saveBlob(blob, filename);
+    }
+    return true;
+  }, [docId, editor]);                                       // eslint-disable-line react-hooks/exhaustive-deps
 
+  const doSave = useCallback(async (opts) => {
+    if (!doc || saveBusy) return;
+    const { name, format, destination } = opts;
+    setSaveBusy(true); setSaveError(null);
+    try {
+      if (destination === 'local') {
+        const ok = await saveLocal(name, format);
+        if (!ok) { setSaveBusy(false); return; }
+        setDirty(false);
+        setLastSaved((p) => ({ ...(p || {}), name, format, destination: 'local', location: 'your computer', id: p?.id }));
+        notify('ok', `Saved ${name}${EXT[format]} to your computer.`);
+      } else {
+        const key = `${destination}:${opts.folder_id ?? ''}:${opts.practice_case_id ?? ''}`;
+        const sameSpot = lastSaved && lastSaved.key === key && lastSaved.id;
+        const target = sameSpot ? lastSaved.id : (doc.edited_copy && (destination === 'vault' || destination === 'hub') ? docId : undefined);
+        const r = await vaultApi.saveAs(docId, {
+          html: currentHtml(), format, destination, title: name, folder_id: opts.folder_id ?? undefined,
+          practice_case_id: opts.practice_case_id ?? undefined, category: opts.category, target_id: target,
+        });
+        setLastSaved({ id: r.id, name, format, destination, key, location: r.location, folder_id: opts.folder_id, practice_case_id: opts.practice_case_id, category: opts.category });
+        setDirty(false);
+        notify('ok', `${r.created ? 'Saved' : 'Updated'} ${r.filename} in ${r.location}. The original is unchanged.`);
+        onChanged?.();
+        if (opts.alsoDownload) { try { await saveLocal(name, format); } catch { /* the save itself already succeeded */ } }
+      }
+      setSaveOpen(false);
+      if (pendingClose) { setPendingClose(false); onClose(); }
+    } catch (e) {
+      setSaveError(e.message || 'Could not save.');
+    } finally {
+      setSaveBusy(false);
+    }
+  }, [doc, saveBusy, saveLocal, lastSaved, docId, notify, onChanged, pendingClose, onClose]);       // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openSave = useCallback(() => { setSaveError(null); setSaveOpen(true); setMenuOpen(false); }, []);
+  const quickSave = useCallback(() => {
+    if (!lastSaved || !lastSaved.name) { openSave(); return; }
+    doSave({ name: lastSaved.name, format: lastSaved.format, destination: lastSaved.destination, folder_id: lastSaved.folder_id, practice_case_id: lastSaved.practice_case_id, category: lastSaved.category });
+  }, [lastSaved, doSave, openSave]);
+
+  const quickDownload = async (format) => {
+    setMenuOpen(false);
+    try {
+      const ok = await saveLocal(defaultName, format);
+      if (ok) { setDirty(false); notify('ok', `Saved ${defaultName}${EXT[format]} to your computer.`); }
+    } catch (e) { notify('err', e.message || 'Could not create the file.'); }
+  };
+
+  const openOriginal = async () => {
+    setMenuOpen(false);
+    try {
+      if (doc?.previewable && doc.ext !== 'txt') {
+        const blob = await vaultApi.viewBlob(docId);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener');
+        setTimeout(() => URL.revokeObjectURL(url), 120000);
+      } else {
+        await vaultApi.downloadOriginal(docId, title);
+      }
+    } catch (e) { notify('err', e.message || 'Could not open the original.'); }
+  };
+
+  const insertOriginalImage = async () => {
+    try {
+      const blob = await vaultApi.viewBlob(docId);
+      const src = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
+      editor.chain().focus('start').setImage({ src }).run();
+    } catch (e) { notify('err', e.message || 'Could not insert the image.'); }
+  };
+
+  // ── closing ──
+  const requestClose = useCallback(() => { if (dirty) setConfirmClose(true); else onClose(); }, [dirty, onClose]);
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); requestClose(); }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && mode === 'edit') { e.preventDefault(); save(); }
+      if (e.defaultPrevented) return;
+      const k = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); if (!saveOpen) quickSave(); return; }
+      if ((e.ctrlKey || e.metaKey) && k === 'f') { e.preventDefault(); setFindOpen(true); return; }
+      if (e.key === 'Escape') {
+        if (saveOpen || confirmClose) return;
+        e.stopPropagation();
+        if (menuOpen) { setMenuOpen(false); return; }
+        if (findOpen) { setFindOpen(false); return; }
+        requestClose();
+      }
     };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [requestClose, save, mode]);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [saveOpen, confirmClose, menuOpen, findOpen, quickSave, requestClose]);
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
-
-  useEffect(() => () => abortRef.current?.abort(), []);
-  useEffect(() => { const el = chatRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs, busy]);
-
-  const onEditorReady = useCallback((ed) => {
-    editorRef.current = ed;
-    if (!ed || ed.__vdvBound) return;
-    ed.__vdvBound = true;
-    const sync = () => {
-      const { from, to } = ed.state.selection;
-      setSelection(from === to ? '' : ed.state.doc.textBetween(from, to, '\n').slice(0, 4000));
-    };
-    ed.on('selectionUpdate', sync);
-    ed.on('blur', () => {});
-  }, []);
-
-  const ask = useCallback(async (text) => {
-    const q = (text || '').trim();
-    if (!q || busy || !doc) return;
-    const history = msgs.slice(-6).map((m) => ({ role: m.role, content: m.content }));
-    setMsgs((m) => [...m, { role: 'user', content: q }]);
-    setDraft(''); setBusy(true);
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    try {
-      const r = await vaultApi.assistant(docId, {
-        message: q, history,
-        selection: mode === 'edit' ? selection : '',
-        document_text: mode === 'edit' ? liveText : undefined,
-      }, ac.signal);
-      setMsgs((m) => [...m, { role: 'assistant', content: r.answer, ai: r.ai !== false }]);
-    } catch (e) {
-      if (e?.name === 'AbortError') return;
-      setMsgs((m) => [...m, { role: 'assistant', content: e.message || 'The assistant could not answer just now.', ai: false, failed: true }]);
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, doc, msgs, docId, mode, selection, liveText]);
-
-  const insertIntoEditor = (content) => {
-    const ed = editorRef.current;
-    if (!ed) return;
-    ed.chain().focus().insertContent(rawTextToHtml(content)).run();
-  };
-  const copy = async (content) => {
-    try { await navigator.clipboard.writeText(content); setNotice({ kind: 'ok', text: 'Copied.' }); } catch { setNotice({ kind: 'err', text: 'Copy is blocked by the browser here.' }); }
-  };
-
-  const exportDocx = async () => {
-    try {
-      await vaultApi.exportDocx(docId, { html: currentHtml() || '<p></p>', title }, `${title}.docx`);
-    } catch (e) {
-      setNotice({ kind: 'err', text: e.message || 'Could not export.' });
-    }
-  };
-  const downloadOriginal = async () => {
-    try { await vaultApi.downloadOriginal(docId, title); } catch (e) { setNotice({ kind: 'err', text: e.message || 'Could not download.' }); }
-  };
-
-  const quick = useMemo(() => (mode === 'edit' && selection ? [...SELECTION_QUICK, ...QUICK.slice(0, 3)] : QUICK), [mode, selection]);
   const openCase = () => {
     if (!doc?.case) return;
     if (dirty) { setConfirmClose(true); return; }
@@ -269,131 +262,112 @@ export default function VaultDocViewer({ docId, fallbackName, onClose, onChanged
   };
 
   const info = doc?.info || {};
-  const chips = [info.doc_class, info.doc_date && `Dated ${info.doc_date}`, info.next_hearing && `Next hearing ${info.next_hearing}`, info.court].filter(Boolean);
-  const isPdfOrImage = isFile && doc?.ext !== 'txt';
+  const savedLabel = dirty ? 'Unsaved changes' : lastSaved ? `Saved to ${lastSaved.location}` : 'Original untouched · saving makes a copy';
+  const saveBtnLabel = !lastSaved ? 'Save' : dirty ? 'Save' : 'Saved';
+  const getText = useCallback(() => (editor && !editor.isDestroyed ? editor.getText({ blockSeparator: '\n\n' }) : ''), [editor]);
 
   return createPortal(
-    <div className="vdv-root" role="dialog" aria-modal="true" aria-label={`Document: ${title}`}>
-      <style>{styles}</style>
-      <header className="vdv-head">
-        <button type="button" className="vdv-btn" onClick={requestClose} aria-label="Close viewer">← Back to vault</button>
-        <h2 className="vdv-title" title={title}>{title}</h2>
-        <div className="vdv-chips">
-          {chips.map((c) => <span key={c} className="vdv-chip">{c}</span>)}
-          {doc?.case && <span className="vdv-chip link" role="link" tabIndex={0} onClick={openCase} onKeyDown={(e) => e.key === 'Enter' && openCase()} title="Open this matter in Practice">{doc.case.case_no} · {doc.case.title}</span>}
-        </div>
-        <div className="vdv-spacer" />
-        {doc && (
-          <div className="vdv-seg" role="tablist" aria-label="View mode">
-            <button type="button" role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'on' : ''} onClick={() => setMode('preview')}>Preview</button>
-            <button type="button" role="tab" aria-selected={mode === 'edit'} className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')} disabled={!canEdit} title={canEdit ? 'Edit in the document editor' : 'You have view-only access'}>Edit</button>
+    <div className="vw-root" role="dialog" aria-modal="true" aria-label={`Document: ${title}`}>
+      <style>{wordStyles}</style>
+      <header className="vw-top">
+        <button type="button" className="vw-back" onClick={requestClose} aria-label="Close document"><ArrowLeft size={17} /> Vault</button>
+        <div className="vw-doc">
+          <div className="vw-doc-ico"><FileText size={18} strokeWidth={1.8} /></div>
+          <div className="vw-doc-text">
+            <h2 className="vw-doc-title" title={title}>{title}</h2>
+            <div className="vw-doc-sub">
+              <span className="vw-state"><i className={`vw-dot${dirty ? ' dirty' : lastSaved ? ' saved' : ''}`} />{savedLabel}</span>
+              {info.doc_class && <span>· {info.doc_class}</span>}
+              {info.next_hearing && <span>· Next hearing {info.next_hearing}</span>}
+              {doc?.case && <button type="button" className="vw-linkchip" onClick={openCase} title="Open this matter in Practice">· {doc.case.case_no} · {doc.case.title}</button>}
+            </div>
           </div>
-        )}
-        {doc && mode === 'edit' && (
-          <button type="button" className="vdv-btn primary" onClick={save} disabled={saving || (!dirty && !!savedId)}>
-            {saving ? 'Saving…' : dirty || !savedId ? 'Save as DOCX' : 'Saved'}
+        </div>
+        <div className="vw-spacer" />
+        <button type="button" className={`vw-action${aiOpen ? ' on' : ''}`} onClick={() => setAiOpen((v) => !v)} aria-pressed={aiOpen}><Sparkles size={15} /> Assistant</button>
+        <div className="vw-split" ref={menuRef}>
+          <button type="button" className="vw-action primary" onClick={quickSave} disabled={!doc || saveBusy || (!!lastSaved && !dirty && lastSaved.destination !== 'local')} title="Save (Ctrl+S)">
+            {saveBusy ? <Loader2 size={15} className="vw-spin" /> : lastSaved && !dirty ? <Check size={15} /> : <Save size={15} />} {saveBtnLabel}
           </button>
-        )}
-        {doc && <button type="button" className="vdv-btn" onClick={exportDocx} title="Download the text shown here as a Word file">Export .docx</button>}
-        {doc && <button type="button" className="vdv-btn" onClick={downloadOriginal} title="Download the original file">Download original</button>}
-        <button type="button" className="vdv-btn" onClick={() => setAiOpen((v) => !v)} aria-pressed={aiOpen}>{aiOpen ? 'Hide assistant' : 'AI assistant'}</button>
+          <button type="button" className="vw-action primary caret" onClick={() => setMenuOpen((v) => !v)} disabled={!doc} aria-label="More save options" aria-haspopup="true" aria-expanded={menuOpen}><ChevronDown size={15} /></button>
+          {menuOpen && (
+            <div className="vw-menu" role="menu">
+              <button type="button" role="menuitem" className="vw-menu-item" onClick={openSave}><Save size={15} /> Save as…<small>Choose where</small></button>
+              <div className="vw-menu-sep" />
+              <div className="vw-menu-title">Download to this computer</div>
+              <button type="button" role="menuitem" className="vw-menu-item" onClick={() => quickDownload('docx')}><FileText size={15} /> Word document<small>.docx</small></button>
+              <button type="button" role="menuitem" className="vw-menu-item" onClick={() => quickDownload('pdf')}><FileType2 size={15} /> PDF<small>.pdf</small></button>
+              <button type="button" role="menuitem" className="vw-menu-item" onClick={() => quickDownload('txt')}><FileCode2 size={15} /> Plain text<small>.txt</small></button>
+              <div className="vw-menu-sep" />
+              <button type="button" role="menuitem" className="vw-menu-item" onClick={openOriginal}><ExternalLink size={15} /> View original file</button>
+            </div>
+          )}
+        </div>
+        <button type="button" className="vw-action" onClick={requestClose} aria-label="Close" style={{ padding: '0 10px' }}><X size={16} /></button>
       </header>
 
-      <div className={`vdv-main${aiOpen ? '' : ' noai'}`}>
-        <section className="vdv-stage">
-          {confirmClose && (
-            <div className="vdv-banner err" role="alert">
-              You have unsaved edits.
-              <button type="button" onClick={async () => { await save(); setConfirmClose(false); onClose(); }}>Save and close</button>
-              <button type="button" onClick={() => { setConfirmClose(false); onClose(); }}>Discard</button>
-              <button type="button" onClick={() => setConfirmClose(false)}>Keep editing</button>
+      <Ribbon editor={editor} onFind={() => setFindOpen(true)} zoom={zoom} fitting={fitting}
+        onZoom={(z) => { setFitting(false); setZoom(z); }} onFit={() => setFitting(true)}
+        guides={guides} onGuides={setGuides} spell={spell} onSpell={setSpell} onError={(m) => notify('err', m)} />
+      {findOpen && editor && <FindBar editor={editor} onClose={() => { setFindOpen(false); editor.commands.focus(); }} initial={selection && !selection.includes('\n') ? selection.slice(0, 80) : ''} />}
+
+      <div className={`vw-main${aiOpen ? '' : ' noai'}`}>
+        <section className="vw-stage">
+          {banner && (
+            <div className="vw-banner" role="status">
+              <span>{banner.text}</span>
+              {isImage && <button type="button" onClick={insertOriginalImage}><ImageIcon size={13} style={{ verticalAlign: '-2px' }} /> Insert the image into the page</button>}
+              {doc && <button type="button" onClick={openOriginal}>View original</button>}
+              <button type="button" className="x" onClick={() => setBanner(null)} aria-label="Dismiss"><X size={14} /></button>
             </div>
           )}
-          {notice && <div className={`vdv-banner ${notice.kind}`} role="status">{notice.text}<button type="button" onClick={() => setNotice(null)}>Dismiss</button></div>}
-          {mode === 'edit' && doc && isPdfOrImage && (
-            <div className="vdv-banner">You are editing the text read from this {isImage ? 'image' : 'PDF'}. Saving creates a new editable DOCX copy; the original file stays exactly as it is.</div>
-          )}
-          {mode === 'edit' && doc && !isPdfOrImage && !doc.edited_copy && (
-            <div className="vdv-banner">Saving creates an “(edited)” DOCX copy next to this document; the original is never overwritten.</div>
-          )}
-          {doc?.note && <div className="vdv-banner">{doc.note}</div>}
-          <div className="vdv-toolbar-slot" ref={setToolbarEl} style={mode === 'edit' ? undefined : { display: 'none' }} />
-
-          {load.loading && <div className="vdv-state">Opening document…</div>}
-          {load.error && <div className="vdv-state" role="alert">{load.error}<br /><br /><button type="button" className="vdv-btn" onClick={onClose}>Back to vault</button></div>}
-
-          {doc && mode === 'preview' && (
-            fileUrl && isFile && doc.ext !== 'txt' ? (
-              isImage
-                ? <div className="vdv-scroll"><div className="vdv-img-wrap"><img src={fileUrl} alt={title} /></div></div>
-                : <iframe className="vdv-frame" title={title} src={fileUrl} />
-            ) : html.trim() ? (
-              <div className="vdv-scroll"><div className="vdv-page" dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} /></div>
-            ) : (
-              <div className="vdv-state">There is no readable text to show for this file yet. Use <b>Download original</b> to open it, or <b>Edit</b> to start a typed copy.</div>
-            )
-          )}
-
-          {doc && mode === 'edit' && (
-            <div className="vdv-scroll vdv-edit-wrap">
-              <ContractTiptapEditor
-                documentKey={`vault-${docId}`}
-                initialHtml={html || '<p></p>'}
-                onHtmlChange={(h) => { setHtml(h); setDirty(true); }}
-                onTextChange={setLiveText}
-                onEditorReady={onEditorReady}
-                clauses={[]}
-                toolbarPortalTarget={toolbarEl}
-              />
+          <div className="vw-desk" ref={deskRef} onScroll={onDeskScroll}>
+            {load.loading && (
+              <div className="vw-skeleton" aria-busy="true" aria-label="Opening document">
+                {[90, 72, 100, 84, 60, 96, 78, 88, 52].map((w, i) => <i key={i} style={{ width: `${w}%` }} />)}
+              </div>
+            )}
+            {load.error && <div className="vw-loading" role="alert">{load.error}<br /><br /><button type="button" className="vw-action" onClick={onClose}>Back to vault</button></div>}
+            <div className="vw-sheet" ref={sheetRef} style={{ zoom, display: load.loading || load.error ? 'none' : 'block' }}>
+              <EditorContent editor={editor} className={`vw-paper${guides ? ' guides' : ''}`} />
             </div>
-          )}
+          </div>
+          <div className="vw-statusbar" aria-label="Document status">
+            <span>Page {counts.page} of {counts.pages}</span>
+            <span>{counts.words.toLocaleString('en-IN')} words</span>
+            <span>{counts.chars.toLocaleString('en-IN')} characters</span>
+            <span className="vw-spacer" />
+            <span>{Math.round(zoom * 100)}%</span>
+            <input type="range" min="50" max="200" step="5" value={Math.round(zoom * 100)} aria-label="Zoom" onChange={(e) => { setFitting(false); setZoom(Number(e.target.value) / 100); }} />
+          </div>
         </section>
-
-        {aiOpen && (
-          <aside className="vdv-ai" aria-label="Document assistant">
-            <div className="vdv-ai-head">
-              <h3 className="vdv-ai-title">Document assistant</h3>
-              <div className="vdv-ai-sub">Reads only this document{mode === 'edit' ? ' (including your unsaved edits)' : ''}. Check anything it tells you against the source before relying on it.</div>
-            </div>
-            <div className="vdv-quick">
-              {quick.map((q) => <button key={q.label} type="button" onClick={() => ask(q.prompt)} disabled={busy || !doc}>{q.label}</button>)}
-            </div>
-            <div className="vdv-chat" ref={chatRef} aria-live="polite">
-              {msgs.length === 0 && !busy && (
-                <div className="vdv-empty">Ask about this document, or pick an action above.{mode === 'edit' ? ' Select text in the editor to rewrite or explain just that part.' : ' Switch to Edit to rewrite parts of it with the assistant.'}</div>
-              )}
-              {msgs.map((m, i) => (
-                <div key={i} className={`vdv-msg ${m.role}`}>
-                  {m.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} /> : m.content}
-                  {m.role === 'assistant' && !m.failed && (
-                    <>
-                      <div className="vdv-msg-actions">
-                        {mode === 'edit' && <button type="button" onClick={() => insertIntoEditor(m.content)}>{selection ? 'Replace selection' : 'Insert at cursor'}</button>}
-                        <button type="button" onClick={() => copy(m.content)}>Copy</button>
-                      </div>
-                      {m.ai === false && <div className="vdv-warn">Plain read-out of the document — the AI service did not answer.</div>}
-                    </>
-                  )}
-                </div>
-              ))}
-              {busy && <div className="vdv-typing">Reading the document…</div>}
-            </div>
-            <form className="vdv-compose" onSubmit={(e) => { e.preventDefault(); ask(draft); }}>
-              {mode === 'edit' && selection && <div className="vdv-sel">Using your selection ({selection.length} characters)</div>}
-              <textarea
-                rows={2}
-                value={draft}
-                placeholder="Ask about this document…"
-                aria-label="Ask the document assistant"
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(draft); } }}
-                disabled={!doc}
-              />
-              <button type="submit" className="vdv-btn primary" disabled={busy || !draft.trim() || !doc}>{busy ? 'Thinking…' : 'Ask'}</button>
-            </form>
-          </aside>
-        )}
+        {aiOpen && <AssistantPanel docId={docId} ready={!!doc && !!editor} editor={editor} selection={selection} getText={getText} onClose={() => setAiOpen(false)} onNotify={notify} />}
       </div>
+
+      <SaveAsDialog open={saveOpen} defaultName={defaultName} defaultFormat={lastSaved?.format || 'docx'} defaultDestination={lastSaved?.destination || 'local'}
+        busy={saveBusy} error={saveError} onCancel={() => { setSaveOpen(false); setPendingClose(false); }} onSave={doSave} />
+
+      {confirmClose && createPortal(
+        <div className="vw-modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmClose(false); }}>
+          <div className="vw-modal small" role="alertdialog" aria-modal="true" aria-label="Unsaved changes" onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setConfirmClose(false); } }}>
+            <div className="vw-modal-head"><div><h3>Save your changes?</h3></div></div>
+            <div className="vw-confirm-body">You have edits that are not saved anywhere yet. Saving makes a copy; the original file stays exactly as it is.</div>
+            <div className="vw-modal-foot">
+              <button type="button" className="vw-action" onClick={() => { setConfirmClose(false); onClose(); }}>Discard</button>
+              <button type="button" className="vw-action" onClick={() => setConfirmClose(false)}>Keep editing</button>
+              <button type="button" className="vw-action primary" autoFocus onClick={() => { setConfirmClose(false); setPendingClose(true); openSave(); }}>Save…</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {toast && (
+        <div className={`vw-toast${toast.kind === 'err' ? ' err' : ''}`} role="status">
+          <span>{toast.text}</span>
+          <button type="button" onClick={() => setToast(null)} aria-label="Dismiss">Dismiss</button>
+        </div>
+      )}
     </div>,
     document.body
   );

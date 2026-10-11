@@ -1426,6 +1426,7 @@ def create_app():
             'folder_ok': lambda folder_id, user_id: _dms_folder_access(folder_id, user_id, require_edit=True),
             'adopt': _dms_adopt_best_effort,
             'provenance': _write_provenance,
+            'practice_event': lambda case_id, doc_id, title, user_id: _lpms_document_hook(case_id, doc_id, title, user_id, 'upload'),
             'log': lambda msg: print(f'[vault] {msg}'),
         }))
     except Exception as exc:

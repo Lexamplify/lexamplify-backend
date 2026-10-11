@@ -56,6 +56,8 @@ function route(url, init = {}) {
     return res({ id: 1, title: 'Plaint OS 123 of 2025', ext: 'pdf', html: '<p>IN THE CITY CIVIL COURT, CHENNAI</p>', text: 'IN THE CITY CIVIL COURT, CHENNAI', previewable: true, info: { doc_class: 'Plaint', doc_date: '2025-06-21' }, case: { id: 3, case_no: 'OS 123/2025', title: 'Arun Kumar v. Sundaram' }, can_edit: true });
   }
   if (/^\/api\/vault\/documents\/\d+\/view$/.test(path)) return res({}, 200, { type: 'application/pdf', body: '%PDF-1.4' });
+  if (/^\/api\/vault\/documents\/\d+\/save-as$/.test(path)) return res({ success: true, id: 56, title: 'Plaint (edited)', filename: 'Plaint (edited).docx', format: 'docx', destination: 'vault', location: 'Case Vault', created: true, size: 100 }, 201);
+  if (path === '/api/vault/destinations') return res({ folders: [], practice: { enabled: false, cases: [] }, library: { categories: ['Pleadings'] }, formats: ['docx', 'pdf', 'txt'] });
   if (/^\/api\/vault\/documents\/\d+\/save-edit$/.test(path)) return res({ success: true, id: 55, title: 'Plaint OS 123 of 2025 (edited)', created: true }, 201);
   if (/^\/api\/vault\/documents\/\d+\/assistant$/.test(path)) return res({ answer: 'It is a plaint for recovery of money.', ai: true });
   return res({ error: true, message: `unexpected ${method} ${path}` }, 404);
@@ -194,37 +196,41 @@ describe('Document Vault controls work', () => {
     await waitFor(() => expect(calls.filter((c) => c.path === '/api/vault/documents/upload')).toHaveLength(3));
   });
 
-  it('clicking a document opens it inside the app (no download) with Preview, Edit and the AI assistant', async () => {
+  it('clicking a document opens ONE Word-style editor (no Preview/Edit switch) with the assistant', async () => {
     db.docs = [{ id: 1, title: 'plaint.pdf', smart_title: 'Plaint OS 123 of 2025', doc_type: 'Plaint', folder_id: null, file_format: 'pdf', size_bytes: 4096, created_at: new Date().toISOString() }];
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     await openVault();
     fireEvent.click(await screen.findByLabelText('Open document Plaint OS 123 of 2025'));
-    const dialog = await screen.findByRole('dialog');
-    expect(await within(dialog).findByRole('tab', { name: 'Preview' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('tab', { name: 'Edit' })).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog', { name: /Document: / });
+    await waitFor(() => expect(dialog.querySelector('.ProseMirror')).not.toBeNull());
+    await waitFor(() => expect(dialog.querySelector('.ProseMirror').textContent).toContain('IN THE CITY CIVIL COURT, CHENNAI'));
+    expect(within(dialog).queryByRole('tab', { name: 'Preview' })).toBeNull();
+    expect(within(dialog).queryByRole('tab', { name: 'Edit' })).toBeNull();
+    expect(within(dialog).getByRole('tab', { name: 'Home' })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Assistant/ }));
     expect(await within(dialog).findByText('Document assistant')).toBeInTheDocument();
-    await waitFor(() => expect(dialog.querySelector('iframe')).not.toBeNull());     // the PDF itself, shown in the page
-    expect(open).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Summarise' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /Summarise/ }));
     expect(await within(dialog).findByText('It is a plaint for recovery of money.')).toBeInTheDocument();
-    const ask = calls.find((c) => c.path.endsWith('/assistant'));
-    expect(JSON.parse(ask.body).message).toMatch(/Summarise/);
+    expect(JSON.parse(calls.find((c) => c.path.endsWith('/assistant')).body).message).toMatch(/Summarise/);
     fireEvent.keyDown(window, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Document: / })).toBeNull());
   });
 
-  it('Edit opens the same document editor as Auto-Draft Studio and saves a DOCX copy', async () => {
+  it('Save opens "Save a copy" and saves the document into a chosen vault folder', async () => {
     db.docs = [{ id: 1, title: 'plaint.pdf', smart_title: 'Plaint OS 123 of 2025', doc_type: 'Plaint', folder_id: null, file_format: 'pdf', size_bytes: 4096, created_at: new Date().toISOString() }];
     await openVault();
     fireEvent.click(await screen.findByLabelText('Open document Plaint OS 123 of 2025'));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('tab', { name: 'Edit' }));
-    await waitFor(() => expect(dialog.querySelector('.ProseMirror')).not.toBeNull());
-    expect(dialog.querySelector('.ProseMirror').textContent).toContain('IN THE CITY CIVIL COURT, CHENNAI');
-    expect(within(dialog).getByText(/original file stays exactly as it is/)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save as DOCX' }));
-    expect(await within(dialog).findByText(/Saved as a new DOCX in your vault/)).toBeInTheDocument();
-    const save = calls.find((c) => c.path.endsWith('/save-edit'));
-    expect(JSON.parse(save.body).html).toContain('IN THE CITY CIVIL COURT, CHENNAI');
+    const dialog = await screen.findByRole('dialog', { name: /Document: / });
+    await waitFor(() => expect(dialog.querySelector('.ProseMirror').textContent).toContain('CHENNAI'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'More save options' }));
+    fireEvent.click(within(dialog).getByRole('menuitem', { name: /Save as/ }));
+    const sd = await screen.findByRole('dialog', { name: 'Save a copy' });
+    expect(within(sd).getByRole('radio', { name: /PDF/ })).toBeInTheDocument();
+    expect(within(sd).getByRole('radio', { name: /Text/ })).toBeInTheDocument();
+    fireEvent.click(within(sd).getByRole('radio', { name: /Case Vault/ }));
+    fireEvent.submit(sd);
+    await waitFor(() => expect(calls.some((c) => c.path.endsWith('/save-as'))).toBe(true));
+    const body = JSON.parse(calls.find((c) => c.path.endsWith('/save-as')).body);
+    expect(body.html).toContain('IN THE CITY CIVIL COURT, CHENNAI');
+    expect(body.destination).toBe('vault');
   });
 });

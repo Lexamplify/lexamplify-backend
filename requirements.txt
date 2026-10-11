@@ -35,3 +35,4 @@ cryptography
 segno
 numpy
 opencv-python-headless
+reportlab

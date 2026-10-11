@@ -101,141 +101,29 @@ def dated_events_in(text, limit=8):
 
 
 # ── text <-> html ────────────────────────────────────────────────────────────────────
-def _esc(s):
-    return _html.escape(s or "", quote=False)
+from utils.vault_docs_convert import (  # noqa: E402  (conversion lives in one place: layout-preserving both ways)
+    _esc, docx_to_html, html_to_docx, html_to_pdf, html_to_text, pdf_to_html, text_to_html,
+)
+
+FORMATS = {
+    "docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Word document"),
+    "pdf": ("application/pdf", "PDF"),
+    "txt": ("text/plain; charset=utf-8", "Plain text"),
+}
 
 
-def text_to_html(text):
-    paras = [p.strip() for p in re.split(r"\n\s*\n", (text or "").replace("\r\n", "\n")) if p.strip()]
-    return "".join("<p>" + "<br>".join(_esc(line) for line in p.split("\n")) + "</p>" for p in paras)
+def render_format(fmt, html, title):
+    if fmt == "docx":
+        return html_to_docx(html, title)
+    if fmt == "pdf":
+        return html_to_pdf(html, title)
+    return html_to_text(html).replace("\r\n", "\n").encode("utf-8-sig")
 
 
-def html_to_text(h):
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(h or "", "html.parser")
-    for br in soup.find_all("br"):
-        br.replace_with("\n")
-    names = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote"]
-    blocks = [b for b in soup.find_all(names) if not b.find(names)]      # innermost blocks only, so <li><p>..</p></li> is read once
-    if not blocks:
-        return soup.get_text("\n").strip()
-    return "\n\n".join(b.get_text().strip() for b in blocks if b.get_text().strip())
-
-
-def docx_to_html(data):
-    from docx import Document
-    from docx.table import Table
-    from docx.text.paragraph import Paragraph
-    doc = Document(io.BytesIO(data))
-    out = []
-    for child in doc.element.body.iterchildren():
-        tag = child.tag.rsplit("}", 1)[-1]
-        if tag == "p":
-            p = Paragraph(child, doc)
-            inner = ""
-            for r in p.runs:
-                t = _esc(r.text).replace("\n", "<br>")
-                if not t:
-                    continue
-                if r.bold:
-                    t = f"<strong>{t}</strong>"
-                if r.italic:
-                    t = f"<em>{t}</em>"
-                if r.underline:
-                    t = f"<u>{t}</u>"
-                inner += t
-            if not inner.strip():
-                continue
-            style = (p.style.name if p.style is not None else "") or ""
-            if style.lower().startswith("list"):
-                inner = "• " + inner
-            align = {1: "center", 2: "right", 3: "justify"}.get(p.alignment if p.alignment is None else int(p.alignment))
-            attr = f' style="text-align:{align}"' if align else ""
-            m = re.match(r"heading (\d)", style, re.I)
-            if m or style.lower() == "title":
-                n = min(max(int(m.group(1)) if m else 1, 1), 4)
-                out.append(f"<h{n}{attr}>{inner}</h{n}>")
-            else:
-                out.append(f"<p{attr}>{inner}</p>")
-        elif tag == "tbl":
-            t = Table(child, doc)
-            for row in t.rows:
-                cells = []
-                for cell in row.cells:
-                    v = " ".join(x.strip() for x in cell.text.split("\n") if x.strip())
-                    if v and (not cells or cells[-1] != v):
-                        cells.append(v)
-                if cells:
-                    out.append("<p>" + _esc("  |  ".join(cells)) + "</p>")
-    return "".join(out)
-
-
-def html_to_docx(html, title=None):
-    from bs4 import BeautifulSoup, NavigableString, Tag
-    from docx import Document
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.shared import Pt
-    d = Document()
-    st = d.styles["Normal"]
-    st.font.name = "Times New Roman"
-    st.font.size = Pt(12)
-    soup = BeautifulSoup(html or "", "html.parser")
-
-    def runs(node, para, fmt):
-        for ch in node.children:
-            if isinstance(ch, NavigableString):
-                t = str(ch)
-                if t:
-                    r = para.add_run(t)
-                    r.bold, r.italic, r.underline = fmt["b"] or None, fmt["i"] or None, fmt["u"] or None
-            elif isinstance(ch, Tag):
-                if ch.name == "br":
-                    para.add_run().add_break()
-                    continue
-                f = dict(fmt)
-                if ch.name in ("strong", "b"):
-                    f["b"] = True
-                if ch.name in ("em", "i"):
-                    f["i"] = True
-                if ch.name == "u":
-                    f["u"] = True
-                runs(ch, para, f)
-
-    def block(el, prefix=""):
-        name = el.name
-        if name in ("ul", "ol"):
-            for i, li in enumerate(el.find_all("li", recursive=False), 1):
-                block(li, "• " if name == "ul" else f"{i}. ")
-            return
-        if name == "li" and el.find(["p"]):
-            for i, p in enumerate(el.find_all("p", recursive=False)):
-                block(p, prefix if i == 0 else "")
-            return
-        if name in ("h1", "h2", "h3", "h4", "h5", "h6"):
-            para = d.add_heading(level=min(int(name[1]), 4))
-        else:
-            para = d.add_paragraph()
-        if prefix:
-            para.add_run(prefix)
-        runs(el, para, {"b": False, "i": False, "u": False})
-        m = re.search(r"text-align:\s*(center|right|justify)", el.get("style", "") or "")
-        if m:
-            para.alignment = {"center": WD_ALIGN_PARAGRAPH.CENTER, "right": WD_ALIGN_PARAGRAPH.RIGHT, "justify": WD_ALIGN_PARAGRAPH.JUSTIFY}[m.group(1)]
-
-    top = [c for c in soup.children if isinstance(c, Tag)]
-    if not top:
-        d.add_paragraph(soup.get_text())
-    for el in top:
-        if el.name in ("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "blockquote"):
-            block(el)
-        else:
-            para = d.add_paragraph()
-            runs(el, para, {"b": False, "i": False, "u": False})
-    if title:
-        d.core_properties.title = title[:200]
-    buf = io.BytesIO()
-    d.save(buf)
-    return buf.getvalue()
+def safe_name(name, fallback="document"):
+    n = re.sub(r"\.(pdf|docx?|txt|rtf|png|jpe?g)$", "", str(name or ""), flags=re.I)
+    n = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", " ", n).strip(" .")
+    return (re.sub(r"\s+", " ", n)[:120] or fallback)
 
 
 # ── blueprint ────────────────────────────────────────────────────────────────────────
@@ -502,6 +390,12 @@ def create_vault_workspace_blueprint(deps):
                 if ext == "docx":
                     data = doc_bytes(c, row, hub)
                     html, source = (docx_to_html(data) if data else ""), "docx"
+                elif ext == "pdf":
+                    data = doc_bytes(c, row, hub)
+                    html = pdf_to_html(data) if data else ""
+                    source = "pdf" if html.strip() else "none"
+                    if html.strip():
+                        note = "Rebuilt from the PDF's text and layout so you can edit it. Your original PDF is never changed."
                 elif ext in ("txt", "md", "text"):
                     data = doc_bytes(c, row, hub)
                     html, source = text_to_html((data or b"").decode("utf-8", "replace")), "text"
@@ -532,14 +426,14 @@ def create_vault_workspace_blueprint(deps):
             title = row["smart_title"] or row["title"] or f"Document {doc_id}"
             return jsonify({
                 "id": doc_id, "title": title, "ext": ext, "html": html, "text": html_to_text(html), "source": source, "note": note,
-                "previewable": ext in INLINE_MIMES, "info": info, "case": case,
+                "previewable": ext in INLINE_MIMES, "has_original": bool(row["has_blob"] or hub is not None), "info": info, "case": case,
                 "can_edit": allowed(u, doc_id, True),
                 "edited_copy": ((row["tags"] or "") == "EDITED" and row["user_id"] == u),
             }), 200
         finally:
             c.close()
 
-    def resync_hub(c, doc_id, data):
+    def resync_hub(c, doc_id, data, ext="docx", fname=None):
         """The edited copy was rewritten in place: give the Document Hub the new bytes and have it read them again,
         so its preview and search never show the old text. Best effort - the vault copy above is already correct."""
         try:
@@ -555,7 +449,7 @@ def create_vault_workspace_blueprint(deps):
                 def __init__(self, name, payload):
                     self.filename, self.stream = name, io.BytesIO(payload)
 
-            tmp, sha, size = S.spool_upload(_FS(h["original_name"] or f"document_{doc_id}.docx", data), 200 * 1024 * 1024)
+            tmp, sha, size = S.spool_upload(_FS(fname or h["original_name"] or f"document_{doc_id}.{ext}", data), 200 * 1024 * 1024)
             try:
                 key, enc = S.commit(tmp, sha)
             finally:
@@ -564,8 +458,8 @@ def create_vault_workspace_blueprint(deps):
                     os.remove(tmp)
                 except OSError:
                     pass
-            c.execute("UPDATE dms_docs SET sha256 = ?, store_key = ?, enc = ?, size = ?, ext = 'docx', updated_at = CURRENT_TIMESTAMP WHERE doc_id = ?",
-                      (sha, key, int(enc), size, doc_id))
+            c.execute("UPDATE dms_docs SET sha256 = ?, store_key = ?, enc = ?, size = ?, ext = ?, original_name = COALESCE(?, original_name), updated_at = CURRENT_TIMESTAMP WHERE doc_id = ?",
+                      (sha, key, int(enc), size, ext, fname, doc_id))
             W.enqueue(c, doc_id, commit=False)
             c.commit()
         except Exception as exc:
@@ -649,6 +543,190 @@ def create_vault_workspace_blueprint(deps):
         resp.headers["Content-Disposition"] = f'attachment; filename="{name}.docx"'
         resp.headers["X-Content-Type-Options"] = "nosniff"
         return resp
+
+    # ── export + save-as (Word / PDF / text; this computer, Case Vault, Document Hub, Practice, Firm Library) ──
+    def clean_html(body):
+        html = body.get("html")
+        if not isinstance(html, str) or not html.strip() or len(html) > 6_000_000:
+            return None
+        return html
+
+    @bp.route("/documents/<int:doc_id>/export", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def export_any(doc_id):
+        """Renders the editor's current content as .docx / .pdf / .txt and returns it for the browser to save anywhere."""
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+        u = uid()
+        if not allowed(u, doc_id):
+            return err("Document not found.", 404)
+        body = request.get_json(silent=True) or {}
+        html, fmt = clean_html(body), str(body.get("format") or "docx").lower()
+        if html is None:
+            return err("There is nothing to export.", 400)
+        if fmt not in FORMATS:
+            return err("Choose Word, PDF or text.", 400)
+        name = safe_name(body.get("title"), f"document_{doc_id}")
+        try:
+            data = render_format(fmt, html, name)
+        except Exception as exc:
+            log(f"vault export {fmt} failed: {exc}")
+            return err(f"Could not create the {FORMATS[fmt][1]} file.", 500)
+        resp = Response(data, mimetype=FORMATS[fmt][0])
+        resp.headers["Content-Disposition"] = f'attachment; filename="{name}.{fmt}"'
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["Cache-Control"] = "private, no-store"
+        return resp
+
+    @bp.route("/destinations", methods=["GET", "OPTIONS"])
+    @jwt_required()
+    def destinations():
+        """Where this user may save a document inside LexAmplify: vault folders, Practice matters, the Firm Library."""
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+        u = uid()
+        c = _connect(db_path)
+        try:
+            rows = c.execute("SELECT id, name, parent_id, user_id FROM vault_folders WHERE user_id = ? OR user_id IS NULL "
+                             "ORDER BY name COLLATE NOCASE LIMIT 1500", (u,)).fetchall()
+            by_id = {r["id"]: r for r in rows}
+            folders = []
+            for r in rows:
+                if r["user_id"] is None and not deps["folder_ok"](r["id"], u):
+                    continue
+                path, cur, guard = [], r, 0
+                while cur is not None and guard < 12:
+                    path.append(cur["name"])
+                    cur = by_id.get(cur["parent_id"])
+                    guard += 1
+                folders.append({"id": r["id"], "name": r["name"], "parent_id": r["parent_id"], "path": " / ".join(reversed(path))})
+            folders.sort(key=lambda f: f["path"].lower())
+            practice = {"enabled": False, "cases": []}
+            m = member(c, u)
+            if m:
+                from utils import lpms_store as L
+                vis, vp = L.case_visible_sql(m, "c")
+                cases = c.execute(f"SELECT c.id, c.case_no, c.title, c.court, c.closed_at FROM lpms_cases c WHERE {vis} AND c.archived_at IS NULL "
+                                  "ORDER BY (c.closed_at IS NOT NULL), c.title COLLATE NOCASE LIMIT 300", vp).fetchall()
+                practice = {"enabled": True, "firm": m["firm_name"], "cases": [
+                    {"id": r["id"], "case_no": r["case_no"], "title": r["title"], "court": r["court"], "closed": bool(r["closed_at"])} for r in cases]}
+            return jsonify({"folders": folders, "practice": practice, "library": {"enabled": True, "categories": ["Draft", "Pleading", "Notice", "Agreement", "Precedent", "Order"]},
+                            "formats": [{"id": k, "label": v[1]} for k, v in FORMATS.items()]}), 200
+        finally:
+            c.close()
+
+    @bp.route("/documents/<int:doc_id>/save-as", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def save_as(doc_id):
+        """Saves the editor's content as a NEW document (or updates the copy this editor already made) in the chosen
+        destination. The original file is never touched."""
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+        u = uid()
+        body = request.get_json(silent=True) or {}
+        html, fmt = clean_html(body), str(body.get("format") or "docx").lower()
+        dest = str(body.get("destination") or "vault").lower()
+        if html is None:
+            return err("There is nothing to save.", 400)
+        if fmt not in FORMATS:
+            return err("Choose Word, PDF or text.", 400)
+        if dest not in ("vault", "hub", "practice", "library"):
+            return err("Choose where to save it.", 400)
+        if not allowed(u, doc_id):
+            return err("Document not found.", 404)
+        c = _connect(db_path)
+        try:
+            row, hub = load_doc(c, doc_id)
+            if not row:
+                return err("Document not found.", 404)
+            base = safe_name(body.get("title") or f"{row['smart_title'] or row['title'] or 'Document ' + str(doc_id)} (edited)")
+            fname = f"{base}.{fmt}"
+            folder, case_ref, practice_case, location = None, row["case_id"] or "General", None, "Case Vault"
+            if dest in ("vault", "hub"):
+                fid = body.get("folder_id")
+                if fid not in (None, "", 0):
+                    try:
+                        fid = int(fid)
+                    except (TypeError, ValueError):
+                        return err("That folder was not found.", 404)
+                    if not deps["folder_ok"](fid, u):
+                        return err("You cannot save into that folder.", 403)
+                    folder = fid
+                    nm = c.execute("SELECT name FROM vault_folders WHERE id = ?", (fid,)).fetchone()
+                    location = ("Document Hub" if dest == "hub" else "Case Vault") + (f" / {nm[0]}" if nm else "")
+                else:
+                    location = "Document Hub" if dest == "hub" else "Case Vault"
+            elif dest == "practice":
+                try:
+                    practice_case = int(body.get("practice_case_id"))
+                except (TypeError, ValueError):
+                    return err("Choose a Practice matter.", 400)
+                from utils import lpms_store as L
+                if not _has(c, "lpms_cases") or L.lpms_case_role(c, u, practice_case) is None:
+                    return err("That matter was not found, or you are not on it.", 404)
+                cr = c.execute("SELECT case_no, title FROM lpms_cases WHERE id = ?", (practice_case,)).fetchone()
+                case_ref, location = f"lpms:{practice_case}", f"Practice / {cr['title'] or cr['case_no']}"
+            else:
+                case_ref, location = f"draft_{int(datetime.utcnow().timestamp())}_{__import__('uuid').uuid4().hex[:6]}", "Firm Library"
+            try:
+                blob = render_format(fmt, html, base)
+            except Exception as exc:
+                log(f"vault save-as: render {fmt} failed: {exc}")
+                return err(f"Could not create the {FORMATS[fmt][1]} file.", 500)
+            text = html_to_text(html)
+            target = body.get("target_id")
+            created = True
+            if target:
+                try:
+                    t = c.execute("SELECT id, user_id, tags, case_id, folder_id FROM case_vault WHERE id = ?", (int(target),)).fetchone()
+                except (TypeError, ValueError):
+                    t = None
+                same_place = t and (t["case_id"] == case_ref or dest in ("vault", "hub")) and (dest not in ("vault", "hub") or t["folder_id"] == folder)
+                if t and t["user_id"] == u and (t["tags"] or "") == "EDITED" and same_place:
+                    c.execute("UPDATE case_vault SET title = ?, smart_title = ?, content = ?, file_blob = ?, file_format = ? WHERE id = ?",
+                              (fname, base, text, blob, fmt, t["id"]))
+                    c.commit()
+                    resync_hub(c, t["id"], blob, fmt, fname)
+                    new_id, created = t["id"], False
+            if created:
+                if dest == "library":
+                    cur = c.execute("INSERT INTO case_vault (case_id, title, doc_type, content, smart_title, file_blob, file_format, user_id) VALUES (?,?,?,?,?,?,?,?)",
+                                    (case_ref, base, f"Firm Library Draft — {str(body.get('category') or 'Draft')[:40]}", html, base, blob, fmt, u))
+                else:
+                    cur = c.execute(
+                        "INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (case_ref, fname, "edited", text, folder, base, "EDITED", blob, fmt, u))
+                c.commit()
+                new_id = cur.lastrowid
+            try:
+                deps["provenance"]("document", new_id, base, "created" if created else "renamed", u, u,
+                                   {"edited_from": doc_id, "size_bytes": len(blob), "format": fmt, "destination": location} if created
+                                   else {"old_name": base, "new_name": base, "revised": True})
+            except Exception as exc:
+                log(f"vault save-as: provenance skipped: {exc}")
+            if dest != "library":
+                try:
+                    deps["adopt"](u, new_id)
+                except Exception as exc:
+                    log(f"vault save-as: hub adopt skipped: {exc}")
+            else:
+                try:
+                    from utils.local_search import index_document
+                    index_document(new_id, base, html)
+                except Exception as exc:
+                    log(f"vault save-as: library index skipped: {exc}")
+            if dest == "practice" and created and deps.get("practice_event"):
+                try:
+                    deps["practice_event"](practice_case, new_id, base, u)
+                except Exception as exc:
+                    log(f"vault save-as: practice timeline skipped: {exc}")
+            return jsonify({"success": True, "id": new_id, "title": base, "filename": fname, "format": fmt, "destination": dest,
+                            "location": location, "created": created, "size": len(blob)}), 201 if created else 200
+        except Exception as exc:
+            log(f"vault save-as failed: {exc}")
+            return err("Could not save the document.", 500)
+        finally:
+            c.close()
 
     # ── per-document AI assistant ───────────────────────────────────────────────────
     ASSIST_SYSTEM = (
