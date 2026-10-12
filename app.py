@@ -3520,6 +3520,29 @@ def create_app():
             sqlalchemy_db.session.remove()
         return jsonify({'ok': True, 'db': db_ok})
 
+    # Keep Neon's compute from suspending while this process is up: it suspends after ~5 idle minutes and the
+    # next login would otherwise wait for it to wake. A cheap SELECT 1 every 3 minutes, in the background.
+    # (Render itself is kept up by the cron job calling /api/ping.)
+    if str(app.config.get('SQLALCHEMY_DATABASE_URI', '')).startswith('postgresql') and not app.config.get('TESTING') and os.getenv('DB_KEEPALIVE', '1') != '0':
+        def _db_keepalive():
+            import time as _t
+            from sqlalchemy import text as _txt
+            while True:
+                _t.sleep(180)
+                try:
+                    with app.app_context():
+                        sqlalchemy_db.session.execute(_txt('SELECT 1'))
+                except Exception as exc:
+                    print(f'[db-keepalive] {exc}')
+                finally:
+                    try:
+                        with app.app_context():
+                            sqlalchemy_db.session.remove()
+                    except Exception:
+                        pass
+        import threading as _th
+        _th.Thread(target=_db_keepalive, name='db-keepalive', daemon=True).start()
+
     def force_pristine_groq_messages(messages):
         clean = []
         allowed_keys = {'role', 'content', 'name', 'tool_calls', 'tool_call_id'}

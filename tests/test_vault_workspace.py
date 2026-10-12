@@ -322,3 +322,23 @@ def test_save_as_cannot_reach_other_users_folders_matters_or_documents(real):
     assert b.send("post", theirs, {"html": "<p>x</p>", "format": "docx", "destination": "vault", "folder_id": fid}).status_code == 403
     assert b.send("post", theirs, {"html": "<p>x</p>", "format": "docx", "destination": "practice", "practice_case_id": case["id"]}).status_code == 404
     assert b.send("post", f"/api/vault/documents/{did}/export", {"html": "<p>x</p>", "format": "pdf"}).status_code == 404
+
+
+def test_autodraft_assistant_reads_the_canvas_draft_and_degrades_to_a_readout(real, monkeypatch):
+    u = Browser(real[0])
+    draft = "# MUTUAL NDA\n\n1. DEFINITIONS\n\n1.1 Terms.\n\n2. TERM\n\nThis runs from [Effective Date] for [Number] years."
+    # AI down (fixture): honest plain read-out, never a 500
+    r = u.send("post", "/api/documents/autodraft-assistant", {"message": "What details are still missing?", "document_text": draft})
+    assert r.status_code == 200 and r.get_json()["ai"] is False
+    assert "[Effective Date]" in r.get_json()["answer"] and "[Number]" in r.get_json()["answer"]
+    # AI up: the draft and the selection reach the model, history is capped
+    import utils.ai_helper as ai
+    seen = {}
+    monkeypatch.setattr(ai, "ask_groq", lambda system, prompt, *a, **k: seen.update(prompt=prompt) or "Add a cure period in clause 2.")
+    hist = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"} for i in range(10)]
+    r = u.send("post", "/api/documents/autodraft-assistant", {"message": "Review", "document_text": draft, "selection": "for [Number] years", "history": hist})
+    assert r.json["ai"] is True and r.json["answer"].startswith("Add a cure")
+    assert "MUTUAL NDA" in seen["prompt"] and "for [Number] years" in seen["prompt"] and "m9" in seen["prompt"] and "m3" not in seen["prompt"]
+    # validation + login required
+    assert u.send("post", "/api/documents/autodraft-assistant", {"message": "  "}).status_code == 400
+    assert real[0].test_client().post("/api/documents/autodraft-assistant", json={"message": "hi"}).status_code in (401, 403)

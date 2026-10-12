@@ -9,6 +9,7 @@ import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
 import { useLetterheads } from '../hooks/useLetterheads.js';
 import DisputeDesk from './DisputeDesk.jsx';
 import SaveDraftModal from './SaveDraftModal.jsx';
+import AutoDraftAssistant from './autodraft/AutoDraftAssistant.jsx';
 import { buildDraftName } from '../utils/draftNaming.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -83,6 +84,7 @@ export default function AutoDraftWorkspace() {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [toolbarRef, setToolbarRef] = useState(null);
+  const [adEditor, setAdEditor] = useState(null); // live Tiptap editor, for the assistant to read selection / insert into
 
   const toggleMod = (modKey, text) => {
     setActiveMods(prev => {
@@ -917,8 +919,23 @@ export default function AutoDraftWorkspace() {
     });
     setExtractedVariables(order.map(t => ({ token: t, count: counts[t] })));
   }, [autoDraftText]);
+  // The studio sits UNDER the app's top bar, so a plain 100vh hangs ~56px past the bottom of the screen and
+  // clips whatever is anchored there (the assistant's message box, the panels' last rows). Fit to what is left.
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    const fit = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      el.style.height = `${Math.max(320, Math.floor(window.innerHeight - Math.max(0, top)))}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    const t = setTimeout(fit, 300);   // after fonts / the top bar settle
+    return () => { window.removeEventListener('resize', fit); clearTimeout(t); };
+  }, []);
   return (
-    <div className="autodraft-page-wrapper">
+    <div className="autodraft-page-wrapper" ref={wrapRef}>
       <style>{`
         .autodraft-page-wrapper {
           --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
@@ -1022,8 +1039,8 @@ export default function AutoDraftWorkspace() {
         .autodraft-page-wrapper .context-chip.empty .dot { background: var(--muted); }
         .autodraft-page-wrapper .context-chip b { color: var(--ink); font-weight: 600; }
 
-        .autodraft-page-wrapper .ads-workbench { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: 240px 20px 1fr 20px 380px; transition: grid-template-columns .28s cubic-bezier(.32,.72,0,1); }
-        .autodraft-page-wrapper .ads-workbench.outline-collapsed { grid-template-columns: 0px 20px 1fr 20px 380px; }
+        .autodraft-page-wrapper .ads-workbench { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: 240px 20px 1fr 20px 420px; transition: grid-template-columns .28s cubic-bezier(.32,.72,0,1); }
+        .autodraft-page-wrapper .ads-workbench.outline-collapsed { grid-template-columns: 0px 20px 1fr 20px 420px; }
         .autodraft-page-wrapper .ads-workbench.panel-collapsed { grid-template-columns: 240px 20px 1fr 20px 0px; }
         .autodraft-page-wrapper .ads-workbench.outline-collapsed.panel-collapsed { grid-template-columns: 0px 20px 1fr 20px 0px; }
 
@@ -1153,12 +1170,14 @@ export default function AutoDraftWorkspace() {
 
         /* ----- intelligence panel ----- */
         .autodraft-page-wrapper .intel-panel { border-left: 1px solid var(--rule); background: var(--paper); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-        .autodraft-page-wrapper .intel-panel-inner { width: 380px; display: flex; flex-direction: column; min-height: 0; height: 100%; }
+        .autodraft-page-wrapper .intel-panel-inner { width: 420px; display: flex; flex-direction: column; min-height: 0; height: 100%; }
         .autodraft-page-wrapper .intel-tabs { display: flex; gap: 2px; padding: 12px 16px 0; flex-shrink: 0; }
         .autodraft-page-wrapper .intel-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 8px; border-radius: 9px 9px 0 0; border: 0; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; }
         .autodraft-page-wrapper .intel-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--paper-2); }
         .autodraft-page-wrapper .intel-body { flex-grow: 1; overflow-y: auto; padding: 18px 18px 24px; display: none; flex-direction: column; gap: 18px; }
         .autodraft-page-wrapper .intel-body.active { display: flex; }
+        .autodraft-page-wrapper .intel-body.ada-body { padding: 0; gap: 0; overflow: hidden; }
+        .autodraft-page-wrapper .intel-tab { padding: 10px 4px; font-size: 12px; gap: 5px; min-width: 0; }
 
         .autodraft-page-wrapper .instructions-textarea { width: 100%; min-height: 128px; resize: vertical; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 14px; font-size: 13px; line-height: 1.55; color: var(--ink); outline: 0; }
         .autodraft-page-wrapper .instructions-textarea:focus { border-color: var(--accent); }
@@ -1200,7 +1219,7 @@ export default function AutoDraftWorkspace() {
         .autodraft-page-wrapper .saved-draft-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
         @media (max-width: 1180px) {
-          .autodraft-page-wrapper .ads-workbench { grid-template-columns: 0px 20px 1fr 20px 340px; }
+          .autodraft-page-wrapper .ads-workbench { grid-template-columns: 0px 20px 1fr 20px 380px; }
           .autodraft-page-wrapper .ads-workbench.panel-collapsed { grid-template-columns: 0px 20px 1fr 20px 0px; }
         }
         
@@ -1392,6 +1411,7 @@ export default function AutoDraftWorkspace() {
                   initialHtml={autoDraftHtml}
                   onTextChange={setAutoDraftText}
                   onHtmlChange={setAutoDraftHtml}
+                  onEditorReady={setAdEditor}
                   clauses={[]}
                   toolbarPortalTarget={toolbarRef}
                 />
@@ -1418,6 +1438,10 @@ export default function AutoDraftWorkspace() {
           <div className="intel-panel">
             <div className="intel-panel-inner">
               <div className="intel-tabs">
+                <button className={`intel-tab ${intelTab === 'assistant' ? 'active' : ''}`} onClick={() => setIntelTab('assistant')}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"></path></svg>
+                  Assistant
+                </button>
                 <button className={`intel-tab ${intelTab === 'instructions' ? 'active' : ''}`} onClick={() => setIntelTab('instructions')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
                   Instructions
@@ -1430,6 +1454,10 @@ export default function AutoDraftWorkspace() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18"></path><path d="M5 7h14"></path><path d="M5 7l-3 7a3 3 0 0 0 6 0z"></path><path d="M19 7l-3 7a3 3 0 0 0 6 0z"></path></svg>
                   Disputes
                 </button>
+              </div>
+
+              <div className={`intel-body ada-body ${intelTab === 'assistant' ? 'active' : ''}`}>
+                <AutoDraftAssistant text={autoDraftText} editor={adEditor} onNotify={showToast} />
               </div>
 
               <div className={`intel-body ${intelTab === 'instructions' ? 'active' : ''}`}>

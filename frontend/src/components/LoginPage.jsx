@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import LexLogoMark from './LexLogoMark';
+import { waitUntilAwake, isServerAwake } from '../utils/warmServer';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
 
@@ -10,7 +11,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — sa
 // abort was firing "slow to respond" errors on requests that would have
 // succeeded a few seconds later. 35s covers a worst-case double cold-start
 // (Render waking up, then its first query waking Neon) with headroom.
-const AUTH_REQUEST_TIMEOUT_MS = 35000;
+const AUTH_REQUEST_TIMEOUT_MS = 45000;
 // After this long still waiting, swap the button label so a slow cold-start
 // reads as "working" rather than "hung" — tuned to fire well before a fast
 // warm request would ever reach it, so it's invisible on the common path.
@@ -638,6 +639,13 @@ export default function LoginPage() {
   // SLOW_CONNECTION_THRESHOLD_MS — swaps the button's label to something
   // that reads as "still working" during a Render/Neon cold start.
   const [slowConnection, setSlowConnection] = useState(false);
+  const [serverReady, setServerReady] = useState(() => isServerAwake());
+  // Wake the backend + database the moment this page opens, so by the time the credentials are typed it is ready.
+  useEffect(() => {
+    let live = true;
+    if (!isServerAwake()) waitUntilAwake().then((ok) => { if (live) setServerReady(ok); });
+    return () => { live = false; };
+  }, []);
 
   // Forgot-password modal has two modes: 'request' (enter email) and
   // 'confirm' (set a new password) — 'confirm' opens automatically when
@@ -764,6 +772,7 @@ export default function LoginPage() {
     const abortTimer = setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
     const slowTimer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_THRESHOLD_MS);
     try {
+      if (!isServerAwake()) { setSlowConnection(true); await waitUntilAwake(); }
       const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -807,13 +816,15 @@ export default function LoginPage() {
     // A sleeping Render service / Neon database answers the FIRST request slowly or not at all, and the
     // next one a moment later is fast. So instead of showing "waking up, try again" and making the person
     // press the button again, wake the server and retry here, up to LOGIN_ATTEMPTS times.
-    const LOGIN_ATTEMPTS = 4;
-    const wasWaking = (res, err) => err ? (err.name === 'AbortError' || err instanceof TypeError) : [502, 503, 504].includes(res.status);
+    const LOGIN_ATTEMPTS = 8;
+    const wasWaking = (res, err) => err ? (err.name === 'AbortError' || err instanceof TypeError) : [502, 503, 504, 520, 521, 522, 523, 524, 429].includes(res.status);
     try {
+      // Never fail just because the server was asleep: wait for it (the page already started waking it).
+      if (!isServerAwake()) { setSlowConnection(true); await waitUntilAwake(); }
       let res = null; let data = {};
       for (let attempt = 1; attempt <= LOGIN_ATTEMPTS; attempt += 1) {
         const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), attempt === 1 ? AUTH_REQUEST_TIMEOUT_MS : 20000);
+        const tid = setTimeout(() => controller.abort(), attempt === 1 ? AUTH_REQUEST_TIMEOUT_MS : 25000);
         let failure = null;
         try {
           res = await fetch(`${API_BASE_URL}/api/auth/login`, {
@@ -831,8 +842,8 @@ export default function LoginPage() {
         if (!wasWaking(res, failure)) break;               // a real answer (success, wrong password, ...) - stop retrying
         if (attempt === LOGIN_ATTEMPTS) throw new Error(WAKING_UP_MESSAGE);
         setSlowConnection(true);
-        try { await fetch(`${API_BASE_URL}/api/ping`, { signal: AbortSignal.timeout(15000) }); } catch { /* still waking */ }
-        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        await waitUntilAwake({ force: true, deadlineMs: 60000 });
+        await new Promise((r) => setTimeout(r, 800 * attempt));
       }
       if (!res.ok) {
         // Password was right but this account needs its second step: show the code box instead of an error.
@@ -1148,6 +1159,13 @@ export default function LoginPage() {
               </div>
             )}
 
+            {/* Quiet connection status — the server sleeps when idle; this shows it is being woken, not broken */}
+            <div className="lx-conn" role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, margin: '2px 0 10px', color: serverReady ? '#34d399' : '#94a3b8' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: serverReady ? '#34d399' : '#f59e0b', boxShadow: serverReady ? '0 0 0 3px rgba(52,211,153,.18)' : '0 0 0 3px rgba(245,158,11,.18)', animation: serverReady ? 'none' : 'lx-conn-pulse 1.2s ease-in-out infinite' }} />
+              {serverReady ? 'Secure server ready' : 'Waking secure server — you can sign in now, we will connect as soon as it is up'}
+            </div>
+            <style>{'@keyframes lx-conn-pulse{0%,100%{opacity:.35}50%{opacity:1}}'}</style>
+
             {/* CTA */}
             {isSignIn ? (
               <button
@@ -1157,7 +1175,7 @@ export default function LoginPage() {
                 disabled={loading}
               >
                 {loading ? (
-                  <><span className="lx-spinner" /> {slowConnection ? 'Connecting to secure database…' : 'Authenticating…'}</>
+                  <><span className="lx-spinner" /> {slowConnection ? 'Starting your secure workspace…' : 'Authenticating…'}</>
                 ) : (
                   <>{otpStep ? 'Verify and sign in' : 'Sign In'}
                     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
@@ -1174,7 +1192,7 @@ export default function LoginPage() {
                 disabled={loading}
               >
                 {loading ? (
-                  <><span className="lx-spinner" /> {slowConnection ? 'Connecting to secure database…' : 'Creating account…'}</>
+                  <><span className="lx-spinner" /> {slowConnection ? 'Starting your secure workspace…' : 'Creating account…'}</>
                 ) : 'Create Advocate Account'}
               </button>
             )}

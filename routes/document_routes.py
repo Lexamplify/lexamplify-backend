@@ -518,3 +518,71 @@ def delete_document(doc_id):
         return jsonify({"error": f"Failed to delete document: {str(e)}"}), 500
     finally:
         conn.close()
+
+
+# ── 2b. AUTO-DRAFT STUDIO ASSISTANT (chat about the draft on the canvas) ───
+_AD_ASSIST_SYSTEM = (
+    "You are the drafting assistant inside an Indian advocate's Auto-Draft Studio. You are given the agreement or legal "
+    "draft currently on the canvas (it may be unfinished, with [Bracketed] fields still to fill) and sometimes the passage "
+    "the advocate has selected. Work from that draft and well-settled Indian law (Indian Contract Act 1872, Specific Relief "
+    "Act 1963, Arbitration and Conciliation Act 1996, Information Technology Act 2000, DPDP Act 2023, Stamp Acts, etc.). "
+    "Never invent party names, dates, amounts, case citations or section numbers - if a fact is not in the draft, keep it as a "
+    "[Bracketed] field. When asked to draft, redraft or rewrite, return ONLY the clause text, numbered like the draft and ready "
+    "to paste into the editor, with no preamble. When asked a question or for a review, answer briefly and concretely, naming "
+    "the clause numbers you refer to. You are an aid to a qualified advocate, not a substitute for their judgment."
+)
+
+
+def _ad_fallback(question, text):
+    """Plain read-out used when the AI service cannot answer - still useful, and honest about what it is."""
+    fields = []
+    for m in re.finditer(r"\[([^\]\n]{1,80})\]", text or ""):
+        v = m.group(1).strip()
+        if v and v not in fields:
+            fields.append(v)
+    heads = re.findall(r"(?m)^\s*(?:#{1,3}\s*)?(\d{1,2}\.?\s+[A-Z][A-Z &/\-]{2,50})\s*$", text or "")
+    out = []
+    q = (question or "").lower()
+    if fields and ("detail" in q or "missing" in q or "fill" in q or "field" in q or "placeholder" in q):
+        out.append("Details still to fill in this draft:\n" + "\n".join(f"• [{f}]" for f in fields[:40]))
+    else:
+        if heads:
+            out.append("Clauses in this draft:\n" + "\n".join(f"• {h.strip()}" for h in heads[:40]))
+        if fields:
+            out.append(f"{len(fields)} bracketed detail(s) still open, for example: " + ", ".join(f"[{f}]" for f in fields[:6]) + ".")
+        if not out:
+            out.append("There is no draft on the canvas yet." if not (text or "").strip() else "I could not read any clause headings in this draft.")
+    out.append("(The AI service is not reachable right now, so this is a plain read-out of the draft, not an AI review. Try again in a moment.)")
+    return "\n\n".join(out)
+
+
+@doc_bp.route("/autodraft-assistant", methods=["POST", "OPTIONS"])
+@jwt_required()
+def autodraft_assistant():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    b = request.get_json(silent=True) or {}
+    question = str(b.get("message") or "").strip()
+    if not question:
+        return jsonify({"error": True, "message": "Ask a question or pick an action."}), 400
+    if len(question) > 4000:
+        return jsonify({"error": True, "message": "That question is too long."}), 400
+    text = str(b.get("document_text") or "")[:60000]
+    selection = str(b.get("selection") or "").strip()[:4000]
+    history = [h for h in (b.get("history") or []) if isinstance(h, dict) and h.get("role") in ("user", "assistant") and isinstance(h.get("content"), str)][-6:]
+    ctx = text[:20000] + ("\n[... draft continues ...]" if len(text) > 20000 else "")
+    prompt = (
+        f"DRAFT ON THE CANVAS:\n{ctx.strip() or '(the canvas is empty - answer as a drafting question)'}\n"
+        + (f"\nADVOCATE'S SELECTION:\n{selection}\n" if selection else "")
+        + ("\nEARLIER IN THIS CHAT:\n" + "\n".join(f"{h['role'].upper()}: {h['content'][:1500]}" for h in history) + "\n" if history else "")
+        + f"\nADVOCATE ASKS: {question}"
+    )
+    try:
+        import utils.ai_helper as _ai
+        answer = (_ai.ask_groq(_AD_ASSIST_SYSTEM, prompt) or "").strip()
+        if not answer:
+            raise ValueError("empty answer")
+        return jsonify({"answer": answer, "ai": True}), 200
+    except Exception as exc:  # noqa: BLE001 - any model/network failure degrades to the read-out
+        print(f"[autodraft-assistant] fell back: {exc}")
+        return jsonify({"answer": _ad_fallback(question, text), "ai": False}), 200

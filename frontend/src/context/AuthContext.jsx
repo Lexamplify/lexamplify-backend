@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { waitUntilAwake, startHeartbeat } from '../utils/warmServer';
 
 export const AuthContext = createContext(null);
 
@@ -20,21 +21,33 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
+  // A sleeping server (Render) / database (Neon) answers /me slowly, with a 5xx, or not at all. That is NOT
+  // "logged out": treating it that way threw people back to the login page although their session was fine.
+  // Only a real 401/403/404 (after the silent refresh in authFetch already tried) means signed out. Anything
+  // else keeps the splash up, wakes the server and retries.
   const refreshSession = useCallback(async () => {
+    const MAX_TRIES = 8;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user || null);
-      } else {
-        setUser(null);
+      for (let i = 1; i <= MAX_TRIES; i += 1) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include', signal: AbortSignal.timeout(30000) });
+          if (res.ok) {
+            const data = await res.json();
+            setUser(data.user || null);
+            return;
+          }
+          if ([401, 403, 404, 422].includes(res.status)) { setUser(null); return; }
+        } catch { /* network error or timeout - the server is waking */ }
+        if (i === MAX_TRIES) break;
+        await waitUntilAwake({ force: true, deadlineMs: 60000 });
       }
-    } catch {
-      setUser(null);
+      // Could not reach the server at all: stay on whatever we had (do not force a logout).
     } finally {
       setIsInitializing(false);
     }
   }, []);
+
+  useEffect(() => { if (user) startHeartbeat(); }, [user]);
 
   useEffect(() => {
     refreshSession();
