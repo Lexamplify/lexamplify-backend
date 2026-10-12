@@ -2944,6 +2944,37 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
+    @app.route('/api/firm-library/saved', methods=['GET', 'OPTIONS'])
+    @jwt_required()
+    def get_saved_firm_library_drafts():
+        """The documents this user filed into the Firm Library (from the editor's Save a copy, Legal Forms or
+        Auto-Draft Studio). The Firm Library page lists these under "Your entries"."""
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = _current_vault_user_id()
+        try:
+            from utils.vault_docs_convert import html_to_text
+            conn = db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT id, case_id, title, smart_title, doc_type, content, created_at FROM case_vault "
+                    "WHERE user_id = ? AND case_id LIKE 'draft\\_%' ESCAPE '\\' AND doc_type LIKE 'Firm Library Draft%' "
+                    "ORDER BY created_at DESC, id DESC", (uid,)).fetchall()
+            finally:
+                conn.row_factory = old_rf
+            out = []
+            for r in rows:
+                dt = r['doc_type'] or ''
+                category = dt.split('\u2014', 1)[1].strip() if '\u2014' in dt else 'Draft'
+                html = r['content'] or ''
+                out.append({'id': r['id'], 'case_id': r['case_id'], 'title': r['smart_title'] or r['title'] or 'Untitled draft',
+                            'category': category or 'Draft', 'timestamp': r['created_at'], 'text': html_to_text(html)[:30000], 'html': html[:200000]})
+            return jsonify(out), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     @app.route('/api/firm-library', methods=['POST'])
     @jwt_required()
     def create_firm_library_entry():

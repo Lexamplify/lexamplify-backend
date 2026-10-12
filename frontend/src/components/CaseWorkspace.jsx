@@ -1235,7 +1235,7 @@ export default function CaseWorkspace() {
 
         {/* ── 2. DOCUMENT VAULT PANEL ── */}
         {activeTab === 'vault' && (() => {
-          const currentItems = getItemsInFolder(vault.flatFolders, vault.documents, activeFolderId)
+          const currentItems = getItemsInFolder(vault.flatFolders, (vault.documents || []).filter((d) => !String(d.doc_type || '').startsWith('Firm Library Draft')), activeFolderId)
             .filter((item) => !vaultSearch.trim() || item.name.toLowerCase().includes(vaultSearch.trim().toLowerCase()))
             .sort((a, b) => {
               if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;

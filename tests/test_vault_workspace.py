@@ -290,6 +290,16 @@ def test_save_as_to_vault_folder_hub_practice_and_firm_library(real):
     assert lib.status_code == 201 and lib.get_json()["location"] == "Firm Library"
     titles = [d["title"] for d in u.get("/api/firm-library").get_json()]
     assert any("Reusable order" in t for t in titles)
+    # each save lands exactly where it was pointed, and nowhere else
+    saved = u.get("/api/firm-library/saved").get_json()
+    assert [d["title"] for d in saved] == ["Reusable order"], saved
+    assert saved[0]["category"] == "Order" and "Edited" in saved[0]["text"] and saved[0]["id"] == lib.get_json()["id"]
+    docs = {d["id"]: d for d in u.get("/api/vault/meta").get_json()["documents"]}
+    assert docs[first]["folder_id"] == fid and not docs[first]["doc_type"].startswith("Firm Library Draft")
+    assert docs[lib.get_json()["id"]]["doc_type"].startswith("Firm Library Draft") and docs[lib.get_json()["id"]]["folder_id"] is None
+    assert docs[p.get_json()["id"]]["folder_id"] is None and docs[h.get_json()["id"]]["folder_id"] is None
+    other = Browser(real[0], name="Someone Else")
+    assert other.get("/api/firm-library/saved").get_json() == []
 
     assert u.send("post", base, {"html": html, "format": "docx", "destination": "practice", "practice_case_id": 999999}).status_code == 404
     assert u.send("post", base, {"html": html, "format": "docx", "destination": "nowhere"}).status_code == 400

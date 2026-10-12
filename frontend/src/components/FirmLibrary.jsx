@@ -1034,7 +1034,26 @@ export default function FirmLibrary() {
 
   // ── State ───────────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('internal'); // 'internal' = the Dispute Library tab
-  const [entries, setEntries] = useState(loadOwnEntries); // the user's own entries (no demo data)
+  const [localEntries, setEntries] = useState(loadOwnEntries); // entries added on this page (kept in this browser)
+  // Documents filed into the Firm Library from the editor's "Save a copy", Legal Forms and Auto-Draft Studio live on the server.
+  const [savedDrafts, setSavedDrafts] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_BASE}/api/firm-library/saved`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => { if (alive && Array.isArray(d)) setSavedDrafts(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const entries = useMemo(() => [
+    ...savedDrafts.map((d) => ({
+      id: `srv-${d.id}`, title: d.title, category: d.category || 'Draft',
+      updated: d.timestamp ? `${String(d.timestamp).replace(' ', 'T')}Z` : new Date().toISOString(),
+      author: 'Saved from your documents', aiAssisted: false, validity: 'current', tags: [d.category || 'Draft'],
+      description: d.text || '', content: d.html || '', fromServer: true,
+    })),
+    ...localEntries,
+  ], [savedDrafts, localEntries]);
 
   // Dispute catalog (the same 112 entries Auto-Draft Studio uses), loaded on demand.
   const [catalog, setCatalog] = useState(null);
@@ -1321,7 +1340,7 @@ Author: ${entry.author}
       description: modalDescription.trim() || `Official firm ${modalCategory.toLowerCase()} for ${modalTitle.trim()}.`,
     };
 
-    persistEntries([newEntry, ...entries]);
+    persistEntries([newEntry, ...localEntries]);
     setIsUploading(false);
     closeAddModal();
     showToastNotification(`Added "${newEntry.title}" to Firm Library.`);
