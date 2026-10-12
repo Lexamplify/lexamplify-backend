@@ -167,7 +167,9 @@ CREATE TABLE IF NOT EXISTS lpms_members (
     active INTEGER NOT NULL DEFAULT 1, email_notify INTEGER NOT NULL DEFAULT 1, managed INTEGER NOT NULL DEFAULT 0,
     created_by INTEGER, created_at TEXT NOT NULL, last_seen TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS lpms_members_user_active ON lpms_members(user_id) WHERE active = 1;
+DROP INDEX IF EXISTS lpms_members_user_active;
+CREATE UNIQUE INDEX IF NOT EXISTS lpms_members_firm_user_active ON lpms_members(firm_id, user_id) WHERE active = 1;
+CREATE TABLE IF NOT EXISTS lpms_current (user_id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS lpms_members_firm ON lpms_members(firm_id);
 
 CREATE TABLE IF NOT EXISTS lpms_clients (
@@ -317,9 +319,30 @@ def merge_settings(stored):
     return out
 
 
+# A person can belong to several practices (one advocate may run more than one chamber, a junior may assist two seniors).
+# The one they are working in right now is remembered in lpms_current; every Practice, Vault and Hub route sees only that one.
+CURRENT_FIRST_SQL = "ORDER BY CASE WHEN m.id = (SELECT member_id FROM lpms_current WHERE user_id = m.user_id) THEN 0 ELSE 1 END, m.id"
+
+
 def member_for_user(conn, user_id):
     return one(conn, "SELECT m.*, f.name AS firm_name FROM lpms_members m JOIN lpms_firms f ON f.id = m.firm_id "
-                     "WHERE m.user_id = ? AND m.active = 1", (int(user_id),))
+                     f"WHERE m.user_id = ? AND m.active = 1 {CURRENT_FIRST_SQL} LIMIT 1", (int(user_id),))
+
+
+def practices_of(conn, user_id):
+    """Every practice this person belongs to, the one they are working in first."""
+    cur = member_for_user(conn, user_id)
+    out = []
+    for r in rows(conn, "SELECT m.id AS member_id, m.firm_id, m.role, f.name AS firm_name FROM lpms_members m JOIN lpms_firms f ON f.id = m.firm_id "
+                        "WHERE m.user_id = ? AND m.active = 1 ORDER BY f.name COLLATE NOCASE, m.id", (int(user_id),)):
+        out.append({"member_id": r["member_id"], "firm_id": r["firm_id"], "name": r["firm_name"], "role": r["role"], "role_label": ROLE_LABEL[r["role"]],
+                    "current": bool(cur and cur["id"] == r["member_id"])})
+    return out
+
+
+def set_current_practice(conn, user_id, member_id):
+    conn.execute("INSERT INTO lpms_current (user_id, member_id) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET member_id = excluded.member_id",
+                 (int(user_id), int(member_id)))
 
 
 def members_of(conn, firm_id, active_only=True):

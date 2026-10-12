@@ -187,6 +187,76 @@ function Onboarding({ me, onDone }) {
   );
 }
 
+// ── practice switcher: one advocate can run 2+ practices (each keeps its own cases, clients, team, documents) ──
+function PracticeSwitcher({ me }) {
+  const { toast } = usePractice();
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const boxRef = useRef(null);
+  const list = me.practices || [];
+  useEffect(() => {
+    if (!open) return undefined;
+    const off = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', off);
+    return () => document.removeEventListener('mousedown', off);
+  }, [open]);
+  const switchTo = async (mid) => {
+    if (busy) return;
+    setBusy(true);
+    try { await pr.post('/practices/switch', { member_id: mid }); window.location.reload(); } catch (e) { toast?.(doneWith(e)); setBusy(false); }
+  };
+  const create = async (e) => {
+    e.preventDefault();
+    if (name.trim().length < 2) { setErr('Give the new practice a name.'); return; }
+    setBusy(true); setErr('');
+    try { await pr.post('/firm', { name: name.trim(), phone: phone.trim() || null }); window.location.reload(); } catch (e2) { setErr(doneWith(e2)); setBusy(false); }
+  };
+  if (list.length < 2 && !me.can_create_practice) return null;
+  return (
+    <div ref={boxRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <button type="button" className="dh-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} title="Switch practice">
+        Switch practice ▾
+      </button>
+      {open ? (
+        <div role="menu" className="pr-card" style={{ position: 'absolute', zIndex: 60, top: '110%', left: 0, minWidth: 260, padding: 6 }}>
+          {list.map((x) => (
+            <button key={x.member_id} type="button" role="menuitem" className="dh-btn" disabled={busy}
+              style={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: 10, border: 0, textAlign: 'left' }}
+              onClick={() => (x.current ? setOpen(false) : switchTo(x.member_id))}>
+              <span><b>{x.name}</b><br /><small>{x.role_label}</small></span>{x.current ? <span aria-label="current">✓</span> : null}
+            </button>
+          ))}
+          {me.can_create_practice ? (
+            <button type="button" role="menuitem" className="dh-btn primary" style={{ width: '100%', marginTop: 6 }} onClick={() => { setOpen(false); setCreating(true); }}>
+              + Create new practice
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {creating ? (
+        <div role="dialog" aria-modal="true" aria-label="Create new practice" style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.5)', display: 'grid', placeItems: 'center' }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setCreating(false); }}>
+          <form onSubmit={create} className="pr-card" style={{ padding: 20, width: 'min(420px, 92vw)' }} noValidate>
+            <h3 style={{ marginTop: 0 }}>Create new practice</h3>
+            <p className="dh-sub" style={{ maxWidth: 'none' }}>You will be the Senior Advocate of this practice. Its cases, clients, team and documents stay separate from your other practices.</p>
+            <ErrText>{err}</ErrText>
+            <Field label="Practice name" required><input className="dh-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={120} placeholder="e.g. Rao Legal Chambers" /></Field>
+            <Field label="Your phone (optional)"><input className="dh-input" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" maxLength={30} /></Field>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="dh-btn" disabled={busy} onClick={() => setCreating(false)}>Cancel</button>
+              <button type="submit" className="dh-btn primary" disabled={busy}>{busy ? 'Creating…' : 'Create practice'}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Blocked({ me, retry, senior }) {
   return (
     <div className="pr-center">
@@ -234,6 +304,7 @@ function Shell({ me, blocked }) {
     <div className="dh-page pr-page">
       <div className="pr-top">
         <div className="pr-brand"><span className="kick">Practice · {me.member.role_label}</span><h1>{me.firm.name}</h1></div>
+        {!blocked ? <PracticeSwitcher me={me} /> : null}
         {!blocked ? <SearchBox /> : null}
         {!blocked ? <Bell /> : null}
         {!blocked && perms.create_case ? <button type="button" className="dh-btn primary" onClick={() => setNewCase(true)}><PIcon name="plus" />New case</button> : null}

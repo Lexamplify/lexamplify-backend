@@ -244,7 +244,10 @@ def scope_of(conn, uid):
     """'firm:<id>' for a member of a Practice firm (they share one register), else 'user:<id>'."""
     if I._has_lpms_tables(conn):
         with contextlib.suppress(sqlite3.DatabaseError):
-            r = conn.execute("SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 ORDER BY id LIMIT 1", (int(uid),)).fetchone()
+            try:
+                r = conn.execute("SELECT m.firm_id FROM lpms_members m WHERE m.user_id = ? AND m.active = 1 ORDER BY CASE WHEN m.id = (SELECT member_id FROM lpms_current WHERE user_id = m.user_id) THEN 0 ELSE 1 END, m.id LIMIT 1", (int(uid),)).fetchone()
+            except sqlite3.DatabaseError:
+                r = conn.execute("SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 ORDER BY id LIMIT 1", (int(uid),)).fetchone()
             if r:
                 return f"firm:{r[0]}"
     return f"user:{int(uid)}"

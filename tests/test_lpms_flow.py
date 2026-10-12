@@ -38,7 +38,8 @@ def test_creating_a_practice_makes_you_the_senior_advocate_once(practice):
     p = practice.person("Asha Rao")
     me = p.ok(p.post("/firm", {"name": "Rao & Associates"}), 201)
     assert me["member"]["role"] == "senior" and me["firm"]["name"] == "Rao & Associates" and me["perms"]["manage_team"]
-    assert p.post("/firm", {"name": "Second"}).status_code == 409
+    me2 = p.ok(p.post("/firm", {"name": "Second"}), 201)  # a senior may run more than one practice
+    assert me2["firm"]["name"] == "Second" and len(me2["practices"]) == 2
     q = practice.person("Nameless")
     assert q.post("/firm", {"name": " "}).status_code == 400
 
@@ -337,3 +338,21 @@ def test_team_notes_parties_followups_and_comm_log(firm):
     a.ok(a.post("/comms", {"case_id": c, "channel": "call", "body": "Client agreed to settle at 5 lakh"}), 201)
     assert a.ok(a.get(f"/comms?case_id={c}"))["comms"][0]["channel"] == "call"
     assert any("Client contact logged" in x["title"] for x in a.ok(a.get(f"/cases/{c}/timeline"))["items"])
+
+
+def test_multi_practice_switch_and_isolation(practice):
+    p = practice.person("Asha Rao")
+    p.ok(p.post("/firm", {"name": "First"}), 201)
+    me = p.ok(p.post("/firm", {"name": "Second"}), 201)
+    assert me["firm"]["name"] == "Second" and me["can_create_practice"]
+    lst = p.ok(p.get("/practices"))["practices"]
+    assert [x["name"] for x in lst] == ["First", "Second"] and [x["current"] for x in lst] == [False, True]
+    back = p.ok(p.post("/practices/switch", {"member_id": lst[0]["member_id"]}))
+    assert back["firm"]["name"] == "First"
+    assert p.ok(p.get("/me"))["firm"]["name"] == "First"
+    assert p.post("/practices/switch", {"member_id": 99999}).status_code in (403, 404)
+
+
+def test_junior_cannot_create_a_practice(firm):
+    r = firm.team["ravi"].post("/firm", {"name": "Mine"})
+    assert r.status_code == 403 and r.get_json()["code"] == "SENIOR_ONLY"

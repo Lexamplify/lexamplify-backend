@@ -23,6 +23,8 @@ AUDIT_GROUPS = {
 ALLOWED_REMINDER_DAYS = [0, 1, 2, 3, 5, 7, 10, 14, 30]
 
 
+MAX_PRACTICES = 10
+
 def meta_payload():
     return {"roles": [{"key": k, "label": L.ROLE_LABEL[k]} for k in L.ROLES], "case_types": L.CASE_TYPES, "statuses": L.STATUSES,
             "closed_statuses": list(L.CLOSED_STATUSES), "priorities": L.PRIORITIES, "hearing_statuses": L.HEARING_STATUSES, "outcomes": L.OUTCOMES,
@@ -69,7 +71,7 @@ def register(env):
         c = env.conn()
         user = env.get_user(uid) or {}
         m = L.member_for_user(c, uid)
-        out = {"user": {"id": uid, "name": user.get("name"), "email": user.get("email")}, "member": None, "meta": meta_payload(),
+        out = {"user": {"id": uid, "name": user.get("name"), "email": user.get("email")}, "member": None, "practices": [], "can_create_practice": False, "meta": meta_payload(),
                "email_configured": bool(env.email_configured()), "ip": env.ip()}
         mfa = L.mfa_row(c, uid)
         out["mfa"] = {"enabled": bool(mfa and mfa["enabled"]), "recovery_left": len(L.jloads(mfa["recovery"], [])) if mfa and mfa["enabled"] else 0}
@@ -85,8 +87,10 @@ def register(env):
                          "email_notify": bool(m["email_notify"])}
         out["firm"] = {"id": m["firm_id"], "name": m["firm_name"], "whatsapp": bool(st["channels"].get("whatsapp", True))}
         out["perms"] = perms
+        out["practices"] = L.practices_of(c, uid)
+        out["can_create_practice"] = any(p["role"] == "senior" for p in out["practices"]) and len(out["practices"]) < MAX_PRACTICES
         if not blocked:
-            out["unread"] = c.execute("SELECT COUNT(*) FROM lpms_notifications WHERE user_id = ? AND read_at IS NULL", (uid,)).fetchone()[0]
+            out["unread"] = c.execute("SELECT COUNT(*) FROM lpms_notifications WHERE user_id = ? AND firm_id = ? AND read_at IS NULL", (uid, m["firm_id"])).fetchone()[0]
         return out
 
     @env.api("/me", firm=False)
@@ -112,8 +116,12 @@ def register(env):
     @env.api("/firm", methods=("POST",), firm=False)
     def create_firm():
         uid, c = env.uid(), env.conn()
-        if L.member_for_user(c, uid):
-            raise ApiError("You are already part of a practice.", 409)
+        mine = L.practices_of(c, uid)
+        if mine and not any(p["role"] == "senior" for p in mine):
+            raise ApiError("Only a Senior Advocate can start another practice. You are part of a practice as a junior advocate or office staff; "
+                           "your Senior Advocate adds you to theirs.", 403, code="SENIOR_ONLY")
+        if len(mine) >= MAX_PRACTICES:
+            raise ApiError(f"You can run up to {MAX_PRACTICES} practices.", 409)
         b = request.get_json(silent=True) or {}
         name = text(b.get("name"), 120, "Practice name", required=True)
         if len(name) < 2:
@@ -122,11 +130,29 @@ def register(env):
         with env.tx() as tc:
             fid = tc.execute("INSERT INTO lpms_firms (name, owner_user_id, settings, created_at) VALUES (?,?,?,?)",
                              (name, uid, "{}", L.now_iso())).lastrowid
-            tc.execute("INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            mid = tc.execute("INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
                              (fid, uid, "senior", text(b.get("your_name"), 120) or user.get("name") or "Senior Advocate", user.get("email"),
-                              phone_of(b.get("phone")) or user.get("phone"), uid, L.now_iso()))
+                              phone_of(b.get("phone")) or user.get("phone"), uid, L.now_iso())).lastrowid
+            L.set_current_practice(tc, uid, mid)
             L.audit(tc, fid, uid, user.get("name"), "firm_create", "firm", fid, f"Practice “{name}” created", ip=env.ip())
         return jsonify(me_payload(uid)), 201
+
+    @env.api("/practices", firm=False)
+    def my_practices():
+        c, uid = env.conn(), env.uid()
+        mine = L.practices_of(c, uid)
+        return jsonify({"practices": mine, "can_create": any(p["role"] == "senior" for p in mine) and len(mine) < MAX_PRACTICES or not mine})
+
+    @env.api("/practices/switch", methods=("POST",), firm=False)
+    def switch_practice():
+        uid, c = env.uid(), env.conn()
+        mid = as_int((request.get_json(silent=True) or {}).get("member_id"))
+        t = L.one(c, "SELECT id FROM lpms_members WHERE id = ? AND user_id = ? AND active = 1", (mid, uid)) if mid else None
+        if not t:
+            raise ApiError("That practice is not one of yours.", 404)
+        with env.tx() as tc:
+            L.set_current_practice(tc, uid, t["id"])
+        return jsonify(me_payload(uid))
 
     # ── team ────────────────────────────────────────────────────────────────────────
     def member_dict(r, full):
@@ -173,8 +199,8 @@ def register(env):
                 raise ApiError("That email already has a LexAmplify account. You can add that person to your practice; they will keep their own password.",
                                409, code="EXISTS", existing_name=existing.get("name"))
             uid = int(existing["id"])
-            if L.member_for_user(c, uid):
-                raise ApiError("That person already belongs to a practice.", 409)
+            if L.one(c, "SELECT id FROM lpms_members WHERE user_id = ? AND firm_id = ? AND active = 1", (uid, m["firm_id"])):
+                raise ApiError("That person is already part of your practice.", 409)
             name = name or existing.get("name") or email.split("@")[0]
         else:
             if not name:
@@ -429,7 +455,7 @@ def register(env):
         sweep_if_due()
         c, uid = env.conn(), env.uid()
         lim = min(max(as_int(request.args.get("limit"), 30), 1), 100)
-        where, params = "user_id = ?", [uid]
+        where, params = "user_id = ? AND firm_id = ?", [uid, env.m["firm_id"]]
         if truthy(request.args.get("unread")):
             where += " AND read_at IS NULL"
         if as_int(request.args.get("before")):
@@ -437,7 +463,7 @@ def register(env):
             params.append(as_int(request.args.get("before")))
         items = L.rows(c, f"SELECT id, kind, title, body, link, case_id, created_at, read_at FROM lpms_notifications WHERE {where} ORDER BY id DESC LIMIT ?", params + [lim + 1])
         more = len(items) > lim
-        unread = c.execute("SELECT COUNT(*) FROM lpms_notifications WHERE user_id = ? AND read_at IS NULL", (uid,)).fetchone()[0]
+        unread = c.execute("SELECT COUNT(*) FROM lpms_notifications WHERE user_id = ? AND firm_id = ? AND read_at IS NULL", (uid, env.m["firm_id"])).fetchone()[0]
         return jsonify({"items": items[:lim], "more": more, "unread": unread})
 
     @env.api("/notifications/<int:nid>/read", methods=("POST",))
@@ -449,7 +475,7 @@ def register(env):
     @env.api("/notifications/read-all", methods=("POST",))
     def read_all_notifications():
         with env.tx() as c:
-            c.execute("UPDATE lpms_notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL", (L.now_iso(), env.uid()))
+            c.execute("UPDATE lpms_notifications SET read_at = ? WHERE user_id = ? AND firm_id = ? AND read_at IS NULL", (L.now_iso(), env.uid(), env.m["firm_id"]))
         return jsonify({"ok": True})
 
     # ── audit ───────────────────────────────────────────────────────────────────────
@@ -612,8 +638,8 @@ def register(env):
                            f"FROM lpms_cases c LEFT JOIN lpms_clients cl ON cl.id = c.client_id LEFT JOIN lpms_members ad ON ad.id = c.advocate_id WHERE {vis} AND c.archived_at IS NULL{mine_c} "
                            "ORDER BY c.updated_at DESC, c.id DESC LIMIT 8", {**vp, "mid": m["id"]})
 
-        notes = L.rows(c, "SELECT id, kind, title, body, link, created_at, read_at FROM lpms_notifications WHERE user_id = ? ORDER BY id DESC LIMIT 6", (env.uid(),))
-        unread = c.execute("SELECT COUNT(*) FROM lpms_notifications WHERE user_id = ? AND read_at IS NULL", (env.uid(),)).fetchone()[0]
+        notes = L.rows(c, "SELECT id, kind, title, body, link, created_at, read_at FROM lpms_notifications WHERE user_id = ? AND firm_id = ? ORDER BY id DESC LIMIT 6", (env.uid(), m["firm_id"]))
+        unread = c.execute("SELECT COUNT(*) FROM lpms_notifications WHERE user_id = ? AND firm_id = ? AND read_at IS NULL", (env.uid(), m["firm_id"])).fetchone()[0]
 
         docs = []
         try:
