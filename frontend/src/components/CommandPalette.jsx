@@ -291,6 +291,9 @@ const escHtml = (s) =>
 
 const applyInline = (s) =>
   escHtml(s)
+    // The model writes indents as literal "&nbsp;" — escHtml turned them into
+    // visible "&amp;nbsp;" text. Restore the (safe, fixed) entity.
+    .replace(/&amp;nbsp;/gi, '&nbsp;')
     // escHtml above turns a literal `<br>`/`<br/>`/`<br />` from LLM output
     // into the entity text "&lt;br&gt;", which then rendered as visible
     // literal characters instead of a line break (confirmed root cause of
@@ -1880,6 +1883,84 @@ const AGENT_CSS = `
   .lex-sel-toolbar .lex-sel-primary:hover { background: var(--accent); filter: brightness(1.08); }
   .lex-sel-toolbar .lex-tool-divider { background: color-mix(in srgb, var(--bg) 35%, transparent); height: 18px; }
 
+
+  /* ═══ Sidebar v2 — conversation rail ═══ */
+  .lex-sidebar { background: linear-gradient(180deg, var(--paper) 0%, color-mix(in srgb, var(--paper) 92%, var(--bg)) 100%) !important; }
+  .rail-id { padding: 16px 14px 12px; gap: 11px; }
+  .rail-icon {
+    width: 34px; height: 34px; border-radius: 11px; color: var(--on-accent);
+    background: linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 62%, #000));
+    box-shadow: 0 6px 16px -8px var(--accent), inset 0 1px 0 rgba(255,255,255,.22);
+  }
+  .rail-title { font-size: 15px; }
+  .rail-collapse { margin-left: auto; width: 26px; height: 26px; border-radius: 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: all .15s ease; }
+  .rail-collapse:hover { background: var(--paper-2); color: var(--ink); }
+  .new-convo-btn {
+    justify-content: space-between; padding: 10px 12px 10px 14px; margin: 0 12px 12px; border-radius: 12px;
+    box-shadow: 0 8px 18px -12px var(--accent); transition: transform .12s ease, box-shadow .15s ease, filter .15s ease;
+  }
+  .new-convo-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px -12px var(--accent); }
+  .new-convo-btn:active { transform: translateY(0); }
+  .new-convo-btn .ncb-l { display: inline-flex; align-items: center; gap: 8px; }
+  .new-convo-btn .ncb-plus { width: 18px; height: 18px; border-radius: 6px; background: rgba(255,255,255,.2); display: grid; place-items: center; font-size: 14px; line-height: 1; }
+  .new-convo-btn .ncb-kbd { font: 600 9.5px 'IBM Plex Mono', monospace; opacity: .8; border: 1px solid rgba(255,255,255,.32); border-radius: 5px; padding: 1px 5px; }
+  .lex-sidebar-search-input { border-radius: 10px; padding: 8px 28px 8px 30px; background: color-mix(in srgb, var(--paper-2) 80%, transparent); }
+  .lex-sidebar-search-input:focus { background: var(--paper); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+  .lex-sidebar-search-icon { top: 9px; }
+  .lex-sidebar-search-clear { top: 8px; }
+  .lex-rail-scroll { flex: 1; overflow-y: auto; padding: 2px 6px 10px; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+  .lex-rail-scroll::-webkit-scrollbar { width: 6px; }
+  .lex-rail-scroll::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 6px; }
+  .lex-grp-head {
+    display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; cursor: pointer;
+    padding: 12px 10px 5px; color: var(--muted); font: 700 9.5px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase;
+  }
+  .lex-grp-head:hover { color: var(--ink-soft); }
+  .lex-grp-head .chev { transition: transform .18s ease; }
+  .lex-grp-head.is-collapsed .chev { transform: rotate(-90deg); }
+  .lex-grp-head .cnt { margin-left: auto; font-weight: 600; background: var(--paper-2); border-radius: 999px; padding: 0 7px; line-height: 16px; }
+  .lex-sess-item {
+    position: relative; gap: 10px; justify-content: flex-start; padding: 8px 8px 8px 10px; margin: 1px 4px;
+    border: 1px solid transparent !important; border-radius: 11px;
+  }
+  .lex-sess-item:hover { background: var(--paper-2); }
+  .lex-sess-item.active { background: color-mix(in srgb, var(--accent) 11%, transparent) !important; border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
+  .lex-sess-item.active::before { content: ''; position: absolute; left: -5px; top: 9px; bottom: 9px; width: 3px; border-radius: 3px; background: var(--accent); }
+  .lex-sess-ico { width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0; display: grid; place-items: center; background: var(--paper-2); color: var(--muted); transition: all .15s ease; }
+  .lex-sess-item:hover .lex-sess-ico { color: var(--ink-soft); }
+  .lex-sess-item.active .lex-sess-ico { background: var(--accent); color: var(--on-accent); }
+  .lex-sess-ico.is-draft { color: var(--accent); background: var(--accent-soft); }
+  .lex-sess-title { font-size: 12.5px; }
+  .lex-sess-meta { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 10px; }
+  .lex-sess-meta .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--muted); opacity: .7; }
+  .lex-sess-pill { font: 700 8.5px 'IBM Plex Mono', monospace; letter-spacing: .06em; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 5px; }
+  .lex-sess-more { opacity: 0; width: 24px; height: 24px; border-radius: 7px; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-size: 15px; line-height: 1; transition: opacity .12s ease, background .12s ease; }
+  .lex-sess-item:hover .lex-sess-more, .lex-sess-item.active .lex-sess-more, .lex-sess-more:focus-visible { opacity: 1; }
+  .lex-sess-more:hover { background: var(--rule); color: var(--ink); }
+  .lex-sidebar-tree { margin: 2px 8px 6px 26px; padding-left: 10px; }
+  .lex-sidebar-tree-node { padding: 5px 8px; border-radius: 8px; font-size: 11.5px; }
+  .rail-foot { padding: 9px 14px; background: color-mix(in srgb, var(--paper-2) 55%, transparent); }
+  .rail-foot .tot { font-weight: 600; color: var(--ink-soft); }
+  .lex-rail-empty { margin: 26px 14px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .lex-rail-empty b { display: block; color: var(--ink-soft); font-size: 13px; margin-bottom: 3px; }
+
+  /* ═══ Roomier document + direct editing ═══ */
+  .lex-thread { max-width: 940px; }
+  .lex-dock .lex-composer, .lex-dock-note { max-width: 860px; }
+  .lex-docblock-body { padding: 40px clamp(28px, 5vw, 68px) 34px; outline: none; cursor: text; }
+  .lex-docblock { transition: border-color .2s ease, box-shadow .2s ease; }
+  .lex-docblock:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--rule)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent), 0 18px 40px -26px rgba(0,0,0,.45); }
+  .lex-doc-typeset { font-size: 16px; line-height: 1.85; }
+  .lex-doc-typeset .draft-p { font-size: 16px; line-height: 1.85; margin: 0 0 14px; }
+  .lex-doc-typeset .draft-section-head { margin: 34px 0 14px; }
+  .lex-doc-typeset .draft-doc-title { margin: 4px 0 26px; }
+  .lex-doc-typeset table td, .lex-doc-typeset table th { padding: 12px 16px !important; }
+  .lex-doc-typeset .lex-placeholder { cursor: text; border-radius: 4px; transition: background .12s ease; }
+  .lex-doc-typeset .lex-placeholder:hover { background: color-mix(in srgb, var(--major, #d9a441) 28%, transparent); }
+  .lex-docblock-edit-hint { margin-left: auto; font: 600 9.5px 'IBM Plex Mono', monospace; letter-spacing: .08em; color: var(--muted); }
+  .lex-docblock-saved { color: var(--accent); }
+  @media (max-width: 768px) { .lex-docblock-body { padding: 22px 18px; } }
+
   @media (max-width: 768px) {
     .lex-thread { padding: 18px 14px 20px; gap: 22px; }
     .lex-row-ai { gap: 10px; }
@@ -2218,6 +2299,7 @@ export function CommandPalette() {
   const [navRoute, setNavRoute] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   const [isClosing, setIsClosing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [viewingSnapshot] = useState(null);
@@ -2634,6 +2716,52 @@ export function CommandPalette() {
       const doc = { ...m.docCard, msgId: docMsgId };
       updateSession(currentId, s => ({ ...s, activeDocument: doc, pendingDraft: doc }));
     }
+  };
+
+  // ── Real-time editing: click straight into the draft and type ───────
+  const inlineDirtyRef = useRef(false);
+  const saveInlineDocEdit = (msgId, md) => {
+    const msg = messages.find(m => m.id === msgId);
+    if (!msg?.docCard) return;
+    const cur = activeDocument?.msgId === msgId ? activeDocument.content : msg.docCard.content;
+    if ((md || '').trim() === (cur || '').trim()) return;
+    updateSession(currentId, s => ({
+      ...s,
+      messages: (s.messages || []).map(m => (m.id === msgId && m.docCard ? { ...m, docCard: { ...m.docCard, content: md } } : m)),
+      ...(s.activeDocument?.msgId === msgId ? {
+        activeDocument: { ...s.activeDocument, content: md },
+        pendingDraft: s.pendingDraft ? { ...s.pendingDraft, content: md } : s.pendingDraft,
+      } : {}),
+    }));
+  };
+  // Clicking a [Placeholder] selects it whole, so typing replaces it.
+  const pickPlaceholder = (e) => {
+    const ph = e.target && e.target.closest ? e.target.closest('.lex-placeholder') : null;
+    if (!ph) return false;
+    const sel = window.getSelection();
+    if (sel && sel.isCollapsed) {
+      const r = document.createRange();
+      r.selectNodeContents(ph);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    setSelToolbar(null);
+    return true;
+  };
+  // Once a placeholder no longer reads "[…]" it is real text — drop the highlight.
+  const unhighlightFilled = (e) => {
+    const sel = window.getSelection();
+    const node = sel && sel.anchorNode;
+    const ph = node && (node.nodeType === 1 ? node : node.parentElement)?.closest?.('.lex-placeholder');
+    if (ph && e.currentTarget.contains(ph)) {
+      const t = ph.textContent || '';
+      if (!(t.startsWith('[') && t.endsWith(']'))) ph.classList.remove('lex-placeholder');
+    }
+  };
+  const pastePlain = (e) => {
+    e.preventDefault();
+    const t = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, t);
   };
 
   const beginSelectionEdit = () => {
@@ -3158,13 +3286,24 @@ export function CommandPalette() {
         </div>
         <div
           className="lex-docblock-body lex-doc-typeset"
-          onMouseUp={e => !isStreaming && handleDocSelection(e, 'inline', msg.id)}
+          contentEditable={!isStreaming}
+          suppressContentEditableWarning
+          spellCheck
+          onMouseUp={e => { if (isStreaming) return; if (pickPlaceholder(e)) return; handleDocSelection(e, 'inline', msg.id); }}
+          onKeyDown={() => { if (selToolbar) setSelToolbar(null); }}
+          onInput={e => { inlineDirtyRef.current = true; unhighlightFilled(e); }}
+          onPaste={pastePlain}
+          onBlur={e => {
+            if (!inlineDirtyRef.current) return;
+            inlineDirtyRef.current = false;
+            saveInlineDocEdit(msg.id, draftHtmlToMarkdown(e.currentTarget));
+          }}
           dangerouslySetInnerHTML={{ __html: highlightPlaceholders(renderDraftHtml(bodyMd)) || '<p class="draft-p lex-muted">Preparing the first clause…</p>' }}
         />
         {!isStreaming && (
           <div className="lex-docblock-foot">
             <Icon name="caution" size={12} />
-            <span><b>AI-drafted, not filed.</b> Check every bracketed field against your matter facts. Select any passage to ask for changes.</span>
+            <span><b>AI-drafted, not filed.</b> Check every bracketed field against your matter facts. Click anywhere to edit directly; select a passage to ask AI for changes.</span>
           </div>
         )}
       </div>
@@ -3317,7 +3456,7 @@ export function CommandPalette() {
           <aside
             className={`lex-sidebar ${sidebarOpen ? 'mobile-open' : ''}`}
             style={{
-              flex: sidebarOpen ? '0 0 264px' : '0 0 0px',
+              flex: sidebarOpen ? '0 0 288px' : '0 0 0px',
               minWidth: 0,
               transition: 'flex-basis 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
@@ -3325,17 +3464,20 @@ export function CommandPalette() {
             {/* Header / Identity */}
             <div className="rail-id">
               <div className="rail-icon">
-                <Icon name="scales" size={16} />
+                <Icon name="scales" size={17} />
               </div>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div className="rail-title serif">AI Legal Associate</div>
                 <div className="rail-sub mono">DRAFTING &amp; RESEARCH</div>
               </div>
+              <button type="button" className="rail-collapse" onClick={() => setSidebarOpen(false)} title="Hide sidebar" aria-label="Hide sidebar">
+                <Icon name="outline" size={14} />
+              </button>
             </div>
 
             <button className="new-convo-btn" onClick={startNew}>
-              <span style={{ fontSize: 15, lineHeight: 1 }}>+</span>
-              New conversation
+              <span className="ncb-l"><span className="ncb-plus">+</span>New conversation</span>
+              <span className="ncb-kbd">NEW</span>
             </button>
 
             {/* Conversation Search Bar */}
@@ -3348,50 +3490,31 @@ export function CommandPalette() {
                 onChange={e => setSessSearch(e.target.value)}
               />
               {sessSearch && (
-                <button className="lex-sidebar-search-clear" onClick={() => setSessSearch('')}>×</button>
+                <button className="lex-sidebar-search-clear" onClick={() => setSessSearch('')} aria-label="Clear search">×</button>
               )}
             </div>
 
             {/* Conversation List */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+            <div className="lex-rail-scroll">
               {filteredSessions.length === 0 ? (
-                <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                  No matching matters found.
+                <div className="lex-rail-empty">
+                  <b>{sessSearch ? 'Nothing matches' : 'No conversations yet'}</b>
+                  {sessSearch ? 'Try a different word or clear the search.' : 'Start a new conversation to draft or research.'}
                 </div>
               ) : (
                 <>
-                  {pinnedSess.length > 0 && (
-                    <>
-                      <div style={{ padding: '6px 14px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.08em', fontFamily: 'IBM Plex Mono, monospace' }}>Pinned Matters</div>
-                      {pinnedSess.map(s => renderSessionRow(s))}
-                    </>
-                  )}
-                  {todaySess.length > 0 && (
-                    <>
-                      <div style={{ padding: '6px 14px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.08em', fontFamily: 'IBM Plex Mono, monospace' }}>Today</div>
-                      {todaySess.map(s => renderSessionRow(s))}
-                    </>
-                  )}
-                  {yesterdaySess.length > 0 && (
-                    <>
-                      <div style={{ padding: '6px 14px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.08em', fontFamily: 'IBM Plex Mono, monospace' }}>Yesterday</div>
-                      {yesterdaySess.map(s => renderSessionRow(s))}
-                    </>
-                  )}
-                  {olderSess.length > 0 && (
-                    <>
-                      <div style={{ padding: '6px 14px 2px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.08em', fontFamily: 'IBM Plex Mono, monospace' }}>Earlier</div>
-                      {olderSess.map(s => renderSessionRow(s))}
-                    </>
-                  )}
+                  {renderGroup('pinned', 'Pinned', pinnedSess)}
+                  {renderGroup('today', 'Today', todaySess)}
+                  {renderGroup('yesterday', 'Yesterday', yesterdaySess)}
+                  {renderGroup('older', 'Earlier', olderSess)}
                 </>
               )}
             </div>
 
             {/* Shortcut Hint Footer */}
             <div className="rail-foot">
-              <span className="mono"><span className="kbd">Ctrl</span><span className="kbd">K</span> Toggle</span>
-              <span className="mono"><span className="kbd">Esc</span> Close</span>
+              <span className="mono tot">{sessions.length} chat{sessions.length === 1 ? '' : 's'}</span>
+              <span className="mono"><span className="kbd">Ctrl</span><span className="kbd">K</span> Toggle · <span className="kbd">Esc</span> Close</span>
             </div>
           </aside>
 
@@ -3643,10 +3766,10 @@ export function CommandPalette() {
                 onMouseDown={e => e.preventDefault()}
               >
                 <button type="button" className="lex-sel-primary" onClick={beginSelectionEdit}>
-                  <Icon name="edit" size={12} /> Ask for changes
+                  <Icon name="edit" size={12} /> Ask AI to rewrite
                 </button>
                 <button type="button" onClick={explainSelection}>Explain</button>
-                {selToolbar.source === 'drawer' && (
+                {(selToolbar.source === 'drawer' || selToolbar.source === 'inline') && (
                   <>
                     <span className="lex-tool-divider" />
                     <button type="button" title="Bold" onClick={() => document.execCommand('bold')}><b>B</b></button>
@@ -3910,7 +4033,10 @@ export function CommandPalette() {
                     className="lex-doc-paper"
                     contentEditable
                     suppressContentEditableWarning
-                    onMouseUp={e => handleDocSelection(e, 'drawer', activeDocument?.msgId)}
+                    onMouseUp={e => { if (pickPlaceholder(e)) return; handleDocSelection(e, 'drawer', activeDocument?.msgId); }}
+                    onKeyDown={() => { if (selToolbar) setSelToolbar(null); }}
+                    onInput={unhighlightFilled}
+                    onPaste={pastePlain}
                     onKeyUp={e => { if (e.shiftKey) handleDocSelection(e, 'drawer', activeDocument?.msgId); }}
                     onBlur={e => {
                       const md = draftHtmlToMarkdown(e.currentTarget);
@@ -4001,6 +4127,27 @@ export function CommandPalette() {
     </>
   );
 
+  // Collapsible conversation group
+  function renderGroup(key, label, list) {
+    if (!list.length) return null;
+    const folded = !!collapsedGroups[key] && !sessSearch.trim();
+    return (
+      <div key={key}>
+        <button
+          type="button"
+          className={`lex-grp-head ${folded ? 'is-collapsed' : ''}`}
+          onClick={() => setCollapsedGroups(g => ({ ...g, [key]: !g[key] }))}
+          aria-expanded={!folded}
+        >
+          <Icon name="chevron" size={10} className="chev" />
+          {label}
+          <span className="cnt">{list.length}</span>
+        </button>
+        {!folded && list.map(s => renderSessionRow(s))}
+      </div>
+    );
+  }
+
   // Helper renderer for each session card in the sidebar
   function renderSessionRow(s) {
     const isActive = s.id === currentId;
@@ -4013,6 +4160,9 @@ export function CommandPalette() {
           className={`lex-sess-item ${isActive ? 'active' : ''}`}
           onClick={() => selectSession(s.id)}
         >
+          <span className={`lex-sess-ico ${hasActiveDraft ? 'is-draft' : ''}`} aria-hidden="true">
+            <Icon name={s.pinned ? 'bookmark' : (hasActiveDraft || hasSavedAssets) ? 'draft' : 'quote'} size={13} />
+          </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             {renamingId === s.id ? (
               <input
@@ -4032,7 +4182,8 @@ export function CommandPalette() {
                 <div className="lex-sess-title">{s.title || 'New conversation'}</div>
                 <div className="lex-sess-meta">
                   <span>{relativeDate(s.updatedAt)}</span>
-                  {s.messages?.length > 0 && <span>· {s.messages.length} turns</span>}
+                  {s.messages?.length > 0 && <><span className="dot" /><span>{s.messages.length} turn{s.messages.length === 1 ? '' : 's'}</span></>}
+                  {hasActiveDraft && <span className="lex-sess-pill">DRAFT</span>}
                 </div>
               </>
             )}
@@ -4055,7 +4206,8 @@ export function CommandPalette() {
                   });
                 }
               }}
-              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}
+              className="lex-sess-more"
+              aria-label="Conversation options"
               title="Matter Options"
             >
               ⋮
