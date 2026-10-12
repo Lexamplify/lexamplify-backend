@@ -710,9 +710,14 @@ def create_vault_workspace_blueprint(deps):
                 except Exception as exc:
                     log(f"vault save-as: hub adopt skipped: {exc}")
             else:
+                # Never cold-load the embedding model (torch) inside a web request: on a small server that alone
+                # exceeds the RAM budget and kills the instance. Index only when the model is already warm, in the
+                # background; otherwise the draft is still saved and is found by keyword search.
                 try:
-                    from utils.local_search import index_document
-                    index_document(new_id, base, html)
+                    import threading
+                    from utils import local_search as _ls
+                    if getattr(_ls, "_collection", None) is not None and getattr(_ls, "_embedder", None) is not None:
+                        threading.Thread(target=_ls.index_document, args=(new_id, base, html), daemon=True).start()
                 except Exception as exc:
                     log(f"vault save-as: library index skipped: {exc}")
             if dest == "practice" and created and deps.get("practice_event"):
