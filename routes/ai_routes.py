@@ -175,6 +175,42 @@ def get_chat_history():
         return jsonify({'threads': []}), 200
 
 
+
+# ── Pre-draft intake: understand the request, then ask before generating ──────
+# A template card or a one-line request does not contain the facts a filing-grade
+# draft needs. This endpoint returns the short list of questions worth asking, and
+# never writes the document itself — generation still goes through /rag-chat once
+# the advocate has answered (or skipped). See utils/draft_intake.py.
+@ai_bp.route("/intake", methods=["POST", "OPTIONS"])
+@jwt_required()
+def draft_intake():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    if not str(get_jwt_identity()).isdigit():
+        return jsonify({"error": True, "message": "Invalid authentication token format. Access denied."}), 401
+
+    from utils import draft_intake as di
+
+    body = request.get_json(silent=True) or {}
+    req_text = str(body.get("request") or body.get("query") or "").strip()
+    if not req_text:
+        return jsonify({"error": True, "message": "Tell me what you need drafted."}), 400
+    has_attachment = bool(body.get("has_attachment")) or req_text.startswith("[Attached document:") or req_text.startswith("\U0001f4ce")
+
+    def _ask(system_prompt, user_msg):
+        from utils.ai_helper import ask_groq
+        return ask_groq(system_prompt, user_msg, max_tokens=900, temperature=0.2)
+
+    try:
+        payload = di.build_intake(req_text, ask_model=_ask, has_attachment=has_attachment)
+    except Exception as exc:  # noqa: BLE001 - intake must never block drafting
+        print(f"[intake] falling back entirely: {exc}")
+        kind, doc_type = di.classify(req_text)
+        payload = {"needed": bool(kind == "draft"), "kind": kind, "doc_type": doc_type,
+                   "doc_label": di.DOC_LABELS.get(doc_type, "Legal Document"),
+                   "summary": "", "questions": di.fallback_questions(kind, doc_type), "source": "library"}
+    return jsonify(payload), 200
+
 # ── Universal RAG Chatbot with SSE Streaming ────────────────────
 @ai_bp.route("/rag-chat", methods=["POST"])
 @jwt_required()
