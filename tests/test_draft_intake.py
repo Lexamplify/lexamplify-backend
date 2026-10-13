@@ -162,6 +162,41 @@ def test_answers_for_questions_that_were_never_asked_are_ignored():
     assert "smuggled payload" not in brief
 
 
+def test_a_composed_brief_never_trips_rag_pipelines_is_new_draft_request_guard():
+    """
+    Regression test for a real production bug: compose_brief()'s own closing
+    instruction used to say "Draft the document now...", and utils/rag_pipeline.py's
+    _is_new_draft_request() treats "the document" (and "this draft", "the
+    agreement", etc.) as a sign the query is an EDIT of an already-open draft,
+    not a brand-new one. Since the composed brief is exactly what gets sent
+    as the query once intake finishes, that false positive routed every
+    intake-assisted drafting request through the slower, unreliable LLM
+    intent router instead of the deterministic fast path — and a
+    misclassification there (a real, previously-observed failure mode) made
+    the whole request silently fall back to a plain chat answer with no
+    draft canvas at all, even though intake had correctly understood it as
+    a drafting request. Every doc_type's brief, answered or left on
+    defaults, must still read as an unambiguous new-draft request.
+    """
+    import utils.rag_pipeline as rp
+
+    requests = {
+        "nda": "Draft a comprehensive mutual Non-Disclosure Agreement compliant with the Indian Contract Act, 1872",
+        "notice": "Draft a formal legal notice for breach of contract demanding payment in 15 days",
+        "bail": "Draft a regular bail application under Section 439 CrPC / Section 483 BNSS",
+        "contract": "Draft a commercial Master Services Agreement with SLA and arbitration",
+        "lease": "prepare a rent agreement for a flat in Adyar",
+    }
+    for doc_type, req in requests.items():
+        questions = di.fallback_questions("draft", doc_type)
+        # fully on defaults (advocate skipped every question)
+        brief_defaulted = di.compose_brief(req, questions, {})
+        assert rp._is_new_draft_request(brief_defaulted), (doc_type, brief_defaulted)
+        # at least one question actually answered
+        brief_answered = di.compose_brief(req, questions, {questions[0]["id"]: "a real answer here"})
+        assert rp._is_new_draft_request(brief_answered), (doc_type, brief_answered)
+
+
 # ── the HTTP endpoint, inside the real app ───────────────────────────────────
 @pytest.fixture(scope="module")
 def real(tmp_path_factory):

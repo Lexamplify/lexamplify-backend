@@ -326,13 +326,30 @@ def _is_new_draft_request(query: str) -> bool:
     """Return True if the query unambiguously asks to create a brand-new
     document from scratch: it opens with a drafting verb AND doesn't point
     back at an existing document ("this draft", "clause 5", "a summary of
-    the agreement") — those are edits or questions, not new drafts."""
+    the agreement") — those are edits or questions, not new drafts.
+
+    The back-reference check only looks at the advocate's own opening
+    request, not the rest of the query. A pre-draft-intake brief
+    (utils/draft_intake.py's compose_brief) appends the advocate's confirmed
+    answers and the unanswered questions' standard-position labels after a
+    blank line, and plenty of ordinary question labels legitimately contain
+    phrases like "the notice" or "this agreement" ("Who is sending the
+    notice, and against whom?") without the query being an edit of
+    anything. Scanning that boilerplate too turned every one of those into
+    a false positive, silently routing a correctly-scoped new-draft brief
+    through the slower, misfire-prone LLM intent router instead of this
+    deterministic fast path. compose_brief always starts the request with
+    the advocate's own text and puts its first section break at a blank
+    line, so splitting on the first "\n\n" reliably isolates it — for a
+    plain one-line query (no blank line at all) this is just the whole
+    query, unchanged from before."""
     ql = query.lower().lstrip()
     if any(ql.startswith(p) for p in _NAV_PREFIXES):
         return False
     if not any(ql.startswith(v) for v in _NEW_DRAFT_VERBS):
         return False
-    if any(ref in ql for ref in _DRAFT_REFS) or 'summar' in ql or _NUMBERED_PART_REF.search(ql):
+    head = ql.split('\n\n', 1)[0]
+    if any(ref in head for ref in _DRAFT_REFS) or 'summar' in head or _NUMBERED_PART_REF.search(head):
         return False
     return True
 
