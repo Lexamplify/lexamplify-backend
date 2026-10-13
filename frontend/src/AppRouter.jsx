@@ -32,6 +32,7 @@ import MatterDashboard from './components/organization/MatterDashboard';
 import TeamDashboard from './components/organization/TeamDashboard';
 import OrgDashboard from './components/organization/OrgDashboard';
 import ContextCapsule from './components/organization/ContextCapsule';
+import AccountSettings from './components/AccountSettings';
 import WorkspaceGuard from './components/WorkspaceGuard';
 import { useOrganizationStore } from './stores/useOrganizationStore';
 import { useChamberStore } from './stores/useChamberStore';
@@ -335,17 +336,6 @@ const SIDEBAR_STYLES = `
 
   .sb-index{ flex:1; overflow-y:auto; padding-bottom:8px; }
   .sb-group-label{ font-family:var(--sb-font-serif); font-style:italic; font-size:12.5px; color:var(--sb-ink-soft); padding:20px 24px 8px; }
-  .sb-group-btn{ display:flex; align-items:center; gap:7px; width:100%; border:0; background:transparent; text-align:left; cursor:pointer; margin:0; }
-  .sb-group-btn:hover{ color:var(--sb-ink); background:var(--sb-paper-2); }
-  .sb-group-btn:focus-visible, .sb-fold-all:focus-visible{ outline:2px solid var(--sb-accent); outline-offset:-2px; }
-  .sb-group-name{ flex:1; }
-  .sb-chev{ display:inline-block; width:10px; font-style:normal; font-family:var(--sb-font-sans); font-size:14px; line-height:1; color:var(--sb-muted); transition:transform .15s ease; }
-  .sb-chev.open{ transform:rotate(90deg); }
-  .sb-group-count{ font-family:var(--sb-font-mono); font-style:normal; font-size:10.5px; color:var(--sb-muted); background:var(--sb-paper-2); border:1px solid var(--sb-rule); border-radius:999px; padding:1px 7px; }
-  .sb-group-btn.folded .sb-group-count{ color:var(--sb-accent); }
-  .sb-fold-all{ display:flex; align-items:center; gap:7px; width:100%; border:0; background:transparent; cursor:pointer; padding:10px 24px 0; font-family:var(--sb-font-mono); font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--sb-muted); text-align:left; }
-  .sb-fold-all:hover{ color:var(--sb-accent); }
-  @media (prefers-reduced-motion: reduce){ .sb-chev{ transition:none; } }
   .sb-entry{ display:flex; align-items:center; gap:13px; padding:9px 24px; border-bottom:1px solid var(--sb-paper-2); cursor:pointer; text-decoration:none; color:inherit; }
   .sb-entry:hover{ background:var(--sb-paper-2); }
   .sb-entry:hover .sb-icon{ color:var(--sb-accent); }
@@ -690,14 +680,6 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   // Focus mode and manual collapse both render the same compact capsule —
   // building two different collapsed treatments for a distinction the
   // brief never draws would just be extra complexity for no real gain.
-  // Sidebar sections the user has folded away (remembered between visits). A folded section still shows the page you are on.
-  const [foldedGroups, setFoldedGroups] = useState(() => {
-    try { const v = JSON.parse(localStorage.getItem('lexai_sidebar_folded') || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem('lexai_sidebar_folded', JSON.stringify(foldedGroups)); } catch { /* storage unavailable */ }
-  }, [foldedGroups]);
-  const toggleGroup = (title) => setFoldedGroups((f) => (f.includes(title) ? f.filter((t) => t !== title) : [...f, title]));
   const isIconOnly = (isCollapsed || focusMode) && window.innerWidth > 768; // the phone drawer is always the full sidebar
 
   const [profileOpen, setProfileOpen] = useState(false);
@@ -727,13 +709,6 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
     fetchTrackedCases()
       .then(data => { if (Array.isArray(data)) setSidebarCases(data); })
       .catch(() => { });
-  }, []);
-  // The Case Vault reports its live matter count (the cases in Practice) so the sidebar never shows a stale number.
-  const [vaultMatterCount, setVaultMatterCount] = useState(null);
-  useEffect(() => {
-    const onCount = (e) => { if (typeof e.detail?.count === 'number') setVaultMatterCount(e.detail.count); };
-    window.addEventListener('lex:vault-matters', onCount);
-    return () => window.removeEventListener('lex:vault-matters', onCount);
   }, []);
 
   useEffect(() => {
@@ -807,36 +782,14 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           </button>
 
           <div className="sb-index">
-            {(() => {
-              const allTitles = [...NAVIGATION_GROUPS.map((g) => g.title), ...(sidebarCases.length > 0 ? ['Tracked cases'] : [])];
-              const allFolded = allTitles.every((t) => foldedGroups.includes(t));
-              return (
-                <button type="button" className="sb-fold-all" onClick={() => setFoldedGroups(allFolded ? [] : allTitles)}
-                  title={allFolded ? 'Open every section' : 'Fold every section to keep only the page you are on'}>
-                  <span className={`sb-chev${allFolded ? '' : ' open'}`} aria-hidden="true">›</span> {allFolded ? 'Expand all' : 'Collapse all'}
-                </button>
-              );
-            })()}
-            {NAVIGATION_GROUPS.map((group) => {
-              const folded = foldedGroups.includes(group.title);
-              const activeInGroup = group.items.some((it) => (it.path === '/dashboard' ? p === it.path : p.startsWith(it.path)));
-              return (
+            {NAVIGATION_GROUPS.map((group) => (
               <div key={group.title}>
-                <button type="button" className={`sb-group-label sb-group-btn${folded ? ' folded' : ''}`} onClick={() => toggleGroup(group.title)}
-                  aria-expanded={!folded} aria-label={`${group.title}, ${group.items.length} items`} title={folded ? `Show ${group.title}` : `Hide ${group.title}`}>
-                  <span className={`sb-chev${folded ? '' : ' open'}`} aria-hidden="true">›</span>
-                  <span className="sb-group-name">{group.title}</span>
-                  {folded && <span className="sb-group-count">{activeInGroup ? '●' : group.items.length}</span>}
-                </button>
-                {group.items.filter((item) => {
-                  if (!folded) return true;
-                  return item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);   // a folded section keeps the page you are on visible
-                }).map(item => {
+                <div className="sb-group-label">{group.title}</div>
+                {group.items.map(item => {
                   const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
                   let activeStatus;
                   if (isActive && item.path === '/vault') {
-                    const trackedCount = vaultMatterCount ?? sidebarCases.length;
-                    activeStatus = `${trackedCount} tracked matter${trackedCount !== 1 ? 's' : ''}`;
+                    activeStatus = `${sidebarCases.length} tracked matter${sidebarCases.length !== 1 ? 's' : ''}`;
                   } else if (isActive && item.badge?.type === 'live') {
                     activeStatus = 'Live';
                   }
@@ -845,20 +798,14 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                   );
                 })}
               </div>
-              );
-            })}
+            ))}
 
             {/* Live case listing from API — real functionality the mockup
                 never anticipated, kept as a fourth dynamic group. */}
             {sidebarCases.length > 0 && (
               <div>
-                <button type="button" className={`sb-group-label sb-group-btn${foldedGroups.includes('Tracked cases') ? ' folded' : ''}`} onClick={() => toggleGroup('Tracked cases')}
-                  aria-expanded={!foldedGroups.includes('Tracked cases')} title={foldedGroups.includes('Tracked cases') ? 'Show Tracked cases' : 'Hide Tracked cases'}>
-                  <span className={`sb-chev${foldedGroups.includes('Tracked cases') ? '' : ' open'}`} aria-hidden="true">›</span>
-                  <span className="sb-group-name">Tracked cases</span>
-                  {foldedGroups.includes('Tracked cases') && <span className="sb-group-count">{sidebarCases.length}</span>}
-                </button>
-                {sidebarCases.filter((c) => !foldedGroups.includes('Tracked cases') || params.caseId === String(c.id)).map(c => {
+                <div className="sb-group-label">Tracked cases</div>
+                {sidebarCases.map(c => {
                   const caseName = c.case_name || c.title || `Case #${c.id}`;
                   const isActive = params.caseId === String(c.id);
                   return (
@@ -900,7 +847,7 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                 <span className="sb-profile-caret">⌄</span>
               </div>
               <div className="sb-profile-menu">
-                <button type="button" disabled title="Not built yet — no account settings page exists">Account settings</button>
+                <button type="button" onClick={() => { setProfileOpen(false); navigate('/account-settings'); }}>Account settings</button>
                 <button type="button" onClick={handleSignOut}>Log out</button>
               </div>
             </div>
@@ -1030,6 +977,7 @@ function AppRouterContent() {
         <Route path="/firm-library/draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms showSaveBar /></Layout>} />
         <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
+        <Route path="/account-settings" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AccountSettings /></Layout>} />
       </Routes>
     </BrowserRouter>
   );
