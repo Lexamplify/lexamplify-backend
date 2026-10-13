@@ -342,3 +342,52 @@ def test_autodraft_assistant_reads_the_canvas_draft_and_degrades_to_a_readout(re
     # validation + login required
     assert u.send("post", "/api/documents/autodraft-assistant", {"message": "  "}).status_code == 400
     assert real[0].test_client().post("/api/documents/autodraft-assistant", json={"message": "hi"}).status_code in (401, 403)
+
+
+def test_a_draft_from_the_assistant_can_be_filed_into_each_destination(real):
+    u = Browser(real[0], name="Asha Rao")
+    html = "<h1>Mutual NDA</h1><p>Between [Party A] and [Party B].</p>"
+    # Case Vault (root)
+    r = u.send("post", "/api/vault/documents/draft-save", {"html": html, "title": "Mutual NDA — Sundaram", "destination": "vault"})
+    assert r.status_code == 201, r.get_json()
+    body = r.get_json()
+    assert body["location"] == "Case Vault" and body["size"] > 0 and body["format"] == "docx"
+    assert any(d["title"].startswith("Mutual NDA") for d in u.get("/api/vault/documents").get_json()["documents"])
+    # Firm Library
+    lib = u.send("post", "/api/vault/documents/draft-save", {"html": html, "title": "NDA precedent", "destination": "library", "format": "pdf"})
+    assert lib.status_code == 201 and lib.get_json()["location"] == "Firm Library" and lib.get_json()["format"] == "pdf"
+    # Practice — needs a real matter the advocate is on
+    assert u.send("post", "/api/practice/firm", {"name": "Rao & Associates"}).status_code == 201
+    cid = u.send("post", "/api/practice/cases", {"case_no": "OS 9/2026", "court": "City Civil Court", "title": "Rao v. Kumar",
+                                                 "filing_date": "2026-01-10"}).get_json()["case"]["id"]
+    pr = u.send("post", "/api/vault/documents/draft-save", {"html": html, "title": "NDA for matter", "destination": "practice", "practice_case_id": cid})
+    assert pr.status_code == 201 and pr.get_json()["location"].startswith("Practice / ")
+
+
+def test_filing_a_draft_rejects_junk_and_other_peoples_matters(real):
+    u = Browser(real[0])
+    other = Browser(real[0], name="Someone Else")
+    assert other.send("post", "/api/practice/firm", {"name": "Other Firm"}).status_code == 201
+    theirs = other.send("post", "/api/practice/cases", {"case_no": "OS 1/2026", "court": "X", "title": "Not yours",
+                                                        "filing_date": "2026-01-10"}).get_json()["case"]["id"]
+    bad = [
+        ({"html": "", "destination": "vault"}, 400),
+        ({"html": "<p>x</p>", "destination": "nowhere"}, 400),
+        ({"html": "<p>x</p>", "destination": "vault", "format": "exe"}, 400),
+        ({"html": "<p>x</p>", "destination": "practice"}, 400),
+        ({"html": "<p>x</p>", "destination": "practice", "practice_case_id": theirs}, 404),
+        ({"html": "<p>x</p>", "destination": "vault", "folder_id": 999999}, (403, 404)),
+    ]
+    for payload, want in bad:
+        got = u.send("post", "/api/vault/documents/draft-save", payload).status_code
+        assert got in (want if isinstance(want, tuple) else (want,)), (payload, got)
+    assert real[0].test_client().post("/api/vault/documents/draft-save", json={"html": "<p>x</p>"}).status_code in (401, 403)
+
+
+def test_a_filed_draft_keeps_a_filing_safe_name(real):
+    u = Browser(real[0])
+    r = u.send("post", "/api/vault/documents/draft-save",
+               {"html": "<p>x</p>", "title": "../../etc/passwd: notice <script>", "destination": "vault"})
+    assert r.status_code == 201
+    name = r.get_json()["title"]
+    assert "/" not in name and "\\" not in name and ":" not in name and "<" not in name

@@ -733,6 +733,105 @@ def create_vault_workspace_blueprint(deps):
         finally:
             c.close()
 
+    # ── a draft written in the AI Legal Associate, filed into the practice ──────────────
+    # The assistant's drafts live only in the conversation until the advocate files them. This
+    # puts one finished draft wherever it belongs — Case Vault, Document Hub, Practice matter or
+    # Firm Library — in one call, so the generated document is connected to the rest of LexAmplify
+    # instead of being a dead end in a chat window.
+    @bp.route("/documents/draft-save", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def draft_save():
+        if request.method == "OPTIONS":
+            return jsonify({}), 200
+        u = uid()
+        body = request.get_json(silent=True) or {}
+        html = clean_html(body)
+        fmt = str(body.get("format") or "docx").lower()
+        dest = str(body.get("destination") or "vault").lower()
+        if html is None:
+            return err("There is nothing to save yet.", 400)
+        if fmt not in FORMATS:
+            return err("Choose Word, PDF or text.", 400)
+        if dest not in ("vault", "hub", "practice", "library"):
+            return err("Choose where to save it.", 400)
+        base = safe_name(body.get("title") or "Legal draft")
+        fname = f"{base}.{fmt}"
+        c = _connect(db_path)
+        try:
+            folder, case_ref, practice_case, location = None, "General", None, "Case Vault"
+            if dest in ("vault", "hub"):
+                fid = body.get("folder_id")
+                if fid not in (None, "", 0):
+                    try:
+                        fid = int(fid)
+                    except (TypeError, ValueError):
+                        return err("That folder was not found.", 404)
+                    if not deps["folder_ok"](fid, u):
+                        return err("You cannot save into that folder.", 403)
+                    folder = fid
+                    nm = c.execute("SELECT name FROM vault_folders WHERE id = ?", (fid,)).fetchone()
+                    location = ("Document Hub" if dest == "hub" else "Case Vault") + (f" / {nm[0]}" if nm else "")
+                else:
+                    location = "Document Hub" if dest == "hub" else "Case Vault"
+            elif dest == "practice":
+                try:
+                    practice_case = int(body.get("practice_case_id"))
+                except (TypeError, ValueError):
+                    return err("Choose a Practice matter.", 400)
+                from utils import lpms_store as L
+                if not _has(c, "lpms_cases") or L.lpms_case_role(c, u, practice_case) is None:
+                    return err("That matter was not found, or you are not on it.", 404)
+                cr = c.execute("SELECT case_no, title FROM lpms_cases WHERE id = ?", (practice_case,)).fetchone()
+                case_ref, location = f"lpms:{practice_case}", f"Practice / {cr['title'] or cr['case_no']}"
+            else:
+                case_ref, location = f"draft_{int(datetime.utcnow().timestamp())}_{__import__('uuid').uuid4().hex[:6]}", "Firm Library"
+            try:
+                blob = render_format(fmt, html, base)
+            except Exception as exc:
+                log(f"draft-save: render {fmt} failed: {exc}")
+                return err(f"Could not create the {FORMATS[fmt][1]} file.", 500)
+            text = html_to_text(html)
+            if dest == "library":
+                cur = c.execute("INSERT INTO case_vault (case_id, title, doc_type, content, smart_title, file_blob, file_format, user_id) VALUES (?,?,?,?,?,?,?,?)",
+                                (case_ref, base, f"Firm Library Draft — {str(body.get('category') or 'Draft')[:40]}", html, base, blob, fmt, u))
+            else:
+                cur = c.execute(
+                    "INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (case_ref, fname, "AI draft", text, folder, base, "EDITED", blob, fmt, u))
+            c.commit()
+            new_id = cur.lastrowid
+            try:
+                deps["provenance"]("document", new_id, base, "created", u, u,
+                                   {"source": "ai_legal_associate", "size_bytes": len(blob), "format": fmt, "destination": location})
+            except Exception as exc:
+                log(f"draft-save: provenance skipped: {exc}")
+            if dest != "library":
+                try:
+                    deps["adopt"](u, new_id)
+                except Exception as exc:
+                    log(f"draft-save: hub adopt skipped: {exc}")
+            else:
+                # Never cold-load the embedding model inside a web request — index only when it is already warm.
+                try:
+                    import threading
+                    from utils import local_search as _ls
+                    if getattr(_ls, "_collection", None) is not None and getattr(_ls, "_embedder", None) is not None:
+                        threading.Thread(target=_ls.index_document, args=(new_id, base, html), daemon=True).start()
+                except Exception as exc:
+                    log(f"draft-save: library index skipped: {exc}")
+            if dest == "practice" and deps.get("practice_event"):
+                try:
+                    deps["practice_event"](practice_case, new_id, base, u)
+                except Exception as exc:
+                    log(f"draft-save: practice timeline skipped: {exc}")
+            return jsonify({"success": True, "id": new_id, "title": base, "filename": fname, "format": fmt,
+                            "destination": dest, "location": location, "size": len(blob)}), 201
+        except Exception as exc:
+            log(f"draft-save failed: {exc}")
+            return err("Could not save the draft.", 500)
+        finally:
+            c.close()
+
     # ── per-document AI assistant ───────────────────────────────────────────────────
     ASSIST_SYSTEM = (
         "You are the document assistant inside an Indian advocate's case vault. You are given ONE document (and sometimes the "

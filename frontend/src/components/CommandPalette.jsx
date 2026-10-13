@@ -828,8 +828,9 @@ const Icon = ({ name, size = 16, className = '', style = {} }) => {
     case 'draft':
       return (
         <svg {...props}>
-          <rect x="2" y="7" width="20" height="14" rx="2" />
-          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+          <path d="M7 2.75h7.1L19 7.6v12.15a1.75 1.75 0 0 1-1.75 1.75h-9.5A1.75 1.75 0 0 1 6 19.75V4.5A1.75 1.75 0 0 1 7.75 2.75Z" />
+          <path d="M14.1 2.75V6.6a1 1 0 0 0 1 1H19" />
+          <path d="M8.75 12.3h6.1M8.75 15.5h4.3" />
         </svg>
       );
     case 'gavel':
@@ -842,7 +843,9 @@ const Icon = ({ name, size = 16, className = '', style = {} }) => {
     case 'scales':
       return (
         <svg {...props}>
-          <path d="M12 3v18M5 7l-3 6a4 4 0 0 0 8 0l-3-6zM19 7l-3 6a4 4 0 0 0 8 0l-3-6zM5 7h14M9 3h6" />
+          <path d="M20.3 3.1c-3.4.2-9 2.1-12.7 6.3C5 12.3 3.9 15.6 3 19.6c3.6-1 7.2-2.2 10.1-4.9 4-3.7 6.1-8.4 7.2-11.6Z" />
+          <path d="M12.6 10.9 4 19.5" />
+          <circle cx="18.6" cy="5.3" r=".9" fill="currentColor" stroke="none" />
         </svg>
       );
     case 'search':
@@ -1002,13 +1005,70 @@ const Icon = ({ name, size = 16, className = '', style = {} }) => {
     case 'quote':
       return (
         <svg {...props}>
-          <path d="M9 7H5v6h4l-2 4M19 7h-4v6h4l-2 4" />
+          <path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H10l-4 3.5v-3.5H4A1.5 1.5 0 0 1 2.5 15.5V7A1.5 1.5 0 0 1 4 5.5Z" />
+          <path d="M7 10h10M7 13h6" />
         </svg>
       );
     case 'chevron':
       return (
         <svg {...props}>
           <path d="m9 6 6 6-6 6" />
+        </svg>
+      );
+    case 'share':
+      return (
+        <svg {...props}>
+          <circle cx="18" cy="5" r="2.5" />
+          <circle cx="6" cy="12" r="2.5" />
+          <circle cx="18" cy="19" r="2.5" />
+          <path d="M8.2 10.7 15.8 6.3M8.2 13.3l7.6 4.4" />
+        </svg>
+      );
+    case 'split':
+      return (
+        <svg {...props}>
+          <rect x="2.5" y="4" width="19" height="16" rx="2" />
+          <line x1="13" y1="4" x2="13" y2="20" />
+          <path d="M16.5 10.5 19 12l-2.5 1.5" />
+        </svg>
+      );
+    case 'fullscreen':
+      return (
+        <svg {...props}>
+          <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+        </svg>
+      );
+    case 'vault':
+      return (
+        <svg {...props}>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="12" cy="12" r="4" />
+          <circle cx="12" cy="12" r=".6" fill="currentColor" stroke="none" />
+          <path d="M12 8v1.2M12 14.8V16M8 12h1.2M14.8 12H16" />
+        </svg>
+      );
+    case 'library':
+      return (
+        <svg {...props}>
+          <path d="M4 20V5a1.5 1.5 0 0 1 1.5-1.5H9V20" />
+          <path d="M9 20V3.5h5.5A1.5 1.5 0 0 1 16 5v15" />
+          <path d="m17 20 .3-15.3a1.5 1.5 0 0 1 1.7-1.3l1 .2a1.5 1.5 0 0 1 1.2 1.8L18.8 20" />
+        </svg>
+      );
+    case 'practice':
+      return (
+        <svg {...props}>
+          <path d="M4 7h16l-1.4 11.3a2 2 0 0 1-2 1.7H7.4a2 2 0 0 1-2-1.7Z" />
+          <path d="M9 7V5.5A2.5 2.5 0 0 1 11.5 3h1A2.5 2.5 0 0 1 15 5.5V7M4 11h16" />
+        </svg>
+      );
+    case 'hub':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="5" r="2" />
+          <circle cx="5" cy="19" r="2" />
+          <circle cx="19" cy="19" r="2" />
+          <path d="M12 7v6M12 13 6.6 17.3M12 13l5.4 4.3" />
         </svg>
       );
     default:
@@ -1485,6 +1545,22 @@ const AGENT_CSS = `
     background: var(--bg); padding: 20px 16px; overflow-y: auto; flex: 1;
     display: flex; justify-content: center; align-items: flex-start;
   }
+  .lex-filemenu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+    width: 240px; background: var(--paper); border: 1px solid var(--rule);
+    border-radius: 11px; box-shadow: var(--shadow); padding: 6px;
+    display: flex; flex-direction: column; gap: 2px; animation: lex-in 0.14s ease;
+  }
+  .lex-filemenu-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 9px;
+    border-radius: 8px; border: none; background: transparent; cursor: pointer;
+    text-align: left; color: var(--ink); width: 100%;
+  }
+  .lex-filemenu-item:hover { background: var(--paper-2); }
+  .lex-filemenu-item svg { color: var(--accent); flex-shrink: 0; }
+  .lex-filemenu-item span { display: flex; flex-direction: column; min-width: 0; }
+  .lex-filemenu-item b { font-size: 12.5px; font-weight: 600; }
+  .lex-filemenu-item small { font-size: 10.5px; color: var(--muted); font-weight: 400; }
   .lex-doc-paper {
     width: 100%; max-width: 720px; min-height: 840px;
     background: var(--paper) !important; color: var(--ink) !important;
@@ -1597,12 +1673,17 @@ const AGENT_CSS = `
   }
 
   /* ── Messages ── */
-  .lex-row-user { display: flex; justify-content: flex-end; animation: lex-in .25s ease both; }
+  .lex-row-user { display: flex; flex-direction: column; align-items: flex-end; animation: lex-in .25s ease both; }
   .lex-user-msg {
     max-width: 82%; background: var(--paper-2); border: 1px solid var(--rule); color: var(--ink);
     border-radius: 20px 20px 6px 20px; padding: 11px 16px; font-size: 14.5px; line-height: 1.55;
     white-space: pre-wrap; word-break: break-word;
   }
+  .lex-user-msg-actions {
+    display: flex; gap: 2px; margin-top: 4px; opacity: 0; transition: opacity .12s ease;
+  }
+  .lex-row-user:hover .lex-user-msg-actions { opacity: 1; }
+  .lex-user-msg-actions .lex-icon-btn { width: 24px; height: 24px; }
   .lex-user-quote {
     display: flex; gap: 7px; align-items: flex-start; font-size: 12.5px; font-style: italic;
     color: var(--ink-soft); padding: 7px 10px; margin: 0 0 9px; white-space: normal;
@@ -2134,11 +2215,29 @@ const generateSmartName = (doc_type, sessionTitle) => {
 };
 
 // ═══════════════════════════════════════════════════════
-//  SAVE TO VAULT MODAL (Slate & Rust Architecture)
+//  FILE DRAFT MODAL — Case Vault · Firm Library · Practice · Document Hub
+//  (the destination picker for a generated draft; keeps it inter-connected
+//  with the rest of LexAmplify instead of just sitting in the chat)
 // ═══════════════════════════════════════════════════════
-function SaveToVaultModal({ draft, sessionTitle, apiBase, messages, onConfirm, onClose }) {
+const DESTINATIONS = [
+  { id: 'vault', label: 'Case Vault', icon: 'vault', hint: 'File it against this matter' },
+  { id: 'library', label: 'Firm Library', icon: 'library', hint: 'Save as a reusable firm template' },
+  { id: 'practice', label: 'Practice', icon: 'practice', hint: 'Attach to a case on Practice' },
+  { id: 'hub', label: 'Document Hub', icon: 'hub', hint: 'Shared, firm-wide document' },
+];
+const DRAFT_FORMATS = [
+  { id: 'docx', label: 'Word (.docx)' },
+  { id: 'pdf', label: 'PDF' },
+  { id: 'txt', label: 'Plain text' },
+];
+
+function SaveToVaultModal({ draft, sessionTitle, apiBase, onConfirm, onClose, initialDest }) {
+  const [dest, setDest] = useState(initialDest || 'vault');
+  const [format, setFormat] = useState('docx');
   const [flatFolders, setFlatFolders] = useState([]);
-  const [navStack, setNavStack] = useState([{ id: null, name: 'Root (Case Vault)' }]);
+  const [navStack, setNavStack] = useState([{ id: null, name: 'Root' }]);
+  const [practiceCases, setPracticeCases] = useState(null);
+  const [practiceCaseId, setPracticeCaseId] = useState('');
   const [fileName, setFileName] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -2153,64 +2252,62 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, messages, onConfirm, o
   useEffect(() => { setFileName(smartDefault); }, [smartDefault]);
 
   useEffect(() => {
-    fetch(`${apiBase}/api/vault/folders`)
-      .then(res => res.ok ? res.json() : null)
-      .then(fData => {
-        if (!isMountedRef.current) return;
-        if (fData) setFlatFolders(fData.flat || []);
-      })
-      .catch(() => {});
-  }, [apiBase]);
+    if (dest === 'vault' || dest === 'hub') {
+      fetch(`${apiBase}/api/vault/folders`)
+        .then(res => res.ok ? res.json() : null)
+        .then(fData => { if (isMountedRef.current && fData) setFlatFolders(fData.flat || []); })
+        .catch(() => {});
+    } else if (dest === 'practice' && practiceCases === null) {
+      fetch(`${apiBase}/api/practice/cases`)
+        .then(res => res.ok ? res.json() : null)
+        .then(d => { if (isMountedRef.current) setPracticeCases((d && d.cases) || []); })
+        .catch(() => { if (isMountedRef.current) setPracticeCases([]); });
+    }
+  }, [dest, apiBase, practiceCases]);
 
   const currentView = navStack[navStack.length - 1];
   const isAtRoot = currentView.id == null;
   const currentChildren = flatFolders
     .filter(f => isAtRoot ? (f.parent_id == null || f.parent_id === 0) : Number(f.parent_id) === Number(currentView.id))
     .sort((a, b) => a.name.localeCompare(b.name));
-
   const destFolderId = isAtRoot ? null : currentView.id;
   const destPath = navStack.map(s => s.name).join(' / ');
 
+  const canSave = fileName.trim() && !saving && (dest !== 'practice' || practiceCaseId);
+
   const handleConfirm = async () => {
-    if (!fileName.trim() || saving) return;
+    if (!canSave) return;
     setSaving(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`${apiBase}/api/vault/save`, {
+      const res = await fetch(`${apiBase}/api/vault/documents/draft-save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: fileName.trim(),
-          content: draft?.content || '',
-          case_id: draft?.case_id || sessionTitle || 'General',
+          html: renderDraftHtmlForDocx(draft?.content || '', fileName.trim()),
+          format,
+          destination: dest,
           folder_id: destFolderId,
-          doc_type: draft?.doc_type || 'Draft',
-          session_title: sessionTitle || '',
-          audit_messages: JSON.stringify((messages || []).map(m => ({ role: m.role, text: m.text }))),
+          practice_case_id: dest === 'practice' ? practiceCaseId : undefined,
+          category: draft?.doc_type || 'Draft',
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) {
-        if (isMountedRef.current) {
-          setErrorMsg(data.message || 'Vault database is unavailable.');
-          setSaving(false);
-        }
+        if (isMountedRef.current) { setErrorMsg(data.message || 'Could not save the draft.'); setSaving(false); }
         return;
       }
       if (isMountedRef.current) {
         onConfirm({
           fileName: fileName.trim(),
-          folderId: destFolderId,
-          folderPath: destPath,
-          smartTitle: fileName.trim(),
+          destination: dest,
+          location: data.location || destPath,
           vaultId: data.id,
         });
       }
     } catch (err) {
-      if (isMountedRef.current) {
-        setErrorMsg('Network error while saving to Case Vault.');
-        setSaving(false);
-      }
+      if (isMountedRef.current) { setErrorMsg('Network error while saving the draft.'); setSaving(false); }
     }
   };
 
@@ -2220,7 +2317,7 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, messages, onConfirm, o
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Icon name="draft" size={16} style={{ color: 'var(--accent)' }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Save Draft to Case Vault</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Save this draft</span>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}><Icon name="close" size={16} /></button>
         </div>
@@ -2231,32 +2328,101 @@ function SaveToVaultModal({ draft, sessionTitle, apiBase, messages, onConfirm, o
               <span>{errorMsg}</span>
             </div>
           )}
+
           <div>
-            <label style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 6, fontFamily: 'IBM Plex Mono, monospace' }}>Document Title</label>
-            <input value={fileName} onChange={e => setFileName(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper-2)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 6, fontFamily: 'IBM Plex Mono, monospace' }}>Destination Folder</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: 'var(--paper-2)', borderRadius: 8, border: '1px solid var(--rule)', fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
-              📁 {destPath}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 6, marginTop: 8, maxHeight: 140, overflowY: 'auto' }}>
-              {navStack.length > 1 && (
-                <button onClick={() => setNavStack(prev => prev.slice(0, -1))} style={{ padding: '6px 10px', borderRadius: 6, border: '1px dashed var(--rule)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}>
-                  ↖ Back
-                </button>
-              )}
-              {currentChildren.map(f => (
-                <button key={f.id} onClick={() => setNavStack(prev => [...prev, { id: f.id, name: f.name }])} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink)', fontSize: 11.5, cursor: 'pointer', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  📁 {f.name}
+            <label style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 8, fontFamily: 'IBM Plex Mono, monospace' }}>Where should it live?</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 7 }}>
+              {DESTINATIONS.map(d => (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => { setDest(d.id); setNavStack([{ id: null, name: 'Root' }]); setErrorMsg(null); }}
+                  title={d.hint}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '12px 6px',
+                    borderRadius: 10, cursor: 'pointer', textAlign: 'center',
+                    border: dest === d.id ? '1.5px solid var(--accent)' : '1px solid var(--rule)',
+                    background: dest === d.id ? 'var(--accent-soft)' : 'var(--paper-2)',
+                    color: dest === d.id ? 'var(--accent)' : 'var(--ink-soft)',
+                  }}
+                >
+                  <Icon name={d.icon} size={17} />
+                  <span style={{ fontSize: 11, fontWeight: 600 }}>{d.label}</span>
                 </button>
               ))}
             </div>
           </div>
+
+          <div>
+            <label style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 6, fontFamily: 'IBM Plex Mono, monospace' }}>Document Title</label>
+            <input value={fileName} onChange={e => setFileName(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper-2)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 6, fontFamily: 'IBM Plex Mono, monospace' }}>Save as</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {DRAFT_FORMATS.map(f => (
+                <button key={f.id} type="button" onClick={() => setFormat(f.id)}
+                  style={{ padding: '6px 12px', borderRadius: 7, fontSize: 12, cursor: 'pointer',
+                    border: format === f.id ? '1.5px solid var(--accent)' : '1px solid var(--rule)',
+                    background: format === f.id ? 'var(--accent-soft)' : 'var(--paper)',
+                    color: format === f.id ? 'var(--accent)' : 'var(--ink-soft)' }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {(dest === 'vault' || dest === 'hub') && (
+            <div>
+              <label style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 6, fontFamily: 'IBM Plex Mono, monospace' }}>
+                {dest === 'hub' ? 'Document Hub folder' : 'Case Vault folder'}
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: 'var(--paper-2)', borderRadius: 8, border: '1px solid var(--rule)', fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
+                <Icon name="folder" size={13} /> {destPath}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 6, marginTop: 8, maxHeight: 140, overflowY: 'auto' }}>
+                {navStack.length > 1 && (
+                  <button onClick={() => setNavStack(prev => prev.slice(0, -1))} style={{ padding: '6px 10px', borderRadius: 6, border: '1px dashed var(--rule)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}>
+                    ↖ Back
+                  </button>
+                )}
+                {currentChildren.map(f => (
+                  <button key={f.id} onClick={() => setNavStack(prev => [...prev, { id: f.id, name: f.name }])} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink)', fontSize: 11.5, cursor: 'pointer', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <Icon name="folder" size={11} /> {f.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {dest === 'practice' && (
+            <div>
+              <label style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: 6, fontFamily: 'IBM Plex Mono, monospace' }}>Which matter?</label>
+              {practiceCases === null ? (
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>Loading your cases…</div>
+              ) : practiceCases.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>No Practice cases yet — add one on Practice first.</div>
+              ) : (
+                <select value={practiceCaseId} onChange={e => setPracticeCaseId(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper-2)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}>
+                  <option value="">Choose a case…</option>
+                  {practiceCases.map(c => (
+                    <option key={c.id} value={c.id}>{c.title} ({c.case_no})</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          {dest === 'library' && (
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+              Saved as a searchable, reusable template for the whole firm — anyone can pull it up from Firm Library later.
+            </div>
+          )}
         </div>
         <div style={{ padding: '12px 24px', borderTop: '1px solid var(--rule)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--paper-2)' }}>
           <button onClick={onClose} className="btn btn-sm">Cancel</button>
-          <button onClick={handleConfirm} disabled={saving || !fileName.trim()} className="btn btn-sm btn-primary">{saving ? 'Saving…' : 'Confirm & Save'}</button>
+          <button onClick={handleConfirm} disabled={!canSave} className="btn btn-sm btn-primary">{saving ? 'Saving…' : `Save to ${DESTINATIONS.find(d => d.id === dest)?.label}`}</button>
         </div>
       </div>
     </div>
@@ -2486,6 +2652,9 @@ export function CommandPalette() {
 
   // ── Modals & Menus ───────────────────────────────────
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveDestPreset, setSaveDestPreset] = useState('vault');
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [showEditorShare, setShowEditorShare] = useState(false);
   const [openMenuState, setOpenMenuState] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
@@ -3849,7 +4018,7 @@ export function CommandPalette() {
                 <>
                   <span className="lex-tool-divider" />
                   <button type="button" className="lex-action-pill" onClick={() => openDocInEditor(msg)}><Icon name="expand" size={12} /> Open in editor</button>
-                  <button type="button" className="lex-action-pill" onClick={() => { openDocInEditor(msg); setShowSaveModal(true); }}><Icon name="folder" size={12} /> Save to Case Vault</button>
+                  <button type="button" className="lex-action-pill" onClick={() => { setSaveDestPreset('vault'); openDocInEditor(msg); setShowSaveModal(true); }}><Icon name="vault" size={12} /> File this draft</button>
                 </>
               )}
             </div>
@@ -4084,6 +4253,7 @@ export function CommandPalette() {
                 <div className="lex-thread">
                   {messages.map((msg, idx) => {
                     if (msg.role === 'user') {
+                      const uKey = `u_${msg.id || idx}`;
                       return (
                         <div key={msg.id || idx} className="lex-row-user">
                           <div className="lex-user-msg">
@@ -4094,6 +4264,28 @@ export function CommandPalette() {
                               </div>
                             )}
                             {msg.text}
+                          </div>
+                          <div className="lex-user-msg-actions">
+                            <button type="button" className="lex-icon-btn" title="Copy" onClick={() => copyText(msg.text || '', uKey)}>
+                              <Icon name={copiedMsgId === uKey ? 'check' : 'copy'} size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="lex-icon-btn"
+                              title="Edit this prompt"
+                              onClick={() => {
+                                setQuery(msg.text || '');
+                                requestAnimationFrame(() => {
+                                  inputRef.current?.focus();
+                                  if (inputRef.current) {
+                                    inputRef.current.style.height = 'auto';
+                                    inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 200) + 'px';
+                                  }
+                                });
+                              }}
+                            >
+                              <Icon name="edit" size={12} />
+                            </button>
                           </div>
                         </div>
                       );
@@ -4238,15 +4430,11 @@ export function CommandPalette() {
               <>
                 {/* Sticky Document Action Bar */}
                 <div className="lex-doc-sticky-toolbar">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                    <Icon name="draft" size={14} style={{ color: 'var(--accent)' }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <Icon name="draft" size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 6 }}>
                       {activeDocument.title || 'Legal Document Draft'}
                     </span>
-                  </div>
-
-                  {/* Toolbar Actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     {docSections.length > 0 && (
                       <button
                         className="btn btn-sm"
@@ -4261,27 +4449,51 @@ export function CommandPalette() {
                         <Icon name="outline" size={12} /> {outlineOpen ? 'Outline ▲' : `Outline (${docSections.length})`}
                       </button>
                     )}
-                    <button className="btn btn-sm" onClick={handleCopyDraft} title="Copy Draft">
-                      <Icon name="copy" size={12} /> {copyToast ? 'Copied!' : 'Copy'}
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={() => setFileMenuOpen(v => !v)}
+                        title="File this draft into LexAmplify"
+                      >
+                        <Icon name="vault" size={12} /> Add to… <Icon name="chevron" size={10} style={{ transform: 'rotate(90deg)' }} />
+                      </button>
+                      {fileMenuOpen && (
+                        <div className="lex-filemenu" onMouseLeave={() => setFileMenuOpen(false)}>
+                          {DESTINATIONS.map(d => (
+                            <button
+                              key={d.id}
+                              type="button"
+                              className="lex-filemenu-item"
+                              onClick={() => { setFileMenuOpen(false); setSaveDestPreset(d.id); setShowSaveModal(true); }}
+                            >
+                              <Icon name={d.icon} size={13} />
+                              <span>
+                                <b>{d.label}</b>
+                                <small>{d.hint}</small>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Toolbar Actions — Download, Share, Enter full screen (ChatGPT-style, icon-only) */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button className="lex-icon-btn" onClick={handleCopyDraft} title="Copy draft">
+                      <Icon name={copyToast ? 'check' : 'copy'} size={14} />
                     </button>
-                    <button className="btn btn-sm" onClick={handleDownloadDraft} disabled={exportingDocx} title="Export as .docx">
-                      <Icon name="download" size={12} /> {exportError ? 'Export failed' : exportingDocx ? 'Exporting…' : 'Export .docx'}
+                    <button className="lex-icon-btn" onClick={handleDownloadDraft} disabled={exportingDocx} title={exportError ? 'Export failed — try again' : 'Download (.docx)'}>
+                      <Icon name="download" size={14} />
                     </button>
-                    <button className="btn btn-sm" onClick={() => window.print()} title="Print or Save as PDF">
-                      <Icon name="print" size={12} /> Print
+                    <button className="lex-icon-btn" onClick={() => setShowEditorShare(true)} title="Share">
+                      <Icon name="share" size={14} />
                     </button>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => setShowSaveModal(true)}
-                      title="Save to Case Vault"
-                    >
-                      <Icon name="folder" size={12} /> Save to Case Vault
+                    <button className="lex-icon-btn" onClick={() => setIsDrawerExpanded(v => !v)} title={isDrawerExpanded ? 'Exit full screen' : 'Enter full screen'}>
+                      <Icon name="fullscreen" size={14} />
                     </button>
-                    <button className="btn btn-sm" onClick={() => setIsDrawerExpanded(v => !v)} title="Toggle Full Width">
-                      <Icon name="sparkles" size={12} />
-                    </button>
-                    <button className="btn btn-sm" onClick={() => setDrawerOpen(false)} title="Close Draft Workspace">
-                      <Icon name="close" size={12} />
+                    <button className="lex-icon-btn" onClick={() => setDrawerOpen(false)} title="Close">
+                      <Icon name="close" size={14} />
                     </button>
                   </div>
                 </div>
@@ -4499,10 +4711,10 @@ export function CommandPalette() {
                     Discard
                   </button>
                   <button
-                    onClick={() => setShowSaveModal(true)}
+                    onClick={() => { setSaveDestPreset('vault'); setShowSaveModal(true); }}
                     className="btn btn-sm btn-primary"
                   >
-                    Save to Case Vault
+                    <Icon name="vault" size={12} /> File this draft
                   </button>
                 </div>
               </>
@@ -4512,15 +4724,15 @@ export function CommandPalette() {
         </div>
       </div>
 
-      {/* Save to Vault Modal */}
+      {/* Save Draft Modal — Case Vault / Firm Library / Practice / Document Hub */}
       {showSaveModal && (
         <SaveToVaultModal
           draft={activeDocument}
           sessionTitle={currentSession?.title || ''}
           apiBase={API_BASE}
-          messages={messages}
-          onConfirm={({ fileName, folderPath, vaultId }) => {
-            const savedItem = { id: vaultId ?? `v_${Date.now()}`, name: fileName, path: folderPath };
+          initialDest={saveDestPreset}
+          onConfirm={({ fileName, location, destination, vaultId }) => {
+            const savedItem = { id: vaultId ?? `v_${Date.now()}`, name: fileName, path: location };
             updateSession(currentId, s => ({
               ...s,
               savedAssets: [...(s.savedAssets || []), savedItem],
@@ -4529,10 +4741,11 @@ export function CommandPalette() {
             }));
             setShowSaveModal(false);
             setDrawerOpen(false);
+            const destLabel = DESTINATIONS.find(d => d.id === destination)?.label || 'Case Vault';
             pushMessage(currentId, {
               id: `sys_${Date.now()}`,
               role: 'assistant',
-              text: `✅ Document **${fileName}** saved to Case Vault (${folderPath || 'Root'}).`,
+              text: `✅ **${fileName}** saved to ${destLabel}${location ? ` (${location})` : ''}.`,
             });
           }}
           onClose={() => setShowSaveModal(false)}
@@ -4544,6 +4757,14 @@ export function CommandPalette() {
         <ShareModal
           sessionTitle={sessions.find(s => s.id === shareSessionId)?.title || ''}
           onClose={() => setShareSessionId(null)}
+        />
+      )}
+
+      {/* Share Modal — opened from the split-panel editor's toolbar */}
+      {showEditorShare && (
+        <ShareModal
+          sessionTitle={activeDocument?.title || currentSession?.title || ''}
+          onClose={() => setShowEditorShare(false)}
         />
       )}
 
