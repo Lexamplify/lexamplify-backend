@@ -4,6 +4,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ContractTiptapEditor from './ContractTiptapEditor.jsx';
 import DraftsModal from './DraftsModal.jsx';
 import { useContractStore } from '../store/useContractStore.js';
+import { useModuleHandoff } from '../utils/moduleHandoff.js';
 import { fetchDocuments, extractContractText } from '../services/api.js';
 import { smartFormatUploadedText } from '../tiptap/textToHtml.js';
 import { useLetterheads } from '../hooks/useLetterheads.js';
@@ -141,6 +142,27 @@ export default function AutoDraftWorkspace() {
       setDeepLinkDispute({ id, nonce: routeLocation.key });
     }
   }, [routeLocation.state, routeLocation.key]);
+  // ── Inbound document from the dashboard junction ────────────────────────────
+  // Arrives with its text already extracted, so it goes straight into the
+  // shared contract store and the reference-context selector points at it —
+  // the 'active_contract' path below is the only one that actually sends text
+  // to the drafting endpoint, so routing the handoff through it means a
+  // dashboard-sent document behaves exactly like one loaded here by hand.
+  const [handoffNotice, setHandoffNotice] = useState(null);
+  useModuleHandoff((payload) => {
+    if (payload.text && payload.text.trim()) {
+      setRawText(payload.text);
+      setSelectedContextMode('active_contract');
+      setIntelTab('instructions');
+      setPanelCollapsed(false);
+    }
+    setHandoffNotice({
+      name: payload.name,
+      sourceLabel: payload.sourceLabel,
+      empty: !(payload.text && payload.text.trim()),
+    });
+  });
+
   const [activeDispute, setActiveDispute] = useState(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [precedentSearch, setPrecedentSearch] = useState('');
@@ -578,8 +600,39 @@ export default function AutoDraftWorkspace() {
       let contextValue = null;
       if (selectedContextMode === 'active_contract' && rawText.trim()) {
         contextValue = rawText.trim();
-      } else if (selectedContextMode !== 'none' && selectedContextMode !== 'active_contract') {
-        contextValue = selectedContextMode;
+      } else if (selectedContextMode === 'active_contract') {
+        // "Active contract" selected but the editor is empty: previously this
+        // fell through every branch and drafted with no reference at all, while
+        // the selector still read "Active contract" — so the advocate believed
+        // the draft was built on their document when it was built on nothing.
+        setDrafting(false);
+        setDraftError('No active contract is loaded, so there is nothing to draft from. Load or paste a document, pick a reference from your vault, or set the reference to "None".');
+        return;
+      } else if (selectedContextMode !== 'none') {
+        // selectedContextMode holds the chosen vault document's ID. It used to
+        // be sent as-is, so the backend received the literal string "42" as the
+        // reference context and drafted against nothing — the picker looked
+        // like it worked and silently did not. Resolve the id to the document's
+        // real text before sending.
+        try {
+          const detail = await fetch(
+            `${API_BASE}/api/vault/documents/${encodeURIComponent(selectedContextMode)}/content`
+          ).then((r) => (r.ok ? r.json() : null));
+          const resolved = (detail && (detail.text || '')).trim();
+          if (resolved) {
+            contextValue = resolved;
+          } else {
+            setDrafting(false);
+            setDraftError(
+              'That reference document has no readable text yet (it may still be awaiting OCR). Pick another, or paste the text into the editor and use "Active contract".'
+            );
+            return;
+          }
+        } catch {
+          setDrafting(false);
+          setDraftError('Could not load that reference document. Check your connection and try again.');
+          return;
+        }
       }
 
       // Backend now resumes truncated drafts with up to 4 follow-up LLM
@@ -1461,6 +1514,35 @@ export default function AutoDraftWorkspace() {
               </div>
 
               <div className={`intel-body ${intelTab === 'instructions' ? 'active' : ''}`}>
+                {handoffNotice && (
+                  <div
+                    style={{
+                      border: '1px solid var(--rule, #333939)',
+                      borderLeft: `3px solid ${handoffNotice.empty ? '#D9AD5C' : 'var(--accent, #CC6B48)'}`,
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      marginBottom: '14px',
+                      fontSize: '12.5px',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: '2px' }}>
+                      {handoffNotice.empty ? 'No readable text in that document' : 'Reference loaded'}
+                    </div>
+                    <div style={{ opacity: 0.8 }}>
+                      {handoffNotice.empty
+                        ? `“${handoffNotice.name}” arrived from ${handoffNotice.sourceLabel} with no extractable text — it may still be awaiting OCR.`
+                        : `“${handoffNotice.name}” from ${handoffNotice.sourceLabel} is set as your reference context. Write the instruction below and draft.`}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setHandoffNotice(null)}
+                      style={{ background: 'none', border: 'none', padding: '4px 0 0', cursor: 'pointer', color: 'inherit', opacity: 0.6, fontSize: '11.5px' }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
                 <div>
                   <span className="field-label">Custom Drafting Instructions</span>
                   <textarea 

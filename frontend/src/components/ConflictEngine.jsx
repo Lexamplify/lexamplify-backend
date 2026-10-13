@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { runConflictCheck, analyzeConflicts, saveClearanceMemo, exportScheduleOfDiscrepanciesDocx } from '../services/api';
 import { getSharedFiles, subscribeSharedFiles } from '../utils/sharedWorkspaceStore';
+import { useModuleHandoff } from '../utils/moduleHandoff';
 import { useAuth } from '../context/AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -1394,7 +1395,17 @@ export default function ConflictEngine() {
 
       if (s.activeMode) setActiveMode(s.activeMode);
       if (Array.isArray(s.docs)) {
-        setDocs(s.docs.map(d => ({ id: d.id, name: d.name, size: d.size, text: d.text || '' })));
+        const restored = s.docs.map(d => ({ id: d.id, name: d.name, size: d.size, text: d.text || '' }));
+        // This effect re-runs whenever storageKey changes, and storageKey
+        // changes once AuthContext resolves the user id (it starts as
+        // 'default'). A plain replace therefore wiped a document the dashboard
+        // had just handed off, moments after adding it — the advocate watched
+        // their document appear and then vanish. Re-apply any handed-off
+        // documents the restored session doesn't already contain.
+        const pending = handoffDocsRef.current.filter(
+          (h) => !restored.some((r) => (r.text || '').trim() === h.text)
+        );
+        setDocs(pending.length ? [...restored, ...pending] : restored);
       }
       if (Array.isArray(s.activeConflicts)) setActiveConflicts(s.activeConflicts);
       if (typeof s.hasAnalyzed === 'boolean') setHasAnalyzed(s.hasAnalyzed);
@@ -1424,6 +1435,68 @@ export default function ConflictEngine() {
       hasLiveFilesRef.current = false;
     } catch (e) {}
   }, [storageKey]);
+
+  // ── Inbound document from the dashboard junction ────────────────────────────
+  // Declared AFTER the localStorage rehydrate effect above on purpose: effects
+  // run in declaration order, so putting it first would have the rehydrate
+  // overwrite the document we just added. Appends rather than replaces — a
+  // conflict check is inherently a comparison, so the advocate's existing set
+  // is what the new document is meant to be checked against.
+  const [handoffNotice, setHandoffNotice] = useState(null);
+  // Documents received from the dashboard this mount, so a later rehydrate can
+  // restore rather than erase them (see the rehydrate effect above).
+  const handoffDocsRef = useRef([]);
+  useModuleHandoff((payload) => {
+    const text = (payload.text || '').trim();
+    if (!text) {
+      setHandoffNotice({ name: payload.name, sourceLabel: payload.sourceLabel, empty: true });
+      return;
+    }
+    // A handed-off document carries its full text, exactly like a freshly
+    // dropped file — so it must flip the same three switches the file and
+    // sample loaders do. Without them: runAnalysis(force) refuses with
+    // "Re-upload these documents…" because hasLiveFilesRef is still false
+    // (making "Re-run fresh analysis" a permanently dead button), the document
+    // is lost on reload because it was never written to the session, and any
+    // conflicts already on screen keep being presented as current for a
+    // document set that has since changed.
+    // This screen opens in Triage Search by default, but a handed-off document
+    // is only consumed by the Cross-Document Workspace. Without this switch the
+    // advocate clicked "Conflicts" on the dashboard and landed on an unrelated
+    // intake form with no sign of their document — the action looking broken
+    // while having silently worked.
+    setActiveMode('cross-doc');
+    hasLiveFilesRef.current = true;
+    const handoffDoc = { id: `handoff-${payload.nonce}`, name: payload.name, text };
+    if (!handoffDocsRef.current.some((h) => h.text === text)) {
+      handoffDocsRef.current = [...handoffDocsRef.current, handoffDoc];
+    }
+    setDocs((prev) => {
+      // Dedupe on text only. Matching on name too would silently drop a
+      // genuinely different document that happens to share a title — common in
+      // practice ("Written Statement.pdf" in two matters) — while the banner
+      // still claimed it had been added.
+      if (prev.some((d) => (d.text || '').trim() === text)) return prev;
+      const next = [...prev, handoffDoc];
+      // activeMode must be passed explicitly: saveSession reads it from the
+      // closure, where the setActiveMode('cross-doc') above has not committed
+      // yet, so the session would be written as 'triage' and a reload would
+      // drop the advocate back into the triage form with this document
+      // invisible. Writing it now also makes the rehydrate effect harmless if
+      // it re-runs (its storageKey changes once auth resolves) — it restores
+      // from a session that already contains this document instead of
+      // replacing it with the pre-handoff set.
+      saveSession({ docs: next, activeMode: 'cross-doc' });
+      return next;
+    });
+    if (hasAnalyzed) setIsStale(true);
+    // Only the facts of the handoff are stored. Whether a second document is
+    // still needed is read off the live docs list at render time: this effect
+    // and the localStorage rehydrate above both run in the same commit, so any
+    // count captured here would be the pre-rehydrate one and could tell the
+    // advocate to add a document they already have.
+    setHandoffNotice({ name: payload.name, sourceLabel: payload.sourceLabel, empty: false });
+  });
 
   // ── Explicit Sample Document Loader (Only loads upon user click) ──
   const handleLoadSampleDocs = () => {
@@ -2011,6 +2084,47 @@ GENERATED BY: LexAmplify — Malpractice Shield Module
               multiple
               onChange={e => { handleAddFiles(e.target.files); e.target.value = ''; }}
             />
+
+            {/* Document pushed here from the dashboard junction */}
+            {handoffNotice && (
+              <div
+                style={{
+                  border: '1px solid var(--rule, #333939)',
+                  borderLeft: `3px solid ${handoffNotice.empty ? '#D9AD5C' : 'var(--accent, #CC6B48)'}`,
+                  borderRadius: '10px',
+                  padding: '12px 14px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ flex: 1, fontSize: '13px', lineHeight: 1.55 }}>
+                  <div style={{ fontWeight: 600, marginBottom: '2px' }}>
+                    {handoffNotice.empty
+                      ? 'No readable text in that document'
+                      : docs.length < 2
+                        ? 'One more document needed'
+                        : 'Document added'}
+                  </div>
+                  <div style={{ opacity: 0.78 }}>
+                    {handoffNotice.empty
+                      ? `“${handoffNotice.name}” arrived from ${handoffNotice.sourceLabel} with no extractable text — it may still be awaiting OCR.`
+                      : docs.length < 2
+                        ? `“${handoffNotice.name}” is loaded from ${handoffNotice.sourceLabel}. A conflict check compares documents against each other, so add at least one more.`
+                        : `“${handoffNotice.name}” from ${handoffNotice.sourceLabel} was added to this comparison set.`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHandoffNotice(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.55, fontSize: '16px', lineHeight: 1, padding: '2px 4px' }}
+                  aria-label="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            )}
 
             {/* Document Ingestion Area: Clean Upload Zone when empty, Document Strip when loaded */}
             {docs.length === 0 ? (

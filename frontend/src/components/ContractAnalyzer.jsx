@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useContractStore } from '../store/useContractStore';
+import { useModuleHandoff } from '../utils/moduleHandoff';
 import DraftsModal from './DraftsModal.jsx';
 import {
   extractContractText,
@@ -219,6 +220,39 @@ export default function ContractAnalyzer() {
   // Active Rail Tab: 'risks' | 'missing' | 'chat' | 'citations' | 'comments' | 'conflicts'
   const [activeTab, setActiveTab] = useState('risks');
 
+  // ── Inbound document from the dashboard junction ────────────────────────────
+  // The dashboard can send a Case Vault / Document Hub document straight here
+  // with its text already extracted, so the advocate never re-uploads a file
+  // the firm already holds. We pre-fill and announce it rather than firing the
+  // analysis automatically: an analysis is a paid, minutes-long AI run, and
+  // starting one the advocate didn't press a button for is the kind of
+  // surprise that burns both trust and credits.
+  const [handoffNotice, setHandoffNotice] = useState(null);
+  // Kept separately from the banner: dismissing the banner should hide a
+  // message, not quietly rename the advocate's document in the report and the
+  // downloaded file.
+  const [handoffDocName, setHandoffDocName] = useState('');
+  useModuleHandoff((payload) => {
+    if (!payload.text || !payload.text.trim()) {
+      setHandoffNotice({ name: payload.name, sourceLabel: payload.sourceLabel, empty: true });
+      return;
+    }
+    setHandoffDocName(payload.name);
+    setViewState('upload');
+    // Clear any previously picked file in BOTH local state and the shared
+    // store: handleBeginAnalysis prefers `contractFile` (which falls back to
+    // the store's file) over pasted text, so a stale file left behind here
+    // would silently win and analyse the wrong document.
+    setSelectedFile(null);
+    setStoreFile(null);
+    setPastedText(payload.text);
+    setRawContractText(payload.text);
+    setStoreRawText(payload.text);
+    setDocumentName(payload.name);
+    setScanError(null);
+    setHandoffNotice({ name: payload.name, sourceLabel: payload.sourceLabel, empty: false });
+  });
+
   // Flag Navigator in Document Toolbar
   const [activeFlagIndex, setActiveFlagIndex] = useState(0);
 
@@ -307,7 +341,14 @@ export default function ContractAnalyzer() {
     setScanError(null);
     setConsoleLogs([]);
 
-    const docTitle = contractFile ? contractFile.name : (pastedText.trim() ? 'Pasted Contract Document.txt' : 'Contract Document.pdf');
+    // A document sent here from the dashboard already has its real title, and
+    // it arrives as text with no File object — so the generic "Pasted Contract
+    // Document.txt" fallback used to overwrite the actual name and carry that
+    // through the scan header, the report and the downloaded filename.
+    const docTitle = contractFile
+      ? contractFile.name
+      : handoffDocName
+        || (pastedText.trim() ? 'Pasted Contract Document.txt' : 'Contract Document.pdf');
     setDocumentName(docTitle);
 
     const startTime = Date.now();
@@ -1374,6 +1415,39 @@ export default function ContractAnalyzer() {
               </div>
             </div>
 
+            {/* Document pushed here from the dashboard junction */}
+            {handoffNotice && (
+              <div
+                className="scan-error-banner"
+                style={{
+                  maxWidth: '100%',
+                  marginBottom: '24px',
+                  borderColor: handoffNotice.empty ? undefined : 'var(--accent)',
+                }}
+              >
+                <div className="scan-error-title">
+                  {handoffNotice.empty ? ICONS.infoCircle : ICONS.fileCheck}{' '}
+                  <span>{handoffNotice.empty ? 'Nothing to read in that document' : 'Loaded from your workspace'}</span>
+                </div>
+                <div className="scan-error-msg">
+                  {handoffNotice.empty
+                    ? `“${handoffNotice.name}” came through from ${handoffNotice.sourceLabel} with no readable text — it may be a scan awaiting OCR. Upload it below or pick another document.`
+                    : `“${handoffNotice.name}” from ${handoffNotice.sourceLabel} is ready. Review the scan depth below, then start the analysis.`}
+                </div>
+                <div className="scan-error-actions">
+                  {!handoffNotice.empty && (
+                    <button type="button" className="btn btn-primary btn-sm" onClick={handleBeginAnalysis}>
+                      {ICONS.sparkles}
+                      <span>Begin Analysis</span>
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-sm" onClick={() => setHandoffNotice(null)}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* High-Contrast Error Card on Failure (Document Preserved) */}
             {scanError && (
               <div className="scan-error-banner" style={{ maxWidth: '100%', marginBottom: '24px' }}>
@@ -1441,6 +1515,11 @@ export default function ContractAnalyzer() {
                   value={pastedText}
                   onChange={(e) => {
                     setPastedText(e.target.value);
+                    // Once the advocate edits the text themselves it is no
+                    // longer the document the dashboard sent, so stop
+                    // attributing it to that document's name and source.
+                    setHandoffDocName('');
+                    setHandoffNotice(null);
                     if (e.target.value.trim()) {
                       setSelectedFile(null);
                       setStoreFile(null);
