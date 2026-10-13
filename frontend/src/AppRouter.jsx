@@ -357,6 +357,20 @@ const SIDEBAR_STYLES = `
   .sb-group-body{ display:grid; grid-template-rows:0fr; transition:grid-template-rows 220ms cubic-bezier(.32,.72,0,1); }
   .sb-group-body.open{ grid-template-rows:1fr; }
   .sb-group-body-inner{ overflow:hidden; min-height:0; }
+  .sb-group-title{ flex:1; }
+  /* Folded-header extras: a small dot when the current page lives inside
+     (so you can tell at a glance without opening it) and an item count so
+     folding doesn't hide how much is in there. */
+  .sb-group-dot{ width:6px; height:6px; border-radius:50%; background:var(--sb-accent); flex-shrink:0; }
+  .sb-group-count{ font-family:var(--sb-font-mono); font-size:10px; color:var(--sb-muted-2); flex-shrink:0; }
+  /* The one item that "peeks" through a folded group — same active-row
+     look as inside an open group, just sitting directly under the header
+     instead of a full item list. */
+  .sb-group-peek{ border-bottom:1px solid var(--sb-rule); }
+  .sb-group-allrow{ padding:10px 24px 2px; display:flex; justify-content:flex-end; }
+  .sb-group-allbtn{ background:none; border:none; cursor:pointer; font-family:var(--sb-font-mono); font-size:10.5px; letter-spacing:.04em; color:var(--sb-muted); padding:2px 0; }
+  .sb-group-allbtn:hover{ color:var(--sb-accent); }
+  .sb-group-allbtn:focus-visible{ outline:2px solid var(--sb-accent); outline-offset:2px; }
   .sb-entry{ display:flex; align-items:center; gap:13px; padding:9px 24px; border-bottom:1px solid var(--sb-paper-2); cursor:pointer; text-decoration:none; color:inherit; }
   .sb-entry:hover{ background:var(--sb-paper-2); }
   .sb-entry:hover .sb-icon{ color:var(--sb-accent); }
@@ -703,9 +717,9 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   // vault) — a long nav list means scrolling just to reach the item you
   // want, so each group can be folded shut independently. Remembered per
   // advocate across sessions (same pattern as the sidebar's own collapse
-  // state), and whichever group holds the page you're currently on is
-  // always forced open — collapsing a section should never hide where you
-  // already are.
+  // state). Folding a group never truly hides where you are: if the page
+  // you're on lives in a folded group, that one item still peeks through
+  // beneath the header, and the header itself carries a small dot.
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('lexai_sidebar_collapsed_groups') || '{}');
@@ -716,6 +730,12 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
     localStorage.setItem('lexai_sidebar_collapsed_groups', JSON.stringify(collapsedGroups));
   }, [collapsedGroups]);
   const toggleGroup = (title) => setCollapsedGroups((prev) => ({ ...prev, [title]: !prev[title] }));
+  const allGroupsCollapsed = NAVIGATION_GROUPS.every((g) => collapsedGroups[g.title]);
+  const toggleAllGroups = () => {
+    const next = {};
+    NAVIGATION_GROUPS.forEach((g) => { next[g.title] = !allGroupsCollapsed; });
+    setCollapsedGroups(next);
+  };
   // Focus mode and manual collapse both render the same compact capsule —
   // building two different collapsed treatments for a distinction the
   // brief never draws would just be extra complexity for no real gain.
@@ -821,14 +841,26 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           </button>
 
           <div className="sb-index">
+            <div className="sb-group-allrow">
+              <button type="button" className="sb-group-allbtn" onClick={toggleAllGroups}>
+                {allGroupsCollapsed ? 'Expand all' : 'Collapse all'}
+              </button>
+            </div>
             {NAVIGATION_GROUPS.map((group) => {
-              const groupHasActiveItem = group.items.some(item =>
+              const getActiveStatus = (item) => {
+                if (item.path === '/vault') return `${sidebarCases.length} tracked matter${sidebarCases.length !== 1 ? 's' : ''}`;
+                if (item.badge?.type === 'live') return 'Live';
+                return undefined;
+              };
+              const activeItem = group.items.find(item =>
                 item.path === '/dashboard' ? p === item.path : p.startsWith(item.path)
               );
-              // A section the advocate folded shut still opens itself the
-              // moment they're actually on a page inside it — collapsing a
-              // group is a tidiness choice, never a way to lose your place.
-              const isGroupOpen = !collapsedGroups[group.title] || groupHasActiveItem;
+              // Folding is purely the advocate's own choice now — it no
+              // longer force-reopens itself. Instead, a folded group that
+              // holds the current page keeps a dot on its header and lets
+              // that one item peek through underneath, so you always know
+              // where you are without the whole section springing open.
+              const isGroupOpen = !collapsedGroups[group.title];
               return (
                 <div key={group.title} className="sb-group">
                   <button
@@ -838,24 +870,25 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
                     aria-expanded={isGroupOpen}
                   >
                     <span className={`sb-group-chevron${isGroupOpen ? ' open' : ''}`}>{Icons.chevronRight(11)}</span>
-                    {group.title}
+                    <span className="sb-group-title">{group.title}</span>
+                    {!isGroupOpen && activeItem && <span className="sb-group-dot" title={`You're on ${activeItem.name}`} />}
+                    {!isGroupOpen && <span className="sb-group-count">{group.items.length}</span>}
                   </button>
                   <div className={`sb-group-body${isGroupOpen ? ' open' : ''}`}>
                     <div className="sb-group-body-inner">
                       {group.items.map(item => {
-                        const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
-                        let activeStatus;
-                        if (isActive && item.path === '/vault') {
-                          activeStatus = `${sidebarCases.length} tracked matter${sidebarCases.length !== 1 ? 's' : ''}`;
-                        } else if (isActive && item.badge?.type === 'live') {
-                          activeStatus = 'Live';
-                        }
+                        const isActive = item === activeItem;
                         return (
-                          <NavItem key={item.path} item={item} isActive={isActive} activeStatus={activeStatus} onClick={closeSidebar} />
+                          <NavItem key={item.path} item={item} isActive={isActive} activeStatus={isActive ? getActiveStatus(item) : undefined} onClick={closeSidebar} />
                         );
                       })}
                     </div>
                   </div>
+                  {!isGroupOpen && activeItem && (
+                    <div className="sb-group-peek">
+                      <NavItem item={activeItem} isActive activeStatus={getActiveStatus(activeItem)} onClick={closeSidebar} />
+                    </div>
+                  )}
                 </div>
               );
             })}
