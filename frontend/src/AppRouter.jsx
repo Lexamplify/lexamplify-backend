@@ -274,7 +274,15 @@ const SIDEBAR_STYLES = `
     transition:width 420ms cubic-bezier(.32, .72, 0, 1);
   }
   .sb-wrap *{ box-sizing:border-box; }
-  .sb-wrap.collapsed{ width:96px; }
+  /* Collapsing: the outer rail only starts narrowing once the full-text
+     sidebar has finished fading out (its own opacity transition below has
+     no delay and is fully done by ~220ms) — a 200ms head start here keeps
+     the rail from visibly narrowing around still-legible "Workspace" /
+     "Litigation & disputes" text mid-fade, which read as a broken/half-done
+     collapse if caught in a screenshot or screen recording. Expanding (the
+     class removed) uses the base .sb-wrap transition above with no delay,
+     since the sidebar should start growing immediately. */
+  .sb-wrap.collapsed{ width:96px; transition:width 320ms cubic-bezier(.32, .72, 0, 1) 200ms; }
   /* Phones: the sidebar becomes an off-canvas drawer opened by the hamburger (the older .sidebar rules in index.css no longer match this markup). */
   @media (max-width: 768px){
     .sb-wrap, .sb-wrap.collapsed{
@@ -312,8 +320,8 @@ const SIDEBAR_STYLES = `
     opacity:0;
     transform:translateX(-10px);
     pointer-events:none;
-    transition:opacity 260ms cubic-bezier(.32, .72, 0, 1) 0ms,
-               transform 320ms cubic-bezier(.32, .72, 0, 1) 0ms,
+    transition:opacity 180ms ease-out 0ms,
+               transform 200ms ease-out 0ms,
                background .2s ease,
                border-color .2s ease;
   }
