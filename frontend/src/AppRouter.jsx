@@ -344,6 +344,19 @@ const SIDEBAR_STYLES = `
 
   .sb-index{ flex:1; overflow-y:auto; padding-bottom:8px; }
   .sb-group-label{ font-family:var(--sb-font-serif); font-style:italic; font-size:12.5px; color:var(--sb-ink-soft); padding:20px 24px 8px; }
+  /* Group header is now a real button — same look as the old static label,
+     plus a chevron that rotates open/shut. */
+  .sb-group-toggle{ display:flex; align-items:center; gap:7px; width:100%; background:none; border:none; cursor:pointer; text-align:left; font-family:inherit; }
+  .sb-group-toggle:hover{ color:var(--sb-ink); }
+  .sb-group-toggle:focus-visible{ outline:2px solid var(--sb-accent); outline-offset:-2px; }
+  .sb-group-chevron{ display:inline-flex; color:var(--sb-muted-2); transition:transform 180ms cubic-bezier(.32,.72,0,1); flex-shrink:0; }
+  .sb-group-chevron.open{ transform:rotate(90deg); }
+  /* Smooth, height-auto-friendly collapse using the grid-rows trick (no JS
+     height measuring needed) — 0fr/1fr animates cleanly and content never
+     needs a fixed max-height guess that breaks when items are added. */
+  .sb-group-body{ display:grid; grid-template-rows:0fr; transition:grid-template-rows 220ms cubic-bezier(.32,.72,0,1); }
+  .sb-group-body.open{ grid-template-rows:1fr; }
+  .sb-group-body-inner{ overflow:hidden; min-height:0; }
   .sb-entry{ display:flex; align-items:center; gap:13px; padding:9px 24px; border-bottom:1px solid var(--sb-paper-2); cursor:pointer; text-decoration:none; color:inherit; }
   .sb-entry:hover{ background:var(--sb-paper-2); }
   .sb-entry:hover .sb-icon{ color:var(--sb-accent); }
@@ -685,6 +698,24 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
   useEffect(() => {
     localStorage.setItem('lexai_sidebar_collapsed', isCollapsed ? '1' : '0');
   }, [isCollapsed]);
+
+  // ── Per-group accordion (Workspace / Litigation & disputes / Practice &
+  // vault) — a long nav list means scrolling just to reach the item you
+  // want, so each group can be folded shut independently. Remembered per
+  // advocate across sessions (same pattern as the sidebar's own collapse
+  // state), and whichever group holds the page you're currently on is
+  // always forced open — collapsing a section should never hide where you
+  // already are.
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('lexai_sidebar_collapsed_groups') || '{}');
+      return saved && typeof saved === 'object' ? saved : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem('lexai_sidebar_collapsed_groups', JSON.stringify(collapsedGroups));
+  }, [collapsedGroups]);
+  const toggleGroup = (title) => setCollapsedGroups((prev) => ({ ...prev, [title]: !prev[title] }));
   // Focus mode and manual collapse both render the same compact capsule —
   // building two different collapsed treatments for a distinction the
   // brief never draws would just be extra complexity for no real gain.
@@ -790,23 +821,44 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
           </button>
 
           <div className="sb-index">
-            {NAVIGATION_GROUPS.map((group) => (
-              <div key={group.title}>
-                <div className="sb-group-label">{group.title}</div>
-                {group.items.map(item => {
-                  const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
-                  let activeStatus;
-                  if (isActive && item.path === '/vault') {
-                    activeStatus = `${sidebarCases.length} tracked matter${sidebarCases.length !== 1 ? 's' : ''}`;
-                  } else if (isActive && item.badge?.type === 'live') {
-                    activeStatus = 'Live';
-                  }
-                  return (
-                    <NavItem key={item.path} item={item} isActive={isActive} activeStatus={activeStatus} onClick={closeSidebar} />
-                  );
-                })}
-              </div>
-            ))}
+            {NAVIGATION_GROUPS.map((group) => {
+              const groupHasActiveItem = group.items.some(item =>
+                item.path === '/dashboard' ? p === item.path : p.startsWith(item.path)
+              );
+              // A section the advocate folded shut still opens itself the
+              // moment they're actually on a page inside it — collapsing a
+              // group is a tidiness choice, never a way to lose your place.
+              const isGroupOpen = !collapsedGroups[group.title] || groupHasActiveItem;
+              return (
+                <div key={group.title} className="sb-group">
+                  <button
+                    type="button"
+                    className="sb-group-label sb-group-toggle"
+                    onClick={() => toggleGroup(group.title)}
+                    aria-expanded={isGroupOpen}
+                  >
+                    <span className={`sb-group-chevron${isGroupOpen ? ' open' : ''}`}>{Icons.chevronRight(11)}</span>
+                    {group.title}
+                  </button>
+                  <div className={`sb-group-body${isGroupOpen ? ' open' : ''}`}>
+                    <div className="sb-group-body-inner">
+                      {group.items.map(item => {
+                        const isActive = item.path === '/dashboard' ? p === item.path : p.startsWith(item.path);
+                        let activeStatus;
+                        if (isActive && item.path === '/vault') {
+                          activeStatus = `${sidebarCases.length} tracked matter${sidebarCases.length !== 1 ? 's' : ''}`;
+                        } else if (isActive && item.badge?.type === 'live') {
+                          activeStatus = 'Live';
+                        }
+                        return (
+                          <NavItem key={item.path} item={item} isActive={isActive} activeStatus={activeStatus} onClick={closeSidebar} />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
 
             {/* Live case listing from API — real functionality the mockup
                 never anticipated, kept as a fourth dynamic group. */}
