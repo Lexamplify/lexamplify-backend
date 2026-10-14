@@ -1,0 +1,389 @@
+"""
+routes/auth_routes.py
+Blueprint: /api/auth
+  POST /api/auth/signup            — legacy alias, same User-model path as /register (server-rendered templates only)
+  POST /api/auth/register          — create account, issues HttpOnly cookie session
+  POST /api/auth/login             — verify credentials, issues HttpOnly cookie session
+  POST /api/auth/logout            — clears cookie session
+  POST /api/auth/refresh           — rotates a new access cookie from the refresh cookie
+  GET  /api/auth/me                — current session identity (cookie-derived), for zero-friction reload
+  POST /api/auth/forgot-password   — rate-limited, always returns a generic response (anti-enumeration)
+  POST /api/auth/reset-password    — consumes a signed reset token, sets a new password
+
+All five persist through the real SQLAlchemy `User` model (see models/user.py),
+which reaches whatever DATABASE_URL is configured — Neon Postgres in
+production. This used to NOT be true: register/login/me/forgot-password/
+reset-password each read and wrote a private raw-sqlite3 file
+(lex_assistant.db) directly, completely bypassing `db`/`User` — the actual
+root cause of registrations never appearing in the Neon `users` table (the
+code was never trying to reach it). services/legacy_user_migration.py
+carries over anyone who registered through that old path.
+
+JWTs live ONLY in HttpOnly cookies — never in a JSON response body, never
+in localStorage. CSRF double-submit is enforced by Flask-JWT-Extended's
+built-in cookie-CSRF protection (JWT_COOKIE_CSRF_PROTECT, configured in
+app.py): a companion non-HttpOnly `csrf_access_token` cookie is set
+alongside the HttpOnly JWT cookie, and every state-changing request must
+echo its value back in the X-CSRF-TOKEN header or Flask-JWT-Extended
+rejects it — a cookie alone (which a CSRF attacker's cross-site form can
+trigger the browser into sending automatically) is never sufficient.
+"""
+import os
+
+from flask import Blueprint, current_app, request, jsonify
+from flask_jwt_extended import (
+    create_access_token,
+    create_refresh_token,
+    set_access_cookies,
+    set_refresh_cookies,
+    unset_jwt_cookies,
+    jwt_required,
+    get_jwt_identity,
+)
+from sqlalchemy.exc import DBAPIError
+from werkzeug.security import generate_password_hash, check_password_hash
+from database import db
+from models.user import User
+from utils.limiter import limiter
+from utils.mailer import send_email
+from utils.tokens import generate_reset_token, verify_reset_token
+
+auth_bp = Blueprint("auth", __name__)
+
+
+@auth_bp.route("/signup", methods=["POST"])
+def signup():
+    # Legacy path for the server-rendered templates/signup.html — not used
+    # by the React app (which posts to /register below). Left as-is.
+    try:
+        data = request.get_json()
+        name     = data.get("name", "").strip()
+        email    = data.get("email", "").strip().lower()
+        password = data.get("password", "").strip()
+        role     = data.get("role", "Lawyer")
+
+        if not name or not email or not password:
+            return jsonify({"error": "Name, email and password are required."}), 400
+        if User.query.filter_by(email=email).first():
+            return jsonify({"error": "Email already registered."}), 409
+
+        user = User(
+            name=name, email=email,
+            password=generate_password_hash(password),
+            role=role
+        )
+        db.session.add(user)
+        db.session.commit()
+        token = create_access_token(identity=str(user.id))
+        return jsonify({"token": token, "name": user.name, "role": user.role}), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Signup error: {str(e)}")
+        return jsonify({"error": f"Server error: {str(e)}", "code": "INTERNAL_ERROR"}), 500
+
+
+def _issue_session_response(payload, user_id, status=200):
+    """Builds the JSON body first, then attaches HttpOnly access+refresh
+    JWT cookies to it — the token itself never appears in `payload`."""
+    resp = jsonify(payload)
+    access_token = create_access_token(identity=str(user_id))
+    refresh_token = create_refresh_token(identity=str(user_id))
+    set_access_cookies(resp, access_token)
+    set_refresh_cookies(resp, refresh_token)
+    return resp, status
+
+
+@auth_bp.route('/register', methods=['POST'])
+def register_user():
+    try:
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip().lower()
+        password = data.get('password') or ''
+        phone = (data.get('phone') or '').strip()
+        name = (data.get('name') or data.get('full_name') or (email.split('@')[0] if email else '')).strip()
+
+        if not email or not password:
+            return jsonify({"error": "Email and password required"}), 400
+        if len(password) < 8:
+            return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+        if User.query.filter_by(email=email).first():
+            return jsonify({"error": "An account with this email already exists."}), 400
+
+        user = User(
+            email=email,
+            password=generate_password_hash(password),
+            name=name,
+            phone=phone or None,
+        )
+        try:
+            db.session.add(user)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"[register] commit failed: {e}")
+            return jsonify({"error": f"Registration failed: {e}", "code": "INTERNAL_ERROR"}), 500
+
+        return _issue_session_response(
+            {"message": "Account created.", "user": {"id": user.id, "email": user.email, "name": user.name, "phone": user.phone}},
+            user.id, status=201,
+        )
+    except Exception as e:
+        db.session.rollback()
+        print(f"[register] error: {e}")
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+
+
+def _practice_event(name, user, ok, reason=None):
+    """Tell the Practice module about a sign-in (it keeps the login history). Never raises."""
+    fn = current_app.extensions.get(name)
+    if fn and user is not None:
+        try:
+            fn(user, ok, reason)
+        except Exception as exc:
+            print(f"[login] practice log skipped: {exc}")
+
+
+@auth_bp.route('/login', methods=['POST'])
+@limiter.limit("10/minute")
+def login_user():
+    try:
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or data.get('username') or '').strip().lower()
+        password = data.get('password') or ''
+
+        if not email or not password:
+            return jsonify({"error": "Missing credentials"}), 400
+
+        # A Neon database that went to sleep (or dropped an idle pooled connection) fails the first query
+        # with an OperationalError; the same query a moment later succeeds. Retry once on a fresh
+        # connection before giving up, so the person never sees that first failure.
+        try:
+            user = User.query.filter_by(email=email).first()
+        except DBAPIError:
+            db.session.rollback()
+            db.session.remove()
+            user = User.query.filter_by(email=email).first()
+
+        # No auto-creation on login — an unrecognized email is a straight
+        # 401, same message as a wrong password, so a brute-forcer can't
+        # use this endpoint to enumerate which emails have accounts.
+        if not user or not check_password_hash(user.password, password):
+            _practice_event("lpms_login_event", user, False, "Wrong password")
+            return jsonify({"error": "Invalid email or password."}), 401
+
+        # Practice module: two-step sign-in (TOTP) for accounts that turned it on. Only an explicit "code needed / wrong code"
+        # stops the login; a problem inside the Practice module never locks anyone out of the app.
+        gate = current_app.extensions.get("lpms_login_gate")
+        if gate:
+            try:
+                blocked = gate(user, data.get("otp"))
+            except Exception as exc:
+                print(f"[login] practice gate skipped: {exc}")
+                blocked = None
+            if blocked:
+                return jsonify(blocked[0]), blocked[1]
+        _practice_event("lpms_login_event", user, True)
+
+        return _issue_session_response(
+            {"user": {"id": user.id, "email": user.email, "name": user.name}},
+            user.id,
+        )
+    except DBAPIError as e:
+        # The database is still waking up: say so (503), which the login page retries by itself.
+        db.session.rollback()
+        print(f"[login] database not ready: {e}")
+        return jsonify({"error": "The database is waking up. Please try again in a few seconds.", "code": "DB_WAKING"}), 503
+    except Exception as e:
+        print(f"[login] error: {e}")
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+
+
+@auth_bp.route('/logout', methods=['POST'])
+def logout_user():
+    resp = jsonify({"message": "Logged out."})
+    unset_jwt_cookies(resp)
+    return resp, 200
+
+
+@auth_bp.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh_token():
+    identity = get_jwt_identity()
+    resp = jsonify({"message": "Session refreshed."})
+    access_token = create_access_token(identity=identity)
+    set_access_cookies(resp, access_token)
+    return resp, 200
+
+
+def _user_payload(user):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "phone": user.phone,
+        "role": user.role,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+    }
+
+
+@auth_bp.route('/me', methods=['GET'])
+@jwt_required()
+def current_user():
+    """Cookie-derived identity check — lets the frontend confirm an
+    existing session on page load without ever touching localStorage."""
+    user_id = get_jwt_identity()
+    try:
+        user = User.query.get(int(user_id))
+        if not user:
+            return jsonify({"error": "Session user not found."}), 404
+        return jsonify({"user": _user_payload(user)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+
+
+@auth_bp.route('/me', methods=['PATCH'])
+@jwt_required()
+def update_current_user():
+    """Account Settings → Profile: updates the advocate's own display name
+    and phone number. Email is intentionally read-only here — it is the
+    sign-in identity, so changing it belongs in a dedicated, verified flow,
+    not a quiet profile-form field."""
+    user_id = get_jwt_identity()
+    try:
+        user = User.query.get(int(user_id))
+        if not user:
+            return jsonify({"error": "Session user not found."}), 404
+
+        data = request.get_json(silent=True) or {}
+
+        if 'name' in data:
+            name = (data.get('name') or '').strip()
+            if not name:
+                return jsonify({"error": "Name cannot be empty."}), 400
+            if len(name) > 120:
+                return jsonify({"error": "Name is too long."}), 400
+            user.name = name
+
+        if 'phone' in data:
+            phone = (data.get('phone') or '').strip()
+            if phone and len(phone) > 20:
+                return jsonify({"error": "Phone number is too long."}), 400
+            user.phone = phone or None
+
+        db.session.commit()
+        return jsonify({"user": _user_payload(user)}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+
+
+@auth_bp.route('/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    """Account Settings → Security: change password while already signed
+    in (requires the current password), as distinct from the existing
+    signed-out forgot/reset-password email flow above."""
+    user_id = get_jwt_identity()
+    try:
+        user = User.query.get(int(user_id))
+        if not user:
+            return jsonify({"error": "Session user not found."}), 404
+
+        data = request.get_json(silent=True) or {}
+        current_password = (data.get('current_password') or '').strip()
+        new_password = (data.get('new_password') or '').strip()
+
+        if not current_password or not new_password:
+            return jsonify({"error": "Current and new password are required."}), 400
+        if len(new_password) < 8:
+            return jsonify({"error": "New password must be at least 8 characters."}), 400
+        if not check_password_hash(user.password, current_password):
+            return jsonify({"error": "Current password is incorrect."}), 401
+
+        user.password = generate_password_hash(new_password)
+        db.session.commit()
+        return jsonify({"message": "Password updated."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+
+
+@auth_bp.route('/forgot-password', methods=['POST'])
+@limiter.limit("3/hour")
+def forgot_password():
+    GENERIC_MESSAGE = {"message": "If an account exists for that email, a reset link has been sent."}
+    is_dev = os.getenv('FLASK_ENV') != 'production'
+    try:
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            # Still generic — do not reveal that the request shape itself was wrong
+            # in a way that would distinguish "no such field" from "no such user".
+            return jsonify(GENERIC_MESSAGE), 200
+
+        user = User.query.filter_by(email=email).first()
+
+        mail_sent = True
+        if user:
+            reset_token = generate_reset_token(email)
+            frontend_origin = (data.get('frontend_origin') or '').strip() or 'https://app.lexamplify.in'
+            reset_link = f"{frontend_origin}/login?resetToken={reset_token}"
+            mail_sent = send_email(
+                email,
+                "Reset your LexAmplify password",
+                f"Click to reset your password (expires in 1 hour): {reset_link}",
+            )
+
+        # Dev-only visibility into a real operational gap (SMTP unset) —
+        # gated on `user` truthy so it can NEVER be used to distinguish a
+        # real account from a nonexistent one, only "is mail configured".
+        # Production never takes this branch: same 200 either way.
+        if user and not mail_sent and is_dev:
+            print(f"[forgot_password] SMTP not configured — reset link for {email} was only logged, not emailed.")
+            return jsonify({
+                "error": "Email delivery is not configured (SMTP_HOST unset). Reset link was logged server-side instead.",
+                "code": "MAILER_NOT_CONFIGURED",
+            }), 503
+
+        # Same response, same latency profile whether or not the user
+        # exists — no branch that lets a caller distinguish the two cases.
+        return jsonify(GENERIC_MESSAGE), 200
+    except Exception as e:
+        print(f"[forgot_password] internal error: {e}")
+        if is_dev:
+            return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 503
+        # Never leak internal errors in production either — an error state
+        # must not become a third distinguishable response an enumeration
+        # attack could key off.
+        return jsonify(GENERIC_MESSAGE), 200
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+@limiter.limit("5/hour")
+def reset_password():
+    try:
+        data = request.get_json(silent=True) or {}
+        token = data.get('token') or ''
+        new_password = data.get('password') or ''
+
+        if not token or not new_password:
+            return jsonify({"error": "Token and new password are required."}), 400
+        if len(new_password) < 8:
+            return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+        email = verify_reset_token(token, max_age_seconds=3600)
+        if not email:
+            return jsonify({"error": "This reset link is invalid or has expired."}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "This reset link is invalid or has expired."}), 400
+
+        user.password = generate_password_hash(new_password)
+        db.session.commit()
+        return jsonify({"message": "Password updated. You can now sign in."}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"[reset_password] error: {e}")
+        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500

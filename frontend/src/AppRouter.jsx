@@ -14,6 +14,8 @@ import { useContractStore } from './store/useContractStore';
 import DraftsModal from './components/DraftsModal.jsx';
 import ConflictEngine from './components/ConflictEngine';
 import LandingPage from './components/LandingPage';
+import SolutionsPage from './components/marketing/SolutionsPage';
+import SecurityPage from './components/marketing/SecurityPage';
 import LoginPage from './components/LoginPage';
 import CalendarView from './components/CalendarView';
 import VaultView from './components/VaultView';
@@ -1046,6 +1048,8 @@ function AppRouterContent() {
       <CommandPalette />
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/solutions" element={<SolutionsPage />} />
+        <Route path="/security" element={<SecurityPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
         <Route path="/workspace/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterLauncher /></Layout>} />

@@ -1,1208 +1,530 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import LexLogoMark from './LexLogoMark';
+import { Icon } from './marketing/MarketingLayout';
 import { waitUntilAwake, isServerAwake } from '../utils/warmServer';
+import './marketing/marketing.css';
+import './marketing/auth.css';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-// Render (backend) and Neon (Postgres) both cold-start from idle — a sub-30s
-// abort was firing "slow to respond" errors on requests that would have
-// succeeded a few seconds later. 35s covers a worst-case double cold-start
-// (Render waking up, then its first query waking Neon) with headroom.
-const AUTH_REQUEST_TIMEOUT_MS = 45000;
-// After this long still waiting, swap the button label so a slow cold-start
-// reads as "working" rather than "hung" — tuned to fire well before a fast
-// warm request would ever reach it, so it's invisible on the common path.
-const SLOW_CONNECTION_THRESHOLD_MS = 4000;
-const WAKING_UP_MESSAGE = 'Authentication server is waking up. Please wait a few seconds and try again.';
+// Render (backend) and Neon (Postgres) both cold-start from idle, so the first
+// request after a quiet spell can take a while. We wake the server when this page
+// opens and retry quietly instead of showing an error for something that is not
+// the person's fault.
+const FIRST_TRY_TIMEOUT_MS = 45000;
+const RETRY_TIMEOUT_MS = 25000;
+const SLOW_AFTER_MS = 4000;
+const WAKING_MESSAGE = 'Our secure server is waking up. Please try again in a few seconds.';
+const WAKING_STATUSES = [502, 503, 504, 520, 521, 522, 523, 524];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-const loginStyles = `
-  /* ── Root layout ── */
-  .lx-login {
-    display: flex; min-height: 100vh;
-    font-family: var(--font-sans);
-    background: #06090F;
-    transition: background 0.45s;
-  }
-  [data-theme="light"] .lx-login { background: #F1F5F9; }
+/** Reduce whatever was typed or pasted ("+91 98765-43210", "09876543210") to the 10 digits. */
+const tenDigits = (raw) => {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
+  if (d.length > 10 && d.startsWith('0')) d = d.slice(1);
+  return d.slice(0, 10);
+};
+const phoneOk = (d) => /^[6-9]\d{9}$/.test(d);
 
-  /* ── Left panel ── */
-  .lx-left {
-    display: none; flex: 1.1;
-    position: relative; overflow: hidden;
-    background: linear-gradient(160deg, #0B1120 0%, #0D1528 50%, #091020 100%);
-    padding: 0;
-    transition: background 0.45s;
-  }
-  [data-theme="light"] .lx-left {
-    background: linear-gradient(160deg, #0F1F42 0%, #152247 50%, #0D1A38 100%);
-  }
-  @media (min-width: 900px) { .lx-left { display: flex; flex-direction: column; } }
+/** 0-4 strength score. Length matters most; mixing character types adds a little. */
+function passwordLevel(pw) {
+  if (!pw) return 0;
+  let s = 0;
+  if (pw.length >= 8) s += 1;
+  if (pw.length >= 12) s += 1;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s += 1;
+  if (/\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)) s += 1;
+  return Math.max(pw.length >= 8 ? 1 : 0, Math.min(4, s));
+}
+const LEVEL_LABEL = ['', 'Fine to start', 'Good', 'Strong', 'Very strong'];
 
-  /* background grid */
-  .lx-left-grid {
-    position: absolute; inset: 0; z-index: 0;
-    background-image:
-      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-    background-size: 44px 44px;
-  }
-  [data-theme="light"] .lx-left-grid {
-    background-image:
-      linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
-  }
-  /* animated orbs */
-  .lx-orb {
-    position: absolute; border-radius: 50%;
-    filter: blur(100px); pointer-events: none; z-index: 0;
-  }
-  .lx-orb-1 {
-    width: 560px; height: 560px;
-    background: radial-gradient(circle, rgba(37,99,235,0.18) 0%, transparent 70%);
-    top: -120px; left: -80px;
-    animation: lx-drift1 14s ease-in-out infinite alternate;
-  }
-  .lx-orb-2 {
-    width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(139,92,246,0.14) 0%, transparent 70%);
-    bottom: 80px; right: -60px;
-    animation: lx-drift2 18s ease-in-out infinite alternate;
-  }
-  .lx-orb-3 {
-    width: 280px; height: 280px;
-    background: radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%);
-    bottom: -60px; left: 40%;
-    animation: lx-drift1 22s ease-in-out infinite alternate-reverse;
-  }
-  @keyframes lx-drift1 { 0% { transform: translate(0,0); } 100% { transform: translate(30px, 40px); } }
-  @keyframes lx-drift2 { 0% { transform: translate(0,0); } 100% { transform: translate(-20px, -30px); } }
+/** POST JSON with quiet wake-up retries. Resolves { res, data }; throws Error with a person-readable message. */
+async function postJSON(path, body, { onSlow, attempts = 8 } = {}) {
+  const slowTimer = onSlow ? setTimeout(onSlow, SLOW_AFTER_MS) : null;
+  try {
+    if (!isServerAwake()) { onSlow?.(); await waitUntilAwake(); }
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), attempt === 1 ? FIRST_TRY_TIMEOUT_MS : RETRY_TIMEOUT_MS);
+      let res = null; let data = {}; let failed = false;
+      try {
+        res = await fetch(`${API_BASE_URL}${path}`, {
+          method: 'POST', credentials: 'include', signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        data = await res.json().catch(() => ({}));   // a 5xx page is HTML - treat as empty
+      } catch { failed = true; } finally { clearTimeout(timer); }
 
-  /* left inner content */
-  .lx-left-inner {
-    position: relative; z-index: 2;
-    display: flex; flex-direction: column;
-    height: 100%; padding: 40px 52px;
+      const waking = failed || WAKING_STATUSES.includes(res.status);
+      if (!waking) return { res, data };
+      if (attempt === attempts) throw new Error(WAKING_MESSAGE);
+      onSlow?.();
+      await waitUntilAwake({ force: true, deadlineMs: 60000 });
+      await new Promise((r) => setTimeout(r, 700 * attempt));
+    }
+    throw new Error(WAKING_MESSAGE);
+  } finally {
+    if (slowTimer) clearTimeout(slowTimer);
   }
+}
 
-  /* brand */
-  .lx-brand { display: flex; align-items: center; gap: 10px; }
-  .lx-brand-name {
-    font-size: 20px; font-weight: 700; color: #FFFFFF !important;
-    letter-spacing: -0.3px;
-  }
+const tooMany = (res) => res.status === 429;
+const TOO_MANY_MESSAGE = 'Too many attempts. Please wait a minute and try again.';
 
-  /* hero text */
-  .lx-hero { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 0 0 20px; }
-  .lx-hero-badge {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 5px 13px; border-radius: 30px;
-    background: rgba(255,255,255,0.06) !important;
-    border: 1px solid rgba(255,255,255,0.12) !important;
-    font-size: 10.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 1.1px;
-    color: #94A3B8 !important; margin-bottom: 20px; width: fit-content;
-  }
-  .lx-badge-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: #10B981;
-    box-shadow: 0 0 6px #10B981;
-    animation: lx-pulse 2s infinite alternate;
-  }
-  @keyframes lx-pulse { 0% { opacity: 0.4; } 100% { opacity: 1; } }
-  .lx-hero-h {
-    font-family: var(--font-serif);
-    font-size: clamp(2rem, 2.8vw, 2.9rem);
-    color: #FFFFFF !important; line-height: 1.15;
-    letter-spacing: -0.8px; margin-bottom: 18px;
-    font-weight: 700;
-  }
-  .lx-hero-h em { font-style: normal; color: #60A5FA !important; }
-  .lx-hero-sub {
-    font-size: 15px; color: rgba(255,255,255,0.7) !important;
-    line-height: 1.65; max-width: 400px; margin-bottom: 44px;
-  }
+/* ── Small presentational pieces ─────────────────────────────────────────── */
+function Notice({ kind = 'error', children }) {
+  if (!children) return null;
+  return (
+    <div className={`notice notice--${kind}`} role={kind === 'error' ? 'alert' : 'status'}>
+      <Icon name={kind === 'error' ? 'shield' : 'spark'} size={18} />
+      <div>{children}</div>
+    </div>
+  );
+}
 
-  /* feature pillars */
-  .lx-pillars { display: flex; flex-direction: column; gap: 12px; }
-  .lx-pillar {
-    display: flex; align-items: flex-start; gap: 14px;
-    padding: 14px 16px; border-radius: 12px;
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-    transition: background 0.25s, border-color 0.25s;
-    cursor: default;
-  }
-  .lx-pillar:hover {
-    background: rgba(255,255,255,0.08) !important;
-    border-color: rgba(59,130,246,0.3) !important;
-  }
-  .lx-pillar-icon {
-    width: 36px; height: 36px; border-radius: 9px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 17px; flex-shrink: 0;
-  }
-  .lx-pillar-icon.blue   { background: rgba(37,99,235,0.2) !important; }
-  .lx-pillar-icon.violet { background: rgba(139,92,246,0.2) !important; }
-  .lx-pillar-icon.green  { background: rgba(16,185,129,0.2) !important; }
-  .lx-pillar-title {
-    font-size: 13px; font-weight: 600; color: #FFFFFF !important;
-    margin-bottom: 2px;
-  }
-  .lx-pillar-desc { font-size: 12px; color: rgba(255,255,255,0.65) !important; line-height: 1.45; }
+function PhoneField({ id, value, onChange, disabled, label = 'Mobile number', hint, invalid, action }) {
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className={`control control--prefix${action ? ' control--btn' : ''}`}>
+        <span className="prefix" aria-hidden="true">+91</span>
+        <input
+          id={id} className="input" type="tel" inputMode="numeric" autoComplete="tel-national"
+          placeholder="98765 43210" value={value} disabled={disabled} aria-invalid={invalid || undefined}
+          onChange={(e) => onChange(tenDigits(e.target.value))}
+          aria-describedby={hint ? `${id}-hint` : undefined}
+        />
+        {action}
+      </div>
+      {hint && <div className="hint" id={`${id}-hint`}>{hint}</div>}
+    </div>
+  );
+}
 
-  /* trust row */
-  .lx-trust-row {
-    display: flex; align-items: center; gap: 20px;
-    padding-top: 32px; flex-wrap: wrap;
-  }
-  .lx-trust-item {
-    font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.55) !important;
-    letter-spacing: 0.7px; text-transform: uppercase;
-    display: flex; align-items: center; gap: 6px;
-  }
+function CodeField({ id, value, onChange, disabled, onComplete, label = '6-digit code' }) {
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id} className="input code-input" type="text" inputMode="numeric" autoComplete="one-time-code"
+        placeholder="······" maxLength={6} value={value} disabled={disabled} autoFocus
+        onChange={(e) => {
+          const v = e.target.value.replace(/\D/g, '').slice(0, 6);
+          onChange(v);
+          if (v.length === 6) onComplete?.(v);
+        }}
+      />
+    </div>
+  );
+}
 
-  /* Explicit light theme overrides for left panel to prevent index.css h1/global color bleed */
-  [data-theme="light"] .lx-left .lx-brand-name,
-  [data-theme="light"] .lx-left .lx-hero-h,
-  [data-theme="light"] .lx-left .lx-pillar-title {
-    color: #FFFFFF !important;
-  }
-  [data-theme="light"] .lx-left .lx-hero-h em {
-    color: #60A5FA !important;
-  }
-  [data-theme="light"] .lx-left .lx-hero-sub {
-    color: rgba(255, 255, 255, 0.7) !important;
-  }
-  [data-theme="light"] .lx-left .lx-pillar-desc {
-    color: rgba(255, 255, 255, 0.65) !important;
-  }
-  [data-theme="light"] .lx-left .lx-trust-item {
-    color: rgba(255, 255, 255, 0.55) !important;
-  }
-  [data-theme="light"] .lx-left .lx-hero-badge {
-    color: #94A3B8 !important;
-    background: rgba(255, 255, 255, 0.06) !important;
-    border-color: rgba(255, 255, 255, 0.12) !important;
-  }
-  .lx-trust-item-dot {
-    width: 4px; height: 4px; border-radius: 50%;
-    background: #10B981; opacity: 0.5;
-  }
+function PasswordField({ id, label = 'Password', value, onChange, disabled, autoComplete, placeholder, aside, showMeter }) {
+  const [show, setShow] = useState(false);
+  const level = passwordLevel(value);
+  return (
+    <div className="field">
+      <label htmlFor={id}><span>{label}</span>{aside}</label>
+      <div className="control">
+        <input
+          id={id} className="input" type={show ? 'text' : 'password'} value={value} disabled={disabled}
+          autoComplete={autoComplete} placeholder={placeholder} style={{ paddingRight: 52 }} maxLength={128}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'}
+          aria-pressed={show}
+          style={{ position: 'absolute', right: 4, top: 4, bottom: 4, width: 42, border: 0, background: 'transparent', cursor: 'pointer', color: 'var(--muted)', borderRadius: 9 }}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {show
+              ? <><path d="M17.9 17.9A10.1 10.1 0 0 1 12 20c-7 0-10.5-8-10.5-8a18 18 0 0 1 5-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 10.5 8 10.5 8a18 18 0 0 1-2.2 3.2" /><path d="m2 2 20 20" /></>
+              : <><path d="M1.5 12S5 4 12 4s10.5 8 10.5 8-3.5 8-10.5 8S1.5 12 1.5 12z" /><circle cx="12" cy="12" r="3" /></>}
+          </svg>
+        </button>
+      </div>
+      {showMeter && (
+        <>
+          <div className="meter" data-level={level} aria-hidden="true"><i /><i /><i /><i /></div>
+          <div className="hint" aria-live="polite">{value ? LEVEL_LABEL[level] || 'Use at least 8 characters' : 'Use at least 8 characters. A longer phrase is stronger.'}</div>
+        </>
+      )}
+    </div>
+  );
+}
 
-  /* ── Right panel ── */
-  .lx-right {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    padding: 32px 24px; position: relative;
-    background: #06090F;
-    transition: background 0.45s;
-  }
-  [data-theme="light"] .lx-right { background: #F8FAFC; }
+function Spinner({ label }) { return <><span className="spinner" aria-hidden="true" />{label}</>; }
 
-  /* theme toggle */
-  .lx-theme-btn {
-    position: absolute; top: 24px; right: 24px;
-    background: transparent;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 9px; width: 38px; height: 38px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; color: rgba(255,255,255,0.45);
-    transition: all 0.2s;
-  }
-  .lx-theme-btn:hover {
-    background: rgba(255,255,255,0.05);
-    border-color: rgba(255,255,255,0.16);
-    color: rgba(255,255,255,0.85);
-  }
-  [data-theme="light"] .lx-theme-btn {
-    border-color: rgba(0,0,0,0.08); color: rgba(15,23,42,0.45);
-  }
-  [data-theme="light"] .lx-theme-btn:hover {
-    background: rgba(0,0,0,0.04);
-    border-color: rgba(0,0,0,0.14);
-    color: #0F172A;
-  }
-
-  /* card — glassmorphism panel */
-  .lx-card {
-    width: 100%; max-width: 400px;
-    display: flex; flex-direction: column; gap: 0;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 20px;
-    padding: 32px;
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    box-shadow: 0 8px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
-  }
-  [data-theme="light"] .lx-card {
-    background: rgba(255,255,255,0.55);
-    border-color: rgba(15,23,42,0.08);
-    box-shadow: 0 8px 40px rgba(15,23,42,0.08), inset 0 1px 0 rgba(255,255,255,0.6);
-  }
-
-  /* header */
-  .lx-card-header { margin-bottom: 28px; }
-  .lx-card-title {
-    font-family: var(--font-serif);
-    font-size: 26px; font-weight: 700; color: #FFFFFF;
-    letter-spacing: -0.4px; margin-bottom: 6px;
-    transition: color 0.4s;
-  }
-  [data-theme="light"] .lx-card-title { color: #0F172A; }
-  .lx-card-sub {
-    font-size: 14px; color: rgba(255,255,255,0.38);
-    line-height: 1.5;
-    transition: color 0.4s;
-  }
-  [data-theme="light"] .lx-card-sub { color: rgba(15,23,42,0.45); }
-
-  /* tab switcher */
-  .lx-tabs {
-    display: flex; gap: 2px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px; padding: 3px;
-    margin-bottom: 28px;
-    transition: background 0.45s, border-color 0.45s;
-  }
-  [data-theme="light"] .lx-tabs { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.07); }
-  .lx-tab {
-    flex: 1; padding: 8px; border-radius: 8px;
-    font-size: 13.5px; font-weight: 600; cursor: pointer;
-    border: none; background: transparent;
-    color: rgba(255,255,255,0.36);
-    transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
-  }
-  [data-theme="light"] .lx-tab { color: rgba(15,23,42,0.4); }
-  .lx-tab.active {
-    background: rgba(255,255,255,0.07);
-    color: #FFFFFF;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.25);
-  }
-  [data-theme="light"] .lx-tab.active {
-    background: #FFFFFF;
-    color: #0F172A;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
-  }
-
-  /* tab content cross-fade */
-  .lx-tab-fade {
-    animation: lx-tab-fade-in 0.5s ease-in-out;
-  }
-  @keyframes lx-tab-fade-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
-
-  /* field */
-  .lx-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-  .lx-field-row { display: flex; justify-content: space-between; align-items: center; }
-  .lx-label {
-    font-size: 12.5px; font-weight: 600;
-    color: rgba(255,255,255,0.55); letter-spacing: 0.02em;
-    transition: color 0.4s;
-  }
-  [data-theme="light"] .lx-label { color: rgba(15,23,42,0.58); }
-  .lx-input-wrap { position: relative; }
-  .lx-input-icon {
-    position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
-    color: rgba(255,255,255,0.2); pointer-events: none;
-    transition: color 0.2s; z-index: 1;
-  }
-  [data-theme="light"] .lx-input-icon { color: rgba(15,23,42,0.22); }
-  .lx-input-wrap:focus-within .lx-input-icon { color: #3B82F6; }
-  .lx-input {
-    width: 100%; box-sizing: border-box;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.07);
-    color: #FFFFFF;
-    border-radius: 10px;
-    padding: 12px 14px 12px 40px !important;
-    font-size: 14px; outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-    font-family: var(--font-sans);
-  }
-  [data-theme="light"] .lx-input {
-    background: #FFFFFF; border-color: rgba(0,0,0,0.1); color: #0F172A;
-  }
-  .lx-input::placeholder { color: rgba(255,255,255,0.2); }
-  [data-theme="light"] .lx-input::placeholder { color: rgba(15,23,42,0.25); }
-
-  /* Chrome/Edge autofill: browser forces its own white-bg/black-text UA
-     style, invisible against this dark glassmorphism card — override both
-     the fill and the text color, per theme. The 5000s transition delay is
-     the standard trick to stop it snapping back before our override paints. */
-  .lx-input:-webkit-autofill,
-  .lx-input:-webkit-autofill:hover,
-  .lx-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #FFFFFF;
-    -webkit-box-shadow: 0 0 0 1000px #131a2b inset;
-    box-shadow: 0 0 0 1000px #131a2b inset;
-    caret-color: #FFFFFF;
-    transition: background-color 5000s ease-in-out 0s;
-  }
-  [data-theme="light"] .lx-input:-webkit-autofill,
-  [data-theme="light"] .lx-input:-webkit-autofill:hover,
-  [data-theme="light"] .lx-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #0F172A;
-    -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset;
-    box-shadow: 0 0 0 1000px #FFFFFF inset;
-    caret-color: #0F172A;
-  }
-  /* glowing focus border — glassmorphism accent */
-  .lx-input:focus {
-    border-color: rgba(59,130,246,0.7);
-    box-shadow: 0 0 0 4px rgba(59,130,246,0.15), 0 0 18px rgba(59,130,246,0.35);
-    background: rgba(255,255,255,0.06);
-  }
-  [data-theme="light"] .lx-input:focus {
-    background: #FFFFFF;
-    box-shadow: 0 0 0 4px rgba(59,130,246,0.14), 0 0 18px rgba(59,130,246,0.25);
-  }
-
-  /* eye toggle on password */
-  .lx-eye-btn {
-    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-    background: none; border: none; cursor: pointer;
-    color: rgba(255,255,255,0.2); padding: 4px;
-    transition: color 0.2s;
-  }
-  .lx-eye-btn:hover { color: rgba(255,255,255,0.5); }
-  [data-theme="light"] .lx-eye-btn { color: rgba(15,23,42,0.25); }
-  [data-theme="light"] .lx-eye-btn:hover { color: rgba(15,23,42,0.55); }
-
-  /* forgot link */
-  .lx-forgot {
-    font-size: 12px; font-weight: 600;
-    color: #3B82F6; cursor: pointer; background: none; border: none;
-    padding: 0; transition: color 0.2s;
-  }
-  .lx-forgot:hover { color: #60A5FA; }
-
-  /* error */
-  .lx-error {
-    display: flex; align-items: flex-start; gap: 9px;
-    background: rgba(239,68,68,0.06);
-    border: 1px solid rgba(239,68,68,0.18);
-    border-left: 3px solid #EF4444;
-    border-radius: 9px; padding: 11px 14px;
-    font-size: 13px; color: #FCA5A5; line-height: 1.45;
-    margin-bottom: 18px;
-    animation: lx-slide-in 0.25s ease;
-  }
-  @keyframes lx-slide-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
-
-  /* CTA button */
-  .lx-btn {
-    width: 100%; padding: 13px;
-    border-radius: 10px; border: none;
-    font-size: 15px; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
-    margin-top: 6px;
-    letter-spacing: 0.01em;
-    position: relative; overflow: hidden;
-  }
-  .lx-btn::after {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(to bottom, rgba(255,255,255,0.06), transparent);
-    pointer-events: none;
-  }
-  .lx-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; }
-  .lx-btn-signin {
-    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-    color: #FFFFFF;
-    box-shadow: 0 4px 20px rgba(37,99,235,0.35);
-  }
-  .lx-btn-signin:hover:not(:disabled) {
-    box-shadow: 0 6px 28px rgba(37,99,235,0.5);
-    transform: translateY(-1px);
-  }
-  .lx-btn-register {
-    background: rgba(255,255,255,0.05);
-    color: #FFFFFF;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: none;
-  }
-  .lx-btn-register:hover:not(:disabled) {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.14);
-    transform: translateY(-1px);
-  }
-  [data-theme="light"] .lx-btn-register {
-    background: rgba(0,0,0,0.04); color: #0F172A;
-    border-color: rgba(0,0,0,0.1);
-  }
-  [data-theme="light"] .lx-btn-register:hover:not(:disabled) {
-    background: rgba(0,0,0,0.07); border-color: rgba(0,0,0,0.15);
-  }
-
-  /* spinner */
-  .lx-spinner {
-    width: 16px; height: 16px; border-radius: 50%;
-    border: 2px solid rgba(255,255,255,0.25);
-    border-top-color: #FFFFFF;
-    animation: lx-spin 0.7s linear infinite;
-    flex-shrink: 0;
-  }
-  @keyframes lx-spin { to { transform: rotate(360deg); } }
-
-  /* divider */
-  .lx-divider {
-    display: flex; align-items: center; gap: 12px;
-    margin: 22px 0; color: rgba(255,255,255,0.12);
-    font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em;
-    text-transform: uppercase;
-    transition: color 0.4s;
-  }
-  [data-theme="light"] .lx-divider { color: rgba(0,0,0,0.12); }
-  .lx-divider::before,.lx-divider::after {
-    content:''; flex:1; height:1px;
-    background: rgba(255,255,255,0.06);
-    transition: background 0.45s;
-  }
-  [data-theme="light"] .lx-divider::before,
-  [data-theme="light"] .lx-divider::after { background: rgba(0,0,0,0.07); }
-
-  /* SSO row */
-  .lx-sso-row { display: flex; flex-direction: column; gap: 10px; }
-  .lx-sso-btn {
-    width: 100%; box-sizing: border-box;
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    padding: 11px; border-radius: 10px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: #FFFFFF; text-decoration: none;
-    font-size: 13.5px; font-weight: 600;
-    transition: all 0.2s;
-  }
-  .lx-sso-btn:hover {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.16);
-    transform: translateY(-1px);
-  }
-  [data-theme="light"] .lx-sso-btn {
-    background: #FFFFFF; color: #0F172A; border-color: rgba(0,0,0,0.1);
-  }
-  [data-theme="light"] .lx-sso-btn:hover { background: rgba(0,0,0,0.03); }
-
-  /* footer link */
-  .lx-footer-link {
-    text-align: center; margin-top: 28px;
-    font-size: 13px;
-  }
-  .lx-footer-link a {
-    color: rgba(255,255,255,0.3); text-decoration: none;
-    display: inline-flex; align-items: center; gap: 5px;
-    transition: color 0.2s;
-  }
-  .lx-footer-link a:hover { color: rgba(255,255,255,0.6); }
-  [data-theme="light"] .lx-footer-link a { color: rgba(15,23,42,0.35); }
-  [data-theme="light"] .lx-footer-link a:hover { color: rgba(15,23,42,0.7); }
-
-  /* ── VERIFY BANNER ── */
-  .lx-verify {
-    display: flex; align-items: flex-start; gap: 11px;
-    background: rgba(16,185,129,0.06);
-    border: 1px solid rgba(16,185,129,0.2);
-    border-left: 3px solid #10B981;
-    border-radius: 9px; padding: 12px 14px;
-    margin-bottom: 20px;
-    animation: lx-slide-in 0.3s ease;
-  }
-  .lx-verify-title { font-size: 13px; font-weight: 600; color: #6EE7B7; margin-bottom: 2px; }
-  .lx-verify-body  { font-size: 12px; color: rgba(255,255,255,0.38); line-height: 1.5; }
-  .lx-verify-badge {
-    display: inline-block; margin-top: 5px;
-    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #FCD34D; background: rgba(245,158,11,0.1);
-    border: 1px solid rgba(245,158,11,0.2); border-radius: 4px; padding: 2px 6px;
-  }
-
-  /* ── RESET MODAL ── */
-  .lx-modal-overlay {
-    position: fixed; inset: 0; z-index: 1000;
-    background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
-    display: flex; align-items: center; justify-content: center; padding: 20px;
-    animation: lx-fade 0.2s ease;
-  }
-  @keyframes lx-fade { from { opacity:0; } to { opacity:1; } }
-  .lx-modal {
-    width: 100%; max-width: 420px;
-    background: #0E1420;
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 16px; padding: 30px;
-    box-shadow: 0 32px 80px rgba(0,0,0,0.6);
-    animation: lx-pop 0.25s cubic-bezier(0.16,1,0.3,1);
-    position: relative;
-  }
-  [data-theme="light"] .lx-modal { background: #FFFFFF; border-color: rgba(0,0,0,0.08); }
-  @keyframes lx-pop { from { opacity:0; transform:scale(0.96) translateY(8px); } to { opacity:1; transform:none; } }
-  .lx-modal-close {
-    position: absolute; top: 14px; right: 14px;
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 7px; width: 30px; height: 30px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; color: rgba(255,255,255,0.4);
-    font-size: 17px; line-height: 1; transition: all 0.2s;
-  }
-  .lx-modal-close:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
-  [data-theme="light"] .lx-modal-close { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.07); color: rgba(15,23,42,0.4); }
-  [data-theme="light"] .lx-modal-close:hover { background: rgba(0,0,0,0.08); color: #0F172A; }
-  .lx-modal-title {
-    font-family: var(--font-serif); font-size: 20px; font-weight: 700;
-    color: #FFFFFF; margin-bottom: 6px; transition: color 0.4s;
-  }
-  [data-theme="light"] .lx-modal-title { color: #0F172A; }
-  .lx-modal-sub { font-size: 13.5px; color: rgba(255,255,255,0.4); line-height: 1.55; margin-bottom: 22px; transition: color 0.4s; }
-  [data-theme="light"] .lx-modal-sub { color: rgba(15,23,42,0.5); }
-  .lx-modal-note { font-size: 11.5px; color: rgba(255,255,255,0.2); text-align: center; margin-top: 14px; line-height: 1.5; transition: color 0.4s; }
-  [data-theme="light"] .lx-modal-note { color: rgba(15,23,42,0.3); }
-
-  /* ── TOAST ── */
-  .lx-toast {
-    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-    z-index: 1100; display: flex; align-items: center; gap: 10px;
-    padding: 13px 20px; border-radius: 11px;
-    font-size: 13.5px; font-weight: 500;
-    box-shadow: 0 16px 48px rgba(0,0,0,0.4);
-    animation: lx-toast-in 0.3s cubic-bezier(0.16,1,0.3,1);
-    max-width: 460px; white-space: nowrap;
-  }
-  @keyframes lx-toast-in {
-    from { opacity:0; transform:translateX(-50%) translateY(14px); }
-    to   { opacity:1; transform:translateX(-50%) translateY(0); }
-  }
-  .lx-toast--success { background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25); color:#6EE7B7; }
-  .lx-toast--error   { background:rgba(239,68,68,0.1);  border:1px solid rgba(239,68,68,0.25);  color:#FCA5A5; }
-`;
-
-const PILLARS = [
-  {
-    icon: '⚖️',
-    cls: 'blue',
-    title: 'Contract Risk Analyzer',
-    desc: 'AI flags every liability clause in under 2 minutes. Rule book enforced.',
-  },
-  {
-    icon: '🤖',
-    cls: 'violet',
-    title: 'LexAmplify AI Command Suite',
-    desc: 'Voice-activated. Query your entire case database in real time.',
-  },
-  {
-    icon: '🔒',
-    cls: 'green',
-    title: 'Sovereign Data Vault',
-    desc: 'AES-256, Indian data residency. Zero-retention protocol — always.',
-  },
-];
-
+/* ── Page ────────────────────────────────────────────────────────────────── */
 export default function LoginPage() {
-  const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, isInitializing, refreshSession } = useAuth();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const resetToken = searchParams.get('resetToken');
+  const [params, setParams] = useSearchParams();
+  const resetToken = params.get('resetToken');
 
-  // Public-route guard: an already-authenticated user landing here (e.g. via
-  // browser back after login) is bounced straight to /workspace/matters. Gated on
-  // !isInitializing so this never fires on the stale `isAuthenticated: false`
-  // that's true for an instant while the /me cookie check is in flight — that
-  // would flash the login form into a redirect on every fresh page load.
-  // A live resetToken is excluded: an authenticated user opening a password-
-  // reset link must still be able to complete that flow, not get redirected away.
-  useEffect(() => {
-    if (isAuthenticated && !isInitializing && !resetToken) {
-      navigate('/workspace/matters', { replace: true });
-    }
-  }, [isAuthenticated, isInitializing, resetToken, navigate]);
+  const [mode, setMode] = useState(params.get('mode') === 'register' ? 'register' : 'signin');
+  const [method, setMethod] = useState('password');           // sign-in: 'password' | 'otp'
+  const [config, setConfig] = useState({ phone_otp_required: false, sms_enabled: false });
+  const [serverReady, setServerReady] = useState(() => isServerAwake());
 
-  const [tab, setTab] = useState('signin'); // 'signin' | 'register'
+  // shared form state
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [showPwd, setShowPwd] = useState(false);
-  // Two-step sign-in (Practice module): the server answers a correct password with code MFA_REQUIRED when the account
-  // has an authenticator app set up. We then ask for the 6-digit code (or a recovery code) and send the login again.
-  const [otpStep, setOtpStep] = useState(false);
-  const [otp, setOtp] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [phoneToken, setPhoneToken] = useState('');           // proves the number on a new account was verified
+  const [resendIn, setResendIn] = useState(0);
+  const [mfa, setMfa] = useState(false);                      // authenticator-app step after a correct password
+  const [mfaCode, setMfaCode] = useState('');
   const [useRecovery, setUseRecovery] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  // True once an in-flight login/register request has taken longer than
-  // SLOW_CONNECTION_THRESHOLD_MS — swaps the button's label to something
-  // that reads as "still working" during a Render/Neon cold start.
-  const [slowConnection, setSlowConnection] = useState(false);
-  const [serverReady, setServerReady] = useState(() => isServerAwake());
-  // Wake the backend + database the moment this page opens, so by the time the credentials are typed it is ready.
-  useEffect(() => {
-    let live = true;
-    if (!isServerAwake()) waitUntilAwake().then((ok) => { if (live) setServerReady(ok); });
-    return () => { live = false; };
-  }, []);
 
-  // Forgot-password modal has two modes: 'request' (enter email) and
-  // 'confirm' (set a new password) — 'confirm' opens automatically when
-  // the page loads with ?resetToken=... from the emailed link.
-  const [showResetModal, setShowResetModal] = useState(Boolean(resetToken));
+  const [busy, setBusy] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [toast, setToast] = useState('');
+
+  const [resetOpen, setResetOpen] = useState(Boolean(resetToken));
   const [resetMode, setResetMode] = useState(resetToken ? 'confirm' : 'request');
   const [resetEmail, setResetEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [resetLoading, setResetLoading] = useState(false);
-  const [toast, setToast] = useState(null);
+  const [resetBusy, setResetBusy] = useState(false);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 5000);
-    return () => clearTimeout(t);
-  }, [toast]);
+  const isSignIn = mode === 'signin';
+  const phoneVerified = Boolean(phoneToken);
+  const needPhoneOtp = config.phone_otp_required;
 
-  // SSO redirects back here with ?sso_error=... (see routes/sso_routes.py's
-  // _sso_redirect_with_error) when a provider is unconfigured or the OAuth
-  // exchange itself failed — the click on "Continue with Google" is a real
-  // top-level navigation (must be, for the OAuth consent redirect chain to
-  // work), so this is the only way the backend can hand an error back to a
-  // React state instead of leaving the browser on a bare JSON response.
+  // Already signed in? Skip the form (but let a reset link through).
   useEffect(() => {
-    const ssoError = searchParams.get('sso_error');
-    if (!ssoError) return;
-    const provider = searchParams.get('provider') || 'This sign-in method';
-    const detail = searchParams.get('detail');
-    const message = ssoError === 'unavailable'
-      ? `${provider} sign-in is temporarily unavailable. Please log in with email/password.`
-      : ssoError === 'no_email'
-        ? `${provider} did not share an email address — this account can't be created.`
-        : `${provider} sign-in failed. Please try again or use email/password.`;
-    setToast({ type: 'error', message: detail || message });
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      next.delete('sso_error'); next.delete('provider'); next.delete('detail');
-      return next;
-    }, { replace: true });
+    if (isAuthenticated && !isInitializing && !resetToken) navigate('/workspace/matters', { replace: true });
+  }, [isAuthenticated, isInitializing, resetToken, navigate]);
+
+  // Wake the backend as soon as the page opens, and learn whether SMS codes are live.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      if (!isServerAwake()) { const ok = await waitUntilAwake(); if (live) setServerReady(ok); } else setServerReady(true);
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/auth/config`, { credentials: 'include' });
+        if (r.ok && live) setConfig(await r.json());
+      } catch { /* keep safe defaults: no OTP step */ }
+    })();
+    return () => { live = false; };
+  }, []);
+
+  // Google sign-in returns here with ?sso_error=...
+  useEffect(() => {
+    const sso = params.get('sso_error');
+    if (!sso) return;
+    const provider = params.get('provider') || 'That sign-in method';
+    setError(
+      sso === 'unavailable' ? `${provider} sign-in is temporarily unavailable. Please use your email or mobile number.`
+        : sso === 'no_email' ? `${provider} did not share an email address, so we could not create the account.`
+          : `${provider} sign-in did not complete. Please try again or use another method.`,
+    );
+    setParams((prev) => { const n = new URLSearchParams(prev); ['sso_error', 'provider', 'detail'].forEach((k) => n.delete(k)); return n; }, { replace: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // clear errors when switching tabs
-  useEffect(() => { setError(''); setOtpStep(false); setOtp(''); setUseRecovery(false); }, [tab]);
+  // Resend countdown
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
 
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(''), 5000); return () => clearTimeout(t); }, [toast]);
 
-  const openResetModal = () => { setResetMode('request'); setResetEmail(email || ''); setShowResetModal(true); };
-  const closeResetModal = () => {
-    setShowResetModal(false);
-    if (resetToken) {
-      searchParams.delete('resetToken');
-      setSearchParams(searchParams, { replace: true });
-    }
+  const clearFlow = useCallback(() => {
+    setError(''); setInfo(''); setCode(''); setCodeSent(false); setMfa(false); setMfaCode(''); setUseRecovery(false); setResendIn(0);
+  }, []);
+
+  const switchMode = (next) => {
+    if (next === mode) return;
+    setMode(next); setMethod('password'); setPhoneToken(''); setPassword(''); clearFlow();
+    setParams((prev) => { const n = new URLSearchParams(prev); if (next === 'register') n.set('mode', 'register'); else n.delete('mode'); return n; }, { replace: true });
   };
 
-  // Step 1: request a reset link — generic response either way (backend
-  // never reveals whether the email has an account).
-  const handlePasswordReset = async (e) => {
-    e.preventDefault();
-    if (!EMAIL_RE.test(resetEmail.trim())) {
-      setToast({ type: 'error', message: 'Please enter a valid email address.' });
-      return;
-    }
-    setResetLoading(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail.trim(), frontend_origin: window.location.origin }),
-      });
-      const data = await res.json().catch(() => ({}));
-      setShowResetModal(false);
-      setToast({ type: 'success', message: data.message || 'If an account exists for that email, a reset link has been sent.' });
-    } catch {
-      // Same generic message on a network error too — never let failure
-      // modes leak information the success path doesn't.
-      setShowResetModal(false);
-      setToast({ type: 'success', message: 'If an account exists for that email, a reset link has been sent.' });
-    } finally {
-      setResetLoading(false);
-    }
+  const finishSignIn = async (emailForCache) => {
+    await refreshSession();
+    try { if (emailForCache) localStorage.setItem('active_lex_user', emailForCache); } catch { /* private mode */ }
+    window.location.href = '/workspace/matters';
   };
 
-  // Step 2: consume the token from the emailed link and set a new password.
-  const handleResetConfirm = async (e) => {
-    e.preventDefault();
-    if (newPassword.length < 8) {
-      setToast({ type: 'error', message: 'Password must be at least 8 characters.' });
-      return;
-    }
-    setResetLoading(true);
+  /* ── Mobile code: send ── */
+  const sendCode = async (purpose) => {
+    setError(''); setInfo('');
+    if (!phoneOk(phone)) { setError('Enter a valid 10-digit mobile number.'); return; }
+    setBusy(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: resetToken, password: newPassword }),
-      });
-      const data = await res.json().catch(() => ({}));
+      const { res, data } = await postJSON('/api/auth/otp/send', { phone, purpose }, { onSlow: () => setSlow(true) });
+      if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
+      if (!res.ok) throw new Error(data.error || 'We could not send the code. Please try again.');
+      setCodeSent(true); setCode(''); setResendIn(data.resend_in || 30);
+      setInfo(`We sent a 6-digit code to +91 ${phone.slice(0, 5)} ${phone.slice(5)}. It expires in 5 minutes.`);
+    } catch (e) { setError(e.message); } finally { setBusy(false); setSlow(false); }
+  };
+
+  /* ── Mobile code: verify during sign-up ── */
+  const verifySignupCode = async (value = code) => {
+    if (value.length !== 6 || busy) return;
+    setError(''); setBusy(true);
+    try {
+      const { res, data } = await postJSON('/api/auth/otp/verify', { phone, code: value }, { onSlow: () => setSlow(true) });
+      if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
+      if (!res.ok) { setCode(''); throw new Error(data.error || 'That code is incorrect or has expired.'); }
+      setPhoneToken(data.phone_token); setCodeSent(false); setInfo('');
+    } catch (e) { setError(e.message); } finally { setBusy(false); setSlow(false); }
+  };
+
+  /* ── Sign in with a mobile code ── */
+  const signInWithCode = async (value = code) => {
+    if (value.length !== 6 || busy) return;
+    setError(''); setBusy(true);
+    try {
+      const { res, data } = await postJSON('/api/auth/otp/login', { phone, code: value }, { onSlow: () => setSlow(true) });
+      if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
+      if (!res.ok) { setCode(''); throw new Error(data.error || 'That code is incorrect or has expired.'); }
+      await finishSignIn(data.user?.email);
+    } catch (e) { setError(e.message); setBusy(false); setSlow(false); }
+  };
+
+  /* ── Sign in with email + password (+ authenticator step) ── */
+  const signInWithPassword = async (e) => {
+    e?.preventDefault();
+    setError('');
+    if (!EMAIL_RE.test(email.trim())) return setError('Enter the email address you signed up with.');
+    if (!password) return setError('Enter your password.');
+    if (mfa && !mfaCode.trim()) return setError(useRecovery ? 'Enter one of your recovery codes.' : 'Enter the 6-digit code from your authenticator app.');
+    setBusy(true);
+    try {
+      const body = { email: email.trim(), password, ...(mfa ? { otp: mfaCode.trim() } : {}) };
+      const { res, data } = await postJSON('/api/auth/login', body, { onSlow: () => setSlow(true) });
+      if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
+      if (!res.ok) {
+        if (data.code === 'MFA_REQUIRED' && !mfa) { setMfa(true); setMfaCode(''); setBusy(false); setSlow(false); return; }
+        if (data.code === 'MFA_INVALID') setMfaCode('');
+        throw new Error(data.error || data.message || (res.status >= 500 ? 'Something went wrong on our side. Please try again.' : 'Incorrect email or password.'));
+      }
+      await finishSignIn(email.trim());
+    } catch (err) { setError(err.message); setBusy(false); setSlow(false); }
+  };
+
+  /* ── Create account ── */
+  const register = async (e) => {
+    e?.preventDefault();
+    setError('');
+    if (!name.trim()) return setError('Enter your full name.');
+    if (!EMAIL_RE.test(email.trim())) return setError('Enter a valid email address.');
+    if (!phoneOk(phone)) return setError('Enter a valid 10-digit mobile number.');
+    if (needPhoneOtp && !phoneVerified) return setError('Verify your mobile number first. Tap “Send code”.');
+    if (password.length < 8) return setError('Your password needs at least 8 characters.');
+    setBusy(true);
+    try {
+      const { res, data } = await postJSON('/api/auth/register', {
+        name: name.trim(), email: email.trim(), phone, password, ...(phoneToken ? { phone_token: phoneToken } : {}),
+      }, { onSlow: () => setSlow(true) });
+      if (tooMany(res)) throw new Error('Too many sign-up attempts from this network. Please try again later.');
+      if (!res.ok) {
+        if (data.code === 'PHONE_NOT_VERIFIED') setPhoneToken('');
+        throw new Error(data.error || 'We could not create your account. Please try again.');
+      }
+      await finishSignIn(email.trim());
+    } catch (err) { setError(err.message); setBusy(false); setSlow(false); }
+  };
+
+  /* ── Password reset ── */
+  const closeReset = () => {
+    setResetOpen(false);
+    if (resetToken) setParams((prev) => { const n = new URLSearchParams(prev); n.delete('resetToken'); return n; }, { replace: true });
+  };
+  const requestReset = async (e) => {
+    e.preventDefault();
+    if (!EMAIL_RE.test(resetEmail.trim())) { setToast('Enter a valid email address.'); return; }
+    setResetBusy(true);
+    try {
+      await postJSON('/api/auth/forgot-password', { email: resetEmail.trim(), frontend_origin: window.location.origin }, { attempts: 3 });
+    } catch { /* identical message either way: never reveal whether an account exists */ }
+    setResetBusy(false); setResetOpen(false);
+    setToast('If an account exists for that email, a reset link is on its way.');
+  };
+  const confirmReset = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 8) { setToast('Your new password needs at least 8 characters.'); return; }
+    setResetBusy(true);
+    try {
+      const { res, data } = await postJSON('/api/auth/reset-password', { token: resetToken, password: newPassword }, { attempts: 3 });
       if (!res.ok) throw new Error(data.error || 'This reset link is invalid or has expired.');
-      closeResetModal();
-      setNewPassword('');
-      setTab('signin');
-      setToast({ type: 'success', message: 'Password updated. Sign in with your new password.' });
-    } catch (err) {
-      setToast({ type: 'error', message: err.message });
-    } finally {
-      setResetLoading(false);
-    }
+      closeReset(); setNewPassword(''); switchMode('signin'); setToast('Password updated. You can sign in now.');
+    } catch (err) { setToast(err.message); } finally { setResetBusy(false); }
   };
 
-  // Cookies are set by the browser directly from the Set-Cookie response
-  // header (via the global credentials:'include' fetch patch) — there is
-  // no token in `data` to store. Register logs straight in, same as login,
-  // for a zero-friction single step (no separate email-verification hop).
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    if (!name.trim()) return setError('Full Name is required.');
-    if (!email.trim()) return setError('Email address is required.');
-    if (!phone.trim()) return setError('Phone number is required.');
-    if (!password) return setError('Password is required.');
-    if (password.length < 8) return setError('Password must be at least 8 characters.');
-    setLoading(true); setError(''); setSlowConnection(false);
-    const controller = new AbortController();
-    const abortTimer = setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
-    const slowTimer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_THRESHOLD_MS);
-    try {
-      if (!isServerAwake()) { setSlowConnection(true); await waitUntilAwake(); }
-      const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), phone: phone.trim(), password }),
-      });
-      // Same HTML-error-page guard as handleLogin above.
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (res.status === 504) {
-          throw new Error(WAKING_UP_MESSAGE);
-        }
-        throw new Error(
-          data.error ||
-          (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Registration failed.')
-        );
-      }
-      // Refresh the AuthContext's user state before navigating away
-      await refreshSession();
-      localStorage.setItem('active_lex_user', email.trim());
-      window.location.href = '/workspace/matters';
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        setError(WAKING_UP_MESSAGE);
-      } else {
-        setError(err.message);
-      }
-    } finally {
-      clearTimeout(abortTimer);
-      clearTimeout(slowTimer);
-      setLoading(false);
-      setSlowConnection(false);
-    }
-  };
+  const busyLabel = slow ? 'Starting your secure workspace…' : null;
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    if (!email || !password) return setError('Email and password are required.');
-    if (otpStep && !otp.trim()) return setError(useRecovery ? 'Enter one of your recovery codes.' : 'Enter the 6-digit code from your authenticator app.');
-    setLoading(true); setError(''); setSlowConnection(false);
-    const slowTimer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_THRESHOLD_MS);
-    // A sleeping Render service / Neon database answers the FIRST request slowly or not at all, and the
-    // next one a moment later is fast. So instead of showing "waking up, try again" and making the person
-    // press the button again, wake the server and retry here, up to LOGIN_ATTEMPTS times.
-    const LOGIN_ATTEMPTS = 8;
-    const wasWaking = (res, err) => err ? (err.name === 'AbortError' || err instanceof TypeError) : [502, 503, 504, 520, 521, 522, 523, 524, 429].includes(res.status);
-    try {
-      // Never fail just because the server was asleep: wait for it (the page already started waking it).
-      if (!isServerAwake()) { setSlowConnection(true); await waitUntilAwake(); }
-      let res = null; let data = {};
-      for (let attempt = 1; attempt <= LOGIN_ATTEMPTS; attempt += 1) {
-        const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), attempt === 1 ? AUTH_REQUEST_TIMEOUT_MS : 25000);
-        let failure = null;
-        try {
-          res = await fetch(`${API_BASE_URL}/api/auth/login`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify(otpStep ? { email, password, otp: otp.trim() } : { email, password }),
-          });
-          // A 500/502 error page is HTML, not JSON - .catch makes that a clean {}.
-          data = await res.json().catch(() => ({}));
-        } catch (err) {
-          failure = err; res = null;
-        } finally {
-          clearTimeout(tid);
-        }
-        if (!wasWaking(res, failure)) break;               // a real answer (success, wrong password, ...) - stop retrying
-        if (attempt === LOGIN_ATTEMPTS) throw new Error(WAKING_UP_MESSAGE);
-        setSlowConnection(true);
-        await waitUntilAwake({ force: true, deadlineMs: 60000 });
-        await new Promise((r) => setTimeout(r, 800 * attempt));
-      }
-      if (!res.ok) {
-        // Password was right but this account needs its second step: show the code box instead of an error.
-        if (data.code === 'MFA_REQUIRED' && !otpStep) { setOtpStep(true); setOtp(''); return; }
-        if (data.code === 'MFA_INVALID') setOtp('');
-        // 401/400 are a real "wrong credentials" answer from a server that responded fine.
-        if (res.status === 401 || res.status === 400) {
-          throw new Error(data.error || data.message || 'Invalid email or password.');
-        }
-        throw new Error(
-          data.error || data.message ||
-          (res.status >= 500 ? 'Server error. Please try again shortly.' : 'Invalid email or password.')
-        );
-      }
-      await refreshSession();
-      localStorage.setItem('active_lex_user', email.trim());
-      window.location.href = '/workspace/matters';
-    } catch (err) {
-      setError(err.name === 'AbortError' ? WAKING_UP_MESSAGE : err.message);
-    } finally {
-      clearTimeout(slowTimer);
-      setLoading(false);
-      setSlowConnection(false);
-    }
-  };
+  /* ── Render helpers ── */
+  const sendBtn = (purpose) => (
+    <button type="button" className="inline-btn" disabled={busy || resendIn > 0 || !phoneOk(phone)} onClick={() => sendCode(purpose)}>
+      {resendIn > 0 ? `${resendIn}s` : codeSent ? 'Resend' : 'Send code'}
+    </button>
+  );
 
-  const isSignIn = tab === 'signin';
+  const googleHref = `${API_BASE_URL}/api/auth/sso/google/login`;
 
   return (
-    <div className="lx-login" data-theme={theme}>
-      <style>{loginStyles}</style>
-
-      {/* ═══════════════════ LEFT PANEL ═══════════════════ */}
-      <div className="lx-left">
-        <div className="lx-left-grid" />
-        <div className="lx-orb lx-orb-1" />
-        <div className="lx-orb lx-orb-2" />
-        <div className="lx-orb lx-orb-3" />
-
-        <div className="lx-left-inner">
-          {/* Brand */}
-          <div className="lx-brand">
-            <LexLogoMark size={30} />
-            <span className="lx-brand-name">LexAmplify</span>
-          </div>
-
-          {/* Hero */}
-          <div className="lx-hero">
-            <div className="lx-hero-badge">
-              <span className="lx-badge-dot" />
-              Sovereign Legal Intelligence
-            </div>
-            <h1 className="lx-hero-h">
-              The intelligence<br />behind <em>elite</em><br />Indian counsel.
-            </h1>
-            <p className="lx-hero-sub">
-              Contract AI, case intelligence, and voice-driven research — built exclusively for Indian advocates.
-            </p>
-
-            <div className="lx-pillars">
-              {PILLARS.map(({ icon, cls, title, desc }) => (
-                <div key={title} className="lx-pillar">
-                  <div className={`lx-pillar-icon ${cls}`}>{icon}</div>
-                  <div>
-                    <div className="lx-pillar-title">{title}</div>
-                    <div className="lx-pillar-desc">{desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Trust row */}
-          <div className="lx-trust-row">
-            {['AES-256 Encrypted', 'Indian Data Residency', 'Zero Retention'].map((t) => (
-              <div key={t} className="lx-trust-item">
-                <span className="lx-trust-item-dot" />
-                {t}
-              </div>
-            ))}
-          </div>
+    <div className="mk auth">
+      {/* ── Side panel ── */}
+      <aside className="auth__side">
+        <Link to="/" className="brand" aria-label="LexAmplify home">
+          <LexLogoMark size={32} /><span className="brand__word">LexAmplify</span>
+        </Link>
+        <div>
+          <h2>Legal work that starts from <em>your file</em>.</h2>
+          <p className="lede" style={{ marginTop: 18 }}>Draft, review and organise matters in one calm workspace built for Indian advocates.</p>
+          <ul className="auth__points">
+            <li><Icon name="file" size={20} /><div>Drafts that ask first<span>It asks for the matter and details instead of guessing.</span></div></li>
+            <li><Icon name="scan" size={20} /><div>Contract review in minutes<span>Risks, gaps and suggested rewrites, clause by clause.</span></div></li>
+            <li><Icon name="shield" size={20} /><div>Careful with your account<span>Mobile verification and optional two-step sign-in.</span></div></li>
+          </ul>
         </div>
-      </div>
+        <p className="auth__fine">LexAmplify assists legal professionals and does not provide legal advice.</p>
+      </aside>
 
-      {/* ═══════════════════ RIGHT PANEL ═══════════════════ */}
-      <div className="lx-right">
-        {/* Theme toggle */}
-        <button
-          className="lx-theme-btn"
-          onClick={toggleTheme}
-          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          {theme === 'dark' ? (
-            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="5" />
-              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-          )}
-        </button>
+      {/* ── Form ── */}
+      <div className="auth__main">
+        <div className="auth__top">
+          <Link to="/" className="auth__back"><Icon name="arrow" size={16} style={{ transform: 'rotate(180deg)' }} />Back to website</Link>
+          <Link to="/" className="brand auth__brand-m" aria-label="LexAmplify home"><LexLogoMark size={28} /><span className="brand__word" style={{ fontSize: 19 }}>LexAmplify</span></Link>
+        </div>
 
-        <div className="lx-card">
-          {/* Header */}
-          <div className="lx-card-header">
-            <div className="lx-card-title">{isSignIn ? 'Welcome back.' : 'Create your account.'}</div>
-            <div className="lx-card-sub">
-              {isSignIn
-                ? 'Sign in to access your advocate console.'
-                : 'Join 380+ Indian law firms on LexAmplify.'}
+        <div className="auth__center">
+          <div className="auth__card">
+            <h1>{isSignIn ? 'Welcome back.' : 'Create your account.'}</h1>
+            <p className="auth__sub">{isSignIn ? 'Sign in to your workspace.' : 'It takes about a minute.'}</p>
+
+            <div className="seg" role="tablist" aria-label="Sign in or create account">
+              <button type="button" role="tab" aria-selected={isSignIn} onClick={() => switchMode('signin')}>Sign in</button>
+              <button type="button" role="tab" aria-selected={!isSignIn} onClick={() => switchMode('register')}>Create account</button>
             </div>
-          </div>
 
-          {/* Tabs */}
-          <div className="lx-tabs" role="tablist">
-            <button
-              role="tab"
-              className={`lx-tab ${tab === 'signin' ? 'active' : ''}`}
-              onClick={() => setTab('signin')}
-            >
-              Sign In
-            </button>
-            <button
-              role="tab"
-              className={`lx-tab ${tab === 'register' ? 'active' : ''}`}
-              onClick={() => setTab('register')}
-            >
-              Create Account
-            </button>
-          </div>
-
-          <form key={tab} className="lx-tab-fade" onSubmit={(e) => e.preventDefault()}>
-            {/* Error */}
-            {error && (
-              <div className="lx-error">
-                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0, marginTop: 1 }}>
-                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                {error}
-              </div>
-            )}
-
-            {/* Full Name — rendered in Create Account mode */}
-            {!isSignIn && (
-              <div className="lx-field">
-                <label htmlFor="reg-name" className="lx-label">Full Name</label>
-                <div className="lx-input-wrap">
-                  <span className="lx-input-icon">
-                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                      <circle cx="12" cy="7" r="4" />
-                    </svg>
-                  </span>
-                  <input
-                    id="reg-name"
-                    type="text"
-                    className="lx-input"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Adv. Rajesh Sharma"
-                    disabled={loading}
-                    autoComplete="name"
-                    required
-                  />
+            {/* ───────── SIGN IN ───────── */}
+            {isSignIn && (
+              <>
+                <div className="seg seg--sm" role="tablist" aria-label="Sign-in method">
+                  <button type="button" role="tab" aria-selected={method === 'password'} onClick={() => { setMethod('password'); clearFlow(); }}>Email &amp; password</button>
+                  <button type="button" role="tab" aria-selected={method === 'otp'} onClick={() => { setMethod('otp'); clearFlow(); }}>Mobile code</button>
                 </div>
-              </div>
-            )}
 
-            {!otpStep && (
-            <>
-            {/* Email address */}
-            <div className="lx-field">
-              <label htmlFor="login-email" className="lx-label">Email address</label>
-              <div className="lx-input-wrap">
-                <span className="lx-input-icon">
-                  <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
-                    <polyline points="22,6 12,13 2,6" />
-                  </svg>
-                </span>
-                <input
-                  id="login-email"
-                  type="email"
-                  className="lx-input"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@gmail.com"
-                  disabled={loading}
-                  autoComplete="email"
-                  required
-                />
-              </div>
-            </div>
-            </>
-            )}
-
-            {/* Phone Number — rendered in Create Account mode */}
-            {!isSignIn && (
-              <div className="lx-field">
-                <label htmlFor="reg-phone" className="lx-label">Phone Number</label>
-                <div className="lx-input-wrap">
-                  <span className="lx-input-icon">
-                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                    </svg>
-                  </span>
-                  <input
-                    id="reg-phone"
-                    type="tel"
-                    className="lx-input"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                    disabled={loading}
-                    autoComplete="tel"
-                    required
-                  />
-                </div>
-              </div>
-            )}
-
-            {!otpStep && (
-            <>
-            {/* Password — same stacked layout */}
-            <div className="lx-field" style={{ marginBottom: isSignIn ? '8px' : '20px' }}>
-              <div className="lx-field-row">
-                <label htmlFor="login-password" className="lx-label">Password</label>
-                {isSignIn && (
-                  <button type="button" className="lx-forgot" onClick={openResetModal} tabIndex={0}>
-                    Forgot password?
-                  </button>
+                {method === 'password' && (
+                  <form className="form" onSubmit={signInWithPassword} noValidate>
+                    <Notice>{error}</Notice>
+                    {!mfa ? (
+                      <>
+                        <div className="field">
+                          <label htmlFor="si-email">Email address</label>
+                          <input id="si-email" className="input" type="email" autoComplete="username" inputMode="email" placeholder="you@example.com"
+                            value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} autoFocus />
+                        </div>
+                        <PasswordField id="si-pw" value={password} onChange={setPassword} disabled={busy} autoComplete="current-password"
+                          placeholder="Your password"
+                          aside={<button type="button" className="link-btn" onClick={() => { setResetMode('request'); setResetEmail(email); setResetOpen(true); }}>Forgot password?</button>} />
+                      </>
+                    ) : (
+                      <div className="field">
+                        <Notice kind="info">{useRecovery
+                          ? <>Enter one of your recovery codes for <b>{email}</b>. Each code works once.</>
+                          : <>Two-step sign-in is on for <b>{email}</b>. Enter the 6-digit code from your authenticator app.</>}</Notice>
+                        <label htmlFor="si-mfa" style={{ marginTop: 16 }}>{useRecovery ? 'Recovery code' : '6-digit code'}</label>
+                        <input id="si-mfa" className={`input${useRecovery ? '' : ' code-input'}`} type="text" autoComplete="one-time-code"
+                          inputMode={useRecovery ? 'text' : 'numeric'} maxLength={20} placeholder={useRecovery ? 'abcd-efgh' : '······'}
+                          value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} disabled={busy} autoFocus />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+                          <button type="button" className="link-btn" onClick={() => { setUseRecovery((v) => !v); setMfaCode(''); setError(''); }}>{useRecovery ? 'Use my authenticator app' : 'Use a recovery code'}</button>
+                          <button type="button" className="link-btn" onClick={() => { setMfa(false); setMfaCode(''); setUseRecovery(false); setError(''); }}>Back</button>
+                        </div>
+                      </div>
+                    )}
+                    <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
+                      {busy ? <Spinner label={busyLabel || 'Signing in…'} /> : <>{mfa ? 'Verify and sign in' : 'Sign in'}<Icon name="arrow" size={18} /></>}
+                    </button>
+                  </form>
                 )}
-              </div>
-              <div className="lx-input-wrap">
-                <span className="lx-input-icon">
-                  <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                </span>
-                <input
-                  id="login-password"
-                  type={showPwd ? 'text' : 'password'}
-                  className="lx-input"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  disabled={loading}
-                  autoComplete={isSignIn ? 'current-password' : 'new-password'}
-                  style={{ paddingRight: '42px' }}
-                  required
-                />
-                <button
-                  type="button"
-                  className="lx-eye-btn"
-                  onClick={() => setShowPwd((p) => !p)}
-                  aria-label={showPwd ? 'Hide password' : 'Show password'}
-                  tabIndex={-1}
-                >
-                  {showPwd ? (
-                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-            </>
+
+                {method === 'otp' && (
+                  <form className="form" onSubmit={(e) => { e.preventDefault(); if (codeSent) signInWithCode(); else sendCode('login'); }} noValidate>
+                    <Notice>{error}</Notice>
+                    <Notice kind="info">{info}</Notice>
+                    <PhoneField id="li-phone" value={phone} onChange={(v) => { setPhone(v); if (codeSent) { setCodeSent(false); setCode(''); setInfo(''); } }} disabled={busy}
+                      action={sendBtn('login')} hint={!codeSent ? 'We will text you a 6-digit code. Use the number on your account.' : undefined} />
+                    {codeSent && <CodeField id="li-code" value={code} onChange={setCode} disabled={busy} onComplete={signInWithCode} />}
+                    {codeSent && (
+                      <button type="submit" className="btn btn--primary btn--block" disabled={busy || code.length !== 6}>
+                        {busy ? <Spinner label={busyLabel || 'Signing in…'} /> : <>Verify and sign in<Icon name="arrow" size={18} /></>}
+                      </button>
+                    )}
+                    {!codeSent && (
+                      <button type="submit" className="btn btn--primary btn--block" disabled={busy || !phoneOk(phone)}>
+                        {busy ? <Spinner label={busyLabel || 'Sending…'} /> : <>Send code<Icon name="arrow" size={18} /></>}
+                      </button>
+                    )}
+                  </form>
+                )}
+              </>
             )}
 
-            {isSignIn && otpStep && (
-              <div className="lx-field" style={{ marginBottom: '8px' }}>
-                <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.55, opacity: 0.85 }}>
-                  {useRecovery
-                    ? <>Enter one of your recovery codes for <b>{email}</b>. Each code works once.</>
-                    : <>Two-step sign-in is on for <b>{email}</b>. Open your authenticator app and enter the 6-digit code.</>}
-                </p>
-                <label htmlFor="login-otp" className="lx-label">{useRecovery ? 'Recovery code' : '6-digit code'}</label>
-                <div className="lx-input-wrap">
-                  <input
-                    id="login-otp"
-                    type="text"
-                    className="lx-input"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !loading) handleLogin(e); }}
-                    placeholder={useRecovery ? 'abcd-efgh' : '123456'}
-                    inputMode={useRecovery ? 'text' : 'numeric'}
-                    autoComplete="one-time-code"
-                    maxLength={20}
-                    disabled={loading}
-                    autoFocus
-                    style={{ paddingLeft: 14, letterSpacing: useRecovery ? '0.08em' : '0.3em', fontVariantNumeric: 'tabular-nums' }}
-                  />
+            {/* ───────── CREATE ACCOUNT ───────── */}
+            {!isSignIn && (
+              <form className="form" onSubmit={register} noValidate>
+                <Notice>{error}</Notice>
+                <div className="field">
+                  <label htmlFor="rg-name">Full name</label>
+                  <input id="rg-name" className="input" type="text" autoComplete="name" placeholder="Adv. Rajesh Sharma"
+                    value={name} onChange={(e) => setName(e.target.value)} disabled={busy} maxLength={120} autoFocus />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 10 }}>
-                  <button type="button" className="lx-forgot" onClick={() => { setUseRecovery((v) => !v); setOtp(''); setError(''); }}>
-                    {useRecovery ? 'Use my authenticator app' : 'Use a recovery code'}
-                  </button>
-                  <button type="button" className="lx-forgot" onClick={() => { setOtpStep(false); setOtp(''); setUseRecovery(false); setError(''); }}>
-                    Back
-                  </button>
+                <div className="field">
+                  <label htmlFor="rg-email">Email address</label>
+                  <input id="rg-email" className="input" type="email" autoComplete="email" inputMode="email" placeholder="you@example.com"
+                    value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} maxLength={120} />
                 </div>
-              </div>
-            )}
 
-            {/* Quiet connection status — the server sleeps when idle; this shows it is being woken, not broken */}
-            <div className="lx-conn" role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, margin: '2px 0 10px', color: serverReady ? '#34d399' : '#94a3b8' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: serverReady ? '#34d399' : '#f59e0b', boxShadow: serverReady ? '0 0 0 3px rgba(52,211,153,.18)' : '0 0 0 3px rgba(245,158,11,.18)', animation: serverReady ? 'none' : 'lx-conn-pulse 1.2s ease-in-out infinite' }} />
-              {serverReady ? 'Secure server ready' : 'Waking secure server — you can sign in now, we will connect as soon as it is up'}
-            </div>
-            <style>{'@keyframes lx-conn-pulse{0%,100%{opacity:.35}50%{opacity:1}}'}</style>
-
-            {/* CTA */}
-            {isSignIn ? (
-              <button
-                type="button"
-                className="lx-btn lx-btn-signin"
-                onClick={handleLogin}
-                disabled={loading}
-              >
-                {loading ? (
-                  <><span className="lx-spinner" /> {slowConnection ? 'Starting your secure workspace…' : 'Authenticating…'}</>
+                {/* Mobile number + one-time code */}
+                {phoneVerified ? (
+                  <div className="field">
+                    <div className="label">Mobile number</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <span className="verified"><Icon name="check" size={16} />+91 {phone.slice(0, 5)} {phone.slice(5)} verified</span>
+                      <button type="button" className="link-btn" onClick={() => { setPhoneToken(''); setCodeSent(false); setCode(''); }}>Change</button>
+                    </div>
+                  </div>
                 ) : (
-                  <>{otpStep ? 'Verify and sign in' : 'Sign In'}
-                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                    </svg>
+                  <>
+                    <PhoneField id="rg-phone" value={phone} disabled={busy}
+                      onChange={(v) => { setPhone(v); if (codeSent) { setCodeSent(false); setCode(''); setInfo(''); } }}
+                      action={needPhoneOtp ? sendBtn('signup') : null}
+                      hint={needPhoneOtp ? 'We will text you a code to confirm this number.' : 'Used for sign-in and important account alerts.'} />
+                    {needPhoneOtp && codeSent && (
+                      <>
+                        <Notice kind="info">{info}</Notice>
+                        <CodeField id="rg-code" value={code} onChange={setCode} disabled={busy} onComplete={verifySignupCode} />
+                        <button type="button" className="btn btn--ghost btn--block" disabled={busy || code.length !== 6} onClick={() => verifySignupCode()}>
+                          {busy ? 'Checking…' : 'Verify number'}
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="lx-btn lx-btn-signin"
-                onClick={handleRegister}
-                disabled={loading}
-              >
-                {loading ? (
-                  <><span className="lx-spinner" /> {slowConnection ? 'Starting your secure workspace…' : 'Creating account…'}</>
-                ) : 'Create Advocate Account'}
-              </button>
-            )}
-          </form>
 
-          {/* SSO */}
-          <div className="lx-divider">Or continue with</div>
-          <div className="lx-sso-row">
-            <a className="lx-sso-btn" href={`${API_BASE_URL}/api/auth/sso/google/login`}>
-              <svg width="16" height="16" viewBox="0 0 24 24">
+                <PasswordField id="rg-pw" value={password} onChange={setPassword} disabled={busy} autoComplete="new-password" placeholder="Create a password" showMeter />
+                <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
+                  {busy ? <Spinner label={busyLabel || 'Creating your account…'} /> : <>Create account<Icon name="arrow" size={18} /></>}
+                </button>
+                <p className="terms">By creating an account you agree to use LexAmplify responsibly and to keep your sign-in details private.</p>
+              </form>
+            )}
+
+            <div className="divider">or</div>
+            <a className="sso" href={googleHref}>
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.89c2.28-2.1 3.56-5.19 3.56-8.82z" />
                 <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.91l-3.89-3c-1.08.73-2.46 1.16-4.04 1.16-3.1 0-5.73-2.1-6.67-4.92H1.3v3.09A12 12 0 0 0 12 24z" />
                 <path fill="#FBBC05" d="M5.33 14.33A7.2 7.2 0 0 1 4.95 12c0-.81.14-1.6.38-2.33V6.58H1.3A12 12 0 0 0 0 12c0 1.94.46 3.77 1.3 5.42z" />
@@ -1210,113 +532,55 @@ export default function LoginPage() {
               </svg>
               Continue with Google
             </a>
-          </div>
 
-          {/* Footer */}
-          <div className="lx-footer-link">
-            <Link to="/">
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-              </svg>
-              Return to public website
-            </Link>
+            <div className={`conn${serverReady ? ' ready' : ''}`} role="status" aria-live="polite">
+              <i />{serverReady ? 'Secure connection ready' : 'Waking our secure server. You can start now and we will connect as soon as it is up.'}
+            </div>
+
+            <p className="swap">
+              {isSignIn
+                ? <>New to LexAmplify? <button type="button" className="link-btn" onClick={() => switchMode('register')}>Create an account</button></>
+                : <>Already have an account? <button type="button" className="link-btn" onClick={() => switchMode('signin')}>Sign in</button></>}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* ═══════════════════ FORGOT / RESET PASSWORD MODAL ═══════════════════ */}
-      {showResetModal && resetMode === 'request' && (
-        <div className="lx-modal-overlay" onClick={closeResetModal}>
-          <div className="lx-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="lx-modal-close" onClick={closeResetModal} aria-label="Close">×</button>
-            <div className="lx-modal-title">Reset your password</div>
-            <div className="lx-modal-sub">
-              Enter the email tied to your advocate console and we'll send a secure reset link.
-            </div>
-            <form onSubmit={handlePasswordReset}>
-              <div className="lx-field">
-                <label className="lx-label">Email address</label>
-                <div className="lx-input-wrap">
-                  <span className="lx-input-icon">
-                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
-                      <polyline points="22,6 12,13 2,6" />
-                    </svg>
-                  </span>
-                  <input
-                    type="email"
-                    className="lx-input"
-                    value={resetEmail}
-                    onChange={(e) => setResetEmail(e.target.value)}
-                    placeholder="advocate@lexamplify.in"
-                    autoFocus
-                    disabled={resetLoading}
-                  />
+      {/* ── Reset modal ── */}
+      {resetOpen && (
+        <div className="modal-back" onClick={closeReset} role="presentation">
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rs-title" onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { if (e.key === 'Escape') closeReset(); }}>
+            <button type="button" className="x" onClick={closeReset} aria-label="Close"><Icon name="close" size={20} /></button>
+            {resetMode === 'request' ? (
+              <form onSubmit={requestReset} noValidate>
+                <h2 id="rs-title">Reset your password</h2>
+                <p className="auth__sub">Enter your email and we will send a secure link. It works once and expires in an hour.</p>
+                <div className="form">
+                  <div className="field">
+                    <label htmlFor="rs-email">Email address</label>
+                    <input id="rs-email" className="input" type="email" autoComplete="email" placeholder="you@example.com" autoFocus
+                      value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} disabled={resetBusy} />
+                  </div>
+                  <button type="submit" className="btn btn--primary btn--block" disabled={resetBusy}>{resetBusy ? <Spinner label="Sending…" /> : 'Send reset link'}</button>
+                  <p className="terms" style={{ marginTop: 0 }}>We show the same message whether or not an account exists, to protect everyone’s privacy.</p>
                 </div>
-              </div>
-              <button
-                type="submit"
-                className="lx-btn lx-btn-signin"
-                style={{ marginTop: '8px' }}
-                disabled={resetLoading}
-              >
-                {resetLoading ? <><span className="lx-spinner" /> Sending…</> : 'Send reset link'}
-              </button>
-            </form>
-            <div className="lx-modal-note">
-              For your security, we'll show the same message whether or not an account exists for that email.
-            </div>
+              </form>
+            ) : (
+              <form onSubmit={confirmReset} noValidate>
+                <h2 id="rs-title">Choose a new password</h2>
+                <p className="auth__sub">Pick something you do not use anywhere else.</p>
+                <div className="form">
+                  <PasswordField id="rs-pw" label="New password" value={newPassword} onChange={setNewPassword} disabled={resetBusy} autoComplete="new-password" placeholder="At least 8 characters" showMeter />
+                  <button type="submit" className="btn btn--primary btn--block" disabled={resetBusy}>{resetBusy ? <Spinner label="Updating…" /> : 'Update password'}</button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
 
-      {showResetModal && resetMode === 'confirm' && (
-        <div className="lx-modal-overlay" onClick={closeResetModal}>
-          <div className="lx-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="lx-modal-close" onClick={closeResetModal} aria-label="Close">×</button>
-            <div className="lx-modal-title">Set a new password</div>
-            <div className="lx-modal-sub">Choose a new password for your advocate console.</div>
-            <form onSubmit={handleResetConfirm}>
-              <div className="lx-field">
-                <label className="lx-label">New password</label>
-                <div className="lx-input-wrap">
-                  <span className="lx-input-icon">
-                    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                  </span>
-                  <input
-                    type="password"
-                    className="lx-input"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="At least 8 characters"
-                    autoFocus
-                    disabled={resetLoading}
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="lx-btn lx-btn-signin"
-                style={{ marginTop: '8px' }}
-                disabled={resetLoading}
-              >
-                {resetLoading ? <><span className="lx-spinner" /> Updating…</> : 'Update password'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════ TOAST ═══════════════════ */}
-      {toast && (
-        <div className={`lx-toast lx-toast--${toast.type}`}>
-          <span>{toast.type === 'success' ? '✅' : '⚠️'}</span>
-          <span>{toast.message}</span>
-        </div>
-      )}
+      {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }

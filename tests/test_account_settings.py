@@ -27,6 +27,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-account-settings-tests")
     monkeypatch.setenv("GROQ_API_KEY", "dummy")
+    # Isolated database - re-runs must not collide with users left in the dev DB.
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'acct_test.db'}")
 
     import app as app_module
     importlib.reload(app_module)

@@ -29,6 +29,9 @@ rejects it — a cookie alone (which a CSRF attacker's cross-site form can
 trigger the browser into sending automatically) is never sufficient.
 """
 import os
+import re
+import secrets
+from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, request, jsonify
 from flask_jwt_extended import (
@@ -44,42 +47,184 @@ from sqlalchemy.exc import DBAPIError
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import db
 from models.user import User
+from models.phone_otp import PhoneOtp
 from utils.limiter import limiter
 from utils.mailer import send_email
-from utils.tokens import generate_reset_token, verify_reset_token
+from utils.sms import send_otp_sms, sms_configured
+from utils.tokens import (
+    generate_reset_token, verify_reset_token, reset_fingerprint_matches,
+    generate_phone_token, verify_phone_token, hmac_hex,
+)
 
 auth_bp = Blueprint("auth", __name__)
+
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+MAX_PASSWORD_LEN = 128  # bcrypt-style hashes get slow on huge inputs - cap it (DoS guard)
+OTP_TTL = timedelta(minutes=5)
+OTP_RESEND_COOLDOWN = timedelta(seconds=30)
+OTP_MAX_ATTEMPTS = 5
+
+
+def _phone_otp_required() -> bool:
+    """New accounts must prove they own the mobile number once an SMS provider
+    is configured (PHONE_OTP_REQUIRED=true/false overrides). Without a provider
+    nobody could ever receive a code, so signup stays open rather than locking
+    every new advocate out."""
+    flag = (os.getenv("PHONE_OTP_REQUIRED") or "auto").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    if flag in ("0", "false", "no"):
+        return False
+    return sms_configured()
+
+
+def normalize_phone(raw):
+    """Indian mobile numbers -> E.164 (+91XXXXXXXXXX). Returns None if invalid.
+    Accepts '98765 43210', '+91 98765-43210', '09876543210', '919876543210'."""
+    digits = re.sub(r"\D", "", raw or "")
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    if len(digits) == 10 and digits[0] in "6789":
+        return f"+91{digits}"
+    return None
+
+
+def _phone_variants(e164):
+    ten = e164[-10:]
+    return [e164, ten, f"91{ten}", f"0{ten}", f"+91 {ten}", f"+91 {ten[:5]} {ten[5:]}"]
+
+
+def _user_by_phone(e164):
+    return User.query.filter(User.phone.in_(_phone_variants(e164))).first()
+
+
+def _frontend_origin(requested):
+    """Where emailed links point. The browser-supplied origin is only honoured
+    if it is on the allow-list - otherwise anyone could request a reset for a
+    victim with frontend_origin=https://evil.example and receive the live
+    reset token in the victim's inbox link (account takeover)."""
+    allowed = [o.strip().rstrip("/") for o in (os.getenv("FRONTEND_ORIGINS") or "").split(",") if o.strip()]
+    default = (os.getenv("FRONTEND_URL") or "https://app.lexamplify.in").rstrip("/")
+    candidate = (requested or "").strip().rstrip("/")
+    if candidate and (candidate == default or candidate in allowed):
+        return candidate
+    if os.getenv("FLASK_ENV") != "production" and re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", candidate):
+        return candidate
+    return default
 
 
 @auth_bp.route("/signup", methods=["POST"])
 def signup():
-    # Legacy path for the server-rendered templates/signup.html — not used
-    # by the React app (which posts to /register below). Left as-is.
+    # Retired. This legacy endpoint returned a bearer token in the response
+    # body, skipped the password rules and let the CALLER choose their own
+    # `role`. The React app uses /register.
+    return jsonify({"error": "This endpoint has been retired. Use /api/auth/register."}), 410
+
+
+@auth_bp.route("/config", methods=["GET"])
+def auth_config():
+    """Public, non-sensitive switches the sign-in page needs to decide what to show."""
+    return jsonify({"phone_otp_required": _phone_otp_required(), "sms_enabled": sms_configured()}), 200
+
+
+# ── Phone OTP ────────────────────────────────────────────────────────────────
+@auth_bp.route("/otp/send", methods=["POST"])
+@limiter.limit("5/minute")
+@limiter.limit("20/hour")
+def otp_send():
+    """Send a 6-digit code to a mobile number.
+    purpose='signup': number must not belong to an account yet.
+    purpose='login' : number must belong to an account.
+    Either way the response is the same generic 200, so this endpoint cannot be
+    used to discover which numbers are registered."""
+    data = request.get_json(silent=True) or {}
+    purpose = data.get("purpose")
+    phone = normalize_phone(data.get("phone"))
+    if purpose not in ("signup", "login") or not phone:
+        return jsonify({"error": "Enter a valid 10-digit Indian mobile number."}), 400
+
+    generic = {"message": "If this number can receive a code, it is on its way.", "resend_in": int(OTP_RESEND_COOLDOWN.total_seconds())}
     try:
-        data = request.get_json()
-        name     = data.get("name", "").strip()
-        email    = data.get("email", "").strip().lower()
-        password = data.get("password", "").strip()
-        role     = data.get("role", "Lawyer")
+        exists = _user_by_phone(phone) is not None
+        if (purpose == "login" and not exists) or (purpose == "signup" and exists):
+            return jsonify(generic), 200
 
-        if not name or not email or not password:
-            return jsonify({"error": "Name, email and password are required."}), 400
-        if User.query.filter_by(email=email).first():
-            return jsonify({"error": "Email already registered."}), 409
+        last = (PhoneOtp.query.filter_by(phone=phone, purpose=purpose)
+                .order_by(PhoneOtp.created_at.desc()).first())
+        if last and datetime.utcnow() - last.created_at < OTP_RESEND_COOLDOWN:
+            return jsonify(generic), 200
 
-        user = User(
-            name=name, email=email,
-            password=generate_password_hash(password),
-            role=role
-        )
-        db.session.add(user)
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        db.session.add(PhoneOtp(
+            phone=phone, purpose=purpose, code_hash=hmac_hex(f"{phone}:{purpose}:{code}", "otp"),
+            expires_at=datetime.utcnow() + OTP_TTL,
+        ))
         db.session.commit()
-        token = create_access_token(identity=str(user.id))
-        return jsonify({"token": token, "name": user.name, "role": user.role}), 201
+        if not send_otp_sms(phone, code) and sms_configured():
+            return jsonify({"error": "We could not send the code right now. Please try again shortly.", "code": "SMS_FAILED"}), 503
+        return jsonify(generic), 200
     except Exception as e:
         db.session.rollback()
-        print(f"Signup error: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}", "code": "INTERNAL_ERROR"}), 500
+        print(f"[otp_send] error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
+
+
+def _consume_otp(phone, purpose, code):
+    """True if `code` is the live, unused code for this number. Counts every
+    wrong guess; after OTP_MAX_ATTEMPTS the code is dead and must be re-sent."""
+    row = (PhoneOtp.query.filter_by(phone=phone, purpose=purpose, consumed=False)
+           .order_by(PhoneOtp.created_at.desc()).first())
+    if not row or row.expires_at < datetime.utcnow() or row.attempts >= OTP_MAX_ATTEMPTS:
+        return False
+    row.attempts += 1
+    ok = bool(re.fullmatch(r"\d{6}", code or "")) and secrets.compare_digest(
+        row.code_hash, hmac_hex(f"{phone}:{purpose}:{code}", "otp"))
+    if ok:
+        row.consumed = True
+    db.session.commit()
+    return ok
+
+
+@auth_bp.route("/otp/verify", methods=["POST"])
+@limiter.limit("10/minute")
+def otp_verify():
+    """Check a signup code. Returns a short-lived signed phone_token that
+    /register requires, so the number on the account is one the person holds."""
+    data = request.get_json(silent=True) or {}
+    phone = normalize_phone(data.get("phone"))
+    if not phone:
+        return jsonify({"error": "Enter a valid 10-digit Indian mobile number."}), 400
+    try:
+        if not _consume_otp(phone, "signup", (data.get("code") or "").strip()):
+            return jsonify({"error": "That code is incorrect or has expired.", "code": "OTP_INVALID"}), 400
+        return jsonify({"phone": phone, "phone_token": generate_phone_token(phone)}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"[otp_verify] error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
+
+
+@auth_bp.route("/otp/login", methods=["POST"])
+@limiter.limit("10/minute")
+def otp_login():
+    """Sign in with mobile number + code (no password)."""
+    data = request.get_json(silent=True) or {}
+    phone = normalize_phone(data.get("phone"))
+    if not phone:
+        return jsonify({"error": "Enter a valid 10-digit Indian mobile number."}), 400
+    try:
+        user = _user_by_phone(phone)
+        # Same error for "no such account" and "wrong code".
+        if not user or not _consume_otp(phone, "login", (data.get("code") or "").strip()):
+            return jsonify({"error": "That code is incorrect or has expired.", "code": "OTP_INVALID"}), 401
+        _practice_event("lpms_login_event", user, True)
+        return _issue_session_response({"user": {"id": user.id, "email": user.email, "name": user.name}}, user.id)
+    except Exception as e:
+        db.session.rollback()
+        print(f"[otp_login] error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 def _issue_session_response(payload, user_id, status=200):
@@ -94,27 +239,45 @@ def _issue_session_response(payload, user_id, status=200):
 
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit("10/hour")
 def register_user():
     try:
         data = request.get_json(silent=True) or {}
         email = (data.get('email') or '').strip().lower()
         password = data.get('password') or ''
-        phone = (data.get('phone') or '').strip()
         name = (data.get('name') or data.get('full_name') or (email.split('@')[0] if email else '')).strip()
 
         if not email or not password:
             return jsonify({"error": "Email and password required"}), 400
+        if not EMAIL_RE.match(email) or len(email) > 120:
+            return jsonify({"error": "Enter a valid email address."}), 400
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters."}), 400
+        if len(password) > MAX_PASSWORD_LEN:
+            return jsonify({"error": f"Password must be at most {MAX_PASSWORD_LEN} characters."}), 400
+        if not name or len(name) > 120:
+            return jsonify({"error": "Enter your full name (up to 120 characters)."}), 400
+
+        # Mobile number: when SMS is live it must be the one the person just
+        # verified with a code; otherwise it is stored as a normalised number.
+        phone = normalize_phone(data.get('phone'))
+        if data.get('phone') and not phone:
+            return jsonify({"error": "Enter a valid 10-digit Indian mobile number."}), 400
+        if _phone_otp_required():
+            verified = verify_phone_token(data.get('phone_token') or '')
+            if not phone or verified != phone:
+                return jsonify({"error": "Please verify your mobile number with the code we send you.", "code": "PHONE_NOT_VERIFIED"}), 400
 
         if User.query.filter_by(email=email).first():
-            return jsonify({"error": "An account with this email already exists."}), 400
+            return jsonify({"error": "An account with this email already exists. Try signing in instead."}), 409
+        if phone and _user_by_phone(phone):
+            return jsonify({"error": "An account with this mobile number already exists. Try signing in instead."}), 409
 
         user = User(
             email=email,
             password=generate_password_hash(password),
             name=name,
-            phone=phone or None,
+            phone=phone,
         )
         try:
             db.session.add(user)
@@ -122,7 +285,7 @@ def register_user():
         except Exception as e:
             db.session.rollback()
             print(f"[register] commit failed: {e}")
-            return jsonify({"error": f"Registration failed: {e}", "code": "INTERNAL_ERROR"}), 500
+            return jsonify({"error": "Registration failed. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
         return _issue_session_response(
             {"message": "Account created.", "user": {"id": user.id, "email": user.email, "name": user.name, "phone": user.phone}},
@@ -131,7 +294,7 @@ def register_user():
     except Exception as e:
         db.session.rollback()
         print(f"[register] error: {e}")
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Registration failed. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 def _practice_event(name, user, ok, reason=None):
@@ -196,7 +359,7 @@ def login_user():
         return jsonify({"error": "The database is waking up. Please try again in a few seconds.", "code": "DB_WAKING"}), 503
     except Exception as e:
         print(f"[login] error: {e}")
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Sign-in failed. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @auth_bp.route('/logout', methods=['POST'])
@@ -326,8 +489,8 @@ def forgot_password():
 
         mail_sent = True
         if user:
-            reset_token = generate_reset_token(email)
-            frontend_origin = (data.get('frontend_origin') or '').strip() or 'https://app.lexamplify.in'
+            reset_token = generate_reset_token(email, user.password)
+            frontend_origin = _frontend_origin(data.get('frontend_origin'))
             reset_link = f"{frontend_origin}/login?resetToken={reset_token}"
             mail_sent = send_email(
                 email,
@@ -371,13 +534,17 @@ def reset_password():
             return jsonify({"error": "Token and new password are required."}), 400
         if len(new_password) < 8:
             return jsonify({"error": "Password must be at least 8 characters."}), 400
+        if len(new_password) > MAX_PASSWORD_LEN:
+            return jsonify({"error": f"Password must be at most {MAX_PASSWORD_LEN} characters."}), 400
 
-        email = verify_reset_token(token, max_age_seconds=3600)
-        if not email:
+        verified = verify_reset_token(token, max_age_seconds=3600)
+        if not verified:
             return jsonify({"error": "This reset link is invalid or has expired."}), 400
+        email, fingerprint = verified
 
         user = User.query.filter_by(email=email).first()
-        if not user:
+        # fingerprint check = single use: once the password changes, this link is dead.
+        if not user or not reset_fingerprint_matches(fingerprint, user.password):
             return jsonify({"error": "This reset link is invalid or has expired."}), 400
 
         user.password = generate_password_hash(new_password)
@@ -386,4 +553,4 @@ def reset_password():
     except Exception as e:
         db.session.rollback()
         print(f"[reset_password] error: {e}")
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Could not reset the password. Please try again.", "code": "INTERNAL_ERROR"}), 500
