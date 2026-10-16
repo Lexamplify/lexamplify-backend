@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import LexLogoMark from './LexLogoMark';
@@ -92,7 +92,7 @@ function PhoneField({ id, value, onChange, disabled, label = 'Mobile number', hi
       <div className={`control control--prefix${action ? ' control--btn' : ''}`}>
         <span className="prefix" aria-hidden="true">+91</span>
         <input
-          id={id} className="input" type="tel" inputMode="numeric" autoComplete="tel-national"
+          id={id} className="input lx-input" type="tel" inputMode="numeric" autoComplete="tel-national"
           placeholder="98765 43210" value={value} disabled={disabled} aria-invalid={invalid || undefined}
           onChange={(e) => onChange(tenDigits(e.target.value))}
           aria-describedby={hint ? `${id}-hint` : undefined}
@@ -109,7 +109,7 @@ function CodeField({ id, value, onChange, disabled, onComplete, label = '6-digit
     <div className="field">
       <label htmlFor={id}>{label}</label>
       <input
-        id={id} className="input code-input" type="text" inputMode="numeric" autoComplete="one-time-code"
+        id={id} className="input lx-input code-input" type="text" inputMode="numeric" autoComplete="one-time-code"
         placeholder="······" maxLength={6} value={value} disabled={disabled} autoFocus
         onChange={(e) => {
           const v = e.target.value.replace(/\D/g, '').slice(0, 6);
@@ -129,7 +129,7 @@ function PasswordField({ id, label = 'Password', value, onChange, disabled, auto
       <label htmlFor={id}><span>{label}</span>{aside}</label>
       <div className="control">
         <input
-          id={id} className="input" type={show ? 'text' : 'password'} value={value} disabled={disabled}
+          id={id} className="input lx-input" type={show ? 'text' : 'password'} value={value} disabled={disabled}
           autoComplete={autoComplete} placeholder={placeholder} style={{ paddingRight: 52 }} maxLength={128}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -179,6 +179,7 @@ export default function LoginPage() {
   const [mfa, setMfa] = useState(false);                      // authenticator-app step after a correct password
   const [mfaCode, setMfaCode] = useState('');
   const [useRecovery, setUseRecovery] = useState(false);
+  const [otpToken, setOtpToken] = useState('');                   // phone code accepted, authenticator code still owed
 
   const [busy, setBusy] = useState(false);
   const [slow, setSlow] = useState(false);
@@ -187,6 +188,12 @@ export default function LoginPage() {
   const [toast, setToast] = useState('');
 
   const [resetOpen, setResetOpen] = useState(Boolean(resetToken));
+  const resetOpener = useRef(null);
+  const wasResetOpen = useRef(false);
+  useEffect(() => {          // hand focus back to the "Forgot password?" link when the dialog closes
+    if (wasResetOpen.current && !resetOpen) resetOpener.current?.focus?.();
+    wasResetOpen.current = resetOpen;
+  }, [resetOpen]);
   const [resetMode, setResetMode] = useState(resetToken ? 'confirm' : 'request');
   const [resetEmail, setResetEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -237,7 +244,7 @@ export default function LoginPage() {
   useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(''), 5000); return () => clearTimeout(t); }, [toast]);
 
   const clearFlow = useCallback(() => {
-    setError(''); setInfo(''); setCode(''); setCodeSent(false); setMfa(false); setMfaCode(''); setUseRecovery(false); setResendIn(0);
+    setError(''); setInfo(''); setCode(''); setCodeSent(false); setMfa(false); setMfaCode(''); setUseRecovery(false); setResendIn(0); setOtpToken('');
   }, []);
 
   const switchMode = (next) => {
@@ -280,12 +287,23 @@ export default function LoginPage() {
 
   /* ── Sign in with a mobile code ── */
   const signInWithCode = async (value = code) => {
-    if (value.length !== 6 || busy) return;
+    const step = Boolean(otpToken);
+    if (busy) return;
+    if (!step && value.length !== 6) return;
+    if (step && !mfaCode.trim()) return setError(useRecovery ? 'Enter one of your recovery codes.' : 'Enter the 6-digit code from your authenticator app.');
     setError(''); setBusy(true);
     try {
-      const { res, data } = await postJSON('/api/auth/otp/login', { phone, code: value }, { onSlow: () => setSlow(true) });
+      const body = step ? { phone, login_token: otpToken, totp: mfaCode.trim() } : { phone, code: value };
+      const { res, data } = await postJSON('/api/auth/otp/login', body, { onSlow: () => setSlow(true) });
       if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
-      if (!res.ok) { setCode(''); throw new Error(data.error || 'That code is incorrect or has expired.'); }
+      if (!res.ok) {
+        if (data.code === 'MFA_REQUIRED' && data.login_token) {
+          setOtpToken(data.login_token); setMfaCode(''); setInfo(''); setBusy(false); setSlow(false); return;
+        }
+        if (data.code === 'MFA_INVALID') setMfaCode('');
+        else { setCode(''); setOtpToken(''); setMfaCode(''); }   // expired or wrong: start the code step again
+        throw new Error(data.error || 'That code is incorrect or has expired.');
+      }
       await finishSignIn(data.user?.email);
     } catch (e) { setError(e.message); setBusy(false); setSlow(false); }
   };
@@ -384,14 +402,14 @@ export default function LoginPage() {
           <ul className="auth__points">
             <li><Icon name="file" size={20} /><div>Drafts that ask first<span>It asks for the matter and details instead of guessing.</span></div></li>
             <li><Icon name="scan" size={20} /><div>Contract review in minutes<span>Risks, gaps and suggested rewrites, clause by clause.</span></div></li>
-            <li><Icon name="shield" size={20} /><div>Careful with your account<span>Mobile verification and optional two-step sign-in.</span></div></li>
+            <li><Icon name="shield" size={20} /><div>Careful with your account<span>Optional two-step sign-in with an authenticator app.</span></div></li>
           </ul>
         </div>
         <p className="auth__fine">LexAmplify assists legal professionals and does not provide legal advice.</p>
       </aside>
 
       {/* ── Form ── */}
-      <div className="auth__main">
+      <main className="auth__main" id="main">
         <div className="auth__top">
           <Link to="/" className="auth__back"><Icon name="arrow" size={16} style={{ transform: 'rotate(180deg)' }} />Back to website</Link>
           <Link to="/" className="brand auth__brand-m" aria-label="LexAmplify home"><LexLogoMark size={28} /><span className="brand__word" style={{ fontSize: 19 }}>LexAmplify</span></Link>
@@ -410,10 +428,12 @@ export default function LoginPage() {
             {/* ───────── SIGN IN ───────── */}
             {isSignIn && (
               <>
+                {config.sms_enabled && (
                 <div className="seg seg--sm" role="tablist" aria-label="Sign-in method">
                   <button type="button" role="tab" aria-selected={method === 'password'} onClick={() => { setMethod('password'); clearFlow(); }}>Email &amp; password</button>
                   <button type="button" role="tab" aria-selected={method === 'otp'} onClick={() => { setMethod('otp'); clearFlow(); }}>Mobile code</button>
                 </div>
+                )}
 
                 {method === 'password' && (
                   <form className="form" onSubmit={signInWithPassword} noValidate>
@@ -422,12 +442,12 @@ export default function LoginPage() {
                       <>
                         <div className="field">
                           <label htmlFor="si-email">Email address</label>
-                          <input id="si-email" className="input" type="email" autoComplete="username" inputMode="email" placeholder="you@example.com"
+                          <input id="si-email" className="input lx-input" type="email" autoComplete="username" inputMode="email" placeholder="you@example.com"
                             value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} autoFocus />
                         </div>
                         <PasswordField id="si-pw" value={password} onChange={setPassword} disabled={busy} autoComplete="current-password"
                           placeholder="Your password"
-                          aside={<button type="button" className="link-btn" onClick={() => { setResetMode('request'); setResetEmail(email); setResetOpen(true); }}>Forgot password?</button>} />
+                          aside={<button type="button" className="link-btn" onClick={(e) => { resetOpener.current = e.currentTarget; setResetMode('request'); setResetEmail(email); setResetOpen(true); }}>Forgot password?</button>} />
                       </>
                     ) : (
                       <div className="field">
@@ -435,7 +455,7 @@ export default function LoginPage() {
                           ? <>Enter one of your recovery codes for <b>{email}</b>. Each code works once.</>
                           : <>Two-step sign-in is on for <b>{email}</b>. Enter the 6-digit code from your authenticator app.</>}</Notice>
                         <label htmlFor="si-mfa" style={{ marginTop: 16 }}>{useRecovery ? 'Recovery code' : '6-digit code'}</label>
-                        <input id="si-mfa" className={`input${useRecovery ? '' : ' code-input'}`} type="text" autoComplete="one-time-code"
+                        <input id="si-mfa" className={`input lx-input${useRecovery ? '' : ' code-input'}`} type="text" autoComplete="one-time-code"
                           inputMode={useRecovery ? 'text' : 'numeric'} maxLength={20} placeholder={useRecovery ? 'abcd-efgh' : '······'}
                           value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} disabled={busy} autoFocus />
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
@@ -450,15 +470,25 @@ export default function LoginPage() {
                   </form>
                 )}
 
-                {method === 'otp' && (
+                {method === 'otp' && config.sms_enabled && (
                   <form className="form" onSubmit={(e) => { e.preventDefault(); if (codeSent) signInWithCode(); else sendCode('login'); }} noValidate>
                     <Notice>{error}</Notice>
                     <Notice kind="info">{info}</Notice>
-                    <PhoneField id="li-phone" value={phone} onChange={(v) => { setPhone(v); if (codeSent) { setCodeSent(false); setCode(''); setInfo(''); } }} disabled={busy}
+                    <PhoneField id="li-phone" value={phone} onChange={(v) => { setPhone(v); if (codeSent) { setCodeSent(false); setCode(''); setInfo(''); setOtpToken(''); setMfaCode(''); } }} disabled={busy}
                       action={sendBtn('login')} hint={!codeSent ? 'We will text you a 6-digit code. Use the number on your account.' : undefined} />
-                    {codeSent && <CodeField id="li-code" value={code} onChange={setCode} disabled={busy} onComplete={signInWithCode} />}
+                    {codeSent && !otpToken && <CodeField id="li-code" value={code} onChange={setCode} disabled={busy} onComplete={signInWithCode} />}
+                    {otpToken && (
+                      <div className="field">
+                        <label htmlFor="li-mfa">{useRecovery ? 'Recovery code' : 'Authenticator code'}</label>
+                        <input id="li-mfa" className={`input lx-input${useRecovery ? '' : ' code-input'}`} type="text" autoComplete="one-time-code"
+                          inputMode={useRecovery ? 'text' : 'numeric'} maxLength={useRecovery ? 20 : 6}
+                          placeholder={useRecovery ? 'xxxx-xxxx' : '······'} value={mfaCode}
+                          onChange={(e) => setMfaCode(e.target.value)} disabled={busy} autoFocus />
+                        <p className="hint">Your account also uses two-step sign-in. <button type="button" className="link-btn" onClick={() => { setUseRecovery((v) => !v); setMfaCode(''); }}>{useRecovery ? 'Use authenticator app' : 'Use a recovery code'}</button></p>
+                      </div>
+                    )}
                     {codeSent && (
-                      <button type="submit" className="btn btn--primary btn--block" disabled={busy || code.length !== 6}>
+                      <button type="submit" className="btn btn--primary btn--block" disabled={busy || (otpToken ? !mfaCode.trim() : code.length !== 6)}>
                         {busy ? <Spinner label={busyLabel || 'Signing in…'} /> : <>Verify and sign in<Icon name="arrow" size={18} /></>}
                       </button>
                     )}
@@ -478,12 +508,12 @@ export default function LoginPage() {
                 <Notice>{error}</Notice>
                 <div className="field">
                   <label htmlFor="rg-name">Full name</label>
-                  <input id="rg-name" className="input" type="text" autoComplete="name" placeholder="Adv. Rajesh Sharma"
+                  <input id="rg-name" className="input lx-input" type="text" autoComplete="name" placeholder="Adv. Rajesh Sharma"
                     value={name} onChange={(e) => setName(e.target.value)} disabled={busy} maxLength={120} autoFocus />
                 </div>
                 <div className="field">
                   <label htmlFor="rg-email">Email address</label>
-                  <input id="rg-email" className="input" type="email" autoComplete="email" inputMode="email" placeholder="you@example.com"
+                  <input id="rg-email" className="input lx-input" type="email" autoComplete="email" inputMode="email" placeholder="you@example.com"
                     value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} maxLength={120} />
                 </div>
 
@@ -544,13 +574,21 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
-      </div>
+      </main>
 
       {/* ── Reset modal ── */}
       {resetOpen && (
         <div className="modal-back" onClick={closeReset} role="presentation">
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rs-title" onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => { if (e.key === 'Escape') closeReset(); }}>
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { closeReset(); return; }
+              if (e.key !== 'Tab') return;      // keep keyboard focus inside the dialog
+              const f = [...e.currentTarget.querySelectorAll('button, input, [href], select, textarea')].filter((x) => !x.disabled && x.offsetParent !== null);
+              if (!f.length) return;
+              const first = f[0]; const last = f[f.length - 1];
+              if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+              else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+            }}>
             <button type="button" className="x" onClick={closeReset} aria-label="Close"><Icon name="close" size={20} /></button>
             {resetMode === 'request' ? (
               <form onSubmit={requestReset} noValidate>
@@ -559,7 +597,7 @@ export default function LoginPage() {
                 <div className="form">
                   <div className="field">
                     <label htmlFor="rs-email">Email address</label>
-                    <input id="rs-email" className="input" type="email" autoComplete="email" placeholder="you@example.com" autoFocus
+                    <input id="rs-email" className="input lx-input" type="email" autoComplete="email" placeholder="you@example.com" autoFocus
                       value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} disabled={resetBusy} />
                   </div>
                   <button type="submit" className="btn btn--primary btn--block" disabled={resetBusy}>{resetBusy ? <Spinner label="Sending…" /> : 'Send reset link'}</button>

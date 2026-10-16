@@ -1,40 +1,41 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { fetchTrackedCases, fetchDocuments } from './services/api';
 import CommandPalette from './components/CommandPalette';
-import CaseVault from './components/CaseVault';
-import DocumentViewer from './components/DocumentViewer';
-import CourtResources from './components/CourtResources';
-import ContractAnalyzer from './components/ContractAnalyzer';
+const CaseVault = lazy(() => import('./components/CaseVault'));
+const DocumentViewer = lazy(() => import('./components/DocumentViewer'));
+const CourtResources = lazy(() => import('./components/CourtResources'));
+const ContractAnalyzer = lazy(() => import('./components/ContractAnalyzer'));
 import ErrorBoundary from './components/ErrorBoundary';
-import AutoDraftWorkspace from './components/AutoDraftWorkspace';
+const AutoDraftWorkspace = lazy(() => import('./components/AutoDraftWorkspace'));
 import { useContractStore } from './store/useContractStore';
 import DraftsModal from './components/DraftsModal.jsx';
-import ConflictEngine from './components/ConflictEngine';
+const ConflictEngine = lazy(() => import('./components/ConflictEngine'));
 import LandingPage from './components/LandingPage';
 import SolutionsPage from './components/marketing/SolutionsPage';
+import NotFoundPage from './components/marketing/NotFoundPage';
 import SecurityPage from './components/marketing/SecurityPage';
 import LoginPage from './components/LoginPage';
-import CalendarView from './components/CalendarView';
+const CalendarView = lazy(() => import('./components/CalendarView'));
 import VaultView from './components/VaultView';
-import DocumentHub from './components/dochub/DocumentHub.jsx';
-import PracticeApp from './components/practice/PracticeApp.jsx';
+const DocumentHub = lazy(() => import('./components/dochub/DocumentHub.jsx'));
+const PracticeApp = lazy(() => import('./components/practice/PracticeApp.jsx'));
 import GlobalUploadDock from './components/dochub/GlobalDock.jsx';
-import CaseWorkspace from './components/CaseWorkspace';
-import DashboardView from './components/DashboardView';
-import WarRoomView from './components/WarRoomView';
-import FirmLibrary from './components/FirmLibrary';
-import LegalForms from './components/LegalForms';
-import FormTemplateLibrary from './components/FormTemplateLibrary';
+const CaseWorkspace = lazy(() => import('./components/CaseWorkspace'));
+const DashboardView = lazy(() => import('./components/DashboardView'));
+const WarRoomView = lazy(() => import('./components/WarRoomView'));
+const FirmLibrary = lazy(() => import('./components/FirmLibrary'));
+const LegalForms = lazy(() => import('./components/LegalForms'));
+const FormTemplateLibrary = lazy(() => import('./components/FormTemplateLibrary'));
 import TEMPLATES from './data/legalTemplates.js';
-import MatterLauncher from './components/organization/MatterLauncher';
-import MatterDashboard from './components/organization/MatterDashboard';
-import TeamDashboard from './components/organization/TeamDashboard';
-import OrgDashboard from './components/organization/OrgDashboard';
+const MatterLauncher = lazy(() => import('./components/organization/MatterLauncher'));
+const MatterDashboard = lazy(() => import('./components/organization/MatterDashboard'));
+const TeamDashboard = lazy(() => import('./components/organization/TeamDashboard'));
+const OrgDashboard = lazy(() => import('./components/organization/OrgDashboard'));
 import ContextCapsule from './components/organization/ContextCapsule';
-import AccountSettings from './components/AccountSettings';
+const AccountSettings = lazy(() => import('./components/AccountSettings'));
 import WorkspaceGuard from './components/WorkspaceGuard';
 import { useOrganizationStore } from './stores/useOrganizationStore';
 import { useChamberStore } from './stores/useChamberStore';
@@ -1039,6 +1040,15 @@ const Layout = ({ children, focusMode, setFocusMode }) => {
 };
 
 
+// Lazy screens load inside the app shell, so the sidebar stays put while a screen's code arrives.
+function PageSuspense({ children }) {
+  return (
+    <Suspense fallback={<div role="status" aria-live="polite" style={{ minHeight: '50vh', display: 'grid', placeItems: 'center', fontSize: 14, opacity: .65 }}>Loading…</div>}>
+      {children}
+    </Suspense>
+  );
+}
+
 // ── ROUTER ─────────────────────────────────────────────────────────────────────
 function AppRouterContent() {
   const [focusMode, setFocusMode] = useState(false);
@@ -1046,36 +1056,39 @@ function AppRouterContent() {
   return (
     <BrowserRouter>
       <CommandPalette />
+      <Suspense fallback={<div role="status" aria-live="polite" style={{ minHeight: '60vh', display: 'grid', placeItems: 'center', fontFamily: 'system-ui, sans-serif', fontSize: 14, opacity: .65 }}>Loading…</div>}>
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/solutions" element={<SolutionsPage />} />
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DashboardView /></Layout>} />
-        <Route path="/workspace/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterLauncher /></Layout>} />
-        <Route path="/workspace/matter/:matterId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><MatterDashboard /></Layout>} />
-        <Route path="/workspace/team/:teamId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><TeamDashboard /></Layout>} />
-        <Route path="/workspace/org" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><OrgDashboard /></Layout>} />
+        <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><DashboardView /></PageSuspense></Layout>} />
+        <Route path="/workspace/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterLauncher /></PageSuspense></Layout>} />
+        <Route path="/workspace/matter/:matterId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterDashboard /></PageSuspense></Layout>} />
+        <Route path="/workspace/team/:teamId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><TeamDashboard /></PageSuspense></Layout>} />
+        <Route path="/workspace/org" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><OrgDashboard /></PageSuspense></Layout>} />
         <Route path="/chamber" element={<Navigate to="/workspace/matters" replace />} />
         <Route path="/matters" element={<Navigate to="/workspace/matters" replace />} />
         <Route path="/home" element={<Navigate to="/workspace/matters" replace />} />
-        <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
-        <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AutoDraftWorkspace /></Layout>} />
-        <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CourtResources /></Layout>} />
-        <Route path="/conflict-engine" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ConflictEngine /></Layout>} />
-        <Route path="/case/:caseId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseVault /></Layout>} />
-        <Route path="/calendar" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CalendarView /></Layout>} />
-        <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><CaseWorkspace /></Layout>} />
-        <Route path="/practice/*" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><PracticeApp /></ErrorBoundary></Layout>} />
-        <Route path="/document-hub" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><DocumentHub /></ErrorBoundary></Layout>} />
-        <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><WarRoomView /></Layout>} />
-        <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FirmLibrary /></Layout>} />
-        <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><FormTemplateLibrary /></Layout>} />
-        <Route path="/firm-library/draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><LegalForms showSaveBar /></Layout>} />
-        <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></Layout>} />
-        <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></Layout>} />
-        <Route path="/account-settings" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><AccountSettings /></Layout>} />
+        <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></PageSuspense></Layout>} />
+        <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><AutoDraftWorkspace /></PageSuspense></Layout>} />
+        <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><CourtResources /></PageSuspense></Layout>} />
+        <Route path="/conflict-engine" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ConflictEngine /></PageSuspense></Layout>} />
+        <Route path="/case/:caseId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><CaseVault /></PageSuspense></Layout>} />
+        <Route path="/calendar" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><CalendarView /></PageSuspense></Layout>} />
+        <Route path="/vault" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><CaseWorkspace /></PageSuspense></Layout>} />
+        <Route path="/practice/*" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><PracticeApp /></ErrorBoundary></PageSuspense></Layout>} />
+        <Route path="/document-hub" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><DocumentHub /></ErrorBoundary></PageSuspense></Layout>} />
+        <Route path="/war-room" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><WarRoomView /></PageSuspense></Layout>} />
+        <Route path="/firm-library" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><FirmLibrary /></PageSuspense></Layout>} />
+        <Route path="/legal-forms" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><FormTemplateLibrary /></PageSuspense></Layout>} />
+        <Route path="/firm-library/draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><LegalForms showSaveBar /></PageSuspense></Layout>} />
+        <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></PageSuspense></Layout>} />
+        <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></PageSuspense></Layout>} />
+        <Route path="/account-settings" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><AccountSettings /></PageSuspense></Layout>} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

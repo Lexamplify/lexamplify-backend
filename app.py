@@ -4433,18 +4433,13 @@ def create_app():
 
     @app.route('/api/ecourts/sync', methods=['POST'])
     def sync_ecourts_cnr():
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-            cnr = (data.get('cnr') or '').strip()
-            # eCourts API integration point — simulated response until live API key is provisioned
-            return jsonify({
-                "success": True,
-                "cnr": cnr,
-                "hearings_added": 3,
-                "message": f"Matter Synced: 3 Hearings added to Calendar."
-            }), 200
-        except Exception as e:
-            return jsonify({"error": True, "message": str(e)}), 500
+        # No live eCourts integration is configured. Report that honestly rather
+        # than returning a fabricated "3 hearings added" for a limitation-date tool.
+        return jsonify({
+            "success": False,
+            "error": True,
+            "message": "Automatic eCourts sync is not connected yet. Add the hearing dates to your calendar manually.",
+        }), 501
 
     @app.route('/api/districts', methods=['GET'])
     def get_districts():
@@ -4507,6 +4502,17 @@ def create_app():
                 conn.commit()
         except Exception as e:
             app.logger.warning(f"users.phone column check passed or not needed: {e}")
+
+        # Same idea for users.phone_verified (mobile-code sign-in only trusts numbers the holder proved).
+        try:
+            with sqlalchemy_db.engine.connect() as conn:
+                if _is_postgres:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE;"))
+                else:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN phone_verified BOOLEAN NOT NULL DEFAULT 0;"))
+                conn.commit()
+        except Exception as e:
+            app.logger.warning(f"users.phone_verified column check passed or not needed: {e}")
 
         # One-time (idempotent) carry-over of anyone who registered through
         # the old raw-sqlite auth path in routes/auth_routes.py before it

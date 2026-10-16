@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import MarketingLayout, { Icon, CONTACT_EMAIL } from './MarketingLayout';
-import { DraftShot, AnalyzerShot, ConflictShot, WorkspaceShot } from './Shots';
+import { DraftApp, ReviewApp, ConflictApp, CalendarApp } from './Product';
 
 const SECTIONS = [
   {
@@ -15,7 +15,7 @@ const SECTIONS = [
       'Notices, petitions, applications, agreements and letters from a growing template library',
       'Edit in a full document editor, then export the finished draft',
     ],
-    shot: <DraftShot />,
+    shot: <DraftApp />,
     who: 'Litigators, chambers and in-house counsel',
   },
   {
@@ -29,7 +29,7 @@ const SECTIONS = [
       'Review against your own playbook, or against Indian statutory standards',
       'Ask questions of the contract and see the clause behind every answer',
     ],
-    shot: <AnalyzerShot />,
+    shot: <ReviewApp />,
     who: 'Corporate and commercial teams, solo advocates reviewing client contracts',
   },
   {
@@ -43,7 +43,7 @@ const SECTIONS = [
       'Organisation, team and matter workspaces so people see what they should',
       'Saved clearance memos attached to the matter',
     ],
-    shot: <ConflictShot />,
+    shot: <ConflictApp />,
     who: 'Law firms and multi-advocate chambers',
   },
   {
@@ -53,11 +53,11 @@ const SECTIONS = [
     lede: 'A workspace for the unglamorous part of the job: finding the right file, knowing what is due, and not missing a limitation date.',
     points: [
       'Case Vault and Document Hub for thousands of documents, with review queues',
-      'Calendar for hearings and limitation periods, with a 48-hour view',
-      'Tracked cases synced from eCourts using the CNR number',
+      'Calendar for hearings, replies and limitation dates',
+      'Cause lists and court resources in one place',
       'Send any document straight into drafting, review or a conflict check',
     ],
-    shot: <WorkspaceShot />,
+    shot: <CalendarApp />,
     who: 'Solo advocates and small chambers',
   },
 ];
@@ -68,10 +68,10 @@ export default function SolutionsPage() {
       title="Solutions · LexAmplify"
       description="How LexAmplify supports litigation drafting, contract review, conflict checks and day-to-day practice for Indian advocates and firms."
     >
-      <section className="hero" style={{ paddingBottom: 'clamp(32px, 5vw, 56px)' }}>
+      <section className="page-hero">
         <div className="wrap" style={{ position: 'relative' }}>
           <p className="eyebrow">Solutions</p>
-          <h1 style={{ maxWidth: '16ch' }}>Built around how <em>chambers</em> really work.</h1>
+          <h1>Built around how <em>chambers</em> really work.</h1>
           <p className="lede">Pick the part of your practice you want to improve first. Each workflow stands on its own and works with the rest.</p>
           <nav className="anchor-nav" aria-label="Solutions on this page">
             {SECTIONS.map((s) => <a key={s.id} href={`#${s.id}`}>{s.eyebrow}</a>)}
@@ -93,7 +93,7 @@ export default function SolutionsPage() {
                   </ul>
                   <p style={{ marginTop: 24, fontSize: 14.5, color: 'var(--muted)' }}><strong style={{ color: 'var(--ink-soft)', fontWeight: 600 }}>Best for:</strong> {s.who}</p>
                 </div>
-                {s.shot}
+                <div className="split__view">{s.shot}</div>
               </div>
             </div>
           ))}

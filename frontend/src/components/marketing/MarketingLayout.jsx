@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import LexLogoMark from '../LexLogoMark';
 import './marketing.css';
+import './home.css';
 
 export const CONTACT_EMAIL = 'enterprise@lexamplify.in';
 
@@ -21,6 +22,7 @@ const P = {
   mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3.5 7 8.5 6 8.5-6" /></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  plus: <path d="M12 5v14M5 12h14" />,
   spark: <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
 };
 
@@ -34,17 +36,26 @@ export function Icon({ name, size = 20, ...rest }) {
 }
 
 const NAV = [
-  { label: 'Solutions', to: '/solutions' },
   { label: 'How it works', to: '/#how-it-works' },
   { label: 'Security', to: '/security' },
+];
+
+const SOLUTIONS = [
+  { icon: 'file', t: 'Drafting', d: 'Notices, petitions and agreements from your file', to: '/solutions#drafting' },
+  { icon: 'scan', t: 'Contract review', d: 'Clause-by-clause risk and rewrites', to: '/solutions#contracts' },
+  { icon: 'scale', t: 'Firms and teams', d: 'Conflict checks and shared workspaces', to: '/solutions#firms' },
+  { icon: 'calendar', t: 'Daily practice', d: 'Matters, documents, hearings and dates', to: '/solutions#chambers' },
 ];
 
 function Nav() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const [mega, setMega] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const megaRef = useRef(null);
+  const closeTimer = useRef(null);
 
-  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => { setOpen(false); setMega(false); }, [pathname]);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
@@ -52,11 +63,16 @@ function Nav() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
   useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    if (!open && !mega) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); setMega(false); } };
+    const onDown = (e) => { if (megaRef.current && !megaRef.current.contains(e.target)) setMega(false); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+    window.addEventListener('mousedown', onDown);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown); };
+  }, [open, mega]);
+
+  const hoverOpen = () => { clearTimeout(closeTimer.current); setMega(true); };
+  const hoverClose = () => { closeTimer.current = setTimeout(() => setMega(false), 140); };
 
   return (
     <header className={`nav${scrolled ? ' is-scrolled' : ''}`}>
@@ -67,6 +83,26 @@ function Nav() {
         </Link>
 
         <nav className="nav__links" aria-label="Primary">
+          <div className="mega" ref={megaRef} onMouseEnter={hoverOpen} onMouseLeave={hoverClose}>
+            <button type="button" className="nav__link nav__link--btn" aria-expanded={mega} aria-haspopup="true"
+              aria-current={pathname === '/solutions' ? 'page' : undefined} onClick={() => setMega((v) => !v)}>
+              Solutions
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+            </button>
+            <div className={`mega__panel${mega ? ' is-open' : ''}`}>
+              <div className="mega__grid">
+                {SOLUTIONS.map((x) => (
+                  <Link key={x.t} to={x.to} className="mega__item" tabIndex={mega ? 0 : -1} onClick={() => setMega(false)}>
+                    <span className="mega__ico"><Icon name={x.icon} size={20} /></span>
+                    <span><b>{x.t}</b><small>{x.d}</small></span>
+                  </Link>
+                ))}
+              </div>
+              <Link to="/solutions" className="mega__all" tabIndex={mega ? 0 : -1} onClick={() => setMega(false)}>
+                See all solutions <Icon name="arrow" size={15} />
+              </Link>
+            </div>
+          </div>
           {NAV.map((n) => (
             <Link key={n.label} to={n.to} className="nav__link"
               aria-current={pathname === n.to ? 'page' : undefined}>{n.label}</Link>
@@ -84,6 +120,7 @@ function Nav() {
       </div>
 
       <div id="mk-mobile-menu" className={`nav__panel${open ? ' is-open' : ''}`}>
+        <Link to="/solutions" tabIndex={open ? 0 : -1}>Solutions</Link>
         {NAV.map((n) => <Link key={n.label} to={n.to} tabIndex={open ? 0 : -1}>{n.label}</Link>)}
         <Link to="/login" tabIndex={open ? 0 : -1}>Sign in</Link>
         <Link to="/login?mode=register" className="btn btn--primary" tabIndex={open ? 0 : -1}>Create account</Link>
@@ -96,6 +133,7 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="wrap">
+        <h2 className="sr-only">Site map</h2>
         <div className="footer__grid">
           <div>
             <Link to="/" className="brand" aria-label="LexAmplify home">
@@ -107,27 +145,32 @@ function Footer() {
             </p>
           </div>
           <div>
-            <h4>Product</h4>
+            <h3>Solutions</h3>
             <ul>
-              <li><Link to="/solutions">Solutions</Link></li>
-              <li><Link to="/#how-it-works">How it works</Link></li>
-              <li><Link to="/security">Security</Link></li>
+              <li><Link to="/solutions#drafting">Drafting</Link></li>
+              <li><Link to="/solutions#contracts">Contract review</Link></li>
+              <li><Link to="/solutions#firms">Firms and teams</Link></li>
+              <li><Link to="/solutions#chambers">Daily practice</Link></li>
             </ul>
           </div>
           <div>
-            <h4>Account</h4>
+            <h3>Company</h3>
+            <ul>
+              <li><Link to="/#how-it-works">How it works</Link></li>
+              <li><Link to="/security">Security</Link></li>
+              <li><a href={`mailto:${CONTACT_EMAIL}`}>Contact</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Account</h3>
             <ul>
               <li><Link to="/login">Sign in</Link></li>
               <li><Link to="/login?mode=register">Create account</Link></li>
-            </ul>
-          </div>
-          <div>
-            <h4>Contact</h4>
-            <ul>
-              <li><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></li>
+              <li><a href={`mailto:${CONTACT_EMAIL}?subject=LexAmplify%20walkthrough`}>Request a walkthrough</a></li>
             </ul>
           </div>
         </div>
+        <div className="footer__mark" aria-hidden="true">LexAmplify</div>
         <div className="footer__legal">
           <span>© {new Date().getFullYear()} LexAmplify India Software Solutions. All rights reserved.</span>
           <span>LexAmplify assists legal professionals; it does not provide legal advice.</span>

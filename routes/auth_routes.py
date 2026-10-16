@@ -52,6 +52,7 @@ from utils.limiter import limiter
 from utils.mailer import send_email
 from utils.sms import send_otp_sms, sms_configured
 from utils.tokens import (
+    generate_login_step_token, verify_login_step_token,
     generate_reset_token, verify_reset_token, reset_fingerprint_matches,
     generate_phone_token, verify_phone_token, hmac_hex,
 )
@@ -63,6 +64,8 @@ MAX_PASSWORD_LEN = 128  # bcrypt-style hashes get slow on huge inputs - cap it (
 OTP_TTL = timedelta(minutes=5)
 OTP_RESEND_COOLDOWN = timedelta(seconds=30)
 OTP_MAX_ATTEMPTS = 5
+OTP_MAX_SENDS_PER_HOUR = 5
+OTP_MAX_GUESSES_PER_HOUR = 15   # across every code issued to one number
 
 
 def _phone_otp_required() -> bool:
@@ -96,8 +99,17 @@ def _phone_variants(e164):
     return [e164, ten, f"91{ten}", f"0{ten}", f"+91 {ten}", f"+91 {ten[:5]} {ten[5:]}"]
 
 
-def _user_by_phone(e164):
-    return User.query.filter(User.phone.in_(_phone_variants(e164))).first()
+def _user_by_phone(e164, verified_only=True):
+    """Account that owns this number. Only numbers the holder proved with a code
+    count by default: an unverified number is a contact detail, not an identity."""
+    q = User.query.filter(User.phone.in_(_phone_variants(e164)))
+    if verified_only:
+        q = q.filter(User.phone_verified.is_(True))
+    return q.first()
+
+
+def _is_production() -> bool:
+    return os.getenv("FLASK_ENV") == "production" or os.getenv("RENDER") == "true"
 
 
 def _frontend_origin(requested):
@@ -110,7 +122,7 @@ def _frontend_origin(requested):
     candidate = (requested or "").strip().rstrip("/")
     if candidate and (candidate == default or candidate in allowed):
         return candidate
-    if os.getenv("FLASK_ENV") != "production" and re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", candidate):
+    if not _is_production() and re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", candidate):
         return candidate
     return default
 
@@ -147,13 +159,21 @@ def otp_send():
 
     generic = {"message": "If this number can receive a code, it is on its way.", "resend_in": int(OTP_RESEND_COOLDOWN.total_seconds())}
     try:
-        exists = _user_by_phone(phone) is not None
+        exists = _user_by_phone(phone) is not None   # verified holders only
         if (purpose == "login" and not exists) or (purpose == "signup" and exists):
             return jsonify(generic), 200
 
         last = (PhoneOtp.query.filter_by(phone=phone, purpose=purpose)
                 .order_by(PhoneOtp.created_at.desc()).first())
         if last and datetime.utcnow() - last.created_at < OTP_RESEND_COOLDOWN:
+            return jsonify(generic), 200
+        # Per-number cap, independent of who is asking: stops SMS-bombing a victim
+        # and bounds how many guesses can ever be made against one number per hour.
+        # Answers with the same generic 200 so the cap itself reveals nothing.
+        hour_ago = datetime.utcnow() - timedelta(hours=1)
+        sent_last_hour = PhoneOtp.query.filter(
+            PhoneOtp.phone == phone, PhoneOtp.purpose == purpose, PhoneOtp.created_at >= hour_ago).count()
+        if sent_last_hour >= OTP_MAX_SENDS_PER_HOUR:
             return jsonify(generic), 200
 
         code = f"{secrets.randbelow(1_000_000):06d}"
@@ -174,6 +194,11 @@ def otp_send():
 def _consume_otp(phone, purpose, code):
     """True if `code` is the live, unused code for this number. Counts every
     wrong guess; after OTP_MAX_ATTEMPTS the code is dead and must be re-sent."""
+    hour_ago = datetime.utcnow() - timedelta(hours=1)
+    guesses = db.session.query(db.func.coalesce(db.func.sum(PhoneOtp.attempts), 0)).filter(
+        PhoneOtp.phone == phone, PhoneOtp.purpose == purpose, PhoneOtp.created_at >= hour_ago).scalar() or 0
+    if guesses >= OTP_MAX_GUESSES_PER_HOUR:
+        return False
     row = (PhoneOtp.query.filter_by(phone=phone, purpose=purpose, consumed=False)
            .order_by(PhoneOtp.created_at.desc()).first())
     if not row or row.expires_at < datetime.utcnow() or row.attempts >= OTP_MAX_ATTEMPTS:
@@ -216,9 +241,28 @@ def otp_login():
         return jsonify({"error": "Enter a valid 10-digit Indian mobile number."}), 400
     try:
         user = _user_by_phone(phone)
-        # Same error for "no such account" and "wrong code".
-        if not user or not _consume_otp(phone, "login", (data.get("code") or "").strip()):
+        step = verify_login_step_token(data.get("login_token") or "") if data.get("login_token") else None
+        if step:
+            # Second request of a two-step sign-in: the SMS code was already spent, the token proves it.
+            if not user or step != (user.id, phone):
+                return jsonify({"error": "That sign-in has expired. Start again.", "code": "OTP_INVALID"}), 401
+        elif not user or not _consume_otp(phone, "login", (data.get("code") or "").strip()):
+            # Same error for "no such account" and "wrong code".
             return jsonify({"error": "That code is incorrect or has expired.", "code": "OTP_INVALID"}), 401
+        # A phone code is one factor. Accounts that switched on authenticator two-step
+        # sign-in must still pass it, or SIM-swap would bypass it entirely.
+        gate = current_app.extensions.get("lpms_login_gate")
+        if gate:
+            try:
+                blocked = gate(user, data.get("totp"))
+            except Exception as exc:
+                print(f"[otp_login] practice gate skipped: {exc}")
+                blocked = None
+            if blocked:
+                body = dict(blocked[0])
+                if body.get("code") == "MFA_REQUIRED":
+                    body["login_token"] = generate_login_step_token(user.id, phone)
+                return jsonify(body), blocked[1]
         _practice_event("lpms_login_event", user, True)
         return _issue_session_response({"user": {"id": user.id, "email": user.email, "name": user.name}}, user.id)
     except Exception as e:
@@ -270,6 +314,9 @@ def register_user():
 
         if User.query.filter_by(email=email).first():
             return jsonify({"error": "An account with this email already exists. Try signing in instead."}), 409
+        # Only a number somebody has already proved blocks a new claim. Anyone who
+        # proves a number now takes it over from unverified entries (typos, squatting).
+        phone_proved = bool(phone) and _phone_otp_required()
         if phone and _user_by_phone(phone):
             return jsonify({"error": "An account with this mobile number already exists. Try signing in instead."}), 409
 
@@ -278,8 +325,12 @@ def register_user():
             password=generate_password_hash(password),
             name=name,
             phone=phone,
+            phone_verified=phone_proved,
         )
         try:
+            if phone_proved:
+                User.query.filter(User.phone.in_(_phone_variants(phone)), User.phone_verified.is_(False)).update(
+                    {"phone": None}, synchronize_session=False)
             db.session.add(user)
             db.session.commit()
         except Exception as e:
@@ -402,7 +453,8 @@ def current_user():
             return jsonify({"error": "Session user not found."}), 404
         return jsonify({"user": _user_payload(user)}), 200
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        print(f"[auth] unexpected error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @auth_bp.route('/me', methods=['PATCH'])
@@ -432,13 +484,16 @@ def update_current_user():
             phone = (data.get('phone') or '').strip()
             if phone and len(phone) > 20:
                 return jsonify({"error": "Phone number is too long."}), 400
-            user.phone = phone or None
+            if (phone or None) != user.phone:
+                user.phone = phone or None
+                user.phone_verified = False   # a changed number has not been proved
 
         db.session.commit()
         return jsonify({"user": _user_payload(user)}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        print(f"[auth] unexpected error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @auth_bp.route('/change-password', methods=['POST'])
@@ -469,7 +524,8 @@ def change_password():
         return jsonify({"message": "Password updated."}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        print(f"[auth] unexpected error: {e}")
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @auth_bp.route('/forgot-password', methods=['POST'])
@@ -515,7 +571,8 @@ def forgot_password():
     except Exception as e:
         print(f"[forgot_password] internal error: {e}")
         if is_dev:
-            return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 503
+            print(f"[auth] unexpected error: {e}")
+            return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 503
         # Never leak internal errors in production either — an error state
         # must not become a third distinguishable response an enumeration
         # attack could key off.

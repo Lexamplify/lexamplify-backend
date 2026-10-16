@@ -14,7 +14,7 @@ const ITEMS = [
   {
     icon: 'phone',
     t: 'Mobile number verification',
-    p: 'New accounts confirm their mobile number with a one-time code, and you can sign in with a code instead of a password. Codes expire in five minutes, work once, and lock after repeated wrong guesses.',
+    p: 'Where enabled, new accounts confirm their mobile number with a one-time code, and you can sign in with a code instead of a password. Codes expire in five minutes, work once, and lock after repeated wrong guesses.',
   },
   {
     icon: 'shield',
@@ -44,16 +44,17 @@ export default function SecurityPage() {
       title="Security · LexAmplify"
       description="How LexAmplify protects accounts and client documents: secure sessions, mobile OTP verification, two-step sign-in and careful password recovery."
     >
-      <section className="hero" style={{ paddingBottom: 'clamp(32px, 5vw, 56px)' }}>
+      <section className="page-hero">
         <div className="wrap" style={{ position: 'relative' }}>
           <p className="eyebrow">Security</p>
-          <h1 style={{ maxWidth: '17ch' }}>Client confidences deserve <em>careful</em> engineering.</h1>
+          <h1>Client confidences deserve <em>careful</em> engineering.</h1>
           <p className="lede">Here is what protects your account today, described plainly. We would rather tell you exactly what exists than make large promises.</p>
         </div>
       </section>
 
       <section className="section" style={{ paddingTop: 'clamp(24px, 4vw, 48px)' }}>
         <div className="wrap">
+          <h2 className="sr-only">How accounts are protected</h2>
           <div className="grid grid--3">
             {ITEMS.map((it, i) => (
               <article className="card reveal" key={it.t} style={{ transitionDelay: `${(i % 3) * 70}ms` }}>
@@ -81,7 +82,7 @@ export default function SecurityPage() {
             <div className="card" style={{ background: 'var(--card)' }}>
               <h3 style={{ marginBottom: 14 }}>You can help protect your account</h3>
               <ul className="ticks" style={{ marginTop: 0 }}>
-                <li><Icon name="check" size={18} />Use a long, unique password, or sign in with a mobile code</li>
+                <li><Icon name="check" size={18} />Use a long, unique password that you use nowhere else</li>
                 <li><Icon name="check" size={18} />Switch on two-step sign-in with an authenticator app</li>
                 <li><Icon name="check" size={18} />Never share a one-time code. LexAmplify will never ask for it</li>
                 <li><Icon name="check" size={18} />Sign out on shared computers</li>

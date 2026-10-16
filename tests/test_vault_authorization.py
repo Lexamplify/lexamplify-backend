@@ -34,6 +34,7 @@ PASSWORD = "TestPass123!"
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 't.db'}")
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-vault-authz-tests")
     monkeypatch.setenv("GROQ_API_KEY", "dummy")
 

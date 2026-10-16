@@ -13,6 +13,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 RESET_SALT = "lexamplify-password-reset"
 PHONE_SALT = "lexamplify-phone-verified"
+LOGIN_STEP_SALT = "lexamplify-login-step"
 
 
 def _secret() -> str:
@@ -61,4 +62,19 @@ def verify_phone_token(token: str, max_age_seconds: int = 900):
     try:
         return _serializer().loads(token, salt=PHONE_SALT, max_age=max_age_seconds)
     except (BadSignature, SignatureExpired):
+        return None
+
+
+def generate_login_step_token(user_id: int, phone_e164: str) -> str:
+    """Issued after a correct phone code when a second factor is still owed, so the
+    one-time SMS code can stay single-use while the person fetches their authenticator."""
+    return _serializer().dumps({"u": int(user_id), "p": phone_e164}, salt=LOGIN_STEP_SALT)
+
+
+def verify_login_step_token(token: str, max_age_seconds: int = 300):
+    """Returns (user_id, phone) or None."""
+    try:
+        d = _serializer().loads(token, salt=LOGIN_STEP_SALT, max_age=max_age_seconds)
+        return int(d["u"]), d["p"]
+    except (BadSignature, SignatureExpired, KeyError, TypeError, ValueError):
         return None

@@ -1,43 +1,92 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MarketingLayout, { Icon, CONTACT_EMAIL } from './marketing/MarketingLayout';
-import { DraftShot, AnalyzerShot, ConflictShot } from './marketing/Shots';
+import { DraftApp, ReviewApp, ConflictApp, CalendarApp } from './marketing/Product';
 
-const WORKFLOWS = [
+const TOUR = [
   {
-    icon: 'file',
-    title: 'Draft from your case file',
-    text: 'Pick the matter and answer a few questions. LexAmplify drafts notices, petitions and agreements from your file, and asks for what is missing instead of making it up.',
-    to: '/solutions#drafting',
-    cta: 'How drafting works',
+    k: 'draft',
+    kicker: 'Drafting',
+    title: 'It asks before it writes.',
+    text: 'Choose the matter. LexAmplify reads the file, shows what it found, and asks for only what is missing. Every filled-in fact shows where it came from, and gaps stay visibly blank instead of being invented.',
+    bullets: ['Starts from a case, an uploaded file, or details you type in', 'Each name, date and amount is traceable to its source', 'Edit in a full editor and export when ready'],
+    link: '/solutions#drafting',
+    View: DraftApp,
   },
   {
-    icon: 'scan',
-    title: 'Review contracts in minutes',
-    text: 'Upload an agreement and see risky clauses, missing protections and a suggested rewrite for each, checked against Indian law and your own playbook.',
-    to: '/solutions#contracts',
-    cta: 'How contract review works',
+    k: 'review',
+    kicker: 'Contract review',
+    title: 'Every clause, read and explained.',
+    text: 'Upload an agreement and see what is risky, what is missing and a rewrite you can accept, edit or dismiss, with the reasoning in plain language beside each clause.',
+    bullets: ['Risk and missing-clause detection against Indian law', 'Review against your own playbook as the standard', 'Ask the contract questions and see the clause behind the answer'],
+    link: '/solutions#contracts',
+    View: ReviewApp,
   },
   {
-    icon: 'scale',
-    title: 'Check conflicts before you accept',
-    text: 'Run new parties against every matter your firm holds, and see overlaps before the engagement letter goes out.',
-    to: '/solutions#firms',
-    cta: 'How conflict checks work',
+    k: 'conflicts',
+    kicker: 'Conflict checks',
+    title: 'Clear a matter before you accept it.',
+    text: 'Run the parties on a new matter against everything your firm holds. See overlaps with opposing and related parties, and save the clearance with the file.',
+    bullets: ['Checks parties, related parties and counsel', 'Compares documents against each other for contradictions', 'Keeps a clearance memo on the matter'],
+    link: '/solutions#firms',
+    View: ConflictApp,
   },
 ];
 
-const STEPS = [
-  { n: '01', t: 'Choose the matter', p: 'Start from a case, or upload the file you already have. Nothing is drafted from thin air.' },
-  { n: '02', t: 'Answer a few questions', p: 'LexAmplify asks for the parties, dates, amounts and relief it needs, and fills in what it can from your documents.' },
-  { n: '03', t: 'Review, edit and export', p: 'Read the draft beside its sources, change anything, and export a clean document when it is ready.' },
+const RULES = [
+  { n: '01', t: 'Grounded in your documents', p: 'Drafts and answers come from the matter and files you point to. When something is missing, it asks you.' },
+  { n: '02', t: 'The advocate stays in charge', p: 'Every clause, citation and date can be edited. LexAmplify proposes; you decide, sign and file.' },
+  { n: '03', t: 'Made for Indian practice', p: 'Limitation periods, court formats, the Indian Contract Act, and the way chambers actually keep their files.' },
 ];
 
-const PRINCIPLES = [
-  { t: 'Grounded in your documents', p: 'Drafts and answers come from the matter and files you point to. When something is missing, it asks you rather than guessing.' },
-  { t: 'You stay in control', p: 'Every clause, citation and date is editable. LexAmplify proposes; the advocate decides and signs.' },
-  { t: 'Built around Indian practice', p: 'Limitation periods, court formats, the Indian Contract Act and the way chambers actually keep their files.' },
+const WORK = ['Legal notices', 'Replies to notices', 'Bail applications', 'Affidavits', 'Non-disclosure agreements', 'Service and lease agreements', 'Petitions and applications'];
+
+const FAQ = [
+  ['Does LexAmplify replace the advocate?', 'No. It prepares drafts and reviews for an advocate to read, change and sign. Nothing leaves your hands without you.'],
+  ['Will it invent names, dates or amounts?', 'It drafts from your matter file and what you enter. Anything it cannot find, it asks you for. If you skip a question, the gap stays visible in the draft so it cannot slip through.'],
+  ['How do we sign in?', 'With email and password or with Google. Mobile one-time codes are being switched on, and authenticator-app two-step sign-in is available too.'],
+  ['Can a whole firm use it?', 'Yes. There are organisation, team and matter workspaces, so people see what they should and conflicts are checked across the firm.'],
+  ['Where is our data kept, and who can see it?', 'Write to us and we will answer in writing before you roll anything out. The Security page lists what protects accounts today.'],
 ];
+
+function Tour() {
+  const [i, setI] = useState(0);
+  const cur = TOUR[i];
+  const tabsRef = useRef(null);
+  const go = (n) => {
+    setI(n);
+    requestAnimationFrame(() => tabsRef.current?.querySelectorAll('[role=tab]')[n]?.focus());
+  };
+  const onKey = (e) => {
+    if (e.key === 'ArrowRight') { e.preventDefault(); go((i + 1) % TOUR.length); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go((i + TOUR.length - 1) % TOUR.length); }
+    if (e.key === 'Home') { e.preventDefault(); go(0); }
+    if (e.key === 'End') { e.preventDefault(); go(TOUR.length - 1); }
+  };
+  return (
+    <div className="tour">
+      <div className="tour__tabs" role="tablist" aria-label="Product tour" onKeyDown={onKey} ref={tabsRef}>
+        {TOUR.map((t, n) => (
+          <button key={t.k} type="button" role="tab" id={`tab-${t.k}`} aria-selected={n === i} aria-controls={`panel-${t.k}`}
+            tabIndex={n === i ? 0 : -1} onClick={() => setI(n)}>
+            <span>{String(n + 1).padStart(2, '0')}</span>{t.kicker}
+          </button>
+        ))}
+      </div>
+      <div className="tour__grid" role="tabpanel" id={`panel-${cur.k}`} aria-labelledby={`tab-${cur.k}`} key={cur.k}>
+        <div className="tour__copy">
+          <h3>{cur.title}</h3>
+          <p>{cur.text}</p>
+          <ul className="ticks">
+            {cur.bullets.map((b) => <li key={b}><Icon name="check" size={18} />{b}</li>)}
+          </ul>
+          <Link to={cur.link} className="link-arrow" style={{ marginTop: 26 }}>See how it works <Icon name="arrow" size={16} /></Link>
+        </div>
+        <div className="tour__view"><cur.View /></div>
+      </div>
+    </div>
+  );
+}
 
 export default function LandingPage() {
   return (
@@ -46,141 +95,137 @@ export default function LandingPage() {
       description="LexAmplify drafts from your case file, reviews contracts against Indian law and keeps every matter organised. Built for Indian advocates and legal teams."
     >
       {/* ─── Hero ─── */}
-      <section className="hero">
-        <div className="wrap hero__grid">
-          <div>
-            <p className="eyebrow">For Indian advocates and legal teams</p>
-            <h1>Legal work that starts from <em>your file</em>, not a blank page.</h1>
-            <p className="lede">
-              LexAmplify drafts notices and agreements from your case documents, reviews contracts against Indian law,
-              and keeps every matter, deadline and document in one calm workspace.
-            </p>
-            <div className="btn-row">
-              <Link to="/login?mode=register" className="btn btn--primary">
-                Create your account <Icon name="arrow" size={18} />
-              </Link>
-              <a href="#how-it-works" className="btn btn--ghost">See how it works</a>
-            </div>
-            <p className="hero__note">
-              <span><Icon name="check" size={16} />Sign in with email, Google or your mobile number</span>
-              <span><Icon name="check" size={16} />Made for Indian courts and contracts</span>
-            </p>
+      <section className="home-hero">
+        <div className="wrap home-hero__top">
+          <p className="pill"><i />For Indian advocates and legal teams</p>
+          <h1>Legal work that starts from <em>your file</em>.</h1>
+          <p className="lede">
+            Draft notices and agreements from your case documents, review contracts against Indian law, and keep every
+            matter, deadline and document in one calm workspace.
+          </p>
+          <div className="btn-row">
+            <Link to="/login?mode=register" className="btn btn--primary btn--lg">Create your account <Icon name="arrow" size={18} /></Link>
+            <a href={`mailto:${CONTACT_EMAIL}?subject=LexAmplify%20walkthrough`} className="btn btn--ghost btn--lg">Request a walkthrough</a>
           </div>
+          <p className="home-hero__note">Sign in with email or Google</p>
+        </div>
 
-          <div className="hero__shot">
-            <DraftShot />
-            <div className="float-card" aria-hidden="true">
-              <span className="ico"><Icon name="spark" size={18} /></span>
-              <div><b>Asks before it drafts</b><span>Matter, parties, amount, relief</span></div>
-            </div>
-          </div>
+        <div className="wrap wrap--wide home-hero__stage">
+          <div className="stage__glow" aria-hidden="true" />
+          <div className="stage__window"><DraftApp /></div>
         </div>
       </section>
 
-      {/* ─── Core workflows ─── */}
-      <section className="section section--tint" id="workflows">
-        <div className="wrap">
-          <div className="section-head reveal">
-            <p className="eyebrow">What you can do</p>
-            <h2>Three jobs, done end to end.</h2>
-            <p className="lede">Most days in chambers come down to drafting, reviewing and clearing. LexAmplify does each one properly before it tries to do anything else.</p>
-          </div>
-          <div className="grid grid--3">
-            {WORKFLOWS.map((w, i) => (
-              <article className="card reveal" key={w.title} style={{ transitionDelay: `${i * 70}ms` }}>
-                <span className="card__icon"><Icon name={w.icon} size={22} /></span>
-                <h3>{w.title}</h3>
-                <p>{w.text}</p>
-                <Link to={w.to} className="link-arrow">{w.cta} <Icon name="arrow" size={16} /></Link>
-              </article>
-            ))}
-          </div>
+      {/* ─── Work strip ─── */}
+      <section className="strip" aria-label="Documents LexAmplify helps draft">
+        <div className="wrap strip__inner">
+          <p>The paperwork of everyday practice</p>
+          <ul>
+            {WORK.map((w) => <li key={w}>{w}</li>)}
+          </ul>
         </div>
       </section>
 
-      {/* ─── How it works ─── */}
+      {/* ─── Tour ─── */}
       <section className="section" id="how-it-works">
+        <div className="wrap wrap--wide">
+          <div className="section-head reveal">
+            <p className="eyebrow">One workspace, three jobs</p>
+            <h2>Most days in chambers come down to <em>drafting, reviewing and clearing</em>.</h2>
+            <p className="lede">LexAmplify does each of them properly before it tries to do anything else.</p>
+          </div>
+          <div className="reveal"><Tour /></div>
+        </div>
+      </section>
+
+      {/* ─── Rules ─── */}
+      <section className="section section--tint">
         <div className="wrap">
           <div className="section-head reveal">
-            <p className="eyebrow">How it works</p>
-            <h2>From file to finished document in three steps.</h2>
+            <p className="eyebrow">How it behaves</p>
+            <h2>Careful by design, because the work is.</h2>
           </div>
-          <div className="flow">
-            {STEPS.map((s, i) => (
-              <div className="flow__step reveal" key={s.n} style={{ transitionDelay: `${i * 80}ms` }}>
-                <span className="flow__n">{s.n}</span>
-                <h3>{s.t}</h3>
-                <p>{s.p}</p>
+          <div className="rules">
+            {RULES.map((r, n) => (
+              <div className="rule reveal" key={r.n} style={{ transitionDelay: `${n * 80}ms` }}>
+                <span className="rule__n">{r.n}</span>
+                <h3>{r.t}</h3>
+                <p>{r.p}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ─── Feature detail ─── */}
-      <section className="section section--tint">
+      {/* ─── Daily practice ─── */}
+      <section className="section">
         <div className="wrap">
           <div className="split reveal">
             <div>
-              <p className="eyebrow">Contract review</p>
-              <h2>Know what is risky <em>before</em> you sign.</h2>
-              <p className="lede">Every clause is read, flagged and explained in plain language, with a suggested rewrite you can accept, edit or discard.</p>
+              <p className="eyebrow">Daily practice</p>
+              <h2>Know what is due before the registry does.</h2>
+              <p className="lede">Hearings, replies and limitation dates in one view, next to the documents each one needs. Send any file straight into drafting, review or a conflict check.</p>
               <ul className="ticks">
-                <li><Icon name="check" size={18} />Risk and missing-clause detection against Indian law</li>
-                <li><Icon name="check" size={18} />Apply your firm’s own playbook as the standard</li>
-                <li><Icon name="check" size={18} />Ask questions of the contract and see the clause behind each answer</li>
+                <li><Icon name="check" size={18} />Calendar for hearings, replies and limitation dates</li>
+                <li><Icon name="check" size={18} />Cause lists and court resources in one place</li>
+                <li><Icon name="check" size={18} />Case Vault and Document Hub with review queues</li>
               </ul>
-              <div style={{ marginTop: 28 }}><Link to="/solutions#contracts" className="link-arrow">Contract review in detail <Icon name="arrow" size={16} /></Link></div>
+              <div style={{ marginTop: 28 }}><Link to="/solutions#chambers" className="link-arrow">Daily practice in detail <Icon name="arrow" size={16} /></Link></div>
             </div>
-            <AnalyzerShot />
-          </div>
-
-          <div className="split split--flip reveal">
-            <div>
-              <p className="eyebrow">Conflict checks</p>
-              <h2>Clear every new engagement with confidence.</h2>
-              <p className="lede">Check parties against the whole firm’s matters in seconds and keep a record of the clearance.</p>
-              <ul className="ticks">
-                <li><Icon name="check" size={18} />Cross-matter overlap on parties, related parties and counsel</li>
-                <li><Icon name="check" size={18} />Compare documents against each other for contradictions</li>
-                <li><Icon name="check" size={18} />Save the clearance memo with the matter</li>
-              </ul>
-            </div>
-            <ConflictShot />
+            <div className="split__view"><CalendarApp /></div>
           </div>
         </div>
       </section>
 
-      {/* ─── Principles ─── */}
-      <section className="section section--slate" id="principles">
+      {/* ─── Security ─── */}
+      <section className="section section--slate" id="security">
         <div className="wrap">
-          <div className="section-head">
-            <p className="eyebrow">Our approach</p>
-            <h2>Careful by design, because the work is.</h2>
-            <p className="lede">A draft that looks right but is wrong is worse than no draft. These are the rules the product is built around.</p>
+          <div className="sec">
+            <div>
+              <p className="eyebrow">Security</p>
+              <h2>Client confidences deserve <em>careful</em> engineering.</h2>
+              <p className="lede">Here is what protects your account today, stated plainly. For anything beyond it, ask us and we will answer in writing.</p>
+              <div style={{ marginTop: 28 }}><Link to="/security" className="link-arrow" style={{ color: '#F0B9A4' }}>Read the security overview <Icon name="arrow" size={16} /></Link></div>
+            </div>
+            <ul className="sec__list">
+              <li><Icon name="lock" size={20} /><div><b>Secure sessions</b><span>HttpOnly cookies and protection against cross-site forgery.</span></div></li>
+              <li><Icon name="phone" size={20} /><div><b>Mobile verification</b><span>Where enabled: one-time codes that expire in five minutes and lock after repeated wrong guesses.</span></div></li>
+              <li><Icon name="shield" size={20} /><div><b>Two-step sign-in</b><span>Authenticator app with recovery codes.</span></div></li>
+              <li><Icon name="mail" size={20} /><div><b>Careful recovery</b><span>Reset links that expire, work once and never reveal who has an account.</span></div></li>
+            </ul>
           </div>
-          <div className="grid grid--3" style={{ gap: 32 }}>
-            {PRINCIPLES.map((p) => (
-              <div className="principle" key={p.t}>
-                <h3>{p.t}</h3>
-                <p>{p.p}</p>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 36 }}>
-            <Link to="/security" className="link-arrow" style={{ color: '#F0B9A4' }}>How we protect your account and documents <Icon name="arrow" size={16} /></Link>
+        </div>
+      </section>
+
+      {/* ─── FAQ ─── */}
+      <section className="section">
+        <div className="wrap">
+          <div className="faq">
+            <div>
+              <p className="eyebrow">Questions</p>
+              <h2>What advocates ask first.</h2>
+              <p className="lede">Something else? <a href={`mailto:${CONTACT_EMAIL}`} className="link-arrow" style={{ display: 'inline' }}>Write to us</a>.</p>
+            </div>
+            <div className="faq__list">
+              {FAQ.map(([q, a]) => (
+                <details key={q}>
+                  <summary>{q}<Icon name="plus" size={18} /></summary>
+                  <p>{a}</p>
+                </details>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
       {/* ─── CTA ─── */}
-      <section className="section section--slate" style={{ paddingTop: 0 }}>
-        <div className="wrap cta" style={{ borderTop: '1px solid rgba(255,255,255,.12)' }}>
+      <section className="final">
+        <div className="wrap final__inner">
           <h2>Try it on a real matter this week.</h2>
-          <p>Create an account in a minute with your email or mobile number. Want a walkthrough instead? Write to us and we will set one up.</p>
+          <p>Create an account in a minute. Prefer a walkthrough? Write to us and we will set one up.</p>
           <div className="btn-row">
-            <Link to="/login?mode=register" className="btn btn--light">Create your account <Icon name="arrow" size={18} /></Link>
-            <a href={`mailto:${CONTACT_EMAIL}?subject=LexAmplify%20walkthrough`} className="btn btn--outline-light">Request a walkthrough</a>
+            <Link to="/login?mode=register" className="btn btn--primary btn--lg">Create your account <Icon name="arrow" size={18} /></Link>
+            <a href={`mailto:${CONTACT_EMAIL}?subject=LexAmplify%20walkthrough`} className="btn btn--ghost btn--lg">Request a walkthrough</a>
           </div>
         </div>
       </section>

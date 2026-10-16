@@ -32,17 +32,31 @@ def sms_configured() -> bool:
 def send_otp_sms(phone_e164: str, code: str) -> bool:
     try:
         if SMS_PROVIDER == "msg91" and sms_configured():
+            # MSG91 "Send OTP" API v5. We generate and store the code ourselves
+            # (hashed) and hand MSG91 the value to deliver through the DLT
+            # template, whose body must contain the ##OTP## variable.
             resp = requests.post(
                 "https://control.msg91.com/api/v5/otp",
                 params={
                     "template_id": os.getenv("MSG91_TEMPLATE_ID"),
-                    "mobile": phone_e164.lstrip("+"),
+                    "mobile": phone_e164.lstrip("+"),      # 91XXXXXXXXXX
                     "otp": code,
+                    "otp_expiry": 5,                       # minutes, matches OTP_TTL
                 },
-                headers={"authkey": os.getenv("MSG91_AUTH_KEY"), "Content-Type": "application/json"},
+                json={},
+                headers={"authkey": os.getenv("MSG91_AUTH_KEY"), "accept": "application/json", "content-type": "application/json"},
                 timeout=10,
             )
-            return resp.ok and resp.json().get("type") == "success"
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {}
+            if resp.ok and body.get("type") == "success":
+                return True
+            # Never log the code or the auth key; the provider message is what
+            # tells you whether it is DLT, template, balance or IP whitelisting.
+            print(f"[sms] MSG91 rejected the request: http={resp.status_code} body={str(body)[:300]}")
+            return False
         if SMS_PROVIDER == "twilio" and sms_configured():
             sid = os.getenv("TWILIO_ACCOUNT_SID")
             resp = requests.post(
@@ -56,7 +70,7 @@ def send_otp_sms(phone_e164: str, code: str) -> bool:
                 timeout=10,
             )
             return resp.status_code in (200, 201)
-        if os.getenv("FLASK_ENV") != "production":
+        if os.getenv("FLASK_ENV") != "production" and os.getenv("RENDER") != "true":
             print(f"[sms] no provider configured - dev passcode for {phone_e164}: {code}")
         else:
             print("[sms] no SMS provider configured in production - passcode NOT sent")
