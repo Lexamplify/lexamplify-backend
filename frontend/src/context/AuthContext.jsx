@@ -49,6 +49,13 @@ export function AuthProvider({ children }) {
 
   useEffect(() => { if (user) startHeartbeat(); }, [user]);
 
+  // authFetch raises this when a refresh fails: the session is over, so drop the user and the route guard sends them to sign in.
+  useEffect(() => {
+    const onExpired = () => setUser(null);
+    window.addEventListener('lexamplify:session-expired', onExpired);
+    return () => window.removeEventListener('lexamplify:session-expired', onExpired);
+  }, []);
+
   useEffect(() => {
     refreshSession();
   }, [refreshSession]);

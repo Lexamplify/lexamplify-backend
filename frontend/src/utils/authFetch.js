@@ -92,7 +92,11 @@ window.fetch = async (input, init = {}) => {
   // original request exactly once. If refresh itself fails (no valid
   // session), fall through and return the original 401 untouched.
   const refreshed = await silentRefresh();
-  if (!refreshed) return response;
+  if (!refreshed) {
+    // The session has really ended (not just an expired access cookie). Let the app send the user to sign in.
+    try { window.dispatchEvent(new CustomEvent('lexamplify:session-expired')); } catch { /* ignore */ }
+    return response;
+  }
 
   return nativeFetch(input, buildAuthedInit(init, method));
 };

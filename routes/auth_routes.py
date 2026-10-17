@@ -282,11 +282,7 @@ def otp_login():
         # sign-in must still pass it, or SIM-swap would bypass it entirely.
         gate = current_app.extensions.get("lpms_login_gate")
         if gate:
-            try:
-                blocked = gate(user, data.get("totp"))
-            except Exception as exc:
-                print(f"[otp_login] practice gate skipped: {exc}")
-                blocked = None
+            blocked = _run_login_gate(gate, user, data.get("totp"))
             if blocked:
                 body = dict(blocked[0])
                 if body.get("code") == "MFA_REQUIRED":
@@ -298,6 +294,23 @@ def otp_login():
         db.session.rollback()
         print(f"[otp_login] error: {e}")
         return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
+
+
+def _run_login_gate(gate, user, code):
+    """Run the two-step gate. If the gate itself breaks, only let the person in when we can PROVE they have no two-step; if we cannot tell, refuse."""
+    try:
+        return gate(user, code)
+    except Exception as exc:
+        print(f"[login] two-step gate error: {exc}")
+        probe = current_app.extensions.get("lpms_mfa_probe")
+        try:
+            has_mfa = bool(probe(user.id)) if probe else False
+        except Exception as exc2:
+            print(f"[login] could not tell whether two-step is on ({exc2}) - refusing")
+            has_mfa = True
+        if has_mfa:
+            return ({"error": "Two-step sign-in could not be checked. Please contact your administrator.", "code": "MFA_UNAVAILABLE"}, 401)
+        return None
 
 
 def _issue_session_response(payload, user_id, status=200):
@@ -419,11 +432,7 @@ def login_user():
         # stops the login; a problem inside the Practice module never locks anyone out of the app.
         gate = current_app.extensions.get("lpms_login_gate")
         if gate:
-            try:
-                blocked = gate(user, data.get("otp"))
-            except Exception as exc:
-                print(f"[login] practice gate skipped: {exc}")
-                blocked = None
+            blocked = _run_login_gate(gate, user, data.get("otp"))
             if blocked:
                 return jsonify(blocked[0]), blocked[1]
         _practice_event("lpms_login_event", user, True)

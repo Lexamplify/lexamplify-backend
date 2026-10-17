@@ -695,7 +695,7 @@ export default function AutoDraftWorkspace() {
       } finally {
         clearTimeout(timeoutId);
       }
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!isMountedRef.current) return;
       setDraftProgress(100);
@@ -716,7 +716,11 @@ export default function AutoDraftWorkspace() {
         // sync above has had a chance to save it.
         try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch {}
       } else {
-        setDraftError(data.message || 'Failed to synthesize auto-draft clause.');
+        setDraftError(
+          response.status === 401 ? 'Your session has ended. Please sign in again.'
+          : response.status === 413 ? 'That is too much text for one draft. Shorten the instructions or the reference document and try again.'
+          : data.message || (typeof data.error === 'string' ? data.error : '') || 'The draft could not be created. Please try again.'
+        );
       }
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -724,7 +728,7 @@ export default function AutoDraftWorkspace() {
       setDraftError(
         err?.name === 'AbortError'
           ? 'The AI reasoning engine took too long to respond (300s). Please retry — a shorter or more focused instruction may complete faster.'
-          : 'Network timeout in the AI legal reasoning engine. Please retry.'
+          : 'We could not reach the server. Check your connection and try again.'
       );
     }
   };
@@ -1674,6 +1678,7 @@ export default function AutoDraftWorkspace() {
         open={guidedOpen}
         initialRequest={guidedSeed.request}
         initialType={guidedSeed.type}
+        loadedDoc={rawText && rawText.trim() ? { name: (handoffNotice && handoffNotice.name) || 'The document open in the studio', text: rawText } : null}
         onClose={() => setGuidedOpen(false)}
         onGenerate={handleGuidedGenerate}
         onOpenPractice={() => navigate('/workspace/matters')}

@@ -24,7 +24,11 @@ const MAX_CONTEXT_CHARS = 40000;
 const clip = (s, n) => (String(s || '').length > n ? String(s).slice(0, n) : String(s || ''));
 
 async function readError(res, fallback) {
-  try { const j = await res.json(); return j.message || j.error || fallback; } catch { return fallback; }
+  try {
+    const j = await res.json();
+    const m = j.message || (typeof j.error === 'string' ? j.error : '');
+    return typeof m === 'string' && m.trim() ? m : fallback;
+  } catch { return fallback; }
 }
 
 /** What the matter file says, as plain facts the drafting model may use (and nothing else). */
@@ -56,7 +60,7 @@ export function prefillFromCase(c, questions) {
   return out;
 }
 
-export default function GuidedDraftModal({ open, initialRequest = '', initialType = '', onClose, onGenerate, onOpenPractice }) {
+export default function GuidedDraftModal({ open, initialRequest = '', initialType = '', loadedDoc = null, onClose, onGenerate, onOpenPractice }) {
   const [step, setStep] = useState('type');            // type | source | questions | review
   const [docType, setDocType] = useState(null);         // {key,label,request}
   const [customRequest, setCustomRequest] = useState('');
@@ -256,13 +260,29 @@ export default function GuidedDraftModal({ open, initialRequest = '', initialTyp
             <>
               <p className="gdm-lede">Drafting a <b>{(docType?.label || 'document').toLowerCase()}</b>. Pick where the facts come from. Nothing is made up: anything missing stays as a blank you fill in.</p>
               <div className="gdm-modes" role="radiogroup" aria-label="Where do the facts come from?">
-                {[['case', 'A case in my practice', 'Uses the parties, court and details already on file'],
+                {[
+                  ...(loadedDoc && loadedDoc.text ? [['loaded', 'Use the document already open', loadedDoc.name || 'The document sent to this screen']] : []),
+                  ['case', 'A case in my practice', 'Uses the parties, court and details already on file'],
                   ['file', 'Upload a file', 'A contract, invoice, FIR or earlier notice (PDF, Word or text)'],
-                  ['manual', 'I will type the details', 'Start with a blank set of questions']].map(([k, t, d]) => (
-                  <button key={k} type="button" role="radio" aria-checked={mode === k} className={`gdm-mode${mode === k ? ' is-on' : ''}`} onClick={() => { setMode(k); setError(''); }}>
+                  ['manual', 'I will type the details', 'Start with a blank set of questions']].map(([k, t, d]) => {
+                  const on = k === 'loaded' ? (mode === 'file' && file && file.fromLoaded) : (k === 'file' ? (mode === 'file' && !(file && file.fromLoaded)) : mode === k);
+                  return (
+                  <button key={k} type="button" role="radio" aria-checked={!!on} className={`gdm-mode${on ? ' is-on' : ''}`}
+                    onClick={() => {
+                      setError('');
+                      if (k === 'loaded') {
+                        const t2 = String(loadedDoc.text || '').trim();
+                        setMode('file'); setFileError('');
+                        setFile({ name: loadedDoc.name || 'Open document', text: clip(t2, MAX_CONTEXT_CHARS), chars: t2.length, truncated: t2.length > MAX_CONTEXT_CHARS, fromLoaded: true });
+                      } else {
+                        if (file && file.fromLoaded) setFile(null);
+                        setMode(k);
+                      }
+                    }}>
                     <b>{t}</b><span>{d}</span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
 
               {mode === 'case' && (

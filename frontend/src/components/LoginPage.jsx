@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import LexLogoMark from './LexLogoMark';
 import { Icon } from './marketing/MarketingLayout';
@@ -160,7 +160,13 @@ function Spinner({ label }) { return <><span className="spinner" aria-hidden="tr
 export default function LoginPage() {
   const { isAuthenticated, isInitializing, refreshSession } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
+  // Where to go after signing in: the page the visitor asked for, else the Start page.
+  const nextPath = (() => {
+    const f = location.state && location.state.from;
+    return typeof f === 'string' && f.startsWith('/') && !f.startsWith('//') && !f.startsWith('/login') ? f : '/start';
+  })();
   const resetToken = params.get('resetToken');
 
   const [mode, setMode] = useState(params.get('mode') === 'register' ? 'register' : 'signin');
@@ -207,8 +213,8 @@ export default function LoginPage() {
 
   // Already signed in? Skip the form (but let a reset link through).
   useEffect(() => {
-    if (isAuthenticated && !isInitializing && !resetToken) navigate('/start', { replace: true });
-  }, [isAuthenticated, isInitializing, resetToken, navigate]);
+    if (isAuthenticated && !isInitializing && !resetToken) navigate(nextPath, { replace: true });
+  }, [isAuthenticated, isInitializing, resetToken, navigate, nextPath]);
 
   // Wake the backend as soon as the page opens, and learn whether SMS codes are live.
   useEffect(() => {
@@ -258,7 +264,7 @@ export default function LoginPage() {
   const finishSignIn = async (emailForCache) => {
     await refreshSession();
     try { if (emailForCache) localStorage.setItem('active_lex_user', emailForCache); } catch { /* private mode */ }
-    window.location.href = '/start';
+    window.location.href = nextPath;
   };
 
   /* ── Mobile code: send ── */

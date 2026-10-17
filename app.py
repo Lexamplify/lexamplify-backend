@@ -556,6 +556,7 @@ PROD_ORIGINS = {
     'https://lexamplify-4.firebaseapp.com',
     'https://test.lexamplify.com',
     'https://lexamplify.com',
+    'https://www.lexamplify.com',
 }
 # Firebase Hosting preview channels get their own subdomain per deploy
 # (e.g. lexamplify-4--pr123-abc12.web.app), which PROD_ORIGINS' exact-match
@@ -4755,6 +4756,49 @@ def create_app():
     except Exception as e:
         print(f"Database setup error: {e}")
     # --- END DATABASE BUILDER ---
+
+    # ── Default-deny sign-in gate ────────────────────────────────────────
+    # Many older endpoints (clients, billing, cause list, IP, calendar, contract tools, AI tools, the court proxy)
+    # carry no @jwt_required of their own, so anyone on the internet could read or change firm data and spend AI
+    # credits. Instead of trusting every route to remember, every /api/ call needs a valid session unless it is on
+    # this short public list. OPTIONS (CORS preflight) always passes.
+    _PUBLIC_API_PREFIXES = ("/api/auth/",)
+    _PUBLIC_API_EXACT = {"/api/ping"}
+
+    @app.before_request
+    def _require_sign_in_for_api():
+        if request.method == "OPTIONS":
+            return None
+        path = request.path or ""
+        if not path.startswith("/api/"):
+            return None
+        if path in _PUBLIC_API_EXACT or path.startswith(_PUBLIC_API_PREFIXES):
+            return None
+        verify_jwt_in_request()   # raises the JWT errors handled below (401 with a friendly body)
+        return None
+
+    @jwt.unauthorized_loader
+    def _jwt_missing(reason):
+        return jsonify({"error": True, "msg": reason, "message": "Please sign in to continue.", "code": "AUTH_REQUIRED"}), 401
+
+    @jwt.invalid_token_loader
+    def _jwt_invalid(reason):
+        return jsonify({"error": True, "msg": reason, "message": "Your session is not valid. Please sign in again.", "code": "AUTH_REQUIRED"}), 401
+
+    @jwt.expired_token_loader
+    def _jwt_expired(jwt_header, jwt_payload):
+        return jsonify({"error": True, "msg": "Token has expired", "message": "Your session has expired. Please sign in again.", "code": "TOKEN_EXPIRED"}), 401
+
+    # In production an unexpected 500 must never echo exception text (file paths, SQL, keys) to the browser.
+    @app.after_request
+    def _mask_server_errors(resp):
+        try:
+            _prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
+            if _prod and resp.status_code == 500 and resp.mimetype == 'application/json':
+                resp.set_data(json.dumps({"error": True, "message": "Something went wrong on our side. Please try again.", "code": "SERVER_ERROR"}))
+        except Exception:
+            pass
+        return resp
 
     # ── Global JSON error handlers ───────────────────────────────────────
     # Every API route here returns JSON; an unhandled exception previously

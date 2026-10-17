@@ -757,8 +757,26 @@ def extract_text():
                 filetype = "pdf"
             elif fname.endswith(".docx"):
                 filetype = "docx"
+            elif fname.endswith(".txt"):
+                filetype = "txt"
             else:
-                return jsonify({"error": True, "message": "Unsupported format. Use PDF or DOCX."}), 400
+                return jsonify({"error": True, "message": "Unsupported file type. Upload a PDF, a Word .docx file or a .txt file. (For an older .doc file, open it in Word and choose Save As .docx.)", "code": "UNSUPPORTED_FORMAT"}), 400
+
+            if not data:
+                return jsonify({"error": True, "message": "That file is empty.", "code": "EMPTY_FILE"}), 422
+
+            if filetype == "txt":
+                # Plain text: try the encodings Indian documents actually arrive in.
+                text = ""
+                for enc in ("utf-8-sig", "utf-16", "cp1252"):
+                    try:
+                        text = data.decode(enc)
+                        break
+                    except Exception:
+                        continue
+                if not text.strip():
+                    return jsonify({"error": True, "message": "We could not read that text file.", "code": "EXTRACTION_ERROR"}), 422
+                return jsonify({"text": text[:500000]})
 
             executor = ThreadPoolExecutor(max_workers=1)
             future = executor.submit(extract_text_for_summary, data, filetype)
@@ -776,7 +794,7 @@ def extract_text():
                     "error": True,
                     "message": "We could not read that file. It may be damaged or password-protected. Try saving it again as a PDF or Word file.",
                     "code": "EXTRACTION_ERROR"
-                }), 500
+                }), 422
 
             if not text or not text.strip():
                 return jsonify({
@@ -1231,6 +1249,14 @@ def export_form_docx():
     data = request.get_json(silent=True) or {}
     html = data.get("html", "")
     title = data.get("title", "Legal Document")
+    if not isinstance(html, str):
+        return jsonify({"error": True, "message": "No document content provided."}), 400
+    if not isinstance(title, str):
+        title = "Legal Document"
+    if len(html) > 2_000_000:
+        return jsonify({"error": True, "message": "This document is too large to export in one go. Split it into parts.", "code": "TOO_LARGE"}), 413
+    # Control characters are illegal in Word's XML and used to crash the export.
+    html = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", html)
     # {firmName, tagline, address, contact} from the client's own locally-
     # persisted letterhead list, or None/omitted for a plain export —
     # see _apply_letterhead's docstring for why this is client-supplied

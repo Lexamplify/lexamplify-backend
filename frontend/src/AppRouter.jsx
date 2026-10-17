@@ -706,7 +706,7 @@ const Breadcrumbs = () => {
 };
 
 // ── LAYOUT SHELL ───────────────────────────────────────────────────────────────
-const Layout = ({ children, focusMode, setFocusMode }) => {
+const LayoutInner = ({ children, focusMode, setFocusMode }) => {
   const params = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -1053,6 +1053,25 @@ function PageSuspense({ children }) {
 }
 
 // ── ROUTER ─────────────────────────────────────────────────────────────────────
+
+// Every app screen sits behind this. A signed-out visitor (or someone whose session has ended) is sent to the
+// sign-in page and returned to the page they wanted, instead of seeing a half-working app where every request fails.
+const Layout = (props) => {
+  const { user, isInitializing } = useAuth();
+  const location = useLocation();
+  if (isInitializing) {
+    return (
+      <div role="status" aria-live="polite" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)', color: 'var(--ink-soft)', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
+        Opening your workspace…
+      </div>
+    );
+  }
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  }
+  return <LayoutInner {...props} />;
+};
+
 function AppRouterContent() {
   const [focusMode, setFocusMode] = useState(false);
 
