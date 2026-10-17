@@ -50,7 +50,7 @@ from models.user import User
 from models.phone_otp import PhoneOtp
 from utils.limiter import limiter
 from utils.mailer import send_email
-from utils.sms import send_otp_sms, sms_configured
+from utils.sms import send_otp_sms, sms_configured, widget_mode, widget_public_config, verify_widget_token
 from utils.tokens import (
     generate_login_step_token, verify_login_step_token,
     generate_reset_token, verify_reset_token, reset_fingerprint_matches,
@@ -138,7 +138,28 @@ def signup():
 @auth_bp.route("/config", methods=["GET"])
 def auth_config():
     """Public, non-sensitive switches the sign-in page needs to decide what to show."""
-    return jsonify({"phone_otp_required": _phone_otp_required(), "sms_enabled": sms_configured()}), 200
+    out = {"phone_otp_required": _phone_otp_required(), "sms_enabled": sms_configured(), "otp_mode": "api"}
+    if widget_mode() and sms_configured():
+        out["otp_mode"] = "widget"
+        out["msg91_widget"] = widget_public_config()   # public browser values, not secrets
+    return jsonify(out), 200
+
+
+def _widget_proof(phone, access_token):
+    """True if MSG91's widget confirmed this number with a fresh, never-used access
+    token. Each token works once: a captured token cannot be replayed."""
+    token = (access_token or "").strip() if isinstance(access_token, str) else ""
+    if not token or not (widget_mode() and sms_configured()):
+        return False
+    marker = hmac_hex(token, "widget")
+    if PhoneOtp.query.filter_by(purpose="widget_used", code_hash=marker).first():
+        return False
+    if not verify_widget_token(token, phone, normalize_phone):
+        return False
+    db.session.add(PhoneOtp(phone=phone, purpose="widget_used", code_hash=marker, consumed=True,
+                            expires_at=datetime.utcnow() + timedelta(days=1)))
+    db.session.commit()
+    return True
 
 
 # ── Phone OTP ────────────────────────────────────────────────────────────────
@@ -151,6 +172,9 @@ def otp_send():
     purpose='login' : number must belong to an account.
     Either way the response is the same generic 200, so this endpoint cannot be
     used to discover which numbers are registered."""
+    if widget_mode():
+        # In widget mode MSG91 sends and checks the code from the browser.
+        return jsonify({"error": "Codes are sent by the verification widget.", "code": "USE_WIDGET"}), 400
     data = request.get_json(silent=True) or {}
     purpose = data.get("purpose")
     phone = normalize_phone(data.get("phone"))
@@ -222,7 +246,11 @@ def otp_verify():
     if not phone:
         return jsonify({"error": "Enter a valid 10-digit Indian mobile number."}), 400
     try:
-        if not _consume_otp(phone, "signup", (data.get("code") or "").strip()):
+        if widget_mode():
+            proved = _widget_proof(phone, data.get("access_token")) and _user_by_phone(phone) is None
+        else:
+            proved = _consume_otp(phone, "signup", (data.get("code") or "").strip())
+        if not proved:
             return jsonify({"error": "That code is incorrect or has expired.", "code": "OTP_INVALID"}), 400
         return jsonify({"phone": phone, "phone_token": generate_phone_token(phone)}), 200
     except Exception as e:
@@ -246,7 +274,8 @@ def otp_login():
             # Second request of a two-step sign-in: the SMS code was already spent, the token proves it.
             if not user or step != (user.id, phone):
                 return jsonify({"error": "That sign-in has expired. Start again.", "code": "OTP_INVALID"}), 401
-        elif not user or not _consume_otp(phone, "login", (data.get("code") or "").strip()):
+        elif not user or not (_widget_proof(phone, data.get("access_token")) if widget_mode()
+                              else _consume_otp(phone, "login", (data.get("code") or "").strip())):
             # Same error for "no such account" and "wrong code".
             return jsonify({"error": "That code is incorrect or has expired.", "code": "OTP_INVALID"}), 401
         # A phone code is one factor. Accounts that switched on authenticator two-step

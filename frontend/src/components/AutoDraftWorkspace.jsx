@@ -11,6 +11,7 @@ import { useLetterheads } from '../hooks/useLetterheads.js';
 import DisputeDesk from './DisputeDesk.jsx';
 import SaveDraftModal from './SaveDraftModal.jsx';
 import AutoDraftAssistant from './autodraft/AutoDraftAssistant.jsx';
+import GuidedDraftModal from './autodraft/GuidedDraftModal.jsx';
 import { buildDraftName } from '../utils/draftNaming.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -63,6 +64,22 @@ export default function AutoDraftWorkspace() {
     setAutoDraftVersion,
     openDraftsModal,
   } = useContractStore();
+
+  // Ask-first drafting: every draft starts in the guided panel, which asks
+  // which case / which file and the missing facts before anything is written.
+  const [guidedOpen, setGuidedOpen] = useState(false);
+  const [guidedSeed, setGuidedSeed] = useState({ request: '', type: '' });
+  const openGuided = (seed = {}) => {
+    setGuidedSeed({ request: seed.request || '', type: seed.type || '' });
+    setGuidedOpen(true);
+  };
+  useEffect(() => {
+    const st = routeLocation.state;
+    if (st && (st.startGuided || st.docType)) {
+      openGuided({ type: st.docType || '', request: st.request || '' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeLocation.key]);
 
   // Local synthesis studio state
   const [drafting, setDrafting] = useState(false);
@@ -585,9 +602,23 @@ export default function AutoDraftWorkspace() {
     };
   }, [drafting]);
 
-  const handleSynthesize = async (e) => {
+  // The Synthesize button no longer drafts straight from free text: it opens
+  // the guided panel (seeded with whatever was typed) so the advocate is asked
+  // which case and which file, and for any missing facts, first.
+  const handleSynthesize = (e) => {
     if (e) e.preventDefault();
-    if (!autoDraftPrompt.trim()) {
+    openGuided({ request: autoDraftPrompt || '' });
+  };
+
+  const handleGuidedGenerate = ({ brief, context, caseId, source, fileName }) => {
+    setGuidedOpen(false);
+    setAutoDraftPrompt(brief);
+    setIntelTab('instructions');
+    runDraft(brief, context || null);
+  };
+
+  const runDraft = async (promptText, explicitContext = null) => {
+    if (!(promptText || '').trim()) {
       setDraftError('Please enter drafting instructions before synthesizing.');
       if (promptTextareaRef.current) promptTextareaRef.current.focus();
       return;
@@ -598,7 +629,9 @@ export default function AutoDraftWorkspace() {
 
     try {
       let contextValue = null;
-      if (selectedContextMode === 'active_contract' && rawText.trim()) {
+      if (explicitContext && explicitContext.trim()) {
+        contextValue = explicitContext.trim();
+      } else if (selectedContextMode === 'active_contract' && rawText.trim()) {
         contextValue = rawText.trim();
       } else if (selectedContextMode === 'active_contract') {
         // "Active contract" selected but the editor is empty: previously this
@@ -653,7 +686,7 @@ export default function AutoDraftWorkspace() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: autoDraftPrompt.trim(),
+            prompt: promptText.trim(),
             context: contextValue,
             depth: draftDepth,
           }),
@@ -1474,11 +1507,11 @@ export default function AutoDraftWorkspace() {
                   <h3 className="serif">Enterprise Auto-Draft Canvas Ready</h3>
                   <p>Describe what you need, pick a Playbook precedent, or upload a draft to extract and append — the canvas will fill in as a real, navigable document.</p>
                   <div className="quickstart-grid">
-                    <button className="quickstart-card" onClick={() => { setIntelTab('instructions'); setTimeout(() => promptTextareaRef.current?.focus(), 10); }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg><span className="qc-title">Describe what you need</span><span className="qc-desc">Write drafting instructions and let the engine synthesize a full agreement.</span></button>
+                    <button className="quickstart-card" onClick={() => openGuided()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg><span className="qc-title">Draft a document</span><span className="qc-desc">Pick the document, then the case or file. We ask for any missing details before writing.</span></button>
                     <button className="quickstart-card" onClick={() => setIntelTab('playbook')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5.5S5 4 8 4s5 1.5 5 1.5v14S11 18 8 18s-5 1.5-5 1.5z"></path><path d="M21 5.5S19 4 16 4s-5 1.5-5 1.5v14S13 18 16 18s5 1.5 5 1.5z"></path></svg><span className="qc-title">Start from a precedent</span><span className="qc-desc">Insert an Indian Playbook clause and build outward from it.</span></button>
                     <button className="quickstart-card" onClick={() => draftUploadInputRef.current?.click()}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21V9"></path><path d="M7 14l5-5 5 5"></path><path d="M5 21h14"></path></svg><span className="qc-title">Upload a draft</span><span className="qc-desc">Extract deadlines, defined terms and structure from an existing file.</span></button>
                   </div>
-                  <input type="file" ref={draftUploadInputRef} style={{ display: 'none' }} accept=".pdf,.docx,.txt" onChange={(e) => {}} />
+                  <input type="file" ref={draftUploadInputRef} style={{ display: 'none' }} accept=".pdf,.docx,.txt" onChange={(e) => handleUploadDraft(Array.from(e.target.files || []))} />
                 </div>
               )}
             </div>
@@ -1583,7 +1616,7 @@ export default function AutoDraftWorkspace() {
                 </div>
                 <button className="btn btn-primary cta-primary" onClick={handleSynthesize} disabled={drafting}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"></path></svg>
-                  {drafting ? 'Synthesizing...' : 'Synthesize Enterprise Clause'}
+                  {drafting ? 'Drafting...' : 'Start guided draft'}
                 </button>
               </div>
 
@@ -1636,6 +1669,15 @@ export default function AutoDraftWorkspace() {
       </div>
 
       <DraftsModal />
+
+      <GuidedDraftModal
+        open={guidedOpen}
+        initialRequest={guidedSeed.request}
+        initialType={guidedSeed.type}
+        onClose={() => setGuidedOpen(false)}
+        onGenerate={handleGuidedGenerate}
+        onOpenPractice={() => navigate('/workspace/matters')}
+      />
 
       <SaveDraftModal
         open={showSaveModal}

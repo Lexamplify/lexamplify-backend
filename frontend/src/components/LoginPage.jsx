@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import LexLogoMark from './LexLogoMark';
 import { Icon } from './marketing/MarketingLayout';
 import { waitUntilAwake, isServerAwake } from '../utils/warmServer';
+import { sendWidgetOtp, verifyWidgetOtp } from '../utils/msg91Widget';
 import './marketing/marketing.css';
 import './marketing/auth.css';
 
@@ -164,7 +165,8 @@ export default function LoginPage() {
 
   const [mode, setMode] = useState(params.get('mode') === 'register' ? 'register' : 'signin');
   const [method, setMethod] = useState('password');           // sign-in: 'password' | 'otp'
-  const [config, setConfig] = useState({ phone_otp_required: false, sms_enabled: false });
+  const [config, setConfig] = useState({ phone_otp_required: false, sms_enabled: false, otp_mode: 'api' });
+  const widgetMode = config.otp_mode === 'widget';
   const [serverReady, setServerReady] = useState(() => isServerAwake());
 
   // shared form state
@@ -205,7 +207,7 @@ export default function LoginPage() {
 
   // Already signed in? Skip the form (but let a reset link through).
   useEffect(() => {
-    if (isAuthenticated && !isInitializing && !resetToken) navigate('/workspace/matters', { replace: true });
+    if (isAuthenticated && !isInitializing && !resetToken) navigate('/start', { replace: true });
   }, [isAuthenticated, isInitializing, resetToken, navigate]);
 
   // Wake the backend as soon as the page opens, and learn whether SMS codes are live.
@@ -256,7 +258,7 @@ export default function LoginPage() {
   const finishSignIn = async (emailForCache) => {
     await refreshSession();
     try { if (emailForCache) localStorage.setItem('active_lex_user', emailForCache); } catch { /* private mode */ }
-    window.location.href = '/workspace/matters';
+    window.location.href = '/start';
   };
 
   /* ── Mobile code: send ── */
@@ -265,11 +267,17 @@ export default function LoginPage() {
     if (!phoneOk(phone)) { setError('Enter a valid 10-digit mobile number.'); return; }
     setBusy(true);
     try {
-      const { res, data } = await postJSON('/api/auth/otp/send', { phone, purpose }, { onSlow: () => setSlow(true) });
-      if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
-      if (!res.ok) throw new Error(data.error || 'We could not send the code. Please try again.');
-      setCodeSent(true); setCode(''); setResendIn(data.resend_in || 30);
-      setInfo(`We sent a 6-digit code to +91 ${phone.slice(0, 5)} ${phone.slice(5)}. It expires in 5 minutes.`);
+      let resend = 30;
+      if (widgetMode) {
+        await sendWidgetOtp(config.msg91_widget, phone);
+      } else {
+        const { res, data } = await postJSON('/api/auth/otp/send', { phone, purpose }, { onSlow: () => setSlow(true) });
+        if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
+        if (!res.ok) throw new Error(data.error || 'We could not send the code. Please try again.');
+        resend = data.resend_in || 30;
+      }
+      setCodeSent(true); setCode(''); setResendIn(resend);
+      setInfo(`We sent a code to +91 ${phone.slice(0, 5)} ${phone.slice(5)}.${widgetMode ? '' : ' It expires in 5 minutes.'}`);
     } catch (e) { setError(e.message); } finally { setBusy(false); setSlow(false); }
   };
 
@@ -278,7 +286,8 @@ export default function LoginPage() {
     if (value.length !== 6 || busy) return;
     setError(''); setBusy(true);
     try {
-      const { res, data } = await postJSON('/api/auth/otp/verify', { phone, code: value }, { onSlow: () => setSlow(true) });
+      const proof = widgetMode ? { access_token: await verifyWidgetOtp(value) } : { code: value };
+      const { res, data } = await postJSON('/api/auth/otp/verify', { phone, ...proof }, { onSlow: () => setSlow(true) });
       if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
       if (!res.ok) { setCode(''); throw new Error(data.error || 'That code is incorrect or has expired.'); }
       setPhoneToken(data.phone_token); setCodeSent(false); setInfo('');
@@ -293,7 +302,8 @@ export default function LoginPage() {
     if (step && !mfaCode.trim()) return setError(useRecovery ? 'Enter one of your recovery codes.' : 'Enter the 6-digit code from your authenticator app.');
     setError(''); setBusy(true);
     try {
-      const body = step ? { phone, login_token: otpToken, totp: mfaCode.trim() } : { phone, code: value };
+      const proof = step ? null : (widgetMode ? { access_token: await verifyWidgetOtp(value) } : { code: value });
+      const body = step ? { phone, login_token: otpToken, totp: mfaCode.trim() } : { phone, ...proof };
       const { res, data } = await postJSON('/api/auth/otp/login', body, { onSlow: () => setSlow(true) });
       if (tooMany(res)) throw new Error(TOO_MANY_MESSAGE);
       if (!res.ok) {

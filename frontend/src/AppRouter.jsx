@@ -30,6 +30,7 @@ const FirmLibrary = lazy(() => import('./components/FirmLibrary'));
 const LegalForms = lazy(() => import('./components/LegalForms'));
 const FormTemplateLibrary = lazy(() => import('./components/FormTemplateLibrary'));
 import TEMPLATES from './data/legalTemplates.js';
+const StartPage = lazy(() => import('./components/StartPage'));
 const MatterLauncher = lazy(() => import('./components/organization/MatterLauncher'));
 const MatterDashboard = lazy(() => import('./components/organization/MatterDashboard'));
 const TeamDashboard = lazy(() => import('./components/organization/TeamDashboard'));
@@ -219,7 +220,8 @@ const NAVIGATION_GROUPS = [
   {
     title: "Workspace",
     items: [
-      { name: "Home", path: "/workspace/matters", icon: SidebarIcons.gateway() },
+      { name: "Start", path: "/start", icon: SidebarIcons.gateway() },
+      { name: "Matters", path: "/workspace/matters", icon: SidebarIcons.practice() },
       { name: "Dashboard", path: "/dashboard", icon: SidebarIcons.dashboard() },
       { name: "Contract Analyzer", path: "/contract-analyzer", icon: SidebarIcons.contract(), aiAssisted: true },
       { name: "Auto-Draft Studio", path: "/auto-draft", icon: SidebarIcons.pencil(), aiAssisted: true },
@@ -651,6 +653,7 @@ const Breadcrumbs = () => {
   const items = [{ label: 'Dashboard', url: '/dashboard' }];
   const p = location.pathname;
   if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
+  else if (p === '/start') items.push({ label: 'Start', url: '/start' });
   else if (p === '/workspace/matters' || p === '/chamber' || p === '/matters' || p === '/home') items.push({ label: 'Home', url: '/workspace/matters' });
   else if (p.startsWith('/workspace/matter/')) items.push({ label: 'Matter Workspace', url: p });
   else if (p.startsWith('/workspace/team/')) items.push({ label: 'Team Workspace', url: p });
@@ -1063,13 +1066,14 @@ function AppRouterContent() {
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><DashboardView /></PageSuspense></Layout>} />
+        <Route path="/start" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><StartPage /></PageSuspense></Layout>} />
         <Route path="/workspace/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterLauncher /></PageSuspense></Layout>} />
         <Route path="/workspace/matter/:matterId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterDashboard /></PageSuspense></Layout>} />
         <Route path="/workspace/team/:teamId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><TeamDashboard /></PageSuspense></Layout>} />
         <Route path="/workspace/org" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><OrgDashboard /></PageSuspense></Layout>} />
         <Route path="/chamber" element={<Navigate to="/workspace/matters" replace />} />
         <Route path="/matters" element={<Navigate to="/workspace/matters" replace />} />
-        <Route path="/home" element={<Navigate to="/workspace/matters" replace />} />
+        <Route path="/home" element={<Navigate to="/start" replace />} />
         <Route path="/contract-analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></PageSuspense></Layout>} />
         <Route path="/auto-draft" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><AutoDraftWorkspace /></PageSuspense></Layout>} />
         <Route path="/court-resources" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><CourtResources /></PageSuspense></Layout>} />

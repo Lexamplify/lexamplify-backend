@@ -211,6 +211,25 @@ def draft_intake():
                    "summary": "", "questions": di.fallback_questions(kind, doc_type), "source": "library"}
     return jsonify(payload), 200
 
+@ai_bp.route("/intake/brief", methods=["POST", "OPTIONS"])
+@jwt_required()
+def draft_intake_brief():
+    """Turn the advocate's answers into the instruction block for drafting. Strict: a
+    question left unanswered becomes a visible [Bracketed Field], never an invented value."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    from utils import draft_intake as di
+    body = request.get_json(silent=True) or {}
+    req_text = str(body.get("request") or "").strip()
+    questions = body.get("questions") if isinstance(body.get("questions"), list) else []
+    answers = body.get("answers") if isinstance(body.get("answers"), dict) else {}
+    if not req_text:
+        return jsonify({"error": True, "message": "Tell me what you need drafted."}), 400
+    questions = di.sanitize_questions(questions)
+    brief = di.compose_brief(req_text, questions, answers, strict=True)
+    return jsonify({"brief": brief}), 200
+
+
 # ── Universal RAG Chatbot with SSE Streaming ────────────────────
 @ai_bp.route("/rag-chat", methods=["POST"])
 @jwt_required()

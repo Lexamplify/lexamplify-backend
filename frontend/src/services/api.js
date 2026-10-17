@@ -508,8 +508,10 @@ export const extractContractText = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
 
+  // 60s, not 15s: the server may be waking from idle, and a long PDF takes a few
+  // seconds to read. Cutting the request off early looked like "upload failed".
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {
@@ -522,18 +524,28 @@ export const extractContractText = async (file) => {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `HTTP ${response.status}`);
+      // The server answers with JSON ({error, message, code}); show its message,
+      // never the raw JSON string.
+      const raw = await response.text();
+      let message = '';
+      let code = '';
+      try { const j = JSON.parse(raw); message = j.message || ''; code = j.code || ''; } catch { /* not JSON */ }
+      const err = new Error(
+        response.status === 401 ? 'Your session has expired. Please sign in again.'
+          : response.status === 413 ? 'That file is too large. Please upload a smaller file.'
+            : message || 'We could not read that file. Try a PDF or Word file with selectable text.');
+      err.code = code || String(response.status);
+      throw err;
     }
 
     const data = await response.json();
     return data;
   } catch (error) {
     if (error.name === 'AbortError') {
-      throw new Error('Extraction request timed out');
+      throw new Error('Reading the file took too long. Please try again, or upload a smaller file.');
     }
-    if (error instanceof TypeError && (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network'))) {
-      throw new Error('Backend unreachable - verify Python Flask server is running');
+    if (error instanceof TypeError) {
+      throw new Error('We could not reach the server. Check your connection and try again.');
     }
     throw error;
   }

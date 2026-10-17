@@ -61,7 +61,7 @@ def _signup_with_otp(client, email="otp@example.com", phone=PHONE):
 def test_config_reports_otp_state(client):
     r = client.get("/api/auth/config")
     assert r.status_code == 200
-    assert r.get_json() == {"phone_otp_required": True, "sms_enabled": True}
+    assert r.get_json() == {"phone_otp_required": True, "sms_enabled": True, "otp_mode": "api"}
 
 
 def test_register_requires_verified_phone(client):

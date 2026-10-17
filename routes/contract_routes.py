@@ -15,6 +15,7 @@ import uuid
 import threading
 import time
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 LOCAL_JOBS = {}
 from utils.job_store import save_local_job, get_local_job, save_job, load_job, update_job
@@ -705,6 +706,7 @@ EXTRACTION_TIMEOUT_SECONDS = 10
 
 
 @contract_bp.route("/extract-text", methods=["POST", "OPTIONS"])
+@jwt_required(optional=True)
 def extract_text():
     """
     Extract raw text from a PDF or DOCX upload without running analysis.
@@ -731,6 +733,9 @@ def extract_text():
         # so the global after_request hook gets a response to attach the
         # Access-Control-Allow-* headers to.
         return jsonify({}), 200
+
+    if not get_jwt_identity():
+        return jsonify({"error": True, "message": "Please sign in to upload documents.", "code": "AUTH_REQUIRED"}), 401
 
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
     from werkzeug.utils import secure_filename
@@ -766,20 +771,22 @@ def extract_text():
                     "code": "EXTRACTION_TIMEOUT",
                 }), 422
             except Exception as e:
+                print(f"[extract-text] extraction failed: {e}")
                 return jsonify({
                     "error": True,
-                    "message": f"Failed to extract text: {str(e)}",
+                    "message": "We could not read that file. It may be damaged or password-protected. Try saving it again as a PDF or Word file.",
                     "code": "EXTRACTION_ERROR"
                 }), 500
 
             if not text or not text.strip():
                 return jsonify({
                     "error": True,
-                    "message": "No readable text found - OCR required.",
+                    "message": "No readable text found. This looks like a scanned image. Upload a text-based PDF or Word file, or type the details in instead.",
                     "code": "BLANK_DOCUMENT",
                 }), 422
         except Exception as e:
-            return jsonify({"error": True, "message": f"Failed to extract text: {e}", "code": "FILE_PROCESSING_ERROR"}), 500
+            print(f"[extract-text] file processing failed: {e}")
+            return jsonify({"error": True, "message": "We could not process that file. Please try again.", "code": "FILE_PROCESSING_ERROR"}), 500
 
     elif request.is_json and request.json.get("text"):
         text = str(request.json["text"]).strip()
@@ -1242,44 +1249,149 @@ def export_form_docx():
         section.right_margin = Inches(1)
         _apply_letterhead(doc, letterhead_data)
 
-        def add_runs(paragraph, node, bold=False):
-            """Recursively walk inline children, tracking bold state so a
-            <strong>/<b> nested inside other inline tags still renders as a
-            real bold run rather than being flattened to plain text."""
+        from docx.shared import Pt
+        from docx.oxml.ns import qn
+
+        # Court-ready defaults: serif 12pt, justified-friendly spacing.
+        normal = doc.styles['Normal']
+        normal.font.name = 'Times New Roman'
+        normal.font.size = Pt(12)
+        normal.element.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
+        normal.paragraph_format.space_after = Pt(6)
+        normal.paragraph_format.line_spacing = 1.15
+        for sty in ('List Bullet', 'List Number'):
+            try:
+                doc.styles[sty].font.name = 'Times New Roman'
+                doc.styles[sty].font.size = Pt(12)
+            except KeyError:
+                pass
+
+        def align_of(el, para):
+            st = (el.get('style') or '').replace(' ', '').lower()
+            if 'text-align:center' in st:
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif 'text-align:right' in st:
+                para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            elif 'text-align:justify' in st:
+                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+        def add_runs(paragraph, node, bold=False, italic=False, underline=False):
+            """Walk inline children keeping bold/italic/underline state, so a
+            <strong> nested inside <em> etc. still renders as a real run."""
             for child in node.children:
                 if isinstance(child, NavigableString):
                     text = str(child)
                     if text:
                         run = paragraph.add_run(text)
-                        run.bold = bold
+                        run.bold = bold or None
+                        run.italic = italic or None
+                        run.underline = underline or None
                 elif isinstance(child, Tag):
                     if child.name == 'br':
                         paragraph.add_run().add_break()
                     else:
-                        add_runs(paragraph, child, bold or child.name in ('strong', 'b'))
+                        add_runs(paragraph, child,
+                                 bold or child.name in ('strong', 'b'),
+                                 italic or child.name in ('em', 'i'),
+                                 underline or child.name == 'u')
+
+        def add_list(el, level=0):
+            style = 'List Bullet' if el.name == 'ul' else 'List Number'
+            if level == 1:
+                style += ' 2'
+            elif level >= 2:
+                style += ' 3'
+            for li in el.find_all('li', recursive=False):
+                try:
+                    para = doc.add_paragraph(style=style)
+                except KeyError:
+                    para = doc.add_paragraph(style='List Bullet' if el.name == 'ul' else 'List Number')
+                # inline content of the li, excluding nested lists (handled below)
+                inline = BeautifulSoup('', 'html.parser').new_tag('span')
+                for ch in list(li.children):
+                    if isinstance(ch, Tag) and ch.name in ('ul', 'ol'):
+                        continue
+                    inline.append(ch.extract() if hasattr(ch, 'extract') else ch)
+                # TipTap wraps li text in <p>; flatten it
+                add_runs(para, inline)
+                for nested in li.find_all(['ul', 'ol'], recursive=False):
+                    add_list(nested, level + 1)
+
+        def add_table(el):
+            rows = el.find_all('tr')
+            if not rows:
+                return
+            ncols = max(len(r.find_all(['td', 'th'], recursive=False)) for r in rows)
+            if ncols == 0:
+                return
+            table = doc.add_table(rows=len(rows), cols=ncols)
+            table.style = 'Table Grid'
+            for ri, r in enumerate(rows):
+                for ci, cell in enumerate(r.find_all(['td', 'th'], recursive=False)):
+                    target = table.cell(ri, ci)
+                    para = target.paragraphs[0]
+                    add_runs(para, cell, bold=(cell.name == 'th'))
+            doc.add_paragraph()
+
+        def handle(el):
+            name = el.name
+            if name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+                para = doc.add_paragraph()
+                para.paragraph_format.space_before = Pt(12)
+                para.paragraph_format.keep_with_next = True
+                align_of(el, para)
+                add_runs(para, el, bold=True)
+                if name == 'h1':
+                    for r in para.runs:
+                        r.font.size = Pt(14)
+                    if para.alignment is None:
+                        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif name == 'p':
+                para = doc.add_paragraph()
+                align_of(el, para)
+                add_runs(para, el)
+            elif name in ('ul', 'ol'):
+                add_list(el)
+            elif name == 'blockquote':
+                for ch in el.find_all(['p'], recursive=False) or [el]:
+                    para = doc.add_paragraph()
+                    para.paragraph_format.left_indent = Inches(0.5)
+                    add_runs(para, ch, italic=False)
+            elif name == 'table':
+                add_table(el)
+            elif name == 'hr':
+                doc.add_paragraph('_' * 40)
+            elif name in ('div', 'section', 'article', 'body', 'html'):
+                for ch in el.children:
+                    if isinstance(ch, Tag):
+                        handle(ch)
+                    elif isinstance(ch, NavigableString) and str(ch).strip():
+                        doc.add_paragraph(str(ch).strip())
 
         soup = BeautifulSoup(html, 'html.parser')
-        top_level = [el for el in soup.find_all(['p', 'ul', 'ol'], recursive=False) if isinstance(el, Tag)]
-        if not top_level:
-            # html_template's top-level elements may not be direct children of
-            # the parse root depending on how the fragment was wrapped — fall
-            # back to scanning anywhere in the document.
-            top_level = [el for el in soup.find_all(['p', 'ul', 'ol']) if isinstance(el, Tag)]
+        roots = [ch for ch in soup.children if isinstance(ch, (Tag, NavigableString))]
+        for ch in roots:
+            if isinstance(ch, Tag):
+                handle(ch)
+            elif str(ch).strip():
+                doc.add_paragraph(str(ch).strip())
 
-        for el in top_level:
-            style_attr = (el.get('style') or '').replace(' ', '')
-            if el.name == 'p':
-                para = doc.add_paragraph()
-                if 'text-align:center' in style_attr:
-                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                elif 'text-align:right' in style_attr:
-                    para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                add_runs(para, el)
-            else:
-                list_style = 'List Bullet' if el.name == 'ul' else 'List Number'
-                for li in el.find_all('li', recursive=False):
-                    para = doc.add_paragraph(style=list_style)
-                    add_runs(para, li)
+        # Page numbers in the footer ("Page X") so a multi-page notice or
+        # petition can be referred to by page.
+        try:
+            from docx.oxml import OxmlElement
+            fp = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
+            if not fp.text.strip():
+                fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = fp.add_run()
+                for kind, txt in (('begin', None), (None, 'PAGE'), ('end', None)):
+                    if kind:
+                        el = OxmlElement('w:fldChar'); el.set(qn('w:fldCharType'), kind)
+                    else:
+                        el = OxmlElement('w:instrText'); el.set(qn('xml:space'), 'preserve'); el.text = txt
+                    run._r.append(el)
+        except Exception:
+            pass
 
         buffer = io.BytesIO()
         doc.save(buffer)

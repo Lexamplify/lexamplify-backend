@@ -23,12 +23,38 @@ from unittest.mock import patch, MagicMock
 import app as app_module
 
 
+class _SignedInClient:
+    """Test client for a signed-in advocate: sends the CSRF header the browser would."""
+    def __init__(self, c):
+        self._c = c
+
+    def _csrf(self):
+        ck = self._c.get_cookie("csrf_access_token")
+        return {"X-CSRF-TOKEN": ck.value} if ck else {}
+
+    def post(self, *a, **kw):
+        kw["headers"] = {**self._csrf(), **kw.get("headers", {})}
+        return self._c.post(*a, **kw)
+
+    def __getattr__(self, name):
+        return getattr(self._c, name)
+
+
 @pytest.fixture()
-def client():
+def client(tmp_path, monkeypatch):
+    # Isolated database and a real signed-in user: these routes now require sign-in,
+    # and nothing here may touch the developer's own database.
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'full_test.db'}")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-backend-full-0123456789")
+    monkeypatch.setenv("PHONE_OTP_REQUIRED", "false")
     flask_app = app_module.create_app()
     flask_app.config.update(TESTING=True)
+    from utils.limiter import limiter
+    limiter.enabled = False
     with flask_app.test_client() as test_client:
-        yield test_client
+        r = test_client.post("/api/auth/register", json={"email": "full@example.com", "password": "TestPass123!", "name": "Full Test"})
+        assert r.status_code == 201, r.get_json()
+        yield _SignedInClient(test_client)
 
 
 # ─────────────────────────────────────────────────────────────────────────
