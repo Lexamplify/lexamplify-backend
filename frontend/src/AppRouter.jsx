@@ -31,6 +31,7 @@ const LegalForms = lazy(() => import('./components/LegalForms'));
 const FormTemplateLibrary = lazy(() => import('./components/FormTemplateLibrary'));
 import TEMPLATES from './data/legalTemplates.js';
 const StartPage = lazy(() => import('./components/StartPage'));
+const DraftWizard = lazy(() => import('./components/wizard/DraftWizard'));
 const MatterLauncher = lazy(() => import('./components/organization/MatterLauncher'));
 const MatterDashboard = lazy(() => import('./components/organization/MatterDashboard'));
 const TeamDashboard = lazy(() => import('./components/organization/TeamDashboard'));
@@ -654,6 +655,7 @@ const Breadcrumbs = () => {
   const p = location.pathname;
   if (p === '/court-resources') items.push({ label: 'Court Resources', url: p });
   else if (p === '/start') items.push({ label: 'Start', url: '/start' });
+  else if (p === '/draft' || p.startsWith('/draft/')) items.push({ label: 'Draft a document', url: '/draft' });
   else if (p === '/workspace/matters' || p === '/chamber' || p === '/matters' || p === '/home') items.push({ label: 'Home', url: '/workspace/matters' });
   else if (p.startsWith('/workspace/matter/')) items.push({ label: 'Matter Workspace', url: p });
   else if (p.startsWith('/workspace/team/')) items.push({ label: 'Team Workspace', url: p });
@@ -1086,6 +1088,7 @@ function AppRouterContent() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><DashboardView /></PageSuspense></Layout>} />
         <Route path="/start" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><StartPage /></PageSuspense></Layout>} />
+        <Route path="/draft/:sessionId?" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><DraftWizard /></ErrorBoundary></PageSuspense></Layout>} />
         <Route path="/workspace/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterLauncher /></PageSuspense></Layout>} />
         <Route path="/workspace/matter/:matterId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterDashboard /></PageSuspense></Layout>} />
         <Route path="/workspace/team/:teamId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><TeamDashboard /></PageSuspense></Layout>} />

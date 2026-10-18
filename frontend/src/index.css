@@ -590,6 +590,15 @@ h1, h2, h3, h4, h5, h6 {
     flex: none;
   }
 
+  /* The header's matter/firm capsule is wider than a phone (431px). That made the whole workspace box scrollable
+     sideways, so any focus() or scrollIntoView() inside a page shifted it 16-40px off the left edge. Let the capsule
+     scroll inside itself instead. */
+  .context-capsule-wrapper {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
   /* Task 2: Typography & Breathing Room */
   .workspace-container p, 
   .workspace-container span, 

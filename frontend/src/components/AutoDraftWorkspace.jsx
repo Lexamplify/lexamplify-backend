@@ -81,6 +81,20 @@ export default function AutoDraftWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeLocation.key]);
 
+  // A finished draft from the guided wizard opens here as the live document (one-time, scrubbed from history).
+  useEffect(() => {
+    const od = routeLocation.state && routeLocation.state.openDraft;
+    if (!od || !od.html) return;
+    setAutoDraftText(od.text || '');
+    setAutoDraftHtml(od.html);
+    try { sessionStorage.removeItem(SCRATCHPAD_STORAGE_KEY); } catch { /* storage may be blocked */ }
+    setAutoDraftVersion((v) => v + 1);
+    const rest = { ...routeLocation.state };
+    delete rest.openDraft;
+    navigate(routeLocation.pathname, { replace: true, state: Object.keys(rest).length ? rest : null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeLocation.key]);
+
   // Local synthesis studio state
   const [drafting, setDrafting] = useState(false);
   const [draftStep, setDraftStep] = useState(0);
