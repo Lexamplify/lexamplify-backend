@@ -30,6 +30,10 @@ _LEGACY_DB_PATH = os.path.join(
 
 
 def migrate_legacy_sqlite_users(db, User) -> int:
+    if os.getenv("LEGACY_USER_MIGRATION", "on").strip().lower() in ("0", "off", "false", "no"):
+        # Tests and local browser runs switch this off so a throw-away database never receives real users.
+        print("[legacy_user_migration] switched off by LEGACY_USER_MIGRATION — nothing to migrate.")
+        return 0
     if not os.path.exists(_LEGACY_DB_PATH):
         print("[legacy_user_migration] no lex_assistant.db found at this path — nothing to migrate.")
         return 0

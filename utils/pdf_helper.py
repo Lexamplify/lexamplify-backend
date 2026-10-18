@@ -33,6 +33,12 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
     if filetype == "pdf":
         import fitz
         doc = fitz.open(stream=file_bytes, filetype="pdf")
+        if doc.needs_pass:
+            doc.close()
+            raise ValueError("password-protected PDF")
+        if doc.page_count > 1500:
+            doc.close()
+            raise ValueError("PDF has too many pages")
         try:
             # page.get_text() (plain "text" mode) puts a \n at every ORIGINAL
             # PRINT LINE, not at paragraph boundaries — a sentence that wrapped

@@ -3493,6 +3493,8 @@ def create_app():
     app.register_blueprint(matter_bp)
     app.register_blueprint(letterhead_bp)
     app.register_blueprint(dispute_bp)  # url_prefix baked into dispute_bp: /api/disputes
+    from routes.draft_engine_routes import drafts_bp
+    app.register_blueprint(drafts_bp)  # /api/drafts (guided drafting engine); url_prefix baked in
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
     app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
@@ -4482,6 +4484,8 @@ def create_app():
         from models.case import Case
         from models.document import Document
         from models.court_models import JudicialOfficer, SupremeCourtRoster
+        from models.draft_session import DraftSession, DraftVersion, UserFlag  # noqa: F401 — registers the tables
+        from models.revoked_token import RevokedToken  # noqa: F401 — registers the table
         sqlalchemy_db.create_all()
         _is_postgres = app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql+psycopg2://')
         _db_kind = 'Neon PostgreSQL' if _is_postgres else 'SQLite'
@@ -4777,6 +4781,20 @@ def create_app():
         verify_jwt_in_request()   # raises the JWT errors handled below (401 with a friendly body)
         return None
 
+    # A signed-out session must stop working at once, not when the cookie happens to expire.
+    @jwt.token_in_blocklist_loader
+    def _jwt_is_revoked(jwt_header, jwt_payload):
+        try:
+            from models.revoked_token import RevokedToken
+            return sqlalchemy_db.session.query(RevokedToken.id).filter_by(jti=jwt_payload.get("jti")).first() is not None
+        except Exception:
+            app.logger.exception("revocation check failed")
+            return False   # a broken blocklist table must not lock every advocate out
+
+    @jwt.revoked_token_loader
+    def _jwt_revoked(jwt_header, jwt_payload):
+        return jsonify({"error": True, "msg": "Token has been revoked", "message": "You have been signed out. Please sign in again.", "code": "AUTH_REQUIRED"}), 401
+
     @jwt.unauthorized_loader
     def _jwt_missing(reason):
         return jsonify({"error": True, "msg": reason, "message": "Please sign in to continue.", "code": "AUTH_REQUIRED"}), 401
@@ -4788,6 +4806,18 @@ def create_app():
     @jwt.expired_token_loader
     def _jwt_expired(jwt_header, jwt_payload):
         return jsonify({"error": True, "msg": "Token has expired", "message": "Your session has expired. Please sign in again.", "code": "TOKEN_EXPIRED"}), 401
+
+    @app.after_request
+    def _security_headers(resp):
+        h = resp.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if (request.path or "").startswith("/api/") and request.path != "/api/proxy":
+            h.setdefault("Cache-Control", "no-store")     # legal data must not sit in a shared cache
+        if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true':
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return resp
 
     # In production an unexpected 500 must never echo exception text (file paths, SQL, keys) to the browser.
     @app.after_request
@@ -4806,6 +4836,12 @@ def create_app():
     # then tried to JSON.parse() — the literal "unexpected character at
     # line 1 column 1" crash. These guarantee every response this app
     # sends back, error or not, is JSON.
+    @app.errorhandler(413)
+    def handle_too_large(e):
+        mb = max(1, int((app.config.get('MAX_CONTENT_LENGTH') or 0) / 1048576))
+        return jsonify({"error": True, "code": "TOO_LARGE",
+                        "message": f"That upload is too large. The limit is {mb} MB. Please upload a smaller file."}), 413
+
     @app.errorhandler(HTTPException)
     def handle_http_exception(e):
         return jsonify({"error": e.description or str(e)}), e.code

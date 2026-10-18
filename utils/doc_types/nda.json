@@ -1,0 +1,221 @@
+{
+  "id": "nda",
+  "label": "Mutual non-disclosure agreement",
+  "short": "NDA (mutual)",
+  "category": "agreement",
+  "minutes": 6,
+  "review": {
+    "status": "unreviewed",
+    "note": "Fixed clauses are a plain mutual NDA. They have not yet been reviewed by a practising advocate."
+  },
+  "statutes": [
+    "Section 27, Indian Contract Act, 1872"
+  ],
+  "notes": [
+    "This is a mutual NDA: both parties give and receive confidential information. For a one-way NDA, ask your reviewing advocate to adapt it.",
+    "Stamp duty on agreements differs by state. Check the stamp law of the state where it will be signed before signing."
+  ],
+  "slots": [
+    {
+      "id": "effective_date",
+      "label": "Date the agreement starts",
+      "group": "The agreement",
+      "type": "date",
+      "required": true,
+      "example": "1 August 2026"
+    },
+    {
+      "id": "place",
+      "label": "Place of signing",
+      "group": "The agreement",
+      "type": "text",
+      "required": true,
+      "example": "Chennai"
+    },
+    {
+      "id": "party_a_name",
+      "label": "First party's full name",
+      "group": "First party",
+      "type": "name",
+      "required": true,
+      "example": "Sundaram Agencies Pvt Ltd",
+      "from_case": "client_name"
+    },
+    {
+      "id": "party_a_address",
+      "label": "First party's address",
+      "group": "First party",
+      "type": "address",
+      "required": true,
+      "example": "14 Cross Street, T. Nagar, Chennai - 600017"
+    },
+    {
+      "id": "party_b_name",
+      "label": "Second party's full name",
+      "group": "Second party",
+      "type": "name",
+      "required": true,
+      "example": "Kumar Infra LLP",
+      "from_case": "opposite_party"
+    },
+    {
+      "id": "party_b_address",
+      "label": "Second party's address",
+      "group": "Second party",
+      "type": "address",
+      "required": true,
+      "example": "Plot 22, Industrial Estate, Hosur - 635109"
+    },
+    {
+      "id": "purpose",
+      "label": "Why will the information be shared?",
+      "group": "Terms",
+      "type": "text",
+      "required": true,
+      "example": "evaluating a joint bid for a road construction project"
+    },
+    {
+      "id": "term_years",
+      "label": "Years the duty of confidentiality lasts",
+      "group": "Terms",
+      "type": "number",
+      "required": true,
+      "example": "3"
+    },
+    {
+      "id": "jurisdiction_city",
+      "label": "City whose courts will decide disputes",
+      "group": "Terms",
+      "type": "text",
+      "required": true,
+      "example": "Chennai"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "title",
+      "text": "MUTUAL NON-DISCLOSURE AGREEMENT"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "This Agreement is made at {{place}} on {{effective_date|date}} (the \"Effective Date\") between {{party_a_name}}, having its address at {{party_a_address}} (\"First Party\"), and {{party_b_name}}, having its address at {{party_b_address}} (\"Second Party\"). The First Party and the Second Party are together the \"Parties\" and each a \"Party\"."
+    },
+    {
+      "type": "heading",
+      "text": "1. Purpose"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "The Parties wish to share confidential information for the purpose of {{purpose}} (the \"Purpose\")."
+    },
+    {
+      "type": "heading",
+      "text": "2. Confidential Information"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "\"Confidential Information\" means all non-public information, in any form, that one Party (the \"Discloser\") gives to the other (the \"Recipient\") for the Purpose and that is marked confidential or would reasonably be understood to be confidential."
+    },
+    {
+      "type": "heading",
+      "text": "3. Obligations"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "The Recipient shall (a) use Confidential Information only for the Purpose; (b) not disclose it to any person other than its employees, advisers and representatives who need to know it for the Purpose and are bound to keep it confidential; and (c) protect it with at least the care it uses for its own confidential information."
+    },
+    {
+      "type": "heading",
+      "text": "4. Exclusions"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "These obligations do not apply to information that (a) is or becomes public other than through breach of this Agreement; (b) was lawfully known to the Recipient before disclosure; (c) is lawfully received from a third party without a duty of confidence; or (d) is independently developed without use of Confidential Information. The Recipient may disclose Confidential Information if required by law or by a court, after giving the Discloser prompt notice where the law allows."
+    },
+    {
+      "type": "heading",
+      "text": "5. Term"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "This Agreement binds the Parties for {{term_years}} years from the Effective Date. The duty of confidentiality for information disclosed during that time continues for the same number of years after the date of disclosure."
+    },
+    {
+      "type": "heading",
+      "text": "6. Return of information"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "On written request, the Recipient shall promptly return or destroy the Discloser's Confidential Information and confirm in writing that it has done so, except for copies it must keep by law."
+    },
+    {
+      "type": "heading",
+      "text": "7. No licence"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "Nothing in this Agreement gives either Party any right, title or licence in the other Party's Confidential Information or intellectual property."
+    },
+    {
+      "type": "heading",
+      "text": "8. Remedies"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "Each Party acknowledges that breach of this Agreement may cause harm for which damages alone may not be enough, and that the Discloser may seek injunctive relief in addition to any other remedy available in law."
+    },
+    {
+      "type": "heading",
+      "text": "9. Lawful trade"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "Nothing in this Agreement restrains any person from engaging in a lawful profession, trade or business, in accordance with Section 27 of the Indian Contract Act, 1872."
+    },
+    {
+      "type": "heading",
+      "text": "10. Governing law and jurisdiction"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "This Agreement is governed by the laws of India. The courts at {{jurisdiction_city}} have exclusive jurisdiction over any dispute arising from it."
+    },
+    {
+      "type": "para",
+      "text": "The Parties have signed this Agreement on the date first written above."
+    },
+    {
+      "type": "table",
+      "header": true,
+      "rows": [
+        [
+          "For the First Party",
+          "For the Second Party"
+        ],
+        [
+          "{{party_a_name}}",
+          "{{party_b_name}}"
+        ],
+        [
+          "Signature: ____________________",
+          "Signature: ____________________"
+        ],
+        [
+          "Name and designation:",
+          "Name and designation:"
+        ]
+      ]
+    }
+  ]
+}

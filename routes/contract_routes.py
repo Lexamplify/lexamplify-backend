@@ -21,6 +21,7 @@ LOCAL_JOBS = {}
 from utils.job_store import save_local_job, get_local_job, save_job, load_job, update_job
 from utils.ai_helper import ask_groq, ask_litellm, extract_json_from_llm_response
 from utils.pdf_helper import extract_text_for_summary
+from utils.upload_guard import check_upload, MAX_UPLOAD_BYTES
 
 contract_bp = Blueprint("contract", __name__)
 
@@ -750,20 +751,13 @@ def extract_text():
     if request.files.get("file"):
         try:
             f = request.files["file"]
-            fname = secure_filename(f.filename.lower())
-            data = f.read()
+            fname = secure_filename((f.filename or "").lower())
+            data = f.read(MAX_UPLOAD_BYTES + 1)
 
-            if fname.endswith(".pdf"):
-                filetype = "pdf"
-            elif fname.endswith(".docx"):
-                filetype = "docx"
-            elif fname.endswith(".txt"):
-                filetype = "txt"
-            else:
-                return jsonify({"error": True, "message": "Unsupported file type. Upload a PDF, a Word .docx file or a .txt file. (For an older .doc file, open it in Word and choose Save As .docx.)", "code": "UNSUPPORTED_FORMAT"}), 400
-
-            if not data:
-                return jsonify({"error": True, "message": "That file is empty.", "code": "EMPTY_FILE"}), 422
+            # The file's real type comes from its bytes: size cap, magic bytes, zip-bomb and macro checks.
+            filetype, problem = check_upload(data, fname)
+            if problem:
+                return jsonify({"error": True, "message": problem["message"], "code": problem["code"]}), problem["status"]
 
             if filetype == "txt":
                 # Plain text: try the encodings Indian documents actually arrive in.
@@ -806,12 +800,15 @@ def extract_text():
             print(f"[extract-text] file processing failed: {e}")
             return jsonify({"error": True, "message": "We could not process that file. Please try again.", "code": "FILE_PROCESSING_ERROR"}), 500
 
-    elif request.is_json and request.json.get("text"):
-        text = str(request.json["text"]).strip()
+    elif isinstance(request.get_json(silent=True), dict) and request.get_json(silent=True).get("text"):
+        text = str(request.get_json(silent=True)["text"]).strip()
     elif request.form.get("text"):
         text = str(request.form["text"]).strip()
     else:
         return jsonify({"error": True, "message": "No file or text provided."}), 400
+
+    if len(text) > 500000:
+        return jsonify({"error": True, "message": "That is too much text for one go. Use the relevant pages only.", "code": "TOO_LARGE"}), 413
 
     if not text:
         return jsonify({"error": True, "message": "No readable text found."}), 422

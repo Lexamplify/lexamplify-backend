@@ -1,0 +1,150 @@
+{
+  "id": "vakalatnama",
+  "label": "Vakalatnama (authority to the advocate)",
+  "short": "Vakalatnama",
+  "category": "court",
+  "minutes": 2,
+  "review": {
+    "status": "unreviewed",
+    "note": "Fixed wording is a standard vakalatnama. It has not yet been reviewed by a practising advocate; some courts require their own prescribed form."
+  },
+  "statutes": [],
+  "notes": [
+    "Some High Courts and tribunals prescribe a particular vakalatnama form or court-fee stamp. Check the rules of the court where it will be filed."
+  ],
+  "slots": [
+    {
+      "id": "court_name",
+      "label": "Name of the court",
+      "group": "The case",
+      "type": "text",
+      "required": true,
+      "example": "Court of the Metropolitan Magistrate, Egmore, Chennai",
+      "from_case": "court"
+    },
+    {
+      "id": "case_ref",
+      "label": "Case type and number",
+      "group": "The case",
+      "type": "text",
+      "required": true,
+      "example": "CC No. 123/2026",
+      "from_case": "case_no"
+    },
+    {
+      "id": "case_title",
+      "label": "Title of the case",
+      "group": "The case",
+      "type": "text",
+      "required": true,
+      "example": "M/s Sundaram Agencies v. M/s Kumar Traders Pvt Ltd",
+      "from_case": "title"
+    },
+    {
+      "id": "client_name",
+      "label": "Client's full name",
+      "group": "The client",
+      "type": "name",
+      "required": true,
+      "example": "M/s Sundaram Agencies",
+      "from_case": "client_name"
+    },
+    {
+      "id": "client_capacity",
+      "label": "Client's role in the case",
+      "group": "The client",
+      "type": "text",
+      "required": true,
+      "example": "Complainant"
+    },
+    {
+      "id": "advocate_names",
+      "label": "Advocate(s) being appointed",
+      "group": "The advocate",
+      "type": "text",
+      "required": true,
+      "example": "Adv. Priya Raman"
+    },
+    {
+      "id": "advocate_enrolment",
+      "label": "Enrolment number(s) (optional)",
+      "group": "The advocate",
+      "type": "text",
+      "required": false,
+      "example": "MS/1234/2015"
+    },
+    {
+      "id": "place",
+      "label": "Place",
+      "group": "The date",
+      "type": "text",
+      "required": true,
+      "example": "Chennai"
+    },
+    {
+      "id": "signing_date",
+      "label": "Date",
+      "group": "The date",
+      "type": "date",
+      "required": true,
+      "example": "30 June 2026"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "title",
+      "text": "VAKALATNAMA"
+    },
+    {
+      "type": "center",
+      "bold": true,
+      "text": "IN THE {{court_name}}"
+    },
+    {
+      "type": "center",
+      "text": "{{case_ref}}"
+    },
+    {
+      "type": "center",
+      "text": "{{case_title}}"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "I/We, {{client_name}}, the {{client_capacity}} in the above matter, appoint and retain {{advocate_names}}, Advocate(s) (together the \"Advocate\"), to appear, act and plead for me/us in the above matter and in all proceedings connected with it, and to conduct, prosecute or defend it on my/our behalf."
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "I/We authorise the Advocate to file and sign applications, pleadings and documents, to take back documents, to appoint another advocate with my/our consent, and to receive money payable to me/us in the matter and give valid receipts for it."
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "I/We agree to accept as binding all acts done by the Advocate in good faith under this authority, and I/We shall not hold the Advocate responsible for any result of the case."
+    },
+    {
+      "type": "para",
+      "text": "Signed at {{place}} on {{signing_date|date}}."
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "{{client_name}}",
+        "({{client_capacity}})"
+      ]
+    },
+    {
+      "type": "para",
+      "text": "Accepted:"
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "{{advocate_names}}",
+        "Advocate",
+        "Enrolment No. {{advocate_enrolment}}"
+      ]
+    }
+  ]
+}

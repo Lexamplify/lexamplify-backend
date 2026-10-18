@@ -1,0 +1,199 @@
+{
+  "id": "general_notice",
+  "label": "General legal notice (demand or warning)",
+  "short": "Legal notice (general)",
+  "category": "notice",
+  "minutes": 4,
+  "review": {
+    "status": "unreviewed",
+    "note": "Fixed wording is a standard notice format. It has not yet been reviewed by a practising advocate."
+  },
+  "statutes": [],
+  "notes": [
+    "Some claims need a statutory notice period or a specific form (for example a notice to the Government under Section 80 of the Code of Civil Procedure, 1908, or a notice under Section 106 of the Transfer of Property Act, 1882). Check that a general notice is enough for your claim."
+  ],
+  "slots": [
+    {
+      "id": "sender_name",
+      "label": "Your client's name",
+      "group": "Your client",
+      "type": "name",
+      "required": true,
+      "example": "Mrs. Lakshmi Narayanan",
+      "from_case": "client_name"
+    },
+    {
+      "id": "sender_address",
+      "label": "Your client's address",
+      "group": "Your client",
+      "type": "address",
+      "required": true,
+      "example": "7, Lake View Road, Mylapore, Chennai - 600004"
+    },
+    {
+      "id": "advocate_name",
+      "label": "Your name, as the advocate issuing the notice",
+      "group": "Your client",
+      "type": "name",
+      "required": true,
+      "example": "Adv. Priya Raman"
+    },
+    {
+      "id": "advocate_enrolment",
+      "label": "Your Bar Council enrolment number",
+      "group": "Your client",
+      "type": "text",
+      "required": false,
+      "example": "MS/1234/2015"
+    },
+    {
+      "id": "advocate_address",
+      "label": "Your office address",
+      "group": "Your client",
+      "type": "address",
+      "required": false,
+      "example": "Chamber 5, High Court Campus, Chennai - 600104"
+    },
+    {
+      "id": "recipient_name",
+      "label": "Name of the person receiving the notice",
+      "group": "The other side",
+      "type": "name",
+      "required": true,
+      "example": "M/s Annai Builders",
+      "from_case": "opposite_party"
+    },
+    {
+      "id": "recipient_address",
+      "label": "Their address",
+      "group": "The other side",
+      "type": "address",
+      "required": true,
+      "example": "22, Anna Salai, Chennai - 600002"
+    },
+    {
+      "id": "subject",
+      "label": "Subject of the notice, in a few words",
+      "group": "The notice",
+      "type": "text",
+      "required": true,
+      "example": "non-delivery of flat as per agreement dated 3 January 2024"
+    },
+    {
+      "id": "facts",
+      "label": "What happened? Write one fact per line, in date order",
+      "group": "The notice",
+      "type": "longtext",
+      "required": true,
+      "example": "That my client booked flat no. B-204 under agreement dated 3 January 2024.\nThat possession was due on 30 June 2025 and has not been given."
+    },
+    {
+      "id": "demand",
+      "label": "What do you want the recipient to do?",
+      "group": "The notice",
+      "type": "text",
+      "required": true,
+      "example": "hand over possession of flat no. B-204 and pay the agreed delay compensation"
+    },
+    {
+      "id": "days",
+      "label": "Number of days you are allowing",
+      "group": "The notice",
+      "type": "number",
+      "required": true,
+      "example": "15"
+    },
+    {
+      "id": "consequence",
+      "label": "What will your client do if the recipient does not comply?",
+      "group": "The notice",
+      "type": "text",
+      "required": true,
+      "example": "my client shall be constrained to approach the appropriate court"
+    },
+    {
+      "id": "notice_date",
+      "label": "Date of this notice",
+      "group": "The notice",
+      "type": "date",
+      "required": true,
+      "example": "30 June 2026"
+    },
+    {
+      "id": "mode_of_service",
+      "label": "How the notice will be sent",
+      "group": "The notice",
+      "type": "text",
+      "required": false,
+      "example": "Registered Post A.D."
+    }
+  ],
+  "blocks": [
+    {
+      "type": "title",
+      "text": "LEGAL NOTICE"
+    },
+    {
+      "type": "right",
+      "when": [
+        "mode_of_service"
+      ],
+      "text": "{{mode_of_service}}"
+    },
+    {
+      "type": "right",
+      "text": "Date: {{notice_date|date}}"
+    },
+    {
+      "type": "para",
+      "text": "To,"
+    },
+    {
+      "type": "address",
+      "lines": [
+        "{{recipient_name}}",
+        "{{recipient_address}}"
+      ]
+    },
+    {
+      "type": "para",
+      "bold": true,
+      "text": "Subject: Legal notice regarding {{subject}}."
+    },
+    {
+      "type": "para",
+      "text": "Sir/Madam,"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "Under instructions from and on behalf of my client, {{sender_name}}, {{sender_address}} (\"my client\"), I serve upon you the following notice:"
+    },
+    {
+      "type": "numbered",
+      "each": "facts"
+    },
+    {
+      "type": "numbered",
+      "text": "That my client hereby calls upon you to {{demand}} within {{days}} days of receipt of this notice, failing which {{consequence}}, at your risk as to costs and consequences."
+    },
+    {
+      "type": "numbered",
+      "text": "That this notice is issued without prejudice to all other rights and remedies available to my client, all of which are reserved."
+    },
+    {
+      "type": "para",
+      "text": "Yours faithfully,"
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "{{advocate_name}}",
+        "Advocate",
+        "Enrolment No. {{advocate_enrolment}}",
+        "{{advocate_address}}",
+        "Counsel for {{sender_name}}"
+      ]
+    }
+  ]
+}

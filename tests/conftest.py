@@ -12,6 +12,9 @@ import time
 
 import pytest
 
+# Test apps must never copy real users out of the developer's lex_assistant.db (see services/legacy_user_migration.py).
+os.environ.setdefault("LEGACY_USER_MIGRATION", "off")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)

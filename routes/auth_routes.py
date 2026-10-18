@@ -453,9 +453,37 @@ def login_user():
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout_user():
+    _revoke_cookie_tokens()
     resp = jsonify({"message": "Logged out."})
     unset_jwt_cookies(resp)
     return resp, 200
+
+
+def _revoke_cookie_tokens():
+    """Record the session's access and refresh tokens as revoked so a copied cookie stops working."""
+    from datetime import datetime, timezone
+    from flask import request
+    from flask_jwt_extended import decode_token
+    from database import db
+    from models.revoked_token import RevokedToken
+    try:
+        for cookie in ("access_token_cookie", "refresh_token_cookie"):
+            raw = request.cookies.get(cookie)
+            if not raw:
+                continue
+            try:
+                payload = decode_token(raw, allow_expired=True)
+            except Exception:  # noqa: BLE001 - an invalid cookie has nothing to revoke
+                continue
+            jti = payload.get("jti")
+            exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc).replace(tzinfo=None)
+            if jti and not db.session.query(RevokedToken.id).filter_by(jti=jti).first():
+                db.session.add(RevokedToken(jti=jti, expires_at=exp))
+        RevokedToken.query.filter(RevokedToken.expires_at < datetime.utcnow()).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:  # noqa: BLE001 - signing out must never fail because bookkeeping did
+        db.session.rollback()
+        current_app.logger.exception("could not record revoked tokens")
 
 
 @auth_bp.route('/refresh', methods=['POST'])

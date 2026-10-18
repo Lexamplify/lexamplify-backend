@@ -1,0 +1,47 @@
+{
+  "id": "sale_deed",
+  "label": "Sale deed (immovable property)",
+  "short": "Sale deed",
+  "category": "agreement",
+  "minutes": 10,
+  "review": {"status": "unreviewed", "note": "Fixed clauses are a plain sale deed. A sale deed transfers title, so it must be reviewed by an advocate against the title documents before use."},
+  "statutes": ["Section 54, Transfer of Property Act, 1882", "Section 17, Registration Act, 1908"],
+  "notes": [
+    "A sale of immovable property of value ₹100 or more can be made only by a registered instrument (Section 54, Transfer of Property Act, 1882). Register this deed with the Sub-Registrar.",
+    "Stamp duty and registration fees vary by state and by property value. Check the guideline value before signing.",
+    "Describe the property exactly as in the title documents. This tool cannot check the title or look for encumbrances."
+  ],
+  "slots": [
+    {"id": "deed_date", "label": "Date of the deed", "group": "The deed", "type": "date", "required": true, "example": "1 September 2026"},
+    {"id": "place", "label": "Place of signing", "group": "The deed", "type": "text", "required": true, "example": "Coimbatore"},
+    {"id": "seller_name", "label": "Seller's full name", "group": "Seller (Vendor)", "type": "name", "required": true, "example": "Mr. K. Murugan"},
+    {"id": "seller_parentage", "label": "Seller's father's or husband's name, with the relation", "group": "Seller (Vendor)", "type": "text", "required": true, "example": "S/o Mr. Kandasamy"},
+    {"id": "seller_address", "label": "Seller's address", "group": "Seller (Vendor)", "type": "address", "required": true, "example": "45 Gandhi Street, Coimbatore - 641001"},
+    {"id": "buyer_name", "label": "Buyer's full name", "group": "Buyer (Purchaser)", "type": "name", "required": true, "example": "Ms. Anita Rao"},
+    {"id": "buyer_parentage", "label": "Buyer's father's or husband's name, with the relation", "group": "Buyer (Purchaser)", "type": "text", "required": true, "example": "D/o Mr. Venkat Rao"},
+    {"id": "buyer_address", "label": "Buyer's address", "group": "Buyer (Purchaser)", "type": "address", "required": true, "example": "9 Park Avenue, Bengaluru - 560001"},
+    {"id": "property_description", "label": "Description of the property (survey number, extent, boundaries)", "group": "The property", "type": "longtext", "required": true, "example": "Plot No. 12, Survey No. 45/2, Ganapathy Village, Coimbatore Taluk, measuring 2,400 sq. ft. Bounded: North by Road; South by Plot 13; East by Plot 11; West by Park."},
+    {"id": "title_source", "label": "How did the seller get the property? (document, date, registration number)", "group": "The property", "type": "longtext", "required": true, "example": "By sale deed dated 4 March 2012, registered as Document No. 812/2012 at the Sub-Registrar Office, Coimbatore."},
+    {"id": "encumbrances", "label": "Any mortgage, lien, litigation or claim on the property? Write 'None' if none", "group": "The property", "type": "text", "required": true, "example": "None"},
+    {"id": "sale_price", "label": "Sale price", "group": "Price and payment", "type": "amount", "required": true, "example": "45,00,000"},
+    {"id": "payment_details", "label": "How and when was the price paid? (cheque or transfer details)", "group": "Price and payment", "type": "longtext", "required": true, "example": "₹5,00,000 by RTGS on 10 August 2026 as advance and the balance by demand draft no. 123456 dated 1 September 2026."}
+  ],
+  "blocks": [
+    {"type": "title", "text": "SALE DEED"},
+    {"type": "para", "align": "justify", "text": "This Sale Deed is made at {{place}} on {{deed_date|date}} between {{seller_name}}, {{seller_parentage}}, residing at {{seller_address}} (the \"Vendor\"), and {{buyer_name}}, {{buyer_parentage}}, residing at {{buyer_address}} (the \"Purchaser\")."},
+    {"type": "heading", "text": "WHEREAS"},
+    {"type": "numbered", "text": "The Vendor is the owner of the property described in the Schedule below (the \"Property\"). The Vendor acquired the Property as follows: {{title_source}}"},
+    {"type": "numbered", "text": "The Vendor has agreed to sell, and the Purchaser has agreed to buy, the Property for {{sale_price|inr}} ({{sale_price|words}}) (the \"Sale Price\")."},
+    {"type": "heading", "text": "NOW THIS DEED WITNESSES AS FOLLOWS"},
+    {"type": "numbered", "text": "Payment. The Sale Price has been paid by the Purchaser to the Vendor as follows: {{payment_details}} The Vendor acknowledges receipt of the full Sale Price."},
+    {"type": "numbered", "text": "Transfer. In consideration of the Sale Price, the Vendor sells, transfers and conveys the Property to the Purchaser absolutely and forever, together with all rights attached to it."},
+    {"type": "numbered", "text": "Title and encumbrances. The Vendor states that the Vendor has the right to sell the Property. Mortgages, liens, litigation or claims on the Property, if any: {{encumbrances}}."},
+    {"type": "numbered", "text": "Possession. The Vendor has handed over vacant and peaceful possession of the Property to the Purchaser on the date of this Deed."},
+    {"type": "numbered", "text": "Further assurance. The Vendor shall, at the Purchaser's cost, sign any further document reasonably needed to give effect to this Deed."},
+    {"type": "heading", "text": "SCHEDULE OF PROPERTY"},
+    {"type": "para", "align": "justify", "text": "{{property_description}}"},
+    {"type": "para", "text": "The Vendor and the Purchaser have signed this Deed on the date first written above, in the presence of the witnesses named below."},
+    {"type": "table", "header": true, "rows": [["Vendor", "Purchaser"], ["{{seller_name}}", "{{buyer_name}}"], ["Signature: ____________________", "Signature: ____________________"]]},
+    {"type": "table", "header": true, "rows": [["Witness 1", "Witness 2"], ["Name and address:", "Name and address:"], ["Signature: ____________________", "Signature: ____________________"]]}
+  ]
+}

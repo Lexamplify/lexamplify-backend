@@ -1342,8 +1342,18 @@ def _proxy_validate_url(url: str) -> tuple[bool, str]:
     if p.scheme not in ('http', 'https'):
         return False, ''
 
+    # Parsers disagree about backslashes, userinfo ("host@") and control characters, which is how guards like
+    # this one get bypassed. A real court URL never needs any of them, so refuse the whole URL.
+    if '\\' in url or any(ord(c) < 33 or ord(c) == 127 for c in url) or p.username is not None or p.password is not None:
+        return False, ''
+    try:
+        if p.port not in (None, 80, 443):
+            return False, ''
+    except ValueError:
+        return False, ''
+
     hostname = (p.hostname or '').lower().strip()
-    if not hostname:
+    if not hostname or not hostname.isascii():
         return False, ''
 
     for domain in ALLOWED_DOMAINS:
