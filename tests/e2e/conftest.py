@@ -73,7 +73,7 @@ def stack():
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            p.chromium.launch().close()
+            getattr(p, os.environ.get("E2E_BROWSER", "chromium")).launch().close()
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"Playwright Chromium is not installed: {exc}")
     env = {**os.environ, "PORT": str(BACK_PORT), "E2E_LIMITS": os.environ.get("E2E_LIMITS", "")}
@@ -100,7 +100,7 @@ def stack():
 def browser(stack):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-        b = p.chromium.launch()
+        b = getattr(p, os.environ.get("E2E_BROWSER", "chromium")).launch()     # E2E_BROWSER=firefox or webkit
         yield b
         b.close()
 
