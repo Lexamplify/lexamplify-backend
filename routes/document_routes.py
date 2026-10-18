@@ -259,11 +259,22 @@ def auto_draft():
         # different callers (old and new UI panels) read different keys
         # for the identical generated text, so all three ship together
         # rather than requiring each caller to agree on one key first.
+        # Check the model's draft against what the advocate actually supplied: every amount, date, case number, ID, name and
+        # statute citation that is not in the instructions or reference text is reported so the screen can flag it.
+        unverified = []
+        try:
+            from utils.draft_engine import verifier as _verifier
+            report = _verifier.verify(generated_text, {"instructions": instructions, "context": context, "precedent": precedent})
+            unverified = [{"kind": i["kind"], "text": i["text"][:120], "reason": i["reason"]} for i in report["issues"][:25]]
+        except Exception as exc:  # noqa: BLE001 - checking must never stop a draft from being returned
+            current_app.logger.warning(f"[Auto-Draft] verification skipped: {exc}")
         return jsonify({
             "status": "success",
             "draft": generated_text,
             "clause": generated_text,
             "content": generated_text,
+            "unverified": unverified,
+            "unverified_count": len(unverified),
         }), 200
     except Exception as e:
         # .exception() (not .error()) captures the full traceback, not just

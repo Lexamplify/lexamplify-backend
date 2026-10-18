@@ -357,3 +357,37 @@ def test_capture_screens_for_the_review_pack(advocate, name, width, height):
     page.get_by_role("button", name="Looks good, continue").click()
     page.get_by_role("heading", name="Your draft is ready").wait_for()
     shot("6-download")
+
+
+def test_an_earlier_version_can_be_opened_and_chosen_again(advocate):
+    page = advocate
+    _open_s138(page)
+    _fill(page, S138)
+    page.get_by_role("button", name="Review the draft").click()
+    page.get_by_role("button", name="Looks good, continue").click()
+    page.get_by_role("heading", name="Your draft is ready").wait_for()
+    page.get_by_role("button", name="Do another").wait_for()
+    page.get_by_text("This draft is saved").wait_for()
+    # go back, change the amount, and reach the download step again: that makes a second version
+    page.get_by_role("button", name="Go back and change something").click()
+    page.get_by_role("button", name="Back to details").click()
+    page.locator("#dw-f-cheque_amount").fill("9,99,999")
+    page.get_by_role("button", name="Review the draft").click()
+    page.get_by_role("heading", name="Check the draft").wait_for()
+    assert "9,99,999" in page.locator(".dw-page").inner_text()
+    page.get_by_role("button", name="Looks good, continue").click()
+    page.get_by_role("heading", name="Your draft is ready").wait_for()
+    page.get_by_text(re.compile(r"Earlier versions \(1\)")).wait_for(timeout=15000)
+    page.get_by_text(re.compile(r"Earlier versions")).click()
+    page.get_by_role("button", name=re.compile("^Saved")).first.click()
+    page.get_by_role("heading", name="An earlier version").wait_for()
+    old = page.locator(".dw-page").inner_text()
+    assert "4,75,000" in old and "9,99,999" not in old
+    page.get_by_role("button", name="Use this version").click()
+    page.get_by_role("heading", name="Your draft is ready").wait_for()
+    with page.expect_download() as dl:
+        page.get_by_role("button", name=re.compile("Download Word")).click()
+    import tempfile, os
+    path = os.path.join(tempfile.mkdtemp(), "v.docx")
+    dl.value.save_as(path)
+    assert "4,75,000" in _docx_text(open(path, "rb").read()) and "9,99,999" not in _docx_text(open(path, "rb").read())

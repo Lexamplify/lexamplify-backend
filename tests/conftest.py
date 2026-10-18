@@ -460,3 +460,17 @@ def firm(practice):
     asha.member_id = asha.ok(asha.get("/me"))["member"]["id"]
     h.team = team
     return h
+
+
+@pytest.fixture(autouse=True)
+def _restore_the_shared_rate_limiter():
+    """Several tests switch the process-wide rate limiter off so they can sign in many times. Left off, it silently disabled
+    the tests that check the limits (they passed alone and failed in the full run). Put it back after every test."""
+    from utils.limiter import limiter
+    before = limiter.enabled
+    yield
+    limiter.enabled = before
+    try:
+        limiter.reset()
+    except Exception:  # noqa: BLE001 - nothing to reset before the limiter was initialised
+        pass

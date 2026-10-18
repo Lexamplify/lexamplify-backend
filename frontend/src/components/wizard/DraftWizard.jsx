@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
-  blocksToHtml, blocksToText, createSession, deleteSession, downloadDocument, extractFacts, getSession, getType,
+  blocksToHtml, blocksToText, createSession, deleteSession, downloadDocument, extractFacts, getSession, getType, getVersion,
   listTypes, readFileText, renderDraft, saveSession,
 } from '../../services/draftApi.js';
 
@@ -166,6 +166,8 @@ export default function DraftWizard() {
   const [staleTab, setStaleTab] = useState(false);
   const [restorable, setRestorable] = useState(null);   // unsaved work found in this browser
   const [restoredNote, setRestoredNote] = useState('');
+  const [versions, setVersions] = useState([]);          // earlier downloads of this draft (the last 10 are kept)
+  const [viewVersion, setViewVersion] = useState(null);  // {when, document} while an earlier version is open
   const [fromNote, setFromNote] = useState(null);       // {label, slots[]}: facts handed over from another screen
   const factsRef = useRef({});
   const typeRef = useRef({ typeId: '', def: null });   // read by the debounced save, which outlives the render that queued it
@@ -181,11 +183,13 @@ export default function DraftWizard() {
   useEffect(() => () => { alive.current = false; clearTimeout(saveTimer.current); }, []);
 
   // ── load the list of document types, and resume a saved draft if the address has one ──
+  const [typesTry, setTypesTry] = useState(0);
   useEffect(() => {
     let live = true;
+    setTypesError('');
     listTypes().then((t) => { if (live) setTypes(t); }).catch((e) => { if (live) { setTypes([]); setTypesError(e.message); } });
     return () => { live = false; };
-  }, []);
+  }, [typesTry]);
 
   useEffect(() => {
     const h = location.state && location.state.prefill;
@@ -212,6 +216,7 @@ export default function DraftWizard() {
         }
         factsRef.current = f;
         setTypeId(s.type); setDef(d); setFacts(f); setSource('manual');
+        setVersions(s.versions || []);
         setStep(s.step === 'review' || s.step === 'download' ? 'review' : 'details');
       } catch (e) {
         if (live) { setError(e.message || 'We could not open that draft.'); setStep('choose'); }
@@ -301,6 +306,7 @@ export default function DraftWizard() {
       factsRef.current = start;
       setTypeId(id); setDef(d); setFacts(start); setProv(np); setSource(handed ? 'manual' : ''); setDoc(null); sidRef.current = null; versionSaved.current = false;
       setFromNote(handed ? { label: handed.label, slots: Object.keys(start) } : null);
+      setVersions([]); setViewVersion(null);
       if (handed) { typeRef.current = { typeId: id, def: d }; writeBackup(null, id, start, false); queueSave(start, 'details'); }
       setStep('details');
     } catch (e) { setError(e.message); } finally { setBusy(''); }
@@ -323,7 +329,11 @@ export default function DraftWizard() {
     } catch (e) { setError(e.message); } finally { setBusy(''); }
   };
 
-  const setFact = (id, value) => {
+  const setFact = (id, rawValue) => {
+    // The page cannot be made to hold more than the server will keep: a huge paste is cut to the field's limit.
+    const slot = (def?.slots || []).find((x) => x.id === id);
+    const limit = slot && slot.type === 'longtext' ? 2000 : slot && slot.type === 'address' ? 400 : 300;
+    const value = String(rawValue == null ? '' : rawValue).slice(0, limit);
     const n = { ...factsRef.current, [id]: value };
     factsRef.current = n;
     setFacts(n);
@@ -428,7 +438,9 @@ export default function DraftWizard() {
     setStep('download');
     if (!versionSaved.current && sidRef.current && doc) {
       versionSaved.current = true;
-      saveSession(sidRef.current, { document: doc, status: 'done', step: 'download', note: 'Downloaded' }).catch(() => { versionSaved.current = false; });
+      saveSession(sidRef.current, { document: doc, status: 'done', step: 'download', note: 'Reviewed' })
+        .then((s) => { if (alive.current) setVersions(s.versions || []); })
+        .catch(() => { versionSaved.current = false; });
     }
   };
 
@@ -442,6 +454,20 @@ export default function DraftWizard() {
     } catch (e) { setError(e.message); if (e.sessionExpired) setExpired(true); } finally { setBusy(''); }
   };
 
+  const when = (iso) => {
+    try { return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(/Z|[+-]\d\d:?\d\d$/.test(iso || '') ? iso : `${iso}Z`)); } catch { return ''; }
+  };
+  const openVersion = async (v) => {
+    if (busy) return;
+    setBusy('version'); setError('');
+    try { const r = await getVersion(sidRef.current, v.id); setViewVersion({ when: when(r.created_at || v.created_at), document: r.document }); }
+    catch (e) { setError(e.message); } finally { setBusy(''); }
+  };
+  const useVersion = () => {
+    if (!viewVersion) return;
+    setDoc(viewVersion.document); versionSaved.current = false; setViewVersion(null);
+  };
+
   const openInEditor = () => navigate('/auto-draft', { state: { openDraft: { html: blocksToHtml(doc.blocks), text: blocksToText(doc.blocks), title: doc.title } } });
 
   const startOver = async () => {
@@ -450,6 +476,7 @@ export default function DraftWizard() {
     sidRef.current = null; dirty.current = false;
     if (id) { try { await deleteSession(id); } catch { /* already gone */ } }
     factsRef.current = {};
+    setVersions([]); setViewVersion(null);
     try { localStorage.removeItem(BACKUP_KEY); } catch { /* storage may be blocked */ }
     setFacts({}); setProv({}); setDoc(null); setTypeId(''); setDef(null); setSource(''); setStep('choose'); setConfirmReset(false); setSaveState('idle');
     navigate('/draft', { replace: true });
@@ -527,7 +554,11 @@ export default function DraftWizard() {
             </div>
           )}
           {types === null && <><div className="dw-skel" style={{ height: 120 }} /></>}
-          {typesError && <div className="dw-alert" role="alert">{typesError}</div>}
+          {typesError && (
+            <div className="dw-alert" role="alert">
+              {typesError} <button type="button" className="dw-link" onClick={() => { setTypes(null); setTypesTry((n) => n + 1); }}>Try again</button>
+            </div>
+          )}
           <div className="dw-cards">
             {featured.map((t) => (
               <button key={t.id} type="button" className="dw-card" onClick={() => chooseType(t.id)} disabled={Boolean(busy)}>
@@ -684,7 +715,19 @@ export default function DraftWizard() {
         </>
       )}
 
-      {!loading && step === 'download' && doc && (
+      {!loading && step === 'download' && doc && viewVersion && (
+        <>
+          <h1 id="dw-h" ref={headingRef} tabIndex={-1}>An earlier version</h1>
+          <p className="dw-lede">Saved {viewVersion.when}. You are only looking at it; your current draft is unchanged until you choose to use this one.</p>
+          <article className="dw-page" aria-label="Earlier version"><Blocks blocks={viewVersion.document.blocks || []} /></article>
+          <div className="dw-actions">
+            <div className="l"><button type="button" className="dw-btn" onClick={() => setViewVersion(null)}>Back to my draft</button></div>
+            <div className="r"><button type="button" className="dw-btn primary" onClick={useVersion}>Use this version</button></div>
+          </div>
+        </>
+      )}
+
+      {!loading && step === 'download' && doc && !viewVersion && (
         <>
           <h1 id="dw-h" ref={headingRef} tabIndex={-1}>Your draft is ready</h1>
           <p className="dw-lede">{doc.unresolved.length ? `${doc.unresolved.length} blank detail${doc.unresolved.length === 1 ? ' is' : 's are'} highlighted in yellow in the file. Fill ${doc.unresolved.length === 1 ? 'it' : 'them'} in before use.` : 'Every detail is filled in. Read it once more before you use it.'}</p>
@@ -695,6 +738,18 @@ export default function DraftWizard() {
             <button type="button" className="dw-btn" onClick={startOver}>Do another</button>
           </div>
           {exportNote && <p role="status" className="dw-hint">{exportNote}</p>}
+          {versions.length > 1 && (
+            <details className="dw-more">
+              <summary>Earlier versions ({versions.length - 1})</summary>
+              <div className="dw-list" style={{ gridTemplateColumns: '1fr' }}>
+                {versions.slice(1).map((v) => (
+                  <button key={v.id} type="button" className="dw-row" onClick={() => openVersion(v)} disabled={Boolean(busy)}>
+                    <span>Saved {when(v.created_at)}</span><small>Open</small>
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
           <p className="dw-hint">This draft is saved. <Link to="/start">Back to Start</Link> · <button type="button" className="dw-link" onClick={() => setStep('review')}>Go back and change something</button></p>
         </>
       )}

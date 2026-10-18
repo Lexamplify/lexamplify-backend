@@ -68,6 +68,7 @@ export const listSessions = () => request('/api/drafts/sessions').then((d) => d.
 export const createSession = (payload) => request('/api/drafts/sessions', { method: 'POST', body: payload });
 export const getSession = (id) => request(`/api/drafts/sessions/${id}`);
 export const saveSession = (id, payload) => request(`/api/drafts/sessions/${id}`, { method: 'PUT', body: payload });
+export const getVersion = (sid, vid) => request(`/api/drafts/sessions/${sid}/versions/${vid}`);
 export const deleteSession = (id) => request(`/api/drafts/sessions/${id}`, { method: 'DELETE' });
 export const getFlag = (key) => request(`/api/drafts/flags/${key}`).then((d) => d.value);
 export const setFlag = (key, value) => request(`/api/drafts/flags/${key}`, { method: 'PUT', body: { value } });

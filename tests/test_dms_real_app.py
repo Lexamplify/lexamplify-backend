@@ -41,6 +41,8 @@ def real(tmp_path_factory):
     importlib.reload(app_module)                                     # rebinds app.py's module-level `db` to this folder
     flask_app = app_module.create_app()
     flask_app.config.update(TESTING=True)
+    from utils.limiter import limiter
+    limiter.enabled = True                                           # an earlier test file may have left the shared limiter off
     yield flask_app, app_module
     try:
         app_module._DMS_BP.worker.stop(timeout=10)

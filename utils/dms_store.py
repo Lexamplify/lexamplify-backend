@@ -203,14 +203,56 @@ def open_plain(key, enc=False):
         return
     tmp_dir = os.path.join(storage_root(), "_incoming")
     os.makedirs(tmp_dir, exist_ok=True)
+    _sweep_decrypted(tmp_dir)
     fd, tmp = tempfile.mkstemp(prefix="dec_", dir=tmp_dir)
     os.close(fd)
     try:
         _decrypt_to(src, tmp)
         yield tmp
     finally:
-        with contextlib.suppress(OSError):
-            os.remove(tmp)
+        _remove_decrypted(tmp)
+
+
+_PENDING_DECRYPTED = []
+
+
+def _remove_decrypted(path):
+    """Delete a decrypted temporary copy. Windows refuses while a reader (PDF library, image library) still holds the file
+    open, and a failed delete used to be ignored, leaving a PLAINTEXT copy of an encrypted document on disk. Retry after
+    letting go of dead handles; if it still cannot be deleted (a response may still be streaming it), delete it on the next
+    call instead of forgetting it. It is never truncated: that would cut off a download that is still being sent."""
+    import gc
+    import time
+    for attempt in range(6):
+        try:
+            os.remove(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            gc.collect()
+            time.sleep(0.05 * (attempt + 1))
+    _PENDING_DECRYPTED.append(path)
+
+
+def _sweep_decrypted(tmp_dir, max_age=600):
+    """Remove leftovers: blanked files waiting for deletion, and any decrypted copy older than ten minutes (a crash)."""
+    import time
+    for p in list(_PENDING_DECRYPTED):
+        try:
+            os.remove(p)
+            _PENDING_DECRYPTED.remove(p)
+        except FileNotFoundError:
+            _PENDING_DECRYPTED.remove(p)
+        except OSError:
+            pass
+    now = time.time()
+    with contextlib.suppress(OSError):
+        for name in os.listdir(tmp_dir):
+            full = os.path.join(tmp_dir, name)
+            if name.startswith("dec_") and now - os.path.getmtime(full) > max_age:
+                with contextlib.suppress(OSError):
+                    os.remove(full)
 
 
 def remove(key, enc=False):

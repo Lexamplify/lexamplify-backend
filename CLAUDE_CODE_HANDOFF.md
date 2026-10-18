@@ -150,18 +150,22 @@ Also verify the dashboard-to-tool handoff (`moduleHandoff.js`) into Auto-Draft a
 
 ---
 
-## 7. Known problems (not yet fixed; investigate and fix or remove)
+## 7. Known problems (state after Part 2)
 
-1. `VaultView` search and citation resolution call `http://localhost:8001` (a dev-only sidecar). They fail in production. Wire to the real backend or remove.
-2. The Case Vault brief in `CaseWorkspace.jsx` hardcodes demo matters (for example "Sharma Textiles vs SBI"). This violates the no-random-data rule. Replace with real case data or an honest empty state.
-3. eCourts sync is not really connected; the stub returns 501. Make the UI say so plainly, or implement it properly.
-4. Existing accounts cannot use mobile sign-in because their phone is unverified (OTP is on hold).
-5. MSG91 widget SMS carries MSG91's default sender text until the owner's own DLT is registered; widget mode cannot cap SMS sends per number server-side.
-6. Two rate-limit tests (DMS, Practice) fail only in the full suite run; `test_demo_pdfs.py` needs the `DEMO_DIR` setting.
-7. Playbook text, "Quick Provision Insert Modifiers" and other studio chips contain legal assertions that were not audited for accuracy. Have a lawyer review them.
-8. "Request type" misclassification: for example "reply to a legal notice" is classified as a notice. Add a reply-to-notice question set.
-9. The real LLM output was never tested in the sandbox (no key). Run realistic prompts against the real model and read the results critically.
-10. Several large components are untested at unit level (AutoDraftWorkspace, ContractAnalyzer). Add tests as you touch them.
+Fixed in Part 2: the localhost:8001 sidecar calls, the hardcoded demo matters, fake conflict check, fake contract-analysis results, the rate-limit test order problem, cross-user data access, logout not ending the session. See `docs/RED_TEAM_REPORT.md` (62 findings).
+
+Still open:
+1. eCourts sync is not really connected; the stub returns 501 (UI says so).
+2. Existing accounts cannot use mobile sign-in because their phone is unverified (OTP is on hold).
+3. MSG91 widget SMS carries MSG91's default sender text until the owner's own DLT is registered.
+4. Playbook text and studio chips contain legal assertions nobody has audited. The 11 draft templates also need an advocate's review (Mohan's checklist).
+5. The real LLM was never run (no key). Extraction from files, contract analysis and free-writing depend on it. Run `docs/DEPLOY_STEPS.md` step 4.2 and `RUN_REAL_LLM=1 REAL_GROQ_API_KEY=... pytest tests/test_corpus.py`.
+6. Firefox, Safari, Lighthouse, staging deploy and Google sign-in under the strict CSP in `firebase.json` are unverified.
+7. `npm audit`: 36 vulnerabilities (3 high); `npm audit fix` not applied. Python packages not audited (pip-audit not installed).
+8. Render persistent disk for the SQLite files (Practice, Case Vault, Document Hub): unconfirmed.
+9. Court proxy serves government HTML from the API origin (accepted risk #19).
+10. `tests/test_demo_pdfs.py` does not exist in the repo; ignore the mention in older notes.
+11. Older screens (sidebar, analyzer workbench) were not fully accessibility-audited.
 
 ---
 
@@ -170,8 +174,10 @@ Also verify the dashboard-to-tool handoff (`moduleHandoff.js`) into Auto-Draft a
 ```bash
 # backend
 python -m pip install -r requirements.txt
-python -m pytest tests -q --ignore=tests/test_demo_pdfs.py
-python -m pytest tests/test_usable_flow.py -q
+python -m pytest tests -q --ignore=tests/e2e        # backend (about 12 minutes)
+E2E_REBUILD=1 python -m pytest tests/e2e -q          # real browser, real backend, strict CSP (about 5 minutes; Chromium only)
+python scripts/smoke.py https://<backend> https://<frontend>   # after a deploy; needs SMOKE_EMAIL / SMOKE_PASSWORD
+python scripts/scan_secrets.py                        # secrets in files and history
 
 # frontend
 cd frontend
@@ -198,3 +204,18 @@ Test isolation tip: set `DATABASE_URL=sqlite:///<tmp>/test.db` and `JWT_SECRET_K
 - A list of anything still risky, stated plainly.
 
 Start with step 1 of the prompt in section 1 and tell me the baseline before you change anything.
+
+
+---
+
+## 10. Part 2 outcome (read this first next time)
+
+Done: all phases 0 to 8 except the items in section 7 that need your keys, servers or permission. What exists: Start page; 4-step drafting wizard (`utils/draft_engine`, `utils/doc_types/*.json`, `routes/draft_engine_routes.py`, `frontend/src/components/wizard/DraftWizard.jsx`); honest Contract Analyzer; real conflict check (`utils/name_match.py`, `utils/conflict_check.py`); per-user data ownership (`utils/tenancy.py`); audit trail; request ids and one error envelope; strict CSP; upload guard.
+
+Decisions made: drafts are deterministic fixed text plus the advocate's facts (no AI in the s.138 path); anything unknown stays a visible `[Bracketed Field: ...]`; extracted values are accepted only if their quote literally appears in the source; the API gate stays default-deny; legacy rows with no owner go to the earliest account.
+
+Docs: `docs/BASELINE.md` (before and after), `docs/PRODUCT_MAP.md`, `docs/RED_TEAM_REPORT.md`, `docs/WALKTHROUGH.md`, `docs/REPORT_FOR_YASHRAJ.md`, `docs/MOHAN_TEST_CHECKLIST.md`, `docs/DEPLOY_STEPS.md`.
+
+Gotchas: on Windows write test or script files with the editor tool, not shell heredocs (backslashes are unescaped). Test apps must be built with `tests/helpers_app.make_app` so they do not touch `lex_assistant.db`. Phone OTP is untouched.
+
+Open test issue: `tests/test_dms_real_app.py::test_the_hub_limit_is_per_user_and_never_counts_preflights` fails only in a full-suite run (passes alone). Cause is the process-wide flask-limiter registry; fix by giving that module its own process or limiter.

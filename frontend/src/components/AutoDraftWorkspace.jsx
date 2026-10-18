@@ -100,6 +100,7 @@ export default function AutoDraftWorkspace() {
   const [draftStep, setDraftStep] = useState(0);
   const [draftProgress, setDraftProgress] = useState(0);
   const [draftError, setDraftError] = useState('');
+  const [draftWarnings, setDraftWarnings] = useState([]);   // details in the AI draft that were not in what the advocate gave
   const [vaultDocs, setVaultDocs] = useState([]);
   const [selectedContextMode, setSelectedContextMode] = useState('active_contract');
   const [draftDepth, setDraftDepth] = useState('comprehensive');
@@ -724,6 +725,7 @@ export default function AutoDraftWorkspace() {
         setAutoDraftHtml('');
         setAutoDraftVersion((v) => v + 1);
         setActiveDispute(null);
+        setDraftWarnings(Array.isArray(data.unverified) ? data.unverified : []);
         // A freshly synthesized draft replaces the canvas wholesale — drop
         // the old scratchpad snapshot so a stale one can't rehydrate over
         // this new draft if the component remounts before the debounced
@@ -1604,6 +1606,15 @@ export default function AutoDraftWorkspace() {
                     onChange={(e) => setAutoDraftPrompt(e.target.value)}
                   />
                   {draftError && <div style={{ fontSize: '12.5px', color: '#EF4444', marginTop: '6px' }}>{draftError}</div>}
+                  {draftWarnings.length > 0 && (
+                    <div role="alert" style={{ marginTop: 8, padding: '10px 12px', border: '1px solid var(--accent)', borderRadius: 8, background: 'var(--paper-2)', fontSize: 12.5, lineHeight: 1.5 }}>
+                      <b>{draftWarnings.length} detail{draftWarnings.length === 1 ? '' : 's'} in this draft {draftWarnings.length === 1 ? 'was' : 'were'} not in what you gave us.</b> The AI may have made {draftWarnings.length === 1 ? 'it' : 'them'} up. Check each before use:
+                      <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                        {draftWarnings.slice(0, 8).map((w, i) => <li key={i}>{w.kind}: “{w.text}”</li>)}
+                      </ul>
+                      <button type="button" className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => setDraftWarnings([])}>Dismiss</button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <span className="field-label">Quick Provision Insert Modifiers</span>

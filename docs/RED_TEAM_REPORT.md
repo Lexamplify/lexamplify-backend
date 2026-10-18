@@ -25,7 +25,7 @@ This file is updated after every phase. Current state: **Phases 0 to 6 attacked 
 | 15 | 2 | Seeded 9 invented facts into generated text: amount, date, case number, two names, PAN, mobile, a section that does not exist in the BNS, a made-up Act | Verifier flags all 9 and reports no false alarm on the real facts | n/a | **Verified** |
 | 16 | 2 | Checked the PDF export of an amount | The rupee sign was silently dropped by fonts that lack it | Medium | **Fixed** (font chosen by glyph coverage; DejaVu Serif bundled in `static/fonts`) |
 | 17 | 2 | Verifier on multi-line text | Names matched across line breaks, so signature lines were flagged as unknown names | Low | **Fixed** |
-| 18 | 2 | Ran the "isolated" test apps | Each one printed `migrated 10 legacy user(s) from lex_assistant.db`: tests read the developer's real database file | Low | **Open** (test hygiene; the migration should be off under test) |
+| 18 | 2 | Ran the "isolated" test apps | Each one printed `migrated 10 legacy user(s) from lex_assistant.db`: tests read the developer's real database file | Low | **Fixed** (`LEGACY_USER_MIGRATION=off` and a temp working folder in every Part 2 test app) |
 | 19 | 2 | Read the court proxy | Proxied government HTML is served from the API origin with its CSP removed, so a script on a compromised `*.gov.in` page could call the API as the signed-in user (it can read the CSRF cookie). The user's own JWT cookies are correctly not forwarded upstream. | Medium | **Accepted risk for now.** A sandbox CSP would break AJAX court pages that I cannot test offline. Recommend testing `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups` on staging. |
 
 | 20 | 2 | Ran Practice tests through the real app and noticed a 409 on the very first user | Test apps opened the developer's real `lex_assistant.db` (Practice stores its data there by a working-directory path), so test users collided with real Practice data and the Practice reminder scheduler started against it. The same path made an earlier e2e run use the developer's real GROQ/Pinecone/ZenRows keys from `.env`. | High (test hygiene, real data and money) | **Fixed.** Test apps run from a temp folder, scheduler off, legacy-user copy off, and every paid API key is blanked. |
@@ -68,6 +68,26 @@ This file is updated after every phase. Current state: **Phases 0 to 6 attacked 
 | 55 | 5 | Measured text contrast on the Start page, wizard and conflict page in both themes | The shared muted text colour was 2.85:1 (light) and 3.4:1 (dark); the header capsule text and orange buttons in the dark theme were 3.0 to 3.4:1; a heading level was skipped | Medium | **Fixed** (muted and accent text now pass 4.5:1; dark-theme text on orange is dark ink). Applies app-wide because the colours are shared tokens. |
 | 56 | 5 | Checked the deployed headers | The Content-Security-Policy only said `frame-ancestors`, so an injected script could run | Medium | **Fixed in `firebase.json`**: `script-src 'self' https://accounts.google.com`, no inline scripts, no objects. All 40 browser tests run under exactly this policy with no violation. **Not verified on staging:** Google sign-in, which I cannot exercise here. |
 | 57 | 5 | Checked that two tabs and refresh cannot corrupt the legacy ownership claim | Rows with no owner are claimed once by the earliest account; nobody else ever sees them | n/a | **Verified** (test) |
+
+| 58 | 7 | Studio "Generate draft" (older free-writing screen) with a model that invents an amount | The invented figure reached the editor with no warning | High | **Fixed** (every studio draft goes through the same fact-checker; `unverified` list shown as a banner; `tests/test_draft_verification.py`) |
+| 59 | 7 | Document Hub label PDFs and bundle temp files on Windows | Decrypted temp files left behind; scan upload could truncate a file | Medium | **Fixed** (retrying removal, never truncates, PDF opened from memory) |
+| 60 | 7 | Dropped network, sleeping database, slow server, expired session, huge paste, back button, HTML error page, 375 px with 300-character names (`tests/e2e/test_chaos_e2e.py`) | Document list had no way to retry after a failed load | Medium | **Fixed** ("Try again" button). All other cases: plain message, no lost answers. |
+| 61 | 7 | Opened an earlier saved version and tried to use it | No way to see old versions | Low | **Fixed** (viewer plus "Use this version") |
+| 62 | 7 | Full test suite run in one process, in a different order | Three rate-limit and QR tests failed only in the full run because an earlier file left the shared rate limiter off | Medium (false confidence) | **Fixed** (those suites switch the limiter on themselves; QR check tries several scales) |
+
+## Final lists
+
+**Fixed:** 53 of the 62 findings (the rest are "Verified" checks that found nothing, and the accepted risk #19) (see the Status column; every Critical and High is fixed).
+
+**Accepted risk:**
+- #19 Court proxy: government HTML served from the API origin. Reduced by the URL guard; removing it needs the proxy moved to a separate origin. Decide with Yashraj.
+- Word and PDF were verified by reading the files back, not by opening Word.
+- Templates are not yet reviewed by an advocate (shown on screen).
+
+**Still open (none Critical or High):**
+- Older test files outside Part 2 that build the app directly (not through `tests/helpers_app.py`) may still read the developer's real `lex_assistant.db`.
+- npm audit: 36 vulnerabilities (3 high, in the text editor and router). Fix is inside allowed ranges; not applied without permission.
+- Not tested: real model, Firefox, Safari, Lighthouse, staging, Google sign-in under the new CSP, Python package audit, Render persistent disk.
 
 ## Still to attack (not yet done)
 Rate-limit and brute-force abuse beyond sign-in, file-upload attacks on the other upload routes (Document Hub, vault, letterheads), the court proxy's script isolation (accepted risk #19), anything that needs a real model or a deployed environment.

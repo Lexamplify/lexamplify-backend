@@ -46,6 +46,7 @@ def test_a_cited_case_number_does_not_pull_the_document_onto_that_case(firm):
 
 # ── restart while processing ─────────────────────────────────────────────────────────
 import os
+import pytest
 import subprocess
 import sys
 import time
@@ -59,6 +60,7 @@ def _dead_pid():
     return p.pid
 
 
+@pytest.mark.skipif(os.name != "posix", reason="a dead owner process is detected on POSIX only, by design (see utils/dms_worker._owner_is_dead); on Windows the heartbeat decides. Production (Linux) runs this.")
 def test_restart_requeues_a_job_left_running_by_a_dead_process_but_not_a_live_one(hub):
     from utils import dms_index as I, dms_worker as W
     a = hub.client(1)

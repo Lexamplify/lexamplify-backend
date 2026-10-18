@@ -264,7 +264,9 @@ def mount(bp, h, api):
                 except ImportError:  # pragma: no cover
                     import fitz
                 try:
-                    doc = fitz.open(dest)
+                    with open(dest, "rb") as fh:
+                        raw_pdf = fh.read()
+                    doc = fitz.open(stream=raw_pdf, filetype="pdf")      # from memory: opening the path left it locked on Windows after a refusal
                 except Exception:
                     raise h.ApiError("That PDF could not be opened.", 415)
                 try:

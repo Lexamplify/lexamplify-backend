@@ -30,3 +30,9 @@ The run ends with asyncio "Event loop is closed" noise from an HTTPS client left
 
 ## Not measured in the baseline
 Real-model output (no key), browser tests (Playwright), Lighthouse, deploy.
+
+## After Part 2 (final runs)
+- Backend (`pytest tests --ignore=tests/e2e`): **709 passed, 9 skipped, 1 failed** (12 min). The one failure, `test_dms_real_app::test_the_hub_limit_is_per_user...`, passes alone and with its neighbours; it fails only in the full-suite order (the shared rate-limiter registry keeps a limit from an earlier test app). A previous full run had 3 such order-dependent failures; two were fixed. Baseline was 701 passed / 6 failed on a smaller suite.
+- Browser tests (`tests/e2e`, strict CSP): **56 passed**.
+- Frontend unit tests: **74 passed** (baseline: 26 failed of 79; stale suites replaced). Build passes.
+- Flagship s.138 notice x100: 0 failures. Cross-tenant route walk: 313 routes, 0 leaks, 0 server errors. Secret scan: 0 findings.

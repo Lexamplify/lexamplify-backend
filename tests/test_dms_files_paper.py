@@ -199,8 +199,12 @@ def test_labels_are_real_pdfs_and_qr_codes_point_at_the_hub(firm):
     import numpy as np
     info = doc.extract_image(doc[0].get_images()[0][0])
     img = cv2.imdecode(np.frombuffer(info["image"], np.uint8), cv2.IMREAD_GRAYSCALE)
-    img = cv2.copyMakeBorder(cv2.resize(img, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST), 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=255)
-    text, _pts, _ = cv2.QRCodeDetector().detectAndDecode(img)
+    text = ""
+    for scale in (4, 6, 3, 8, 5):                     # the detector is fussy about size; a phone camera would simply refocus
+        big = cv2.copyMakeBorder(cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST), 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=255)
+        text, _pts, _ = cv2.QRCodeDetector().detectAndDecode(big)
+        if text:
+            break
     tok = firm.sql("SELECT token FROM dms_pfiles WHERE file_no = 'PF-0001'")[0]["token"]
     assert text == f"https://test.lexamplify.com/document-hub?pf={tok}"
     for layout, pages in (("a4-12", 3), ("a4-6", 5), ("roll", 30)):

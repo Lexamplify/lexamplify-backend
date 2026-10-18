@@ -217,10 +217,9 @@ def _layout_pdf():
             'Advocate. Heard the learned counsel for both sides. The suit is posted today for the evidence of the plaintiff and the matter is part-heard. '
             'Next date: 20.11.2026.</p><p style="text-align:right"><b>XII Assistant Judge</b><br>22.09.2026</p></body>')
     st = pymupdf.Story(html=html, user_css="body{font-family:serif;font-size:12pt}p{margin:0 0 10pt 0}")
-    import tempfile
-    f = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    f.close()
-    w = pymupdf.DocumentWriter(f.name)
+    import io
+    buf = io.BytesIO()                       # in memory: a temp file stays locked by the writer on Windows
+    w = pymupdf.DocumentWriter(buf)
     media = pymupdf.paper_rect("a4")
     more = 1
     while more:
@@ -229,9 +228,7 @@ def _layout_pdf():
         st.draw(dev)
         w.end_page()
     w.close()
-    data = open(f.name, "rb").read()
-    os.remove(f.name)
-    return data
+    return buf.getvalue()
 
 
 def test_a_pdf_opens_in_the_editor_with_its_layout_not_flattened(real):
