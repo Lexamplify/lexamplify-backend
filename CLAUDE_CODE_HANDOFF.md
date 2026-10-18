@@ -160,8 +160,8 @@ Still open:
 3. MSG91 widget SMS carries MSG91's default sender text until the owner's own DLT is registered.
 4. Playbook text and studio chips contain legal assertions nobody has audited. The 11 draft templates also need an advocate's review (Mohan's checklist).
 5. The real LLM was never run (no key). Extraction from files, contract analysis and free-writing depend on it. Run `docs/DEPLOY_STEPS.md` step 4.2 and `RUN_REAL_LLM=1 REAL_GROQ_API_KEY=... pytest tests/test_corpus.py`.
-6. Firefox, Safari, Lighthouse, staging deploy and Google sign-in under the strict CSP in `firebase.json` are unverified.
-7. `npm audit`: 36 vulnerabilities (3 high); `npm audit fix` not applied. Python packages not audited (pip-audit not installed).
+6. Safari (WebKit run hung and was stopped; Firefox 56/56 and Chromium 56/56 pass, run with `E2E_BROWSER=firefox`), Lighthouse, staging deploy and Google sign-in under the strict CSP in `firebase.json` are unverified.
+7. `npm audit`: 47 vulnerabilities (10 high); `npm audit fix` crashes and updates hit peer-dependency conflicts; upgrade `@tiptap/*` manually. Python packages not audited (pip-audit not installed).
 8. Render persistent disk for the SQLite files (Practice, Case Vault, Document Hub): unconfirmed.
 9. Court proxy serves government HTML from the API origin (accepted risk #19).
 10. `tests/test_demo_pdfs.py` does not exist in the repo; ignore the mention in older notes.

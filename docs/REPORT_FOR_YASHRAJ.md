@@ -43,12 +43,12 @@ Security and privacy, found by trying to break it (62 findings logged in `docs/R
 ## Not proven (please read)
 
 - **The real AI model was never run.** No key was available here. The notice drafting does not use the AI at all (fixed wording plus your facts), so it is unaffected. Reading facts from a file, contract analysis and free-writing do use it. A 20-run real-model test exists (`tests/test_corpus.py`, needs your key) but has not been run. **Run the manual test in `docs/DEPLOY_STEPS.md` step 4.2 first.**
-- **Only Chrome-family browsers were tested.** Firefox and Safari engines are not installed here and I did not install them without your permission.
+- **Tested on Chrome (Chromium) and Firefox: 56 of 56 browser tests pass on each. Safari was not tested.** A WebKit run hung for an hour and was stopped; WebKit on Windows is not real Safari, so please open the app once on an iPhone or Mac.
 - **Lighthouse could not be run** (not installed). I ran my own accessibility checks instead: names on every control, headings, colour contrast in light and dark, keyboard use, focus. They pass on Start, the wizard and conflict pages. The older screens (sidebar, analyzer workbench) were improved in colour contrast but not fully audited.
 - **Nothing was deployed or checked on your live servers.** Deploy steps are in `docs/DEPLOY_STEPS.md`. **Google sign-in under the new security policy is the most likely thing to need a one-line adjustment.**
 - **Document wording has not been reviewed by a practising advocate.** Every template says so on screen. Mohan's checklist (`docs/MOHAN_TEST_CHECKLIST.md`) is for exactly this.
 - **Word and PDF were checked by reading the files back, not by opening them in Word.** Page breaks and fonts in real Word were not seen.
-- **Frontend packages have known vulnerabilities** (`npm audit`: 36, of which 3 high, in a text-editor library and the router). A fix exists inside the allowed version ranges; I did not apply it without asking. Python packages were not audited.
+- **Frontend packages have known vulnerabilities** (`npm audit`: 47, of which 10 high, in the text-editor library and the router). `npm audit fix` crashed and a targeted update hit conflicting versions; fixing it needs a manual upgrade of the editor library, best done as its own task. Python packages were not audited.
 - **The Render disk question:** Practice, the Case Vault and the Document Hub keep data in SQLite files on the server. If Render has no persistent Disk, a redeploy erases them. Please confirm.
 - Phone sign-in (OTP) is still on hold, as instructed. The older Contract Analyzer screen still has several primary buttons on one screen.
 
