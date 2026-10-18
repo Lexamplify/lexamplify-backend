@@ -7,12 +7,29 @@ import sqlite3
 import io
 from datetime import date, datetime
 from flask import Blueprint, request, jsonify, render_template, current_app, send_file
+from utils import tenancy
 
 billing_bp = Blueprint('billing', __name__)
 
 
+OWNED_TABLES = ('time_entries', 'invoices', 'clients', 'tracked_cases')
+
+
 def get_db():
-    return sqlite3.connect(current_app.config['SQLITE_DB_PATH'])
+    conn = sqlite3.connect(current_app.config['SQLITE_DB_PATH'])
+    tenancy.prepare(conn, 'billing', OWNED_TABLES, tenancy.current_uid())
+    return conn
+
+
+def owner():
+    return tenancy.current_uid()
+
+
+def _mine(conn, table, row_id):
+    """True when the id is empty or belongs to the signed-in user (a row id from someone else must not be linkable)."""
+    if row_id in (None, ""):
+        return True
+    return conn.execute(f"SELECT 1 FROM {table} WHERE id=? AND owner_user_id=?", (row_id, owner())).fetchone() is not None
 
 
 @billing_bp.route('/billing')
@@ -27,22 +44,26 @@ def log_time():
     try:
         data = request.get_json(silent=True) or {}
         conn = get_db()
+        if not (_mine(conn, 'clients', data.get('client_id')) and _mine(conn, 'tracked_cases', data.get('case_id'))):
+            conn.close()
+            return jsonify({'error': 'That client or case was not found.'}), 404
         c = conn.cursor()
-        c.execute('''INSERT INTO time_entries (client_id, case_id, date, hours, rate, description)
-                     VALUES (?,?,?,?,?,?)''', (
+        c.execute('''INSERT INTO time_entries (client_id, case_id, date, hours, rate, description, owner_user_id)
+                     VALUES (?,?,?,?,?,?,?)''', (
             data.get('client_id'),
             data.get('case_id'),
             data.get('date', str(date.today())),
             float(data.get('hours', 0)),
             float(data.get('rate', 0)),
             data.get('description', ''),
+            owner(),
         ))
         conn.commit()
         new_id = c.lastrowid
         conn.close()
         return jsonify({'status': 'success', 'id': new_id})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @billing_bp.route('/api/billing/time-entries', methods=['GET'])
@@ -52,10 +73,11 @@ def list_time_entries():
     rows = conn.execute('''
         SELECT te.*, c.name as client_name, tc.case_name
         FROM time_entries te
-        LEFT JOIN clients c ON te.client_id = c.id
-        LEFT JOIN tracked_cases tc ON te.case_id = tc.id
+        LEFT JOIN clients c ON te.client_id = c.id AND c.owner_user_id = te.owner_user_id
+        LEFT JOIN tracked_cases tc ON te.case_id = tc.id AND tc.owner_user_id = te.owner_user_id
+        WHERE te.owner_user_id = ?
         ORDER BY te.date DESC
-    ''').fetchall()
+    ''', (owner(),)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -67,6 +89,9 @@ def generate_invoice():
     try:
         data = request.get_json(silent=True) or {}
         conn = get_db()
+        if not _mine(conn, 'clients', data.get('client_id')):
+            conn.close()
+            return jsonify({'error': 'That client was not found.'}), 404
         c = conn.cursor()
 
         amount = float(data.get('amount', 0))
@@ -75,12 +100,12 @@ def generate_invoice():
         total = round(amount + gst, 2)
 
         # Generate invoice number
-        count = conn.execute('SELECT COUNT(*) FROM invoices').fetchone()[0]
+        count = conn.execute('SELECT COUNT(*) FROM invoices WHERE owner_user_id=?', (owner(),)).fetchone()[0]
         inv_num = f'LEX-{date.today().year}-{str(count + 1).zfill(4)}'
 
         c.execute('''INSERT INTO invoices
-            (client_id, invoice_number, amount, gst, total, status, due_date, notes)
-            VALUES (?,?,?,?,?,?,?,?)''', (
+            (client_id, invoice_number, amount, gst, total, status, due_date, notes, owner_user_id)
+            VALUES (?,?,?,?,?,?,?,?,?)''', (
             data.get('client_id'),
             inv_num,
             amount,
@@ -89,13 +114,14 @@ def generate_invoice():
             'Draft',
             data.get('due_date', None),
             data.get('notes', ''),
+            owner(),
         ))
         conn.commit()
         new_id = c.lastrowid
         conn.close()
         return jsonify({'status': 'success', 'id': new_id, 'invoice_number': inv_num})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @billing_bp.route('/api/billing/invoices', methods=['GET'])
@@ -105,9 +131,10 @@ def list_invoices():
     rows = conn.execute('''
         SELECT inv.*, c.name as client_name
         FROM invoices inv
-        LEFT JOIN clients c ON inv.client_id = c.id
+        LEFT JOIN clients c ON inv.client_id = c.id AND c.owner_user_id = inv.owner_user_id
+        WHERE inv.owner_user_id = ?
         ORDER BY inv.created_at DESC
-    ''').fetchall()
+    ''', (owner(),)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -118,14 +145,17 @@ def mark_paid(inv_id):
         data = request.get_json(silent=True) or {}
         conn = get_db()
         conn.execute(
-            "UPDATE invoices SET status='Paid', paid_date=? WHERE id=?",
-            (data.get('paid_date', str(date.today())), inv_id)
+            "UPDATE invoices SET status='Paid', paid_date=? WHERE id=? AND owner_user_id=?",
+            (data.get('paid_date', str(date.today())), inv_id, owner())
         )
+        changed = conn.total_changes
         conn.commit()
         conn.close()
+        if not changed:
+            return jsonify({'error': 'Invoice not found'}), 404
         return jsonify({'status': 'success'})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 # ── PDF GENERATION ────────────────────────────────────────────────────────────
@@ -136,9 +166,9 @@ def generate_pdf(inv_id):
     conn.row_factory = sqlite3.Row
     inv = conn.execute('''
         SELECT inv.*, c.name as client_name, c.email, c.phone, c.address
-        FROM invoices inv LEFT JOIN clients c ON inv.client_id = c.id
-        WHERE inv.id=?
-    ''', (inv_id,)).fetchone()
+        FROM invoices inv LEFT JOIN clients c ON inv.client_id = c.id AND c.owner_user_id = inv.owner_user_id
+        WHERE inv.id=? AND inv.owner_user_id=?
+    ''', (inv_id, owner())).fetchone()
     conn.close()
 
     if not inv:

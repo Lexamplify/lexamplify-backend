@@ -1277,7 +1277,27 @@ def create_app():
             raise RuntimeError('JWT_SECRET_KEY must be set in production — no fallback is generated.')
         _jwt_secret = secrets.token_hex(32)
         print('[app] JWT_SECRET_KEY not set — generated an ephemeral dev key (sessions will not survive a restart).')
+    _weak = {'secret', 'changeme', 'change-me', 'password', 'jwt-secret', 'dev', 'test', 'your-secret-key', 'supersecret'}
+    if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true':
+        problems = []
+        if len(_jwt_secret) < 32 or _jwt_secret.lower() in _weak:
+            problems.append('JWT_SECRET_KEY is too short or guessable (use at least 32 random characters)')
+        if not os.getenv('DATABASE_URL'):
+            problems.append('DATABASE_URL is not set (production must not fall back to a local file)')
+        if problems:
+            msg = 'Refusing to start: ' + '; '.join(problems) + '.'
+            print('[app] ' + msg)
+            raise RuntimeError(msg)
     app.config['JWT_SECRET_KEY'] = _jwt_secret
+
+    # Optional error reporting. Does nothing unless SENTRY_DSN is set AND the sentry-sdk package is installed.
+    if os.getenv('SENTRY_DSN'):
+        try:
+            import sentry_sdk
+            sentry_sdk.init(dsn=os.getenv('SENTRY_DSN'), traces_sample_rate=0.0, send_default_pii=False)
+            print('[app] error reporting is on.')
+        except Exception as _exc:
+            print(f'[app] SENTRY_DSN is set but error reporting could not start: {_exc}')
 
     app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'static/uploads')
     app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 104857600))  # 100 MB
@@ -2051,7 +2071,11 @@ def create_app():
 
             team_conn = sqlite3.connect(DB_PATH)
             try:
-                member_row = team_conn.execute('SELECT id, name, email FROM team_members WHERE id = ?', (team_member_id,)).fetchone()
+                # Only people on the sharer's OWN roster can be shared with. Without this, any signed-in user could
+                # probe other advocates' rosters (names and e-mails) by trying member ids.
+                from utils import tenancy
+                tenancy.prepare(team_conn, "team", ("team_members",), uid)
+                member_row = team_conn.execute('SELECT id, name, email FROM team_members WHERE id = ? AND owner_user_id = ?', (team_member_id, uid)).fetchone()
             finally:
                 team_conn.close()
             if not member_row:
@@ -3494,7 +3518,9 @@ def create_app():
     app.register_blueprint(letterhead_bp)
     app.register_blueprint(dispute_bp)  # url_prefix baked into dispute_bp: /api/disputes
     from routes.draft_engine_routes import drafts_bp
+    from routes.audit_routes import audit_bp
     app.register_blueprint(drafts_bp)  # /api/drafts (guided drafting engine); url_prefix baked in
+    app.register_blueprint(audit_bp)   # /api/audit (own activity + CSV); url_prefix baked in
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
     app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
@@ -4401,7 +4427,10 @@ def create_app():
             data = request.get_json(force=True, silent=True) or {}
             events = data.get('events', [])
             
+            from utils import tenancy
             conn = db
+            tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
+            me = tenancy.current_uid()
             c = conn.cursor()
             for event in events:
                 event_date = event.get('event_date')
@@ -4412,27 +4441,31 @@ def create_app():
                 opposing_counsel = event.get('opposing_counsel', '')
                 google_event_id = event.get('google_event_id')
                 c.execute('''
-                    INSERT INTO calendar_events (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id))
+                    INSERT INTO calendar_events (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, owner_user_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, me))
             
             conn.commit()
             return jsonify({"success": True, "message": "Events successfully saved."}), 200
         except Exception as e:
-            return jsonify({"error": True, "message": str(e)}), 500
+            app.logger.error(f"calendar save failed: {e}")
+            return jsonify({"error": True, "message": "The events could not be saved. Please try again."}), 500
 
     @app.route('/api/calendar/events', methods=['GET'])
     def get_calendar_events_all():
         try:
+            from utils import tenancy
             conn = db
             conn.row_factory = sqlite3.Row
+            tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
             c = conn.cursor()
-            c.execute("SELECT * FROM calendar_events ORDER BY event_date ASC")
+            c.execute("SELECT * FROM calendar_events WHERE owner_user_id=? ORDER BY event_date ASC", (tenancy.current_uid(),))
             rows = c.fetchall()
             dict_rows = [dict(row) for row in rows]
             return jsonify({"events": dict_rows}), 200
         except Exception as e:
-            return jsonify({"error": True, "message": str(e)}), 500
+            app.logger.error(f"calendar list failed: {e}")
+            return jsonify({"error": True, "message": "Your calendar could not be loaded. Please try again."}), 500
 
     @app.route('/api/ecourts/sync', methods=['POST'])
     def sync_ecourts_cnr():
@@ -4486,6 +4519,7 @@ def create_app():
         from models.court_models import JudicialOfficer, SupremeCourtRoster
         from models.draft_session import DraftSession, DraftVersion, UserFlag  # noqa: F401 — registers the tables
         from models.revoked_token import RevokedToken  # noqa: F401 — registers the table
+        from models.audit_event import AuditEvent  # noqa: F401 — registers the table
         sqlalchemy_db.create_all()
         _is_postgres = app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql+psycopg2://')
         _db_kind = 'Neon PostgreSQL' if _is_postgres else 'SQLite'
@@ -4807,6 +4841,27 @@ def create_app():
     def _jwt_expired(jwt_header, jwt_payload):
         return jsonify({"error": True, "msg": "Token has expired", "message": "Your session has expired. Please sign in again.", "code": "TOKEN_EXPIRED"}), 401
 
+    @app.before_request
+    def _assign_request_id():
+        from flask import g
+        rid = re.sub(r'[^A-Za-z0-9\-]', '', request.headers.get('X-Request-ID', ''))[:40]
+        g.request_id = rid or uuid.uuid4().hex[:12]
+
+    @app.after_request
+    def _stamp_request(resp):
+        from flask import g
+        from utils import metrics
+        rid = getattr(g, 'request_id', None) or uuid.uuid4().hex[:12]     # also set when the sign-in gate answered before the id was assigned
+        g.request_id = rid
+        resp.headers['X-Request-ID'] = rid
+        metrics.count(f'responses_{resp.status_code // 100}xx')
+        if resp.status_code >= 500:
+            app.logger.error(f'[{rid}] {request.method} {request.path} -> {resp.status_code}')
+        return resp
+
+    from utils import audit_log as _audit_log
+    app.after_request(_audit_log.after_request)
+
     @app.after_request
     def _security_headers(resp):
         h = resp.headers
@@ -4819,13 +4874,18 @@ def create_app():
             h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return resp
 
-    # In production an unexpected 500 must never echo exception text (file paths, SQL, keys) to the browser.
+    # A server error must never echo exception text (file paths, SQL, keys) to the browser, in any environment.
+    # Older routes still build {"error": str(e)} themselves; every newer response carries a "code", so anything
+    # 5xx without one is replaced by the same plain envelope. Upstream outages (502/503) keep their own wording.
     @app.after_request
     def _mask_server_errors(resp):
         try:
-            _prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
-            if _prod and resp.status_code == 500 and resp.mimetype == 'application/json':
-                resp.set_data(json.dumps({"error": True, "message": "Something went wrong on our side. Please try again.", "code": "SERVER_ERROR"}))
+            if resp.status_code >= 500 and resp.mimetype == 'application/json':
+                body = resp.get_json(silent=True)
+                if not (isinstance(body, dict) and body.get('code')):
+                    from flask import g
+                    resp.set_data(json.dumps({"error": True, "code": "SERVER_ERROR", "request_id": getattr(g, 'request_id', None),
+                                              "message": "Something went wrong on our side. Please try again. If it keeps happening, quote the reference below."}))
         except Exception:
             pass
         return resp
@@ -4842,26 +4902,65 @@ def create_app():
         return jsonify({"error": True, "code": "TOO_LARGE",
                         "message": f"That upload is too large. The limit is {mb} MB. Please upload a smaller file."}), 413
 
+    def _rid():
+        from flask import g
+        return getattr(g, 'request_id', None)
+
     @app.errorhandler(HTTPException)
     def handle_http_exception(e):
-        return jsonify({"error": e.description or str(e)}), e.code
+        # One envelope for every error: `error` (kept as text for older screens), `message`, `code`, `request_id`.
+        text = e.description or str(e)
+        if e.code == 429:
+            resp = jsonify({"error": True, "code": "RATE_LIMITED", "request_id": _rid(),
+                            "message": "You are doing that too quickly. Please wait a minute and try again."})
+            resp.status_code = 429
+            if getattr(e, 'retry_after', None):
+                resp.headers['Retry-After'] = str(int(e.retry_after))
+            return resp
+        return jsonify({"error": text, "message": text, "code": f"HTTP_{e.code}", "request_id": _rid()}), e.code
 
     @app.errorhandler(SQLAlchemyError)
     def handle_db_error(e):
-        app.logger.error(f"Database Error: {e}")
-        return jsonify({"error": "Database service unavailable. Please try again shortly."}), 500
+        app.logger.error(f"[{_rid()}] Database Error: {e}")
+        return jsonify({"error": True, "code": "DB_UNAVAILABLE", "request_id": _rid(),
+                        "message": "The database is not responding. It may be waking up. Please try again in a few seconds."}), 503
 
     @app.errorhandler(Exception)
     def handle_generic_exception(e):
-        # Full detail server-side only. str(e) can carry query fragments,
-        # file paths, or other internals — echoing it back to the client
-        # in production is an information-disclosure leak, not a debugging
-        # convenience. Dev keeps the detail inline since there's no
-        # untrusted audience there and it saves a log round-trip.
-        app.logger.error(f"Unhandled Exception: {e}", exc_info=True)
-        if os.getenv('FLASK_ENV') == 'production':
-            return jsonify({"error": "An unexpected server error occurred."}), 500
-        return jsonify({"error": f"Server error: {e}"}), 500
+        # Full detail goes to the server log with the request id; the person sees a plain sentence and the id to quote.
+        app.logger.error(f"[{_rid()}] Unhandled Exception: {e}", exc_info=True)
+        return jsonify({"error": True, "code": "SERVER_ERROR", "request_id": _rid(),
+                        "message": "Something went wrong on our side. Please try again. If it keeps happening, quote the reference below."}), 500
+
+    # Signed-in health and basic numbers. Deep check (?deep=1) also asks the AI provider for one tiny answer.
+    @app.route('/api/status', methods=['GET'])
+    def api_status():
+        from utils import metrics
+        out = {"ok": True, "time": int(time.time()), "checks": {}}
+        try:
+            from sqlalchemy import text as _t
+            sqlalchemy_db.session.execute(_t('SELECT 1'))
+            out["checks"]["database"] = "ok"
+        except Exception as exc:
+            app.logger.error(f"[{_rid()}] status: database check failed: {exc}")
+            out["checks"]["database"] = "down"
+            out["ok"] = False
+        out["checks"]["practice_module"] = "ok" if app.extensions.get('lpms_db_path') else "not available"
+        out["checks"]["ai_configured"] = "yes" if os.getenv('GROQ_API_KEY') else "no"
+        if request.args.get('deep') == '1' and os.getenv('GROQ_API_KEY'):
+            t0 = time.time()
+            try:
+                from utils.ai_helper import ask_groq
+                ask_groq("Reply with the single word OK.", "ping", max_tokens=5)
+                out["checks"]["ai_reachable"] = f"ok ({round(time.time() - t0, 2)}s)"
+                metrics.observe('ai_ping', time.time() - t0)
+            except Exception as exc:
+                app.logger.error(f"[{_rid()}] status: AI check failed: {exc}")
+                out["checks"]["ai_reachable"] = "down"
+                out["ok"] = False
+        out["metrics"] = metrics.snapshot()
+        out["note"] = "Counters restart when the server restarts."
+        return jsonify(out), (200 if out["ok"] else 503)
 
     @app.cli.command("seed-supreme-court")
     def seed_supreme_court_command():

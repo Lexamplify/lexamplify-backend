@@ -214,7 +214,13 @@ def test_session_that_expires_mid_task_loses_nothing_the_advocate_typed(advocate
     page.context.clear_cookies()                                        # the session ends while they are mid-form
     page.locator("#dw-f-drawer_name").fill("M/s Kumar Traders Pvt Ltd")
     # Either the in-page notice or the app's redirect to sign-in is fine. A blank page or lost typing is not.
-    page.wait_for_function("location.pathname.startsWith('/login') || document.body.innerText.includes('session has expired')", timeout=25000)
+    # polled from Python: Playwright's own wait_for_function evaluates a string inside the page, which the strict CSP forbids
+    for _ in range(50):
+        if "/login" in page.url or "session has expired" in page.locator("body").inner_text():
+            break
+        page.wait_for_timeout(500)
+    else:
+        raise AssertionError("neither the sign-in redirect nor the expired-session notice appeared")
     assert page.locator("body").inner_text().strip()
     r = page.context.request.post("/api/auth/login", data={"email": page.email, "password": "TestPass123!"})
     assert r.status == 200, r.text()

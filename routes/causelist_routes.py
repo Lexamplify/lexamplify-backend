@@ -8,12 +8,22 @@ import sqlite3
 from datetime import datetime, date
 from flask import Blueprint, request, jsonify, render_template, current_app, send_file
 import io
+from utils import tenancy
 
 causelist_bp = Blueprint('causelist', __name__)
 
 
+OWNED_TABLES = ('tracked_cases', 'ip_assets')
+
+
 def get_db():
-    return sqlite3.connect(current_app.config['SQLITE_DB_PATH'])
+    conn = sqlite3.connect(current_app.config['SQLITE_DB_PATH'])
+    tenancy.prepare(conn, 'causelist', OWNED_TABLES, tenancy.current_uid())
+    return conn
+
+
+def owner():
+    return tenancy.current_uid()
 
 
 # ── PAGE ──────────────────────────────────────────────────────────────────────
@@ -117,8 +127,8 @@ def save_case():
 
     c.execute('''INSERT INTO tracked_cases
         (case_name, case_number, cnr_number, court, client_name, case_type,
-         next_hearing, last_hearing, status, notes, cnr, title, next_hearing_date)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+         next_hearing, last_hearing, status, notes, cnr, title, next_hearing_date, owner_user_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
         case_name,
         data.get('case_number', ''),
         cnr_val,
@@ -131,7 +141,8 @@ def save_case():
         data.get('notes', ''),
         cnr_val,
         case_name,
-        next_hearing_val
+        next_hearing_val,
+        owner(),
     ))
     conn.commit()
     new_id = c.lastrowid
@@ -143,7 +154,7 @@ def save_case():
 def list_cases():
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    rows = conn.execute('SELECT * FROM tracked_cases ORDER BY created_at DESC').fetchall()
+    rows = conn.execute('SELECT * FROM tracked_cases WHERE owner_user_id=? ORDER BY created_at DESC', (owner(),)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -161,7 +172,7 @@ def update_case(case_id):
         case_name=?, case_number=?, cnr_number=?, court=?, client_name=?,
         case_type=?, next_hearing=?, last_hearing=?, status=?, notes=?,
         cnr=?, title=?, next_hearing_date=?
-        WHERE id=?''', (
+        WHERE id=? AND owner_user_id=?''', (
         case_name,
         data.get('case_number', ''),
         cnr_val,
@@ -176,18 +187,25 @@ def update_case(case_id):
         case_name,
         next_hearing_val,
         case_id,
+        owner(),
     ))
+    changed = conn.total_changes
     conn.commit()
     conn.close()
+    if not changed:
+        return jsonify({'error': 'not found'}), 404
     return jsonify({'status': 'success'}), 200
 
 
 @causelist_bp.route('/api/causelist/delete/<int:case_id>', methods=['DELETE'])
 def delete_case(case_id):
     conn = get_db()
-    conn.execute('DELETE FROM tracked_cases WHERE id=?', (case_id,))
+    conn.execute('DELETE FROM tracked_cases WHERE id=? AND owner_user_id=?', (case_id, owner()))
+    changed = conn.total_changes
     conn.commit()
     conn.close()
+    if not changed:
+        return jsonify({'error': 'not found'}), 404
     return jsonify({'status': 'deleted'}), 200
 
 
@@ -198,7 +216,8 @@ def export_ics():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT id, case_name, title, case_number, court, client_name, next_hearing, next_hearing_date FROM tracked_cases"
+        "SELECT id, case_name, title, case_number, court, client_name, next_hearing, next_hearing_date FROM tracked_cases WHERE owner_user_id=?",
+        (owner(),)
     ).fetchall()
     conn.close()
 
@@ -253,8 +272,8 @@ def add_ip():
         conn = get_db()
         c = conn.cursor()
         c.execute('''INSERT INTO ip_assets
-            (ip_type, title, registration_number, filing_date, renewal_due, status, notes)
-            VALUES (?,?,?,?,?,?,?)''', (
+            (ip_type, title, registration_number, filing_date, renewal_due, status, notes, owner_user_id)
+            VALUES (?,?,?,?,?,?,?,?)''', (
             data.get('ip_type', ''),
             data.get('title', ''),
             data.get('registration_number', ''),
@@ -262,20 +281,21 @@ def add_ip():
             data.get('renewal_due', None),
             data.get('status', 'Active'),
             data.get('notes', ''),
+            owner(),
         ))
         conn.commit()
         new_id = c.lastrowid
         conn.close()
         return jsonify({'status': 'success', 'id': new_id})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @causelist_bp.route('/api/ip/list', methods=['GET'])
 def list_ip():
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    rows = conn.execute('SELECT * FROM ip_assets ORDER BY renewal_due ASC').fetchall()
+    rows = conn.execute('SELECT * FROM ip_assets WHERE owner_user_id=? ORDER BY renewal_due ASC', (owner(),)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -287,7 +307,7 @@ def update_ip(ip_id):
         conn = get_db()
         conn.execute('''UPDATE ip_assets SET
             ip_type=?, title=?, registration_number=?, filing_date=?,
-            renewal_due=?, status=?, notes=? WHERE id=?''', (
+            renewal_due=?, status=?, notes=? WHERE id=? AND owner_user_id=?''', (
             data.get('ip_type', ''),
             data.get('title', ''),
             data.get('registration_number', ''),
@@ -296,18 +316,25 @@ def update_ip(ip_id):
             data.get('status', 'Active'),
             data.get('notes', ''),
             ip_id,
+            owner(),
         ))
+        changed = conn.total_changes
         conn.commit()
         conn.close()
+        if not changed:
+            return jsonify({'error': 'not found'}), 404
         return jsonify({'status': 'success'})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @causelist_bp.route('/api/ip/delete/<int:ip_id>', methods=['DELETE'])
 def delete_ip(ip_id):
     conn = get_db()
-    conn.execute('DELETE FROM ip_assets WHERE id=?', (ip_id,))
+    conn.execute('DELETE FROM ip_assets WHERE id=? AND owner_user_id=?', (ip_id, owner()))
+    changed = conn.total_changes
     conn.commit()
     conn.close()
+    if not changed:
+        return jsonify({'error': 'not found'}), 404
     return jsonify({'status': 'deleted'})

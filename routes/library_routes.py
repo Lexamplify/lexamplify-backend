@@ -11,6 +11,7 @@ import sqlite3
 import time
 
 from flask import Blueprint, request, jsonify, current_app, Response, stream_with_context
+from flask_jwt_extended import get_jwt_identity
 
 from utils.local_search import hybrid_search
 from utils.citation_verifier import verify_citation_status
@@ -23,6 +24,13 @@ def _get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _uid():
+    try:
+        return int(get_jwt_identity())
+    except (TypeError, ValueError):
+        return None
 
 
 @library_bp.route("/search", methods=["GET", "OPTIONS"])
@@ -38,7 +46,8 @@ def search_library():
     try:
         conn = _get_db()
         rows = conn.execute(
-            "SELECT id, case_id, title, content FROM case_vault ORDER BY created_at DESC LIMIT 500"
+            "SELECT id, case_id, title, content FROM case_vault WHERE user_id = ? ORDER BY created_at DESC LIMIT 500",
+            (_uid(),)
         ).fetchall()
         candidates = [
             {"id": r["id"], "title": r["title"] or r["case_id"] or "", "content": r["content"] or ""}
@@ -62,35 +71,58 @@ def verify_status(doc_id):
     conn = None
     try:
         conn = _get_db()
-        row = conn.execute("SELECT id, title, case_id FROM case_vault WHERE id = ?", (doc_id,)).fetchone()
+        row = conn.execute("SELECT id, title, case_id FROM case_vault WHERE id = ? AND user_id = ?", (doc_id, _uid())).fetchone()
         if not row:
             return jsonify({"error": True, "message": "Document not found."}), 404
 
         citation_string = row["title"] or row["case_id"] or ""
         status = verify_citation_status(citation_string)
 
-        conn.execute("UPDATE case_vault SET validity_status = ? WHERE id = ?", (status, doc_id))
+        conn.execute("UPDATE case_vault SET validity_status = ? WHERE id = ? AND user_id = ?", (status, doc_id, _uid()))
         conn.commit()
         return jsonify({"id": doc_id, "validity_status": status}), 200
     except Exception as e:
-        return jsonify({"error": True, "message": str(e), "code": "INTERNAL_ERROR"}), 500
+        print(f"[verify_status] {e}")
+        return jsonify({"error": True, "message": "The check could not be completed. Please try again.", "code": "INTERNAL_ERROR"}), 500
     finally:
         if conn:
             conn.close()
 
 
+def _worker_reachable():
+    """The headnote job needs the Celery worker (Redis). Without this check the request waits for the broker to answer,
+    which can take minutes, so the advocate sees a spinner and then a timeout."""
+    import os
+    import socket
+    from urllib.parse import urlparse
+    url = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL") or current_app.config.get("CELERY_BROKER_URL") or "redis://localhost:6379/0"
+    parsed = urlparse(url)
+    try:
+        with socket.create_connection((parsed.hostname or "localhost", parsed.port or 6379), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 @library_bp.route("/<int:doc_id>/generate-headnote", methods=["POST"])
 def generate_headnote(doc_id):
+    conn = _get_db()
+    try:
+        mine = conn.execute("SELECT 1 FROM case_vault WHERE id = ? AND user_id = ?", (doc_id, _uid())).fetchone()
+    finally:
+        conn.close()
+    if not mine:
+        return jsonify({"error": True, "message": "Document not found.", "code": "NOT_FOUND"}), 404
+    if not _worker_reachable():
+        return jsonify({"error": True, "code": "WORKER_OFFLINE",
+                        "message": "Summaries are not available right now because the background service is not running. Please try again later."}), 503
     try:
         from tasks.library_tasks import generate_headnote_task
         task = generate_headnote_task.delay(doc_id)
         return jsonify({"job_id": task.id, "status_url": f"/api/library/headnote/stream/{task.id}"}), 202
     except Exception as e:
         print(f"[generate_headnote] Failed to dispatch Celery task: {e}")
-        return jsonify({
-            "error": "Failed to start headnote job. Is the Celery worker running?",
-            "code": "JOB_DISPATCH_ERROR",
-        }), 503
+        return jsonify({"error": True, "message": "The summary could not be started. Please try again later.", "code": "JOB_DISPATCH_ERROR"}), 503
 
 
 @library_bp.route("/headnote/stream/<job_id>", methods=["GET"])
@@ -102,6 +134,8 @@ def stream_headnote_job(job_id):
     from celery.result import AsyncResult
 
     celery_app = current_app.extensions.get("celery")
+    if celery_app is None or not _worker_reachable():
+        return jsonify({"error": True, "code": "WORKER_OFFLINE", "message": "Summaries are not available right now. Please try again later."}), 503
     app_ctx = current_app._get_current_object()
 
     def event_stream():
@@ -121,7 +155,7 @@ def stream_headnote_job(job_id):
                 elif result.state == 'SUCCESS':
                     payload = {"state": "SUCCESS", "status": "Complete", "progress": 100, "result": result.result}
                 elif result.state == 'FAILURE':
-                    payload = {"state": "FAILURE", "status": "Headnote generation failed.", "error": str(result.info)}
+                    payload = {"state": "FAILURE", "status": "Headnote generation failed.", "error": "The summary could not be completed. Please try again."}
                 else:
                     payload = {"state": result.state, "status": result.state, "progress": 0}
 

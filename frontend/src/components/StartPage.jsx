@@ -40,7 +40,7 @@ const STYLES = `
 .sp-stack .sp-card:nth-child(2) { animation-delay: .25s; }
 
 .sp-feature { padding: clamp(24px, 3vw, 36px); min-height: 440px; background: linear-gradient(160deg, var(--paper) 0%, var(--paper-2) 100%); }
-.sp-tag { align-self: flex-start; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 5px 10px; border-radius: 99px; }
+.sp-tag { align-self: flex-start; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent-soft); padding: 5px 10px; border-radius: 99px; }
 .sp-title { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-spacing: -.015em; margin: 16px 0 8px; font-size: clamp(26px, 3vw, 34px); line-height: 1.1; }
 .sp-desc { margin: 0; max-width: 380px; font-size: 14.5px; line-height: 1.65; color: var(--ink-soft); }
 .sp-go { margin-top: auto; padding-top: 22px; display: inline-flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--accent); }
@@ -65,6 +65,7 @@ const STYLES = `
 .sp-mini .sp-title { font-size: 23px; margin: 0 0 6px; }
 .sp-mini .sp-go { padding-top: 16px; }
 
+.sp-resume a, .sp-all a { color: var(--ink); }
 .sp-time { margin-top: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .sp-resume { margin-top: 28px; padding: 18px 20px; border: 1px solid var(--rule); border-radius: 14px; background: var(--paper); }
 .sp-resume h2 { margin: 0 0 10px; font-size: 12px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }

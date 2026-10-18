@@ -444,6 +444,10 @@
   background: var(--on-accent);
 }
 
+.trail-seg.current span.txt {
+  color: var(--on-accent);
+}
+
 .trail-seg.current .chev {
   opacity: 0.85;
 }

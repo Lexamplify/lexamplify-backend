@@ -43,6 +43,8 @@ def make_app(tmp_path, monkeypatch, name="t.db"):
     the working directory (the Practice module among them): without this, tests would read and write the developer's data."""
     import app as app_module
     monkeypatch.chdir(tmp_path)
+    from utils import tenancy
+    tenancy.reset_cache()
     monkeypatch.setenv("LPMS_SCHEDULER", "0")
     monkeypatch.setenv("LEGACY_USER_MIGRATION", "off")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / name}")

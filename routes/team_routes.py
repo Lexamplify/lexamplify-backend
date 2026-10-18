@@ -5,12 +5,22 @@ Team Management — members CRUD and task board.
 import sqlite3
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required
+from utils import tenancy
 
 team_bp = Blueprint('team', __name__)
 
 
+OWNED_TABLES = ('team_members', 'tasks', 'tracked_cases')
+
+
 def get_db():
-    return sqlite3.connect(current_app.config['SQLITE_DB_PATH'])
+    conn = sqlite3.connect(current_app.config['SQLITE_DB_PATH'])
+    tenancy.prepare(conn, 'team', OWNED_TABLES, tenancy.current_uid())
+    return conn
+
+
+def owner():
+    return tenancy.current_uid()
 
 
 # ── TEAM MEMBERS ──────────────────────────────────────────────────────────────
@@ -54,13 +64,13 @@ def list_members():
         except sqlite3.OperationalError:
             pass
         _resolve_member_user_ids(conn)
-        members = conn.execute('SELECT * FROM team_members ORDER BY name ASC').fetchall()
+        members = conn.execute('SELECT * FROM team_members WHERE owner_user_id=? ORDER BY name ASC', (owner(),)).fetchall()
         result = []
         for m in members:
             row = dict(m)
             count = conn.execute(
-                "SELECT COUNT(*) FROM tasks WHERE assigned_to=? AND status!='done'",
-                (row['id'],)
+                "SELECT COUNT(*) FROM tasks WHERE assigned_to=? AND status!='done' AND owner_user_id=?",
+                (row['id'], owner())
             ).fetchone()[0]
             row['active_tasks'] = count
             row['matched'] = row.get('user_id') is not None
@@ -68,7 +78,7 @@ def list_members():
         conn.close()
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @team_bp.route('/api/team/members/add', methods=['POST'])
@@ -79,27 +89,30 @@ def add_member():
             return jsonify({'error': 'name is required'}), 400
         conn = get_db()
         c = conn.cursor()
-        c.execute('INSERT INTO team_members (name, email, role) VALUES (?,?,?)', (
-            data['name'], data.get('email', ''), data.get('role', 'Junior')
+        c.execute('INSERT INTO team_members (name, email, role, owner_user_id) VALUES (?,?,?,?)', (
+            data['name'], data.get('email', ''), data.get('role', 'Junior'), owner()
         ))
         conn.commit()
         new_id = c.lastrowid
         conn.close()
         return jsonify({'status': 'success', 'id': new_id})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @team_bp.route('/api/team/members/delete/<int:member_id>', methods=['DELETE'])
 def delete_member(member_id):
     try:
         conn = get_db()
-        conn.execute('DELETE FROM team_members WHERE id=?', (member_id,))
+        conn.execute('DELETE FROM team_members WHERE id=? AND owner_user_id=?', (member_id, owner()))
+        changed = conn.total_changes
         conn.commit()
         conn.close()
+        if not changed:
+            return jsonify({'error': 'not found'}), 404
         return jsonify({'status': 'deleted'})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 # ── TASKS ─────────────────────────────────────────────────────────────────────
@@ -112,14 +125,15 @@ def list_tasks():
         rows = conn.execute('''
             SELECT t.*, m.name as assignee_name, tc.case_name
             FROM tasks t
-            LEFT JOIN team_members m ON t.assigned_to = m.id
-            LEFT JOIN tracked_cases tc ON t.case_id = tc.id
+            LEFT JOIN team_members m ON t.assigned_to = m.id AND m.owner_user_id = t.owner_user_id
+            LEFT JOIN tracked_cases tc ON t.case_id = tc.id AND tc.owner_user_id = t.owner_user_id
+            WHERE t.owner_user_id = ?
             ORDER BY t.due_date ASC
-        ''').fetchall()
+        ''', (owner(),)).fetchall()
         conn.close()
         return jsonify([dict(r) for r in rows])
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @team_bp.route('/api/team/tasks/add', methods=['POST'])
@@ -130,8 +144,8 @@ def add_task():
             return jsonify({'error': 'title is required'}), 400
         conn = get_db()
         c = conn.cursor()
-        c.execute('''INSERT INTO tasks (title, assigned_to, case_id, due_date, priority, status, notes)
-                     VALUES (?,?,?,?,?,?,?)''', (
+        c.execute('''INSERT INTO tasks (title, assigned_to, case_id, due_date, priority, status, notes, owner_user_id)
+                     VALUES (?,?,?,?,?,?,?,?)''', (
             data['title'],
             data.get('assigned_to'),
             data.get('case_id'),
@@ -139,13 +153,14 @@ def add_task():
             data.get('priority', 'Normal'),
             data.get('status', 'todo'),
             data.get('notes', ''),
+            owner(),
         ))
         conn.commit()
         new_id = c.lastrowid
         conn.close()
         return jsonify({'status': 'success', 'id': new_id})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @team_bp.route('/api/team/tasks/update/<int:task_id>', methods=['PUT'])
@@ -154,7 +169,7 @@ def update_task(task_id):
         data = request.get_json(silent=True) or {}
         conn = get_db()
         conn.execute('''UPDATE tasks SET title=?, assigned_to=?, case_id=?, due_date=?,
-                        priority=?, status=?, notes=? WHERE id=?''', (
+                        priority=?, status=?, notes=? WHERE id=? AND owner_user_id=?''', (
             data.get('title', ''),
             data.get('assigned_to'),
             data.get('case_id'),
@@ -163,12 +178,16 @@ def update_task(task_id):
             data.get('status', 'todo'),
             data.get('notes', ''),
             task_id,
+            owner(),
         ))
+        changed = conn.total_changes
         conn.commit()
         conn.close()
+        if not changed:
+            return jsonify({'error': 'not found'}), 404
         return jsonify({'status': 'success'})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @team_bp.route('/api/team/tasks/status/<int:task_id>', methods=['PUT'])
@@ -179,21 +198,27 @@ def update_task_status(task_id):
         if status not in ('todo', 'inprogress', 'done'):
             return jsonify({'error': 'Invalid status'}), 400
         conn = get_db()
-        conn.execute('UPDATE tasks SET status=? WHERE id=?', (status, task_id))
+        conn.execute('UPDATE tasks SET status=? WHERE id=? AND owner_user_id=?', (status, task_id, owner()))
+        changed = conn.total_changes
         conn.commit()
         conn.close()
+        if not changed:
+            return jsonify({'error': 'not found'}), 404
         return jsonify({'status': 'success'})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
 
 @team_bp.route('/api/team/tasks/delete/<int:task_id>', methods=['DELETE'])
 def delete_task(task_id):
     try:
         conn = get_db()
-        conn.execute('DELETE FROM tasks WHERE id=?', (task_id,))
+        conn.execute('DELETE FROM tasks WHERE id=? AND owner_user_id=?', (task_id, owner()))
+        changed = conn.total_changes
         conn.commit()
         conn.close()
+        if not changed:
+            return jsonify({'error': 'not found'}), 404
         return jsonify({'status': 'deleted'})
     except Exception as e:
-        return jsonify({"error": str(e), "code": "INTERNAL_ERROR"}), 500
+        return jsonify({"error": "Something went wrong. Please try again.", "code": "INTERNAL_ERROR"}), 500

@@ -31,6 +31,7 @@ const STYLES = `
 .dw-save { font-size: 12.5px; color: var(--muted); min-height: 18px; }
 .dw-save.err { color: #b3261e; }
 .dw h1 { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: clamp(28px, 4.2vw, 40px); line-height: 1.1; letter-spacing: -.018em; margin: 28px 0 8px; outline: none; }
+.dw a { color: var(--accent-ink); }
 .dw-lede { margin: 0 0 24px; color: var(--ink-soft); font-size: 15.5px; line-height: 1.6; max-width: 600px; }
 .dw-cards { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .dw-card { text-align: left; background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; cursor: pointer; font: inherit; color: inherit; min-height: 150px; display: flex; flex-direction: column; gap: 6px; transition: border-color .2s, transform .2s; }
@@ -41,7 +42,7 @@ const STYLES = `
 .dw-card em { margin-top: auto; font-style: normal; font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .06em; }
 .dw-more { margin-top: 22px; }
 .dw-more summary { cursor: pointer; font-size: 14px; color: var(--ink-soft); min-height: 44px; display: flex; align-items: center; }
-.dw-more h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 18px 0 8px; font-weight: 500; }
+.dw-more h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 18px 0 8px; font-weight: 500; }
 .dw-list { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .dw-row { text-align: left; background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; cursor: pointer; font: inherit; color: inherit; min-height: 48px; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .dw-row:hover { border-color: var(--accent); }
@@ -57,7 +58,7 @@ textarea.dw-in { min-height: 88px; resize: vertical; line-height: 1.5; }
 .dw-group h2 { margin: 0 0 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 500; }
 .dw-field { margin-bottom: 16px; }
 .dw-field label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.dw-field label em { font-weight: 400; font-style: normal; color: var(--accent); font-size: 12px; margin-left: 6px; }
+.dw-field label em { font-weight: 400; font-style: normal; color: var(--accent-ink); font-size: 12px; margin-left: 6px; }
 .dw-hint { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
 .dw-warn { font-size: 13px; color: #b3261e; margin-top: 4px; }
 .dw-field.check .dw-in { border-color: #c98a1a; background: color-mix(in srgb, #c98a1a 8%, var(--paper)); }
@@ -76,6 +77,10 @@ textarea.dw-in { min-height: 88px; resize: vertical; line-height: 1.5; }
 .dw-alert.note { border-color: #c98a1a; background: color-mix(in srgb, #c98a1a 8%, var(--paper)); }
 .dw-alert ul { margin: 6px 0 0; padding-left: 18px; }
 .dw-page { background: #fff; color: #111; border: 1px solid var(--rule); border-radius: 4px; padding: clamp(20px, 5vw, 56px); font-family: 'Times New Roman', Times, serif; font-size: 16px; line-height: 1.7; box-shadow: 0 10px 30px -20px rgba(0,0,0,.4); overflow-wrap: anywhere; }
+/* The preview is a sheet of white paper in BOTH themes. Global dark-theme rules recolour p/span, which made the text
+   near-white on white; pin the ink colour on everything inside the sheet. */
+.dw-page, .dw-page p, .dw-page span, .dw-page div, .dw-page td, .dw-page h3, .dw-page b { color: #111 !important; }
+.dw-page .dw-chip { color: #5a4300 !important; }
 .dw-page p { margin: 0 0 12px; }
 .dw-page .t { text-align: center; font-weight: 700; text-decoration: underline; font-size: 18px; margin: 0 0 16px; }
 .dw-page .r { text-align: right; } .dw-page .c { text-align: center; } .dw-page .j { text-align: justify; } .dw-page .b { font-weight: 700; }
@@ -537,7 +542,7 @@ export default function DraftWizard() {
               <summary>More document types</summary>
               {Object.entries(byCategory).map(([cat, list]) => (
                 <div key={cat}>
-                  <h3>{CATEGORY[cat] || 'Other'}</h3>
+                  <h2>{CATEGORY[cat] || 'Other'}</h2>
                   <div className="dw-list">
                     {list.map((t) => (
                       <button key={t.id} type="button" className="dw-row" onClick={() => chooseType(t.id)} disabled={Boolean(busy)}>

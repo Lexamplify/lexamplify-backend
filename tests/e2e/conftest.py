@@ -4,6 +4,7 @@ Starts scripts/e2e_backend.py (throw-away database, no AI key) on :5000 and `vit
 (its proxy sends /api to :5000, exactly like production's same-origin cookies). Skipped when the build, the browser or
 the ports are not available, and with E2E_SKIP=1.
 """
+import json
 import os
 import shutil
 import socket
@@ -111,6 +112,16 @@ def advocate(browser, stack, request):
     email = f"adv{int(time.time() * 1000)}{abs(hash(request.node.name)) % 1000}@example.com"
     r = ctx.request.post("/api/auth/register", data={"email": email, "password": "TestPass123!", "name": "Priya Raman"})
     assert r.status == 201, r.text()
+    # Run under the CSP that firebase.json deploys, so a policy that would break the app fails here, not in production.
+    csp = json.load(open(os.path.join(ROOT, "firebase.json"), encoding="utf-8"))["hosting"]["headers"][0]["headers"]
+    csp = next(h["value"] for h in csp if h["key"] == "Content-Security-Policy")
+
+    def add_csp(route):
+        resp = route.fetch()
+        headers = {**resp.headers, "content-security-policy": csp}
+        route.fulfill(response=resp, headers=headers)
+    ctx.route("**/*", lambda route: add_csp(route) if route.request.resource_type == "document" else route.continue_())
+    ctx.add_init_script("document.addEventListener('securitypolicyviolation', e => { (window.__csp = window.__csp || []).push(e.violatedDirective + ' ' + e.blockedURI); });")
     page = ctx.new_page()
     page.email = email
     page.console_errors, page.bad_responses = [], []
@@ -118,6 +129,11 @@ def advocate(browser, stack, request):
     page.on("response", lambda resp: page.bad_responses.append(f"{resp.status} {resp.url}") if resp.status >= 500 else None)
     page.on("pageerror", lambda e: page.console_errors.append(f"pageerror: {e}"))
     yield page
+    try:
+        violations = page.evaluate("window.__csp || []")
+    except Exception:  # noqa: BLE001 - the page may have been closed by the test
+        violations = []
+    assert not violations, f"Content-Security-Policy violations: {violations}"
     rep = getattr(request.node, "rep_call", None)
     if rep is not None and rep.failed:
         try:

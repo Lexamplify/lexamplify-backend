@@ -8,6 +8,7 @@ const STYLES = `
 .cc { max-width: 820px; margin: 0 auto; padding: clamp(20px, 4vw, 48px) clamp(16px, 4vw, 32px) 80px; color: var(--ink); }
 .cc * { box-sizing: border-box; }
 .cc h1 { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: clamp(28px, 4.2vw, 40px); line-height: 1.1; letter-spacing: -.018em; margin: 0 0 8px; outline: none; }
+.cc a { color: var(--accent-ink); }
 .cc-lede { margin: 0 0 24px; color: var(--ink-soft); font-size: 15.5px; line-height: 1.6; max-width: 600px; }
 .cc-form { display: grid; gap: 16px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; }
 .cc label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px; }

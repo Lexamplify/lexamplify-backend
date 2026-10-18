@@ -2,13 +2,13 @@
 
 Method: after each phase I switched to a hostile attacker and a careless first-time user and wrote new attacks (not re-runs of my own happy-path tests). Attacks live in `tests/test_redteam_part2.py` unless noted. Severity: Critical / High / Medium / Low. Status: fixed, accepted risk, or open.
 
-This file is updated after every phase. Current state: **Phases 0, 1, 2, 3 and 6 (corpus) attacked; Phases 4 and 5 in progress.**
+This file is updated after every phase. Current state: **Phases 0 to 6 attacked at least once; final re-attack and acceptance gate (Phase 7) pending.**
 
 ## Findings
 
 | # | Phase | What I tried | What happened | Severity | Status |
 |---|---|---|---|---|---|
-| 1 | 0 | Walked the route table (`scripts/dump_routes.py`) for routes with no per-user filter | `clients`, `billing`, `causelist`, `ip`, `calendar` routes have no `@jwt_required` and no `user_id` column. The sign-in gate stops anonymous callers, but any signed-in advocate can read and change every firm's clients and billing. | High | **Open** (tenancy work, Phase 5) |
+| 1 | 0 | Walked the route table (`scripts/dump_routes.py`) for routes with no per-user filter | `clients`, `billing`, `causelist`, `ip`, `calendar` routes have no `@jwt_required` and no `user_id` column. The sign-in gate stops anonymous callers, but any signed-in advocate can read and change every firm's clients and billing. | High | **Fixed** (Phase 5: every table has an owner; rows from before belong to the earliest account only; see #46) |
 | 2 | 2 | Uploaded a .docx whose `document.xml` expands to 150 MB from about 150 KB on the wire | python-docx would have parsed it in a worker thread; the 10-second timeout stops waiting but not the thread, so memory is exhausted | High | **Fixed** (`utils/upload_guard.py` checks the zip directory before any parser runs) |
 | 3 | 2 | Uploaded a macro-enabled file renamed `.docx` | Accepted | Medium | **Fixed** (refused with a plain message) |
 | 4 | 2 | Uploaded text renamed `.pdf`, a non-zip renamed `.docx`, an empty file, `evil.pdf.exe`, `../../etc/passwd.pdf`, a NUL-byte filename, a binary `.txt` | Type was decided from the extension only | Medium | **Fixed** (magic bytes decide; all give a 4xx with a plain message) |
@@ -56,5 +56,18 @@ This file is updated after every phase. Current state: **Phases 0, 1, 2, 3 and 6
 | 44 | 6 | Ran 12 advocates at once (create, 5 autosaves, render, export each) | No errors; each advocate saw only their own draft | n/a | **Verified** |
 | 45 | 6 | Sent a 50 MB file, a password-protected PDF, an old .doc renamed .docx, a macro file, an empty file, a scanned PDF, a truncated PDF | Each got a plain 4xx with the right reason and no 5xx | n/a | **Verified** |
 
+| 46 | 5 | Wrote an automated cross-user test per older table (clients, billing, tracked cases, IP assets, team roster, task board, calendar) | Confirmed: a second advocate could read, change and delete all of them. Billing also numbered invoices from the whole firm's count. | High | **Fixed** (`owner_user_id` on each table; routes filter by it; ids from another advocate cannot be linked; invoice numbers count your own; 10 tests) |
+| 47 | 5 | Walked the whole route map as a second advocate: 313 routes, 985 calls, every method on ids 1 to 6, search parameters on every GET (`tests/test_cross_tenant_walk.py`) | `/api/library/search` searched every user's vault documents; `verify-status` and `generate-headnote` worked on anyone's document | High | **Fixed** (own documents only). Final walk: **0 leaks, 0 server errors**. A signed-out visitor gets 401 from every non-public route. |
+| 48 | 5 | Tried to share a vault folder with another advocate's roster member id | The share worked and answered with that person's name and e-mail, so rosters could be probed by id | Medium | **Fixed** (only your own roster can be shared with) |
+| 49 | 5 | Called `generate-headnote` with no background worker running | The request hung while the broker connection timed out | Medium | **Fixed** (plain answer at once: "background service is not running") |
+| 50 | 4 | Grepped for error responses that build their text from the exception | 52 places sent exception text to the browser (file names, provider messages) | Medium | **Fixed** centrally: every 5xx without a code is replaced by one plain envelope with a reference id, in every environment |
+| 51 | 4 | Asked for a request id and a consistent error shape | None existed | Medium | **Fixed** (`X-Request-ID` on every response, quoted on the error screen and in the log; one envelope `{error, message, code, request_id}`) |
+| 52 | 4 | Started production with `JWT_SECRET_KEY=changeme`, a 31-character key, and no `DATABASE_URL` | Started | High | **Fixed** (refuses to start, with a plain log line; 3 tests) |
+| 53 | 5 | Looked for an audit trail | Only Practice had one; sign-ins, uploads, exports and deletions were not recorded anywhere | Medium | **Fixed** (sign-in and failed sign-in, register, logout, password change, draft start/export/delete, uploads, vault deletions; `GET /api/audit/me` and a CSV a spreadsheet cannot run as a formula) |
+| 54 | 5 | Opened the dark theme on the draft preview | The preview sheet is white, but global dark-theme rules made its text near-white: **1.1:1, unreadable** | High | **Fixed** (found by the accessibility audit) |
+| 55 | 5 | Measured text contrast on the Start page, wizard and conflict page in both themes | The shared muted text colour was 2.85:1 (light) and 3.4:1 (dark); the header capsule text and orange buttons in the dark theme were 3.0 to 3.4:1; a heading level was skipped | Medium | **Fixed** (muted and accent text now pass 4.5:1; dark-theme text on orange is dark ink). Applies app-wide because the colours are shared tokens. |
+| 56 | 5 | Checked the deployed headers | The Content-Security-Policy only said `frame-ancestors`, so an injected script could run | Medium | **Fixed in `firebase.json`**: `script-src 'self' https://accounts.google.com`, no inline scripts, no objects. All 40 browser tests run under exactly this policy with no violation. **Not verified on staging:** Google sign-in, which I cannot exercise here. |
+| 57 | 5 | Checked that two tabs and refresh cannot corrupt the legacy ownership claim | Rows with no owner are claimed once by the earliest account; nobody else ever sees them | n/a | **Verified** (test) |
+
 ## Still to attack (not yet done)
-Cross-user access across every router (automated walk), the unscoped clients, billing and cause-list tables, rate-limit and brute-force abuse, file-upload attacks on the other upload routes (Document Hub, vault, letterheads), the Firebase hosting headers.
+Rate-limit and brute-force abuse beyond sign-in, file-upload attacks on the other upload routes (Document Hub, vault, letterheads), the court proxy's script isolation (accepted risk #19), anything that needs a real model or a deployed environment.
