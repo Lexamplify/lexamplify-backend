@@ -4,6 +4,8 @@ import { uploadDocument, fetchTrackedCases, saveTrackedCase, fetchCauselist } fr
 
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
+// Optional research service (library search + citation resolver). Empty = not deployed, feature stays off.
+const RAG_SERVER_URL = (import.meta.env.VITE_RAG_SERVER_URL || '').replace(/\/$/, '');
 
 // Reconstruct full breadcrumb path from any folderId using the flat folder list
 const buildPathFromId = (folderId, flat) => {
@@ -1429,10 +1431,16 @@ export default function VaultView({ targetFolderId = null }) {
       setLibRagLoading(false);
       return;
     }
+    if (!RAG_SERVER_URL) {
+      // No research service is deployed: show nothing rather than call a dev-only address that fails in production.
+      setLibRagResult(null);
+      setLibRagLoading(false);
+      return;
+    }
     setLibRagLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:8001/api/search', {
+        const res = await fetch(`${RAG_SERVER_URL}/api/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: libSearch.trim() }),
@@ -2268,7 +2276,8 @@ export default function VaultView({ targetFolderId = null }) {
                                 const win = window.open('', '_blank');
                                 setResolvingCitation(citKey);
                                 try {
-                                  const res = await fetch(`http://localhost:8001/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
+                                  if (!RAG_SERVER_URL) throw new Error('no resolver configured');
+                                  const res = await fetch(`${RAG_SERVER_URL}/api/resolve-citation?query=${encodeURIComponent(`${c.case_name} ${c.year}`)}`);
                                   const { exact_url } = await res.json();
                                   win.location.href = exact_url;
                                 } catch {

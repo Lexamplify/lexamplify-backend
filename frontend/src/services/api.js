@@ -552,31 +552,6 @@ export const extractContractText = async (file) => {
 };
 
 /**
- * Analyzes contract text via the Groq-powered RAG sidecar (port 8001).
- * Supports an optional Rule Book for custom override rules.
- * @param {string} text
- * @param {string} ruleBook
- * @param {string} scanStrategy
- */
-export const analyzeContractWithGroq = async (text = '', ruleBook = '', scanStrategy = 'Defensive') => {
-  try {
-    const response = await fetch('http://localhost:8001/api/analyze-contract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contract_text: text, rule_book: ruleBook || null, scan_strategy: scanStrategy }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      return { error: true, message: err.detail || `RAG server error ${response.status}` };
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('[API Service] analyzeContractWithGroq error:', error);
-    return { error: true, message: error.message || 'Failed to reach RAG server.' };
-  }
-};
-
-/**
  * Dispatches the (formerly ~5-minute synchronous) contract risk scan as a
  * Celery job and returns immediately with { job_id }. Pair with
  * hooks/useContractJobStream(job_id) to track live progress over SSE —
@@ -600,36 +575,6 @@ export const startContractAnalysisJob = async (text = '', ruleBook = '', scanStr
   } catch (error) {
     console.error('[API Service] startContractAnalysisJob error:', error);
     return { error: true, message: error.message || 'Failed to reach analysis service.' };
-  }
-};
-
-/**
- * AI Auto-Resolution: drafts a revised version of a flagged/commented clause.
- * surroundingContext is REQUIRED — isolated clause text alone causes the LLM
- * to hallucinate or break cross-referenced defined terms.
- * @param {string} originalText
- * @param {string} surroundingContext
- * @param {string} userComment
- */
-export const draftRevision = async (originalText, surroundingContext, userComment = '') => {
-  try {
-    const response = await fetch('http://localhost:8001/api/draft-revision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        original_text: originalText,
-        surrounding_context: surroundingContext,
-        user_comment: userComment,
-      }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      return { error: true, message: err.detail || `RAG server error ${response.status}` };
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('[API Service] draftRevision error:', error);
-    return { error: true, message: error.message || 'Failed to reach RAG server.' };
   }
 };
 
