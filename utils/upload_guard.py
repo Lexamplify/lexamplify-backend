@@ -84,3 +84,17 @@ def _check_docx(data: bytes):
         if i.file_size > 5 * 1024 * 1024 and i.compress_size and i.file_size / i.compress_size > MAX_RATIO:
             return "UNSAFE_ARCHIVE"
     return None
+
+
+def decode_text(data: bytes) -> str:
+    """Decode a .txt upload: UTF-16 only when it has a byte-order mark (it would otherwise accept any even-length bytes),
+    then UTF-8 (with or without BOM), then Windows-1252, which Indian offices' older files are usually saved in."""
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return data.decode("utf-16")
+        except UnicodeError:
+            pass
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeError:
+        return data.decode("cp1252", errors="replace")

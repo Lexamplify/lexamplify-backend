@@ -79,11 +79,35 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
             doc.close()
     elif filetype == "docx":
         import docx
-        doc = docx.Document(io.BytesIO(file_bytes))
-        text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        text = docx_text_in_order(docx.Document(io.BytesIO(file_bytes)))
     else:
         text = file_bytes.decode("utf-8", errors="ignore")
     return text
+
+
+def docx_text_in_order(doc) -> str:
+    """Paragraphs AND table cells, in the order they appear. Fee schedules, party lists and payment tables live in tables."""
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+    out = []
+    for child in doc.element.body.iterchildren():
+        tag = child.tag.rsplit("}", 1)[-1]
+        if tag == "p":
+            t = Paragraph(child, doc).text
+            if t.strip():
+                out.append(t)
+        elif tag == "tbl":
+            for row in Table(child, doc).rows:
+                seen, cells = set(), []
+                for cell in row.cells:
+                    if id(cell._tc) in seen:
+                        continue                      # merged cells repeat
+                    seen.add(id(cell._tc))
+                    if cell.text.strip():
+                        cells.append(cell.text.strip().replace("\n", " "))
+                if cells:
+                    out.append(" | ".join(cells))
+    return "\n".join(out)
 
 def _split_into_clauses(text: str) -> list:
     """

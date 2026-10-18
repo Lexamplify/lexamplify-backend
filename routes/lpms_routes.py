@@ -21,7 +21,7 @@ import os
 
 from flask import Blueprint, request
 
-from routes import lpms_cases, lpms_core, lpms_more
+from routes import lpms_cases, lpms_conflicts, lpms_core, lpms_more
 from routes.lpms_common import ApiError, Env, err
 from utils import lpms_store as L
 
@@ -64,6 +64,7 @@ def create_lpms_blueprint(deps):
     lpms_core.register(env)
     lpms_cases.register(env)
     lpms_more.register(env)
+    lpms_conflicts.register(env)
 
     sender = deps.get("send_email")
     bp.scheduler = L.Scheduler(deps["db_path"], sender if (deps.get("email_configured") and deps["email_configured"]()) else None,

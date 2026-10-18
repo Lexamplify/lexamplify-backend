@@ -183,11 +183,14 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     if not chunks:
         chunks.append(full_text)
 
+    failed_sections = []
+
     def process_chunk_safe(chunk):
         try:
             return analyze_contract_with_llm(chunk, scan_strategy)
         except Exception as e:
             print(f"[analyze_contract_task] chunk failed, skipping: {e}")
+            failed_sections.append(1)
             return {"summary": "", "clauses": []}
 
     all_clauses = []
@@ -209,6 +212,11 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                 if isinstance(res.get("summary"), str) and res["summary"]:
                     all_summaries.append(res["summary"])
 
+    if failed_sections and len(failed_sections) >= total:
+        # Every section failed (provider down, key missing, rate limit). An empty result here would read as
+        # "no risks found", which is the one thing a contract review must never say by accident.
+        raise RuntimeError("AI_UNAVAILABLE")
+
     report('Deduplicating flagged clauses...', 75)
     accepted_texts = []
     unique_clauses = []
@@ -221,7 +229,32 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
         accepted_texts.append(txt)
         unique_clauses.append(c)
 
-    final_summary = all_summaries[0] if all_summaries else "Document analyzed successfully."
+    from utils.contract_checks import find_missing_clauses, key_dates, locate_quote
+    from utils.draft_engine.verifier import check_citations
+
+    grounded, dropped_unverified = [], 0
+    for c in unique_clauses:
+        exact, how = locate_quote(c.get("original_text") or "", full_text)
+        if not exact:
+            dropped_unverified += 1
+            continue
+        c["original_text"] = exact
+        c["_quote_match"] = how
+        grounded.append(c)
+    unique_clauses = grounded
+
+    final_summary = all_summaries[0] if all_summaries else "No summary could be produced for this document."
+    if len(all_summaries) > 1:
+        try:
+            from utils.ai_helper import ask_groq
+            combined = ask_groq(
+                "Combine these partial summaries of ONE contract into a single plain summary of at most four short sentences. "
+                "Use only facts that appear in them. Do not add anything and do not discuss risks.",
+                "\n".join(f"- {t}" for t in all_summaries[:8]))
+            if combined and combined.strip():
+                final_summary = combined.strip()
+        except Exception as e:
+            print(f"[analyze_contract_task] summary merge skipped: {e}")
 
     formatted_clauses = []
     for idx, c in enumerate(unique_clauses):
@@ -246,8 +279,11 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
         rule = c.get("playbook_rule") or "Indian Contract Act, 1872"
         explanation = c.get("explanation") or c.get("issue") or "This clause presents contractual risk under Indian law."
 
+        cite_issues = check_citations(" ".join([str(rule), str(explanation), str(rev_text)]))
         formatted_clauses.append({
             "id": f"risk-{idx+1}",
+            "quoteMatch": c.get("_quote_match", "exact"),
+            "citationWarnings": [i["reason"] + " (" + i["text"] + ")" for i in cite_issues],
             "severity": severity,
             "title": title,
             "excerpt": (orig_text[:140] + "…") if len(orig_text) > 140 else orig_text,
@@ -270,39 +306,7 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
         })
 
     report('Identifying missing standard clauses...', 80)
-    missing_clauses = []
-    try:
-        from utils.ai_helper import ask_groq, extract_json_from_llm_response
-        missing_prompt = """You are a senior Indian corporate lawyer reviewing a contract.
-Identify 3 to 5 critical clauses or legal protections that are completely MISSING or dangerously absent from this agreement (e.g. Force Majeure, Transition Assistance, Audit Rights, DPDP Act 2023 compliance, Mutual Indemnification, Severability).
-
-Return ONLY a valid JSON array of objects with these exact keys:
-[
-  {
-    "title": "Clause Title (e.g. Force Majeure clause)",
-    "rationale": "One-sentence rationale explaining why this clause is standard and what exposure its absence creates under Indian law.",
-    "model": "Complete, formal contractual clause ready to insert directly into the executed agreement."
-  }
-]
-"""
-        raw_missing = ask_groq(missing_prompt, f"Contract Text excerpt:\n{full_text[:9000]}")
-        parsed_missing = extract_json_from_llm_response(raw_missing)
-        if isinstance(parsed_missing, list):
-            for m_idx, m_item in enumerate(parsed_missing):
-                if isinstance(m_item, dict) and m_item.get("title"):
-                    model_txt = m_item.get("model", "")
-                    if not model_txt.startswith('"') and model_txt:
-                        model_txt = f'"{model_txt}"'
-                    missing_clauses.append({
-                        "id": f"miss-{m_idx+1}",
-                        "title": m_item.get("title", ""),
-                        "rationale": m_item.get("rationale", ""),
-                        "model": model_txt,
-                        "checked": False,
-                        "expanded": False,
-                    })
-    except Exception as e:
-        print(f"[analyze_contract_task] Missing clauses detection error: {e}")
+    missing_clauses = find_missing_clauses(full_text)
 
     report('Matching precedents...', 88)
     citations = []
@@ -374,49 +378,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     except Exception as precedent_err:
         print(f"[analyze_contract_task] Precedent matching non-fatal failure: {precedent_err}")
 
-    # Fallback statutory citations if index was empty or offline (guaranteed non-fatal)
-    if not citations:
-        try:
-            statutory_candidates = [
-                {
-                    "title": "Digital Personal Data Protection Act, 2023",
-                    "num": "Act No. 22 of 2023",
-                    "snippet": "Governs the processing of digital personal data within India, requiring reasonable security safeguards and lawful basis for processing.",
-                },
-                {
-                    "title": "Indian Contract Act, 1872 — Section 73 & 74",
-                    "num": "Act No. 9 of 1872",
-                    "snippet": "Statutory rules on compensation for loss or damage caused by breach of contract and enforcement of liquidated damages.",
-                },
-                {
-                    "title": "Arbitration and Conciliation Act, 1996",
-                    "num": "Act No. 26 of 1996",
-                    "snippet": "Sets out the legal framework for domestic and international commercial arbitration seated in India, party autonomy, and enforceability.",
-                },
-                {
-                    "title": "Specific Relief Act, 1963 — Section 14",
-                    "num": "Act No. 47 of 1963",
-                    "snippet": "Contracts not specifically enforceable, including contracts dependent on personal qualifications or determinable contracts.",
-                },
-            ]
-            for c_cand in statutory_candidates:
-                in_v, v_id = safe_check_case_in_vault(c_cand["title"], c_cand["num"])
-                citations.append({
-                    "id": f"cite-{len(citations)+1}",
-                    "case_id": c_cand["num"],
-                    "title": c_cand["title"],
-                    "name": c_cand["title"],
-                    "year": c_cand["num"],
-                    "num": c_cand["num"],
-                    "snippet": c_cand["snippet"],
-                    "in_vault": in_v,
-                    "inVault": in_v,
-                    "vault_id": v_id,
-                    "kanoon_url": f"https://indiankanoon.org/search/?formInput={urllib.parse.quote(c_cand['title'])}",
-                })
-        except Exception as stat_err:
-            print(f"[analyze_contract_task] Statutory fallback non-fatal error: {stat_err}")
-
     report('Finalizing report...', 97)
     word_count = len(full_text.split())
     page_count = max(1, word_count // 250)
@@ -434,4 +395,12 @@ Return ONLY a valid JSON array of objects with these exact keys:
         "page_count": page_count,
         "word_count": word_count,
         "pdf_url": "",
+        "key_dates": key_dates(full_text),
+        "coverage": {
+            "sections": total, "failed_sections": len(failed_sections), "dropped_unverified": dropped_unverified,
+            "warnings": (
+                ([f"The AI could not read {len(failed_sections)} of {total} sections, so risks in those sections are not shown."] if failed_sections else [])
+                + ([f"{dropped_unverified} AI finding(s) were removed because the text they quoted is not in your document."] if dropped_unverified else [])
+            ),
+        },
     }

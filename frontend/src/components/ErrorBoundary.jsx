@@ -1,11 +1,8 @@
 import { Component } from 'react';
 
-// The app has no error boundary anywhere from the DOM root down (confirmed
-// by searching the whole codebase) — any uncaught exception thrown inside
-// a React event handler or render (e.g. a ProseMirror transaction failing
-// synchronously mid-click) unmounts the entire tree per React's default
-// no-boundary behavior. This exists specifically to stop that turning into
-// a full white-screen crash for whatever page it wraps.
+// Catches any error thrown while a page renders (or inside one of its event handlers) so the advocate sees a calm
+// message and a way forward instead of a white screen. Wrap a page, or the whole app shell with a `resetKey` (the
+// current path) so moving to another page clears the error.
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -20,47 +17,37 @@ export default class ErrorBoundary extends Component {
     console.error('[ErrorBoundary] caught an error:', error, info);
   }
 
-  handleReload = () => {
-    window.location.reload();
-  };
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false });
+    }
+  }
 
   render() {
     if (this.state.hasError) {
       return (
-        <div
-          style={{
-            padding: '64px 24px',
-            textAlign: 'center',
-            maxWidth: '480px',
-            margin: '0 auto',
-            color: 'var(--text-primary, #0F172A)',
-            fontFamily: 'inherit',
-          }}
-        >
-          <div style={{ fontSize: '36px', marginBottom: '14px' }}>⚠️</div>
-          <h2 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700 }}>
-            Editor encountered an error
+        <div role="alert" style={{ padding: '64px 24px', textAlign: 'center', maxWidth: '520px', margin: '0 auto', color: 'var(--ink, #181b1d)', fontFamily: 'inherit' }}>
+          <h2 style={{ margin: '0 0 8px', fontFamily: "'Fraunces', Georgia, serif", fontWeight: 500, fontSize: '26px' }}>
+            Something went wrong on this page
           </h2>
-          <p style={{ margin: '0 0 22px', fontSize: '13.5px', lineHeight: 1.6, color: 'var(--text-muted, #64748B)' }}>
-            Something went wrong while rendering this page. Reloading recovers it — your saved drafts and vault
-            documents are unaffected.
+          <p style={{ margin: '0 0 22px', fontSize: '15px', lineHeight: 1.6, color: 'var(--ink-soft, #44494d)' }}>
+            Your saved drafts, cases and documents are safe. Try again, or go back to the start page.
           </p>
-          <button
-            type="button"
-            onClick={this.handleReload}
-            style={{
-              padding: '11px 22px',
-              borderRadius: '8px',
-              background: '#3B82F6',
-              color: '#FFFFFF',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '13.5px',
-              cursor: 'pointer',
-            }}
-          >
-            Reload Editor
-          </button>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false })}
+              style={{ minHeight: 44, padding: '0 22px', borderRadius: 10, background: 'var(--accent, #b24a2e)', color: 'var(--on-accent, #fff)', border: 'none', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}
+            >
+              Try again
+            </button>
+            <a
+              href="/start"
+              style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', padding: '0 22px', borderRadius: 10, border: '1px solid var(--rule, #ccc)', color: 'inherit', textDecoration: 'none', fontSize: 15 }}
+            >
+              Go to Start
+            </a>
+          </div>
         </div>
       );
     }

@@ -59,7 +59,7 @@ export default function OrgDashboard() {
           </div>
           <h1 className="page-title serif" style={{ fontSize: '28px', margin: '6px 0 0' }}>Firm Console</h1>
           <p className="page-sub" style={{ fontSize: '13px', color: 'var(--ink-soft)', marginTop: '7px' }}>
-            Enterprise overview of practice groups, matter pipeline, pooled AI consumption, and compliance telemetry — <span>{organization?.name || 'LexAmplify'}</span> is shown here too, not a second hardcoded title.
+            Your practice groups and matter pipeline, counted from the matters you have created.
           </p>
         </div>
 
@@ -93,9 +93,9 @@ export default function OrgDashboard() {
         </div>
 
         <div className="metric-tile">
-          <span className="metric-label">AI runs (30d)</span>
-          <span className="metric-value">{organization?.totalAiRuns30d || 142}</span>
-          <span className="metric-sub">firm-pooled LLM executions</span>
+          <span className="metric-label">Closed matters</span>
+          <span className="metric-value">{matters.filter((m) => m.status === 'closed').length}</span>
+          <span className="metric-sub">counted from your matters</span>
         </div>
       </section>
 

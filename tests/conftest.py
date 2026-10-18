@@ -14,6 +14,13 @@ import pytest
 
 # Test apps must never copy real users out of the developer's lex_assistant.db (see services/legacy_user_migration.py).
 os.environ.setdefault("LEGACY_USER_MIGRATION", "off")
+# ...and must never start the Practice reminder scheduler, which could e-mail real users from the real database.
+os.environ.setdefault("LPMS_SCHEDULER", "0")
+# Tests must never spend real API credits or reach paid services with the developer's keys from .env. An empty value
+# also stops python-dotenv from filling the real one in (it never overrides a variable that is already set).
+for _name in ("GROQ_API_KEY", "OPENAI_API_KEY", "PINECONE_API_KEY", "PINECONE_HOST", "ZENROWS_API_KEY", "TAVILY_API_KEY",
+              "GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_ID"):
+    os.environ[_name] = ""
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:

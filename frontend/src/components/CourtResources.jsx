@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import districtsJson from '../../../data/districts.json';
+import districtsJson from '../data/districts.json';
 import { formatCourtDisplayName, getMetroComplexes, resolveDistrictSelection } from '../utils/courtNameFormatter.js';
 import JudgesDirectoryHub from './JudgesDirectoryHub.jsx';
 import HighCourtSelector from './HighCourtSelector.jsx';

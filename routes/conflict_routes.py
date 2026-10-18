@@ -875,161 +875,51 @@ Severity must be either "critical" or "major"."""
 
 @conflict_bp.route('/api/conflict/check', methods=['POST'])
 def check_conflict_entity():
-  try:
-    data = request.get_json(silent=True) or {}
-    entity_name = (data.get('entity_name') or '').strip()
-    opposing_party = (data.get('opposing_party') or '').strip()
-    matter_type = (data.get('matter_type') or 'Civil').strip()
-
+    """Name check for the older Conflict Engine screen. It answers from the signed-in advocate's own Practice records
+    (clients, cases, parties) through the same engine as /api/practice/conflicts/check. Nothing here is sample data."""
+    from flask import current_app
+    from flask_jwt_extended import get_jwt_identity
+    from utils import lpms_store as L
+    from utils.conflict_check import run_check
+    data = request.get_json(silent=True)
+    data = data if isinstance(data, dict) else {}
+    entity_name = str(data.get('entity_name') or '').strip()[:160]
+    opposing_party = str(data.get('opposing_party') or '').strip()[:160]
+    matter_type = str(data.get('matter_type') or 'Civil').strip()[:40]
     if not entity_name:
-        return jsonify({'error': 'Please provide an entity name to search.'}), 400
-
-    # Severity weighting: Criminal/Matrimonial/Writ raise conflict_status to High Conflict
-    high_risk_matters = {'criminal', 'matrimonial', 'writ'}
-    matter_severity_boost = matter_type.lower() in high_risk_matters
-    
-    # Search inside the case vault
-    vault_path = os.path.join(os.getcwd(), "case_vault.json")
+        return jsonify({'error': True, 'message': 'Please provide a name to search.'}), 400
+    path = current_app.extensions.get('lpms_db_path')
+    if not path:
+        return jsonify({'error': True, 'message': 'The Practice module is not available, so there is nothing to check against. Please try again later.', 'code': 'PRACTICE_UNAVAILABLE'}), 503
+    conn = L.connect(path)
+    try:
+        member = L.member_for_user(conn, int(get_jwt_identity()))
+        if not member:
+            return jsonify({'error': True, 'message': 'Set up your practice and add your clients and cases first. Without them there is nothing to check against.', 'code': 'NO_FIRM'}), 403
+        res = run_check(conn, member, entity_name, [opposing_party] if opposing_party else [])
+    finally:
+        conn.close()
+    status = {'conflict': 'High Conflict', 'possible': 'Potential', 'clear': 'Clear', 'no_records': 'No Records'}[res['status']]
     results = []
-    
-    # Try to load case_vault.json
-    cases = {}
-    if os.path.exists(vault_path):
-        try:
-            with open(vault_path, 'r', encoding='utf-8') as f:
-                cases = json.load(f)
-        except Exception as e:
-            print(f"Error loading case_vault.json: {e}")
-            
-    # Dummy cases matching frontend client list for full RAG database fidelity
-    dummy_cases = [
-        {
-            "id": "101",
-            "title": "Sharma vs. Tech Corp",
-            "client": "Rajesh Sharma",
-            "opponent": "Tech Corp India Private Limited",
-            "docs": [
-                {"title": "Bail_Application_Format.pdf", "text": "IN THE COURT OF THE METROPOLITAN MAGISTRATE AT NEW DELHI\n\nCRIMINAL MISC. BAIL APPLICATION NO. 456 OF 2026\n\nIN THE MATTER OF:\nRajesh Sharma ... APPLICANT\nVERSUS\nState of NCT Delhi ... RESPONDENT"},
-                {"title": "Master_Service_Agreement.docx", "text": "MASTER SOFTWARE DEVELOPMENT & SERVICE AGREEMENT\n\nThis Agreement is entered into on 14th April 2026 by and between:\nTech Corp India Private Limited (Client)\n-AND-\nLexAmplify Software Solutions (Service Provider)"}
-            ]
-        },
-        {
-            "id": "102",
-            "title": "State of Maharashtra vs. K. Patel",
-            "client": "Karan Patel",
-            "opponent": "State of Maharashtra",
-            "docs": [
-                {"title": "FIR_Report_No_88.pdf", "text": "FIRST INFORMATION REPORT (FIR) - UNDER SECTION 154 CrPC\n\nAccused Karan Patel allegedly entered the complainant's premises and caused damage to proprietary physical assets, violating Section 448 (House-trespass) and Section 379 (Theft) of the Indian Penal Code."}
-            ]
-        }
-    ]
-
-    entity_lower = entity_name.lower()
-    opposing_lower = opposing_party.lower() if opposing_party else ''
-
-    # 1. Search dummy case lists
-    for case in dummy_cases:
-        case_match = False
-        match_type = ""
-        matched_text = ""
-
-        if entity_lower in case["client"].lower():
-            case_match = True
-            match_type = "Primary Client Match"
-            matched_text = f"Represented client name: {case['client']}"
-        elif entity_lower in case["opponent"].lower():
-            case_match = True
-            match_type = "Adverse Party Match"
-            matched_text = f"Adverse opposing party name: {case['opponent']}"
-        elif entity_lower in case["title"].lower():
-            case_match = True
-            match_type = "Case Title Match"
-            matched_text = f"Case Title: {case['title']}"
-        # Also check if opposing party appears as the current client (cross-side conflict)
-        elif opposing_lower and opposing_lower in case["client"].lower():
-            case_match = True
-            match_type = "Adverse Party Match"
-            matched_text = f"Opposing party '{opposing_party}' is our existing client: {case['client']}"
-
-        if case_match:
-            base_status = "High Conflict" if match_type in ("Primary Client Match", "Adverse Party Match") else "Potential"
-            boosted_status = "High Conflict" if (matter_severity_boost and base_status == "Potential") else base_status
-            results.append({
-                "case_id": case["id"],
-                "case_title": case["title"],
-                "client": case["client"],
-                "opponent": case["opponent"],
-                "matched_doc": "Case Core Records",
-                "match_type": match_type,
-                "excerpt": matched_text,
-                "conflict_status": boosted_status,
-            })
+    for f in res['findings']:
+        if f['level'] == 'info':
             continue
-
-        # Check document contents
-        for doc in case["docs"]:
-            if entity_lower in doc["text"].lower():
-                start_idx = max(0, doc["text"].lower().find(entity_lower) - 50)
-                end_idx = min(len(doc["text"]), start_idx + len(entity_name) + 100)
-                excerpt = doc["text"][start_idx:end_idx].strip().replace('\n', ' ')
-                status = "High Conflict" if matter_severity_boost else "Potential"
-                results.append({
-                    "case_id": case["id"],
-                    "case_title": case["title"],
-                    "client": case["client"],
-                    "opponent": case["opponent"],
-                    "matched_doc": doc["title"],
-                    "match_type": "Document Ingestion Mention",
-                    "excerpt": f"... {excerpt} ...",
-                    "conflict_status": status,
-                })
-                break
-
-    # 2. Search inside case_vault.json loaded files
-    for doc_id, doc_data in cases.items():
-        doc_title = doc_data.get('title', 'Ingested Document')
-        doc_html = doc_data.get('html_content', '')
-        doc_text = re.sub(r'<[^>]*>', '', doc_html)
-        doc_summary = doc_data.get('summary', '')
-
-        if entity_lower in doc_text.lower() or entity_lower in doc_summary.lower():
-            matched_in = doc_summary if entity_lower in doc_summary.lower() else doc_text
-            start_idx = max(0, matched_in.lower().find(entity_lower) - 50)
-            end_idx = min(len(matched_in), start_idx + len(entity_name) + 100)
-            excerpt = matched_in[start_idx:end_idx].strip().replace('\n', ' ')
-
-            results.append({
-                "case_id": doc_id,
-                "case_title": f"Vault Doc: {doc_title}",
-                "client": "Vault Storage",
-                "opponent": "N/A",
-                "matched_doc": doc_title,
-                "match_type": "Ingested Clause Match",
-                "excerpt": f"... {excerpt} ...",
-                "conflict_status": "Potential",
-            })
-
-    # Overall status classification
-    overall_status = "Clear"
-    if any(r["conflict_status"] == "High Conflict" for r in results):
-        overall_status = "High Conflict"
-    elif any(r["conflict_status"] == "Potential" for r in results):
-        overall_status = "Potential"
-
+        rec = f['record']
+        results.append({
+            'case_id': rec.get('case_id') or rec.get('client_id'),
+            'case_title': rec.get('title') or '',
+            'client': f['matched_name'] if f['kind'].endswith('client') or f['kind'] == 'existing_client' else '',
+            'opponent': f['matched_name'] if 'opposed' in f['kind'] else '',
+            'matched_doc': (rec.get('case_no') or 'Practice record'),
+            'match_type': f['kind'].replace('_', ' ').capitalize(),
+            'excerpt': f['message'],
+            'conflict_status': 'High Conflict' if f['level'] == 'conflict' else 'Potential',
+        })
     return jsonify({
-        "entity_name": entity_name,
-        "opposing_party": opposing_party,
-        "matter_type": matter_type,
-        "status": overall_status,
-        "results": results,
-        "summary": (
-            f"Conflict check completed for '{entity_name}'"
-            + (f" vs '{opposing_party}'" if opposing_party else "")
-            + f" [{matter_type}]. Status: {overall_status}. {len(results)} risk nodes identified."
-        ),
+        'entity_name': entity_name, 'opposing_party': opposing_party, 'matter_type': matter_type,
+        'status': status, 'results': results, 'searched': res['searched'], 'limits': res['limits'],
+        'summary': res['headline'],
     })
-  except Exception as e:
-    return jsonify({'error': str(e), 'code': 'INTERNAL_ERROR'}), 500
 
 
 @conflict_bp.route('/api/conflict/clearance-memo', methods=['POST'])
@@ -1078,7 +968,7 @@ def save_clearance_memo():
 
     except Exception as e:
         print(f"[clearance_memo] DB error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': True, 'message': 'The record could not be saved. Please try again.'}), 500
 
 
 @conflict_bp.route('/api/conflict/export-docx', methods=['POST'])

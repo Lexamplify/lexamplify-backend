@@ -173,7 +173,7 @@ export default function StartPage() {
             <span className="sp-time">About 3 minutes</span>
             <span className="sp-go"><span>Upload a contract</span><span className="sp-circle"><Arrow /></span></span>
           </Link>
-          <Link to="/conflict-engine" className="sp-card sp-mini">
+          <Link to="/check-conflicts" className="sp-card sp-mini">
             <span className="sp-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3 4 6v5c0 4.6 3.2 8.3 8 10 4.8-1.7 8-5.4 8-10V6Z" /><path d="m9 12 2.2 2.2L15.5 10" /></svg></span>
             <h2 className="sp-title">Check conflicts</h2>
             <p className="sp-desc">Before taking a new client, check their name against your own matters.</p>
@@ -213,6 +213,7 @@ export default function StartPage() {
           <Link to="/firm-library">Firm Library</Link>
           <Link to="/court-resources">Court Resources</Link>
           <Link to="/auto-draft">Drafting studio (free writing)</Link>
+          <Link to="/conflict-engine">Compare documents for discrepancies</Link>
           <Link to="/dashboard">Dashboard</Link>
         </div>
       </details>

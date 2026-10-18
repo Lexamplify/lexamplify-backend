@@ -216,6 +216,7 @@ export default function ContractAnalyzer() {
   const [missing, setMissing] = useState(INITIAL_MISSING);
   const [citations, setCitations] = useState(INITIAL_CITATIONS);
   const [conflicts, setConflicts] = useState(INITIAL_CONFLICTS);
+  const [analysisMeta, setAnalysisMeta] = useState({ warnings: [], keyDates: [] });
 
   // Active Rail Tab: 'risks' | 'missing' | 'chat' | 'citations' | 'comments' | 'conflicts'
   const [activeTab, setActiveTab] = useState('risks');
@@ -563,6 +564,10 @@ export default function ContractAnalyzer() {
     setRisks(rawRisks);
     setMissing(rawMissing);
     setCitations(rawCitations);
+    setAnalysisMeta({
+      warnings: (result.coverage && Array.isArray(result.coverage.warnings)) ? result.coverage.warnings : [],
+      keyDates: Array.isArray(result.key_dates) ? result.key_dates : [],
+    });
     if (docClauses.length > 0) {
       setContractClauses(docClauses);
     }
@@ -1740,6 +1745,13 @@ export default function ContractAnalyzer() {
               </div>
             </div>
 
+            {analysisMeta.warnings.length > 0 && (
+              <div role="alert" style={{ margin: '0 0 14px', padding: '12px 14px', border: '1px solid var(--accent)', borderRadius: 10, background: 'var(--paper-2)', fontSize: 13.5, lineHeight: 1.55 }}>
+                <b>Please read before relying on this review</b>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{analysisMeta.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+              </div>
+            )}
+
             <div className="workbench">
 
               {/* ── LEFT: DOCUMENT PANE ── */}
@@ -1983,6 +1995,17 @@ export default function ContractAnalyzer() {
                     </svg>
                     Conflicts
                   </button>
+
+                  <button
+                    type="button"
+                    className={`rail-tab ${activeTab === 'dates' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('dates')}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M8 2v4M16 2v4M3 10h18" />
+                    </svg>
+                    Key dates
+                  </button>
                 </div>
 
                 <div className="rail-panel-wrap">
@@ -2001,8 +2024,8 @@ export default function ContractAnalyzer() {
                       {risks.length === 0 ? (
                         <div className="empty" style={{ padding: '30px 10px' }}>
                           <div className="empty-icon">{ICONS.check}</div>
-                          <div className="empty-title serif">All risks resolved</div>
-                          <div className="empty-sub">Every flagged clause in this contract has been addressed or accepted.</div>
+                          <div className="empty-title serif">No risks flagged</div>
+                          <div className="empty-sub">The review found nothing to flag in {scanMode} mode, or every flag has been dealt with. Defensive mode flags only severe items; try Balanced for a closer read. This is not legal advice.</div>
                         </div>
                       ) : (
                         risks.map((r) => (
@@ -2018,12 +2041,32 @@ export default function ContractAnalyzer() {
                             </div>
                             <div className="risk-clause-title">{r.title}</div>
                             <div className="risk-excerpt">{r.excerpt}</div>
+                            {Array.isArray(r.citationWarnings) && r.citationWarnings.length > 0 && (
+                              <div style={{ fontSize: 11.5, color: 'var(--accent)', margin: '4px 0' }}>Check the law cited here: {r.citationWarnings.join(' ')}</div>
+                            )}
                             <div className="risk-loc">
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
                               </svg>
                               {r.location}
                             </div>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ marginTop: 8 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const title = String(documentName || '').replace(/\.[A-Za-z0-9]+$/, '');
+                                navigate('/draft', { state: { prefill: {
+                                  type: 'contract_amendment',
+                                  label: 'the contract analysis',
+                                  checkSlots: ['new_wording', 'agreement_title'],
+                                  facts: { agreement_title: title, clause_ref: r.location, old_wording: r.original_text || r.text, new_wording: r.replacementText || '' },
+                                } } });
+                              }}
+                            >
+                              Draft an amendment
+                            </button>
                           </div>
                         ))
                       )}
@@ -2194,6 +2237,12 @@ export default function ContractAnalyzer() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {citations.length === 0 && (
+                        <div className="empty" style={{ padding: '30px 10px' }}>
+                          <div className="empty-title serif">No supporting authorities found</div>
+                          <div className="empty-sub">We list a case or statute here only when the research index returns one for this document. We never show generic ones.</div>
+                        </div>
+                      )}
                       {citations.map((c) => (
                         <div key={c.id} className="citation-card">
                           <div className="citation-top">
@@ -2207,16 +2256,6 @@ export default function ContractAnalyzer() {
                           </div>
                           <div className="citation-snippet">{c.snippet}</div>
                           <div className="citation-actions">
-                            <button
-                              type="button"
-                              className="btn btn-sm"
-                              onClick={() => {
-                                setToastMessage(`Inserted citation "${c.num}" into active clause`);
-                                setTimeout(() => setToastMessage(''), 3500);
-                              }}
-                            >
-                              Insert citation
-                            </button>
                             <a
                               href={`https://indiankanoon.org/search/?formInput=${encodeURIComponent(c.name)}`}
                               target="_blank"
@@ -2334,6 +2373,32 @@ export default function ContractAnalyzer() {
                   </div>
 
                   {/* ── TAB 6: CONFLICTS ── */}
+                  {/* ── KEY DATES: read straight from the contract text, no AI ── */}
+                  <div className={`rail-panel ${activeTab === 'dates' ? 'active' : ''}`}>
+                    <div className="rail-head">
+                      <div>
+                        <div className="rail-head-title">Key dates and time periods</div>
+                        <div className="rail-head-sub">Found in the contract text, each with its sentence. Check them against the original.</div>
+                      </div>
+                      <span className="chip chip-neutral">{analysisMeta.keyDates.length}</span>
+                    </div>
+                    {analysisMeta.keyDates.length === 0 ? (
+                      <div className="empty" style={{ padding: '30px 10px' }}>
+                        <div className="empty-title serif">No dates or periods found</div>
+                        <div className="empty-sub">The text has no dates or periods like "30 days" that we could read.</div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {analysisMeta.keyDates.map((d, i) => (
+                          <div key={i} className="citation-card">
+                            <div className="citation-name">{d.text}</div>
+                            <div className="citation-snippet">{d.context}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className={`rail-panel ${activeTab === 'conflicts' ? 'active' : ''}`}>
                     <div className="rail-head">
                       <div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   blocksToHtml, blocksToText, createSession, deleteSession, downloadDocument, extractFacts, getSession, getType,
   listTypes, readFileText, renderDraft, saveSession,
@@ -134,6 +134,7 @@ function readBackup() {
 export default function DraftWizard() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
+  const location = useLocation();
   const headingRef = useRef(null);
 
   const [step, setStep] = useState('choose');
@@ -160,10 +161,12 @@ export default function DraftWizard() {
   const [staleTab, setStaleTab] = useState(false);
   const [restorable, setRestorable] = useState(null);   // unsaved work found in this browser
   const [restoredNote, setRestoredNote] = useState('');
+  const [fromNote, setFromNote] = useState(null);       // {label, slots[]}: facts handed over from another screen
   const factsRef = useRef({});
   const typeRef = useRef({ typeId: '', def: null });   // read by the debounced save, which outlives the render that queued it
 
   const sidRef = useRef(sessionId ? Number(sessionId) : null);
+  const handoffDone = useRef(false);
   const createdHere = useRef(false);               // a session this screen just made: do not reload it when the address changes
   const savedStamp = useRef('');
   const dirty = useRef(false);
@@ -177,6 +180,14 @@ export default function DraftWizard() {
     let live = true;
     listTypes().then((t) => { if (live) setTypes(t); }).catch((e) => { if (live) { setTypes([]); setTypesError(e.message); } });
     return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    const h = location.state && location.state.prefill;
+    if (!h || !h.type || sessionId || handoffDone.current) return;
+    handoffDone.current = true;
+    chooseType(h.type, h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -268,13 +279,24 @@ export default function DraftWizard() {
   }, []);
 
   // ── choosing a type ──
-  const chooseType = async (id) => {
+  const chooseType = async (id, handed) => {
     if (busy) return;
     setBusy('type'); setError('');
     try {
       const d = await getType(id);
-      factsRef.current = {};
-      setTypeId(id); setDef(d); setFacts({}); setProv({}); setSource(''); setDoc(null); sidRef.current = null; versionSaved.current = false;
+      const start = {}, np = {};
+      if (handed && handed.facts) {
+        Object.entries(handed.facts).forEach(([k, v]) => {
+          if (d.slots.some((s) => s.id === k) && String(v || '').trim()) {
+            start[k] = String(v);
+            np[k] = { source: handed.label, snippet: String(v), confidence: handed.checkSlots && handed.checkSlots.includes(k) ? 'low' : 'high', confirmed: !(handed.checkSlots && handed.checkSlots.includes(k)) };
+          }
+        });
+      }
+      factsRef.current = start;
+      setTypeId(id); setDef(d); setFacts(start); setProv(np); setSource(handed ? 'manual' : ''); setDoc(null); sidRef.current = null; versionSaved.current = false;
+      setFromNote(handed ? { label: handed.label, slots: Object.keys(start) } : null);
+      if (handed) { typeRef.current = { typeId: id, def: d }; writeBackup(null, id, start, false); queueSave(start, 'details'); }
       setStep('details');
     } catch (e) { setError(e.message); } finally { setBusy(''); }
   };
@@ -477,6 +499,15 @@ export default function DraftWizard() {
       {staleTab && <div className="dw-alert note" role="alert">This draft was changed in another tab or window. <button type="button" className="dw-link" onClick={() => window.location.reload()}>Reload to see the latest</button></div>}
       {error && <div className="dw-alert" role="alert">{error}</div>}
       {restoredNote && <div className="dw-alert note" role="status">{restoredNote}</div>}
+      {fromNote && step === 'details' && (
+        <div className="dw-alert note" role="status">
+          <b>Started from {fromNote.label}.</b> Details taken from there are marked so you can check them.{' '}
+          <button type="button" className="dw-link" onClick={() => {
+            const next = { ...factsRef.current }; fromNote.slots.forEach((k) => { delete next[k]; });
+            factsRef.current = next; setFacts(next); setProv({}); setFromNote(null); queueSave(next, 'details');
+          }}>Start without them</button>
+        </div>
+      )}
 
       {loading && <><div className="dw-skel" style={{ width: '60%', height: 34, marginTop: 30 }} /><div className="dw-skel" /><div className="dw-skel" style={{ width: '80%' }} /></>}
 

@@ -1,4 +1,6 @@
 import '@testing-library/jest-dom/vitest';
+// Some test files run in the plain node environment (no window): the browser-only setup below is skipped there.
+const HAS_WINDOW = typeof window !== 'undefined';
 import { afterEach, beforeEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
@@ -12,14 +14,14 @@ afterEach(() => {
 // LexAmplify chat sessions, Firm Library notes/reviewed sets) — start each test
 // from a clean slate so one test's writes can't change another's render.
 beforeEach(() => {
-  window.localStorage.clear();
+  if (HAS_WINDOW) window.localStorage.clear();
 });
 
 // jsdom implements neither API; several components call them defensively
 // (responsive layout checks, scroll-into-view on tab switch) and would
 // otherwise throw "not implemented" errors that have nothing to do with
 // the behavior under test.
-if (!window.matchMedia) {
+if (HAS_WINDOW && !window.matchMedia) {
   window.matchMedia = (query) => ({
     matches: false,
     media: query,
@@ -32,7 +34,7 @@ if (!window.matchMedia) {
   });
 }
 
-if (!window.ResizeObserver) {
+if (HAS_WINDOW && !window.ResizeObserver) {
   window.ResizeObserver = class ResizeObserver {
     observe() { }
     unobserve() { }
@@ -40,7 +42,7 @@ if (!window.ResizeObserver) {
   };
 }
 
-if (!window.IntersectionObserver) {
+if (HAS_WINDOW && !window.IntersectionObserver) {
   window.IntersectionObserver = class IntersectionObserver {
     observe() { }
     unobserve() { }
@@ -48,6 +50,6 @@ if (!window.IntersectionObserver) {
   };
 }
 
-if (!window.HTMLElement.prototype.scrollIntoView) {
+if (HAS_WINDOW && !window.HTMLElement.prototype.scrollIntoView) {
   window.HTMLElement.prototype.scrollIntoView = () => { };
 }

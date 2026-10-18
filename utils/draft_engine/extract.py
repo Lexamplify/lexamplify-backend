@@ -88,11 +88,16 @@ def deterministic(type_id: str, text: str, source_doc: str = "uploaded document"
         m = _near(text, _AMOUNT_PAT, ["cheque"])
         if m and V.parse_amount(m.group(1)):
             put("cheque_amount", m, 1)
-        m = _near(text, _DATE_PAT, ["cheque no", "cheque dated", "cheque bearing", "cheque for", "cheque of", "dated"], window=90)
-        if m and "cheque_date" not in out:
-            ctx = text[max(0, m.start() - 90): m.start()].lower()
-            if "cheque" in ctx and "memo" not in ctx and "return" not in ctx and "present" not in ctx and V.parse_date(m.group(1)):
-                put("cheque_date", m, 1, conf="medium")
+        # the date written on the cheque: a date whose nearest earlier word "cheque" is not followed by memo/return/presented
+        for dm in re.finditer(_DATE_PAT, text, re.I):
+            before = text[max(0, dm.start() - 90): dm.start()].lower()
+            if "cheque" not in before:
+                continue
+            tail = before.rsplit("cheque", 1)[-1]
+            if any(w in tail for w in ("memo", "return", "present", "deposit", "tender", "lodged")) or not V.parse_date(dm.group(1)):
+                continue
+            put("cheque_date", dm, 1, conf="medium")
+            break
         low = text.lower()
         for reason in RETURN_REASONS:
             i = low.find(reason)
@@ -105,7 +110,7 @@ def deterministic(type_id: str, text: str, source_doc: str = "uploaded document"
         m = _near(text, _DATE_PAT, ["presented", "deposited", "tendered", "lodged"], window=90)
         if m and V.parse_date(m.group(1)):
             put("presentation_date", m, 1, conf="medium")
-        m = _first(r"drawn\s+on\s+([A-Z][^,.\n]{3,70}(?:Bank|Branch)[^,.\n]{0,40})", text)
+        m = _first(r"drawn\s+on\s+([A-Z][^.\n]{3,90}?Branch|[A-Z][^,.\n]{3,70}Bank)(?=\s+in\s+favour|[,.\n]|\s+was\b)", text)
         if m:
             put("drawn_bank", m, 1, conf="medium")
     return out

@@ -33,12 +33,7 @@ const userScopedStorage = {
 export const useOrganizationStore = create(
   persist(
     (set) => ({
-      organization: {
-        id: 'org_lexamplify_main',
-        name: 'LexAmplify',
-        plan: 'Enterprise',
-        totalAiRuns30d: 142,
-      },
+      organization: { id: 'org_lexamplify_main', name: 'LexAmplify' },
       activeOrgId: 'org_lexamplify_main',
       activeTeamId: null,
       activeMatterId: null,
@@ -53,7 +48,7 @@ export const useOrganizationStore = create(
       // No real migration — see the version-bump comment above. This just
       // discards the old teams/matters/activities shape instead of
       // warning about it on every load.
-      migrate: () => ({ organization: { id: 'org_lexamplify_main', name: 'LexAmplify', plan: 'Enterprise', totalAiRuns30d: 142 }, activeOrgId: 'org_lexamplify_main', activeTeamId: null, activeMatterId: null }),
+      migrate: () => ({ organization: { id: 'org_lexamplify_main', name: 'LexAmplify' }, activeOrgId: 'org_lexamplify_main', activeTeamId: null, activeMatterId: null }),
     }
   )
 );

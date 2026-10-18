@@ -69,7 +69,6 @@ export default function TeamDashboard() {
   // 4 Metrics Tiles
   const totalSharedFiles = teamMatters.reduce((acc, m) => acc + (m.documents ? m.documents.length : 0), 0);
   const totalOpenTasks = teamMatters.reduce((acc, m) => acc + (m.tasks ? m.tasks.filter((t) => !t.completed).length : 0), 0);
-  const teamAiRuns = Math.round(organization.totalAiRuns30d / Math.max(teams.length, 1));
 
   if (!team) {
     return (

@@ -39,11 +39,17 @@ class SignedIn:
 
 
 def make_app(tmp_path, monkeypatch, name="t.db"):
+    """An isolated real app. It runs from tmp_path, because parts of the app open lex_assistant.db / instance/ relative to
+    the working directory (the Practice module among them): without this, tests would read and write the developer's data."""
     import app as app_module
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LPMS_SCHEDULER", "0")
+    monkeypatch.setenv("LEGACY_USER_MIGRATION", "off")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / name}")
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-engine-tests-0123456789ab")
     monkeypatch.setenv("PHONE_OTP_REQUIRED", "false")
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    for name in ("GROQ_API_KEY", "OPENAI_API_KEY", "PINECONE_API_KEY", "PINECONE_HOST", "ZENROWS_API_KEY", "TAVILY_API_KEY"):
+        monkeypatch.setenv(name, "")      # empty (not deleted): python-dotenv would refill a deleted one from .env
     monkeypatch.setenv("MAX_CONTENT_LENGTH", str(100 * 1024 * 1024))   # a developer .env may set a smaller cap
     flask_app = app_module.create_app()
     flask_app.config.update(TESTING=True)
