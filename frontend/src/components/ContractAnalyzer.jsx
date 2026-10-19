@@ -203,6 +203,11 @@ export default function ContractAnalyzer() {
   const [scanDuration, setScanDuration] = useState(0);
   const [scanError, setScanError] = useState(null);
   const eventSourceRef = useRef(null);
+  const jobIdRef = useRef(null);
+  const stopWaitingRef = useRef(null);       // set while a scan is being waited on; call it to stop waiting
+  const scanStartedRef = useRef(0);
+  const [scanElapsed, setScanElapsed] = useState(0);
+  const [scanSections, setScanSections] = useState({ done: 0, total: 0 });
 
   // Analyzed Workbench State (Dynamic from live pipeline)
   const [documentName, setDocumentName] = useState('Contract Document.pdf');
@@ -334,6 +339,32 @@ export default function ContractAnalyzer() {
     }
   };
 
+  useEffect(() => {
+    if (viewState !== 'scanning' || scanError) return undefined;
+    const t = setInterval(() => {
+      if (scanStartedRef.current) setScanElapsed(Math.floor((Date.now() - scanStartedRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [viewState, scanError]);
+
+  // Leaving the screen while a scan runs stops it on the server too, so it does not use up the AI allowance for nothing.
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => { unmountedRef.current = true; };
+  }, []);
+  useEffect(() => () => {
+    const id = jobIdRef.current;
+    if (stopWaitingRef.current) stopWaitingRef.current('Stopped.');
+    if (id) fetch(`${API_BASE}/api/contract/cancel/${id}`, { method: 'POST' }).catch(() => {});
+  }, []);
+
+  const handleCancelScan = () => {
+    const id = jobIdRef.current;
+    if (id) fetch(`${API_BASE}/api/contract/cancel/${id}`, { method: 'POST' }).catch(() => {});
+    if (stopWaitingRef.current) stopWaitingRef.current('You cancelled the analysis. Nothing was checked.');
+  };
+
   // ── Trigger Dynamic Scan Flow ───────────────────────────────────────────────
   const handleBeginAnalysis = async () => {
     setViewState('scanning');
@@ -419,7 +450,7 @@ export default function ContractAnalyzer() {
           log(`Playbook warning: ${pbErr.message}, using statutory standards.`, 'dim');
         }
       } else {
-        log('Cross-referencing Indian Contract Act 1872 & DPDP Act 2023 guardrails…', '');
+        log('Using the standard review rules for Indian contracts.', '');
       }
 
       const jobRes = await startContractAnalysisJob(extractedText, playbookText, scanMode);
@@ -428,127 +459,102 @@ export default function ContractAnalyzer() {
       }
 
       const jobId = jobRes.job_id;
+      if (unmountedRef.current) {
+        // the person left while the job was being started: stop it so it does not run for nobody
+        fetch(`${API_BASE}/api/contract/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+        return;
+      }
       log(`AI analysis job dispatched (Job ID: ${jobId.slice(0, 10)}…).`, 'dim');
       setScanProgress(30);
       setScanStage('Analyzing risks & liabilities…');
 
-      // ── Transport Strategy: EventSource with clean Polling fallback & Circuit Breaker ──
+      // ── Waiting for the result: plain status checks every 1.5 s ─────────────────────────────────────────
+      // A lost connection is retried for up to two minutes (a sleeping server needs about a minute to wake), a job the
+      // server no longer knows ends at once, and nothing waits longer than 16 minutes.
+      jobIdRef.current = jobId;
+      scanStartedRef.current = Date.now();
+      setScanElapsed(0);
+      setScanSections({ done: 0, total: 0 });
       await new Promise((resolve, reject) => {
-        let isDone = false;
-        let pollTimer = null;
-        let consecutiveFailures = 0;
-        const MAX_FAILURES = 3;
+        const MAX_WAIT_MS = 16 * 60 * 1000;
+        const RECONNECT_GIVE_UP_MS = 120 * 1000;
+        const began = Date.now();
+        let finished = false;
+        let timer = null;
+        let firstFailureAt = null;
 
-        const cleanup = () => {
-          if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-          }
-          if (eventSourceRef.current) {
-            eventSourceRef.current.close();
-            eventSourceRef.current = null;
-          }
+        const finish = (fn) => {
+          if (finished) return;
+          finished = true;
+          if (timer) clearTimeout(timer);
+          stopWaitingRef.current = null;
+          fn();
         };
+        stopWaitingRef.current = (reason) => finish(() => reject(new Error(reason || 'The analysis was stopped.')));
 
-        const startPollingFallback = (reason = '') => {
-          if (isDone || pollTimer) return;
-          if (eventSourceRef.current) {
-            eventSourceRef.current.close();
-            eventSourceRef.current = null;
+        const tick = async () => {
+          if (finished) return;
+          if (Date.now() - began > MAX_WAIT_MS) {
+            fetch(`${API_BASE}/api/contract/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+            finish(() => reject(new Error('This is taking much longer than expected, so it was stopped and nothing was checked. Please try again, or upload only the relevant part of the contract.')));
+            return;
           }
-          log(`Switching transport to resilient status polling${reason ? ` (${reason})` : ''}…`, 'dim');
-
-          pollTimer = setInterval(async () => {
-            if (isDone) {
-              cleanup();
+          try {
+            const statusRes = await fetch(`${API_BASE}/api/contract/analysis-status/${jobId}`, { cache: 'no-store' });
+            if (finished) return;
+            if (statusRes.status === 404) {
+              finish(() => reject(new Error('The server no longer has this analysis (it may have restarted), so nothing was checked. Please run it again. Your document is still here.')));
               return;
             }
-            try {
-              const statusRes = await fetch(`${API_BASE}/api/contract/analysis-status/${jobId}`);
-              if (!statusRes.ok) {
-                consecutiveFailures += 1;
-                if (consecutiveFailures >= MAX_FAILURES) {
-                  isDone = true;
-                  cleanup();
-                  reject(new Error('The analysis engine encountered a service disruption. Your document is preserved; please retry.'));
-                  return;
-                }
+            if (statusRes.status === 401 || statusRes.status === 403) {
+              finish(() => reject(new Error('Your session has expired. Please sign in again, then run the analysis again.')));
+              return;
+            }
+            if (!statusRes.ok) throw new Error(`status ${statusRes.status}`);
+
+            const sData = await statusRes.json();
+            if (finished) return;
+            firstFailureAt = null;
+
+            if (sData.status === 'complete') {
+              if (!sData.results) {
+                finish(() => reject(new Error('The analysis finished without a result. Please run it again.')));
                 return;
               }
-
-              const sData = await statusRes.json();
-              consecutiveFailures = 0; // Reset on success
-
-              if (sData.status === 'complete' && sData.results) {
-                isDone = true;
-                cleanup();
+              finish(() => {
                 handleAnalysisSuccess(sData.results, extractedClauses, extractedPages, extractedWords, startTime);
                 resolve();
-              } else if (sData.status === 'failed') {
-                isDone = true;
-                cleanup();
-                reject(new Error(sData.error || 'Contract analysis pipeline reported failure.'));
-              } else if (sData.progress) {
-                setScanProgress((prev) => Math.max(prev, Math.min(95, sData.progress)));
-                if (sData.stage) setScanStage(sData.stage);
-              }
-            } catch (pollErr) {
-              consecutiveFailures += 1;
-              if (consecutiveFailures >= MAX_FAILURES) {
-                isDone = true;
-                cleanup();
-                reject(new Error('The analysis engine encountered a service disruption. Your document is preserved; please retry.'));
-              }
+              });
+              return;
             }
-          }, 1200);
+            if (sData.status === 'failed') {
+              finish(() => reject(new Error(sData.error || 'The analysis could not be completed. Please try again.')));
+              return;
+            }
+            if (sData.progress) setScanProgress((prev) => Math.max(prev, Math.min(95, sData.progress)));
+            if (sData.stage) setScanStage(sData.stage);
+            if (sData.sections_total) setScanSections({ done: sData.sections_done || 0, total: sData.sections_total });
+          } catch {
+            if (finished) return;
+            if (firstFailureAt === null) firstFailureAt = Date.now();
+            setScanStage('Reconnecting to the server…');
+            if (Date.now() - firstFailureAt > RECONNECT_GIVE_UP_MS) {
+              finish(() => reject(new Error('We lost contact with the server for more than two minutes. The analysis may still be running, but we cannot show it. Please check your connection and run it again. Your document is still here.')));
+              return;
+            }
+          }
+          if (!finished) timer = setTimeout(tick, 1500);
         };
-
-        // Try SSE first. If it connects, stream live. If onerror fires, immediately fall back to polling.
-        try {
-          const es = new EventSource(`${API_BASE}/api/contract/stream/${jobId}`, { withCredentials: true });
-          eventSourceRef.current = es;
-
-          es.onmessage = (evt) => {
-            if (isDone) return;
-            try {
-              const data = JSON.parse(evt.data);
-              if (data.progress) {
-                setScanProgress((prev) => Math.max(prev, Math.min(95, data.progress)));
-              }
-              if (data.status) {
-                setScanStage(data.status);
-                log(data.status, data.status.toLowerCase().includes('fail') ? 'err' : 'dim');
-              }
-              if (data.state === 'SUCCESS' && data.result) {
-                isDone = true;
-                cleanup();
-                handleAnalysisSuccess(data.result, extractedClauses, extractedPages, extractedWords, startTime);
-                resolve();
-              } else if (data.state === 'FAILURE') {
-                isDone = true;
-                cleanup();
-                reject(new Error(data.error || 'Contract analysis failed.'));
-              }
-            } catch {
-              // frame parse error, continue
-            }
-          };
-
-          es.onerror = () => {
-            if (isDone) return;
-            // Close EventSource and transition cleanly to HTTP polling with circuit breaker
-            startPollingFallback('SSE transport disconnected');
-          };
-        } catch {
-          startPollingFallback('SSE initialization failed');
-        }
+        tick();
       });
+      jobIdRef.current = null;
 
     } catch (err) {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
+      jobIdRef.current = null;
       setScanError(err.message || 'An error occurred during contract analysis.');
       log(`Analysis error: ${err.message}`, 'err');
       // STRICT GUARDRAIL: Do NOT fall back to dummy mock data! Document is preserved in state.
@@ -1648,7 +1654,7 @@ export default function ContractAnalyzer() {
               <div className="scan-sub">
                 {scanError
                   ? 'The dynamic analysis pipeline encountered an issue. See details below.'
-                  : `${pageCount} pages · running the Hybrid Engine — clause segmentation, playbook comparison, precedent retrieval and missing-clause detection all run per page, so this scales with document length.`}
+                  : `${pageCount} ${pageCount === 1 ? 'page' : 'pages'} · the AI reads the contract section by section and every finding is checked against your text. A short contract takes a minute or two; a long one can take several minutes.`}
               </div>
             </div>
 
@@ -1690,10 +1696,17 @@ export default function ContractAnalyzer() {
                   <span>{scanProgress}%</span>
                   <span>{scanStage}</span>
                 </div>
+                <div className="progress-label" style={{ marginTop: 8 }}>
+                  <span>
+                    {Math.floor(scanElapsed / 60)}:{String(scanElapsed % 60).padStart(2, '0')} elapsed
+                    {scanSections.total ? ` · section ${Math.min(scanSections.done + 1, scanSections.total)} of ${scanSections.total}` : ''}
+                  </span>
+                  <button type="button" className="btn btn-sm" onClick={handleCancelScan}>Cancel</button>
+                </div>
               </div>
             )}
             <div className="console">
-              <div className="console-eyebrow">HYBRID ENGINE CONSOLE</div>
+              <div className="console-eyebrow">PROGRESS LOG</div>
               <div>
                 {consoleLogs.map((log, idx) => (
                   <div key={idx} className={`console-line ${log.cls}`}>

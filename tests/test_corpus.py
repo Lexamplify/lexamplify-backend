@@ -34,7 +34,7 @@ def world(tmp_path_factory):
     import routes.contract_routes as cr
     import utils.ai_helper as ah
 
-    def fake_chunk(chunk, strategy="Defensive"):
+    def fake_chunk(chunk, strategy="Defensive", **kw):
         found = []
         for pat, title, level in ((r"[^.\n]*without notice[^.\n]*\.", "Termination without notice", "High"), (r"[^.\n]*24% per month[^.\n]*\.", "Excessive interest", "Medium")):
             m = re.search(pat, chunk)

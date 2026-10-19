@@ -75,9 +75,24 @@ This file is updated after every phase. Current state: **Phases 0 to 6 attacked 
 | 61 | 7 | Opened an earlier saved version and tried to use it | No way to see old versions | Low | **Fixed** (viewer plus "Use this version") |
 | 62 | 7 | Full test suite run in one process, in a different order | Three rate-limit and QR tests failed only in the full run because an earlier file left the shared rate limiter off | Medium (false confidence) | **Fixed** (those suites switch the limiter on themselves; QR check tries several scales) |
 
+| 63 | 8 | Asked why the analyzer spun for 30 minutes at "42%, section 1 of 2" | **Root cause:** no call to the AI provider had a time limit. The library waits 10 minutes per attempt and tries three models in turn: one stuck request is 3 x 10 = 30 minutes | Critical | **Fixed** (every call has a limit, 50 s per call in the analyzer, cut to the time left; a test fails if any call is made without one) |
+| 64 | 8 | Restarted the server in the middle of an analysis (this is what a Render deploy or a free-plan sleep does) | The job file said "processing" for ever and the screen waited for ever | Critical | **Fixed** (heartbeat every 2 s; a job whose server is gone, or whose heartbeat stops, is closed at once with "the server restarted, run it again") |
+| 65 | 8 | Cut the connection during the wait; opened the status link with no job; expired the session | The screen gave up after 3 failed checks (4 seconds, shorter than a server waking up) or, with the live stream, waited without end | High | **Fixed** (plain checks every 1.5 s; lost connection retried for 2 minutes with "Reconnecting"; unknown job and expired session end at once with a plain message; nothing waits more than 16 minutes) |
+| 66 | 8 | Looked for a way out | No Cancel button; leaving the screen left the scan running and using the shared AI allowance | Medium | **Fixed** (Cancel, and leaving the screen cancels on the server; only the owner can cancel) |
+| 67 | 8 | Pointed the app at a reachable queue with no worker running | Jobs sat "queued" for ever | High | **Fixed** (a worker must answer before the queue is used; otherwise it runs in the server; a queue that stays pending for 60 s fails with a message) |
+| 68 | 8 | Started analyses without limit as one user | One person could use up the AI allowance for everyone | High | **Fixed** (2 running analyses per person, 4 AI calls at once server-wide) |
+| 69 | 8 | Read how rate limits were handled | Calls were fired blind into the provider's shared per-minute allowance and refused, then slept 12 to 32 s and tried again, with no overall limit | High | **Fixed** (calls ask for room in the shared allowance first; real use is settled afterwards; no wait ever runs past the job's deadline) |
+| 70 | 8 | Ran the same contract several times | Findings came back in a different order each time; two different clauses that sounded alike were merged as "duplicates"; the summary came from whichever section answered first | Medium | **Fixed** (document order; duplicates are found by position, not by wording, and the more serious one is kept; summaries in document order) |
+| 71 | 8 | Fed hundreds of similar findings to the duplicate check | It compared every pair; my own test run hung for 8 minutes on it | High | **Fixed** (position-based and neighbours only; word-overlap prefilter) |
+| 72 | 8 | Slowed the case-law search and the vault look-up | Up to about 100 s of sequential waiting after the AI had finished | Medium | **Fixed** (25 s limit, skipped with a warning; not started at all once time is up) |
+| 73 | 8 | Used `..`, slashes, NULs, 200-character and spaced job ids | Job ids were used as file names | Medium | **Fixed** (letters, digits, `_` and `-` only; 5 attacks tested) |
+| 74 | 8 | Looked at what the server keeps | Finished jobs stayed in memory and every contract stayed in the temp folder | Medium | **Fixed** (dropped from memory at the end; files older than 6 hours removed) |
+| 75 | 8 | Read the screen text while waiting | It claimed "running the Hybrid Engine" and "cross-referencing the Indian Contract Act and DPDP Act guardrails", work that was not happening | Medium | **Fixed** (plain wording: reads section by section, every finding checked against your text; shows time elapsed, section X of Y and Cancel) |
+| 76 | 8 | 12 advocates at once, 25 status checks x 6 at once, 400,000 characters with no spaces, NUL and right-to-left characters, Hindi and Tamil, a damaged job file, cancel twice, cancel after the end, signed-out polling | No server errors, no one saw another's job, every case ended with an answer | n/a | **Verified** (`tests/test_analysis_resilience.py`, 38 tests, and 6 browser tests in `tests/e2e/test_analyzer_resilience_e2e.py`) |
+
 ## Final lists
 
-**Fixed:** 53 of the 62 findings (the rest are "Verified" checks that found nothing, and the accepted risk #19) (see the Status column; every Critical and High is fixed).
+**Fixed:** 66 of the 76 findings (the rest are "Verified" checks that found nothing, and the accepted risk #19) (see the Status column; every Critical and High is fixed).
 
 **Accepted risk:**
 - #19 Court proxy: government HTML served from the API origin. Reduced by the URL guard; removing it needs the proxy moved to a separate origin. Decide with Yashraj.
@@ -87,6 +102,7 @@ This file is updated after every phase. Current state: **Phases 0 to 6 attacked 
 **Still open (none Critical or High):**
 - Older test files outside Part 2 that build the app directly (not through `tests/helpers_app.py`) may still read the developer's real `lex_assistant.db`.
 - npm audit: 36 vulnerabilities (3 high, in the text editor and router). Fix is inside allowed ranges; not applied without permission.
+- Analyzer speed on the real model is not measured (no key here). Scanning is limited by the provider's per-minute token allowance: set `LLM_TPM_BUDGET` to your real limit (default 8000) so the pacer matches it. A 60-page contract may legitimately end as a partial result with a warning on a small allowance.
 - Not tested: real model, Firefox, Safari, Lighthouse, staging, Google sign-in under the new CSP, Python package audit, Render persistent disk.
 
 ## Still to attack (not yet done)

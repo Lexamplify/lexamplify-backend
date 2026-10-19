@@ -8,28 +8,28 @@ Screens checked: 22. Screens with a confusion point: 0. Screenshots are in `docs
 
 | Device | Screen | Title shown | Primary buttons | First control ready | Confusion points |
 |---|---|---|---|---|---|
-| desktop | Start | What would you like to get done? | none | 89 ms | none |
-| desktop | Draft: choose a document | What would you like to draft? | none | 46 ms | none |
-| desktop | Draft: where do the facts come from | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 36 ms | none |
-| desktop | Draft: pick a case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 41 ms | none |
-| desktop | Draft: details filled from the case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 35 ms | none |
-| desktop | Draft: review | Check the draft | Looks good, continue | 29 ms | none |
-| desktop | Draft: download | Your draft is ready | Download Word (.docx) | 36 ms | none |
-| desktop | Analyzer: upload | Contract Analyzer | Begin analysis | 41 ms | none |
-| desktop | Analyzer: results | Contract Analyzer | Export report | 38 ms | none |
-| desktop | Conflicts: the form | Check for a conflict of interest | Check names | 42 ms | none |
-| desktop | Conflicts: the answer | Check for a conflict of interest | Check names | 39 ms | none |
-| phone | Start | What would you like to get done? | none | 49 ms | none |
-| phone | Draft: choose a document | What would you like to draft? | none | 57 ms | none |
+| desktop | Start | What would you like to get done? | none | 46 ms | none |
+| desktop | Draft: choose a document | What would you like to draft? | none | 28 ms | none |
+| desktop | Draft: where do the facts come from | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 19 ms | none |
+| desktop | Draft: pick a case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 19 ms | none |
+| desktop | Draft: details filled from the case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 20 ms | none |
+| desktop | Draft: review | Check the draft | Looks good, continue | 20 ms | none |
+| desktop | Draft: download | Your draft is ready | Download Word (.docx) | 23 ms | none |
+| desktop | Analyzer: upload | Contract Analyzer | Begin analysis | 26 ms | none |
+| desktop | Analyzer: results | Contract Analyzer | Export report | 31 ms | none |
+| desktop | Conflicts: the form | Check for a conflict of interest | Check names | 22 ms | none |
+| desktop | Conflicts: the answer | Check for a conflict of interest | Check names | 37 ms | none |
+| phone | Start | What would you like to get done? | none | 39 ms | none |
+| phone | Draft: choose a document | What would you like to draft? | none | 82 ms | none |
 | phone | Draft: where do the facts come from | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 32 ms | none |
-| phone | Draft: pick a case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 38 ms | none |
-| phone | Draft: details filled from the case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 31 ms | none |
-| phone | Draft: review | Check the draft | Looks good, continue | 28 ms | none |
-| phone | Draft: download | Your draft is ready | Download Word (.docx) | 32 ms | none |
-| phone | Analyzer: upload | Contract Analyzer | Begin analysis | 31 ms | none |
-| phone | Analyzer: results | Contract Analyzer | Export report | 37 ms | none |
-| phone | Conflicts: the form | Check for a conflict of interest | Check names | 36 ms | none |
-| phone | Conflicts: the answer | Check for a conflict of interest | Check names | 34 ms | none |
+| phone | Draft: pick a case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 44 ms | none |
+| phone | Draft: details filled from the case | Cheque bounce notice (s.138 NI Act): add the details | Review the draft | 32 ms | none |
+| phone | Draft: review | Check the draft | Looks good, continue | 24 ms | none |
+| phone | Draft: download | Your draft is ready | Download Word (.docx) | 25 ms | none |
+| phone | Analyzer: upload | Contract Analyzer | Begin analysis | 36 ms | none |
+| phone | Analyzer: results | Contract Analyzer | Export report | 33 ms | none |
+| phone | Conflicts: the form | Check for a conflict of interest | Check names | 29 ms | none |
+| phone | Conflicts: the answer | Check for a conflict of interest | Check names | 30 ms | none |
 
 ## What this found while it was being built
 

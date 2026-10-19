@@ -474,3 +474,14 @@ def _restore_the_shared_rate_limiter():
         limiter.reset()
     except Exception:  # noqa: BLE001 - nothing to reset before the limiter was initialised
         pass
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ai_allowance():
+    """The AI call pacer remembers the last minute's token use for the whole process; every test starts with a clean slate."""
+    yield
+    try:
+        from utils import ai_helper
+        ai_helper._PACER._events.clear()
+    except Exception:  # noqa: BLE001
+        pass

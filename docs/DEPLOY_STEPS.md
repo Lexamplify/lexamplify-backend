@@ -13,6 +13,8 @@ Nothing here has been run against your live Render or Firebase projects. I canno
 | `DATABASE_URL` | yes | Neon connection string. Also refuses to start without it. |
 | `GROQ_API_KEY` | yes for AI | Without it drafting from the guided form still works; free-writing and analysis show "the AI service did not respond". |
 | `MAX_CONTENT_LENGTH` | **change** | Set to `33554432` (32 MB). The screens promise 25 MB; a smaller value (the local `.env` has 16 MB) makes bigger files fail with a polite "too large" message. |
+| `LLM_TPM_BUDGET` | recommended | Your Groq account's tokens-per-minute limit (default 8000, the free tier). The analyzer paces its calls to fit it. If you are on a paid tier, set the real number: contract analysis gets much faster. |
+| `LLM_TIMEOUT_SECONDS`, `ANALYSIS_MAX_SECONDS`, `ANALYSIS_CALL_TIMEOUT` | optional | Time limits for one AI call (75 s), one whole analysis (4 to 15 minutes, depending on size) and one analyzer call (50 s). The defaults are fine. |
 | `FLASK_ENV` | yes | `production` (turns on HSTS and the strict cookie settings). |
 | `SENTRY_DSN` | optional | Error reporting. Needs `pip install sentry-sdk` first; ignored if missing. |
 | `PHONE_OTP_REQUIRED`, `SMS_PROVIDER`, `MSG91_*` | leave as they are | Phone sign-in stays on hold. |

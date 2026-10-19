@@ -13,8 +13,11 @@ fallback attempt fail closed, with only the primary model's own failure
 ever actually surfacing.
 """
 import json
+import os
 import re
+import threading
 import time
+from collections import deque
 
 import litellm
 from litellm import completion
@@ -92,28 +95,108 @@ def _retry_after_seconds(exc, default: float) -> float:
     return default
 
 
-def _call_with_rate_limit_retry(**call_kwargs):
+class _TokenPacer:
+    """Keeps this server's calls inside the provider's per-minute token allowance, which every user and every screen shares.
+    Firing calls and waiting for "rate limit" errors wastes the allowance on refused requests and then sleeps; asking first
+    for room in the last minute's budget is faster overall. Reservations are corrected to the real usage after the call."""
+
+    def __init__(self):
+        self._events = deque()      # [time, tokens]
+        self._lock = threading.Lock()
+
+    def _budget(self):
+        return float(os.getenv("LLM_TPM_BUDGET", _GROQ_TPM_BUDGET)) * 0.9
+
+    def _window(self):
+        return float(os.getenv("LLM_TPM_WINDOW_SECONDS", "60"))
+
+    def acquire(self, tokens, deadline=None):
+        while True:
+            with self._lock:
+                now = time.time()
+                window = self._window()
+                while self._events and now - self._events[0][0] >= window:
+                    self._events.popleft()
+                used = sum(e[1] for e in self._events)
+                if not self._events or used + tokens <= self._budget():      # an oversized request may run alone
+                    event = [now, tokens]
+                    self._events.append(event)
+                    return event
+                wait = self._events[0][0] + window - now + 0.05
+            if deadline is not None and time.time() + wait >= deadline:
+                raise AITimeout("AI_TIMEOUT: the shared AI allowance is used up and there is no time left to wait for it")
+            time.sleep(min(max(wait, 0.05), 2.0))
+
+    @staticmethod
+    def settle(event, actual_tokens):
+        if event is not None and actual_tokens:
+            event[1] = actual_tokens
+
+
+_PACER = _TokenPacer()
+
+
+class AITimeout(Exception):
+    """The AI provider did not answer inside the time we allow. Raised instead of waiting for minutes."""
+
+
+# litellm waits 10 minutes per attempt by default, and the fallback chain tries three models in turn: one stuck
+# request could keep a screen spinning for 30 minutes. Every call now has a ceiling.
+DEFAULT_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "75"))
+
+
+def _call_with_rate_limit_retry(deadline=None, **call_kwargs):
     """Retries a completion() call, with a real sleep, specifically when
     Groq's rolling TPM window is exhausted — see _GROQ_TPM_BUDGET's comment
     for why this is a separate problem from sizing a single call's own
     max_tokens. litellm's own num_retries retries too fast to let a
     per-minute window recover, which is why this account still hit the
     exact same rate-limit error after "LiteLLM Retried: 2 times" — verified
-    live. num_retries=0 here since this loop is the retry strategy now."""
+    live. num_retries=0 here since this loop is the retry strategy now.
+
+    `deadline` (epoch seconds) is the point after which the caller no longer wants an answer: no new attempt starts,
+    no rate-limit sleep runs past it, and each attempt's own timeout is cut to the time that is left."""
     last_err = None
     for attempt, default_delay in enumerate((0,) + _RATE_LIMIT_RETRY_DELAYS):
         if attempt > 0:
-            time.sleep(_retry_after_seconds(last_err, default_delay))
+            wait = _retry_after_seconds(last_err, default_delay)
+            if deadline is not None and time.time() + wait >= deadline:
+                raise AITimeout("AI_TIMEOUT: the provider is rate-limiting and there is no time left to wait")
+            time.sleep(wait)
+        kwargs = dict(call_kwargs)
+        if deadline is not None:
+            remaining = deadline - time.time()
+            if remaining < 5:
+                raise AITimeout("AI_TIMEOUT: out of time before the call started")
+            kwargs["timeout"] = max(5.0, min(float(kwargs.get("timeout") or DEFAULT_TIMEOUT_SECONDS), remaining / 2))
+        else:
+            kwargs.setdefault("timeout", DEFAULT_TIMEOUT_SECONDS)
+        reserve = int(kwargs.pop("_reserve_tokens", 0) or 0) if "_reserve_tokens" in kwargs else 0
+        event = _PACER.acquire(reserve, deadline) if reserve else None
         try:
-            return completion(num_retries=0, **call_kwargs)
+            response = completion(num_retries=0, **kwargs)
+            try:
+                _PACER.settle(event, int(getattr(getattr(response, "usage", None), "total_tokens", 0) or 0))
+            except Exception:  # noqa: BLE001 - usage is optional
+                pass
+            return response
         except Exception as e:
             last_err = e
+            if _is_timeout_error(e):
+                raise AITimeout(f"AI_TIMEOUT: {type(e).__name__}") from e
             if not _is_rate_limit_error(e):
                 raise
     raise last_err
 
 
-def ask_groq(system_prompt: str, user_msg: str, max_continuations: int = 0, **kwargs) -> str:
+def _is_timeout_error(exc) -> bool:
+    if isinstance(exc, (TimeoutError, getattr(litellm, "Timeout", ()))):
+        return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return "timeout" in text or "timed out" in text
+
+
+def ask_groq(system_prompt: str, user_msg: str, max_continuations: int = 0, deadline=None, **kwargs) -> str:
     """
     LLM Gateway Router.
     Attempts the primary model first. If it hits a Token Limit or Rate Limit,
@@ -151,6 +234,8 @@ def ask_groq(system_prompt: str, user_msg: str, max_continuations: int = 0, **kw
                 call_kwargs['max_tokens'] = max(_MIN_COMPLETION_TOKENS, min(requested_max_tokens, headroom))
 
             response = _call_with_rate_limit_retry(
+                deadline=deadline,
+                _reserve_tokens=_estimate_tokens(messages) + int(call_kwargs.get('max_tokens') or 1500),
                 model="groq/openai/gpt-oss-120b",
                 messages=messages,
                 fallbacks=["groq/openai/gpt-oss-20b", "groq/qwen/qwen3.6-27b"],

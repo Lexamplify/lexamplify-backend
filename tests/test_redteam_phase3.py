@@ -122,7 +122,7 @@ def test_diff_html_never_carries_markup_from_the_contract():
 def test_a_second_analysis_cannot_read_the_first_ones_text_through_the_job_store(world, monkeypatch):
     flask_app, a, b = world
     import routes.contract_routes as cr
-    monkeypatch.setattr(cr, "analyze_contract_with_llm", lambda chunk, strategy="Defensive": {"summary": "s", "clauses": []})
+    monkeypatch.setattr(cr, "analyze_contract_with_llm", lambda chunk, strategy="Defensive", **kw: {"summary": "s", "clauses": []})
     r = a.post("/api/contract/analyze", json={"text": "SECRET CONTRACT 1. Term. Three years of confidential work for Hidden Client."})
     job = r.get_json()["job_id"]
     time.sleep(2)

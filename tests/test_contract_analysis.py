@@ -77,7 +77,7 @@ def world(tmp_path, monkeypatch):
 def _ai(monkeypatch, per_chunk):
     """per_chunk(chunk_text) -> dict, or raises. Also disables the other AI calls (summary merge)."""
     import routes.contract_routes as cr
-    monkeypatch.setattr(cr, "analyze_contract_with_llm", lambda chunk, strategy="Defensive": per_chunk(chunk))
+    monkeypatch.setattr(cr, "analyze_contract_with_llm", lambda chunk, strategy="Defensive", **kw: per_chunk(chunk))
     import utils.ai_helper as ah
     monkeypatch.setattr(ah, "ask_groq", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no AI in this test")))
 
@@ -156,11 +156,8 @@ def test_if_the_ai_is_down_the_job_fails_loudly_it_never_says_no_risks_found(wor
 
 def test_if_some_sections_fail_the_result_says_so(world):
     _f, a, _b, mp = world
-    calls = {"n": 0}
-
     def flaky(chunk):
-        calls["n"] += 1
-        if calls["n"] % 2 == 0:
+        if "1. Clause number 1. " in chunk:        # the first section fails, and fails again on the retry
             raise RuntimeError("rate limit")
         return {"summary": "A long agreement.", "clauses": []}
     _ai(mp, flaky)

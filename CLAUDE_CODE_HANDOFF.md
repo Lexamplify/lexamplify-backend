@@ -219,3 +219,7 @@ Docs: `docs/BASELINE.md` (before and after), `docs/PRODUCT_MAP.md`, `docs/RED_TE
 Gotchas: on Windows write test or script files with the editor tool, not shell heredocs (backslashes are unescaped). Test apps must be built with `tests/helpers_app.make_app` so they do not touch `lex_assistant.db`. Phone OTP is untouched.
 
 Open test issue: `tests/test_dms_real_app.py::test_the_hub_limit_is_per_user_and_never_counts_preflights` fails only in a full-suite run (passes alone). Cause is the process-wide flask-limiter registry; fix by giving that module its own process or limiter.
+
+
+### 10.1 Contract Analyzer hang fix (after Part 2)
+Symptom: the analyzer spun for 30 minutes at "section 1 of 2". Cause: no AI call had a time limit (litellm waits 10 minutes per attempt, three models in the fallback chain). Fixed in `utils/ai_helper.py` (timeouts, deadline, `_TokenPacer` for the shared per-minute token allowance), `tasks/contract_tasks.py` (time budget, heartbeat, cancel, partial results with a warning, document-order findings, bounded precedent step), `routes/contract_routes.py` (`_load_job` closes abandoned jobs, `/api/contract/cancel/<id>`, per-user cap, worker check before using Celery), `utils/job_store.py` (id whitelist, heartbeat, cleanup) and `ContractAnalyzer.jsx` (plain polling, reconnect for 2 minutes, 16-minute cap, Cancel, elapsed time). Tests: `tests/test_analysis_resilience.py`, `tests/e2e/test_analyzer_resilience_e2e.py`. Set `LLM_TPM_BUDGET` on Render to the real Groq limit. Real-model speed is unmeasured.

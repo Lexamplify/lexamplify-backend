@@ -36,7 +36,7 @@ def _install_fake_ai():
     import routes.contract_routes as cr
     import utils.ai_helper as ah
 
-    def fake_chunk(chunk, strategy="Defensive"):
+    def fake_chunk(chunk, strategy="Defensive", **kw):
         if "[[AI-DOWN]]" in chunk:
             raise RuntimeError("simulated provider outage")
         found = []
