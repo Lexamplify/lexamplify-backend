@@ -8,7 +8,7 @@ import re
 import sqlite3
 from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, current_app
-from litellm import completion
+from utils.llm_client import completion
 from utils.ai_helper import extract_json_from_llm_response, ask_groq
 
 conflict_bp = Blueprint('conflict', __name__)

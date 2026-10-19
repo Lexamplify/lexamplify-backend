@@ -11,7 +11,7 @@ import os
 
 worker_class = "gthread"
 workers = int(os.getenv("WEB_CONCURRENCY", "1"))     # one process: analysis jobs live inside it, and the free plan has little memory
-threads = int(os.getenv("GUNICORN_THREADS", "8"))
+threads = int(os.getenv("GUNICORN_THREADS", "6"))
 timeout = int(os.getenv("GUNICORN_TIMEOUT", "120"))
 graceful_timeout = int(os.getenv("GUNICORN_GRACEFUL_TIMEOUT", "30"))
 keepalive = 5

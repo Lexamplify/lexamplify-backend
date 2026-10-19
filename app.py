@@ -21,8 +21,17 @@ import uuid
 import requests
 import urllib.parse
 from bs4 import BeautifulSoup
-from groq import Groq
-from tavily import TavilyClient
+def Groq(*args, **kwargs):
+    """Imported on first use: the package costs about 25 MB of memory, and the free server has 512 MB in total."""
+    from groq import Groq as _real
+    return _real(*args, **kwargs)
+
+
+def TavilyClient(*args, **kwargs):
+    """Imported on first use: the package costs about 25 MB of memory, and the free server has 512 MB in total."""
+    from tavily import TavilyClient as _real
+    return _real(*args, **kwargs)
+
 from pinecone import Pinecone
 from utils.ai_helper import extract_json_from_llm_response
 
@@ -4959,6 +4968,7 @@ def create_app():
                 out["checks"]["ai_reachable"] = "down"
                 out["ok"] = False
         out["metrics"] = metrics.snapshot()
+        out["memory_mb"] = metrics.rss_mb()
         out["note"] = "Counters restart when the server restarts."
         return jsonify(out), (200 if out["ok"] else 503)
 

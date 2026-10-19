@@ -569,7 +569,7 @@ export const startContractAnalysisJob = async (text = '', ruleBook = '', scanStr
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      return { error: true, message: data.error || `Job dispatch failed (${response.status})`, code: data.code };
+      return { error: true, message: data.message || (typeof data.error === 'string' ? data.error : '') || `The analysis could not be started (${response.status}). Please try again.`, code: data.code };
     }
     return data; // { job_id, status_url }
   } catch (error) {

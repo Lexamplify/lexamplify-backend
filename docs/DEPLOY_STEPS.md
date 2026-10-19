@@ -15,6 +15,8 @@ Nothing here has been run against your live Render or Firebase projects. I canno
 | `MAX_CONTENT_LENGTH` | **change** | Set to `33554432` (32 MB). The screens promise 25 MB; a smaller value (the local `.env` has 16 MB) makes bigger files fail with a polite "too large" message. |
 | `LLM_TPM_BUDGET` | recommended | Your Groq account's tokens-per-minute limit (default 8000, the free tier). The analyzer paces its calls to fit it. If you are on a paid tier, set the real number: contract analysis gets much faster. |
 | `LLM_TIMEOUT_SECONDS`, `ANALYSIS_MAX_SECONDS`, `ANALYSIS_CALL_TIMEOUT` | optional | Time limits for one AI call (75 s), one whole analysis (4 to 15 minutes, depending on size) and one analyzer call (50 s). The defaults are fine. |
+| `MALLOC_ARENA_MAX` | **recommended** | Set to `2`. On Linux, Python programs that use threads can hold far more memory than they need; this one setting commonly saves 50 to 100 MB. Important on the free plan (512 MB). |
+| `LOCAL_VECTOR_SEARCH` | leave unset | Meaning-based Firm Library search needs about 500 MB. Leave it off on the free plan; keyword search still works. |
 | `FLASK_ENV` | yes | `production` (turns on HSTS and the strict cookie settings). |
 | `SENTRY_DSN` | optional | Error reporting. Needs `pip install sentry-sdk` first; ignored if missing. |
 | `PHONE_OTP_REQUIRED`, `SMS_PROVIDER`, `MSG91_*` | leave as they are | Phone sign-in stays on hold. |
@@ -68,3 +70,7 @@ Also open `https://api.lexamplify.com/api/ping` (should say the database replied
 - Frontend: `firebase hosting:rollback` (or redeploy the previous build).
 - Backend: redeploy commit `db66ab8` on Render. The new tables are harmless if left in place; the ownership columns are additive.
 - If sign-in itself breaks, set `JWT_SECRET_KEY` correctly first (the new start-up check is the most likely thing to stop a misconfigured server).
+
+
+## Checking memory after a deploy (free plan)
+Open `https://<backend>/api/status` while signed in and read `memory_mb`. A healthy idle server shows well under 250. Run one contract analysis and look again: it should stay under about 350. In Render, Metrics → Memory shows the same over time. If it climbs towards 512, send me the `[analyze] job ... started, server memory N MB` log lines.

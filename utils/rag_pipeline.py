@@ -9,10 +9,13 @@ import os
 import json
 import math
 import hashlib
-import litellm
 import threading
 import queue
-from groq import Groq
+def Groq(*args, **kwargs):
+    """Imported on first use: the package costs about 25 MB of memory, and the free server has 512 MB in total."""
+    from groq import Groq as _real
+    return _real(*args, **kwargs)
+
 from utils.ai_helper import ask_groq
 
 # ── LAZY CLIENT SINGLETON PATTERN ───────────────────────────────────
@@ -119,6 +122,7 @@ def _generate_local_fallback_embedding(text: str, dimension: int = 512) -> list[
 
 
 def get_embedding(text: str) -> list[float]:
+    import litellm        # loaded only when an embedding is really requested: it costs about 150 MB of memory
     try:
         response = litellm.embedding(model="groq/nomic-embed-text-v1.5", input=[text])
         return response['data'][0]['embedding']

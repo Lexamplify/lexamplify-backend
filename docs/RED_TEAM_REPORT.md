@@ -90,9 +90,15 @@ This file is updated after every phase. Current state: **Phases 0 to 6 attacked 
 | 75 | 8 | Read the screen text while waiting | It claimed "running the Hybrid Engine" and "cross-referencing the Indian Contract Act and DPDP Act guardrails", work that was not happening | Medium | **Fixed** (plain wording: reads section by section, every finding checked against your text; shows time elapsed, section X of Y and Cancel) |
 | 76 | 8 | 12 advocates at once, 25 status checks x 6 at once, 400,000 characters with no spaces, NUL and right-to-left characters, Hindi and Tamil, a damaged job file, cancel twice, cancel after the end, signed-out polling | No server errors, no one saw another's job, every case ended with an answer | n/a | **Verified** (`tests/test_analysis_resilience.py`, 38 tests, and 6 browser tests in `tests/e2e/test_analyzer_resilience_e2e.py`) |
 
+| 77 | 8 | Read the Render event "Instance failed: ran out of memory (used over 512 MB)" that appeared while a contract was being analysed | **Root cause of the repeated failures.** The app used about 270 MB just to start (measured), mostly the `litellm` package (155 MB), plus 48 MB of ChromaDB and 25 MB each for the Groq and Tavily packages. An analysis then pushed it past the free plan's 512 MB and Render killed the service, and every running analysis with it. The screen then saw "CORS blocked" and 429 errors, which are Render's replies while the service restarts | Critical | **Fixed** (litellm replaced by a 100-line Groq client, `utils/llm_client.py`; ChromaDB, Groq and Tavily load only when used. Start-up memory **271 MB to 119 MB**, measured) |
+| 78 | 8 | Looked for anything that loads a large model | Saving or searching a Firm Library document loaded sentence-transformers and PyTorch (roughly 500 MB) the first time, enough to stop the free server by itself | Critical | **Fixed** (the meaning-based search is off unless `LOCAL_VECTOR_SEARCH=1`; keyword search works as before) |
+| 79 | 8 | Started an analysis when the server was already near its limit | It started and took the whole service down | High | **Fixed** (a new analysis is refused with "the server is busy, try again in a minute" above 430 MB; `/api/status` shows `memory_mb`) |
+| 80 | 8 | Kept the status page open while the server restarted | The screen asked every 1.5 s, adding load while the server was trying to start, and gave up after 2 minutes (a cold start takes longer) | Medium | **Fixed** (waits longer between asks while the server is down, up to 3 minutes of retrying) |
+| 81 | 8 | Read the start-up error text when an analysis could not be started | The screen could show the word "true" (the error field is a flag, the text is in `message`) | Low | **Fixed** |
+
 ## Final lists
 
-**Fixed:** 66 of the 76 findings (the rest are "Verified" checks that found nothing, and the accepted risk #19) (see the Status column; every Critical and High is fixed).
+**Fixed:** 71 of the 81 findings (the rest are "Verified" checks that found nothing, and the accepted risk #19) (see the Status column; every Critical and High is fixed).
 
 **Accepted risk:**
 - #19 Court proxy: government HTML served from the API origin. Reduced by the URL guard; removing it needs the proxy moved to a separate origin. Decide with Yashraj.

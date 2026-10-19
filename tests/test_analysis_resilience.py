@@ -67,11 +67,11 @@ def test_the_time_limit_shrinks_to_what_is_left_before_the_deadline(monkeypatch)
 
 
 def test_a_provider_that_times_out_becomes_an_ai_timeout_not_a_long_wait(monkeypatch):
-    import litellm
+    import utils.llm_client as lc
     import utils.ai_helper as ah
 
     def hang(**kw):
-        raise litellm.Timeout("request timed out", model="m", llm_provider="groq")
+        raise lc.Timeout("request timed out after 50s")
     monkeypatch.setattr(ah, "completion", hang)
     t0 = time.time()
     with pytest.raises(ah.AITimeout):
@@ -486,3 +486,22 @@ def test_the_live_stream_closes_by_itself_so_it_cannot_hold_a_server_worker(worl
     assert r.status_code == 200 and time.time() - t0 < 6
     assert '"state": "PROGRESS"' in body and "FAILURE" not in body       # it ended quietly; the page checks again
     _wait(a, job, timeout=30)
+
+
+# ── memory: the free server stops everything at 512 MB ─────────────────────────────────────────────────────
+def test_a_new_analysis_is_refused_politely_when_the_server_is_nearly_out_of_memory(world):
+    _f, a, _b, mp = world
+    import routes.contract_routes as cr
+    from utils import metrics
+    mp.setattr(metrics, "rss_mb", lambda: 600)
+    r = _start(a)
+    assert r.status_code == 503 and r.get_json()["code"] == "SERVER_BUSY" and "try again" in r.get_json()["message"]
+    mp.setattr(metrics, "rss_mb", lambda: 200)
+    mp.setattr(cr, "analyze_contract_with_llm", lambda chunk, strategy="Defensive", **kw: {"summary": "s", "clauses": []})
+    assert _start(a).status_code == 200
+
+
+def test_the_status_page_shows_memory_use(world):
+    flask_app, a, _b, _mp = world
+    r = a.get("/api/status")
+    assert r.status_code == 200 and isinstance(r.get_json().get("memory_mb"), int) and r.get_json()["memory_mb"] > 0

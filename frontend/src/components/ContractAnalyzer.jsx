@@ -469,7 +469,7 @@ export default function ContractAnalyzer() {
       setScanStage('Analyzing risks & liabilities…');
 
       // ── Waiting for the result: plain status checks every 1.5 s ─────────────────────────────────────────
-      // A lost connection is retried for up to two minutes (a sleeping server needs about a minute to wake), a job the
+      // A lost connection is retried for up to three minutes (a sleeping server needs about a minute to wake), a job the
       // server no longer knows ends at once, and nothing waits longer than 16 minutes.
       jobIdRef.current = jobId;
       scanStartedRef.current = Date.now();
@@ -477,11 +477,12 @@ export default function ContractAnalyzer() {
       setScanSections({ done: 0, total: 0 });
       await new Promise((resolve, reject) => {
         const MAX_WAIT_MS = 16 * 60 * 1000;
-        const RECONNECT_GIVE_UP_MS = 120 * 1000;
+        const RECONNECT_GIVE_UP_MS = 180 * 1000;
         const began = Date.now();
         let finished = false;
         let timer = null;
         let firstFailureAt = null;
+        let failures = 0;                      // grows while the server is unreachable, so we do not hammer it while it restarts
 
         const finish = (fn) => {
           if (finished) return;
@@ -515,6 +516,7 @@ export default function ContractAnalyzer() {
             const sData = await statusRes.json();
             if (finished) return;
             firstFailureAt = null;
+            failures = 0;
 
             if (sData.status === 'complete') {
               if (!sData.results) {
@@ -537,13 +539,14 @@ export default function ContractAnalyzer() {
           } catch {
             if (finished) return;
             if (firstFailureAt === null) firstFailureAt = Date.now();
+            failures += 1;
             setScanStage('Reconnecting to the server…');
             if (Date.now() - firstFailureAt > RECONNECT_GIVE_UP_MS) {
-              finish(() => reject(new Error('We lost contact with the server for more than two minutes. The analysis may still be running, but we cannot show it. Please check your connection and run it again. Your document is still here.')));
+              finish(() => reject(new Error('We lost contact with the server for more than three minutes. The analysis may still be running, but we cannot show it. Please check your connection and run it again. Your document is still here.')));
               return;
             }
           }
-          if (!finished) timer = setTimeout(tick, 1500);
+          if (!finished) timer = setTimeout(tick, firstFailureAt === null ? 1500 : Math.min(10000, 1500 * 2 ** Math.min(4, failures)));
         };
         tick();
       });

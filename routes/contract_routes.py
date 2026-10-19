@@ -27,6 +27,7 @@ contract_bp = Blueprint("contract", __name__)
 
 JOB_STALE_SECONDS = int(os.getenv("ANALYSIS_STALE_SECONDS", "75"))          # a running job writes a heartbeat every 2 s
 JOB_HARD_LIMIT_SECONDS = int(os.getenv("ANALYSIS_HARD_LIMIT_SECONDS", "1200"))
+MAX_RSS_MB = int(os.getenv("ANALYSIS_MAX_RSS_MB", "430"))                    # the free plan stops the whole service at 512 MB
 MAX_ACTIVE_PER_USER = int(os.getenv("ANALYSIS_MAX_ACTIVE_PER_USER", "2"))
 STREAM_MAX_SECONDS = int(os.getenv("ANALYSIS_STREAM_MAX_SECONDS", "20"))     # a live stream holds a server thread; never for long
 _LIVE_JOBS = {}                                                            # job_id -> owner, for jobs running in THIS process
@@ -554,6 +555,16 @@ def analyze():
         except (TypeError, ValueError):
             owner_id = None
         from tasks.contract_tasks import analyze_contract_task, JobCancelled
+        from utils import metrics
+        used = metrics.rss_mb()
+        if used and used > MAX_RSS_MB:
+            import gc
+            gc.collect()
+            used = metrics.rss_mb()
+            if used > MAX_RSS_MB:
+                print(f"[analyze] refusing a new analysis: the server is using {used} MB (limit {MAX_RSS_MB})")
+                return jsonify({"error": True, "code": "SERVER_BUSY",
+                                "message": "The server is busy with other work right now. Please try again in a minute. Your document is still here."}), 503
         with _LIVE_LOCK:
             running = sum(1 for o in _LIVE_JOBS.values() if o == owner_id)
             if running >= MAX_ACTIVE_PER_USER:
@@ -601,6 +612,7 @@ def analyze():
                 with _LIVE_LOCK:
                     _LIVE_JOBS.pop(job_id, None)
 
+        print(f"[analyze] job {job_id[:14]} started, server memory {used} MB")
         threading.Thread(target=_run_local_job, daemon=True, name=f"analysis-{job_id[:14]}").start()
         return jsonify({"job_id": job_id, "status": "QUEUED"}), 200
 

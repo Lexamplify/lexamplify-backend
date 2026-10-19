@@ -7,8 +7,13 @@ import os
 import json
 import re
 from flask import Blueprint, request, jsonify
-from litellm import completion
-from tavily import TavilyClient
+from utils.llm_client import completion
+
+def TavilyClient(*args, **kwargs):
+    """Imported on first use: the package costs about 25 MB of memory, and the free server has 512 MB in total."""
+    from tavily import TavilyClient as _real
+    return _real(*args, **kwargs)
+
 from utils.ai_helper import extract_json_from_llm_response
 
 # Blueprint definition

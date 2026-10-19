@@ -255,7 +255,7 @@ def test_hearings_cause_list_and_warnings(firm):
     other = next(h["id"] for h in cl["hearings"] if h["id"] != hid)
     assert t["kiran"].patch(f"/hearings/{other}", {"purpose": "x"}).status_code == 403
     # reschedule is recorded on the timeline
-    a.ok(a.patch(f"/hearings/{hid}", {"hearing_date": iso(6)}))
+    a.ok(a.patch(f"/hearings/{hid}", {"hearing_date": iso(9)}))
     assert any("moved from" in x["title"] for x in a.ok(a.get(f"/cases/{cl['hearings'][0]['case_id']}/timeline"))["items"])
     # delete only while nothing happened
     a.ok(a.delete(f"/hearings/{other}"))

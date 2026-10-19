@@ -27,12 +27,13 @@ def world(tmp_path, monkeypatch):
     def no_network(*a, **k):
         raise requests.ConnectionError("network is off in the tenancy walk")
     monkeypatch.setattr(requests.sessions.Session, "request", no_network)
-    import litellm
+    import utils.ai_helper as ah
+    import utils.llm_client as lc
 
     def ai_off(*a, **k):
         raise RuntimeError("AI is off in the tenancy walk")
-    monkeypatch.setattr(litellm, "completion", ai_off)
-    monkeypatch.setattr(litellm, "acompletion", ai_off, raising=False)
+    monkeypatch.setattr(lc, "completion", ai_off)
+    monkeypatch.setattr(ah, "completion", ai_off)
     flask_app = make_app(tmp_path, monkeypatch)
     a, b = register(flask_app, "a@example.com"), register(flask_app, "b@example.com")
     return flask_app, a, b

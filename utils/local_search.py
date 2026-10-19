@@ -12,13 +12,18 @@ import os
 import re
 import threading
 
-import chromadb
-from chromadb.utils import embedding_functions
 from rank_bm25 import BM25Okapi
 
 CHROMA_PATH = os.getenv('CHROMA_PATH', 'chroma_data')
 COLLECTION_NAME = 'firm_library'
 EMBED_MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
+
+def vector_search_enabled():
+    """The meaning-based leg needs sentence-transformers and PyTorch, which take roughly 500 MB of memory the moment the
+    first document is indexed or searched. The free Render plan stops the whole server at 512 MB, so it is OFF unless
+    LOCAL_VECTOR_SEARCH=1 is set on a server with the memory for it. Keyword (BM25) search works either way."""
+    return os.getenv("LOCAL_VECTOR_SEARCH", "0").strip().lower() in ("1", "true", "yes", "on")
+
 
 _lock = threading.Lock()
 _collection = None
@@ -28,6 +33,7 @@ _embedder = None
 def _get_embedder():
     global _embedder
     if _embedder is None:
+        from chromadb.utils import embedding_functions
         _embedder = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=EMBED_MODEL_NAME
         )
@@ -36,11 +42,14 @@ def _get_embedder():
 
 def _get_collection():
     global _collection
+    if not vector_search_enabled():
+        raise RuntimeError("local vector search is switched off (LOCAL_VECTOR_SEARCH)")
     if _collection is not None:
         return _collection
     with _lock:
         if _collection is not None:
             return _collection
+        import chromadb
         client = chromadb.PersistentClient(path=CHROMA_PATH)
         _collection = client.get_or_create_collection(
             name=COLLECTION_NAME,
@@ -54,7 +63,7 @@ def index_document(doc_id, title, content):
     Best-effort — a local-model load hiccup must never break the write
     path that calls this (document creation), so failures are swallowed
     after logging."""
-    if not content or not content.strip():
+    if not content or not content.strip() or not vector_search_enabled():
         return
     try:
         collection = _get_collection()
@@ -105,6 +114,8 @@ def hybrid_search(query, candidates, top_k=10):
     # ── Vector leg ──────────────────────────────────────────────────────
     vector_scores = {}
     try:
+        if not vector_search_enabled():
+            raise RuntimeError("switched off")
         collection = _get_collection()
         result = collection.query(
             query_texts=[query],
@@ -119,7 +130,8 @@ def hybrid_search(query, candidates, top_k=10):
             # 0..1 similarity so it combines cleanly with the BM25 score.
             vector_scores[doc_id] = 1.0 / (1.0 + max(dist, 0.0))
     except Exception as e:
-        print(f"[local_search] vector query failed, falling back to BM25 only: {e}")
+        if vector_search_enabled():
+            print(f"[local_search] vector query failed, falling back to BM25 only: {e}")
 
     # ── BM25 keyword leg ────────────────────────────────────────────────
     corpus_ids = [str(c["id"]) for c in candidates]

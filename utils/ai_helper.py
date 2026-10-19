@@ -19,11 +19,9 @@ import threading
 import time
 from collections import deque
 
-import litellm
-from litellm import completion
+from utils.llm_client import completion, RateLimitError, Timeout as LLMTimeout
 
 # Suppress excessive LiteLLM logging in the terminal
-litellm.set_verbose = False
 
 # qwen/qwen3.6-27b (unlike the gpt-oss family, which keeps reasoning in a
 # separate hidden channel) inlines its chain-of-thought directly into
@@ -71,7 +69,7 @@ _RETRY_AFTER_RE = re.compile(r'try again in ([\d.]+)s', re.IGNORECASE)
 
 
 def _is_rate_limit_error(exc) -> bool:
-    if isinstance(exc, getattr(litellm, 'RateLimitError', ())):
+    if isinstance(exc, RateLimitError):
         return True
     # litellm's completion_with_fallbacks() (used whenever `fallbacks=` is
     # passed) re-raises every attempt's failure wrapped in a plain
@@ -190,7 +188,7 @@ def _call_with_rate_limit_retry(deadline=None, **call_kwargs):
 
 
 def _is_timeout_error(exc) -> bool:
-    if isinstance(exc, (TimeoutError, getattr(litellm, "Timeout", ()))):
+    if isinstance(exc, (TimeoutError, LLMTimeout)):
         return True
     text = f"{type(exc).__name__} {exc}".lower()
     return "timeout" in text or "timed out" in text
