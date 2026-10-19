@@ -28,7 +28,8 @@ contract_bp = Blueprint("contract", __name__)
 JOB_STALE_SECONDS = int(os.getenv("ANALYSIS_STALE_SECONDS", "75"))          # a running job writes a heartbeat every 2 s
 JOB_HARD_LIMIT_SECONDS = int(os.getenv("ANALYSIS_HARD_LIMIT_SECONDS", "1200"))
 MAX_ACTIVE_PER_USER = int(os.getenv("ANALYSIS_MAX_ACTIVE_PER_USER", "2"))
-_LIVE_JOBS = {}                                                              # job_id -> owner, for jobs running in THIS process
+STREAM_MAX_SECONDS = int(os.getenv("ANALYSIS_STREAM_MAX_SECONDS", "20"))     # a live stream holds a server thread; never for long
+_LIVE_JOBS = {}                                                            # job_id -> owner, for jobs running in THIS process
 _LIVE_LOCK = threading.Lock()
 
 _JOB_MESSAGES = {
@@ -646,9 +647,8 @@ def stream_job(job_id):
             try:
                 while True:
                     job_data = _load_job(job_id)
-                    if time.time() - start_time > JOB_HARD_LIMIT_SECONDS + 30:
-                        yield 'data: {"status": "failed", "state": "FAILURE", "error": "The analysis took too long and was stopped."}\n\n'
-                        break
+                    if time.time() - start_time > STREAM_MAX_SECONDS:
+                        break                                    # the client reconnects or switches to plain status checks
                     if not job_data:
                         # Grace period: Worker is currently starting up
                         if time.time() - start_time < 8.0:
@@ -721,6 +721,8 @@ def stream_job(job_id):
                     result = AsyncResult(job_id, app=celery_app)
                     began = time.time()
                     while True:
+                        if time.time() - began > STREAM_MAX_SECONDS:
+                            break
                         if time.time() - began > JOB_HARD_LIMIT_SECONDS or (result.state == 'PENDING' and time.time() - began > 60):
                             yield 'data: {"status": "failed", "state": "FAILURE", "error": "The analysis service is not running right now, so nothing was checked. Please try again in a minute."}\n\n'
                             break
@@ -821,6 +823,8 @@ def analysis_status(job_id):
                         return jsonify({"success": False, "job_id": job_id, "status": "failed", "progress": 0, "stage": "Failed", "error": "The analysis could not be completed. Please try again."}), 200
                     elif state == 'PROGRESS':
                         return jsonify({"success": True, "job_id": job_id, "status": "processing", "progress": meta.get("progress", 0), "stage": meta.get("status", "Working...")}), 200
+                    elif state in ('PENDING', 'STARTED', 'RETRY'):
+                        return jsonify({"success": True, "job_id": job_id, "status": "processing", "progress": 5, "stage": "Waiting for the analysis service..."}), 200
                 except Exception as cel_err:
                     print(f"[analysis_status] Celery lookup error: {cel_err}")
 

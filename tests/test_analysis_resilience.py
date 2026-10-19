@@ -470,3 +470,19 @@ def test_real_usage_replaces_the_reservation(monkeypatch):
     t0 = time.time()
     pacer.acquire(800)
     assert time.time() - t0 < 0.5
+
+
+# ── an old browser tab still uses the live stream: it must not hold a server thread for long ────────────
+def test_the_live_stream_closes_by_itself_so_it_cannot_hold_a_server_worker(world):
+    _f, a, _b, mp = world
+    import routes.contract_routes as cr
+    gate = _slow_ai(mp)
+    mp.setattr(cr, "STREAM_MAX_SECONDS", 2)
+    job = _start(a).get_json()["job_id"]
+    t0 = time.time()
+    r = a.get(f"/api/contract/stream/{job}")
+    body = r.get_data(as_text=True)
+    gate.set()
+    assert r.status_code == 200 and time.time() - t0 < 6
+    assert '"state": "PROGRESS"' in body and "FAILURE" not in body       # it ended quietly; the page checks again
+    _wait(a, job, timeout=30)
