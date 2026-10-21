@@ -409,13 +409,13 @@ const CSS = `
 .gdm-card,.gdm-mode,.gdm-case{display:flex;flex-direction:column;gap:3px;text-align:left;padding:12px 14px;border:1px solid var(--rule,#ddd);border-radius:12px;background:var(--paper-2,#faf8f3);cursor:pointer;color:var(--ink,#1c252c);font:inherit}
 .gdm-card b,.gdm-mode b,.gdm-case b{font-size:14px;font-weight:600}
 .gdm-card span,.gdm-mode span,.gdm-case span{font-size:12px;color:var(--muted,#667);line-height:1.4}
-.gdm-card:hover,.gdm-mode:hover,.gdm-case:hover,.gdm-card.is-on,.gdm-mode.is-on,.gdm-case.is-on{border-color:var(--accent,#b24a2e);background:color-mix(in srgb,var(--accent,#b24a2e) 8%,var(--paper-2,#faf8f3))}
+.gdm-card:hover,.gdm-mode:hover,.gdm-case:hover,.gdm-card.is-on,.gdm-mode.is-on,.gdm-case.is-on{border-color:var(--accent,#937243);background:color-mix(in srgb,var(--accent,#937243) 8%,var(--paper-2,#faf8f3))}
 .gdm-other{margin-top:16px}.gdm-other label,.gdm-pane label,.gdm-q label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
 .gdm-row{display:flex;gap:8px}
 .gdm-input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--rule,#ccc);border-radius:10px;background:var(--paper,#fff)!important;color:var(--ink,#1c252c)!important;font:inherit;font-size:14px}
-.gdm-input:focus-visible{outline:2px solid var(--accent,#b24a2e);outline-offset:1px}
+.gdm-input:focus-visible{outline:2px solid var(--accent,#937243);outline-offset:1px}
 .gdm-input--sm{flex:1;min-width:150px;padding:6px 10px;font-size:13px}.gdm-ta{resize:vertical;min-height:54px}
-.gdm-btn{padding:10px 18px;border:0;border-radius:10px;background:var(--accent,#b24a2e);color:var(--on-accent,#fff);font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer;white-space:nowrap}
+.gdm-btn{padding:10px 18px;border:0;border-radius:10px;background:var(--accent,#937243);color:var(--on-accent,#fff);font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer;white-space:nowrap}
 .gdm-btn:disabled{opacity:.4;cursor:not-allowed}
 .gdm-ghost{padding:10px 16px;border:1px solid var(--rule,#ccc);border-radius:10px;background:none;color:var(--ink,#1c252c);font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
 .gdm-ghost:disabled{opacity:.35;cursor:not-allowed}
@@ -426,17 +426,17 @@ const CSS = `
 .gdm-cases{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:7px;max-height:250px;overflow-y:auto}
 .gdm-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .gdm-drop{display:flex;flex-direction:column;gap:4px;align-items:center;padding:26px 14px;border:1.5px dashed var(--rule,#bbb);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;text-align:center}
-.gdm-drop small{font-weight:400;color:var(--muted,#667);font-size:12px}.gdm-drop:hover{border-color:var(--accent,#b24a2e)}.gdm-drop.is-busy{opacity:.6}
+.gdm-drop small{font-weight:400;color:var(--muted,#667);font-size:12px}.gdm-drop:hover{border-color:var(--accent,#937243)}.gdm-drop.is-busy{opacity:.6}
 .gdm-file{border:1px solid var(--rule,#ddd);border-radius:12px;padding:12px 14px;background:var(--paper-2,#faf8f3)}
 .gdm-file b{display:block;font-size:14px}.gdm-file span{font-size:12px;color:var(--muted,#667)}.gdm-file p{margin:8px 0;font-size:12.5px;color:var(--ink-soft,#3a454c);line-height:1.5}
-.gdm-link{border:0;background:none;padding:0;color:var(--accent,#b24a2e);font:inherit;font-size:inherit;text-decoration:underline;cursor:pointer}
+.gdm-link{border:0;background:none;padding:0;color:var(--accent,#937243);font:inherit;font-size:inherit;text-decoration:underline;cursor:pointer}
 .gdm-err{margin:10px 0 0;padding:9px 12px;border-radius:10px;background:#fbeaea;color:#8c2323;font-size:13px;line-height:1.45}
 .gdm-qs{display:grid;gap:16px;margin-top:10px}.gdm-q small{display:block;margin:-2px 0 7px;font-size:12px;color:var(--muted,#667);line-height:1.45}
-.gdm-q label em{font-style:normal;font-weight:500;color:var(--accent,#b24a2e);font-size:12px}
-.gdm-tag{margin-left:8px;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--accent,#b24a2e) 12%,transparent);color:var(--accent,#b24a2e);font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em}
+.gdm-q label em{font-style:normal;font-weight:500;color:var(--accent,#937243);font-size:12px}
+.gdm-tag{margin-left:8px;padding:2px 7px;border-radius:99px;background:color-mix(in srgb,var(--accent,#937243) 12%,transparent);color:var(--accent,#937243);font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em}
 .gdm-chips{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
 .gdm-chip{padding:7px 12px;border:1px solid var(--rule,#ccc);border-radius:99px;background:var(--paper,#fff);color:var(--ink,#1c252c);font:500 13px 'IBM Plex Sans',sans-serif;cursor:pointer}
-.gdm-chip.is-on{background:var(--accent,#b24a2e);border-color:var(--accent,#b24a2e);color:var(--on-accent,#fff)}
+.gdm-chip.is-on{background:var(--accent,#937243);border-color:var(--accent,#937243);color:var(--on-accent,#fff)}
 .gdm-sum{margin:0 0 12px}.gdm-sum div{display:grid;grid-template-columns:minmax(120px,38%) 1fr;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule,#e5e5e5)}
 .gdm-sum dt{font-size:12.5px;color:var(--muted,#667)}.gdm-sum dd{margin:0;font-size:13.5px;word-break:break-word}
 .gdm-warn{padding:11px 14px;border-radius:12px;background:#fff6e5;border:1px solid #f0d9a8;color:#6b4e12;font-size:13px}

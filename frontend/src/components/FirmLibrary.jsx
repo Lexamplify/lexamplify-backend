@@ -199,7 +199,7 @@ const styles = `
   .lib-root {
     --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
     --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
-    --accent:#B24A2E; --accent-soft:#EFDCD1;
+    --accent:#937243; --accent-soft:#EFDCD1;
     --major:#9C7A2E; --major-soft:#F1E6C9;
     --on-accent:#FBF7EE;
     font-family: 'IBM Plex Sans', sans-serif;
@@ -209,7 +209,7 @@ const styles = `
   :root[data-theme="dark"] .lib-root {
     --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
     --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
-    --accent:#CC6B48; --accent-soft:#3B281F;
+    --accent:#B08D57; --accent-soft:#3B281F;
     --major:#D9AD5C; --major-soft:#35301C;
     --on-accent:#FBF7EE;
   }
@@ -650,7 +650,7 @@ const styles = `
   .dv-portal-root {
     --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
     --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
-    --accent:#B24A2E; --accent-soft:#EFDCD1;
+    --accent:#937243; --accent-soft:#EFDCD1;
     --major:#9C7A2E; --major-soft:#F1E6C9;
     --on-accent:#FBF7EE;
     font-family: 'IBM Plex Sans', sans-serif;
@@ -659,7 +659,7 @@ const styles = `
   :root[data-theme="dark"] .dv-portal-root {
     --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
     --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
-    --accent:#CC6B48; --accent-soft:#3B281F;
+    --accent:#B08D57; --accent-soft:#3B281F;
     --major:#D9AD5C; --major-soft:#35301C;
     --on-accent:#FBF7EE;
   }

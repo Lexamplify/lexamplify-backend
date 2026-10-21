@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { waitUntilAwake, startHeartbeat } from '../utils/warmServer';
+import { isPreviewMode, PREVIEW_USER } from '../utils/devPreview';
 
 export const AuthContext = createContext(null);
+
+const PREVIEW = isPreviewMode();
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -18,8 +21,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
  * trigger a premature redirect/hide before the cookie is ever verified.
  */
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [user, setUser] = useState(PREVIEW ? PREVIEW_USER : null);
+  const [isInitializing, setIsInitializing] = useState(!PREVIEW);
 
   // A sleeping server (Render) / database (Neon) answers /me slowly, with a 5xx, or not at all. That is NOT
   // "logged out": treating it that way threw people back to the login page although their session was fine.
@@ -57,6 +60,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    if (PREVIEW) return; // dev preview: skip the backend /me call entirely
     refreshSession();
   }, [refreshSession]);
 

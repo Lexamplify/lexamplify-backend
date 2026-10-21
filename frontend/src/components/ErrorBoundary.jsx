@@ -37,7 +37,7 @@ export default class ErrorBoundary extends Component {
             <button
               type="button"
               onClick={() => this.setState({ hasError: false })}
-              style={{ minHeight: 44, padding: '0 22px', borderRadius: 10, background: 'var(--accent, #b24a2e)', color: 'var(--on-accent, #fff)', border: 'none', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}
+              style={{ minHeight: 44, padding: '0 22px', borderRadius: 10, background: 'var(--accent, #937243)', color: 'var(--on-accent, #fff)', border: 'none', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}
             >
               Try again
             </button>

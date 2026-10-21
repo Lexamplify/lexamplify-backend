@@ -434,7 +434,7 @@ export default function CalendarView() {
           --muted: #727776;
           --muted-2: #494E4D;
           --rule: #333939;
-          --accent: #CC6B48;
+          --accent: #B08D57;
           --accent-soft: #3B281F;
           --major: #D9AD5C;
           --major-soft: #35301C;
@@ -454,7 +454,7 @@ export default function CalendarView() {
           --muted: #868C8E;
           --muted-2: #B3B8B9;
           --rule: #D2D5D4;
-          --accent: #B24A2E;
+          --accent: #937243;
           --accent-soft: #EFDCD1;
           --major: #9C7A2E;
           --major-soft: #F1E6C9;
@@ -471,7 +471,7 @@ export default function CalendarView() {
           --muted: #727776;
           --muted-2: #494E4D;
           --rule: #333939;
-          --accent: #CC6B48;
+          --accent: #B08D57;
           --accent-soft: #3B281F;
           --major: #D9AD5C;
           --major-soft: #35301C;

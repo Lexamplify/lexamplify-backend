@@ -259,7 +259,7 @@ const SIDEBAR_STYLES = `
   .sb-root {
     --sb-bg:#DFE1E0; --sb-paper:#EAEBE8; --sb-paper-2:#E3E4E1;
     --sb-ink:#181B1D; --sb-ink-soft:#494E51; --sb-muted:#5C6366; --sb-muted-2:#596063; --sb-rule:#D2D5D4;
-    --sb-accent:#B24A2E; --sb-accent-soft:#EFDCD1;
+    --sb-accent:#937243; --sb-accent-soft:#EFDCD1;
     --sb-capsule-bg:#3E4649; --sb-capsule-mono-bg:#4E585B;
     --sb-capsule-chip:#BEC4C5; --sb-capsule-chip-hover:#F0F2F1; --sb-capsule-mono-text:#F0F2F1;
     --sb-capsule-active-text:#FBF7EE;
@@ -268,7 +268,7 @@ const SIDEBAR_STYLES = `
   html[data-theme="dark"] .sb-root {
     --sb-bg:#191C1D; --sb-paper:#212527; --sb-paper-2:#2A2F31;
     --sb-ink:#D6D9D9; --sb-ink-soft:#AAAEAE; --sb-muted:#9BA2A2; --sb-muted-2:#8D9494; --sb-rule:#333939;
-    --sb-accent:#CC6B48; --sb-accent-soft:#3B281F;
+    --sb-accent:#B08D57; --sb-accent-soft:#3B281F;
     --sb-capsule-bg:#C6CBCA; --sb-capsule-mono-bg:#B7BDBC;
     --sb-capsule-chip:#5D6362; --sb-capsule-chip-hover:#1D2021; --sb-capsule-mono-text:#1D2021;
   }
@@ -833,9 +833,11 @@ const LayoutInner = ({ children, focusMode, setFocusMode }) => {
           <div className="sb-masthead">
             {!isIconOnly && (
               <div className="sb-brand-id">
-                <img className="sb-logo-mark" alt="LexAmplify" src={logoMark} />
+                <span className="sb-logo-mark" aria-label="LexAmplify" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', background: '#1A2E22', border: '1px solid rgba(176,141,87,0.55)', flexShrink: 0 }}>
+                  <span style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, color: '#C9A46B', fontSize: 18, lineHeight: 1 }}>L</span>
+                </span>
                 <div className="sb-firm-block">
-                  <div className="sb-firm-name">{orgName || 'LexAmplify'}</div>
+                  <div className="sb-firm-name" style={{ fontFamily: 'var(--font-serif)' }}>{orgName || 'Lexamplify'}</div>
                   <div className="sb-firm-credit">LEXAMPLIFY</div>
                 </div>
               </div>
@@ -962,7 +964,9 @@ const LayoutInner = ({ children, focusMode, setFocusMode }) => {
         <div className="sb-capsule-outer">
           <div className="sb-capsule">
             <div className="sb-capsule-mono" title={orgName || 'LexAmplify'}>
-              <img src={logoMark} alt="LexAmplify" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+              <span aria-label="LexAmplify" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: '50%', background: '#1A2E22', border: '1px solid rgba(176,141,87,0.55)' }}>
+                <span style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, color: '#C9A46B', fontSize: 16, lineHeight: 1 }}>L</span>
+              </span>
             </div>
             <button className="sb-capsule-expand" onClick={() => setIsCollapsed(false)} aria-label="Expand sidebar" title="Expand sidebar">›</button>
             <div className="sb-capsule-list">

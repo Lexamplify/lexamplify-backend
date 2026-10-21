@@ -363,7 +363,7 @@ ${MARKDOWN_CSS}
   :root, .vc-root {
     --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
     --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
-    --accent:#B24A2E; --accent-soft:#EFDCD1;
+    --accent:#937243; --accent-soft:#EFDCD1;
     --hero-bg:#14171A; --hero-text:#F1F2F0; --hero-muted:rgba(241,242,240,.62); --hero-rule:rgba(241,242,240,.14);
     --on-accent:#FBF7EE;
     --warn:#8A5A2A; --warn-soft:#F1E3CE;
@@ -379,7 +379,7 @@ ${MARKDOWN_CSS}
   :root[data-theme="dark"] .vc-root {
     --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
     --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
-    --accent:#CC6B48; --accent-soft:#3B281F;
+    --accent:#B08D57; --accent-soft:#3B281F;
     --warn:#D9A85C; --warn-soft:#332813;
     /* --hero-bg / --hero-text intentionally NOT overridden: the masthead stays a
        constant dark surface in both themes, same principle as the sidebar's

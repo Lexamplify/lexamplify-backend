@@ -1,0 +1,142 @@
+/* ============================================================
+   LEXAMPLIFY — DESIGN SYSTEM  (lx-*)
+   An intentional, reusable component kit built on the theme
+   tokens (--ink / --paper / --accent gold / --rule …). Works
+   in both light and dark themes automatically.
+   ============================================================ */
+
+:root {
+  --lx-r-sm: 8px;
+  --lx-r: 12px;
+  --lx-r-lg: 18px;
+  --lx-gap: 20px;
+  --lx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --lx-gold-tint: color-mix(in srgb, var(--accent) 12%, transparent);
+  --lx-gold-line: color-mix(in srgb, var(--accent) 45%, transparent);
+  --lx-shadow-1: 0 1px 2px rgba(26,46,34,.05), 0 2px 6px rgba(26,46,34,.05);
+  --lx-shadow-2: 0 6px 18px rgba(26,46,34,.07), 0 2px 6px rgba(26,46,34,.05);
+  --lx-shadow-3: 0 20px 48px rgba(26,46,34,.10), 0 6px 16px rgba(26,46,34,.06);
+}
+
+/* ── Page scaffold ─────────────────────────────────────── */
+.lx-page { max-width: 1120px; margin: 0 auto; padding: 40px 36px 72px; }
+@media (max-width: 720px){ .lx-page { padding: 28px 20px 56px; } }
+.lx-stack { display: flex; flex-direction: column; }
+.lx-row { display: flex; align-items: center; }
+.lx-between { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+
+/* ── Typography ────────────────────────────────────────── */
+.lx-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 11px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--accent-ink); display: inline-flex; align-items: center; gap: 10px;
+}
+.lx-eyebrow::before { content:""; width: 26px; height: 1px; background: var(--accent); }
+.lx-h1 { font-family: var(--font-serif); font-weight: 600; font-size: clamp(30px, 4vw, 46px); line-height: 1.04; letter-spacing: -.01em; color: var(--ink); }
+.lx-h2 { font-family: var(--font-serif); font-weight: 600; font-size: 22px; line-height: 1.15; color: var(--ink); }
+.lx-title { font-family: var(--font-serif); font-weight: 500; font-size: 16px; color: var(--ink); }
+.lx-lead { font-size: 15px; line-height: 1.65; color: var(--ink-soft); }
+.lx-muted { font-size: 13px; color: var(--muted); }
+.lx-mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: .02em; }
+
+/* ── Section heading ───────────────────────────────────── */
+.lx-section-head { display:flex; align-items:baseline; justify-content:space-between; margin-bottom: 16px; }
+.lx-section-head h3 { font-family: var(--font-serif); font-weight: 600; font-size: 17px; color: var(--ink); }
+.lx-section-head a { font-size: 12.5px; color: var(--accent-ink); font-weight: 500; }
+
+/* ── Card ──────────────────────────────────────────────── */
+.lx-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--lx-r-lg);
+  box-shadow: var(--lx-shadow-1);
+}
+.lx-card--pad { padding: 24px; }
+.lx-card--hover { transition: transform .4s var(--lx-ease), box-shadow .4s var(--lx-ease), border-color .4s var(--lx-ease); }
+.lx-card--hover:hover { transform: translateY(-3px); box-shadow: var(--lx-shadow-3); border-color: var(--lx-gold-line); }
+
+/* ── Buttons ───────────────────────────────────────────── */
+.lx-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 42px; padding: 0 20px; border-radius: 999px;
+  font-family: var(--font-sans); font-size: 13.5px; font-weight: 600; letter-spacing: .01em;
+  cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+  transition: transform .3s var(--lx-ease), box-shadow .3s var(--lx-ease), background .3s ease, border-color .3s ease, color .3s ease;
+}
+.lx-btn:hover { transform: translateY(-2px); }
+.lx-btn--primary { background: var(--ink); color: var(--paper); box-shadow: var(--lx-shadow-1); }
+.lx-btn--primary:hover { box-shadow: var(--lx-shadow-2); filter: brightness(1.08); }
+.lx-btn--gold { background: var(--accent); color: var(--on-accent); box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent); }
+.lx-btn--gold:hover { filter: brightness(1.05); }
+.lx-btn--ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.lx-btn--ghost:hover { border-color: var(--ink); background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.lx-btn--sm { height: 34px; padding: 0 14px; font-size: 12.5px; }
+
+/* ── Input / search ────────────────────────────────────── */
+.lx-field {
+  display: flex; align-items: center; gap: 12px;
+  height: 52px; padding: 0 18px;
+  background: var(--bg-card, var(--paper)); border: 1px solid var(--rule);
+  border-radius: var(--lx-r); transition: border-color .3s ease, box-shadow .3s ease;
+}
+.lx-field:focus-within { border-color: var(--lx-gold-line); box-shadow: 0 0 0 4px var(--lx-gold-tint); }
+.lx-field input { flex: 1; border: 0; outline: 0; background: transparent; font-family: var(--font-sans); font-size: 15px; color: var(--ink); }
+.lx-field input::placeholder { color: var(--muted); }
+.lx-field svg { color: var(--accent-ink); flex-shrink: 0; }
+
+/* ── Badges / pills ────────────────────────────────────── */
+.lx-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  background: var(--lx-gold-tint); color: var(--accent-ink);
+  border: 1px solid var(--lx-gold-line);
+}
+.lx-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.lx-badge--ok    { background: color-mix(in srgb, var(--accent-success) 12%, transparent); color: var(--accent-success); border-color: color-mix(in srgb, var(--accent-success) 40%, transparent); }
+.lx-badge--warn  { background: color-mix(in srgb, var(--accent-warning) 14%, transparent); color: var(--accent-warning); border-color: color-mix(in srgb, var(--accent-warning) 40%, transparent); }
+.lx-badge--risk  { background: color-mix(in srgb, var(--accent-danger) 12%, transparent); color: var(--accent-danger); border-color: color-mix(in srgb, var(--accent-danger) 40%, transparent); }
+.lx-badge--muted { background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); border-color: color-mix(in srgb, var(--muted) 30%, transparent); }
+
+/* ── Stat card ─────────────────────────────────────────── */
+.lx-stat { position: relative; padding: 22px; border-radius: var(--lx-r-lg); background: var(--paper); border: 1px solid var(--rule); overflow: hidden; transition: border-color .4s var(--lx-ease), box-shadow .4s var(--lx-ease); }
+.lx-stat:hover { border-color: var(--lx-gold-line); box-shadow: var(--lx-shadow-2); }
+.lx-stat__ico { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: var(--lx-gold-tint); color: var(--accent-ink); margin-bottom: 16px; }
+.lx-stat__num { font-family: var(--font-serif); font-weight: 600; font-size: 38px; line-height: 1; color: var(--ink); }
+.lx-stat__label { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.lx-stat__sub { margin-top: 3px; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+
+/* ── List rows ─────────────────────────────────────────── */
+.lx-list { display: flex; flex-direction: column; }
+.lx-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 15px 4px; border-bottom: 1px solid var(--rule);
+  transition: background .25s ease; cursor: pointer;
+}
+.lx-item:last-child { border-bottom: 0; }
+.lx-item:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.lx-item__ico { width: 38px; height: 38px; flex-shrink: 0; display: grid; place-items: center; border-radius: 10px; background: var(--paper-2); border: 1px solid var(--rule); color: var(--accent-ink); }
+.lx-item__body { min-width: 0; flex: 1; }
+.lx-item__title { font-family: var(--font-serif); font-weight: 500; font-size: 15px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lx-item__meta { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+
+/* ── Empty state ───────────────────────────────────────── */
+.lx-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 44px 24px; }
+.lx-empty__ico { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: var(--lx-gold-tint); color: var(--accent-ink); margin-bottom: 18px; }
+.lx-empty h4 { font-family: var(--font-serif); font-weight: 600; font-size: 18px; color: var(--ink); margin-bottom: 7px; }
+.lx-empty p { font-size: 13.5px; color: var(--muted); max-width: 320px; line-height: 1.6; margin-bottom: 20px; }
+
+/* ── Divider ───────────────────────────────────────────── */
+.lx-rule { height: 1px; background: var(--rule); border: 0; }
+.lx-rule-gold { width: 48px; height: 2px; background: var(--accent); border: 0; border-radius: 2px; }
+
+@keyframes lx-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.lx-rise { animation: lx-rise .6s var(--lx-ease) both; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Grid helpers ──────────────────────────────────────── */
+.lx-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.lx-dash-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 0.9fr); gap: 24px; align-items: start; }
+.lx-mt-xl { margin-top: 44px; } .lx-mt-l { margin-top: 32px; } .lx-mt-m { margin-top: 24px; }
+@media (max-width: 1000px) { .lx-stats { grid-template-columns: repeat(2, 1fr); } .lx-dash-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .lx-stats { grid-template-columns: 1fr; } }

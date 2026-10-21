@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Relative base so the built template works under any GitHub Pages subpath.
+  base: './',
   plugins: [react()],
   define: {
     'import.meta.env.VITE_BUILD_ID': JSON.stringify(process.env.VITE_BUILD_ID || `v9-${Date.now()}`),
