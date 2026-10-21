@@ -1,0 +1,55 @@
+name: backend-ci
+
+# Verification harness for the backend modularization (docs/BACKEND_REFACTOR_PLAN.md).
+# Boots the app factory on SQLite with dummy secrets and runs the unit tests so the
+# refactor can be validated on every push. Browser e2e tests are excluded (they need
+# a live server + Playwright).
+
+on:
+  push:
+    branches: [backend-cleanup, 'backend-modular**', main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke-and-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # No DATABASE_URL -> the factory falls back to local SQLite.
+      JWT_SECRET_KEY: ci-dummy-jwt-secret-not-for-prod
+      SECRET_KEY: ci-dummy-flask-secret
+      FLASK_ENV: development
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: System deps (OCR engine for pytesseract)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Boot smoke test (app factory must construct)
+        run: |
+          python - <<'PY'
+          from app import create_app
+          app = create_app()
+          client = app.test_client()
+          r = client.get('/api/status')
+          print('GET /api/status ->', r.status_code)
+          assert r.status_code < 500, f'factory booted but /api/status returned {r.status_code}'
+          print('BOOT OK')
+          PY
+
+      - name: Unit tests (excluding browser e2e)
+        run: pytest tests -q --ignore=tests/e2e -p no:cacheprovider
