@@ -183,6 +183,21 @@ somebody else (404, nothing said about its contents) and refuses an id that is n
 Baseline was `2 failed, 762 passed, 9 skipped`. Now: **791 passed, 9 skipped, 0 failed** (+27 new tests,
 + the 2 that used to fail).
 
+Browser tests (real backend, real Chromium, the strict CSP of `firebase.json`):
+
+```
+.\venv\Scripts\python.exe -m pytest tests\e2e -q
+62 passed in 378.77s (0:06:18)
+```
+
+(The first run of the day ended `61 passed, 1 error`: the fixture that signs a new advocate in got one
+`ECONNRESET` from the preview proxy. That test passes on its own and the whole suite passed on the re-run,
+so it was a network hiccup, not a change in the app.)
+
+**Note for the next step:** the browser tests rewrite `docs/WALKTHROUGH.md` and `docs/screens/*.png` with
+fresh timings. They are generated artefacts - restore them (`git checkout -- docs/WALKTHROUGH.md
+docs/screens/`) instead of committing them.
+
 #### Red-team check for this step (section 3 of the brief)
 
 Probe: `C:\Users\hp\AppData\Local\Temp\opencode\step1_redteam.py` (temporary file, not in the repo).
