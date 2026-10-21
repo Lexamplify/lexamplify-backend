@@ -340,11 +340,14 @@ def register(env):
     def make_hearing(c, case, b, actor, notify=True):
         """Insert a hearing for a case (the shared path for the hearing form, the first date on a new case, and 'next date' on a proceeding)."""
         day = date_of(b.get("date") or b.get("hearing_date"), "Hearing date", required=True)
+        # The time is checked before the day is compared with what is already booked: a malformed time is a bad
+        # request (400) whatever the diary looks like, and only a well-formed request can clash (409).
+        slot = time_of(b.get("time") or b.get("hearing_time"))
         if L.one(c, "SELECT id FROM lpms_hearings WHERE case_id = ? AND hearing_date = ? AND status = 'scheduled'", (case["id"], day)):
             raise ApiError("This case already has a hearing on that date.", 409, code="DUPLICATE_HEARING")
         adv = env.member_in_firm(b["advocate_id"], "Advocate", advocates_only=True) if b.get("advocate_id") not in (None, "") else case["advocate_id"]
         now = L.now_iso()
-        row = {"firm_id": case["firm_id"], "case_id": case["id"], "hearing_date": day, "hearing_time": time_of(b.get("time") or b.get("hearing_time")),
+        row = {"firm_id": case["firm_id"], "case_id": case["id"], "hearing_date": day, "hearing_time": slot,
                "court": text(b.get("court"), 160, "Court") or case["court"], "hall_no": text(b.get("hall_no"), 30, "Hall") or case["hall_no"],
                "judge": text(b.get("judge"), 120, "Judge") or case["judge"], "purpose": text(b.get("purpose"), 200, "Purpose"), "serial_no": text(b.get("serial_no"), 20, "Item number"),
                "advocate_id": adv, "status": "scheduled", "note": text(b.get("note"), 1000, "Note"), "created_by": actor["id"], "created_at": now, "updated_at": now}

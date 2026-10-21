@@ -2360,7 +2360,21 @@ def create_app():
 
             try:
                 data = request.get_json(force=True, silent=True) or {}
-                draft_id = data.get('id') or f"draft_{int(time.time())}"
+                draft_id = data.get('id')
+                if draft_id is None:
+                    draft_id = f"draft_{int(time.time() * 1000)}_{uid}"
+                elif not isinstance(draft_id, str) or not draft_id.strip() or len(draft_id) > 120:
+                    # The id comes from the browser: anything that is not a short piece of text is a bad request,
+                    # not something to hand to the database.
+                    return jsonify({'error': True, 'message': 'That draft id is not valid.'}), 400
+                draft_id = draft_id.strip()
+                # The id is chosen by the browser, so it must never be allowed to reach another advocate's row:
+                # "save" writes with an upsert, and without this check a second advocate who guessed (or read) an
+                # id could overwrite the first one's draft. A row that belongs to somebody else is not this
+                # advocate's to write - and the answer says nothing about what is in it.
+                owner_row = conn.execute('SELECT owner_user_id FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()
+                if owner_row is not None and int(owner_row['owner_user_id'] or 0) != uid:
+                    return jsonify({'error': True, 'message': 'That draft is not yours.'}), 404
                 title = data.get('title') or "Untitled Contract Draft"
                 raw_text = data.get('rawText') or ""
                 clauses_json = json.dumps(data.get('clauses') or [])

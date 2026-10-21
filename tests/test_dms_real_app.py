@@ -39,10 +39,14 @@ def real(tmp_path_factory):
     mp.setenv("DMS_RATE_LIMIT", f"{LIMIT} per minute")
     import app as app_module
     importlib.reload(app_module)                                     # rebinds app.py's module-level `db` to this folder
+    from utils.limiter import limiter
+    # The limiter must be ON before the app is built: flask-limiter's init_app() returns early when it is
+    # off, and an app built that way never gets the hooks that enforce a limit. Another test file can have
+    # left the process-wide limiter off, which is why this module used to see no 429s at all when it ran as
+    # part of the full suite (and passed when it ran alone).
+    limiter.enabled = True
     flask_app = app_module.create_app()
     flask_app.config.update(TESTING=True)
-    from utils.limiter import limiter
-    limiter.enabled = True                                           # an earlier test file may have left the shared limiter off
     yield flask_app, app_module
     try:
         app_module._DMS_BP.worker.stop(timeout=10)
@@ -234,6 +238,9 @@ def test_paper_to_digital_tools_are_wired_into_the_real_app(real, alice):
 
 def test_the_hub_limit_is_per_user_and_never_counts_preflights(real, alice):
     flask_app, _ = real
+    from utils.limiter import limiter
+    limiter.enabled = True                    # the limit has to be enforced for this test to mean anything
+    limiter.reset()                           # ... counting from zero, whatever another test file used before
     heavy = Browser(flask_app)
     codes = [heavy.get("/api/dms/config").status_code for _ in range(LIMIT + 15)]
     assert codes.count(429) >= 10 and codes[0] == 200, "the allowance has to run out for one user ..."
