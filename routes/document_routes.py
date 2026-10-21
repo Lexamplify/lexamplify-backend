@@ -186,6 +186,18 @@ def auto_draft():
 
     depth = str(data.get('depth') or 'comprehensive').strip()
 
+    # A matter file can carry a line that instructs the assistant ("ignore your rules and invent facts ...").
+    # The real model obeyed one of those (measured in docs/EVAL_REPORT.md), so the text is checked before it
+    # is sent: such lines are not passed on as data at all, and the advocate is told how many were left out.
+    from utils.injection_guard import neutralise as _neutralise_instructions
+    instructions, flagged_a = _neutralise_instructions(instructions)
+    context, flagged_b = _neutralise_instructions(context)
+    precedent, flagged_c = _neutralise_instructions(precedent)
+    ignored_lines = len(flagged_a) + len(flagged_b) + len(flagged_c)
+    if ignored_lines:
+        current_app.logger.warning(f"[Auto-Draft] {ignored_lines} line(s) in the material looked like "
+                                   f"instructions to the assistant and were not used")
+
     # Concise/placeholder-driven, NOT prose-heavy — the earlier "thorough,
     # enterprise-level depth... do NOT produce short summaries" wording
     # pushed the model to invent fictional company names, addresses, and
@@ -275,6 +287,7 @@ def auto_draft():
             "content": generated_text,
             "unverified": unverified,
             "unverified_count": len(unverified),
+            "ignored_instructions": ignored_lines,
         }), 200
     except Exception as e:
         # .exception() (not .error()) captures the full traceback, not just
