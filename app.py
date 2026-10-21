@@ -3536,6 +3536,8 @@ def create_app():
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
     app.register_blueprint(doc_bp, url_prefix='/api/documents')
     app.register_blueprint(contract_bp, url_prefix='/api/contract')
+    from routes.page_routes import page_bp
+    app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer
 
     # Keep-alive health check — always 200 while the server is up.
     # The client clears its interval on 401/403 from other protected endpoints.
@@ -4499,26 +4501,7 @@ def create_app():
         except FileNotFoundError:
             return jsonify({"error": "Database not found. Please run scraper.py first."}), 404
 
-    # Page routes
-    @app.route('/')
-    def landing():
-        return render_template('landing.html')
-
-    @app.route('/login')
-    def login_page():
-        return render_template('login.html')
-
-    @app.route('/signup')
-    def signup_page():
-        return render_template('signup.html')
-
-    @app.route('/dashboard')
-    def dashboard():
-        return render_template('dashboard.html')
-
-    @app.route('/contract-viewer')
-    def contract_viewer():
-        return render_template('contract_viewer.html')
+    # Page routes moved to routes/page_routes.py (page_bp), registered above.
 
     with app.app_context():
         # Explicitly import all models to ensure SQL schemas are registered in metadata
