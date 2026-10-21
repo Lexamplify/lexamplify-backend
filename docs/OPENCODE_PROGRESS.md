@@ -225,23 +225,118 @@ and now has a test.
 
 ---
 
+### STEP 2 — make the new version live-able
+
+Commit: `step 2: make the new version live-able (tests: 793/793)`.
+
+**2a — the environment checklist and the start-up message.**
+`docs/RENDER_ENV_CHECKLIST.md` lists **every** environment variable the app reads (113 names in the code, of
+which ~100 are reachable in production), grouped as: must be set / needed for the product / optional /
+not yours to set / test-only. Names only — no value appears anywhere in the file. For each: what it does,
+what a strong value looks like (length, randomness), and what happens when it is missing.
+
+The start-up refusal in `app.py` now names **every** missing variable at once, in plain English, and says
+where to fix it:
+
+```
+[app] Refusing to start: this deployment is not ready to serve.
+  1. JWT_SECRET_KEY is missing. Set it to at least 32 random characters (for example: openssl rand -hex 32). The server will not start without it, and a weak key would let anyone forge a session.
+  2. DATABASE_URL is not set. Put the Postgres connection string from Neon into the Render environment (service -> Environment). The server will not start without a database, and it must never fall back to a local file.
+Fix the variables above in the Render environment (service -> Environment) and redeploy. Every variable the app reads is listed in docs/RENDER_ENV_CHECKLIST.md.
+```
+
+Two new tests in `tests/test_ops.py` pin this down (the missing variable is named, the value is never printed,
+a good configuration still starts, and a development server still starts without a secret).
+
+**2b — the smoke script.** `scripts/smoke.py` already existed and did most of the job; it now also proves two
+things it did not before: that a detail the advocate did not give stays a visible `[Bracketed Field: …]` (and
+that no cheque number is invented), and that the exported **Word file really carries the notice** — it is
+opened as a zip and read back, and the invented demo names of the old fake conflict check must not be in it.
+It still reads the password from the environment only, and prints no secret.
+
+**2c — the go-live document.** `docs/GO_LIVE.md`: the ordered steps (Render env → redeploy → ping → build →
+deploy to the **test** site first, then the live site → hard refresh → smoke → the three manual checks), the
+two Firebase site ids as `<TEST_SITE_ID>` / `<LIVE_SITE_ID>` placeholders to fill in, how to list them with
+`firebase hosting:sites:list`, and the rollback in two minutes.
+**`firebase.json` was not touched.** The document explains that the file currently holds one unnamed hosting
+block, so a site that is not the project's default site needs its own named block before it can be addressed
+by `firebase deploy --only hosting:<SITE_ID>` — that is the owner's call, so it is written down, not done.
+
+Two corrections to `docs/DEPLOY_STEPS.md` (it is the document the manager reaches for during an incident):
+`firebase hosting:rollback` **does not exist** in the installed Firebase CLI (checked in firebase-tools
+15.19.0 — the release list and the rollback button are in the console), and the smoke test now has 15 checks,
+not 13.
+
+#### Proof (raw)
+
+```
+.\venv\Scripts\python.exe scripts\smoke.py http://127.0.0.1:5055 --register
+Smoke test against http://127.0.0.1:5055
+  PASS  server answers /api/ping and the database replied  (0.0s)
+  PASS  sign in  (0.3s)
+  PASS  signed-in status is healthy  (0.0s)
+  PASS  signed-out requests are refused  (0.0s)
+  PASS  document types are listed  (0.0s)
+  PASS  a notice is drafted from the details, none invented  (0.0s)
+  PASS  a detail that was not given stays a visible blank  (0.0s)
+  PASS  Word export  (0.2s)
+  PASS  PDF export  (1.4s)
+  PASS  the Word file really carries the notice  (0.1s)
+  PASS  a draft can be saved, updated and deleted  (0.1s)
+  PASS  conflict check answers (200, or a plain 'set up your practice' 403)  (0.0s)
+  PASS  own activity is listed  (0.0s)
+  PASS  sign out  (0.1s)
+  PASS  a signed-out session is really signed out  (0.0s)
+
+All checks passed. (AI configured on the server: no)
+exit code = 0
+```
+
+The failure path also works: with a wrong password the script prints `FAIL  sign in` and exits **1**.
+
+Frontend (nothing in it changed, checked anyway): `✓ built in 6.75s`, `74 passed (74)`.
+
+#### Red-team check for this step (section 3 of the brief)
+
+Probe: `C:\Users\hp\AppData\Local\Temp\opencode\step2_redteam.py` (temporary file, not in the repo).
+
+| Attack | Result |
+|---|---|
+| A weak `JWT_SECRET_KEY` in production | refused, and the message never prints the value |
+| A missing `DATABASE_URL` in production | refused, and the message does not blame the variable that is fine |
+| Both missing at once | one message, both names, numbered 1. and 2. |
+| A strong secret and a database | the server starts, nothing is refused |
+| The smoke script against a dead server | exit 1, the failing check is named, no traceback |
+| The smoke script with no account | exit 2, and it names `SMOKE_EMAIL` and `SMOKE_PASSWORD` |
+| The smoke script with `--register` against a real address | exit 2, "only allowed for a local address" |
+| The password in the script's output | never printed |
+| A secret or key written into the script | none (the file names the variable it reads, nothing more) |
+| A hard-coded server address in the script | none (only the localhost guard for `--register`) |
+
+Result: **no problems**. Two of the probe's own string checks flagged the usage line
+`set SMOKE_PASSWORD=your password` and the localhost guard — both were the probe being too crude, not a
+finding; the lines are shown above.
+
+---
+
 ## IN PROGRESS
 
-Nothing yet — Step 1 is committed; waiting for the manager's "go" on **Step 2**.
+Nothing yet — Step 2 is committed; waiting for the manager's "go" on **Step 6** (the real-model eval
+harness).
 
 ## NEXT
 
-**Step 2 — make the new version live-able** (see the plan in the chat reply):
+**Step 6 — the real-model quality harness** (the one thing that has never been tested):
 
-- 2a `docs/RENDER_ENV_CHECKLIST.md` — every environment variable the app reads (names only, never values),
-  which are required in production, what a strong value looks like, and what the error says when one is
-  missing. The start-up error must name the exact missing variable in plain English (small change in the
-  config part of `app.py`).
-- 2b `scripts/smoke.py` — it already exists and covers ping, sign-in, drafting a notice, Word/PDF export and
-  sign-out; review it against the brief, extend if needed, and run it against a local server (proof).
-- 2c `docs/GO_LIVE.md` — the exact ordered steps (Render env → redeploy → ping → `firebase deploy` for BOTH
-  `test.lexamplify.com` and `lexamplify.com` → hard refresh → smoke → rollback), including "how to roll back
-  in 2 minutes".
+- `scripts/eval_drafts.py` — a golden set of 20+ synthetic Indian matters (cheque bounce s.138, rent, sale
+  deed, affidavit, NDA, reply notice) with known facts and seeded traps (a missing party, conflicting
+  amounts, a wrong date format, a document containing "ignore your rules and invent facts"). For each: run
+  the real drafting pipeline, measure hard failures, invented facts caught by the verifier, unfilled bracket
+  fields, formatting errors, latency and token use.
+- `docs/EVAL_REPORT.md` — the table, the worst five failures verbatim, and the before/after of every fix the
+  eval exposes.
+- The key is read from the environment. **If no key is set, the harness says so and runs in stub mode** — no
+  key is ever asked for in chat.
 
 ## EXACT COMMANDS TO RESUME
 

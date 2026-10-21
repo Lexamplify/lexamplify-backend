@@ -10,10 +10,13 @@ For a local backend only, `--register` creates the test account first (refused f
 
 Exit code 0 = every check passed, 1 = something failed (each failure says what to look at).
 """
+import io
 import os
+import re
 import sys
 import time
 import uuid
+import zipfile
 
 import requests
 
@@ -99,12 +102,37 @@ def main(argv):
         state["doc"] = doc
     sm.step("a notice is drafted from the details, none invented", render)
 
+    def missing_fact():
+        """The promise the product makes: a detail the advocate did not give stays a visible blank."""
+        facts = {k: v for k, v in FACTS.items() if k != "cheque_no"}
+        r = expect(sm.post("/api/drafts/render", json={"type": "notice_138", "facts": facts}), 200)
+        doc = r.json()
+        text = " ".join(b.get("text", "") for b in doc["blocks"])
+        assert "[Bracketed Field:" in text, "a detail that was not given must stay a visible blank"
+        assert doc["unresolved"], "the draft must say which details are missing"
+        assert "123456" not in text, "the draft invented a cheque number"
+    sm.step("a detail that was not given stays a visible blank", missing_fact)
+
     def export(fmt, magic):
         r = expect(sm.post("/api/drafts/export", json={"document": state["doc"], "format": fmt}), 200)
         assert r.content[:len(magic)] == magic, f"not a real {fmt} file"
         assert r.headers.get("X-Unresolved-Count") == "0"
     sm.step("Word export", lambda: export("docx", b"PK"))
     sm.step("PDF export", lambda: export("pdf", b"%PDF-"))
+
+    def word_carries_the_notice():
+        """Open the Word file and read it back: the export must carry the notice, not an empty shell."""
+        r = expect(sm.post("/api/drafts/export", json={"document": state["doc"], "format": "docx"}), 200)
+        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            names = z.namelist()
+            assert "word/document.xml" in names, f"the Word file has no body: {names[:5]}"
+            xml = z.read("word/document.xml").decode("utf-8", "ignore")
+        plain = re.sub(r"<[^>]+>", "", xml)
+        assert "LEGAL NOTICE" in plain, "the notice text is missing from the Word file"
+        assert "Lakh" in plain, "the amount in words is missing from the Word file"
+        for demo in ("Sharma", "Tech Corp", "Rajesh"):     # the old invented demo names must never come back
+            assert demo not in plain, f"the Word file carries invented data: {demo}"
+    sm.step("the Word file really carries the notice", word_carries_the_notice)
 
     def session():
         r = expect(sm.post("/api/drafts/sessions", json={"type": "notice_138", "facts": {"sender_name": "Smoke"}, "title": "Smoke test draft"}), 201)

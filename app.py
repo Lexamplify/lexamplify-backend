@@ -1281,21 +1281,32 @@ def create_app():
     # restarting invalidates existing sessions, which is acceptable for a
     # local dev loop and not something production should ever do.
     _jwt_secret = os.getenv('JWT_SECRET_KEY')
-    if not _jwt_secret:
-        if os.getenv('FLASK_ENV') == 'production':
-            raise RuntimeError('JWT_SECRET_KEY must be set in production — no fallback is generated.')
+    _is_prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
+    if not _jwt_secret and not _is_prod:
         _jwt_secret = secrets.token_hex(32)
         print('[app] JWT_SECRET_KEY not set — generated an ephemeral dev key (sessions will not survive a restart).')
     _weak = {'secret', 'changeme', 'change-me', 'password', 'jwt-secret', 'dev', 'test', 'your-secret-key', 'supersecret'}
-    if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true':
+    if _is_prod:
+        # Every problem is listed at once and each line names the exact variable and what to do about it, so
+        # the person reading the Render log does not have to guess what is missing.
         problems = []
-        if len(_jwt_secret) < 32 or _jwt_secret.lower() in _weak:
-            problems.append('JWT_SECRET_KEY is too short or guessable (use at least 32 random characters)')
+        if not _jwt_secret:
+            problems.append('JWT_SECRET_KEY is missing. Set it to at least 32 random characters '
+                            '(for example: openssl rand -hex 32). The server will not start without it, '
+                            'and a weak key would let anyone forge a session.')
+        elif len(_jwt_secret) < 32 or _jwt_secret.lower() in _weak:
+            problems.append('JWT_SECRET_KEY is too short or guessable. Use at least 32 random characters '
+                            '(for example: openssl rand -hex 32).')
         if not os.getenv('DATABASE_URL'):
-            problems.append('DATABASE_URL is not set (production must not fall back to a local file)')
+            problems.append('DATABASE_URL is not set. Put the Postgres connection string from Neon into the '
+                            'Render environment (service -> Environment). The server will not start without a '
+                            'database, and it must never fall back to a local file.')
         if problems:
-            msg = 'Refusing to start: ' + '; '.join(problems) + '.'
-            print('[app] ' + msg)
+            msg = ("[app] Refusing to start: this deployment is not ready to serve.\n"
+                   + "\n".join(f"  {i}. {p}" for i, p in enumerate(problems, 1))
+                   + "\nFix the variables above in the Render environment (service -> Environment) and redeploy. "
+                     "Every variable the app reads is listed in docs/RENDER_ENV_CHECKLIST.md.")
+            print(msg)
             raise RuntimeError(msg)
     app.config['JWT_SECRET_KEY'] = _jwt_secret
 
@@ -1325,7 +1336,7 @@ def create_app():
     # RENDER is a real, Render-set env var (true on every Render service,
     # regardless of whether FLASK_ENV was also configured in the dashboard)
     # — a backstop against exactly that omission, not a replacement for it.
-    is_prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
+    is_prod = _is_prod        # the same test as the start-up safety check above, read once
     # Strict/no-domain works end-to-end in dev because frontend/vite.config.js
     # proxies /api to Flask — the browser only ever talks to the Vite origin,
     # so the cookie is first-party from its point of view.

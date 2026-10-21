@@ -77,6 +77,55 @@ def test_production_refuses_to_start_with_weak_or_missing_secrets(tmp_path, monk
         app_module.create_app()
 
 
+def test_the_start_up_error_names_the_exact_missing_variable_in_plain_words(tmp_path, monkeypatch):
+    """The person reading the Render log must be able to see, without reading the code, which variable is
+    missing and what to put in it."""
+    import app as app_module
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'x.db'}")
+
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError) as excinfo:
+        app_module.create_app()
+    text = str(excinfo.value)
+    assert "JWT_SECRET_KEY is missing" in text, text
+    assert "32 random characters" in text, text            # what a good value looks like
+    assert "Refusing to start" in text, text
+    assert "Render" in text, text                           # where to fix it
+    assert "DATABASE_URL" not in text, text                # the database is set: it is not the problem
+
+    monkeypatch.setenv("JWT_SECRET_KEY", "k" * 48)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError) as excinfo:
+        app_module.create_app()
+    text = str(excinfo.value)
+    assert "DATABASE_URL is not set" in text, text
+    assert "Neon" in text, text                             # where the value comes from
+
+    # both at once: one message, both names, so nothing has to be fixed twice
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError) as excinfo:
+        app_module.create_app()
+    text = str(excinfo.value)
+    assert "JWT_SECRET_KEY is missing" in text and "DATABASE_URL is not set" in text, text
+    assert "1." in text and "2." in text, text             # both are listed
+
+
+def test_a_development_server_starts_without_a_secret_and_says_so(tmp_path, monkeypatch, capsys):
+    """Only production is strict: a developer must still be able to run the app with nothing set."""
+    import app as app_module
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'dev.db'}")
+    flask_app = app_module.create_app()
+    assert flask_app.config["JWT_SECRET_KEY"]
+    assert len(flask_app.config["JWT_SECRET_KEY"]) >= 32
+    assert "ephemeral dev key" in capsys.readouterr().out
+
+
 def test_status_needs_sign_in_and_reports_the_database(world):
     flask_app, a, _b, _mp = world
     assert flask_app.test_client().get("/api/status").status_code == 401
