@@ -13,6 +13,30 @@ configures extensions and registers blueprints.
 
 ---
 
+## Progress & findings (2026-10-22)
+
+Done on `backend-cleanup`, each verified by the CI gate (boots `create_app()` +
+runs the deterministic test suite):
+
+- **Repo cleanup** (9,628 -> 511 tracked files) + `README.md` + this plan.
+- **CI harness** (`.github/workflows/backend-ci.yml`) — boot smoke-test + regression
+  gate. Excludes `tests/test_corpus.py` (flaky AI/fixture suite) and two pre-existing
+  order-dependent flakes (`test_hearings_cause_list_and_warnings`, the job-store
+  redteam test) so green == "no regression from the refactor".
+- **Step: page routes** -> `routes/page_routes.py` (`page_bp`). Verified green.
+- **Step: health routes** (`/api/ping`, `/api/status`) -> `routes/health_routes.py`
+  (`health_bp`). Verified green.
+
+**IMPORTANT finding — the `core/` DB extraction is NOT a no-op.** Moving
+`_ThreadLocalDB` + the `db` instance into `core/db.py` turned ~13 vault / DMS / LPMS
+tests red (test_vault_workspace, test_vault_authorization, test_dms_real_app,
+test_lpms_flow) — the suites wire the raw SQLite handle to a per-test temp DB, and
+the module move disturbed that isolation. It was **reverted**. Before re-attempting
+Step 1, inspect how `tests/conftest.py` + the vault tests point `db` at a temp file
+(they likely `monkeypatch`/patch the symbol by its module path) and make the tests
+patch `core.db.db` (or have `app.db` and `core.db.db` stay the same object the tests
+target). This step needs local, iterative test runs — do not land it blind.
+
 ## The key structural fact
 
 Almost everything lives **inside `create_app()`** (lines ~1182–5050). The 46
