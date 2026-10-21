@@ -3515,27 +3515,12 @@ def create_app():
     app.register_blueprint(contract_bp, url_prefix='/api/contract')
     from routes.page_routes import page_bp
     app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer
+    from routes.health_routes import health_bp
+    app.register_blueprint(health_bp)  # /api/ping, /api/status
 
     # Keep-alive health check — always 200 while the server is up.
     # The client clears its interval on 401/403 from other protected endpoints.
-    @app.route('/api/ping')
-    def api_ping():
-        # Also touches the database. Render stays awake while something calls this URL, but Neon suspends
-        # its compute after ~5 idle minutes unless a QUERY arrives - a ping that never reaches the
-        # database leaves it asleep, and the next login then waits for it to wake. Point the cron job
-        # at this URL every 3-4 minutes and both stay warm. Never fails: the answer says whether the
-        # database replied.
-        db_ok = False
-        try:
-            from sqlalchemy import text as _sql_text
-            sqlalchemy_db.session.execute(_sql_text('SELECT 1'))
-            db_ok = True
-        except Exception as exc:
-            print(f'[ping] database not reachable yet: {exc}')
-            sqlalchemy_db.session.rollback()
-        finally:
-            sqlalchemy_db.session.remove()
-        return jsonify({'ok': True, 'db': db_ok})
+    # /api/ping moved to routes/health_routes.py (health_bp).
 
     # Keep Neon's compute from suspending while this process is up: it suspends after ~5 idle minutes and the
     # next login would otherwise wait for it to wake. A cheap SELECT 1 every 3 minutes, in the background.
@@ -4901,36 +4886,7 @@ def create_app():
         return jsonify({"error": True, "code": "SERVER_ERROR", "request_id": _rid(),
                         "message": "Something went wrong on our side. Please try again. If it keeps happening, quote the reference below."}), 500
 
-    # Signed-in health and basic numbers. Deep check (?deep=1) also asks the AI provider for one tiny answer.
-    @app.route('/api/status', methods=['GET'])
-    def api_status():
-        from utils import metrics
-        out = {"ok": True, "time": int(time.time()), "checks": {}}
-        try:
-            from sqlalchemy import text as _t
-            sqlalchemy_db.session.execute(_t('SELECT 1'))
-            out["checks"]["database"] = "ok"
-        except Exception as exc:
-            app.logger.error(f"[{_rid()}] status: database check failed: {exc}")
-            out["checks"]["database"] = "down"
-            out["ok"] = False
-        out["checks"]["practice_module"] = "ok" if app.extensions.get('lpms_db_path') else "not available"
-        out["checks"]["ai_configured"] = "yes" if os.getenv('GROQ_API_KEY') else "no"
-        if request.args.get('deep') == '1' and os.getenv('GROQ_API_KEY'):
-            t0 = time.time()
-            try:
-                from utils.ai_helper import ask_groq
-                ask_groq("Reply with the single word OK.", "ping", max_tokens=5)
-                out["checks"]["ai_reachable"] = f"ok ({round(time.time() - t0, 2)}s)"
-                metrics.observe('ai_ping', time.time() - t0)
-            except Exception as exc:
-                app.logger.error(f"[{_rid()}] status: AI check failed: {exc}")
-                out["checks"]["ai_reachable"] = "down"
-                out["ok"] = False
-        out["metrics"] = metrics.snapshot()
-        out["memory_mb"] = metrics.rss_mb()
-        out["note"] = "Counters restart when the server restarts."
-        return jsonify(out), (200 if out["ok"] else 503)
+    # /api/status moved to routes/health_routes.py (health_bp).
 
     @app.cli.command("seed-supreme-court")
     def seed_supreme_court_command():
