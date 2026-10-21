@@ -321,7 +321,33 @@ finding; the lines are shown above.
 
 ## IN PROGRESS
 
-**Step 6 — the real-model evaluation harness** (the final full run is going; the findings are below).### What the evaluation found (and what was fixed because of it)
+Nothing — **Step 6 is committed** (`aacd705`). Waiting for the manager's "go" on **Step 5** (the dependency
+and vulnerability triage).
+
+### The one test that is red today
+
+`tests/test_lpms_flow.py::test_hearings_cause_list_and_warnings` fails today (Thursday 2026-10-22). It is
+**the same date-dependent test as in the baseline**, and the product's behaviour is right:
+
+- the test books a hearing on **the next Sunday** and then expects another hearing for the **same case** on
+  `iso(3)` to be accepted (the clash warning there is about a *different* case);
+- today the next Sunday **is** `iso(3)`, so the first hearing already occupies that day for that case and
+  the second one is correctly refused with 409 ("This case already has a hearing on that date");
+- the same test failed in the baseline for the other reason (the next Sunday was `iso(4`, so the
+  malformed-time check came second) — that one is fixed in the code, and
+  `tests/test_lpms_hearing_validation.py` covers both halves.
+
+The test therefore fails on the days when the next Sunday is 3 or 4 days away (Wednesday and Thursday this
+week) and passes on the other five. The fix belongs in the test — pick a Sunday that is not `iso(3)`/`iso(4)`
+— and the manager asked not to edit that test, so it is **reported, not changed**. The one-line change is
+ready to make on a "go":
+
+```python
+sunday = next(today() + timedelta(days=i) for i in range(1, 8)
+              if (today() + timedelta(days=i)).weekday() == 6 and i not in (3, 4))
+```
+
+### What the evaluation found (and what was fixed because of it)
 
 The harness is `scripts/eval_drafts.py`; the golden set is `scripts/eval_matters.py` (21 synthetic Indian
 matters: 6 s.138 notices, 3 rent agreements, 3 sale deeds, 3 affidavits, 3 NDAs, 3 replies to notices, with
