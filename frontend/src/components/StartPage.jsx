@@ -206,6 +206,7 @@ export default function StartPage() {
       <details className="sp-all">
         <summary>All tools</summary>
         <div>
+          <Link to="/editor">Blank editor</Link>
           <Link to="/workspace/matters">Matters</Link>
           <Link to="/practice">Practice (cases and hearings)</Link>
           <Link to="/document-hub">Document Hub</Link>

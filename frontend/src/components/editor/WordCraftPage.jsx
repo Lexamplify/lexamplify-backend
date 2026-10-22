@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import WordCraftEditor from './WordCraftEditor.jsx';
 import { inlineEditSelection } from '../../services/api.js';
 import { getSession, blocksToHtml } from '../../services/draftApi.js';
+import { vaultApi } from '../vault/vaultApi.js';
 import './editor.css';
 
 // Full-page WordCraft editor for LexAmplify. A draft handed off from the wizard / auto-draft
@@ -36,6 +37,9 @@ export default function WordCraftPage() {
   const [selection, setSelection] = useState('');
   const [saved, setSaved] = useState('saved');
   const [busy, setBusy] = useState(false);
+  const [savedDocId, setSavedDocId] = useState(null);
+  const [savingDoc, setSavingDoc] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
   const [log, setLog] = useState([{ who: 'ai', text: 'Select text in the document, then tell me how to change it — I’ll rewrite just that part.' }]);
   const [input, setInput] = useState('');
   const wsRef = useRef(null);
@@ -106,6 +110,33 @@ export default function WordCraftPage() {
     runEdit(v);
   }
 
+  // Durable save into the user's real document store (Case Vault). First save creates the
+  // document (draft-save); later saves update that same document (save-as).
+  async function saveToDocuments() {
+    if (!bridge || savingDoc) return;
+    const html = bridge.html();
+    if (!html || !html.trim()) { setSaveMsg('Nothing to save yet.'); return; }
+    setSavingDoc(true);
+    setSaveMsg(null);
+    try {
+      let res;
+      if (savedDocId) {
+        res = await vaultApi.saveAs(savedDocId, { html, format: 'docx', title });
+      } else {
+        res = await vaultApi.draftSave({ html, title, format: 'docx', destination: 'vault' });
+        const newId = res?.id || res?.document?.id || res?.new_id;
+        if (newId) setSavedDocId(newId);
+      }
+      if (res?.error) setSaveMsg(res.message || 'Could not save.');
+      else setSaveMsg('Saved to your Documents.');
+    } catch (e) {
+      setSaveMsg(e.message || 'Could not save.');
+    } finally {
+      setSavingDoc(false);
+      setTimeout(() => setSaveMsg(null), 4000);
+    }
+  }
+
   async function exportDocx() {
     if (!bridge) return;
     const bytes = await bridge.bytes('docx');
@@ -135,8 +166,10 @@ export default function WordCraftPage() {
           <span className={`wcp-save wcp-save--${saved}`}>{saved === 'saving' ? 'Saving…' : 'Saved on this device'}</span>
         </div>
         <div className="wcp-head-r">
+          {saveMsg && <span className="wcp-savemsg">{saveMsg}</span>}
           <button className="wcp-btn" onClick={fullscreen}>Focus</button>
           <button className="wcp-btn" onClick={exportDocx}>Export .docx</button>
+          <button className="wcp-btn wcp-btn--primary" onClick={saveToDocuments} disabled={savingDoc}>{savingDoc ? 'Saving…' : 'Save to Documents'}</button>
         </div>
       </header>
 

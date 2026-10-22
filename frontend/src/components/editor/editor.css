@@ -18,6 +18,10 @@
 @keyframes wcp-pulse { 50% { opacity: .35; } }
 .wcp-btn { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font-size: 13px; font-weight: 500; cursor: pointer; }
 .wcp-btn:hover { border-color: var(--accent); color: var(--accent); }
+.wcp-btn--primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.wcp-btn--primary:hover { color: var(--on-accent); filter: brightness(1.05); }
+.wcp-btn--primary:disabled { opacity: .6; cursor: default; }
+.wcp-savemsg { font-size: 12.5px; color: var(--ink-soft); }
 
 .wcp-body { flex: 1; display: flex; min-height: 0; }
 .wcp-editor { flex: 1; min-width: 0; display: flex; }
