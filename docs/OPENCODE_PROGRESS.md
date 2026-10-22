@@ -542,6 +542,66 @@ After step 3c batch 1 (drafts + autocomplete), the same command ends:
 824 passed, 9 skipped, 294 warnings in 864.00s (0:14:23)
 ```
 
+## Step 3c batch 2 — vault sharing, provenance and citations (module A, module B)
+
+Base: `fbbd867` on `opencode-modular`. Both modules move handlers verbatim; no public path
+changed.
+
+**Blueprint used:** the existing `vault_workspace` (`routes/vault_workspace_routes.py`,
+`Blueprint("vault_workspace", __name__, url_prefix="/api/vault")`). All eight public paths
+were already under `/api/vault` and none collided, so no new routes file was needed. The
+blueprint has no `before_request`/`after_request` and no limiter of its own; the app-level
+API gate and the audit `after_request` apply to it like every other route.
+
+**Module A (`c6017cc`)** — `list_vault_shares`, `create_vault_share`, `delete_vault_share`,
+`toggle_vault_link_share`. Public paths stay `/api/vault/shares`,
+`/api/vault/shares/<int:share_id>` and `/api/vault/shares/link`.
+`_fetch_vault_node_owner`/`_fetch_vault_node_name` were `create_app()` locals used only by
+these four handlers; they were promoted verbatim to module level in `app.py` and are called
+as `app_module.<name>`. Pinned helpers (`_vault_owner_ok`, `_current_vault_user_id`,
+`_write_provenance`) stayed in `app.py`. `utils/audit_log.py`'s WATCHED key follows the
+endpoint rename (`vault_workspace.delete_vault_share`) so the `vault_share_removed` event is
+still recorded.
+
+**Module B (`9a193eb`)** — `get_vault_provenance`, `verify_vault_provenance`,
+`add_vault_citation`, `remove_vault_citation`. Public paths stay
+`/api/vault/provenance`, `/api/vault/provenance/verify`,
+`/api/vault/documents/<int:doc_id>/citations` and
+`/api/vault/documents/<int:doc_id>/citations/<string:citation_id>`.
+`_CITATION_INSERT_SQL`/`_CITATION_DELETE_SQL` were `create_app()` locals used only by the
+two citation handlers; they were promoted verbatim (the SQL string values are byte-identical,
+452 and 361 bytes) and `hashlib` was added to the blueprint's imports. Pinned helpers
+(`_vault_access_ok`, `_effective_permission` indirectly, `_current_vault_user_id`) stayed in
+`app.py`.
+
+**Proof (each module):** AST comparison says identical for every moved handler (and for the
+two promoted helpers in A); the two SQL constants are value-identical in B; pyflakes reports
+zero undefined names; the route snapshot changed exactly four endpoint-column lines and
+stayed at 364 routes; the signed-in before/after probe (owner, stranger, view-only member,
+error paths, link toggle on/off, unauthenticated requests) matched on every behavioural
+field; named tests: 82 passed (A), 113 passed (B); full suite: 824 passed, 9 skipped both
+times.
+
+**Finding — there is no public link route.** `link_shared` is only read by the share list
+and the toggle; no route serves a node by link. Every `/api/vault` route in
+`tests/route_snapshot.txt` is `signed-in`, and `git grep` finds no public/shared/link
+route. The unauthenticated request after each toggle therefore hits `/api/vault/shares` and
+gets 401. The "Anyone with the link" flag is UI-only today.
+
+**Pinned test guard:** none of the eight handlers is named in
+`tests/test_app_vault_patch.py` (MODULE_FUNCS/ROUTES); the only test file naming the moved
+URLs is `tests/test_tenancy.py` (shares).
+
+**Saved drafts (read-only question):** saved drafts are rows in `saved_drafts` inside
+`lex_assistant.db`, written by raw `sqlite3.connect('lex_assistant.db')` in
+`routes/draft_engine_routes.py:342` (GET/POST `handle_drafts`) and `:412` (`delete_draft`);
+the schema is created at `app.py:372` and again at `app.py:4142`. The path is CWD-relative
+(`app.py:41-45`). Postgres is never used for these rows; the separate draft-session/version
+tables (`models/draft_session.py:5-23`) do use `DATABASE_URL` (`app.py:1277-1289`). On
+Render, `app.py:100-102` symlinks `lex_assistant.db` onto `PERSISTENT_DATA_DIR` when that
+env var is set and the directory exists, so drafts survive deploys; without it the file is
+on the ephemeral filesystem and is wiped on redeploy/restart (`docs/DEPLOY_STEPS.md:25`).
+
 ## EXACT COMMANDS TO RESUME
 
 ```powershell
