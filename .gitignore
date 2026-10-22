@@ -90,3 +90,20 @@ rag_server/chroma_db/
 # Local safety backups made before big changes (never commit)
 _backup_before_*/
 _vw_scratch/
+
+# ── VIRTUALENVS (any name) — never commit ────────────────────────
+rag_venv/
+*_venv/
+*-venv/
+
+# ── VECTOR STORE / RUNTIME DATA ──────────────────────────────────
+chroma_data/
+*.chroma/
+
+# ── AI / SCRATCH OUTPUTS ─────────────────────────────────────────
+Claude outputs/
+*.bak
+
+# ── FUSE / STRAY FILESYSTEM ARTIFACTS ────────────────────────────
+.fuse_hidden*
+=*.*
