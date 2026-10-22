@@ -1,0 +1,58 @@
+/* WordCraft editor page — themed with the Slate & Rust tokens from index.css. */
+
+.wcp { display: flex; flex-direction: column; height: calc(100vh - 0px); min-height: 560px; background: var(--bg); }
+.wcp:fullscreen { height: 100vh; }
+
+.wcp-head { flex-shrink: 0; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 16px; background: var(--paper); border-bottom: 1px solid var(--rule); }
+.wcp-head-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wcp-head-r { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.wcp-back { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); font-size: 17px; line-height: 1; cursor: pointer; }
+.wcp-back:hover { border-color: var(--accent); color: var(--accent); }
+.wcp-title { font-family: var(--font-serif, 'Source Serif 4', Georgia, serif); font-weight: 600; font-size: 16px; color: var(--ink); border: 1px solid transparent; background: transparent; border-radius: 7px; padding: 4px 8px; max-width: 44vw; outline: none; }
+.wcp-title:hover { border-color: var(--rule); }
+.wcp-title:focus { border-color: var(--accent); background: var(--paper-2, var(--paper)); }
+.wcp-save { font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.wcp-save::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #0E7C66; }
+.wcp-save--saving { color: var(--accent); }
+.wcp-save--saving::before { background: var(--accent); animation: wcp-pulse 1s infinite; }
+@keyframes wcp-pulse { 50% { opacity: .35; } }
+.wcp-btn { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font-size: 13px; font-weight: 500; cursor: pointer; }
+.wcp-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.wcp-body { flex: 1; display: flex; min-height: 0; }
+.wcp-editor { flex: 1; min-width: 0; display: flex; }
+.wcp-ai { width: 360px; flex-shrink: 0; border-left: 1px solid var(--rule); background: var(--paper); display: flex; flex-direction: column; min-height: 0; }
+.wcp-ai-head { flex-shrink: 0; padding: 14px 16px; font-weight: 600; font-size: 14px; color: var(--ink); border-bottom: 1px solid var(--rule); }
+.wcp-ai-log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 11px; }
+.wcp-msg { max-width: 94%; font-size: 13.5px; line-height: 1.55; padding: 10px 13px; border-radius: 13px; }
+.wcp-msg--ai { align-self: flex-start; background: var(--paper-2, rgba(0,0,0,.04)); color: var(--ink); border-bottom-left-radius: 4px; }
+.wcp-msg--you { align-self: flex-end; background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
+.wcp-typing { display: inline-flex; gap: 4px; }
+.wcp-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: wcp-bounce 1.1s infinite; }
+.wcp-typing span:nth-child(2) { animation-delay: .15s; }
+.wcp-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes wcp-bounce { 0%,60%,100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+.wcp-ai-foot { flex-shrink: 0; border-top: 1px solid var(--rule); padding: 12px 14px 14px; }
+.wcp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.wcp-chip { font-size: 12.5px; font-weight: 500; padding: 5px 11px; border-radius: 20px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; }
+.wcp-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.wcp-chip:disabled { opacity: .5; }
+.wcp-input { display: flex; gap: 8px; align-items: center; }
+.wcp-input input { flex: 1; height: 42px; border: 1px solid var(--rule); border-radius: 11px; padding: 0 14px; font-size: 13.5px; background: var(--paper-2, var(--paper)); color: var(--ink); outline: none; }
+.wcp-input input:focus { border-color: var(--accent); }
+.wcp-input button { width: 42px; height: 42px; flex-shrink: 0; border-radius: 11px; border: 0; background: var(--accent); color: var(--on-accent); font-size: 17px; cursor: pointer; }
+.wcp-input button:disabled { opacity: .45; cursor: default; }
+.wcp-hint { font-size: 11.5px; color: var(--muted); margin-top: 8px; text-align: center; }
+
+/* WordCraft iframe */
+.wce { position: relative; flex: 1; min-width: 0; display: flex; background: var(--bg); }
+.wce-frame { flex: 1; width: 100%; height: 100%; border: 0; display: block; }
+.wce-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--bg); color: var(--muted); font-size: 14px; pointer-events: none; }
+.wce-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--rule); border-top-color: var(--accent); animation: wce-spin .8s linear infinite; }
+.wce-loadtext { color: var(--ink-soft); font-weight: 500; }
+.wce-loadsub { font-size: 12.5px; color: var(--muted); }
+@keyframes wce-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  .wcp-ai { position: fixed; right: 0; top: 0; bottom: 0; width: min(360px, 90vw); z-index: 90; box-shadow: -10px 0 40px -20px rgba(0,0,0,.4); }
+}

@@ -468,7 +468,7 @@ export default function DraftWizard() {
     setDoc(viewVersion.document); versionSaved.current = false; setViewVersion(null);
   };
 
-  const openInEditor = () => navigate('/auto-draft', { state: { openDraft: { html: blocksToHtml(doc.blocks), text: blocksToText(doc.blocks), title: doc.title } } });
+  const openInEditor = () => navigate('/editor', { state: { openDraft: { html: blocksToHtml(doc.blocks), text: blocksToText(doc.blocks), title: doc.title } } });
 
   const startOver = async () => {
     clearTimeout(saveTimer.current);
