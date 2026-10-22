@@ -180,7 +180,7 @@ export default function WordCraftPage() {
 
         <aside className="wcp-ai">
           <div className="wcp-ai-head">AI assistant</div>
-          <div className="wcp-ai-log" ref={logRef}>
+          <div className="wcp-ai-log" ref={logRef} role="log" aria-live="polite" aria-label="AI assistant conversation">
             {log.map((m, i) => <div key={i} className={`wcp-msg wcp-msg--${m.who}`}>{m.text}</div>)}
             {busy && <div className="wcp-msg wcp-msg--ai wcp-typing"><span /><span /><span /></div>}
           </div>
@@ -189,7 +189,7 @@ export default function WordCraftPage() {
               {QUICK.map((q) => <button key={q.label} className="wcp-chip" disabled={busy} onClick={() => runEdit(q.instruction)}>{q.label}</button>)}
             </div>
             <form className="wcp-input" onSubmit={onSend}>
-              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={selection ? 'Rewrite the selected text…' : 'Select text, then describe the change…'} disabled={busy} />
+              <input value={input} onChange={(e) => setInput(e.target.value)} aria-label="Describe how to change the selected text" placeholder={selection ? 'Rewrite the selected text…' : 'Select text, then describe the change…'} disabled={busy} />
               <button type="submit" disabled={busy || !input.trim()} aria-label="Send">→</button>
             </form>
             <div className="wcp-hint">{selection ? `Editing ${selection.length} selected characters` : 'Nothing selected — highlight text in the document first'}</div>
