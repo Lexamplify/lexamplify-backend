@@ -1500,24 +1500,7 @@ def create_app():
         print(f'[vault] Case Vault workspace routes are NOT available: {exc}')
         traceback.print_exc()
 
-    @app.route('/api/ai/extract-file', methods=['POST', 'OPTIONS'])
-    def extract_file_text():
-        """Extract plain text from an uploaded PDF, DOCX, or TXT for the AI Legal Associate."""
-        if request.method == 'OPTIONS':
-            return jsonify({}), 200
-        f = request.files.get('file')
-        if not f or not f.filename:
-            return jsonify({'error': 'No file provided'}), 400
-        ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else 'txt'
-        try:
-            from utils.pdf_helper import extract_text_for_summary
-            raw_bytes = f.read()
-            text = extract_text_for_summary(raw_bytes, ext)
-            if not text or not text.strip():
-                text = raw_bytes.decode('utf-8', errors='ignore')
-            return jsonify({'text': text[:12000], 'filename': f.filename})
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+    # /api/ai/extract-file moved to routes/ai_routes.py (ai_bp), registered above.
 
     # ── Vault Folders API ─────────────────────────────────────────────────────
     @app.route('/api/vault/folders', methods=['GET', 'OPTIONS'])
@@ -3820,49 +3803,7 @@ def create_app():
             traceback.print_exc()
             return jsonify({"error": True, "message": f"Failed to reconstruct document: {str(e)}"}), 500
 
-    @app.route('/api/ai/summarize-judgment', methods=['POST', 'OPTIONS'])
-    def api_summarize_judgment():
-        if request.method == 'OPTIONS':
-            return jsonify({}), 200
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-            text = str(data.get('text', '')).strip()
-            if not text:
-                return jsonify({"error": True, "message": "text cannot be empty."}), 400
-
-            # Legal preamble blindspot: the first ~6000 characters of a judgment
-            # are almost always procedural history and counsel appearances, not
-            # the court's actual reasoning. Sample the opening (for structural
-            # context) plus the closing (where the ratio decidendi and ultimate
-            # holding live) instead of naively truncating from the top. Guard
-            # against the two windows overlapping on short judgments, which
-            # would otherwise duplicate the opening into the context block.
-            if len(text) <= 8000:
-                context_block = text
-            else:
-                context_block = f"{text[:2000]}\n\n...[middle of judgment omitted]...\n\n{text[-6000:]}"
-
-            groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-            system_prompt = (
-                "You are an expert senior legal counsel in India. Summarize the following judgment "
-                "excerpt into exactly 3 concise bulleted legal takeaways. Focus on the court's ratio "
-                "decidendi and ultimate holding — ignore procedural history and counsel appearances "
-                "even if they dominate the excerpt."
-            )
-            chat_completion = groq_client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": context_block},
-                ],
-                model="llama-3.1-8b-instant",
-                temperature=0.2,
-            )
-            summary = chat_completion.choices[0].message.content
-            return jsonify({"status": "success", "summary": summary}), 200
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": True, "message": str(e)}), 500
+    # /api/ai/summarize-judgment moved to routes/ai_routes.py (ai_bp), registered above.
 
     @app.route('/api/chat', methods=['POST', 'OPTIONS'])
     @jwt_required()
