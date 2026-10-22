@@ -1,4 +1,4 @@
-GET | / | landing | non-api
+GET | / | pages.landing | non-api
 GET | /api/admin/sync-court-data | court.trigger_court_sync | signed-in
 POST | /api/ai/chat | ai.general_chat | signed-in
 POST | /api/ai/extract-file | extract_file_text | signed-in
@@ -224,7 +224,7 @@ GET | /api/matters/<int:matter_id>/tasks | matter.list_matter_tasks | signed-in
 POST | /api/matters/<int:matter_id>/tasks | matter.create_matter_task | signed-in
 PATCH | /api/matters/<int:matter_id>/tasks/<int:task_id> | matter.toggle_matter_task | signed-in
 PATCH | /api/matters/<int:matter_id>/team | matter.assign_matter_team | signed-in
-GET | /api/ping | api_ping | public
+GET | /api/ping | health.api_ping | public
 GET | /api/practice/audit | lpms.audit_list | signed-in
 GET | /api/practice/audit/export.csv | lpms.audit_csv | signed-in
 GET | /api/practice/audit/verify | lpms.audit_verify | signed-in
@@ -305,7 +305,7 @@ GET | /api/practice/search | lpms.search | signed-in
 GET | /api/practice/settings | lpms.get_settings | signed-in
 PUT | /api/practice/settings | lpms.put_settings | signed-in
 GET,POST | /api/proxy | court.reverse_proxy | signed-in
-GET | /api/status | api_status | signed-in
+GET | /api/status | health.api_status | signed-in
 GET | /api/team/members | team.list_members | signed-in
 POST | /api/team/members/add | team.add_member | signed-in
 DELETE | /api/team/members/delete/<int:member_id> | team.delete_member | signed-in
@@ -356,9 +356,9 @@ POST | /api/virtual-courtroom/chat | argument.vc_chat | signed-in
 GET | /billing | billing.billing_page | non-api
 GET | /case-management | causelist.case_management | non-api
 GET | /clients | client.clients_page | non-api
-GET | /contract-viewer | contract_viewer | non-api
+GET | /contract-viewer | pages.contract_viewer | non-api
 GET | /court-resources | court.court_resources | non-api
-GET | /dashboard | dashboard | non-api
-GET | /login | login_page | non-api
-GET | /signup | signup_page | non-api
+GET | /dashboard | pages.dashboard | non-api
+GET | /login | pages.login_page | non-api
+GET | /signup | pages.signup_page | non-api
 GET | /static/<path:filename> | static | static
