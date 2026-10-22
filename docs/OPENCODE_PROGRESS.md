@@ -1,11 +1,11 @@
 # OPENCODE_PROGRESS
 
-Work log for the `opencode-refactor` branch. Any engineer (or model) can pick this up and continue.
+Work log for the `opencode-modular` branch. Any engineer (or model) can pick this up and continue.
 Update this file after every step: **done / in progress / next / exact commands to resume / known failures**.
 
-- Branch: `opencode-refactor` (never push, never deploy from this branch)
+- Branch: `opencode-modular` (branched from `main` at `8c0ccdb`; never push, never deploy from this branch)
 - Brief: `OPENCODE_COMMAND.md` (read it first; its rules win)
-- Last updated: 2026-10-21, after STEP 0
+- Last updated: 2026-10-22, after STEP 3 (calendar + AI groups moved; firm-library group reverted — see below)
 
 ---
 
@@ -419,7 +419,66 @@ After Step 6: **Step 5** (dependency and vulnerability triage → `docs/VULN_TRI
 **Step 8** (the final proof and `docs/STATUS.md`) — in that order, and only if there is time for the two
 splits.
 
-## EXACT COMMANDS TO RESUME
+---
+
+### STEP 3 — split `app.py` into blueprints (in progress, branch `opencode-modular`)
+
+Every handler is moved **verbatim**: same URLs, methods, decorator order, handler names and logic. The new
+module never imports `app` at the top; each handler does `import app as app_module` locally and reaches
+app-level objects through it. Registration sits next to the other blueprints in `app.py`. The route count
+stays **364** and the snapshot diff touches only the endpoint column. No `url_for`/`endpoint=` use of a
+moved name exists anywhere in the repo.
+
+| group | commit | moved | destination | proof |
+|---|---|---|---|---|
+| calendar | `e9141e6` | `POST /api/calendar/save`, `GET /api/calendar/events`, `POST /api/ecourts/sync`, `GET /api/districts` | `routes/calendar_routes.py` (`calendar_bp`) | signed-in status codes and response keys identical; pyflakes 0 undefined names; snapshot endpoint-only, 364 routes; 824 passed / 9 skipped |
+| AI file + judgment | `19bf6a1` | `POST /api/ai/extract-file`, `POST /api/ai/summarize-judgment` | `routes/ai_routes.py` (`ai_bp`) | signed-in status codes and response keys identical; AST `VERBATIM_MOVE=OK`; pyflakes 0 undefined names; snapshot 2 endpoint lines only, 364 routes; 34/34 group tests |
+
+Deliberate differences (only these): `app.logger` → `current_app.logger`; the two AI decorators use paths
+relative to `ai_bp`'s `/api/ai` prefix (`/extract-file`, `/summarize-judgment`); `Groq` is reached as
+`app_module.Groq` (the lazy shim at `app.py:24`); `import os` added to `routes/ai_routes.py`.
+
+**Undone: the firm-library group (4 handlers).** The move itself verified clean — AST `VERBATIM_MOVE=OK`
+for all four bodies, signed-in probe identical, pyflakes 0 undefined names, snapshot endpoint-only with 364
+routes — but `tests/test_app_vault_patch.py` reads the **source text of `get_firm_library` and
+`create_firm_library_entry` out of `app.py`'s `create_app()` AST by name** (`ROUTES`, lines 35–36;
+`mount_routes`, lines 58–72) and fails at setup for all 10 tests when those names are not there
+(`AssertionError: {'create_firm_library_entry', 'get_firm_library'}`). No route-level change satisfies that
+check, and tests are not edited in this task, so the group was reverted (`git checkout -- app.py
+tests/route_snapshot.txt`, delete the new file). **Decision needed:** either let that test load the two
+functions from `routes/firm_library_routes.py` (its docstring already says it mounts "the real route
+functions"), or keep those two inline and move only `/api/firm-library/saved` and
+`/api/firm-library/external-search`.
+
+**Still inline in `app.py`:** 33 `@app.route` handlers (vault documents/folders/shares, drafts, firm library,
+research/chat, the Kanoon redirect, …). Per-handler checks before each move: create_app locals,
+`global`/module-level state, and the target blueprint's hooks/prefix/limiter/name collisions — see
+`docs/BACKEND_REFACTOR_PLAN.md`.
+
+**Do not repeat:** extracting the DB bootstrap into `core/db.py` regressed ~13 tests and was reverted. The
+SQLite handle is a thread-local set during `create_app()` and stays there.
+
+**Known failures:** none. Full suite on this tree (group 1 committed, firm-library group reverted):
+
+```
+tests/test_backend_full.py::TestContractExport::test_pdf_export_returns_valid_pdf_attachment
+  E:\lexai-india\routes\contract_routes.py:1654: DeprecationWarning: Substituting font arial by core font helvetica - This is deprecated since v2.7.8, and will soon be removed
+    pdf.set_font("Arial", 'B', 12)
+
+tests/test_backend_full.py::TestContractExport::test_pdf_export_returns_valid_pdf_attachment
+  E:\lexai-india\routes\contract_routes.py:1655: DeprecationWarning: The parameter "ln" is deprecated since v2.5.2. Instead of ln=True use new_x=XPos.LMARGIN, new_y=YPos.NEXT.
+    pdf.cell(0, 10, "Auto-Draft Text:", ln=True)
+
+tests/test_backend_full.py::TestContractExport::test_pdf_export_returns_valid_pdf_attachment
+  E:\lexai-india\routes\contract_routes.py:1656: DeprecationWarning: Substituting font arial by core font helvetica - This is deprecated since v2.7.8, and will soon be removed
+    pdf.set_font("Arial", size=11)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+824 passed, 9 skipped, 294 warnings in 901.39s (0:15:01)
+```
+
+`tests/test_app_vault_patch.py` is green again because the two firm-library handlers are back in `app.py`.
+
 ## EXACT COMMANDS TO RESUME
 
 ```powershell
