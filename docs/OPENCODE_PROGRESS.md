@@ -5,7 +5,7 @@ Update this file after every step: **done / in progress / next / exact commands 
 
 - Branch: `opencode-modular` (branched from `main` at `8c0ccdb`; never push, never deploy from this branch)
 - Brief: `OPENCODE_COMMAND.md` (read it first; its rules win)
-- Last updated: 2026-10-22, after STEP 3 (calendar + AI groups moved; firm-library group reverted — see below)
+- Last updated: 2026-10-22, after STEP 3c batch 1 (saved drafts + case autocomplete moved; firm-library group still blocked — see below)
 
 ---
 
@@ -433,10 +433,17 @@ moved name exists anywhere in the repo.
 |---|---|---|---|---|
 | calendar | `e9141e6` | `POST /api/calendar/save`, `GET /api/calendar/events`, `POST /api/ecourts/sync`, `GET /api/districts` | `routes/calendar_routes.py` (`calendar_bp`) | signed-in status codes and response keys identical; pyflakes 0 undefined names; snapshot endpoint-only, 364 routes; 824 passed / 9 skipped |
 | AI file + judgment | `19bf6a1` | `POST /api/ai/extract-file`, `POST /api/ai/summarize-judgment` | `routes/ai_routes.py` (`ai_bp`) | signed-in status codes and response keys identical; AST `VERBATIM_MOVE=OK`; pyflakes 0 undefined names; snapshot 2 endpoint lines only, 364 routes; 34/34 group tests |
+| saved drafts | `f29d347` | `GET/POST /api/drafts`, `DELETE /api/drafts/<draft_id>` | existing `routes/draft_engine_routes.py` (`drafts_bp`, prefix `/api/drafts`) | AST `VERBATIM_MOVE=OK` (66/17 lines); two-user probe identical apart from temp paths and timestamps; pyflakes 0 undefined names; snapshot 2 endpoint lines only, 364 routes; 26 named tests; full suite 824 passed / 9 skipped |
+| case autocomplete | `5841330` | `GET /api/cases/autocomplete` | new `routes/cases_routes.py` (`cases_bp`, no prefix) | AST `VERBATIM_MOVE=OK` (23 lines); real/empty/no-match probe identical apart from temp paths; pyflakes 0 undefined names; snapshot 1 endpoint line only, 364 routes; 55 named tests; full suite 824 passed / 9 skipped |
 
 Deliberate differences (only these): `app.logger` → `current_app.logger`; the two AI decorators use paths
 relative to `ai_bp`'s `/api/ai` prefix (`/extract-file`, `/summarize-judgment`); `Groq` is reached as
 `app_module.Groq` (the lazy shim at `app.py:24`); `import os` added to `routes/ai_routes.py`.
+For the saved drafts: the decorators are relative to the existing `/api/drafts` prefix (`""` and
+`/<string:draft_id>`), and `routes/draft_engine_routes.py` gained `import sqlite3`, `import time` and
+`jwt_required` on its existing `flask_jwt_extended` import line. For autocomplete: the handler imports
+`app as app_module` locally, reads `app_module.db` and `app_module._current_vault_user_id()`, and keeps the
+absolute path because `cases_bp` has no prefix.
 
 **Undone: the firm-library group (4 handlers).** The move itself verified clean — AST `VERBATIM_MOVE=OK`
 for all four bodies, signed-in probe identical, pyflakes 0 undefined names, snapshot endpoint-only with 364
@@ -450,10 +457,60 @@ functions from `routes/firm_library_routes.py` (its docstring already says it mo
 functions"), or keep those two inline and move only `/api/firm-library/saved` and
 `/api/firm-library/external-search`.
 
-**Still inline in `app.py`:** 33 `@app.route` handlers (vault documents/folders/shares, drafts, firm library,
+**Still inline in `app.py`:** 30 `@app.route` handlers (vault documents/folders/shares, firm library,
 research/chat, the Kanoon redirect, …). Per-handler checks before each move: create_app locals,
 `global`/module-level state, and the target blueprint's hooks/prefix/limiter/name collisions — see
 `docs/BACKEND_REFACTOR_PLAN.md`.
+
+#### STEP 3c — batch 1 (saved drafts + case autocomplete), done
+
+Commands (for each module, in this order; the full suite ran once per module, before its commit):
+
+```powershell
+# AST verbatim comparison (drops decorators, re-indents, ignores the local import)
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\compare_move2.py routes\draft_engine_routes.py handle_drafts delete_draft
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\compare_move2.py routes\cases_routes.py api_cases_autocomplete
+
+# signed-in before/after probe; "before" = temporary worktree at 35a8e45 (removed afterwards)
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\probe_drafts.py <tree> <out.json>
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\probe_autocomplete.py <tree> <out.json>
+
+# snapshot (endpoint column only)
+$env:REGENERATE_ROUTE_SNAPSHOT="1"; .\venv\Scripts\python.exe -m pytest tests\test_route_snapshot.py -q; Remove-Item Env:\REGENERATE_ROUTE_SNAPSHOT
+
+# named tests, then the full suite
+.\venv\Scripts\python.exe -m pytest tests\test_route_snapshot.py tests\test_api_gate_matrix.py tests\test_cross_tenant_walk.py tests\test_saved_drafts.py tests\test_cross_tenant_tables.py -q
+.\venv\Scripts\python.exe -m pytest tests -q --ignore=tests/e2e
+```
+
+Raw results:
+
+```
+handle_drafts              identical=True lines=66
+delete_draft               identical=True lines=17
+VERBATIM_MOVE=OK
+api_cases_autocomplete     identical=True lines=23
+VERBATIM_MOVE=OK
+```
+
+```
+# drafts probe: every behavioural field same=True; the only differing keys are
+# DATABASE_URL / cwd / app_file (temp paths)
+a_create / a_update / a_list_* / a_delete / b_list / b_delete_a_draft: same=True
+
+# autocomplete probe
+real_query same=True   empty_query same=True   no_match same=True   uid/inserted_id same=True
+
+# snapshot: 2 endpoint lines (drafts), then 1 (autocomplete); 364 routes both times
+# named tests: 26 passed, then 55 passed
+# full suite (drafts tree):  824 passed, 9 skipped in 769.92s
+# full suite (cases tree):   824 passed, 9 skipped in 864.00s
+```
+
+Saved drafts are covered by `tests/test_saved_drafts.py` and the `saved_drafts` row of
+`tests/test_cross_tenant_tables.py`. Autocomplete has no direct test (checked: no test names it), so the
+named run above also included `tests/test_app_vault_patch.py` and `tests/test_vault_authorization.py`
+(the vault / `case_vault` paths).
 
 **Do not repeat:** extracting the DB bootstrap into `core/db.py` regressed ~13 tests and was reverted. The
 SQLite handle is a thread-local set during `create_app()` and stays there.
@@ -478,6 +535,12 @@ tests/test_backend_full.py::TestContractExport::test_pdf_export_returns_valid_pd
 ```
 
 `tests/test_app_vault_patch.py` is green again because the two firm-library handlers are back in `app.py`.
+
+After step 3c batch 1 (drafts + autocomplete), the same command ends:
+
+```
+824 passed, 9 skipped, 294 warnings in 864.00s (0:14:23)
+```
 
 ## EXACT COMMANDS TO RESUME
 
