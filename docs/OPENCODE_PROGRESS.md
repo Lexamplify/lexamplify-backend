@@ -321,33 +321,46 @@ finding; the lines are shown above.
 
 ## IN PROGRESS
 
-Nothing — **Step 6 is committed** (`aacd705`). Waiting for the manager's "go" on **Step 5** (the dependency
-and vulnerability triage).
+Nothing — **Step 5 is in progress** (the dependency triage; the full suite is running).
 
-### The one test that is red today
+### Step 5 — the vulnerability triage (what was done)
 
-`tests/test_lpms_flow.py::test_hearings_cause_list_and_warnings` fails today (Thursday 2026-10-22). It is
-**the same date-dependent test as in the baseline**, and the product's behaviour is right:
+`docs/VULN_TRIAGE.md` has the full table. The short version:
 
-- the test books a hearing on **the next Sunday** and then expects another hearing for the **same case** on
-  `iso(3)` to be accepted (the clash warning there is about a *different* case);
-- today the next Sunday **is** `iso(3)`, so the first hearing already occupies that day for that case and
-  the second one is correctly refused with 409 ("This case already has a hearing on that date");
-- the same test failed in the baseline for the other reason (the next Sunday was `iso(4`, so the
-  malformed-time check came second) — that one is fixed in the code, and
-  `tests/test_lpms_hearing_validation.py` covers both halves.
+**Before:** `npm audit` 47 (10 high) and `pip-audit` 43 advisories in 6 Python packages (never audited
+before). **After:** `npm audit` **36** (2 high) and `pip-audit` **30** advisories in 3 packages.
 
-The test therefore fails on the days when the next Sunday is 3 or 4 days away (Wednesday and Thursday this
-week) and passes on the other five. The fix belongs in the test — pick a Sunday that is not `iso(3)`/`iso(4)`
-— and the manager asked not to edit that test, so it is **reported, not changed**. The one-line change is
-ready to make on a "go":
+Applied, one package per commit, each with the build and the tests green:
+`python-dotenv` 1.2.1→1.2.4, `requests` 2.32.3→2.34.2, `Werkzeug` 3.1.3→3.1.9, `Pillow`→12.3.0,
+`react-router-dom` 7.15.1→7.18.4 (shipped to the browser), `dompurify` 3.4.13→3.4.17 (shipped),
+`vite` 8.0.14→8.3.5, `browserslist` 4.28.2→4.29.4, `undici` 7.29.0→7.30.1, `brace-expansion`
+5.0.6→5.0.12 (the last four are build/test tools that are not in the deployed bundle — checked against
+`npm ls --omit=dev` and against `frontend/dist`).
 
-```python
-sunday = next(today() + timedelta(days=i) for i in range(1, 8)
-              if (today() + timedelta(days=i)).weekday() == 6 and i not in (3, 4))
-```
+**Four things are left, and they are written out in the document with the exact change each needs:**
 
-### What the evaluation found (and what was fixed because of it)
+1. **The editor stack** (`@tiptap/core` + 31 `@tiptap/*` packages, `prosemirror-view`) — 2 high. The brief
+   says not to upgrade it without the owner's approval, so it was not done. The document also records
+   that the installed tree is **invalid** (`@tiptap/extension-text-style` 3.29.2 needs
+   `@tiptap/core` 3.29.2, the project pins 3.29.1), which is why *every* `npm install` fails with ERESOLVE
+   and why "npm audit fix crashes". Moving the whole family to 3.32.0 fixes both the advisories and the
+   install.
+2. **Pillow's remaining 24 advisories** — the fixes are in Pillow 13.0.0, which needs Python ≥ 3.11. There
+   is no `render.yaml`, no `runtime.txt` and no `Dockerfile`, so the Python version on Render is not pinned.
+3. **PyPDF2's one advisory** — the package is end-of-life with no fixed version; the maintained successor
+   `pypdf` has the same `PdfReader` API and is used in three places (always as a fallback).
+4. **chromadb (5 advisories) and sentence-transformers** — only used when `LOCAL_VECTOR_SEARCH=1`, which is
+   off (it must stay off: the search model alone needs ~500 MB of the 512 MB plan). Removing them from
+   `requirements.txt` touches no code path that runs today.
+
+## NEXT
+
+After Step 5: the two code splits (Step 3: `app.py`, Step 4: `AutoDraftWorkspace.jsx`), then Step 7 (the
+open red-team items) and Step 8 (the final proof and `docs/STATUS.md`) — and the four items the triage
+document leaves open (the editor stack, the Python runtime, PyPDF2 → pypdf, chromadb) need the manager's
+decision.
+
+### Step 6 — the real-model evaluation harness (done, committed `aacd705`)
 
 The harness is `scripts/eval_drafts.py`; the golden set is `scripts/eval_matters.py` (21 synthetic Indian
 matters: 6 s.138 notices, 3 rent agreements, 3 sale deeds, 3 affidavits, 3 NDAs, 3 replies to notices, with
