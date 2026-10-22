@@ -36,8 +36,8 @@ POST | /api/billing/log-time | billing.log_time | signed-in
 PUT | /api/billing/mark-paid/<int:inv_id> | billing.mark_paid | signed-in
 GET | /api/billing/time-entries | billing.list_time_entries | signed-in
 POST | /api/calculate-fee | court.calculate_fee | signed-in
-GET | /api/calendar/events | get_calendar_events_all | signed-in
-POST | /api/calendar/save | save_calendar_events | signed-in
+GET | /api/calendar/events | calendar.get_calendar_events_all | signed-in
+POST | /api/calendar/save | calendar.save_calendar_events | signed-in
 GET | /api/cases/autocomplete | api_cases_autocomplete | signed-in
 DELETE | /api/causelist/delete/<int:case_id> | causelist.delete_case | signed-in
 GET | /api/causelist/export-ics | causelist.export_ics | signed-in
@@ -83,7 +83,7 @@ GET | /api/disputes/catalog | disputes.catalog | signed-in
 POST | /api/disputes/draft | disputes.draft | signed-in
 POST | /api/disputes/match | disputes.match | signed-in
 POST | /api/disputes/verify | disputes.verify | signed-in
-GET | /api/districts | get_districts | signed-in
+GET | /api/districts | calendar.get_districts | signed-in
 POST | /api/dms/adopt | dms.adopt | signed-in
 GET | /api/dms/batches/<string:batch_id> | dms.batch | signed-in
 POST | /api/dms/bulk | dms.bulk | signed-in
@@ -186,7 +186,7 @@ GET | /api/drafts/sessions/<int:session_id>/versions/<int:version_id> | drafts.v
 GET | /api/drafts/types | drafts.types | signed-in
 GET | /api/drafts/types/<type_id> | drafts.type_detail | signed-in
 POST | /api/drafts/verify | drafts.verify_text | signed-in
-POST | /api/ecourts/sync | sync_ecourts_cnr | signed-in
+POST | /api/ecourts/sync | calendar.sync_ecourts_cnr | signed-in
 GET | /api/events/<event_id> | court.get_event_detail | signed-in
 GET | /api/firm-library | get_firm_library | signed-in
 POST | /api/firm-library | create_firm_library_entry | signed-in

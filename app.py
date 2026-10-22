@@ -3565,6 +3565,8 @@ def create_app():
     app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer
     from routes.health_routes import health_bp
     app.register_blueprint(health_bp)  # /api/ping, /api/status
+    from routes.calendar_routes import calendar_bp
+    app.register_blueprint(calendar_bp)  # /api/calendar/*, /api/ecourts/sync, /api/districts
 
     # Keep-alive health check — always 200 while the server is up.
     # The client clears its interval on 401/403 from other protected endpoints.
@@ -4442,75 +4444,8 @@ def create_app():
             traceback.print_exc()
             return jsonify({"error": True, "message": str(e)}), 500
 
-    @app.route('/api/calendar/save', methods=['POST'])
-    def save_calendar_events():
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-            events = data.get('events', [])
-            
-            from utils import tenancy
-            conn = db
-            tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
-            me = tenancy.current_uid()
-            c = conn.cursor()
-            for event in events:
-                event_date = event.get('event_date')
-                event_type = event.get('event_type')
-                title = event.get('title')
-                related_case_id = event.get('related_case_id')
-                location = event.get('location', '')
-                opposing_counsel = event.get('opposing_counsel', '')
-                google_event_id = event.get('google_event_id')
-                c.execute('''
-                    INSERT INTO calendar_events (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, owner_user_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, me))
-            
-            conn.commit()
-            return jsonify({"success": True, "message": "Events successfully saved."}), 200
-        except Exception as e:
-            app.logger.error(f"calendar save failed: {e}")
-            return jsonify({"error": True, "message": "The events could not be saved. Please try again."}), 500
-
-    @app.route('/api/calendar/events', methods=['GET'])
-    def get_calendar_events_all():
-        try:
-            from utils import tenancy
-            conn = db
-            conn.row_factory = sqlite3.Row
-            tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
-            c = conn.cursor()
-            c.execute("SELECT * FROM calendar_events WHERE owner_user_id=? ORDER BY event_date ASC", (tenancy.current_uid(),))
-            rows = c.fetchall()
-            dict_rows = [dict(row) for row in rows]
-            return jsonify({"events": dict_rows}), 200
-        except Exception as e:
-            app.logger.error(f"calendar list failed: {e}")
-            return jsonify({"error": True, "message": "Your calendar could not be loaded. Please try again."}), 500
-
-    @app.route('/api/ecourts/sync', methods=['POST'])
-    def sync_ecourts_cnr():
-        # No live eCourts integration is configured. Report that honestly rather
-        # than returning a fabricated "3 hearings added" for a limitation-date tool.
-        return jsonify({
-            "success": False,
-            "error": True,
-            "message": "Automatic eCourts sync is not connected yet. Add the hearing dates to your calendar manually.",
-        }), 501
-
-    @app.route('/api/districts', methods=['GET'])
-    def get_districts():
-        try:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            primary_path = os.path.join(base_dir, 'data', 'districts.json')
-            backup_path  = os.path.join(base_dir, 'data', 'districts_backup.json')
-            target_file  = primary_path if os.path.exists(primary_path) else backup_path
-            with open(target_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return jsonify(data)
-        except FileNotFoundError:
-            return jsonify({"error": "Database not found. Please run scraper.py first."}), 404
-
+    # Calendar, eCourts and district routes moved to routes/calendar_routes.py (calendar_bp),
+    # registered above.
     # Page routes moved to routes/page_routes.py (page_bp), registered above.
 
     with app.app_context():
