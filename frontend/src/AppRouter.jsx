@@ -1065,17 +1065,30 @@ function PageSuspense({ children }) {
 
 // Every app screen sits behind this. A signed-out visitor (or someone whose session has ended) is sent to the
 // sign-in page and returned to the page they wanted, instead of seeing a half-working app where every request fails.
+// DEV-ONLY preview bypass: lets a developer view auth-gated screens (e.g. the editor) without a
+// backend login. `import.meta.env.DEV` is false in production builds, so this whole branch is
+// dead-code-eliminated from any deploy — it can never weaken production auth. Enable with
+// `localStorage.setItem('lx-dev-preview','1')` or the `?devpreview` query flag.
+function devPreviewEnabled(location) {
+  if (!import.meta.env.DEV) return false;
+  try {
+    if (new URLSearchParams(location.search).has('devpreview')) return true;
+    return localStorage.getItem('lx-dev-preview') === '1';
+  } catch { return false; }
+}
+
 const Layout = (props) => {
   const { user, isInitializing } = useAuth();
   const location = useLocation();
-  if (isInitializing) {
+  const devPreview = devPreviewEnabled(location);
+  if (isInitializing && !devPreview) {
     return (
       <div role="status" aria-live="polite" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)', color: 'var(--ink-soft)', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
         Opening your workspace…
       </div>
     );
   }
-  if (!user) {
+  if (!user && !devPreview) {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
   return <LayoutInner {...props} />;
