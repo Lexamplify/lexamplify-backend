@@ -942,6 +942,20 @@ def _vault_access_ok(node_type, node_id, row_user_id, current_user_id, require_e
     return perm == 'edit' if require_edit else True
 
 
+def _fetch_vault_node_owner(node_type, node_id):
+    table = 'vault_folders' if node_type == 'folder' else 'case_vault'
+    row = db.execute(f'SELECT user_id FROM {table} WHERE id = ?', (node_id,)).fetchone()
+    return row[0] if row else None
+
+
+def _fetch_vault_node_name(node_type, node_id):
+    if node_type == 'folder':
+        row = db.execute('SELECT name FROM vault_folders WHERE id = ?', (node_id,)).fetchone()
+    else:
+        row = db.execute('SELECT COALESCE(smart_title, title) FROM case_vault WHERE id = ?', (node_id,)).fetchone()
+    return row[0] if row else f'{node_type} {node_id}'
+
+
 # ── Case Vault Provenance Trail (Phase 3) ───────────────────────────────
 _PROVENANCE_LOCK = threading.Lock()
 
@@ -1961,218 +1975,8 @@ def create_app():
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
 
-    # ── Vault Sharing API (Phase 2) ──────────────────────────────────────────
-    # Sharing itself is owner-only to manage (an editor granted access to a
-    # folder can read/write its contents but can't re-share it to someone
-    # else) — _vault_owner_ok, not _vault_access_ok, guards every route here.
-    def _fetch_vault_node_owner(node_type, node_id):
-        table = 'vault_folders' if node_type == 'folder' else 'case_vault'
-        row = db.execute(f'SELECT user_id FROM {table} WHERE id = ?', (node_id,)).fetchone()
-        return row[0] if row else None
-
-    def _fetch_vault_node_name(node_type, node_id):
-        if node_type == 'folder':
-            row = db.execute('SELECT name FROM vault_folders WHERE id = ?', (node_id,)).fetchone()
-        else:
-            row = db.execute('SELECT COALESCE(smart_title, title) FROM case_vault WHERE id = ?', (node_id,)).fetchone()
-        return row[0] if row else f'{node_type} {node_id}'
-
-    @app.route('/api/vault/shares', methods=['GET', 'OPTIONS'])
-    @jwt_required()
-    def list_vault_shares():
-        """Returns a node's OWN explicit shares only (never ones it merely
-        inherits by cascade from an ancestor folder) — this is what the
-        Share modal's people list and the vault grid's share badge both
-        render, so cascaded access stays invisible/implicit exactly like a
-        parent folder's other properties would."""
-        if request.method == 'OPTIONS':
-            return jsonify({}), 200
-        uid = _current_vault_user_id()
-        try:
-            node_type = request.args.get('node_type')
-            node_id = request.args.get('node_id', type=int)
-            if node_type not in ('folder', 'document') or node_id is None:
-                return jsonify({'error': True, 'message': 'node_type and node_id are required.'}), 400
-
-            row_owner = _fetch_vault_node_owner(node_type, node_id)
-            if row_owner is None and db.execute(
-                f"SELECT 1 FROM {'vault_folders' if node_type == 'folder' else 'case_vault'} WHERE id = ?", (node_id,)
-            ).fetchone() is None:
-                return jsonify({'error': True, 'message': 'Not found.'}), 404
-            if not _vault_owner_ok(row_owner, uid):
-                return jsonify({'error': True, 'message': 'Only the owner can view sharing for this item.'}), 403
-
-            conn = db
-            old_rf = conn.row_factory
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(
-                    'SELECT id, team_member_id, permission, created_at FROM document_vault_shares '
-                    'WHERE node_type = ? AND node_id = ? ORDER BY created_at ASC',
-                    (node_type, node_id)
-                ).fetchall()
-                shares = [dict(r) for r in rows]
-            finally:
-                conn.row_factory = old_rf
-
-            # Enrich with the roster's name/email/resolved-user_id so the
-            # modal doesn't need a second round trip per row.
-            if shares:
-                team_conn = sqlite3.connect(DB_PATH)
-                team_conn.row_factory = sqlite3.Row
-                try:
-                    _resolve_team_member_user_ids(team_conn)
-                    ids = [s['team_member_id'] for s in shares]
-                    ph = ','.join('?' for _ in ids)
-                    members = {
-                        r['id']: dict(r) for r in team_conn.execute(
-                            f'SELECT id, name, email, role, user_id FROM team_members WHERE id IN ({ph})', ids
-                        ).fetchall()
-                    }
-                finally:
-                    team_conn.close()
-                for s in shares:
-                    m = members.get(s['team_member_id'], {})
-                    s['member_name'] = m.get('name')
-                    s['member_email'] = m.get('email')
-                    s['member_matched'] = m.get('user_id') is not None
-
-            link_shared = False
-            table = 'vault_folders' if node_type == 'folder' else 'case_vault'
-            ls_row = db.execute(f'SELECT link_shared FROM {table} WHERE id = ?', (node_id,)).fetchone()
-            if ls_row:
-                link_shared = bool(ls_row[0])
-
-            return jsonify({'shares': shares, 'link_shared': link_shared}), 200
-        except Exception as e:
-            return jsonify({'error': True, 'message': str(e)}), 500
-
-    @app.route('/api/vault/shares', methods=['POST', 'OPTIONS'])
-    @jwt_required()
-    def create_vault_share():
-        if request.method == 'OPTIONS':
-            return jsonify({}), 200
-        uid = _current_vault_user_id()
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-            node_type = data.get('node_type')
-            node_id = data.get('node_id')
-            team_member_id = data.get('team_member_id')
-            permission = data.get('permission', 'view')
-            if node_type not in ('folder', 'document') or not node_id or not team_member_id:
-                return jsonify({'error': True, 'message': 'node_type, node_id and team_member_id are required.'}), 400
-            if permission not in ('view', 'edit'):
-                return jsonify({'error': True, 'message': 'permission must be "view" or "edit".'}), 400
-
-            row_owner = _fetch_vault_node_owner(node_type, node_id)
-            if row_owner is None and db.execute(
-                f"SELECT 1 FROM {'vault_folders' if node_type == 'folder' else 'case_vault'} WHERE id = ?", (node_id,)
-            ).fetchone() is None:
-                return jsonify({'error': True, 'message': 'Not found.'}), 404
-            if not _vault_owner_ok(row_owner, uid):
-                return jsonify({'error': True, 'message': 'Only the owner can share this item.'}), 403
-
-            team_conn = sqlite3.connect(DB_PATH)
-            try:
-                # Only people on the sharer's OWN roster can be shared with. Without this, any signed-in user could
-                # probe other advocates' rosters (names and e-mails) by trying member ids.
-                from utils import tenancy
-                tenancy.prepare(team_conn, "team", ("team_members",), uid)
-                member_row = team_conn.execute('SELECT id, name, email FROM team_members WHERE id = ? AND owner_user_id = ?', (team_member_id, uid)).fetchone()
-            finally:
-                team_conn.close()
-            if not member_row:
-                return jsonify({'error': True, 'message': 'Team member not found.'}), 404
-
-            db.execute(
-                'INSERT INTO document_vault_shares (node_type, node_id, team_member_id, permission) VALUES (?, ?, ?, ?) '
-                'ON CONFLICT(node_type, node_id, team_member_id) DO UPDATE SET permission = excluded.permission',
-                (node_type, node_id, team_member_id, permission)
-            )
-            db.commit()
-            share_id = db.execute(
-                'SELECT id FROM document_vault_shares WHERE node_type = ? AND node_id = ? AND team_member_id = ?',
-                (node_type, node_id, team_member_id)
-            ).fetchone()[0]
-            _write_provenance(
-                node_type, node_id, _fetch_vault_node_name(node_type, node_id), 'shared', uid, uid,
-                {
-                    'team_member_id': team_member_id, 'permission': permission,
-                    'member_name': member_row[1], 'member_email': member_row[2],
-                }
-            )
-            return jsonify({'success': True, 'id': share_id, 'permission': permission}), 201
-        except Exception as e:
-            return jsonify({'error': True, 'message': str(e)}), 500
-
-    @app.route('/api/vault/shares/<int:share_id>', methods=['DELETE', 'OPTIONS'])
-    @jwt_required()
-    def delete_vault_share(share_id):
-        if request.method == 'OPTIONS':
-            return jsonify({}), 200
-        uid = _current_vault_user_id()
-        try:
-            share_row = db.execute(
-                'SELECT node_type, node_id, team_member_id FROM document_vault_shares WHERE id = ?', (share_id,)
-            ).fetchone()
-            if not share_row:
-                return jsonify({'error': True, 'message': 'Share not found.'}), 404
-            node_type, node_id, team_member_id = share_row
-            row_owner = _fetch_vault_node_owner(node_type, node_id)
-            if not _vault_owner_ok(row_owner, uid):
-                return jsonify({'error': True, 'message': 'Only the owner can revoke this share.'}), 403
-            member_row = None
-            team_conn = sqlite3.connect(DB_PATH)
-            try:
-                member_row = team_conn.execute('SELECT name, email FROM team_members WHERE id = ?', (team_member_id,)).fetchone()
-            finally:
-                team_conn.close()
-            db.execute('DELETE FROM document_vault_shares WHERE id = ?', (share_id,))
-            db.commit()
-            _write_provenance(
-                node_type, node_id, _fetch_vault_node_name(node_type, node_id), 'unshared', uid, uid,
-                {
-                    'team_member_id': team_member_id,
-                    'member_name': member_row[0] if member_row else None,
-                    'member_email': member_row[1] if member_row else None,
-                }
-            )
-            return jsonify({'success': True, 'deleted_id': share_id}), 200
-        except Exception as e:
-            return jsonify({'error': True, 'message': str(e)}), 500
-
-    @app.route('/api/vault/shares/link', methods=['PATCH', 'OPTIONS'])
-    @jwt_required()
-    def toggle_vault_link_share():
-        """Owner-only toggle for the node's "Anyone with the link" flag —
-        distinct from (and independent of) the per-person shares above."""
-        if request.method == 'OPTIONS':
-            return jsonify({}), 200
-        uid = _current_vault_user_id()
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-            node_type = data.get('node_type')
-            node_id = data.get('node_id')
-            link_shared = bool(data.get('link_shared'))
-            if node_type not in ('folder', 'document') or not node_id:
-                return jsonify({'error': True, 'message': 'node_type and node_id are required.'}), 400
-
-            table = 'vault_folders' if node_type == 'folder' else 'case_vault'
-            row_owner = _fetch_vault_node_owner(node_type, node_id)
-            if row_owner is None and db.execute(f'SELECT 1 FROM {table} WHERE id = ?', (node_id,)).fetchone() is None:
-                return jsonify({'error': True, 'message': 'Not found.'}), 404
-            if not _vault_owner_ok(row_owner, uid):
-                return jsonify({'error': True, 'message': 'Only the owner can change link sharing.'}), 403
-
-            db.execute(f'UPDATE {table} SET link_shared = ? WHERE id = ?', (1 if link_shared else 0, node_id))
-            db.commit()
-            _write_provenance(
-                node_type, node_id, _fetch_vault_node_name(node_type, node_id),
-                'link_shared' if link_shared else 'link_unshared', uid, uid, {}
-            )
-            return jsonify({'success': True, 'link_shared': link_shared}), 200
-        except Exception as e:
-            return jsonify({'error': True, 'message': str(e)}), 500
+    # The Vault Sharing API (four handlers) moved to routes/vault_workspace_routes.py
+    # (vault_workspace); _fetch_vault_node_owner/_fetch_vault_node_name now live at module level.
 
     # ── Vault Provenance Trail (Phase 3) ─────────────────────────────────────
     @app.route('/api/vault/provenance', methods=['GET', 'OPTIONS'])

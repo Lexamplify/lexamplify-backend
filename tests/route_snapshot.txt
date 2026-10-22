@@ -346,10 +346,10 @@ GET | /api/vault/provenance | get_vault_provenance | signed-in
 GET | /api/vault/provenance/verify | verify_vault_provenance | signed-in
 POST | /api/vault/save | save_vault_document | signed-in
 POST | /api/vault/save | argument.save_vault | signed-in
-GET | /api/vault/shares | list_vault_shares | signed-in
-POST | /api/vault/shares | create_vault_share | signed-in
-DELETE | /api/vault/shares/<int:share_id> | delete_vault_share | signed-in
-PATCH | /api/vault/shares/link | toggle_vault_link_share | signed-in
+GET | /api/vault/shares | vault_workspace.list_vault_shares | signed-in
+POST | /api/vault/shares | vault_workspace.create_vault_share | signed-in
+DELETE | /api/vault/shares/<int:share_id> | vault_workspace.delete_vault_share | signed-in
+PATCH | /api/vault/shares/link | vault_workspace.toggle_vault_link_share | signed-in
 GET | /api/vault/timeline | vault_workspace.timeline | signed-in
 POST | /api/vc/simulate | argument.vc_simulate | signed-in
 POST | /api/virtual-courtroom/chat | argument.vc_chat | signed-in

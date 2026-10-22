@@ -28,7 +28,7 @@ WATCHED = {
     "upload_vault_document": ("vault_uploaded", (200, 201)),
     "delete_vault_document": ("vault_deleted", (200,)),
     "delete_vault_folder": ("vault_folder_deleted", (200,)),
-    "delete_vault_share": ("vault_share_removed", (200,)),
+    "vault_workspace.delete_vault_share": ("vault_share_removed", (200,)),
 }
 _EMAIL = re.compile(r"[^\s@]{1,64}@[^\s@]{1,120}")
 
