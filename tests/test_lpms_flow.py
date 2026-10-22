@@ -227,7 +227,11 @@ def test_hearings_cause_list_and_warnings(firm):
     c1 = make_case(a, advocate=ravi.member_id, case_no="A 1/2026", title="Case One", court="Court 1")["id"]
     c2 = make_case(a, advocate=ravi.member_id, case_no="A 2/2026", title="Case Two", court="Court 1")["id"]
     # a Sunday gives a warning (not an error), a court holiday too
-    sunday = next(today() + timedelta(days=i) for i in range(1, 8) if (today() + timedelta(days=i)).weekday() == 6)
+    # The Sunday must not be one of the two days the rest of this test uses (iso(3) and iso(4)): if it were,
+    # this test's own first hearing would already occupy that day for this case and the test would
+    # contradict itself. The next Sunday is looked for in the following fortnight for that reason.
+    sunday = next(today() + timedelta(days=i) for i in range(1, 15)
+                  if (today() + timedelta(days=i)).weekday() == 6 and i not in (3, 4))
     r = a.ok(a.post(f"/cases/{c1}/hearings", {"date": sunday.isoformat(), "time": "10:30", "hall_no": "4", "serial_no": "12", "purpose": "Arguments"}), 201)
     assert any("Sunday" in w for w in r["warnings"])
     a.ok(a.post("/events", {"kind": "holiday", "title": "Diwali", "start_date": iso(3)}), 201)

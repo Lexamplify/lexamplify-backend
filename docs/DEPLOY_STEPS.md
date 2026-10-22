@@ -55,7 +55,7 @@ set SMOKE_PASSWORD=its password
 python scripts/smoke.py https://api.lexamplify.com
 ```
 
-Expect 13 lines starting `PASS` and "All checks passed." Any `FAIL` line says what to look at. The script creates one throw-away draft and deletes it.
+Expect 15 lines starting `PASS` and "All checks passed." Any `FAIL` line says what to look at. The script creates one throw-away draft and deletes it. The full order of operations, including both Firebase sites and how to roll back in two minutes, is in `docs/GO_LIVE.md`; the environment variables are listed in `docs/RENDER_ENV_CHECKLIST.md`.
 
 Also open `https://api.lexamplify.com/api/ping` (should say the database replied) and, signed in, `/api/status` (all checks "ok"; add `?deep=1` once to confirm the AI provider answers).
 
@@ -67,7 +67,9 @@ Also open `https://api.lexamplify.com/api/ping` (should say the database replied
 
 ## Rolling back
 
-- Frontend: `firebase hosting:rollback` (or redeploy the previous build).
+- Frontend: the release list and the rollback button are in the Firebase console (**Hosting → the site →
+  Releases → "Rollback to this release"**). There is no `firebase hosting:rollback` command in the Firebase
+  CLI; the alternative is to rebuild the previous commit and redeploy it. See `docs/GO_LIVE.md`.
 - Backend: redeploy commit `db66ab8` on Render. The new tables are harmless if left in place; the ownership columns are additive.
 - If sign-in itself breaks, set `JWT_SECRET_KEY` correctly first (the new start-up check is the most likely thing to stop a misconfigured server).
 

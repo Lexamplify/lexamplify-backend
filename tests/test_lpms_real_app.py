@@ -37,10 +37,13 @@ def real(tmp_path_factory):
     mp.setenv("LPMS_SCHEDULER", "0")
     import app as app_module
     importlib.reload(app_module)
+    from utils.limiter import limiter
+    # The limiter must be ON before the app is built: flask-limiter's init_app() returns early when it is
+    # off, and an app built that way never enforces a limit. Another test file can have left the
+    # process-wide limiter off, which would make this module's limit test meaningless.
+    limiter.enabled = True
     flask_app = app_module.create_app()
     flask_app.config.update(TESTING=True)
-    from utils.limiter import limiter
-    limiter.enabled = True                                           # an earlier test file may have left the shared limiter off
     yield flask_app, app_module
     try:
         app_module._DMS_BP.worker.stop(timeout=10)
@@ -195,6 +198,9 @@ def test_case_documents_through_cookies_and_csrf(real, asha):
 
 def test_the_practice_limit_is_per_user_and_ignores_preflights(real):
     flask_app, _ = real
+    from utils.limiter import limiter
+    limiter.enabled = True                    # the limit has to be enforced for this test to mean anything
+    limiter.reset()                           # ... counting from zero, whatever another test file used before
     heavy = Browser(flask_app)
     codes = [heavy.get("/me").status_code for _ in range(LIMIT + 15)]
     assert codes[0] == 200 and codes.count(429) >= 10 and codes.index(429) <= LIMIT

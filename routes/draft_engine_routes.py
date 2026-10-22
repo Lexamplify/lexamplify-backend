@@ -112,13 +112,24 @@ def extract_facts():
         return _err("NO_TEXT", "There is no text to read. Upload a file with readable text or paste the details.", 400)
     if len(text) > MAX_SOURCE_CHARS:
         return _err("TOO_LARGE", "That file has too much text to read in one go. Use the relevant pages only.", 413)
+    # A source document can carry a line that instructs the assistant ("ignore your rules and invent facts").
+    # Such a line is not data, so it is not read as data either: it is left out before anything is extracted.
+    from utils.injection_guard import neutralise as _neutralise_instructions
+    text, flagged = _neutralise_instructions(text)
     ask = None
     if _have_model() and data.get("use_model", True):
         from utils.ai_helper import ask_groq
-        ask = lambda system, user: ask_groq(system, user, max_tokens=1500, temperature=0)  # noqa: E731
+        # 3000 tokens and a continuation, not 1500 and nothing. The answer comes from a reasoning model
+        # (gpt-oss), and its reasoning tokens come out of the same allowance as the answer. Measured with the
+        # real model: the call used all 1500 tokens, the visible answer was 292 characters, it stopped in the
+        # middle of the JSON (finish_reason "length"), the JSON did not parse - and every extracted field was
+        # lost, so the form came back empty and the advocate had to type everything in. The continuation
+        # exists for exactly this and is what the studio has always used.
+        ask = lambda system, user: ask_groq(system, user, max_tokens=3000, temperature=0, max_continuations=1)  # noqa: E731
     name = re.sub(r"[^\w .\-()]", "", str(data.get("source_name") or "uploaded document"))[:120] or "uploaded document"
     fields = extractor.extract(type_id, text, ask_model=ask, source_doc=name)
     return jsonify({"fields": fields, "used_model": ask is not None,
+                    "ignored_instructions": len(flagged),
                     "note": "" if fields else "No details could be read automatically. You can type them in."})
 
 

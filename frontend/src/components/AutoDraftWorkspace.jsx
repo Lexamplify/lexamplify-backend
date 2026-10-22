@@ -101,6 +101,7 @@ export default function AutoDraftWorkspace() {
   const [draftProgress, setDraftProgress] = useState(0);
   const [draftError, setDraftError] = useState('');
   const [draftWarnings, setDraftWarnings] = useState([]);   // details in the AI draft that were not in what the advocate gave
+  const [ignoredLines, setIgnoredLines] = useState(0);       // lines in the reference that looked like instructions and were not used
   const [vaultDocs, setVaultDocs] = useState([]);
   const [selectedContextMode, setSelectedContextMode] = useState('active_contract');
   const [draftDepth, setDraftDepth] = useState('comprehensive');
@@ -641,6 +642,7 @@ export default function AutoDraftWorkspace() {
 
     setDrafting(true);
     setDraftError('');
+    setIgnoredLines(0);
 
     try {
       let contextValue = null;
@@ -726,6 +728,10 @@ export default function AutoDraftWorkspace() {
         setAutoDraftVersion((v) => v + 1);
         setActiveDispute(null);
         setDraftWarnings(Array.isArray(data.unverified) ? data.unverified : []);
+        // The server leaves out any line in the material that looks like an instruction to the assistant
+        // (a document that says "ignore your rules and invent facts"). The advocate is told, so nothing
+        // disappears silently.
+        setIgnoredLines(Number(data.ignored_instructions) || 0);
         // A freshly synthesized draft replaces the canvas wholesale — drop
         // the old scratchpad snapshot so a stale one can't rehydrate over
         // this new draft if the component remounts before the debounced
@@ -1607,6 +1613,11 @@ export default function AutoDraftWorkspace() {
                     onChange={(e) => setAutoDraftPrompt(e.target.value)}
                   />
                   {draftError && <div style={{ fontSize: '12.5px', color: '#EF4444', marginTop: '6px' }}>{draftError}</div>}
+                  {ignoredLines > 0 && (
+                    <div role="alert" style={{ marginTop: 8, padding: '10px 12px', border: '1px solid var(--accent)', borderRadius: 8, background: 'var(--paper-2)', fontSize: 12.5, lineHeight: 1.5 }}>
+                      <b>{ignoredLines} line{ignoredLines === 1 ? '' : 's'} in the document {ignoredLines === 1 ? 'looks' : 'look'} like an instruction to the assistant and {ignoredLines === 1 ? 'was' : 'were'} not used.</b> A document that tells the assistant to ignore its instructions or to invent facts is not read as a fact. Check the draft.
+                    </div>
+                  )}
                   {draftWarnings.length > 0 && (
                     <div role="alert" style={{ marginTop: 8, padding: '10px 12px', border: '1px solid var(--accent)', borderRadius: 8, background: 'var(--paper-2)', fontSize: 12.5, lineHeight: 1.5 }}>
                       <b>{draftWarnings.length} detail{draftWarnings.length === 1 ? '' : 's'} in this draft {draftWarnings.length === 1 ? 'was' : 'were'} not in what you gave us.</b> The AI may have made {draftWarnings.length === 1 ? 'it' : 'them'} up. Check each before use:

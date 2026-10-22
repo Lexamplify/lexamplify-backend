@@ -1281,21 +1281,32 @@ def create_app():
     # restarting invalidates existing sessions, which is acceptable for a
     # local dev loop and not something production should ever do.
     _jwt_secret = os.getenv('JWT_SECRET_KEY')
-    if not _jwt_secret:
-        if os.getenv('FLASK_ENV') == 'production':
-            raise RuntimeError('JWT_SECRET_KEY must be set in production — no fallback is generated.')
+    _is_prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
+    if not _jwt_secret and not _is_prod:
         _jwt_secret = secrets.token_hex(32)
         print('[app] JWT_SECRET_KEY not set — generated an ephemeral dev key (sessions will not survive a restart).')
     _weak = {'secret', 'changeme', 'change-me', 'password', 'jwt-secret', 'dev', 'test', 'your-secret-key', 'supersecret'}
-    if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true':
+    if _is_prod:
+        # Every problem is listed at once and each line names the exact variable and what to do about it, so
+        # the person reading the Render log does not have to guess what is missing.
         problems = []
-        if len(_jwt_secret) < 32 or _jwt_secret.lower() in _weak:
-            problems.append('JWT_SECRET_KEY is too short or guessable (use at least 32 random characters)')
+        if not _jwt_secret:
+            problems.append('JWT_SECRET_KEY is missing. Set it to at least 32 random characters '
+                            '(for example: openssl rand -hex 32). The server will not start without it, '
+                            'and a weak key would let anyone forge a session.')
+        elif len(_jwt_secret) < 32 or _jwt_secret.lower() in _weak:
+            problems.append('JWT_SECRET_KEY is too short or guessable. Use at least 32 random characters '
+                            '(for example: openssl rand -hex 32).')
         if not os.getenv('DATABASE_URL'):
-            problems.append('DATABASE_URL is not set (production must not fall back to a local file)')
+            problems.append('DATABASE_URL is not set. Put the Postgres connection string from Neon into the '
+                            'Render environment (service -> Environment). The server will not start without a '
+                            'database, and it must never fall back to a local file.')
         if problems:
-            msg = 'Refusing to start: ' + '; '.join(problems) + '.'
-            print('[app] ' + msg)
+            msg = ("[app] Refusing to start: this deployment is not ready to serve.\n"
+                   + "\n".join(f"  {i}. {p}" for i, p in enumerate(problems, 1))
+                   + "\nFix the variables above in the Render environment (service -> Environment) and redeploy. "
+                     "Every variable the app reads is listed in docs/RENDER_ENV_CHECKLIST.md.")
+            print(msg)
             raise RuntimeError(msg)
     app.config['JWT_SECRET_KEY'] = _jwt_secret
 
@@ -1325,7 +1336,7 @@ def create_app():
     # RENDER is a real, Render-set env var (true on every Render service,
     # regardless of whether FLASK_ENV was also configured in the dashboard)
     # — a backstop against exactly that omission, not a replacement for it.
-    is_prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
+    is_prod = _is_prod        # the same test as the start-up safety check above, read once
     # Strict/no-domain works end-to-end in dev because frontend/vite.config.js
     # proxies /api to Flask — the browser only ever talks to the Vite origin,
     # so the cookie is first-party from its point of view.
@@ -2360,7 +2371,21 @@ def create_app():
 
             try:
                 data = request.get_json(force=True, silent=True) or {}
-                draft_id = data.get('id') or f"draft_{int(time.time())}"
+                draft_id = data.get('id')
+                if draft_id is None:
+                    draft_id = f"draft_{int(time.time() * 1000)}_{uid}"
+                elif not isinstance(draft_id, str) or not draft_id.strip() or len(draft_id) > 120:
+                    # The id comes from the browser: anything that is not a short piece of text is a bad request,
+                    # not something to hand to the database.
+                    return jsonify({'error': True, 'message': 'That draft id is not valid.'}), 400
+                draft_id = draft_id.strip()
+                # The id is chosen by the browser, so it must never be allowed to reach another advocate's row:
+                # "save" writes with an upsert, and without this check a second advocate who guessed (or read) an
+                # id could overwrite the first one's draft. A row that belongs to somebody else is not this
+                # advocate's to write - and the answer says nothing about what is in it.
+                owner_row = conn.execute('SELECT owner_user_id FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()
+                if owner_row is not None and int(owner_row['owner_user_id'] or 0) != uid:
+                    return jsonify({'error': True, 'message': 'That draft is not yours.'}), 404
                 title = data.get('title') or "Untitled Contract Draft"
                 raw_text = data.get('rawText') or ""
                 clauses_json = json.dumps(data.get('clauses') or [])
