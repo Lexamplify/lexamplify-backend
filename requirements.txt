@@ -28,7 +28,7 @@ chromadb
 sentence-transformers
 rank-bm25
 # Document Hub (routes/dms_routes.py, utils/dms_*.py)
-Pillow
+Pillow==12.3.0
 pytesseract
 openpyxl
 cryptography
