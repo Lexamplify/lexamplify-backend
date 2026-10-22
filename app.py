@@ -2468,31 +2468,7 @@ def create_app():
         except Exception as e:
             return jsonify({"error": True, "message": str(e)}), 500
 
-    @app.route('/api/cases/autocomplete', methods=['GET', 'OPTIONS'])
-    @jwt_required()
-    def api_cases_autocomplete():
-        if request.method == 'OPTIONS':
-            return jsonify({}), 200
-        uid = _current_vault_user_id()
-        q = request.args.get('q', '').strip()
-        if not q:
-            return jsonify([]), 200
-        try:
-            conn = db
-            c = conn.cursor()
-            # Parameterized placeholder — the LIKE wildcard is built into the
-            # bound value, never concatenated into the SQL string itself.
-            c.execute(
-                "SELECT id, title FROM case_vault WHERE title LIKE ? AND (user_id = ? OR user_id IS NULL) "
-                "ORDER BY created_at DESC LIMIT 10",
-                (f'%{q}%', uid)
-            )
-            rows = c.fetchall()
-            return jsonify([{"id": r[0], "title": r[1]} for r in rows]), 200
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": True, "message": str(e)}), 500
+    # /api/cases/autocomplete moved to routes/cases_routes.py (cases_bp), registered above.
 
     # Citations are stored as a JSON array of {id, title} objects inside
     # case_vault.tags. Both mutations below run as a single atomic SQL
@@ -3464,6 +3440,8 @@ def create_app():
     app.register_blueprint(health_bp)  # /api/ping, /api/status
     from routes.calendar_routes import calendar_bp
     app.register_blueprint(calendar_bp)  # /api/calendar/*, /api/ecourts/sync, /api/districts
+    from routes.cases_routes import cases_bp
+    app.register_blueprint(cases_bp)  # /api/cases/autocomplete
 
     # Keep-alive health check — always 200 while the server is up.
     # The client clears its interval on 401/403 from other protected endpoints.

@@ -38,7 +38,7 @@ GET | /api/billing/time-entries | billing.list_time_entries | signed-in
 POST | /api/calculate-fee | court.calculate_fee | signed-in
 GET | /api/calendar/events | calendar.get_calendar_events_all | signed-in
 POST | /api/calendar/save | calendar.save_calendar_events | signed-in
-GET | /api/cases/autocomplete | api_cases_autocomplete | signed-in
+GET | /api/cases/autocomplete | cases.api_cases_autocomplete | signed-in
 DELETE | /api/causelist/delete/<int:case_id> | causelist.delete_case | signed-in
 GET | /api/causelist/export-ics | causelist.export_ics | signed-in
 POST | /api/causelist/fetch | causelist.fetch_causelist | signed-in
