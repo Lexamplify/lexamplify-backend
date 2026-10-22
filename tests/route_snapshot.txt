@@ -324,8 +324,8 @@ GET | /api/vault/documents | get_vault_documents | signed-in
 DELETE | /api/vault/documents/<int:doc_id> | delete_vault_document | signed-in
 PUT | /api/vault/documents/<int:doc_id> | update_vault_document | signed-in
 POST | /api/vault/documents/<int:doc_id>/assistant | vault_workspace.assistant | signed-in
-POST | /api/vault/documents/<int:doc_id>/citations | add_vault_citation | signed-in
-DELETE | /api/vault/documents/<int:doc_id>/citations/<string:citation_id> | remove_vault_citation | signed-in
+POST | /api/vault/documents/<int:doc_id>/citations | vault_workspace.add_vault_citation | signed-in
+DELETE | /api/vault/documents/<int:doc_id>/citations/<string:citation_id> | vault_workspace.remove_vault_citation | signed-in
 GET | /api/vault/documents/<int:doc_id>/content | vault_workspace.content | signed-in
 GET | /api/vault/documents/<int:doc_id>/download | download_vault_document | signed-in
 POST | /api/vault/documents/<int:doc_id>/export | vault_workspace.export_any | signed-in
@@ -342,8 +342,8 @@ PATCH | /api/vault/folders/<int:folder_id> | update_vault_folder | signed-in
 POST | /api/vault/folders/init-blueprint | init_vault_blueprint | signed-in
 GET | /api/vault/meta | get_vault_meta | signed-in
 GET | /api/vault/overview | vault_workspace.overview | signed-in
-GET | /api/vault/provenance | get_vault_provenance | signed-in
-GET | /api/vault/provenance/verify | verify_vault_provenance | signed-in
+GET | /api/vault/provenance | vault_workspace.get_vault_provenance | signed-in
+GET | /api/vault/provenance/verify | vault_workspace.verify_vault_provenance | signed-in
 POST | /api/vault/save | save_vault_document | signed-in
 POST | /api/vault/save | argument.save_vault | signed-in
 GET | /api/vault/shares | vault_workspace.list_vault_shares | signed-in

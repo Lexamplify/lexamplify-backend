@@ -11,6 +11,7 @@ Mounted from app.py with create_vault_workspace_blueprint(deps). deps:
 Nothing here invents data: every number and every timeline entry comes from a table row, and a user with no practice, no
 documents or no matters simply gets zeros and empty lists.
 """
+import hashlib
 import html as _html
 import io
 import json
@@ -1113,5 +1114,217 @@ def create_vault_workspace_blueprint(deps):
             return jsonify({'success': True, 'link_shared': link_shared}), 200
         except Exception as e:
             return jsonify({'error': True, 'message': str(e)}), 500
+
+
+    # ── Vault Provenance + Citations (moved verbatim from app.py's create_app(), step 3c) ──
+    # Paths are relative to this blueprint's /api/vault prefix.
+
+    @bp.route("/provenance", methods=["GET", "OPTIONS"])
+    @jwt_required()
+    def get_vault_provenance():
+        """The real Provenance Trail feed — merges vault_provenance (every
+        folder/document mutation, hash-chained) with vault_audit (the
+        pre-existing, narrower "AI conversation behind one saved document"
+        log) into one chronological list, replacing the old client-only
+        mock (INITIAL_PROVENANCE/generateQuickHash()) entirely.
+
+        Scoped by owner_user_id/actor_user_id rather than trying to
+        re-check current access on possibly-deleted nodes: a user sees an
+        entry if they own (or owned, at write time) the node, it was
+        legacy/shared-to-everyone, or they personally performed the action
+        — the same "owned or legacy" convention used everywhere else in
+        this vault, just captured as a snapshot since a deleted node has no
+        current owner to re-check against.
+
+        node_type+node_id optionally filters to one item's own history
+        (folder/document detail view); otherwise this is the vault-wide
+        feed, mirroring vault_audit_trail's own optional folder_id filter."""
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            node_type = request.args.get('node_type')
+            node_id = request.args.get('node_id', type=int)
+            try:
+                limit = max(1, min(int(request.args.get('limit', 100)), 300))
+            except (TypeError, ValueError):
+                limit = 100
+
+            conn = app_module.db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                where = ['(owner_user_id = ? OR owner_user_id IS NULL OR actor_user_id = ?)']
+                params = [uid, uid]
+                if node_type in ('folder', 'document') and node_id is not None:
+                    where.append('node_type = ? AND node_id = ?')
+                    params.extend([node_type, node_id])
+                where_sql = ' AND '.join(where)
+                prov_rows = conn.execute(
+                    f'SELECT id, node_type, node_id, node_name, action, actor_user_id, detail, content_hash, created_at '
+                    f'FROM vault_provenance WHERE {where_sql} ORDER BY id DESC LIMIT ?',
+                    params + [limit]
+                ).fetchall()
+                entries = []
+                for r in prov_rows:
+                    d = dict(r)
+                    try:
+                        d['detail'] = json.loads(d['detail']) if d['detail'] else {}
+                    except Exception:
+                        d['detail'] = {}
+                    d['id'] = f"prov-{d['id']}"
+                    d['source'] = 'provenance'
+                    entries.append(d)
+
+                # Fold in vault_audit, scoped the same way vault_audit_trail
+                # already scopes it (via the case_vault row's own
+                # ownership, since vault_audit itself carries no user_id).
+                audit_where = ['(cv.user_id = ? OR cv.user_id IS NULL)']
+                audit_params = [uid]
+                if node_type == 'folder' and node_id is not None:
+                    audit_where.append('va.folder_id = ?')
+                    audit_params.append(node_id)
+                elif node_type == 'document' and node_id is not None:
+                    audit_where.append('va.vault_doc_id = ?')
+                    audit_params.append(node_id)
+                audit_where_sql = ' AND '.join(audit_where)
+                audit_rows = conn.execute(
+                    f'''
+                    SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title, va.created_at,
+                           cv.title AS doc_title, cv.smart_title AS doc_smart_title
+                    FROM vault_audit va
+                    LEFT JOIN case_vault cv ON va.vault_doc_id = cv.id
+                    WHERE {audit_where_sql}
+                    ORDER BY va.id DESC LIMIT ?
+                    ''',
+                    audit_params + [limit]
+                ).fetchall()
+                for r in audit_rows:
+                    entries.append({
+                        'id': f'audit-{r["id"]}',
+                        'node_type': 'document',
+                        'node_id': r['vault_doc_id'],
+                        'node_name': r['doc_smart_title'] or r['doc_title'] or r['session_title'] or 'Document',
+                        'action': 'ai_generated',
+                        'actor_user_id': None,
+                        'detail': {'session_title': r['session_title']},
+                        'content_hash': None,
+                        'created_at': r['created_at'],
+                        'source': 'audit',
+                    })
+            finally:
+                conn.row_factory = old_rf
+
+            entries.sort(key=lambda e: e['created_at'], reverse=True)
+            return jsonify({'entries': entries[:limit]}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/provenance/verify", methods=["GET", "OPTIONS"])
+    @jwt_required()
+    def verify_vault_provenance():
+        """Recomputes the ENTIRE global hash chain from the first row
+        onward using the exact same payload formula _write_provenance
+        writes with, and compares each recomputed hash against what's
+        stored — real tamper-evidence, replacing the old "Verify chain
+        integrity" button's no-op alert(). Deliberately walks the whole
+        chain rather than a per-case slice: vault_audit_trail-style
+        filtering is a display concern, not a verification one — a
+        tampered row anywhere breaks every hash after it, so any partial
+        check would be able to report "valid" while missing corruption
+        upstream of the slice it looked at."""
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            conn = app_module.db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail, content_hash '
+                    'FROM vault_provenance ORDER BY id ASC'
+                ).fetchall()
+            finally:
+                conn.row_factory = old_rf
+
+            prev_hash = '0' * 64
+            for row in rows:
+                payload = '|'.join(str(x) for x in (
+                    prev_hash, row['node_type'], row['node_id'], row['node_name'],
+                    row['action'], row['actor_user_id'], row['owner_user_id'], row['detail']
+                ))
+                expected = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+                if expected != row['content_hash']:
+                    return jsonify({
+                        'valid': False,
+                        'broken_at_id': row['id'],
+                        'total_entries': len(rows),
+                    }), 200
+                prev_hash = row['content_hash']
+            return jsonify({'valid': True, 'broken_at_id': None, 'total_entries': len(rows)}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/documents/<int:doc_id>/citations", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def add_vault_citation(doc_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            citation_id = str(data.get('id', '')).strip()
+            citation_title = str(data.get('title', '')).strip()
+            if not citation_id or not citation_title:
+                return jsonify({"error": True, "message": "Citation requires both id and title."}), 400
+
+            payload = json.dumps({"id": citation_id, "title": citation_title})
+
+            conn = app_module.db
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row or not app_module._vault_access_ok('document', doc_id, row[1], uid, require_edit=True):
+                conn.rollback()
+                return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
+            conn.execute(app_module._CITATION_INSERT_SQL, (citation_id, payload, doc_id, doc_id))
+            conn.commit()
+
+            tags_row = conn.execute('SELECT tags FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            citations = json.loads(tags_row[0]) if tags_row and tags_row[0] else []
+            return jsonify({"status": "success", "citations": citations}), 200
+        except Exception as e:
+            app_module.db.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
+    @bp.route("/documents/<int:doc_id>/citations/<string:citation_id>", methods=["DELETE", "OPTIONS"])
+    @jwt_required()
+    def remove_vault_citation(doc_id, citation_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            conn = app_module.db
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row or not app_module._vault_access_ok('document', doc_id, row[1], uid, require_edit=True):
+                conn.rollback()
+                return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
+            conn.execute(app_module._CITATION_DELETE_SQL, (doc_id, citation_id, doc_id))
+            conn.commit()
+
+            tags_row = conn.execute('SELECT tags FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            citations = json.loads(tags_row[0]) if tags_row and tags_row[0] else []
+            return jsonify({"status": "success", "citations": citations}), 200
+        except Exception as e:
+            app_module.db.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
 
     return bp
