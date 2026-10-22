@@ -170,8 +170,8 @@ POST | /api/documents/autodraft-assistant | document.autodraft_assistant | signe
 POST | /api/documents/draft | document.auto_draft | signed-in
 POST | /api/documents/inline-edit | document.inline_edit | signed-in
 POST | /api/documents/upload | document.upload_document | signed-in
-GET,POST | /api/drafts | handle_drafts | signed-in
-DELETE | /api/drafts/<string:draft_id> | delete_draft | signed-in
+GET,POST | /api/drafts | drafts.handle_drafts | signed-in
+DELETE | /api/drafts/<string:draft_id> | drafts.delete_draft | signed-in
 POST | /api/drafts/export | drafts.export_doc | signed-in
 POST | /api/drafts/extract | drafts.extract_facts | signed-in
 GET | /api/drafts/flags/<key> | drafts.flag_get | signed-in
