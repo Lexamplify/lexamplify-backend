@@ -1,11 +1,11 @@
 # OPENCODE_PROGRESS
 
-Work log for the `opencode-refactor` branch. Any engineer (or model) can pick this up and continue.
+Work log for the `opencode-modular` branch. Any engineer (or model) can pick this up and continue.
 Update this file after every step: **done / in progress / next / exact commands to resume / known failures**.
 
-- Branch: `opencode-refactor` (never push, never deploy from this branch)
+- Branch: `opencode-modular` (branched from `main` at `8c0ccdb`; never push, never deploy from this branch)
 - Brief: `OPENCODE_COMMAND.md` (read it first; its rules win)
-- Last updated: 2026-10-21, after STEP 0
+- Last updated: 2026-10-22, after STEP 3c batch 1 (saved drafts + case autocomplete moved; firm-library group still blocked — see below)
 
 ---
 
@@ -419,7 +419,319 @@ After Step 6: **Step 5** (dependency and vulnerability triage → `docs/VULN_TRI
 **Step 8** (the final proof and `docs/STATUS.md`) — in that order, and only if there is time for the two
 splits.
 
-## EXACT COMMANDS TO RESUME
+---
+
+### STEP 3 — split `app.py` into blueprints (in progress, branch `opencode-modular`)
+
+Every handler is moved **verbatim**: same URLs, methods, decorator order, handler names and logic. The new
+module never imports `app` at the top; each handler does `import app as app_module` locally and reaches
+app-level objects through it. Registration sits next to the other blueprints in `app.py`. The route count
+stays **364** and the snapshot diff touches only the endpoint column. No `url_for`/`endpoint=` use of a
+moved name exists anywhere in the repo.
+
+| group | commit | moved | destination | proof |
+|---|---|---|---|---|
+| calendar | `e9141e6` | `POST /api/calendar/save`, `GET /api/calendar/events`, `POST /api/ecourts/sync`, `GET /api/districts` | `routes/calendar_routes.py` (`calendar_bp`) | signed-in status codes and response keys identical; pyflakes 0 undefined names; snapshot endpoint-only, 364 routes; 824 passed / 9 skipped |
+| AI file + judgment | `19bf6a1` | `POST /api/ai/extract-file`, `POST /api/ai/summarize-judgment` | `routes/ai_routes.py` (`ai_bp`) | signed-in status codes and response keys identical; AST `VERBATIM_MOVE=OK`; pyflakes 0 undefined names; snapshot 2 endpoint lines only, 364 routes; 34/34 group tests |
+| saved drafts | `f29d347` | `GET/POST /api/drafts`, `DELETE /api/drafts/<draft_id>` | existing `routes/draft_engine_routes.py` (`drafts_bp`, prefix `/api/drafts`) | AST `VERBATIM_MOVE=OK` (66/17 lines); two-user probe identical apart from temp paths and timestamps; pyflakes 0 undefined names; snapshot 2 endpoint lines only, 364 routes; 26 named tests; full suite 824 passed / 9 skipped |
+| case autocomplete | `5841330` | `GET /api/cases/autocomplete` | new `routes/cases_routes.py` (`cases_bp`, no prefix) | AST `VERBATIM_MOVE=OK` (23 lines); real/empty/no-match probe identical apart from temp paths; pyflakes 0 undefined names; snapshot 1 endpoint line only, 364 routes; 55 named tests; full suite 824 passed / 9 skipped |
+
+Deliberate differences (only these): `app.logger` → `current_app.logger`; the two AI decorators use paths
+relative to `ai_bp`'s `/api/ai` prefix (`/extract-file`, `/summarize-judgment`); `Groq` is reached as
+`app_module.Groq` (the lazy shim at `app.py:24`); `import os` added to `routes/ai_routes.py`.
+For the saved drafts: the decorators are relative to the existing `/api/drafts` prefix (`""` and
+`/<string:draft_id>`), and `routes/draft_engine_routes.py` gained `import sqlite3`, `import time` and
+`jwt_required` on its existing `flask_jwt_extended` import line. For autocomplete: the handler imports
+`app as app_module` locally, reads `app_module.db` and `app_module._current_vault_user_id()`, and keeps the
+absolute path because `cases_bp` has no prefix.
+
+**Undone: the firm-library group (4 handlers).** The move itself verified clean — AST `VERBATIM_MOVE=OK`
+for all four bodies, signed-in probe identical, pyflakes 0 undefined names, snapshot endpoint-only with 364
+routes — but `tests/test_app_vault_patch.py` reads the **source text of `get_firm_library` and
+`create_firm_library_entry` out of `app.py`'s `create_app()` AST by name** (`ROUTES`, lines 35–36;
+`mount_routes`, lines 58–72) and fails at setup for all 10 tests when those names are not there
+(`AssertionError: {'create_firm_library_entry', 'get_firm_library'}`). No route-level change satisfies that
+check, and tests are not edited in this task, so the group was reverted (`git checkout -- app.py
+tests/route_snapshot.txt`, delete the new file). **Decision needed:** either let that test load the two
+functions from `routes/firm_library_routes.py` (its docstring already says it mounts "the real route
+functions"), or keep those two inline and move only `/api/firm-library/saved` and
+`/api/firm-library/external-search`.
+
+**Still inline in `app.py`:** 30 `@app.route` handlers (vault documents/folders/shares, firm library,
+research/chat, the Kanoon redirect, …). Per-handler checks before each move: create_app locals,
+`global`/module-level state, and the target blueprint's hooks/prefix/limiter/name collisions — see
+`docs/BACKEND_REFACTOR_PLAN.md`.
+
+#### STEP 3c — batch 1 (saved drafts + case autocomplete), done
+
+Commands (for each module, in this order; the full suite ran once per module, before its commit):
+
+```powershell
+# AST verbatim comparison (drops decorators, re-indents, ignores the local import)
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\compare_move2.py routes\draft_engine_routes.py handle_drafts delete_draft
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\compare_move2.py routes\cases_routes.py api_cases_autocomplete
+
+# signed-in before/after probe; "before" = temporary worktree at 35a8e45 (removed afterwards)
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\probe_drafts.py <tree> <out.json>
+.\venv\Scripts\python.exe C:\Users\hp\AppData\Local\Temp\opencode\probe_autocomplete.py <tree> <out.json>
+
+# snapshot (endpoint column only)
+$env:REGENERATE_ROUTE_SNAPSHOT="1"; .\venv\Scripts\python.exe -m pytest tests\test_route_snapshot.py -q; Remove-Item Env:\REGENERATE_ROUTE_SNAPSHOT
+
+# named tests, then the full suite
+.\venv\Scripts\python.exe -m pytest tests\test_route_snapshot.py tests\test_api_gate_matrix.py tests\test_cross_tenant_walk.py tests\test_saved_drafts.py tests\test_cross_tenant_tables.py -q
+.\venv\Scripts\python.exe -m pytest tests -q --ignore=tests/e2e
+```
+
+Raw results:
+
+```
+handle_drafts              identical=True lines=66
+delete_draft               identical=True lines=17
+VERBATIM_MOVE=OK
+api_cases_autocomplete     identical=True lines=23
+VERBATIM_MOVE=OK
+```
+
+```
+# drafts probe: every behavioural field same=True; the only differing keys are
+# DATABASE_URL / cwd / app_file (temp paths)
+a_create / a_update / a_list_* / a_delete / b_list / b_delete_a_draft: same=True
+
+# autocomplete probe
+real_query same=True   empty_query same=True   no_match same=True   uid/inserted_id same=True
+
+# snapshot: 2 endpoint lines (drafts), then 1 (autocomplete); 364 routes both times
+# named tests: 26 passed, then 55 passed
+# full suite (drafts tree):  824 passed, 9 skipped in 769.92s
+# full suite (cases tree):   824 passed, 9 skipped in 864.00s
+```
+
+Saved drafts are covered by `tests/test_saved_drafts.py` and the `saved_drafts` row of
+`tests/test_cross_tenant_tables.py`. Autocomplete has no direct test (checked: no test names it), so the
+named run above also included `tests/test_app_vault_patch.py` and `tests/test_vault_authorization.py`
+(the vault / `case_vault` paths).
+
+**Do not repeat:** extracting the DB bootstrap into `core/db.py` regressed ~13 tests and was reverted. The
+SQLite handle is a thread-local set during `create_app()` and stays there.
+
+**Known failures:** none. Full suite on this tree (group 1 committed, firm-library group reverted):
+
+```
+tests/test_backend_full.py::TestContractExport::test_pdf_export_returns_valid_pdf_attachment
+  E:\lexai-india\routes\contract_routes.py:1654: DeprecationWarning: Substituting font arial by core font helvetica - This is deprecated since v2.7.8, and will soon be removed
+    pdf.set_font("Arial", 'B', 12)
+
+tests/test_backend_full.py::TestContractExport::test_pdf_export_returns_valid_pdf_attachment
+  E:\lexai-india\routes\contract_routes.py:1655: DeprecationWarning: The parameter "ln" is deprecated since v2.5.2. Instead of ln=True use new_x=XPos.LMARGIN, new_y=YPos.NEXT.
+    pdf.cell(0, 10, "Auto-Draft Text:", ln=True)
+
+tests/test_backend_full.py::TestContractExport::test_pdf_export_returns_valid_pdf_attachment
+  E:\lexai-india\routes\contract_routes.py:1656: DeprecationWarning: Substituting font arial by core font helvetica - This is deprecated since v2.7.8, and will soon be removed
+    pdf.set_font("Arial", size=11)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+824 passed, 9 skipped, 294 warnings in 901.39s (0:15:01)
+```
+
+`tests/test_app_vault_patch.py` is green again because the two firm-library handlers are back in `app.py`.
+
+After step 3c batch 1 (drafts + autocomplete), the same command ends:
+
+```
+824 passed, 9 skipped, 294 warnings in 864.00s (0:14:23)
+```
+
+## Step 3c batch 2 — vault sharing, provenance and citations (module A, module B)
+
+Base: `fbbd867` on `opencode-modular`. Both modules move handlers verbatim; no public path
+changed.
+
+**Blueprint used:** the existing `vault_workspace` (`routes/vault_workspace_routes.py`,
+`Blueprint("vault_workspace", __name__, url_prefix="/api/vault")`). All eight public paths
+were already under `/api/vault` and none collided, so no new routes file was needed. The
+blueprint has no `before_request`/`after_request` and no limiter of its own; the app-level
+API gate and the audit `after_request` apply to it like every other route.
+
+**Module A (`c6017cc`)** — `list_vault_shares`, `create_vault_share`, `delete_vault_share`,
+`toggle_vault_link_share`. Public paths stay `/api/vault/shares`,
+`/api/vault/shares/<int:share_id>` and `/api/vault/shares/link`.
+`_fetch_vault_node_owner`/`_fetch_vault_node_name` were `create_app()` locals used only by
+these four handlers; they were promoted verbatim to module level in `app.py` and are called
+as `app_module.<name>`. Pinned helpers (`_vault_owner_ok`, `_current_vault_user_id`,
+`_write_provenance`) stayed in `app.py`. `utils/audit_log.py`'s WATCHED key follows the
+endpoint rename (`vault_workspace.delete_vault_share`) so the `vault_share_removed` event is
+still recorded.
+
+**Module B (`9a193eb`)** — `get_vault_provenance`, `verify_vault_provenance`,
+`add_vault_citation`, `remove_vault_citation`. Public paths stay
+`/api/vault/provenance`, `/api/vault/provenance/verify`,
+`/api/vault/documents/<int:doc_id>/citations` and
+`/api/vault/documents/<int:doc_id>/citations/<string:citation_id>`.
+`_CITATION_INSERT_SQL`/`_CITATION_DELETE_SQL` were `create_app()` locals used only by the
+two citation handlers; they were promoted verbatim (the SQL string values are byte-identical,
+452 and 361 bytes) and `hashlib` was added to the blueprint's imports. Pinned helpers
+(`_vault_access_ok`, `_effective_permission` indirectly, `_current_vault_user_id`) stayed in
+`app.py`.
+
+**Proof (each module):** AST comparison says identical for every moved handler (and for the
+two promoted helpers in A); the two SQL constants are value-identical in B; pyflakes reports
+zero undefined names; the route snapshot changed exactly four endpoint-column lines and
+stayed at 364 routes; the signed-in before/after probe (owner, stranger, view-only member,
+error paths, link toggle on/off, unauthenticated requests) matched on every behavioural
+field; named tests: 82 passed (A), 113 passed (B); full suite: 824 passed, 9 skipped both
+times.
+
+**Finding — there is no public link route.** `link_shared` is only read by the share list
+and the toggle; no route serves a node by link. Every `/api/vault` route in
+`tests/route_snapshot.txt` is `signed-in`, and `git grep` finds no public/shared/link
+route. The unauthenticated request after each toggle therefore hits `/api/vault/shares` and
+gets 401. The "Anyone with the link" flag is UI-only today.
+
+**Pinned test guard:** none of the eight handlers is named in
+`tests/test_app_vault_patch.py` (MODULE_FUNCS/ROUTES); the only test file naming the moved
+URLs is `tests/test_tenancy.py` (shares).
+
+**Saved drafts (read-only question):** saved drafts are rows in `saved_drafts` inside
+`lex_assistant.db`, written by raw `sqlite3.connect('lex_assistant.db')` in
+`routes/draft_engine_routes.py:342` (GET/POST `handle_drafts`) and `:412` (`delete_draft`);
+the schema is created at `app.py:372` and again at `app.py:4142`. The path is CWD-relative
+(`app.py:41-45`). Postgres is never used for these rows; the separate draft-session/version
+tables (`models/draft_session.py:5-23`) do use `DATABASE_URL` (`app.py:1277-1289`). On
+Render, `app.py:100-102` symlinks `lex_assistant.db` onto `PERSISTENT_DATA_DIR` when that
+env var is set and the directory exists, so drafts survive deploys; without it the file is
+on the ephemeral filesystem and is wiped on redeploy/restart (`docs/DEPLOY_STEPS.md:25`).
+
+## Step 3c batch 3 — vault folders, documents, audit trail and save (module A, module B)
+
+Base: `9a7bb64` on `opencode-modular`. Both modules move handlers verbatim into the existing
+`vault_workspace` blueprint (`routes/vault_workspace_routes.py`, prefix `/api/vault`); no public
+path changed. The blueprint has no `before_request`/`after_request` and no limiter of its own;
+the app-level API gate and the audit `after_request` apply to it like every other route.
+
+**Module A (`3d01ae2`)** — `create_vault_folder`, `init_vault_blueprint`, `update_vault_folder`,
+`update_vault_document`, `vault_audit_trail`. Paths stay `/api/vault/folders`,
+`/api/vault/folders/init-blueprint`, `/api/vault/folders/<int:folder_id>`,
+`/api/vault/documents/<int:doc_id>` (PUT) and `/api/vault/audit-trail`.
+`_BLUEPRINT_FOLDER_NAMES` was a `create_app()` local used only by `init_vault_blueprint`; it was
+promoted verbatim to module level in `app.py` and is called as
+`app_module._BLUEPRINT_FOLDER_NAMES`. Pinned helpers (`_current_vault_user_id`,
+`_vault_access_ok`, `_write_provenance`) stayed in `app.py`. No target endpoint appears in
+`utils/audit_log.py` `WATCHED` or another endpoint-keyed config, so no audit-key change was needed.
+
+**Module B (`3cea97b`)** — `save_vault_document`. Public path stays `/api/vault/save`.
+`generate_pdf_blob`/`generate_docx_blob` stayed module-level in `app.py` and are called as
+`app_module.<name>`; `os` was added to the blueprint imports because the handler uses `os.getcwd()`.
+Pre-existing overlap: `POST /api/vault/save` also exists in `routes/argument_routes.py`
+(`argument.save_vault`). The vault rule remains first in route order and still serves the request:
+the probe confirms a native save inserts a `case_vault` row and returns `location`, not the VC-only
+response. The duplicate already existed at `9a7bb64` and is not introduced by this move.
+
+**Proof (each module):** AST `VERBATIM_MOVE=OK` for every moved handler; the promoted constant
+value is identical; pyflakes reports zero undefined names; the route snapshot changes exactly
+five endpoint-column lines in A and one in B, and stays at 364 routes; the signed-in before/after
+probe is identical on every behavioural field except the tree path — owner success, init twice,
+audit trail after actions, stranger and view-only denials, nonexistent nodes, malformed bodies,
+empty title, invalid parent, self/child folder moves, VC file, zero external calls, and identical
+`case_vault`/`vault_provenance`/`vault_audit`/`dms_*` rows after masking ids and timestamps.
+Named tests: 82 passed (A) and 82 passed (B); frontend `CaseVaultLive.test.jsx`: 11 passed.
+Full suite: 824 passed, 9 skipped both times.
+
+The PDF-format save probe returns 500 in both trees because `reportlab` is not installed in this
+venv; native and DOCX saves succeed identically. This is an environment dependency, not a move
+regression.
+
+**Pinned test guard:** none of the six handlers is named in
+`tests/test_app_vault_patch.py` `MODULE_FUNCS`/`ROUTES`; all pinned helpers/globals stayed in
+`app.py`. There is no `url_for`/`endpoint=` reference to a moved name.
+
+**Remaining inline `@app.route` handlers:** 17 after A, 16 after both (baseline 22). The 11 figure
+does not match the actual AST count.
+
+## Step 3c batch 4 — firm-library extras, legal research, assistant/kanoon (module A, module B, module C)
+
+Base: `7083dbd` on `opencode-modular`. Three ordered code commits, one per module; no push and no
+deploy. Public paths, methods and the app-level sign-in gate are byte-identical; only the endpoint
+column in the route snapshot changes.
+
+**Module A (`be5dd25`)** — `get_saved_firm_library_drafts`,
+`firm_library_external_search`. New `routes/firm_library_routes.py`; blueprint `firm_library`
+with prefix `/api/firm-library`. Paths stay `/api/firm-library/saved` and
+`/api/firm-library/external-search`. The core `GET/POST /api/firm-library` handlers stay inline
+in `app.py` because `tests/test_app_vault_patch.py` pins `get_firm_library` and
+`create_firm_library_entry`; that test passes unchanged. The split is deliberate: the core
+list/create surface is the pinned vault-adjacent API, while these two are the Firm Library page's
+non-core extras (the user's saved drafts and the Pinecone-backed external case-law grid).
+`Pinecone`, `_get_pinecone_index`, `EMBED_MODEL`, `format_case_title`, `db` and
+`_current_vault_user_id` are resolved through `app_module.<name>` at call time. `sqlite3` is a
+module-level import in both `app.py` and the new route module (the old handler also saw the
+`import sqlite3` local to `create_app()`; it is the same stdlib module). No `create_app()` local
+was unique to these handlers, so none was promoted. No target endpoint is in
+`utils/audit_log.py` `WATCHED` or another endpoint-keyed config: none affected.
+
+**Module B (`93bd10e`)** — `api_legal_research`, `api_legal_research_document`. New
+`routes/legal_research_routes.py`; blueprint `legal_research` with no prefix. Paths stay
+`POST /api/legal-research` and `GET /api/legal-research/document/<string:case_id>`. No
+`create_app()` local was unique to these handlers, so none was promoted. `Pinecone`, `Groq`,
+`_get_pinecone_index`, `EMBED_MODEL`, `format_case_title`, `CASE_ID_RE`, `db` and
+`_current_vault_user_id` are resolved through `app_module.<name>` at call time. The document
+handler keeps its tenant predicate `(user_id = ? OR user_id IS NULL)`; user B receives 404 for
+user A's document. No target endpoint is in `WATCHED`: none affected.
+
+**Module C (`b674744`)** — `api_document_reconstruct`, `api_chat`, `kanoon_redirect`. New
+`routes/assistant_routes.py`; blueprint `assistant` with no prefix. Paths stay
+`GET /api/document/<string:case_id>`, `POST /api/chat`, `GET /api/kanoon-redirect`. The
+`_KANOON_*` regexes/constants, the six `_kanoon_*` helpers and `force_pristine_groq_messages`
+were `create_app()` locals used only by these handlers; they were promoted verbatim to module
+level in the new route module (the `_KANOON_*` values are AST-identical and the helpers are
+AST-identical). `Pinecone`, `Groq`, `TavilyClient`, `extract_json_from_llm_response`, `db` and
+`_current_vault_user_id` are resolved through `app_module.<name>` at call time. The kanoon helper
+calls `app_module.requests.get`, so `patch("app.requests.get")` still intercepts it. No target
+endpoint is in `WATCHED`: none affected.
+
+**Blueprint choice.** The existing blueprints do not fit without changing public paths:
+`library_routes.py` is `/api/library`, `document_routes.py` is `/api/documents` (plural),
+`ai_routes.py` is `/api/ai`, and `court_routes.py` is a large unrelated no-prefix module. Each
+new small module owns exactly its old public paths and has no `before_request`/`after_request`
+hooks, no prefix beyond A's `/api/firm-library`, and no `@limiter.limit`. The shared
+`utils/limiter.py` is `Limiter(key_func=get_remote_address, default_limits=[])`; no target route
+is decorated, so there is no per-route counter and the endpoint rename resets nothing. No
+endpoint-name collision exists and there is no `url_for`/`endpoint=` reference to a moved name.
+
+**Proof (each module):** AST `VERBATIM_MOVE=OK` for every moved handler (and for the C helpers);
+pyflakes reports zero undefined names; the route snapshot stays at 364 routes and changes exactly
+two endpoint-column lines in A, two in B and three in C, with every method/path/gate column
+unchanged. The signed-in before/after probe is identical on every behavioural field except the
+tree path: owner success, empty and malformed bodies, unauthenticated 401, the second-user
+checks, fake Pinecone/Groq/Tavily/requests arguments, and the `case_vault`/`vault_*`/`dms_*` rows
+after masking ids and timestamps. `chat_history` is absent in both fresh-DB probes, so there are
+no rows to compare (see the read-only note below). No target handler streams; there are no
+streamed chunks to compare. Named tests: 69 passed (A), 92 passed (B), 92 passed (C). Frontend
+`LexAmplify_Suite.test.jsx`: 35 passed (no frontend files changed). Full suite: `824 passed, 9
+skipped` after each module.
+
+**Read-only Q1 — `chat_history` on a fresh DB.** `create_app()`'s schema builder starts at
+`app.py:2312` and does not create `chat_history`; the only `CREATE TABLE IF NOT EXISTS
+chat_history` is in `init_db()` (`app.py:134`, table statement at `app.py:395`). Empirically, a
+fresh `tests.helpers_app.make_app` temp-SQLite app has 62 raw tables and no `chat_history`;
+`POST /api/chat` with a fake Groq returns 200 and leaves the count at 62/no table; calling
+`app_module.init_db()` then creates it (63 raw tables). `init_db()` is called only by
+`app.py:2753` (`__main__`) and `scripts/e2e_backend.py:62`; gunicorn does not call it, so
+`chat_history` is absent on a fresh gunicorn DB. `routes/ai_routes.py:_log_chat` is the only
+writer and swallows its exception. Not fixed.
+
+**Read-only Q2 — `kanoon_redirect` is not an open redirect.** The fallback is the fixed
+`https://indiankanoon.org/search/?formInput=<urllib.parse.quote(query)>`
+(`routes/assistant_routes.py:199`); the helper's fetch target is the same fixed host
+(`:131`). The success paths are the fixed `https://indiankanoon.org/doc/<digits>/`
+(`:247`, `:341`) built from `_KANOON_DOC_ID_RE` (`:26`, `\d+`). The query controls only the
+quoted `formInput`, never the host. Redirect `Location` hosts are only `indiankanoon.org`
+(outbound fetch may use `api.zenrows.com` when `ZENROWS_API_KEY` is configured). Not changed.
+
+**Remaining inline `@app.route` handlers:** 14 after A, 12 after B, 9 after C (baseline 16).
+The 9 are the seven vault handlers pinned by `tests/test_app_vault_patch.py` plus the two
+firm-library core handlers.
+
 ## EXACT COMMANDS TO RESUME
 
 ```powershell

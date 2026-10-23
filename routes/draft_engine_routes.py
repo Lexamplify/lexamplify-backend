@@ -20,9 +20,11 @@ Every saved row belongs to one user; a draft id that is not yours answers 404, s
 import json
 import os
 import re
+import sqlite3
+import time
 
 from flask import Blueprint, Response, jsonify, request
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from database import db
 from models.draft_session import DraftSession, DraftVersion, UserFlag
@@ -324,3 +326,99 @@ def flag_put(key):
         db.session.add(UserFlag(user_id=_uid(), key=key, value=value))
     db.session.commit()
     return jsonify({"key": key, "value": value})
+
+
+# ── Saved drafts (Auto-Draft Studio) ─────────────────────────────────────────────────────────
+# Moved verbatim out of app.py's create_app() (step 3c). Paths are relative to this
+# blueprint's /api/drafts prefix, so '' is /api/drafts and '/<draft_id>' is
+# /api/drafts/<draft_id>. URLs, methods, decorator order, names and logic are unchanged.
+
+@drafts_bp.route("", methods=['GET', 'POST', 'OPTIONS'])
+@jwt_required()
+def handle_drafts():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    uid = int(get_jwt_identity())
+    conn = sqlite3.connect('lex_assistant.db')
+    conn.row_factory = sqlite3.Row
+    try:
+        if request.method == 'GET':
+            rows = conn.execute(
+                'SELECT * FROM saved_drafts WHERE owner_user_id = ? ORDER BY created_at DESC',
+                (uid,)
+            ).fetchall()
+            drafts = [{
+                'id': r['id'],
+                'timestamp': r['created_at'],
+                'title': r['title'],
+                'rawText': r['raw_text'] or '',
+                'clauses': json.loads(r['clauses_json']) if r['clauses_json'] else [],
+                'summary': r['summary'] or '',
+            } for r in rows]
+            return jsonify(drafts), 200
+
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            draft_id = data.get('id')
+            if draft_id is None:
+                draft_id = f"draft_{int(time.time() * 1000)}_{uid}"
+            elif not isinstance(draft_id, str) or not draft_id.strip() or len(draft_id) > 120:
+                # The id comes from the browser: anything that is not a short piece of text is a bad request,
+                # not something to hand to the database.
+                return jsonify({'error': True, 'message': 'That draft id is not valid.'}), 400
+            draft_id = draft_id.strip()
+            # The id is chosen by the browser, so it must never be allowed to reach another advocate's row:
+            # "save" writes with an upsert, and without this check a second advocate who guessed (or read) an
+            # id could overwrite the first one's draft. A row that belongs to somebody else is not this
+            # advocate's to write - and the answer says nothing about what is in it.
+            owner_row = conn.execute('SELECT owner_user_id FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()
+            if owner_row is not None and int(owner_row['owner_user_id'] or 0) != uid:
+                return jsonify({'error': True, 'message': 'That draft is not yours.'}), 404
+            title = data.get('title') or "Untitled Contract Draft"
+            raw_text = data.get('rawText') or ""
+            clauses_json = json.dumps(data.get('clauses') or [])
+            summary = data.get('summary') or ""
+            conn.execute(
+                '''INSERT INTO saved_drafts (id, owner_user_id, title, raw_text, clauses_json, summary)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     title=excluded.title, raw_text=excluded.raw_text,
+                     clauses_json=excluded.clauses_json, summary=excluded.summary''',
+                (draft_id, uid, title, raw_text, clauses_json, summary)
+            )
+            conn.commit()
+            row = conn.execute('SELECT * FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()
+            payload = {
+                'id': row['id'],
+                'timestamp': row['created_at'],
+                'title': row['title'],
+                'rawText': row['raw_text'] or '',
+                'clauses': json.loads(row['clauses_json']) if row['clauses_json'] else [],
+                'summary': row['summary'] or '',
+            }
+            return jsonify({"status": "success", "draft": payload}), 200
+        except Exception as e:
+            return jsonify({"error": True, "message": str(e)}), 500
+    finally:
+        conn.close()
+
+
+@drafts_bp.route("/<string:draft_id>", methods=['DELETE', 'OPTIONS'])
+@jwt_required()
+def delete_draft(draft_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    uid = int(get_jwt_identity())
+    conn = sqlite3.connect('lex_assistant.db')
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute('SELECT * FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({"error": True, "message": "Draft not found."}), 404
+        conn.execute('DELETE FROM saved_drafts WHERE id = ?', (draft_id,))
+        conn.commit()
+        return jsonify({"status": "success", "deleted_id": draft_id}), 200
+    except Exception as e:
+        return jsonify({"error": True, "message": str(e)}), 500
+    finally:
+        conn.close()

@@ -11,9 +11,11 @@ Mounted from app.py with create_vault_workspace_blueprint(deps). deps:
 Nothing here invents data: every number and every timeline entry comes from a table row, and a user with no practice, no
 documents or no matters simply gets zeros and empty lists.
 """
+import hashlib
 import html as _html
 import io
 import json
+import os
 import re
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -907,5 +909,815 @@ def create_vault_workspace_blueprint(deps):
         except Exception as exc:
             log(f"vault assistant fell back: {exc}")
             return jsonify({"answer": fallback_answer(question, text, info, dates), "ai": False}), 200
+
+    # ── Vault Sharing API (moved verbatim from app.py's create_app(), step 3c) ──────────────
+    # Paths are relative to this blueprint's /api/vault prefix: "/shares" is /api/vault/shares,
+    # "/shares/<id>" is /api/vault/shares/<id>. Owner-only management is unchanged
+    # (app.py's _vault_owner_ok, not _vault_access_ok, guards every route here).
+
+    @bp.route("/shares", methods=['GET', 'OPTIONS'])
+    @jwt_required()
+    def list_vault_shares():
+        """Returns a node's OWN explicit shares only (never ones it merely
+        inherits by cascade from an ancestor folder) — this is what the
+        Share modal's people list and the vault grid's share badge both
+        render, so cascaded access stays invisible/implicit exactly like a
+        parent folder's other properties would."""
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            node_type = request.args.get('node_type')
+            node_id = request.args.get('node_id', type=int)
+            if node_type not in ('folder', 'document') or node_id is None:
+                return jsonify({'error': True, 'message': 'node_type and node_id are required.'}), 400
+
+            row_owner = app_module._fetch_vault_node_owner(node_type, node_id)
+            if row_owner is None and app_module.db.execute(
+                f"SELECT 1 FROM {'vault_folders' if node_type == 'folder' else 'case_vault'} WHERE id = ?", (node_id,)
+            ).fetchone() is None:
+                return jsonify({'error': True, 'message': 'Not found.'}), 404
+            if not app_module._vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can view sharing for this item.'}), 403
+
+            conn = app_module.db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, team_member_id, permission, created_at FROM document_vault_shares '
+                    'WHERE node_type = ? AND node_id = ? ORDER BY created_at ASC',
+                    (node_type, node_id)
+                ).fetchall()
+                shares = [dict(r) for r in rows]
+            finally:
+                conn.row_factory = old_rf
+
+            # Enrich with the roster's name/email/resolved-user_id so the
+            # modal doesn't need a second round trip per row.
+            if shares:
+                team_conn = sqlite3.connect(app_module.DB_PATH)
+                team_conn.row_factory = sqlite3.Row
+                try:
+                    app_module._resolve_team_member_user_ids(team_conn)
+                    ids = [s['team_member_id'] for s in shares]
+                    ph = ','.join('?' for _ in ids)
+                    members = {
+                        r['id']: dict(r) for r in team_conn.execute(
+                            f'SELECT id, name, email, role, user_id FROM team_members WHERE id IN ({ph})', ids
+                        ).fetchall()
+                    }
+                finally:
+                    team_conn.close()
+                for s in shares:
+                    m = members.get(s['team_member_id'], {})
+                    s['member_name'] = m.get('name')
+                    s['member_email'] = m.get('email')
+                    s['member_matched'] = m.get('user_id') is not None
+
+            link_shared = False
+            table = 'vault_folders' if node_type == 'folder' else 'case_vault'
+            ls_row = app_module.db.execute(f'SELECT link_shared FROM {table} WHERE id = ?', (node_id,)).fetchone()
+            if ls_row:
+                link_shared = bool(ls_row[0])
+
+            return jsonify({'shares': shares, 'link_shared': link_shared}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/shares", methods=['POST', 'OPTIONS'])
+    @jwt_required()
+    def create_vault_share():
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            node_type = data.get('node_type')
+            node_id = data.get('node_id')
+            team_member_id = data.get('team_member_id')
+            permission = data.get('permission', 'view')
+            if node_type not in ('folder', 'document') or not node_id or not team_member_id:
+                return jsonify({'error': True, 'message': 'node_type, node_id and team_member_id are required.'}), 400
+            if permission not in ('view', 'edit'):
+                return jsonify({'error': True, 'message': 'permission must be "view" or "edit".'}), 400
+
+            row_owner = app_module._fetch_vault_node_owner(node_type, node_id)
+            if row_owner is None and app_module.db.execute(
+                f"SELECT 1 FROM {'vault_folders' if node_type == 'folder' else 'case_vault'} WHERE id = ?", (node_id,)
+            ).fetchone() is None:
+                return jsonify({'error': True, 'message': 'Not found.'}), 404
+            if not app_module._vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can share this item.'}), 403
+
+            team_conn = sqlite3.connect(app_module.DB_PATH)
+            try:
+                # Only people on the sharer's OWN roster can be shared with. Without this, any signed-in user could
+                # probe other advocates' rosters (names and e-mails) by trying member ids.
+                from utils import tenancy
+                tenancy.prepare(team_conn, "team", ("team_members",), uid)
+                member_row = team_conn.execute('SELECT id, name, email FROM team_members WHERE id = ? AND owner_user_id = ?', (team_member_id, uid)).fetchone()
+            finally:
+                team_conn.close()
+            if not member_row:
+                return jsonify({'error': True, 'message': 'Team member not found.'}), 404
+
+            app_module.db.execute(
+                'INSERT INTO document_vault_shares (node_type, node_id, team_member_id, permission) VALUES (?, ?, ?, ?) '
+                'ON CONFLICT(node_type, node_id, team_member_id) DO UPDATE SET permission = excluded.permission',
+                (node_type, node_id, team_member_id, permission)
+            )
+            app_module.db.commit()
+            share_id = app_module.db.execute(
+                'SELECT id FROM document_vault_shares WHERE node_type = ? AND node_id = ? AND team_member_id = ?',
+                (node_type, node_id, team_member_id)
+            ).fetchone()[0]
+            app_module._write_provenance(
+                node_type, node_id, app_module._fetch_vault_node_name(node_type, node_id), 'shared', uid, uid,
+                {
+                    'team_member_id': team_member_id, 'permission': permission,
+                    'member_name': member_row[1], 'member_email': member_row[2],
+                }
+            )
+            return jsonify({'success': True, 'id': share_id, 'permission': permission}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/shares/<int:share_id>", methods=['DELETE', 'OPTIONS'])
+    @jwt_required()
+    def delete_vault_share(share_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            share_row = app_module.db.execute(
+                'SELECT node_type, node_id, team_member_id FROM document_vault_shares WHERE id = ?', (share_id,)
+            ).fetchone()
+            if not share_row:
+                return jsonify({'error': True, 'message': 'Share not found.'}), 404
+            node_type, node_id, team_member_id = share_row
+            row_owner = app_module._fetch_vault_node_owner(node_type, node_id)
+            if not app_module._vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can revoke this share.'}), 403
+            member_row = None
+            team_conn = sqlite3.connect(app_module.DB_PATH)
+            try:
+                member_row = team_conn.execute('SELECT name, email FROM team_members WHERE id = ?', (team_member_id,)).fetchone()
+            finally:
+                team_conn.close()
+            app_module.db.execute('DELETE FROM document_vault_shares WHERE id = ?', (share_id,))
+            app_module.db.commit()
+            app_module._write_provenance(
+                node_type, node_id, app_module._fetch_vault_node_name(node_type, node_id), 'unshared', uid, uid,
+                {
+                    'team_member_id': team_member_id,
+                    'member_name': member_row[0] if member_row else None,
+                    'member_email': member_row[1] if member_row else None,
+                }
+            )
+            return jsonify({'success': True, 'deleted_id': share_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/shares/link", methods=['PATCH', 'OPTIONS'])
+    @jwt_required()
+    def toggle_vault_link_share():
+        """Owner-only toggle for the node's "Anyone with the link" flag —
+        distinct from (and independent of) the per-person shares above."""
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            node_type = data.get('node_type')
+            node_id = data.get('node_id')
+            link_shared = bool(data.get('link_shared'))
+            if node_type not in ('folder', 'document') or not node_id:
+                return jsonify({'error': True, 'message': 'node_type and node_id are required.'}), 400
+
+            table = 'vault_folders' if node_type == 'folder' else 'case_vault'
+            row_owner = app_module._fetch_vault_node_owner(node_type, node_id)
+            if row_owner is None and app_module.db.execute(f'SELECT 1 FROM {table} WHERE id = ?', (node_id,)).fetchone() is None:
+                return jsonify({'error': True, 'message': 'Not found.'}), 404
+            if not app_module._vault_owner_ok(row_owner, uid):
+                return jsonify({'error': True, 'message': 'Only the owner can change link sharing.'}), 403
+
+            app_module.db.execute(f'UPDATE {table} SET link_shared = ? WHERE id = ?', (1 if link_shared else 0, node_id))
+            app_module.db.commit()
+            app_module._write_provenance(
+                node_type, node_id, app_module._fetch_vault_node_name(node_type, node_id),
+                'link_shared' if link_shared else 'link_unshared', uid, uid, {}
+            )
+            return jsonify({'success': True, 'link_shared': link_shared}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+
+    # ── Vault Provenance + Citations (moved verbatim from app.py's create_app(), step 3c) ──
+    # Paths are relative to this blueprint's /api/vault prefix.
+
+    @bp.route("/provenance", methods=["GET", "OPTIONS"])
+    @jwt_required()
+    def get_vault_provenance():
+        """The real Provenance Trail feed — merges vault_provenance (every
+        folder/document mutation, hash-chained) with vault_audit (the
+        pre-existing, narrower "AI conversation behind one saved document"
+        log) into one chronological list, replacing the old client-only
+        mock (INITIAL_PROVENANCE/generateQuickHash()) entirely.
+
+        Scoped by owner_user_id/actor_user_id rather than trying to
+        re-check current access on possibly-deleted nodes: a user sees an
+        entry if they own (or owned, at write time) the node, it was
+        legacy/shared-to-everyone, or they personally performed the action
+        — the same "owned or legacy" convention used everywhere else in
+        this vault, just captured as a snapshot since a deleted node has no
+        current owner to re-check against.
+
+        node_type+node_id optionally filters to one item's own history
+        (folder/document detail view); otherwise this is the vault-wide
+        feed, mirroring vault_audit_trail's own optional folder_id filter."""
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            node_type = request.args.get('node_type')
+            node_id = request.args.get('node_id', type=int)
+            try:
+                limit = max(1, min(int(request.args.get('limit', 100)), 300))
+            except (TypeError, ValueError):
+                limit = 100
+
+            conn = app_module.db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                where = ['(owner_user_id = ? OR owner_user_id IS NULL OR actor_user_id = ?)']
+                params = [uid, uid]
+                if node_type in ('folder', 'document') and node_id is not None:
+                    where.append('node_type = ? AND node_id = ?')
+                    params.extend([node_type, node_id])
+                where_sql = ' AND '.join(where)
+                prov_rows = conn.execute(
+                    f'SELECT id, node_type, node_id, node_name, action, actor_user_id, detail, content_hash, created_at '
+                    f'FROM vault_provenance WHERE {where_sql} ORDER BY id DESC LIMIT ?',
+                    params + [limit]
+                ).fetchall()
+                entries = []
+                for r in prov_rows:
+                    d = dict(r)
+                    try:
+                        d['detail'] = json.loads(d['detail']) if d['detail'] else {}
+                    except Exception:
+                        d['detail'] = {}
+                    d['id'] = f"prov-{d['id']}"
+                    d['source'] = 'provenance'
+                    entries.append(d)
+
+                # Fold in vault_audit, scoped the same way vault_audit_trail
+                # already scopes it (via the case_vault row's own
+                # ownership, since vault_audit itself carries no user_id).
+                audit_where = ['(cv.user_id = ? OR cv.user_id IS NULL)']
+                audit_params = [uid]
+                if node_type == 'folder' and node_id is not None:
+                    audit_where.append('va.folder_id = ?')
+                    audit_params.append(node_id)
+                elif node_type == 'document' and node_id is not None:
+                    audit_where.append('va.vault_doc_id = ?')
+                    audit_params.append(node_id)
+                audit_where_sql = ' AND '.join(audit_where)
+                audit_rows = conn.execute(
+                    f'''
+                    SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title, va.created_at,
+                           cv.title AS doc_title, cv.smart_title AS doc_smart_title
+                    FROM vault_audit va
+                    LEFT JOIN case_vault cv ON va.vault_doc_id = cv.id
+                    WHERE {audit_where_sql}
+                    ORDER BY va.id DESC LIMIT ?
+                    ''',
+                    audit_params + [limit]
+                ).fetchall()
+                for r in audit_rows:
+                    entries.append({
+                        'id': f'audit-{r["id"]}',
+                        'node_type': 'document',
+                        'node_id': r['vault_doc_id'],
+                        'node_name': r['doc_smart_title'] or r['doc_title'] or r['session_title'] or 'Document',
+                        'action': 'ai_generated',
+                        'actor_user_id': None,
+                        'detail': {'session_title': r['session_title']},
+                        'content_hash': None,
+                        'created_at': r['created_at'],
+                        'source': 'audit',
+                    })
+            finally:
+                conn.row_factory = old_rf
+
+            entries.sort(key=lambda e: e['created_at'], reverse=True)
+            return jsonify({'entries': entries[:limit]}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/provenance/verify", methods=["GET", "OPTIONS"])
+    @jwt_required()
+    def verify_vault_provenance():
+        """Recomputes the ENTIRE global hash chain from the first row
+        onward using the exact same payload formula _write_provenance
+        writes with, and compares each recomputed hash against what's
+        stored — real tamper-evidence, replacing the old "Verify chain
+        integrity" button's no-op alert(). Deliberately walks the whole
+        chain rather than a per-case slice: vault_audit_trail-style
+        filtering is a display concern, not a verification one — a
+        tampered row anywhere breaks every hash after it, so any partial
+        check would be able to report "valid" while missing corruption
+        upstream of the slice it looked at."""
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        try:
+            conn = app_module.db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    'SELECT id, node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail, content_hash '
+                    'FROM vault_provenance ORDER BY id ASC'
+                ).fetchall()
+            finally:
+                conn.row_factory = old_rf
+
+            prev_hash = '0' * 64
+            for row in rows:
+                payload = '|'.join(str(x) for x in (
+                    prev_hash, row['node_type'], row['node_id'], row['node_name'],
+                    row['action'], row['actor_user_id'], row['owner_user_id'], row['detail']
+                ))
+                expected = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+                if expected != row['content_hash']:
+                    return jsonify({
+                        'valid': False,
+                        'broken_at_id': row['id'],
+                        'total_entries': len(rows),
+                    }), 200
+                prev_hash = row['content_hash']
+            return jsonify({'valid': True, 'broken_at_id': None, 'total_entries': len(rows)}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/documents/<int:doc_id>/citations", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def add_vault_citation(doc_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            citation_id = str(data.get('id', '')).strip()
+            citation_title = str(data.get('title', '')).strip()
+            if not citation_id or not citation_title:
+                return jsonify({"error": True, "message": "Citation requires both id and title."}), 400
+
+            payload = json.dumps({"id": citation_id, "title": citation_title})
+
+            conn = app_module.db
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row or not app_module._vault_access_ok('document', doc_id, row[1], uid, require_edit=True):
+                conn.rollback()
+                return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
+            conn.execute(app_module._CITATION_INSERT_SQL, (citation_id, payload, doc_id, doc_id))
+            conn.commit()
+
+            tags_row = conn.execute('SELECT tags FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            citations = json.loads(tags_row[0]) if tags_row and tags_row[0] else []
+            return jsonify({"status": "success", "citations": citations}), 200
+        except Exception as e:
+            app_module.db.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
+    @bp.route("/documents/<int:doc_id>/citations/<string:citation_id>", methods=["DELETE", "OPTIONS"])
+    @jwt_required()
+    def remove_vault_citation(doc_id, citation_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            conn = app_module.db
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT id, user_id FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            if not row or not app_module._vault_access_ok('document', doc_id, row[1], uid, require_edit=True):
+                conn.rollback()
+                return jsonify({"error": True, "message": f"Document {doc_id} not found."}), 404
+            conn.execute(app_module._CITATION_DELETE_SQL, (doc_id, citation_id, doc_id))
+            conn.commit()
+
+            tags_row = conn.execute('SELECT tags FROM case_vault WHERE id = ?', (doc_id,)).fetchone()
+            citations = json.loads(tags_row[0]) if tags_row and tags_row[0] else []
+            return jsonify({"status": "success", "citations": citations}), 200
+        except Exception as e:
+            app_module.db.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": True, "message": str(e)}), 500
+
+
+    # ── Folder/document writes, blueprint init and audit trail (moved verbatim from app.py's create_app(), step 3c) ──
+    # Paths are relative to this blueprint's /api/vault prefix.
+
+    @bp.route("/folders", methods=["POST"])
+    @jwt_required()
+    def create_vault_folder():
+        import app as app_module
+        uid = app_module._current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            name = (data.get('name') or '').strip()
+            parent_id = data.get('parent_id')  # None = root folder
+
+            if not name:
+                return jsonify({'error': True, 'message': 'Folder name is required.'}), 400
+            if len(name) > 80:
+                return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
+
+            conn = app_module.db
+
+            # A parent_id must be a folder this user can actually see —
+            # otherwise anyone could nest a folder under another user's
+            # private folder id (folder_id is a small sequential integer,
+            # trivially guessable/enumerable).
+            if parent_id is not None:
+                parent_row = conn.execute(
+                    'SELECT user_id FROM vault_folders WHERE id = ?', (parent_id,)
+                ).fetchone()
+                if not parent_row or not app_module._vault_access_ok('folder', parent_id, parent_row[0], uid, require_edit=True):
+                    return jsonify({'error': True, 'message': 'Parent folder not found.'}), 404
+
+            # Uniqueness check: same name + same parent, within this user's own folders
+            existing = conn.execute(
+                'SELECT id FROM vault_folders WHERE name = ? AND (parent_id IS ? OR parent_id = ?) AND user_id = ?',
+                (name, parent_id, parent_id, uid)
+            ).fetchone()
+            if existing:
+                return jsonify({'error': True, 'message': f'A folder named "{name}" already exists here.'}), 409
+
+            c = conn.cursor()
+            c.execute(
+                'INSERT INTO vault_folders (name, parent_id, user_id) VALUES (?, ?, ?)',
+                (name, parent_id, uid)
+            )
+            conn.commit()
+            folder_id = c.lastrowid
+            app_module._write_provenance('folder', folder_id, name, 'created', uid, uid, {'parent_id': parent_id})
+            return jsonify({'success': True, 'id': folder_id, 'name': name, 'parent_id': parent_id}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/folders/init-blueprint", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def init_vault_blueprint():
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            existing = app_module.db.execute(
+                'SELECT name FROM vault_folders WHERE parent_id IS NULL AND (user_id = ? OR user_id IS NULL)',
+                (uid,)
+            ).fetchall()
+            existing_names = {r[0] for r in existing}
+            if existing_names & set(app_module._BLUEPRINT_FOLDER_NAMES):
+                return jsonify({'success': True, 'created': False, 'message': 'Blueprint already initialized.'}), 200
+
+            c = app_module.db.cursor()
+            created = []
+            for name in app_module._BLUEPRINT_FOLDER_NAMES:
+                c.execute(
+                    'INSERT INTO vault_folders (name, parent_id, user_id, protected) VALUES (?, NULL, ?, 1)',
+                    (name, uid)
+                )
+                created.append({'id': c.lastrowid, 'name': name, 'protected': True})
+            app_module.db.commit()
+            app_module._write_provenance(
+                'folder', None, 'Standard blueprint', 'blueprint_applied', uid, uid,
+                {'folders': created}
+            )
+            return jsonify({'success': True, 'created': True, 'folders': created}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/folders/<int:folder_id>", methods=["PATCH", "OPTIONS"])
+    @jwt_required()
+    def update_vault_folder(folder_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            owner_row = app_module.db.execute('SELECT user_id, protected, name, parent_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            if not owner_row or not app_module._vault_access_ok('folder', folder_id, owner_row[0], uid, require_edit=True):
+                return jsonify({'error': True, 'message': 'Folder not found.'}), 404
+            if owner_row[1]:
+                return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be renamed or moved.'}), 403
+            folder_owner_uid = owner_row[0] if owner_row[0] is not None else uid
+            old_name, old_parent_id = owner_row[2], owner_row[3]
+
+            data = request.get_json(force=True, silent=True) or {}
+
+            if 'name' in data:
+                new_name = (data.get('name') or '').strip()
+                if not new_name:
+                    return jsonify({'error': True, 'message': 'Folder name cannot be empty.'}), 400
+                if len(new_name) > 80:
+                    return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
+                app_module.db.execute('UPDATE vault_folders SET name = ? WHERE id = ?', (new_name, folder_id))
+                app_module.db.commit()
+                app_module._write_provenance(
+                    'folder', folder_id, new_name, 'renamed', uid, folder_owner_uid,
+                    {'old_name': old_name, 'new_name': new_name}
+                )
+                return jsonify({'success': True, 'id': folder_id, 'name': new_name}), 200
+
+            if 'parent_id' in data:
+                new_parent = data.get('parent_id')  # None = move to root
+                # The destination folder must also belong to this user (or be
+                # legacy/shared) — otherwise a folder could be relocated
+                # underneath another user's private tree by guessing an id.
+                if new_parent is not None:
+                    dest_row = app_module.db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (new_parent,)).fetchone()
+                    if not dest_row or not app_module._vault_access_ok('folder', new_parent, dest_row[0], uid, require_edit=True):
+                        return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
+                # Prevent circular parentage: new_parent must not be self or a descendant
+                def get_descendants(fid):
+                    kids = [r['id'] for r in app_module.db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()]
+                    result = list(kids)
+                    for k in kids:
+                        result.extend(get_descendants(k))
+                    return result
+                if new_parent == folder_id or new_parent in get_descendants(folder_id):
+                    return jsonify({'error': True, 'message': 'Cannot move a folder into itself or its own descendant.'}), 400
+                app_module.db.execute('UPDATE vault_folders SET parent_id = ? WHERE id = ?', (new_parent, folder_id))
+                app_module.db.commit()
+                app_module._write_provenance(
+                    'folder', folder_id, old_name, 'moved', uid, folder_owner_uid,
+                    {'old_parent_id': old_parent_id, 'new_parent_id': new_parent}
+                )
+                return jsonify({'success': True, 'id': folder_id, 'parent_id': new_parent}), 200
+
+            return jsonify({'error': True, 'message': 'No valid fields provided (name or parent_id).'}), 400
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/documents/<int:doc_id>", methods=["PUT", "OPTIONS"])
+    @jwt_required()
+    def update_vault_document(doc_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            owner_row = app_module.db.execute(
+                'SELECT user_id, COALESCE(smart_title, title), folder_id FROM case_vault WHERE id = ?', (doc_id,)
+            ).fetchone()
+            if not owner_row or not app_module._vault_access_ok('document', doc_id, owner_row[0], uid, require_edit=True):
+                return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            doc_owner_uid = owner_row[0] if owner_row[0] is not None else uid
+            old_title, old_folder_id = owner_row[1], owner_row[2]
+
+            data = request.get_json(force=True, silent=True) or {}
+            if 'content' in data:
+                app_module.db.execute('UPDATE case_vault SET content = ? WHERE id = ?', (data.get('content', ''), doc_id))
+            if 'title' in data or 'smart_title' in data:
+                new_title = (data.get('title') or data.get('smart_title') or '').strip()
+                if not new_title:
+                    return jsonify({'error': True, 'message': 'Title cannot be empty.'}), 400
+                if len(new_title) > 200:
+                    return jsonify({'error': True, 'message': 'Title must be under 200 characters.'}), 400
+                app_module.db.execute('UPDATE case_vault SET smart_title = ? WHERE id = ?', (new_title, doc_id))
+                app_module._write_provenance(
+                    'document', doc_id, new_title, 'renamed', uid, doc_owner_uid,
+                    {'old_title': old_title, 'new_title': new_title}
+                )
+            if 'folder_id' in data:
+                new_folder_id = data.get('folder_id')
+                if new_folder_id is not None:
+                    dest_row = app_module.db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (new_folder_id,)).fetchone()
+                    if not dest_row or not app_module._vault_access_ok('folder', new_folder_id, dest_row[0], uid, require_edit=True):
+                        return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
+                app_module.db.execute('UPDATE case_vault SET folder_id = ? WHERE id = ?', (new_folder_id, doc_id))
+                app_module._write_provenance(
+                    'document', doc_id, old_title, 'moved', uid, doc_owner_uid,
+                    {'old_folder_id': old_folder_id, 'new_folder_id': new_folder_id}
+                )
+            app_module.db.commit()
+            return jsonify({'success': True, 'id': doc_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/audit-trail", methods=["GET", "OPTIONS"])
+    @jwt_required()
+    def vault_audit_trail():
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            folder_id = request.args.get('folder_id', type=int)
+            conn = app_module.db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                c = conn.cursor()
+                # An audit record's owner is transitive through the vault
+                # document it documents — vault_audit itself carries no
+                # user_id, so ownership is resolved via the case_vault join.
+                if folder_id is not None:
+                    c.execute('''
+                        SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
+                               va.messages_json, va.created_at,
+                               cv.title AS doc_title, cv.doc_type,
+                               vf.name  AS folder_name
+                        FROM   vault_audit va
+                        LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
+                        LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
+                        WHERE  va.folder_id = ? AND (cv.user_id = ? OR cv.user_id IS NULL)
+                        ORDER  BY va.created_at DESC
+                    ''', (folder_id, uid))
+                else:
+                    c.execute('''
+                        SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
+                               va.messages_json, va.created_at,
+                               cv.title AS doc_title, cv.doc_type,
+                               vf.name  AS folder_name
+                        FROM   vault_audit va
+                        LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
+                        LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
+                        WHERE  cv.user_id = ? OR cv.user_id IS NULL
+                        ORDER  BY va.created_at DESC
+                        LIMIT  60
+                    ''', (uid,))
+                rows = c.fetchall()
+                threads = []
+                for row in rows:
+                    d = dict(row)
+                    try:
+                        d['messages'] = json.loads(d.get('messages_json') or '[]')
+                    except Exception:
+                        d['messages'] = []
+                    threads.append(d)
+                return jsonify({'threads': threads}), 200
+            finally:
+                conn.row_factory = old_rf
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+
+    # ── Vault save (moved verbatim from app.py's create_app(), step 3c) ──
+    # Path is relative to this blueprint's /api/vault prefix.
+
+    @bp.route("/save", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def save_vault_document():
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+
+            # Virtual Courtroom simulator session save format
+            if 'case_facts' in data or 'history' in data:
+                case_facts = data.get("case_facts", "")
+                history = data.get("history", [])
+                title = data.get("title", "VC Session")
+
+                import uuid
+                vault_path = os.path.join(os.getcwd(), "vc_vault_data.json")
+                if os.path.exists(vault_path):
+                    with open(vault_path, "r", encoding="utf-8") as f:
+                        vault_data = json.load(f)
+                else:
+                    vault_data = {}
+
+                case_id = "VC_" + str(uuid.uuid4())[:8]
+                vault_data[case_id] = {
+                    "title": title,
+                    "case_facts": case_facts,
+                    "history": history
+                }
+
+                with open(vault_path, "w", encoding="utf-8") as f:
+                    json.dump(vault_data, f, indent=4)
+
+                return jsonify({"status": "success", "message": f"Session locked to VC Vault (ID: {case_id}).", "id": case_id}), 200
+
+            # Case Vault save format
+            case_id     = data.get('case_id')
+            title       = data.get('title')
+            doc_type    = data.get('doc_type')
+            content     = data.get('content')
+            folder_id   = data.get('folder_id')    # optional — from SaveToVaultModal
+            smart_title = data.get('smart_title')  # optional — auto-generated client-side
+            tags_raw    = data.get('tags')          # optional — JSON string or list
+            if isinstance(tags_raw, list):
+                tags = ','.join(str(t) for t in tags_raw)
+            elif isinstance(tags_raw, str):
+                try:
+                    import json as _json
+                    parsed = _json.loads(tags_raw)
+                    tags = ','.join(str(t) for t in parsed) if isinstance(parsed, list) else tags_raw
+                except Exception:
+                    tags = tags_raw
+            else:
+                tags = None
+
+            # Normalise content — allow empty string (blank draft is valid)
+            content = str(content) if content is not None else ''
+            if not case_id or not title:
+                return jsonify({"error": True, "message": "Missing required fields (case_id, title)."}), 400
+
+            # A folder_id must be a folder this user can actually see — a
+            # bare integer id is trivially guessable, so without this check
+            # a client could file a document straight into another user's
+            # private folder just by sending its id.
+            if folder_id:
+                folder_owner = app_module.db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+                if not folder_owner or not app_module._vault_access_ok('folder', folder_id, folder_owner[0], uid, require_edit=True):
+                    return jsonify({"error": True, "message": "Destination folder not found."}), 404
+
+            # Format conversion — generate binary blob if requested
+            save_format = data.get('format', 'native')
+            file_blob = None
+            file_format = save_format
+            if save_format == 'pdf':
+                try:
+                    file_blob = app_module.generate_pdf_blob(smart_title or title or 'Document', content)
+                except Exception as conv_err:
+                    return jsonify({'error': True, 'message': f'PDF generation failed: {str(conv_err)}'}), 500
+            elif save_format == 'docx':
+                try:
+                    file_blob = app_module.generate_docx_blob(smart_title or title or 'Document', content)
+                except Exception as conv_err:
+                    return jsonify({'error': True, 'message': f'DOCX generation failed: {str(conv_err)}'}), 500
+
+            audit_messages  = data.get('audit_messages')   # JSON string of [{role, text, ts}]
+            session_title_s = data.get('session_title', '')
+
+            # Resolve folder path string for breadcrumb confirmation (best-effort)
+            folder_path = ''
+            if folder_id:
+                try:
+                    path_parts = []
+                    fid = folder_id
+                    seen = set()
+                    while fid and fid not in seen:
+                        seen.add(fid)
+                        row = app_module.db.execute('SELECT name, parent_id FROM vault_folders WHERE id = ?', (fid,)).fetchone()
+                        if row:
+                            path_parts.insert(0, row[0])
+                            fid = row[1]
+                        else:
+                            break
+                    folder_path = ' / '.join(path_parts)
+                except Exception:
+                    pass
+
+            conn = app_module.db
+            c = conn.cursor()
+            c.execute(
+                'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title, tags, file_blob, file_format, uid)
+            )
+            conn.commit()
+            inserted_id = c.lastrowid
+
+            # Write AI provenance / audit trail entry
+            if audit_messages and inserted_id:
+                try:
+                    c.execute(
+                        'INSERT INTO vault_audit (folder_id, vault_doc_id, session_title, messages_json) VALUES (?, ?, ?, ?)',
+                        (folder_id, inserted_id, session_title_s, audit_messages)
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+
+            display_title = smart_title or title
+            location_str  = f'{folder_path} / {display_title}' if folder_path else display_title
+            return jsonify({
+                'success': True,
+                'id': inserted_id,
+                'message': 'Document successfully saved.',
+                'location': location_str,
+            }), 200
+        except Exception as e:
+            return jsonify({"error": True, "message": str(e)}), 500
 
     return bp
