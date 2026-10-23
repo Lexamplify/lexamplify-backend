@@ -12,15 +12,13 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionBanner from './components/ConnectionBanner';
 const AutoDraftWorkspace = lazy(() => import('./components/AutoDraftWorkspace'));
 import { useContractStore } from './store/useContractStore';
-import DraftsModal from './components/DraftsModal.jsx';
 const ConflictEngine = lazy(() => import('./components/ConflictEngine'));
-import LandingPage from './components/LandingPage';
-import SolutionsPage from './components/marketing/SolutionsPage';
-import NotFoundPage from './components/marketing/NotFoundPage';
-import SecurityPage from './components/marketing/SecurityPage';
-import LoginPage from './components/LoginPage';
+const LandingPage = lazy(() => import('./components/LandingPage'));
+const SolutionsPage = lazy(() => import('./components/marketing/SolutionsPage'));
+const NotFoundPage = lazy(() => import('./components/marketing/NotFoundPage'));
+const SecurityPage = lazy(() => import('./components/marketing/SecurityPage'));
+const LoginPage = lazy(() => import('./components/LoginPage'));
 const CalendarView = lazy(() => import('./components/CalendarView'));
-import VaultView from './components/VaultView';
 const DocumentHub = lazy(() => import('./components/dochub/DocumentHub.jsx'));
 const PracticeApp = lazy(() => import('./components/practice/PracticeApp.jsx'));
 import GlobalUploadDock from './components/dochub/GlobalDock.jsx';
@@ -1102,10 +1100,10 @@ function AppRouterContent() {
       <CommandPalette />
       <Suspense fallback={<div role="status" aria-live="polite" style={{ minHeight: '60vh', display: 'grid', placeItems: 'center', fontFamily: 'system-ui, sans-serif', fontSize: 14, opacity: .65 }}>Loading…</div>}>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/solutions" element={<SolutionsPage />} />
-        <Route path="/security" element={<SecurityPage />} />
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<PageSuspense><LandingPage /></PageSuspense>} />
+        <Route path="/solutions" element={<PageSuspense><SolutionsPage /></PageSuspense>} />
+        <Route path="/security" element={<PageSuspense><SecurityPage /></PageSuspense>} />
+        <Route path="/login" element={<PageSuspense><LoginPage /></PageSuspense>} />
         <Route path="/dashboard" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><DashboardView /></PageSuspense></Layout>} />
         <Route path="/start" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><StartPage /></PageSuspense></Layout>} />
         <Route path="/draft/:sessionId?" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><DraftWizard /></ErrorBoundary></PageSuspense></Layout>} />
@@ -1134,7 +1132,7 @@ function AppRouterContent() {
         <Route path="/analyzer" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><ContractAnalyzer setFocusMode={setFocusMode} /></ErrorBoundary></PageSuspense></Layout>} />
         <Route path="/case/:caseId/doc/:docId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><DocumentViewer focusMode={focusMode} setFocusMode={setFocusMode} /></PageSuspense></Layout>} />
         <Route path="/account-settings" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><AccountSettings /></PageSuspense></Layout>} />
-        <Route path="*" element={<NotFoundPage />} />
+        <Route path="*" element={<PageSuspense><NotFoundPage /></PageSuspense>} />
       </Routes>
       </Suspense>
     </BrowserRouter>
