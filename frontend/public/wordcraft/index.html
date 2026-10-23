@@ -6,15 +6,7 @@
   <title>Lexamplify Draft</title>
   <link rel="icon" href="./wordcraft-fa59e09a3f921e03.ico"/>
 
-<script type="module">
-// On a brotli-serving host (Cloudflare Pages / Netlify) the server compresses this .wasm and the
-// browser decompresses it natively (Content-Encoding: br) — the ~30 MB file transfers as ~7 MB
-// with no client-side decoder. Standard streaming init is all that's needed.
-import init, * as bindings from './wordcraft-web-d656851965f9f036.js';
-const wasm = await init({ module_or_path: './wordcraft-web-12c248babe565607_bg.wasm' });
-window.wasmBindings = bindings;
-dispatchEvent(new CustomEvent("TrunkApplicationStarted", { detail: { wasm } }));
-</script>
+<script type="module" src="./boot.js"></script>
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f4f5f7; }
     #wordcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }

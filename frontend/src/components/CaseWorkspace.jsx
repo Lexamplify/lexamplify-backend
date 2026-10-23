@@ -14,7 +14,7 @@ import SyncToast from './vault/SyncToast';
 import VaultDocViewer from './vault/VaultDocViewer';
 import { vaultApi } from './vault/vaultApi';
 import { pr } from './practice/api';
-import { Folder, FileText, MoreVertical, Users, Lock, Search, FileImage, FileSpreadsheet, FileCode, FileArchive } from 'lucide-react';
+import { Folder, FileText, MoreVertical, Users, Lock, Search, FileImage, FileSpreadsheet, FileCode, FileArchive, PenLine } from 'lucide-react';
 
 // File-type-aware icon for a document card, keyed off case_vault.file_format
 // (the caller's own extension for real uploads; 'pdf'/'docx' for
@@ -354,6 +354,7 @@ const styles = `
   .cv-vault-card-top-left { display: flex; align-items: center; gap: 6px; }
   .cv-vault-card-icon { padding: 8px; border-radius: 8px; background: var(--paper-2); color: var(--accent); display: flex; align-items: center; justify-content: center; }
   .cv-vault-card-share-badge { width: 20px; height: 20px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+  .cv-vault-card-actions { display: flex; align-items: center; gap: 2px; }
   .cv-vault-card-kebab { padding: 6px; border-radius: 6px; border: none; background: transparent; color: var(--muted); cursor: pointer; opacity: 0.7; transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease; }
   .cv-vault-card:hover .cv-vault-card-kebab { opacity: 1; }
   .cv-vault-card-kebab:hover { background: var(--paper-2); color: var(--ink); }
@@ -1395,17 +1396,30 @@ export default function CaseWorkspace() {
                               </div>
                             )}
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              openContextMenu(e, item, { x: rect.right, y: rect.bottom });
-                            }}
-                            className="cv-vault-card-kebab"
-                            title="Actions"
-                          >
-                            <MoreVertical size={16} />
-                          </button>
+                          <div className="cv-vault-card-actions">
+                            {!isFolder && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); navigate(`/editor/vault/${item.id}`); }}
+                                className="cv-vault-card-kebab"
+                                title="Open in editor"
+                                aria-label={`Open ${item.name} in editor`}
+                              >
+                                <PenLine size={15} />
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                openContextMenu(e, item, { x: rect.right, y: rect.bottom });
+                              }}
+                              className="cv-vault-card-kebab"
+                              title="Actions"
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="cv-vault-card-body">

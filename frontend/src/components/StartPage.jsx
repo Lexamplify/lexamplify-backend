@@ -150,7 +150,7 @@ export default function StartPage() {
         <Link to="/draft" className="sp-card sp-feature">
           <span className="sp-tag">Most used</span>
           <h2 className="sp-title">Draft a document</h2>
-          <p className="sp-desc">Legal notice, bail application, affidavit, agreement. Pick one of your cases or upload a file, answer a few questions, and download a properly formatted Word file. Anything we do not know stays as a highlighted blank.</p>
+          <p className="sp-desc">Legal notice, bail application, affidavit, agreement. Pick one of your cases or upload a file, answer a few questions, and download a properly formatted Word file or open the draft in the editor to keep working on it. Anything we do not know stays as a highlighted blank.</p>
           <span className="sp-time">About 5 minutes</span>
           <span className="sp-go"><span>Start drafting</span><span className="sp-circle"><Arrow /></span></span>
           <div className="sp-sheets" aria-hidden="true">

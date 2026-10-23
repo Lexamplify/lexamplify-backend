@@ -57,5 +57,12 @@ def api_status():
             out["ok"] = False
     out["metrics"] = metrics.snapshot()
     out["memory_mb"] = metrics.rss_mb()
+    # Document-blob storage health: lets the owner confirm Render's disk is writable/persistent
+    # (vault documents are stored as blobs). Read-only; does not change any write path.
+    try:
+        from utils import doc_storage
+        out["storage"] = doc_storage.status()
+    except Exception as exc:
+        out["storage"] = {"error": str(exc)}
     out["note"] = "Counters restart when the server restarts."
     return jsonify(out), (200 if out["ok"] else 503)

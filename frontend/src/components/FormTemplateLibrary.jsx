@@ -182,6 +182,26 @@ const styles = `
   }
 `;
 
+// Render a template's preview text to plain HTML with every field shown as a [Label] blank,
+// so a blank form can be taken straight into the WordCraft editor.
+const ALIGN = { c: 'center', r: 'right', j: 'justify' };
+function templateToHtml(t) {
+  const labels = new Map((t.fields || t.schema || []).map((f) => [f.key, f.label]));
+  return String(t.preview || '')
+    .split('\n\n')
+    .map((raw) => {
+      const m = /^>>([crj]) /.exec(raw);
+      const para = m ? raw.slice(m[0].length) : raw;
+      const html = para
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\{\{(\w+)\}\}/g, (_, key) => '[' + (labels.get(key) || key) + ']')
+        .replace(/\n/g, '<br/>');
+      return '<p' + (m ? ' style="text-align: ' + ALIGN[m[1]] + '"' : '') + '>' + html + '</p>';
+    })
+    .join('');
+}
+
 export default function FormTemplateLibrary() {
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState('All');
@@ -211,6 +231,16 @@ export default function FormTemplateLibrary() {
   const openInStudio = (e, template) => {
     e.stopPropagation();
     navigate('/auto-draft', { state: { disputeId: template.disputeId } });
+  };
+
+  const openInEditor = (e, template) => {
+    e.stopPropagation();
+    const html = templateToHtml(template);
+    const text = String(template.preview || '').replace(/\{\{(\w+)\}\}/g, (_, key) => {
+      const f = (template.fields || template.schema || []).find((x) => x.key === key);
+      return '[' + (f ? f.label : key) + ']';
+    });
+    navigate('/editor', { state: { openDraft: { html, text, title: template.title } } });
   };
 
   return (
@@ -306,6 +336,9 @@ export default function FormTemplateLibrary() {
                 <div className="ftl-tpl-footer">
                   <span className="ftl-tpl-fields-count">{(t.fields || t.schema || []).length} fields</span>
                   <span className="ftl-tpl-actions">
+                    <button type="button" className="ftl-tpl-ai" title="Open this template as a blank document in the editor" onClick={(e) => openInEditor(e, t)}>
+                      Open in editor
+                    </button>
                     {t.dispute && (
                       <button type="button" className="ftl-tpl-ai" title="Open this dispute in Auto-Draft Studio for an AI-assisted draft" onClick={(e) => openInStudio(e, t)}>
                         AI draft ↗

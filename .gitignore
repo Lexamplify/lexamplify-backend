@@ -107,3 +107,7 @@ Claude outputs/
 # ── FUSE / STRAY FILESYSTEM ARTIFACTS ────────────────────────────
 .fuse_hidden*
 =*.*
+
+# The WordCraft editor bundle is a real source asset the build needs (public/ is otherwise ignored).
+!frontend/public/wordcraft/
+!frontend/public/wordcraft/**

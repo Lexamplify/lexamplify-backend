@@ -553,6 +553,14 @@ export default function LegalForms({ showSaveBar } = {}) {
     navigate('/contract-analyzer', { state: { importedDocument: docHtml } });
   };
 
+  // Hand the filled form to the WordCraft editor as an editable document.
+  const handleOpenInEditor = () => {
+    if (!activeTemplate) return;
+    const docHtml = generateExportHtml(activeTemplate.preview, activeTemplate.fields, formValues, !!activeTemplate.dispute);
+    const text = docHtml.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]+>/g, '').trim();
+    navigate('/editor', { state: { openDraft: { html: docHtml, text, title: activeTemplate.title } } });
+  };
+
   const handleSaveAndExit = async () => {
     if (!activeTemplate) return;
     setSaving(true);
@@ -760,6 +768,19 @@ export default function LegalForms({ showSaveBar } = {}) {
               <path d="M5 21h14" />
             </svg>
             {downloading ? 'Preparing DOCX…' : 'Download DOCX'}
+          </button>
+          <button
+            type="button"
+            className="lf-btn lf-btn-ghost"
+            id="openEditorBtn"
+            onClick={handleOpenInEditor}
+            title="Continue this form as an editable document in the editor"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+            Open in editor
           </button>
           <button
             type="button"

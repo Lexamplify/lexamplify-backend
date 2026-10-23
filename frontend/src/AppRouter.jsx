@@ -1108,6 +1108,7 @@ function AppRouterContent() {
         <Route path="/start" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><StartPage /></PageSuspense></Layout>} />
         <Route path="/draft/:sessionId?" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><DraftWizard /></ErrorBoundary></PageSuspense></Layout>} />
         <Route path="/editor/:docId?" element={<Layout focusMode={true} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><WordCraftPage /></ErrorBoundary></PageSuspense></Layout>} />
+        <Route path="/editor/vault/:vaultId" element={<Layout focusMode={true} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><WordCraftPage /></ErrorBoundary></PageSuspense></Layout>} />
         <Route path="/check-conflicts" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><ErrorBoundary><ConflictCheck /></ErrorBoundary></PageSuspense></Layout>} />
         <Route path="/workspace/matters" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterLauncher /></PageSuspense></Layout>} />
         <Route path="/workspace/matter/:matterId" element={<Layout focusMode={focusMode} setFocusMode={setFocusMode}><PageSuspense><MatterDashboard /></PageSuspense></Layout>} />

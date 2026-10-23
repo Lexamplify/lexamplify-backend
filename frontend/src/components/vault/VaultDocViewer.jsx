@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { ArrowLeft, FileText, Save, ChevronDown, Download, Sparkles, FileType2, FileCode2, ExternalLink, Check, X, Loader2, ImageIcon } from 'lucide-react';
+import { ArrowLeft, FileText, Save, ChevronDown, Download, Sparkles, FileType2, FileCode2, ExternalLink, Check, X, Loader2, ImageIcon, PenLine } from 'lucide-react';
 import { vaultApi, saveBlob } from './vaultApi.js';
 import { wordExtensions } from './word/wordExtensions.js';
 import Ribbon from './word/Ribbon.jsx';
@@ -262,6 +262,12 @@ export default function VaultDocViewer({ docId, fallbackName, onClose, onChanged
     onClose(); navigate(`/practice/cases/${doc.case.id}`);
   };
 
+  // Hand the same vault document to the full WordCraft editor (/editor/vault/:vaultId).
+  const openInEditor = () => {
+    if (dirty) { setConfirmClose(true); return; }
+    onClose(); navigate(`/editor/vault/${docId}`);
+  };
+
   const info = doc?.info || {};
   const savedLabel = dirty ? 'Unsaved changes' : lastSaved ? `Saved to ${lastSaved.location}` : 'Original untouched · saving makes a copy';
   const saveBtnLabel = !lastSaved ? 'Save' : dirty ? 'Save' : 'Saved';
@@ -285,6 +291,7 @@ export default function VaultDocViewer({ docId, fallbackName, onClose, onChanged
           </div>
         </div>
         <div className="vw-spacer" />
+        <button type="button" className="vw-action" onClick={openInEditor} disabled={!doc} title="Open this document in the full editor"><PenLine size={15} /> Open in editor</button>
         <button type="button" className={`vw-action${aiOpen ? ' on' : ''}`} onClick={() => setAiOpen((v) => !v)} aria-pressed={aiOpen}><Sparkles size={15} /> Assistant</button>
         <div className="vw-split" ref={menuRef}>
           <button type="button" className="vw-action primary" onClick={quickSave} disabled={!doc || saveBusy || (!!lastSaved && !dirty && lastSaved.destination !== 'local')} title="Save (Ctrl+S)">
