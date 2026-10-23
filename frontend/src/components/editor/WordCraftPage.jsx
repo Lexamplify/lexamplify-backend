@@ -171,7 +171,7 @@ export default function WordCraftPage() {
         <div className="wcp-head-l">
           <button className="wcp-back" onClick={() => navigate(-1)} aria-label="Back">←</button>
           <input className="wcp-title" value={title} onChange={(e) => setTitle(e.target.value)} spellCheck={false} aria-label="Document title" />
-          <span className={`wcp-save wcp-save--${saved}`}>{saved === 'saving' ? 'Saving…' : 'Saved on this device'}</span>
+          <span className={`wcp-save wcp-save--${saved}`}>{saved === 'saving' ? 'Autosaving…' : (savedDocId ? 'Saved to Documents' : 'Autosaved locally — use Save to Documents to keep it in your vault')}</span>
         </div>
         <div className="wcp-head-r">
           {saveMsg && <span className="wcp-savemsg">{saveMsg}</span>}
