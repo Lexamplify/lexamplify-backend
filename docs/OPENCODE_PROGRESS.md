@@ -602,6 +602,52 @@ Render, `app.py:100-102` symlinks `lex_assistant.db` onto `PERSISTENT_DATA_DIR` 
 env var is set and the directory exists, so drafts survive deploys; without it the file is
 on the ephemeral filesystem and is wiped on redeploy/restart (`docs/DEPLOY_STEPS.md:25`).
 
+## Step 3c batch 3 — vault folders, documents, audit trail and save (module A, module B)
+
+Base: `9a7bb64` on `opencode-modular`. Both modules move handlers verbatim into the existing
+`vault_workspace` blueprint (`routes/vault_workspace_routes.py`, prefix `/api/vault`); no public
+path changed. The blueprint has no `before_request`/`after_request` and no limiter of its own;
+the app-level API gate and the audit `after_request` apply to it like every other route.
+
+**Module A (`3d01ae2`)** — `create_vault_folder`, `init_vault_blueprint`, `update_vault_folder`,
+`update_vault_document`, `vault_audit_trail`. Paths stay `/api/vault/folders`,
+`/api/vault/folders/init-blueprint`, `/api/vault/folders/<int:folder_id>`,
+`/api/vault/documents/<int:doc_id>` (PUT) and `/api/vault/audit-trail`.
+`_BLUEPRINT_FOLDER_NAMES` was a `create_app()` local used only by `init_vault_blueprint`; it was
+promoted verbatim to module level in `app.py` and is called as
+`app_module._BLUEPRINT_FOLDER_NAMES`. Pinned helpers (`_current_vault_user_id`,
+`_vault_access_ok`, `_write_provenance`) stayed in `app.py`. No target endpoint appears in
+`utils/audit_log.py` `WATCHED` or another endpoint-keyed config, so no audit-key change was needed.
+
+**Module B (`3cea97b`)** — `save_vault_document`. Public path stays `/api/vault/save`.
+`generate_pdf_blob`/`generate_docx_blob` stayed module-level in `app.py` and are called as
+`app_module.<name>`; `os` was added to the blueprint imports because the handler uses `os.getcwd()`.
+Pre-existing overlap: `POST /api/vault/save` also exists in `routes/argument_routes.py`
+(`argument.save_vault`). The vault rule remains first in route order and still serves the request:
+the probe confirms a native save inserts a `case_vault` row and returns `location`, not the VC-only
+response. The duplicate already existed at `9a7bb64` and is not introduced by this move.
+
+**Proof (each module):** AST `VERBATIM_MOVE=OK` for every moved handler; the promoted constant
+value is identical; pyflakes reports zero undefined names; the route snapshot changes exactly
+five endpoint-column lines in A and one in B, and stays at 364 routes; the signed-in before/after
+probe is identical on every behavioural field except the tree path — owner success, init twice,
+audit trail after actions, stranger and view-only denials, nonexistent nodes, malformed bodies,
+empty title, invalid parent, self/child folder moves, VC file, zero external calls, and identical
+`case_vault`/`vault_provenance`/`vault_audit`/`dms_*` rows after masking ids and timestamps.
+Named tests: 82 passed (A) and 82 passed (B); frontend `CaseVaultLive.test.jsx`: 11 passed.
+Full suite: 824 passed, 9 skipped both times.
+
+The PDF-format save probe returns 500 in both trees because `reportlab` is not installed in this
+venv; native and DOCX saves succeed identically. This is an environment dependency, not a move
+regression.
+
+**Pinned test guard:** none of the six handlers is named in
+`tests/test_app_vault_patch.py` `MODULE_FUNCS`/`ROUTES`; all pinned helpers/globals stayed in
+`app.py`. There is no `url_for`/`endpoint=` reference to a moved name.
+
+**Remaining inline `@app.route` handlers:** 17 after A, 16 after both (baseline 22). The 11 figure
+does not match the actual AST count.
+
 ## EXACT COMMANDS TO RESUME
 
 ```powershell
