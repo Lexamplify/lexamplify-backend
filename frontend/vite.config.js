@@ -35,6 +35,11 @@ export default defineConfig({
       },
     },
   },
+  // `vite preview` serves the PRODUCTION bundle; proxy /api the same way so the built app can be
+  // verified end-to-end against a local Flask on :5000 with same-origin cookies.
+  preview: {
+    proxy: { '/api': { target: 'http://localhost:5000', changeOrigin: true } },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
