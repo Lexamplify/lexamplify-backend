@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import WordCraftEditor from './WordCraftEditor.jsx';
 import { inlineEditSelection } from '../../services/api.js';
-import { getSession, blocksToHtml } from '../../services/draftApi.js';
+import { getSession, getVersion, blocksToHtml } from '../../services/draftApi.js';
 import { vaultApi } from '../vault/vaultApi.js';
 import './editor.css';
 
@@ -50,13 +50,21 @@ export default function WordCraftPage() {
   useEffect(() => {
     let alive = true;
     if (docId && !handoff?.html) {
+      // The session GET lists versions without their bodies; the latest version's document
+      // comes from getVersion(sid, vid). Prefer an inlined document if the API ever adds one.
       getSession(docId)
-        .then((s) => {
+        .then(async (s) => {
           if (!alive || !s) return;
-          const doc = s.document || (s.versions && s.versions[0]?.document) || null;
-          if (doc?.html) { setSeedHtml(doc.html); setTitle(doc.title || s.title || 'Draft'); }
-          else if (doc?.blocks) { setSeedHtml(blocksToHtml(doc.blocks)); setTitle(s.title || 'Draft'); }
-          else if (s.title) setTitle(s.title);
+          if (s.title) setTitle(s.title);
+          let doc = s.document || null;
+          if (!doc && Array.isArray(s.versions) && s.versions.length) {
+            const latest = s.versions[s.versions.length - 1];
+            try { const v = await getVersion(docId, latest.id); doc = v?.document || v || null; } catch { doc = null; }
+          }
+          if (!alive || !doc) return;
+          if (doc.html) setSeedHtml(doc.html);
+          else if (Array.isArray(doc.blocks)) setSeedHtml(blocksToHtml(doc.blocks));
+          if (doc.title) setTitle(doc.title);
         })
         .catch(() => { /* a scratch doc or an unknown id just starts blank */ });
     }
@@ -163,7 +171,7 @@ export default function WordCraftPage() {
         <div className="wcp-head-l">
           <button className="wcp-back" onClick={() => navigate(-1)} aria-label="Back">←</button>
           <input className="wcp-title" value={title} onChange={(e) => setTitle(e.target.value)} spellCheck={false} aria-label="Document title" />
-          <span className={`wcp-save wcp-save--${saved}`}>{saved === 'saving' ? 'Saving…' : 'Saved on this device'}</span>
+          <span className={`wcp-save wcp-save--${saved}`}>{saved === 'saving' ? 'Autosaving…' : (savedDocId ? 'Saved to Documents' : 'Autosaved locally — use Save to Documents to keep it in your vault')}</span>
         </div>
         <div className="wcp-head-r">
           {saveMsg && <span className="wcp-savemsg">{saveMsg}</span>}
