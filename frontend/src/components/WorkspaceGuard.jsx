@@ -1,21 +1,9 @@
-import { useEffect } from 'react';
-import { useOrganizationStore } from '../stores/useOrganizationStore';
-
+// Pass-through wrapper for the organisation workspace routes.
+//
+// Earlier this read a legacy `authToken` from localStorage and gated on store fields
+// (`isHydrating` / `setHydratedData`) that no longer exist — so it was already a no-op.
+// Authentication is enforced by the cookie-based `Layout` guard in AppRouter (AuthContext),
+// and workspace data is loaded by `hooks/useOrganization.js`. Nothing to guard here.
 export default function WorkspaceGuard({ children }) {
-  const setHydratedData = useOrganizationStore((state) => state.setHydratedData);
-  const isHydrating = useOrganizationStore((state) => state.isHydrating);
-
-  useEffect(() => {
-    const loadWorkspace = async () => {
-      const token = localStorage.getItem('authToken');
-      if (token) {
-        // Future: const data = await fetchUserWorkspace(token);
-        // setHydratedData(data);
-      }
-    };
-    loadWorkspace();
-  }, [setHydratedData]);
-
-  if (isHydrating) return <div className="p-8 text-[var(--muted)]">Loading secure workspace...</div>;
   return children;
 }
