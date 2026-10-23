@@ -190,8 +190,8 @@ POST | /api/ecourts/sync | calendar.sync_ecourts_cnr | signed-in
 GET | /api/events/<event_id> | court.get_event_detail | signed-in
 GET | /api/firm-library | get_firm_library | signed-in
 POST | /api/firm-library | create_firm_library_entry | signed-in
-GET | /api/firm-library/external-search | firm_library_external_search | signed-in
-GET | /api/firm-library/saved | get_saved_firm_library_drafts | signed-in
+GET | /api/firm-library/external-search | firm_library.firm_library_external_search | signed-in
+GET | /api/firm-library/saved | firm_library.get_saved_firm_library_drafts | signed-in
 GET | /api/forms/fetch-dynamic | court.fetch_dynamic_form | signed-in
 POST | /api/generate-arguments | argument.generate_arguments | signed-in
 POST | /api/ip/add | causelist.add_ip | signed-in
