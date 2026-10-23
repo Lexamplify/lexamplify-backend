@@ -45,7 +45,7 @@ POST | /api/causelist/fetch | causelist.fetch_causelist | signed-in
 GET | /api/causelist/list | causelist.list_cases | signed-in
 POST | /api/causelist/save | causelist.save_case | signed-in
 PUT | /api/causelist/update/<int:case_id> | causelist.update_case | signed-in
-POST | /api/chat | api_chat | signed-in
+POST | /api/chat | assistant.api_chat | signed-in
 GET | /api/clients/<int:client_id> | client.get_client | signed-in
 POST | /api/clients/add | client.add_client | signed-in
 DELETE | /api/clients/delete/<int:client_id> | client.delete_client | signed-in
@@ -162,7 +162,7 @@ GET | /api/dms/stats | dms.stats | signed-in
 GET | /api/dms/trash | dms.trash_list | signed-in
 POST | /api/dms/trash/empty | dms.trash_empty | signed-in
 POST | /api/dms/upload | dms.upload | signed-in
-GET | /api/document/<string:case_id> | api_document_reconstruct | signed-in
+GET | /api/document/<string:case_id> | assistant.api_document_reconstruct | signed-in
 GET | /api/documents | document.list_documents | signed-in
 DELETE | /api/documents/<int:doc_id> | document.delete_document | signed-in
 GET | /api/documents/<int:doc_id> | document.get_document_details | signed-in
@@ -198,7 +198,7 @@ POST | /api/ip/add | causelist.add_ip | signed-in
 DELETE | /api/ip/delete/<int:ip_id> | causelist.delete_ip | signed-in
 GET | /api/ip/list | causelist.list_ip | signed-in
 PUT | /api/ip/update/<int:ip_id> | causelist.update_ip | signed-in
-GET | /api/kanoon-redirect | kanoon_redirect | signed-in
+GET | /api/kanoon-redirect | assistant.kanoon_redirect | signed-in
 GET | /api/legal-events | court.get_live_legal_events | signed-in
 POST | /api/legal-research | legal_research.api_legal_research | signed-in
 GET | /api/legal-research/document/<string:case_id> | legal_research.api_legal_research_document | signed-in
