@@ -648,6 +648,90 @@ regression.
 **Remaining inline `@app.route` handlers:** 17 after A, 16 after both (baseline 22). The 11 figure
 does not match the actual AST count.
 
+## Step 3c batch 4 — firm-library extras, legal research, assistant/kanoon (module A, module B, module C)
+
+Base: `7083dbd` on `opencode-modular`. Three ordered code commits, one per module; no push and no
+deploy. Public paths, methods and the app-level sign-in gate are byte-identical; only the endpoint
+column in the route snapshot changes.
+
+**Module A (`be5dd25`)** — `get_saved_firm_library_drafts`,
+`firm_library_external_search`. New `routes/firm_library_routes.py`; blueprint `firm_library`
+with prefix `/api/firm-library`. Paths stay `/api/firm-library/saved` and
+`/api/firm-library/external-search`. The core `GET/POST /api/firm-library` handlers stay inline
+in `app.py` because `tests/test_app_vault_patch.py` pins `get_firm_library` and
+`create_firm_library_entry`; that test passes unchanged. The split is deliberate: the core
+list/create surface is the pinned vault-adjacent API, while these two are the Firm Library page's
+non-core extras (the user's saved drafts and the Pinecone-backed external case-law grid).
+`Pinecone`, `_get_pinecone_index`, `EMBED_MODEL`, `format_case_title`, `db` and
+`_current_vault_user_id` are resolved through `app_module.<name>` at call time. `sqlite3` is a
+module-level import in both `app.py` and the new route module (the old handler also saw the
+`import sqlite3` local to `create_app()`; it is the same stdlib module). No `create_app()` local
+was unique to these handlers, so none was promoted. No target endpoint is in
+`utils/audit_log.py` `WATCHED` or another endpoint-keyed config: none affected.
+
+**Module B (`93bd10e`)** — `api_legal_research`, `api_legal_research_document`. New
+`routes/legal_research_routes.py`; blueprint `legal_research` with no prefix. Paths stay
+`POST /api/legal-research` and `GET /api/legal-research/document/<string:case_id>`. No
+`create_app()` local was unique to these handlers, so none was promoted. `Pinecone`, `Groq`,
+`_get_pinecone_index`, `EMBED_MODEL`, `format_case_title`, `CASE_ID_RE`, `db` and
+`_current_vault_user_id` are resolved through `app_module.<name>` at call time. The document
+handler keeps its tenant predicate `(user_id = ? OR user_id IS NULL)`; user B receives 404 for
+user A's document. No target endpoint is in `WATCHED`: none affected.
+
+**Module C (`b674744`)** — `api_document_reconstruct`, `api_chat`, `kanoon_redirect`. New
+`routes/assistant_routes.py`; blueprint `assistant` with no prefix. Paths stay
+`GET /api/document/<string:case_id>`, `POST /api/chat`, `GET /api/kanoon-redirect`. The
+`_KANOON_*` regexes/constants, the six `_kanoon_*` helpers and `force_pristine_groq_messages`
+were `create_app()` locals used only by these handlers; they were promoted verbatim to module
+level in the new route module (the `_KANOON_*` values are AST-identical and the helpers are
+AST-identical). `Pinecone`, `Groq`, `TavilyClient`, `extract_json_from_llm_response`, `db` and
+`_current_vault_user_id` are resolved through `app_module.<name>` at call time. The kanoon helper
+calls `app_module.requests.get`, so `patch("app.requests.get")` still intercepts it. No target
+endpoint is in `WATCHED`: none affected.
+
+**Blueprint choice.** The existing blueprints do not fit without changing public paths:
+`library_routes.py` is `/api/library`, `document_routes.py` is `/api/documents` (plural),
+`ai_routes.py` is `/api/ai`, and `court_routes.py` is a large unrelated no-prefix module. Each
+new small module owns exactly its old public paths and has no `before_request`/`after_request`
+hooks, no prefix beyond A's `/api/firm-library`, and no `@limiter.limit`. The shared
+`utils/limiter.py` is `Limiter(key_func=get_remote_address, default_limits=[])`; no target route
+is decorated, so there is no per-route counter and the endpoint rename resets nothing. No
+endpoint-name collision exists and there is no `url_for`/`endpoint=` reference to a moved name.
+
+**Proof (each module):** AST `VERBATIM_MOVE=OK` for every moved handler (and for the C helpers);
+pyflakes reports zero undefined names; the route snapshot stays at 364 routes and changes exactly
+two endpoint-column lines in A, two in B and three in C, with every method/path/gate column
+unchanged. The signed-in before/after probe is identical on every behavioural field except the
+tree path: owner success, empty and malformed bodies, unauthenticated 401, the second-user
+checks, fake Pinecone/Groq/Tavily/requests arguments, and the `case_vault`/`vault_*`/`dms_*` rows
+after masking ids and timestamps. `chat_history` is absent in both fresh-DB probes, so there are
+no rows to compare (see the read-only note below). No target handler streams; there are no
+streamed chunks to compare. Named tests: 69 passed (A), 92 passed (B), 92 passed (C). Frontend
+`LexAmplify_Suite.test.jsx`: 35 passed (no frontend files changed). Full suite: `824 passed, 9
+skipped` after each module.
+
+**Read-only Q1 — `chat_history` on a fresh DB.** `create_app()`'s schema builder starts at
+`app.py:2312` and does not create `chat_history`; the only `CREATE TABLE IF NOT EXISTS
+chat_history` is in `init_db()` (`app.py:134`, table statement at `app.py:395`). Empirically, a
+fresh `tests.helpers_app.make_app` temp-SQLite app has 62 raw tables and no `chat_history`;
+`POST /api/chat` with a fake Groq returns 200 and leaves the count at 62/no table; calling
+`app_module.init_db()` then creates it (63 raw tables). `init_db()` is called only by
+`app.py:2753` (`__main__`) and `scripts/e2e_backend.py:62`; gunicorn does not call it, so
+`chat_history` is absent on a fresh gunicorn DB. `routes/ai_routes.py:_log_chat` is the only
+writer and swallows its exception. Not fixed.
+
+**Read-only Q2 — `kanoon_redirect` is not an open redirect.** The fallback is the fixed
+`https://indiankanoon.org/search/?formInput=<urllib.parse.quote(query)>`
+(`routes/assistant_routes.py:199`); the helper's fetch target is the same fixed host
+(`:131`). The success paths are the fixed `https://indiankanoon.org/doc/<digits>/`
+(`:247`, `:341`) built from `_KANOON_DOC_ID_RE` (`:26`, `\d+`). The query controls only the
+quoted `formInput`, never the host. Redirect `Location` hosts are only `indiankanoon.org`
+(outbound fetch may use `api.zenrows.com` when `ZENROWS_API_KEY` is configured). Not changed.
+
+**Remaining inline `@app.route` handlers:** 14 after A, 12 after B, 9 after C (baseline 16).
+The 9 are the seven vault handlers pinned by `tests/test_app_vault_patch.py` plus the two
+firm-library core handlers.
+
 ## EXACT COMMANDS TO RESUME
 
 ```powershell
