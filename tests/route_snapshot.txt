@@ -200,8 +200,8 @@ GET | /api/ip/list | causelist.list_ip | signed-in
 PUT | /api/ip/update/<int:ip_id> | causelist.update_ip | signed-in
 GET | /api/kanoon-redirect | kanoon_redirect | signed-in
 GET | /api/legal-events | court.get_live_legal_events | signed-in
-POST | /api/legal-research | api_legal_research | signed-in
-GET | /api/legal-research/document/<string:case_id> | api_legal_research_document | signed-in
+POST | /api/legal-research | legal_research.api_legal_research | signed-in
+GET | /api/legal-research/document/<string:case_id> | legal_research.api_legal_research_document | signed-in
 GET | /api/letterheads | letterhead.list_letterheads | signed-in
 POST | /api/letterheads | letterhead.create_letterhead | signed-in
 DELETE | /api/letterheads/<int:letterhead_id> | letterhead.delete_letterhead | signed-in
