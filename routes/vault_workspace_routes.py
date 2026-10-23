@@ -1327,4 +1327,254 @@ def create_vault_workspace_blueprint(deps):
             traceback.print_exc()
             return jsonify({"error": True, "message": str(e)}), 500
 
+
+    # ── Folder/document writes, blueprint init and audit trail (moved verbatim from app.py's create_app(), step 3c) ──
+    # Paths are relative to this blueprint's /api/vault prefix.
+
+    @bp.route("/folders", methods=["POST"])
+    @jwt_required()
+    def create_vault_folder():
+        import app as app_module
+        uid = app_module._current_vault_user_id()
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            name = (data.get('name') or '').strip()
+            parent_id = data.get('parent_id')  # None = root folder
+
+            if not name:
+                return jsonify({'error': True, 'message': 'Folder name is required.'}), 400
+            if len(name) > 80:
+                return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
+
+            conn = app_module.db
+
+            # A parent_id must be a folder this user can actually see —
+            # otherwise anyone could nest a folder under another user's
+            # private folder id (folder_id is a small sequential integer,
+            # trivially guessable/enumerable).
+            if parent_id is not None:
+                parent_row = conn.execute(
+                    'SELECT user_id FROM vault_folders WHERE id = ?', (parent_id,)
+                ).fetchone()
+                if not parent_row or not app_module._vault_access_ok('folder', parent_id, parent_row[0], uid, require_edit=True):
+                    return jsonify({'error': True, 'message': 'Parent folder not found.'}), 404
+
+            # Uniqueness check: same name + same parent, within this user's own folders
+            existing = conn.execute(
+                'SELECT id FROM vault_folders WHERE name = ? AND (parent_id IS ? OR parent_id = ?) AND user_id = ?',
+                (name, parent_id, parent_id, uid)
+            ).fetchone()
+            if existing:
+                return jsonify({'error': True, 'message': f'A folder named "{name}" already exists here.'}), 409
+
+            c = conn.cursor()
+            c.execute(
+                'INSERT INTO vault_folders (name, parent_id, user_id) VALUES (?, ?, ?)',
+                (name, parent_id, uid)
+            )
+            conn.commit()
+            folder_id = c.lastrowid
+            app_module._write_provenance('folder', folder_id, name, 'created', uid, uid, {'parent_id': parent_id})
+            return jsonify({'success': True, 'id': folder_id, 'name': name, 'parent_id': parent_id}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/folders/init-blueprint", methods=["POST", "OPTIONS"])
+    @jwt_required()
+    def init_vault_blueprint():
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            existing = app_module.db.execute(
+                'SELECT name FROM vault_folders WHERE parent_id IS NULL AND (user_id = ? OR user_id IS NULL)',
+                (uid,)
+            ).fetchall()
+            existing_names = {r[0] for r in existing}
+            if existing_names & set(app_module._BLUEPRINT_FOLDER_NAMES):
+                return jsonify({'success': True, 'created': False, 'message': 'Blueprint already initialized.'}), 200
+
+            c = app_module.db.cursor()
+            created = []
+            for name in app_module._BLUEPRINT_FOLDER_NAMES:
+                c.execute(
+                    'INSERT INTO vault_folders (name, parent_id, user_id, protected) VALUES (?, NULL, ?, 1)',
+                    (name, uid)
+                )
+                created.append({'id': c.lastrowid, 'name': name, 'protected': True})
+            app_module.db.commit()
+            app_module._write_provenance(
+                'folder', None, 'Standard blueprint', 'blueprint_applied', uid, uid,
+                {'folders': created}
+            )
+            return jsonify({'success': True, 'created': True, 'folders': created}), 201
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/folders/<int:folder_id>", methods=["PATCH", "OPTIONS"])
+    @jwt_required()
+    def update_vault_folder(folder_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            owner_row = app_module.db.execute('SELECT user_id, protected, name, parent_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+            if not owner_row or not app_module._vault_access_ok('folder', folder_id, owner_row[0], uid, require_edit=True):
+                return jsonify({'error': True, 'message': 'Folder not found.'}), 404
+            if owner_row[1]:
+                return jsonify({'error': True, 'message': 'This is one of the standard blueprint folders and cannot be renamed or moved.'}), 403
+            folder_owner_uid = owner_row[0] if owner_row[0] is not None else uid
+            old_name, old_parent_id = owner_row[2], owner_row[3]
+
+            data = request.get_json(force=True, silent=True) or {}
+
+            if 'name' in data:
+                new_name = (data.get('name') or '').strip()
+                if not new_name:
+                    return jsonify({'error': True, 'message': 'Folder name cannot be empty.'}), 400
+                if len(new_name) > 80:
+                    return jsonify({'error': True, 'message': 'Folder name must be under 80 characters.'}), 400
+                app_module.db.execute('UPDATE vault_folders SET name = ? WHERE id = ?', (new_name, folder_id))
+                app_module.db.commit()
+                app_module._write_provenance(
+                    'folder', folder_id, new_name, 'renamed', uid, folder_owner_uid,
+                    {'old_name': old_name, 'new_name': new_name}
+                )
+                return jsonify({'success': True, 'id': folder_id, 'name': new_name}), 200
+
+            if 'parent_id' in data:
+                new_parent = data.get('parent_id')  # None = move to root
+                # The destination folder must also belong to this user (or be
+                # legacy/shared) — otherwise a folder could be relocated
+                # underneath another user's private tree by guessing an id.
+                if new_parent is not None:
+                    dest_row = app_module.db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (new_parent,)).fetchone()
+                    if not dest_row or not app_module._vault_access_ok('folder', new_parent, dest_row[0], uid, require_edit=True):
+                        return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
+                # Prevent circular parentage: new_parent must not be self or a descendant
+                def get_descendants(fid):
+                    kids = [r['id'] for r in app_module.db.execute('SELECT id FROM vault_folders WHERE parent_id = ?', (fid,)).fetchall()]
+                    result = list(kids)
+                    for k in kids:
+                        result.extend(get_descendants(k))
+                    return result
+                if new_parent == folder_id or new_parent in get_descendants(folder_id):
+                    return jsonify({'error': True, 'message': 'Cannot move a folder into itself or its own descendant.'}), 400
+                app_module.db.execute('UPDATE vault_folders SET parent_id = ? WHERE id = ?', (new_parent, folder_id))
+                app_module.db.commit()
+                app_module._write_provenance(
+                    'folder', folder_id, old_name, 'moved', uid, folder_owner_uid,
+                    {'old_parent_id': old_parent_id, 'new_parent_id': new_parent}
+                )
+                return jsonify({'success': True, 'id': folder_id, 'parent_id': new_parent}), 200
+
+            return jsonify({'error': True, 'message': 'No valid fields provided (name or parent_id).'}), 400
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/documents/<int:doc_id>", methods=["PUT", "OPTIONS"])
+    @jwt_required()
+    def update_vault_document(doc_id):
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            owner_row = app_module.db.execute(
+                'SELECT user_id, COALESCE(smart_title, title), folder_id FROM case_vault WHERE id = ?', (doc_id,)
+            ).fetchone()
+            if not owner_row or not app_module._vault_access_ok('document', doc_id, owner_row[0], uid, require_edit=True):
+                return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            doc_owner_uid = owner_row[0] if owner_row[0] is not None else uid
+            old_title, old_folder_id = owner_row[1], owner_row[2]
+
+            data = request.get_json(force=True, silent=True) or {}
+            if 'content' in data:
+                app_module.db.execute('UPDATE case_vault SET content = ? WHERE id = ?', (data.get('content', ''), doc_id))
+            if 'title' in data or 'smart_title' in data:
+                new_title = (data.get('title') or data.get('smart_title') or '').strip()
+                if not new_title:
+                    return jsonify({'error': True, 'message': 'Title cannot be empty.'}), 400
+                if len(new_title) > 200:
+                    return jsonify({'error': True, 'message': 'Title must be under 200 characters.'}), 400
+                app_module.db.execute('UPDATE case_vault SET smart_title = ? WHERE id = ?', (new_title, doc_id))
+                app_module._write_provenance(
+                    'document', doc_id, new_title, 'renamed', uid, doc_owner_uid,
+                    {'old_title': old_title, 'new_title': new_title}
+                )
+            if 'folder_id' in data:
+                new_folder_id = data.get('folder_id')
+                if new_folder_id is not None:
+                    dest_row = app_module.db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (new_folder_id,)).fetchone()
+                    if not dest_row or not app_module._vault_access_ok('folder', new_folder_id, dest_row[0], uid, require_edit=True):
+                        return jsonify({'error': True, 'message': 'Destination folder not found.'}), 404
+                app_module.db.execute('UPDATE case_vault SET folder_id = ? WHERE id = ?', (new_folder_id, doc_id))
+                app_module._write_provenance(
+                    'document', doc_id, old_title, 'moved', uid, doc_owner_uid,
+                    {'old_folder_id': old_folder_id, 'new_folder_id': new_folder_id}
+                )
+            app_module.db.commit()
+            return jsonify({'success': True, 'id': doc_id}), 200
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
+    @bp.route("/audit-trail", methods=["GET", "OPTIONS"])
+    @jwt_required()
+    def vault_audit_trail():
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
+        try:
+            folder_id = request.args.get('folder_id', type=int)
+            conn = app_module.db
+            old_rf = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            try:
+                c = conn.cursor()
+                # An audit record's owner is transitive through the vault
+                # document it documents — vault_audit itself carries no
+                # user_id, so ownership is resolved via the case_vault join.
+                if folder_id is not None:
+                    c.execute('''
+                        SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
+                               va.messages_json, va.created_at,
+                               cv.title AS doc_title, cv.doc_type,
+                               vf.name  AS folder_name
+                        FROM   vault_audit va
+                        LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
+                        LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
+                        WHERE  va.folder_id = ? AND (cv.user_id = ? OR cv.user_id IS NULL)
+                        ORDER  BY va.created_at DESC
+                    ''', (folder_id, uid))
+                else:
+                    c.execute('''
+                        SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
+                               va.messages_json, va.created_at,
+                               cv.title AS doc_title, cv.doc_type,
+                               vf.name  AS folder_name
+                        FROM   vault_audit va
+                        LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
+                        LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
+                        WHERE  cv.user_id = ? OR cv.user_id IS NULL
+                        ORDER  BY va.created_at DESC
+                        LIMIT  60
+                    ''', (uid,))
+                rows = c.fetchall()
+                threads = []
+                for row in rows:
+                    d = dict(row)
+                    try:
+                        d['messages'] = json.loads(d.get('messages_json') or '[]')
+                    except Exception:
+                        d['messages'] = []
+                    threads.append(d)
+                return jsonify({'threads': threads}), 200
+            finally:
+                conn.row_factory = old_rf
+        except Exception as e:
+            return jsonify({'error': True, 'message': str(e)}), 500
+
     return bp

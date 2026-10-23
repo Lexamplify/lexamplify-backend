@@ -318,11 +318,11 @@ GET | /api/teams | matter.list_teams | signed-in
 POST | /api/teams | matter.create_team | signed-in
 GET | /api/teams/<int:team_id>/roster | matter.team_roster | signed-in
 POST | /api/upload-case | argument.upload_case | signed-in
-GET | /api/vault/audit-trail | vault_audit_trail | signed-in
+GET | /api/vault/audit-trail | vault_workspace.vault_audit_trail | signed-in
 GET | /api/vault/destinations | vault_workspace.destinations | signed-in
 GET | /api/vault/documents | get_vault_documents | signed-in
 DELETE | /api/vault/documents/<int:doc_id> | delete_vault_document | signed-in
-PUT | /api/vault/documents/<int:doc_id> | update_vault_document | signed-in
+PUT | /api/vault/documents/<int:doc_id> | vault_workspace.update_vault_document | signed-in
 POST | /api/vault/documents/<int:doc_id>/assistant | vault_workspace.assistant | signed-in
 POST | /api/vault/documents/<int:doc_id>/citations | vault_workspace.add_vault_citation | signed-in
 DELETE | /api/vault/documents/<int:doc_id>/citations/<string:citation_id> | vault_workspace.remove_vault_citation | signed-in
@@ -336,10 +336,10 @@ GET | /api/vault/documents/<int:doc_id>/view | vault_workspace.view_file | signe
 POST | /api/vault/documents/draft-save | vault_workspace.draft_save | signed-in
 POST | /api/vault/documents/upload | upload_vault_document | signed-in
 GET | /api/vault/folders | get_vault_folders | signed-in
-POST | /api/vault/folders | create_vault_folder | signed-in
+POST | /api/vault/folders | vault_workspace.create_vault_folder | signed-in
 DELETE | /api/vault/folders/<int:folder_id> | delete_vault_folder | signed-in
-PATCH | /api/vault/folders/<int:folder_id> | update_vault_folder | signed-in
-POST | /api/vault/folders/init-blueprint | init_vault_blueprint | signed-in
+PATCH | /api/vault/folders/<int:folder_id> | vault_workspace.update_vault_folder | signed-in
+POST | /api/vault/folders/init-blueprint | vault_workspace.init_vault_blueprint | signed-in
 GET | /api/vault/meta | get_vault_meta | signed-in
 GET | /api/vault/overview | vault_workspace.overview | signed-in
 GET | /api/vault/provenance | vault_workspace.get_vault_provenance | signed-in
