@@ -2338,6 +2338,19 @@ def create_app():
             except Exception:
                 pass
 
+        # Chat history table — same DDL as init_db(), so a fresh deploy and an
+        # upgraded deployment end up with the same schema. POST /api/ai/chat
+        # writes here; without this the INSERT is swallowed and history is lost.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                user_message TEXT NOT NULL,
+                bot_response TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Vault folders table + case_vault migration
         conn.execute('''
             CREATE TABLE IF NOT EXISTS vault_folders (

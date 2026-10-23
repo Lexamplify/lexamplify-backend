@@ -4,8 +4,9 @@ Work log for the `opencode-modular` branch. Any engineer (or model) can pick thi
 Update this file after every step: **done / in progress / next / exact commands to resume / known failures**.
 
 - Branch: `opencode-modular` (branched from `main` at `8c0ccdb`; never push, never deploy from this branch)
+- Step 5b branch: `opencode-fixes` (base `144ecc6`; no push, no deploy)
 - Brief: `OPENCODE_COMMAND.md` (read it first; its rules win)
-- Last updated: 2026-10-22, after STEP 3c batch 1 (saved drafts + case autocomplete moved; firm-library group still blocked — see below)
+- Last updated: 2026-10-24, after STEP 5b (fresh-database `chat_history` fix + Case Vault NULL-owner audit — see below)
 
 ---
 
@@ -731,6 +732,253 @@ quoted `formInput`, never the host. Redirect `Location` hosts are only `indianka
 **Remaining inline `@app.route` handlers:** 14 after A, 12 after B, 9 after C (baseline 16).
 The 9 are the seven vault handlers pinned by `tests/test_app_vault_patch.py` plus the two
 firm-library core handlers.
+
+## Step 5b — fresh-database chat history + Case Vault ownership audit (2026-10-24)
+
+Branch: `opencode-fixes`, base `144ecc6`. No push and no deploy. This step is one code commit
+(factory schema + regression test) followed by this docs-only commit. Job 2 is deliberately an
+audit/proposal only: no vault authorization code, route, test or frontend file was changed.
+
+### Job 1 — `create_app()` now creates `chat_history` (fixed)
+
+**Finding.** `init_db()` creates `chat_history` (`app.py:395`), but the schema builder inside
+`create_app()` did not. The only writer is `POST /api/ai/chat` (`routes/ai_routes.py:95`);
+`_log_chat` is defined at `:19`, inserts at `:24`, and is called once at `:137`. The only reader is
+`GET /api/ai/history` (`:146`, query at `:156`). `_log_chat` opens `lex_assistant.db` directly with
+`sqlite3.connect(...)` and swallows every exception, so on a fresh deploy the failed INSERT was
+invisible: the endpoint returned `200` and the history list stayed empty. `POST /api/chat`
+(`routes/assistant_routes.py:414`) neither calls `_log_chat` nor references `chat_history`.
+
+**Change.** `app.py:2341-2351`, immediately after the `calendar_events` migration in the
+`create_app()` schema builder: the same `chat_history` DDL as `init_db()` (`id` INTEGER PRIMARY KEY
+AUTOINCREMENT, `user_id` INTEGER, `user_message`/`bot_response` TEXT NOT NULL, `created_at`
+DATETIME DEFAULT CURRENT_TIMESTAMP). No API path, method, request shape or response shape changed.
+New regression file: `tests/test_chat_history_table.py` (3 tests).
+
+**Proof.**
+
+- Baseline detached worktree at `144ecc6`: 61 application tables (62 including `sqlite_sequence`),
+  no `chat_history`. `POST /api/ai/chat` returned `200 {"response": "Fake Groq reply for Step 5b."}`
+  with no table / 0 rows; `POST /api/chat` returned `200 {"action": "chat", ...}` and still 0 rows.
+- Fixed fresh app: 62 application tables (63 including `sqlite_sequence`). Set difference against the
+  baseline is exactly `{"chat_history"}`; nothing else added or removed.
+- DDL: whitespace-normalised `init_db()` and `create_app()` strings are equal; the resulting
+  `sqlite_master.sql` is equal; `PRAGMA table_info` is equal; indexes `[]`; foreign keys `[]`;
+  normalised-DDL SHA-256 `4010e9e4d8ec3a9e908eba53755cafb6f08ca27078616e47a661ac20384dd931`.
+- Fixed runtime probe: `/api/ai/chat` returned the same `200` body and added exactly one row; the
+  regression test's `GET /api/ai/history` returned that thread; `/api/chat` returned `200` with
+  `action: chat` and the row count stayed at one. Provider calls were faked; sockets were blocked.
+- New tests: `3 passed`. Route snapshot: 364 routes, unchanged. Named safety net
+  (`test_route_snapshot`, `test_api_gate_matrix`, `test_cross_tenant_walk`, `test_backend_full`,
+  `test_app_vault_patch`): `47 passed`. Pyflakes: 0 undefined names (only the pre-existing unused
+  imports/f-string warnings in `app.py`).
+- Full suite: `827 passed, 9 skipped` (the 3 new tests on top of the stable baseline
+  `824 passed, 9 skipped`). The first baseline run crossed midnight and hit
+  `test_lpms_modules.py::test_every_report_builds_in_json_xlsx_and_pdf` (`cause_list` 0 != 1);
+  the test passes in isolation and the clean rerun was 824/9.
+- Code commit: `e766efc` — `fix: create chat_history in the app factory`.
+
+### Job 2a — NULL-owner Case Vault rows (audited, not changed)
+
+**Only producers of `case_vault.user_id IS NULL` / `vault_folders.user_id IS NULL`:**
+
+1. `app.py:171-185` (`init_db()`) and `app.py:2379-2391` (`create_app()`): add the nullable
+   `user_id` columns and deliberately never backfill pre-existing rows. The comments call this
+   "legacy/shared". Every row that existed before the ownership column is NULL.
+2. `mass_ingestion.py:342`: inserts public judgments with no `user_id`. Its update branch
+   (`mass_ingestion.py:344-348`) also never sets an owner.
+3. No other production writer leaves the owner NULL. Runtime inserts in `app.py:1776` and `:2132`,
+   `routes/dms_routes.py:490`, `routes/document_routes.py:408`, and
+   `routes/vault_workspace_routes.py:510`, `:695`, `:699` all pass a JWT-derived user id. Test seed
+   rows with NULL are test-only.
+
+**Root cause.** `_vault_owner_ok` (`app.py:738-740`) returns true when `row_user_id is None`;
+`_vault_access_ok` (`app.py:929-943`) builds every read/edit/share/delete guard on it. This is a
+disclosed legacy design, but in a multi-user deployment it means any signed-in user can read, edit,
+move, share or delete any legacy row by sequential id.
+
+**Every read using `OR user_id IS NULL` (or `owner_user_id IS NULL`):**
+
+| Location | Endpoint / use | Exposure |
+|---|---|---|
+| `app.py:1543` | `_vw_scope`: `/api/vault/overview`, `/api/vault/timeline` | Legacy docs/folders appear in every user's workspace; high in combination with the by-id guards. |
+| `app.py:1589` | `GET /api/vault/folders` | Legacy folder names/tree/protected/share flags; medium. |
+| `app.py:1625` | folder document counts | Counts of legacy documents; low. |
+| `app.py:1920` | `GET /api/vault/documents` | Every column except `file_blob`, including full `content`, tags and folder name; high. |
+| `app.py:2017` | `GET /api/vault/meta` | Legacy titles, doc types, tags, sizes, folder ids; medium. |
+| `app.py:2067` | `GET /api/firm-library` | Legacy entry metadata plus `content[:4000]`; high. |
+| `routes/ai_routes.py:395,435` | `POST /api/ai/simulate` | Legacy document content is fed to the model and can be returned in the simulation; high. |
+| `routes/assistant_routes.py:713` | `/api/chat` courtroom-simulation tool | Full legacy content sent to the model; high. |
+| `routes/assistant_routes.py:858,865,885` | `/api/chat` vault-search tools | Full rows/content sent to the model; high. |
+| `routes/cases_routes.py:30` | `GET /api/cases/autocomplete` | Legacy document titles; low. |
+| `routes/document_routes.py:463,470` | `GET /api/documents` | Legacy metadata; medium. |
+| `routes/document_routes.py:505` | `GET /api/documents/<id>` | Full text/details; high. |
+| `routes/document_routes.py:543` | `DELETE /api/documents/<id>` | Deletes a legacy document; high. |
+| `routes/legal_research_routes.py:148` | `GET /api/legal-research/document/<case_id>` | Returns `full_text`; high. |
+| `routes/matter_routes.py:494` | `GET /api/matters/<id>/documents` | Legacy metadata under a guessed `case_id`; low/medium. |
+| `routes/vault_workspace_routes.py:592` | `/api/vault/destinations` | Legacy folder names/paths; the destinations loop's `folder_ok` also accepts NULL; medium. |
+| `routes/vault_workspace_routes.py:1159` | `/api/vault/provenance` | Legacy node names, actions and detail; medium. |
+| `routes/vault_workspace_routes.py:1184` | `/api/vault/provenance` audit merge | Legacy document/session titles; medium. |
+| `routes/vault_workspace_routes.py:1392` | protected-folder name collision check | Reveals whether a legacy root folder name exists; low. |
+| `routes/vault_workspace_routes.py:1550,1562` | `GET /api/vault/audit-trail` | Full legacy `messages_json` (saved AI conversations), doc/folder titles; high. |
+
+**By-id guards that accept NULL (no list filter needed):**
+
+- `app.py:738-740` and `:929-943` are the root. All workspace document routes guarded by
+  `_vw_access` inherit it: `routes/vault_workspace_routes.py:340` (view), `:375` (content),
+  `:470` (save-edit), `:530` (export-docx), `:556` (export), `:620` (save-as), `:861` (assistant),
+  `:1271`/`:1305` (citations), `:1478` (move). Any signed-in user can use a sequential id.
+- `app.py:1809` (`DELETE /api/vault/documents/<id>`) and `:1856`
+  (`GET /api/vault/documents/<id>/download`) accept NULL.
+- `app.py:1676-1730` (`DELETE /api/vault/folders/<id>`) accepts a NULL folder and then
+  `recursive_delete` unconditionally deletes every document and child folder below it. This is the
+  most destructive path: a legacy folder is deletable by anyone. The recursive code intentionally
+  deletes shared editors' children after the top-level edit check; NULL makes that cross-user.
+- `app.py:1766` upload-folder check, `app.py:1159` `_dms_folder_access`, and
+  `routes/vault_workspace_routes.py:1335`/`:1416` folder create/update also accept NULL parents.
+- `routes/document_routes.py:505,543` use a literal `row["user_id"] is None` test instead of the
+  central helper, so they must be fixed separately.
+
+**No-user-filter reads and whether they are safe:**
+
+- **DMS is safe for NULL.** `utils/dms_index.py:393-413` (`visibility_sql`) explicitly excludes
+  NULL-owner rows and `:434-471` (`access_level`) returns `None` for them. `routes/dms_routes.py`,
+  `routes/dms_f_*.py`, `utils/dms_paper.py` and `utils/dms_worker.py` use those gates; direct
+  by-id loads are followed by `access_level`. No change needed for the NULL rule there.
+- **Workspace by-id loads are access-gated, but not safe today** because the gate accepts NULL:
+  `routes/vault_workspace_routes.py:312,328,337,444,496,503,683,1289,1296,1315,1322,1487`.
+- **`app.py` helpers are safe once the gate is fixed:** breadcrumbs/ancestors `:805,830,898,916,
+  953,955`; legal-hold titles `:1107,1111` (called only after a doc/folder access check or for a
+  global hold); citation reads `:1043,1052`; `:1713,1719` are the recursive-delete exception above.
+- **Owner-scoped application reads are safe:** `routes/library_routes.py:49`,
+  `routes/firm_library_routes.py:39`, LPMS case/document queries (`routes/lpms_cases.py:168`,
+  `routes/lpms_core.py:646`, `utils/lpms_reports.py:60` — filtered by case visibility).
+- **Internal/background reads are low risk but should be documented:** `tasks/library_tasks.py:26`
+  is dispatched only after an owner check; `tasks/contract_tasks.py:50,58` returns only bool/id;
+  `utils/rag_pipeline.py:1112` reads a title by an already-retrieved id;
+  `mass_ingestion.py:338` is maintenance code; `verify_rag_pipeline.py:26` is a dev script.
+  `rag_server/main.py:694` is an unauthenticated sidecar (`uvicorn.run(... host="0.0.0.0",
+  port=8001)` at `:993`) that queries all `case_vault` content and returns only a matching id: a
+  content oracle, medium, not a direct content dump.
+
+**Exact minimal fix (proposed, not applied).**
+
+1. Stop treating NULL as owned:
+   `def _vault_owner_ok(row_user_id, current_user_id): return row_user_id is not None and int(row_user_id) == int(current_user_id)`
+   and make `_vault_access_ok` inherit that (no extra NULL branch).
+2. Remove every `OR user_id IS NULL` / `OR owner_user_id IS NULL` above:
+   `app.py:1543,1589,1625,1920,2017,2067`; `routes/ai_routes.py:395,435`;
+   `routes/assistant_routes.py:713,858,865,885`; `routes/cases_routes.py:30`;
+   `routes/document_routes.py:463,470,505,543`; `routes/legal_research_routes.py:148`;
+   `routes/matter_routes.py:494`; `routes/vault_workspace_routes.py:592,1159,1184,1392,1550,1562`.
+3. Do not use NULL as the public marker. Add an explicit `is_public` column (or a dedicated
+   `PUBLIC_USER_ID = 0` sentinel) to `case_vault`; set it only in `mass_ingestion.py`; then allow
+   public rows with `(user_id = ? OR is_public = 1)`. Folders have no public rows. Backfill or
+   quarantine the remaining pre-ownership rows; do not invent owners.
+4. Scope the audit/provenance feeds to `owner_user_id IS NOT NULL AND (owner_user_id = ? OR
+   actor_user_id = ?)` and `cv.user_id = ?`. The current `LEFT JOIN case_vault` + `IS NULL` also
+   treats an orphaned audit row as visible to everyone.
+5. For destructive folder deletes, require owner (not merely edit) or delete only the actor's rows
+   and reparent the rest; at minimum apply the NULL denial first.
+6. Add a second-user regression test for each of: list, content, download, edit, delete, folder
+   recurse, audit trail, provenance, shares. The existing tests seed NULL rows and currently
+   document the permissive behavior; that is why this is a code+test change, not just a query edit.
+
+Emergency containment (smallest change, hides all legacy rows): steps 1 and 2 only. It also hides
+the public mass-ingested judgments until step 3 lands, so plan the migration in the same release.
+
+### Job 2b — duplicate `POST /api/vault/save` (audited, not changed)
+
+**Which handler wins.** `vault_workspace.save_vault_document` (`routes/vault_workspace_routes.py:1585`)
+is registered at `app.py:1552`; `argument.save_vault` (`routes/argument_routes.py:298`) is registered
+at `app.py:2191`. Both are `POST /api/vault/save`. Werkzeug uses the first registered matching rule;
+a signed-in probe returned the workspace shape `{id, location, message, success}` and did not create
+`vc_vault_data.json`. The argument handler's `{status: "success"}` branch is not reachable in a
+normal boot. It becomes reachable only if the workspace blueprint registration fails (the
+`try/except` around `app.py:1552`) or rule order changes. It has no `@jwt_required` of its own, but
+the app-level signed-in gate still applies. It is dead HTTP code today.
+
+**Frontend call sites for `/api/vault/save` (all served by the workspace handler):**
+
+- `frontend/src/components/FirmLibrary.jsx:1444` — `{case_id, title, content, doc_type: "Pinned Precedent"}`.
+- `frontend/src/components/SaveDraftModal.jsx:113` — `{title, smart_title, content, case_id, folder_id, doc_type, format: "docx"}`.
+- `frontend/src/components/WarRoomView.jsx:976` — `{case_id: "WAR_ROOM", title, doc_type: "Courtroom Simulation", content}`.
+
+No current frontend caller sends the `case_facts`/`history` payload that the workspace VC branch
+still accepts.
+
+**Other frontend `/api/vault/*` call sites and serving handlers (production files only):**
+
+- Workspace feeds: `GET /api/vault/overview` — `vaultApi.overview` at `CaseWorkspace.jsx:661,670`,
+  and direct `DashboardView.jsx:173`; handler `routes/vault_workspace_routes.py:155`.
+  `GET /api/vault/timeline` — `vaultApi.timeline` at `CaseWorkspace.jsx:680`; handler `:220`.
+- Folders: `GET /api/vault/folders` — `CommandPalette.jsx:2256`, `SaveDraftModal.jsx:59`,
+  `VaultView.jsx:1147`, `dochub/api.js:133`, `useVaultTree.js:41`; handler `app.py:1570`.
+  `POST /api/vault/folders` `{name, parent_id}` — `VaultView.jsx:1212,1256`, `dochub/api.js:138`,
+  `useVaultTree.js:60`; handler `routes/vault_workspace_routes.py:1335`.
+  `POST /api/vault/folders/init-blueprint` — `dochub/api.js:141`, `useVaultTree.js:69`; handler
+  `:1383`. `PATCH /api/vault/folders/<id>` `{name}` or `{parent_id}` — `VaultView.jsx:1162,1175`,
+  `useVaultTree.js:75,80`; handler `:1416`. `DELETE /api/vault/folders/<id>` —
+  `VaultView.jsx:1196,1349`, `useVaultTree.js:85`; handler `app.py:1669`.
+- Document lists/meta: `GET /api/vault/documents` — `DashboardView.jsx:170` (`?limit=25`),
+  `VaultView.jsx:1126` (query params), `:1735` (bare); handler `app.py:1903`.
+  `GET /api/vault/meta` — `useVaultTree.js:42`; handler `app.py:1985`.
+- Upload: `POST /api/vault/documents/upload` — `useOrganization.js:179` (`file` + `case_id:
+  matter:<id>`), `useVaultTree.js:109` (`file` + optional `folder_id` + `case_id`); handler
+  `app.py:1750`.
+- Document mutations: `PUT /api/vault/documents/<id>` — `DocumentViewer.jsx:380` `{content}`,
+  `useVaultTree.js:90` `{title}`, `:95` `{folder_id}`; handler
+  `routes/vault_workspace_routes.py:1478`. `DELETE /api/vault/documents/<id>` —
+  `VaultView.jsx:1620`, `useVaultTree.js:100`; handler `app.py:1801`.
+- Viewer/content/export/download: `vaultApi.content` — `VaultDocViewer.jsx:90`,
+  `WordCraftPage.jsx:123`; handler `routes/vault_workspace_routes.py:375`.
+  `vaultApi.viewBlob` — `VaultDocViewer.jsx:221,233`; handler `:340`. Direct content fetches —
+  `AutoDraftWorkspace.jsx:669`, `DashboardView.jsx:554`. `vaultApi.exportBlob` —
+  `VaultDocViewer.jsx:158` `{html, format, title}`; handler `:556`. `vaultApi.downloadOriginal` —
+  `CaseWorkspace.jsx:2153`, `VaultDocViewer.jsx:226`; handler `app.py:1847`.
+- Editor/assistant: `vaultApi.saveEdit` — `WordCraftPage.jsx:177`
+  `{html, format:"docx", title, target_id?}`; handler `routes/vault_workspace_routes.py:470`.
+  `vaultApi.assistant` — `AssistantPanel.jsx:59`
+  `{message, history, selection, document_text}`; handler `:861`. `vaultApi.saveAs` —
+  `WordCraftPage.jsx:179` (`destination:"vault"`, optional `target_id`) and
+  `VaultDocViewer.jsx:184` (`html, format, destination, title, folder_id?, practice_case_id?,
+  category?, target_id?`); handler `:620`. `vaultApi.destinations` — `SaveAsDialog.jsx:31`;
+  handler `:583`.
+- Citations: `POST /api/vault/documents/<id>/citations` `{id, title}` — `CaseVault.jsx:194`;
+  handler `:1271`. `DELETE .../citations/<citation_id>` — `CaseVault.jsx:209`; handler `:1305`.
+- Shares: `GET /api/vault/shares?node_type&node_id` — `ShareModal.jsx:66`; handler `:918`.
+  `POST /api/vault/shares` `{node_type, node_id, team_member_id, permission}` —
+  `ShareModal.jsx:110`; handler `:989`. `DELETE /api/vault/shares/<id>` — `ShareModal.jsx:124`;
+  handler `:1048`. `PATCH /api/vault/shares/link` `{node_type, node_id, link_shared}` —
+  `ShareModal.jsx:136`; handler `:1085`.
+- Provenance: `GET /api/vault/provenance` — `useVaultProvenance.js:21`; handler
+  `routes/vault_workspace_routes.py:1123`. `GET /api/vault/provenance/verify` — `:40`; handler
+  `:1225`. No production `/api/vault/audit-trail` caller.
+
+**`draftSave` specifically.** `vaultApi.draftSave` is defined at
+`frontend/src/components/vault/vaultApi.js:55` and calls
+`POST /api/vault/documents/draft-save`. Called by `WordCraftPage.jsx:181`
+`{html, title, format:"docx", destination:"vault"}` and `:351`
+`{html, title, format:"docx", destination:"practice", practice_case_id}`; also a direct
+`CommandPalette.jsx:2283` call with `{title, html, format, destination, folder_id,
+practice_case_id?, category}`. Served by `routes/vault_workspace_routes.py:743`. It is a different
+endpoint from `/api/vault/save`.
+
+`frontend/src/services/wordcraftBridge.js` contains no `fetch`, `/api/`, `vaultApi`, XHR or axios
+call; it only wraps the WASM editor. `WordCraftPage`'s local `exportDocx()` uses `bridge.bytes("docx")`
+and a browser download, not `/api/vault/*`. `vaultApi.exportDocx` and the server's
+`/documents/<id>/export-docx` endpoint have no production frontend caller; the same is true of
+`/api/vault/audit-trail` (backend-only today).
+
+**Safe removal proposal (not applied).** Keep `vault_workspace.save_vault_document`; remove only
+`routes/argument_routes.py:298-326`. No frontend or test caller references `argument.save_vault`
+(the only other reference is the duplicate line in `tests/route_snapshot.txt:348`). The removal
+changes the route count from 364 to 363, so regenerate the snapshot intentionally and say so in the
+removal commit. If any external client still sends `case_facts`/`history` to `/api/vault/save`,
+move that VC JSON persistence into the workspace handler before deleting the old function; the
+current frontend does not send it.
+
+**Nothing in Job 2a or Job 2b was applied in this Step 5b code commit.**
 
 ## EXACT COMMANDS TO RESUME
 
