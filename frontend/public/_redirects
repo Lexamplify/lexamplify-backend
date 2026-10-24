@@ -1,0 +1,9 @@
+# Netlify test environment rules.
+# 1) Proxy API calls same-origin so the browser never does a cross-origin request
+#    to api.lexamplify.com (which does not CORS-allow netlify.app origins). Requires
+#    the bundle to call a RELATIVE /api base (VITE_API_BASE_URL empty for this build).
+/api/*  https://api.lexamplify.com/api/:splat  200
+
+# 2) SPA fallback: serve index.html for client-side routes so deep links don't 404.
+#    (Firebase hosting does both of these via firebase.json; this is Netlify-only.)
+/*      /index.html                            200
