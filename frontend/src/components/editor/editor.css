@@ -82,3 +82,11 @@
   .wcp-ai-foot { padding: 10px 12px 12px; background: var(--paper); }
   .wcp-chips { margin-bottom: 8px; }
 }
+
+/* Finalise action + locked state */
+.wcp-btn--gold { background: #B45309; color: #fff; border-color: #B45309; }
+.wcp-btn--gold:hover { filter: brightness(1.06); color: #fff; }
+.wcp-btn--gold:disabled { opacity: .6; cursor: default; }
+.wcp-finalchip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 9px;
+  background: color-mix(in srgb, #0E7C66 14%, transparent); color: #0E7C66; border: 1px solid #0E7C66; font-size: 13px; font-weight: 600; }
+.wcp-finalchip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #0E7C66; }

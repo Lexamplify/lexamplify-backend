@@ -53,6 +53,8 @@ export const vaultApi = {
   saveAs: (id, body) => json(`/api/vault/documents/${id}/save-as`, { method: 'POST', json: body }),
   // Create a NEW document from editor HTML (used by the WordCraft editor's "Save to Documents").
   draftSave: (body) => json('/api/vault/documents/draft-save', { method: 'POST', json: body }),
+  // Update a document's metadata (title/tags/folder). Used to mark a draft FINAL.
+  updateDoc: (id, body) => json(`/api/vault/documents/${id}`, { method: 'PUT', json: body }),
   exportBlob: async (id, body, fallbackName = 'document') => {
     const res = await raw(`/api/vault/documents/${id}/export`, { method: 'POST', json: body });
     return { blob: await res.blob(), filename: fileNameFrom(res, fallbackName) };

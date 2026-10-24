@@ -1510,6 +1510,11 @@ def create_vault_workspace_blueprint(deps):
                     'document', doc_id, new_title, 'renamed', uid, doc_owner_uid,
                     {'old_title': old_title, 'new_title': new_title}
                 )
+            if 'tags' in data:
+                new_tags = (str(data.get('tags') or '')).strip()[:120]
+                app_module.db.execute('UPDATE case_vault SET tags = ? WHERE id = ?', (new_tags, doc_id))
+                if 'FINAL' in new_tags.upper():
+                    app_module._write_provenance('document', doc_id, old_title, 'finalised', uid, doc_owner_uid, {'tags': new_tags})
             if 'folder_id' in data:
                 new_folder_id = data.get('folder_id')
                 if new_folder_id is not None:

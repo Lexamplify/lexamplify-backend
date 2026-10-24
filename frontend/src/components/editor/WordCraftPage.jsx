@@ -76,6 +76,9 @@ export default function WordCraftPage() {
   const [filing, setFiling] = useState(false);
   const [filed, setFiled] = useState(null); // {caseTitle, location, id, html}
   const [shareOpen, setShareOpen] = useState(false);
+  const [finalised, setFinalised] = useState(false);
+  const [finalising, setFinalising] = useState(false);
+  const finalisedRef = useRef(false);
 
   const wsRef = useRef(null);
   const saveTimer = useRef(null);
@@ -201,6 +204,7 @@ export default function WordCraftPage() {
   }, [vaultMode, vaultId, id]);
 
   const autosaveNow = useCallback(async () => {
+    if (finalisedRef.current) return; // a finalised document is locked
     const html = latestRef.current.html;
     const text = latestRef.current.text;
     if (!savedDocIdRef.current || !html || !(text || '').trim()) return; // never autosave an empty doc
@@ -248,6 +252,7 @@ export default function WordCraftPage() {
 
   async function runEdit(instruction) {
     if (!bridge || busy) return;
+    if (finalised) { setLog((l) => [...l, { who: 'ai', text: 'This document is finalised and locked. Duplicate it to keep editing.' }]); return; }
     const sel = bridge.selection().trim();
     if (!sel) {
       setLog((l) => [...l, { who: 'ai', text: 'Select some text in the document first, then I’ll rewrite exactly that.' }]);
@@ -291,6 +296,27 @@ export default function WordCraftPage() {
   function flash(msg) {
     setSaveMsg(msg);
     setTimeout(() => setSaveMsg(null), 4000);
+  }
+
+  async function finalise() {
+    if (finalising || finalised) return;
+    // A finalised document must already live in the vault, so ensure it is saved first.
+    let docId = savedDocIdRef.current;
+    if (!docId) { await saveToDocuments(); docId = savedDocIdRef.current; }
+    if (!docId) { setSaveMsg('Save to Documents before finalising.'); return; }
+    setFinalising(true);
+    try {
+      await vaultApi.updateDoc(docId, { tags: 'FINAL' });
+      finalisedRef.current = true;
+      setFinalised(true);
+      clearTimeout(autosaveTimer.current);
+      setSaveMsg('Finalised and locked.');
+    } catch (e) {
+      setSaveMsg((e && e.message) || 'Could not finalise.');
+    } finally {
+      setFinalising(false);
+      setTimeout(() => setSaveMsg(null), 4000);
+    }
   }
 
   async function saveToDocuments() {
@@ -430,8 +456,15 @@ export default function WordCraftPage() {
           >
             Share
           </button>
-          <button className="wcp-btn" onClick={openFilePicker} aria-expanded={fileOpen} aria-haspopup="dialog">File to matter</button>
-          <button className="wcp-btn wcp-btn--primary" onClick={saveToDocuments} disabled={savingDoc}>{savingDoc ? 'Saving…' : 'Save to Documents'}</button>
+          <button className="wcp-btn" onClick={openFilePicker} aria-expanded={fileOpen} aria-haspopup="dialog" disabled={finalised}>File to matter</button>
+          {finalised ? (
+            <span className="wcp-finalchip" title="This document is finalised and locked">Finalised</span>
+          ) : (
+            <>
+              <button className="wcp-btn wcp-btn--primary" onClick={saveToDocuments} disabled={savingDoc}>{savingDoc ? 'Saving…' : 'Save to Documents'}</button>
+              <button className="wcp-btn wcp-btn--gold" onClick={finalise} disabled={finalising} title="Lock this draft as the final version">{finalising ? 'Finalising…' : 'Finalise'}</button>
+            </>
+          )}
         </div>
 
         {fileOpen && (
