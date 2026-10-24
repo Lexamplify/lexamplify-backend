@@ -722,7 +722,8 @@ export default function CaseWorkspace() {
   const openViewer = (item) => setViewer({ id: item.id, name: item.name || item.title });
   const fail = (e, fallback) => setActionError((e && e.message) || fallback);
 
-  // Quick CNR lookup — shows exactly what eCourts returned; nothing is filled in on its behalf.
+  // Quick CNR lookup — India has no public eCourts status API, so we resolve the CNR to the
+  // correct court portal and let the advocate open it. Nothing about a case is ever invented.
   const handleFetchCnr = async () => {
     const cnr = cnrSearchInput.trim();
     if (!cnr) return;
@@ -735,17 +736,27 @@ export default function CaseWorkspace() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data && (data.case_title || data.case_number)) {
+        // Reserved for a future real status API; honest if one is ever wired in.
         setCnrResult({
           cnr,
           title: data.case_title || data.case_number,
           meta: [data.case_number || cnr, data.next_hearing && `Next hearing ${data.next_hearing}`, data.court].filter(Boolean).join(' · '),
           raw: data,
         });
+      } else if (res.ok && data && data.portal_url) {
+        setCnrResult({
+          cnr,
+          title: `Check this CNR on the ${data.court || 'court'} portal`,
+          meta: data.message || '',
+          portalUrl: data.portal_url,
+          portalLabel: `Open ${data.court || 'court'} portal`,
+          raw: data,
+        });
       } else {
-        setCnrError((typeof data?.message === 'string' && data.message) || 'No case was found for that CNR. Check the number, or add the matter manually.');
+        setCnrError((typeof data?.message === 'string' && data.message) || 'Could not resolve that CNR. Check the number, or add the matter manually.');
       }
     } catch {
-      setCnrError('Could not reach eCourts just now. Try again in a moment, or add the matter manually.');
+      setCnrError('Could not reach the server just now. Try again in a moment, or add the matter manually.');
     } finally {
       setCnrLoading(false);
     }
@@ -1482,7 +1493,7 @@ export default function CaseWorkspace() {
             <div className="cv-section-head">
               <div>
                 <h2 className="cv-section-title cv-serif">Case Tracker</h2>
-                <div className="cv-section-sub">Your active caseload, synced to eCourts where a CNR is on file.</div>
+                <div className="cv-section-sub">Your active caseload. Add a CNR and jump straight to the court's status portal.</div>
               </div>
               <button
                 type="button"
@@ -1498,9 +1509,9 @@ export default function CaseWorkspace() {
 
             {/* Quick eCourts lookup Card */}
             <div className="cv-card">
-              <div className="cv-card-eyebrow" style={{ marginBottom: '6px' }}>Quick eCourts lookup</div>
+              <div className="cv-card-eyebrow" style={{ marginBottom: '6px' }}>Quick CNR lookup</div>
               <div className="cv-card-body-text" style={{ marginBottom: '14px' }}>
-                Paste a 16-digit CNR to pull hearing status directly into the tracker.
+                Paste a 16-digit CNR — we'll take you to the right court's status portal, or you can add the matter to your tracker.
               </div>
               <div className="cv-cnr-row">
                 <input
@@ -1534,13 +1545,27 @@ export default function CaseWorkspace() {
                     <div className="cv-cnr-result-title">{cnrResult.title}</div>
                     <div className="cv-cnr-result-meta">{cnrResult.meta}</div>
                   </div>
-                  <button
-                    type="button"
-                    className="cv-btn cv-btn-sm"
-                    onClick={handleAddCnrToTracker}
-                  >
-                    Review &amp; add to tracker
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    {cnrResult.portalUrl && (
+                      <a
+                        href={cnrResult.portalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="cv-btn cv-btn-sm cv-btn-primary"
+                        style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}
+                      >
+                        {cnrResult.portalLabel || 'Open portal'}
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      className="cv-btn cv-btn-sm"
+                      onClick={handleAddCnrToTracker}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      Add to tracker
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

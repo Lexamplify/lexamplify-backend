@@ -35,78 +35,56 @@ def case_management():
 
 # ── CAUSE LIST FETCH ──────────────────────────────────────────────────────────
 
+# CNR → the right court's official status/cause-list portal. India has no public
+# eCourts JSON API (the real CNR service is a CAPTCHA-gated POST), so we never
+# claim to have fetched a case — we resolve the CNR to the correct portal and let
+# the advocate open it. Nothing about a case is ever invented on eCourts' behalf.
+_CNR_PORTALS = (
+    ("DLHC", "Delhi High Court", "https://delhihighcourt.nic.in/case-status"),
+    ("MUBH", "Bombay High Court", "https://bombayhighcourt.nic.in/casestatus.php"),
+    ("BOM", "Bombay High Court", "https://bombayhighcourt.nic.in/casestatus.php"),
+    ("MDR", "Madras High Court", "https://www.mhc.tn.gov.in/judis"),
+    ("MAD", "Madras High Court", "https://www.mhc.tn.gov.in/judis"),
+    ("KAR", "Karnataka High Court", "https://karnatakajudiciary.kar.nic.in"),
+    ("ALL", "Allahabad High Court", "https://www.allahabadhighcourt.in/apps/casestatus"),
+    ("GJHC", "Gujarat High Court", "https://gujarathighcourt.nic.in/casestatus"),
+    ("APHC", "Andhra Pradesh High Court", "https://aphc.gov.in"),
+    ("TLHC", "Telangana High Court", "https://tshc.gov.in"),
+    ("KLHC", "Kerala High Court", "https://highcourtofkerala.nic.in"),
+    ("PBHC", "Punjab & Haryana High Court", "https://highcourtchd.gov.in"),
+    ("CGHC", "Chhattisgarh High Court", "https://highcourt.cg.gov.in"),
+    ("INSC", "Supreme Court of India", "https://www.sci.gov.in/case-status-case-no/"),
+    ("SC", "Supreme Court of India", "https://www.sci.gov.in/case-status-case-no/"),
+)
+
+
 @causelist_bp.route('/api/causelist/fetch', methods=['POST'])
 def fetch_causelist():
     data = request.get_json() or {}
     cnr = (data.get('cnr_number') or data.get('cnr') or '').strip()
-    court = (data.get('court') or 'Supreme Court').strip()
 
     if not cnr:
         return jsonify({'error': 'CNR number is required'}), 400
 
-    # Determine fallback manual portal link based on CNR structure
     cnr_upper = cnr.upper()
-    if "DLHC" in cnr_upper:
-        fallback_url = "https://delhihighcourt.nic.in/causelist"
-        court_name = "Delhi High Court"
-    elif "MUBH" in cnr_upper or "BOM" in cnr_upper:
-        fallback_url = "https://bombayhighcourt.nic.in/causelist"
-        court_name = "Bombay High Court"
-    elif "MDR" in cnr_upper or "MAD" in cnr_upper:
-        fallback_url = "https://hcmadras.tn.gov.in/causelist"
-        court_name = "Madras High Court"
-    elif "KAR" in cnr_upper:
-        fallback_url = "https://karnatakajudiciary.kar.nic.in"
-        court_name = "Karnataka High Court"
-    elif "ALL" in cnr_upper:
-        fallback_url = "https://www.allahabadhighcourt.in"
-        court_name = "Allahabad High Court"
-    elif "INSC" in cnr_upper or cnr_upper.startswith("SC"):
-        fallback_url = "https://sci.gov.in/causelist"
-        court_name = "Supreme Court of India"
-    else:
-        fallback_url = "https://services.ecourts.gov.in"
-        court_name = "District/Subordinate Courts"
+    court_name = "District / Subordinate Courts"
+    portal_url = "https://services.ecourts.gov.in/ecourtindia_v6/"
+    for marker, name, url in _CNR_PORTALS:
+        if marker in cnr_upper or cnr_upper.startswith(marker):
+            court_name, portal_url = name, url
+            break
 
-    # Simulated eCourts fetch block for testing/demo
-    if cnr_upper.startswith("DEMO"):
-        return jsonify({
-            'source': 'ecourts',
-            'case_title': 'State vs. John Doe',
-            'case_number': 'CRA/123/2026',
-            'next_hearing': '2026-06-15',
-            'court': court,
-            'judge': 'Hon\'ble Mr. Justice R. Nariman',
-            'status': 'Active',
-        }), 200
-
-    # Try live eCourts API
-    try:
-        import requests as req
-        api_url = f'https://services.ecourts.gov.in/ecourtindia_v6/cases/case_details_get?cnr_number={cnr}'
-        r = req.get(api_url, timeout=5)
-        if r.status_code == 200:
-            payload = r.json()
-            case_details = payload.get('case_details') or payload
-            if case_details and (case_details.get('case_title') or case_details.get('party_name')):
-                return jsonify({
-                    'source': 'ecourts',
-                    'case_title': case_details.get('case_title') or case_details.get('party_name', 'Unknown'),
-                    'case_number': case_details.get('case_number', cnr),
-                    'next_hearing': case_details.get('next_hearing_date', '—'),
-                    'court': court,
-                    'judge': case_details.get('judge_name', '—'),
-                    'status': case_details.get('case_status', 'Active'),
-                }), 200
-    except Exception:
-        pass
-
-    # Safety Fallback
+    # Honest response: we resolved the portal, we did NOT fetch the case.
     return jsonify({
-        'source': 'fallback',
-        'fallback_url': fallback_url,
-        'message': f'eCourts API unavailable. Opening {court_name} portal.',
+        'source': 'portal',
         'cnr_number': cnr,
+        'court': court_name,
+        'portal_url': portal_url,
+        'message': (
+            f'Automated status lookup isn’t available for Indian courts. '
+            f'Open the {court_name} portal to check this CNR, or add the matter '
+            f'to your tracker manually.'
+        ),
     }), 200
 
 
