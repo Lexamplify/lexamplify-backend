@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import districtsJson from '../data/districts.json';
 import { formatCourtDisplayName, getMetroComplexes, resolveDistrictSelection } from '../utils/courtNameFormatter.js';
@@ -1086,6 +1086,24 @@ export default function CourtResources() {
   }, [location.state]);
   const [globals, setGlobals] = useState({ sc_courts: [], bare_acts: [], events: [], cause_list_urls: {} });
   const [loadingGlobals, setLoadingGlobals] = useState(true);
+
+  // Bare Acts = the curated local list (best, direct statute links — incl. the new BNS/BNSS/BSA
+  // and the Limitation Act) UNIONED with the backend catalog for breadth. Dedup by a normalized
+  // name; the local entry wins on a conflict so its better link is kept. Falls back to local-only
+  // if the backend list hasn't loaded yet.
+  const mergedBareActs = useMemo(() => {
+    const normName = (s) => String(s || '')
+      .toLowerCase()
+      .replace(/\(.*?\)/g, ' ')          // drop "(IPC)" etc.
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\b(the|indian)\b/g, ' ')  // "The Constitution" == "Constitution"; "Indian Evidence Act" == "Evidence Act"
+      .replace(/\s+/g, ' ')
+      .trim();
+    const seen = new Set(BARE_ACTS.map((a) => normName(a.name)));
+    const extras = (Array.isArray(globals.bare_acts) ? globals.bare_acts : [])
+      .filter((a) => a && a.name && a.url && !seen.has(normName(a.name)));
+    return [...BARE_ACTS, ...extras];
+  }, [globals.bare_acts]);
   const [scRoster, setScRoster] = useState([]);
   const [scLoading, setScLoading] = useState(true);
   const [scError, setScError] = useState(null);
@@ -2052,7 +2070,7 @@ export default function CourtResources() {
             </div>
 
             <div className="bare-acts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
-              {BARE_ACTS
+              {mergedBareActs
                 .filter(act => act.name.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((act, index) => (
                   <a
