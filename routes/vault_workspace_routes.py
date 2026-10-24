@@ -106,6 +106,7 @@ def dated_events_in(text, limit=8):
 from utils.vault_docs_convert import (  # noqa: E402  (conversion lives in one place: layout-preserving both ways)
     _esc, docx_to_html, html_to_docx, html_to_pdf, html_to_text, pdf_to_html, text_to_html,
 )
+from utils import doc_storage  # noqa: E402
 
 FORMATS = {
     "docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Word document"),
@@ -325,7 +326,8 @@ def create_vault_workspace_blueprint(deps):
 
     def doc_bytes(c, row, hub):
         if row["has_blob"]:
-            return bytes(c.execute("SELECT file_blob FROM case_vault WHERE id = ?", (row["id"],)).fetchone()[0])
+            _raw = c.execute("SELECT file_blob FROM case_vault WHERE id = ?", (row["id"],)).fetchone()[0]
+            return doc_storage.resolve(_raw)
         if hub is None:
             return None
         from utils import dms_store
@@ -491,6 +493,7 @@ def create_vault_workspace_blueprint(deps):
                 return err("You can view this document but not add copies to its folder.", 403)
             text = html_to_text(html)
             blob = html_to_docx(html, row["smart_title"] or row["title"])
+            blob = doc_storage.store(blob, 'docx')  # durable when DOC_STORAGE=disk; unchanged on sqlite
             target = body.get("target_id")
             if target:
                 t = c.execute("SELECT id, user_id, tags FROM case_vault WHERE id = ?", (int(target),)).fetchone()
@@ -672,6 +675,7 @@ def create_vault_workspace_blueprint(deps):
                 case_ref, location = f"draft_{int(datetime.utcnow().timestamp())}_{__import__('uuid').uuid4().hex[:6]}", "Firm Library"
             try:
                 blob = render_format(fmt, html, base)
+                blob = doc_storage.store(blob, fmt)  # durable when DOC_STORAGE=disk; unchanged on sqlite
             except Exception as exc:
                 log(f"vault save-as: render {fmt} failed: {exc}")
                 return err(f"Could not create the {FORMATS[fmt][1]} file.", 500)
@@ -789,6 +793,7 @@ def create_vault_workspace_blueprint(deps):
                 case_ref, location = f"draft_{int(datetime.utcnow().timestamp())}_{__import__('uuid').uuid4().hex[:6]}", "Firm Library"
             try:
                 blob = render_format(fmt, html, base)
+                blob = doc_storage.store(blob, fmt)  # durable when DOC_STORAGE=disk; unchanged on sqlite
             except Exception as exc:
                 log(f"draft-save: render {fmt} failed: {exc}")
                 return err(f"Could not create the {FORMATS[fmt][1]} file.", 500)
@@ -1691,6 +1696,7 @@ def create_vault_workspace_blueprint(deps):
 
             conn = app_module.db
             c = conn.cursor()
+            file_blob = doc_storage.store(file_blob, file_format)  # durable when DOC_STORAGE=disk; unchanged on sqlite
             c.execute(
                 'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (str(case_id), str(title), str(doc_type or ''), str(content), folder_id, smart_title, tags, file_blob, file_format, uid)

@@ -8,6 +8,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy.exc import SQLAlchemyError
 import os
+from utils import doc_storage
 import re
 import secrets
 import click
@@ -1770,6 +1771,8 @@ def create_app():
             file_bytes = f.read()
             ext = (f.filename.rsplit('.', 1)[-1] if '.' in f.filename else '').lower()
             title = f.filename.rsplit('.', 1)[0] if '.' in f.filename else f.filename
+            from utils import doc_storage  # module-global is shadowed as a create_app local here
+            file_bytes = doc_storage.store(file_bytes, ext)  # durable when DOC_STORAGE=disk; unchanged on sqlite
 
             c = db.cursor()
             c.execute(
@@ -1892,8 +1895,10 @@ def create_app():
             mime = _KNOWN_MIMES.get(fmt, 'application/octet-stream')
             ext = f'.{fmt}' if fmt and fmt != 'native' else ''
             safe_name = ''.join(c for c in name if c.isalnum() or c in ' _-.')
+            from utils import doc_storage
+            _served = doc_storage.resolve(row[0])
             return FlaskResponse(
-                bytes(row[0]),
+                _served,
                 mimetype=mime,
                 headers={'Content-Disposition': f'attachment; filename="{safe_name}{ext}"'},
             )

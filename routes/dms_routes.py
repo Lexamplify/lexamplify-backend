@@ -32,6 +32,7 @@ from flask import Blueprint, Response, g, jsonify, request, send_file, stream_wi
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from utils import dms_classify as C
+from utils import doc_storage
 from utils import dms_extract as X
 from utils import dms_index as I
 from utils import dms_preview as P
@@ -366,7 +367,7 @@ def create_dms_blueprint(deps):
             if not row:
                 continue
             try:
-                data = bytes(row["file_blob"]) if row["file_blob"] else None
+                data = doc_storage.resolve(row["file_blob"]) if row["file_blob"] else None
                 title = row["title"] or row["smart_title"] or f"Document {cv_id}"
                 if data is None:
                     text = row["content"] or ""
