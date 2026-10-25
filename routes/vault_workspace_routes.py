@@ -592,13 +592,11 @@ def create_vault_workspace_blueprint(deps):
         u = uid()
         c = _connect(db_path)
         try:
-            rows = c.execute("SELECT id, name, parent_id, user_id FROM vault_folders WHERE user_id = ? OR user_id IS NULL "
+            rows = c.execute("SELECT id, name, parent_id, user_id FROM vault_folders WHERE user_id = ? "
                              "ORDER BY name COLLATE NOCASE LIMIT 1500", (u,)).fetchall()
             by_id = {r["id"]: r for r in rows}
             folders = []
             for r in rows:
-                if r["user_id"] is None and not deps["folder_ok"](r["id"], u):
-                    continue
                 path, cur, guard = [], r, 0
                 while cur is not None and guard < 12:
                     path.append(cur["name"])
@@ -1394,7 +1392,7 @@ def create_vault_workspace_blueprint(deps):
         uid = app_module._current_vault_user_id()
         try:
             existing = app_module.db.execute(
-                'SELECT name FROM vault_folders WHERE parent_id IS NULL AND (user_id = ? OR user_id IS NULL)',
+                'SELECT name FROM vault_folders WHERE parent_id IS NULL AND user_id = ?',
                 (uid,)
             ).fetchall()
             existing_names = {r[0] for r in existing}

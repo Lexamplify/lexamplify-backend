@@ -885,9 +885,10 @@ def _effective_permission(node_type, node_id, member_ids):
 
 def _visible_shared_vault_ids(current_user_id, include_nav=True, member_ids=None):
     """Additional folder/document ids a non-owner can see through sharing —
-    composes with the existing `user_id = ? OR user_id IS NULL` filters via
-    `OR id IN (...)` rather than replacing them, so every pre-Phase-2 query
-    keeps its ownership semantics unchanged and only gains extra rows.
+    composes with the `user_id = ?` owner filter via `OR id IN (...)` (and
+    `OR folder_id IN (...)`) rather than replacing it, so private vault
+    queries show only the signed-in user's own rows plus rows shared with
+    them (rows with `user_id IS NULL` are never included in private lists).
 
     Sharing a folder grants access to everything nested inside it, so a
     shared folder's entire descendant subtree is included even though only
@@ -1578,7 +1579,7 @@ def create_app():
         def _vw_scope(user_id):
             sf, sd = _visible_shared_vault_ids(user_id, include_nav=False)
             return (
-                '(cv.user_id = ? OR cv.user_id IS NULL OR cv.folder_id IN (SELECT value FROM json_each(?)) '
+                '(cv.user_id = ? OR cv.folder_id IN (SELECT value FROM json_each(?)) '
                 'OR cv.id IN (SELECT value FROM json_each(?))) AND ' + _dms_hidden_sql('cv'),
                 [user_id, json.dumps(sorted(sf)), json.dumps(sorted(sd))],
             )
@@ -1624,7 +1625,7 @@ def create_app():
             try:
                 rows = conn.execute(
                     'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
-                    'WHERE user_id = ? OR user_id IS NULL OR id IN (SELECT value FROM json_each(?)) ORDER BY name ASC',
+                    'WHERE user_id = ? OR id IN (SELECT value FROM json_each(?)) ORDER BY name ASC',
                     (uid, json.dumps(sorted(tree_folder_ids)))
                 ).fetchall()
 
@@ -1660,7 +1661,7 @@ def create_app():
                 # display must reflect nested contents too.
                 count_rows = conn.execute(
                     'SELECT cv.folder_id, COUNT(*) AS cnt FROM case_vault cv '
-                    'WHERE (cv.user_id = ? OR cv.user_id IS NULL '
+                    'WHERE (cv.user_id = ? '
                     '       OR cv.folder_id IN (SELECT value FROM json_each(?)) '
                     '       OR cv.id IN (SELECT value FROM json_each(?))) '
                     f'AND {_dms_hidden_sql("cv")} GROUP BY cv.folder_id',
@@ -1959,7 +1960,7 @@ def create_app():
                 offset = 0
 
             # Never list what is in the Document Hub's trash.
-            where_clauses = ['(cv.user_id = ? OR cv.user_id IS NULL)', _dms_hidden_sql('cv')]
+            where_clauses = ['(cv.user_id = ?)', _dms_hidden_sql('cv')]
             params = [uid]
             if q:
                 like = f'%{q}%'
@@ -2056,7 +2057,7 @@ def create_app():
                     'SELECT cv.id, cv.title, cv.smart_title, cv.doc_type, cv.folder_id, cv.file_format, cv.tags, '
                     f'{size_sql} AS size_bytes, cv.created_at '
                     f'FROM case_vault cv {join_sql} '
-                    'WHERE (cv.user_id = ? OR cv.user_id IS NULL '
+                    'WHERE (cv.user_id = ? '
                     '       OR cv.folder_id IN (SELECT value FROM json_each(?)) '
                     '       OR cv.id IN (SELECT value FROM json_each(?))) '
                     f'AND {_dms_hidden_sql("cv")} ORDER BY cv.created_at DESC',
