@@ -12,18 +12,20 @@ Requires env vars (unset -> route responds 503, does not crash the app):
   SSO_FRONTEND_REDIRECT (where to land the browser after a successful login, e.g. https://app.lexamplify.in/dashboard)
 """
 import os
-import sqlite3
 import secrets
 from urllib.parse import urlsplit, urlunsplit, urlencode
 
-from flask import Blueprint, redirect, url_for, session, current_app
+from flask import Blueprint, redirect, url_for, current_app
 from authlib.integrations.flask_client import OAuth
 from flask_jwt_extended import create_access_token, create_refresh_token, set_access_cookies, set_refresh_cookies
+from sqlalchemy.exc import IntegrityError
+from werkzeug.security import generate_password_hash
+
+from database import db
+from models.user import User
 
 sso_bp = Blueprint("sso", __name__, url_prefix="/api/auth/sso")
 oauth = OAuth()
-
-DB_PATH = "lex_assistant.db"
 FRONTEND_REDIRECT = os.getenv("SSO_FRONTEND_REDIRECT", "http://localhost:5173/dashboard")
 if os.getenv("FLASK_ENV") == "production" and not os.getenv("SSO_FRONTEND_REDIRECT"):
     # This is the exact failure mode of bouncing a real OAuth login back to
@@ -67,38 +69,43 @@ def init_sso(app):
         )
 
 
+def _email_verified_is_false(claims):
+    """True only when the provider explicitly says the email is not verified."""
+    if "email_verified" not in claims:
+        return False
+    value = claims.get("email_verified")
+    return value is False or (isinstance(value, str) and value.strip().lower() == "false")
+
+
 def _find_or_create_sso_user(email, name):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    email = (email or "").strip().lower()
+    user = User.query.filter_by(email=email).first()
+    if user:
+        return user.id
+
+    # SSO accounts get an unusable random password hash — they can only
+    # ever authenticate via the provider, never via /api/auth/login.
+    display_name = (name or "").strip() or email.split("@")[0]
+    user = User(
+        email=email,
+        password=generate_password_hash(secrets.token_hex(32)),
+        name=display_name[:120],
+    )
     try:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL
-            )
-        ''')
-        for col, col_type in (("name", "TEXT"), ("created_at", "TEXT DEFAULT CURRENT_TIMESTAMP"), ("sso_provider", "TEXT")):
-            try:
-                conn.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
-            except sqlite3.OperationalError:
-                pass
-
-        row = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-        if row:
-            return row["id"]
-
-        # SSO accounts get an unusable random password hash — they can only
-        # ever authenticate via the provider, never via /api/auth/login.
-        unusable_password = secrets.token_hex(32)
-        cur = conn.execute(
-            "INSERT INTO users (email, password, name) VALUES (?, ?, ?)",
-            (email, unusable_password, name or email.split("@")[0]),
-        )
-        conn.commit()
-        return cur.lastrowid
-    finally:
-        conn.close()
+        db.session.add(user)
+        db.session.commit()
+        return user.id
+    except IntegrityError:
+        # Two first-time SSO requests can race for the same email. The
+        # database's unique constraint decides the winner; return that row.
+        db.session.rollback()
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            return existing.id
+        raise
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def _two_step_blocks_sso(provider, user_id):
@@ -176,6 +183,8 @@ def microsoft_callback():
         name = claims.get("name") or ""
         if not email:
             return _sso_redirect_with_error("Microsoft", "no_email", "Microsoft did not return an email claim.")
+        if _email_verified_is_false(claims):
+            return _sso_redirect_with_error("Microsoft", "email_not_verified", "Microsoft says this email address is not verified.")
         user_id = _find_or_create_sso_user(email, name)
         blocked = _two_step_blocks_sso("Microsoft", user_id)
         if blocked:
@@ -204,6 +213,8 @@ def google_callback():
         name = claims.get("name") or ""
         if not email:
             return _sso_redirect_with_error("Google", "no_email", "Google did not return an email claim.")
+        if _email_verified_is_false(claims):
+            return _sso_redirect_with_error("Google", "email_not_verified", "Google says this email address is not verified.")
         user_id = _find_or_create_sso_user(email, name)
         blocked = _two_step_blocks_sso("Google", user_id)
         if blocked:

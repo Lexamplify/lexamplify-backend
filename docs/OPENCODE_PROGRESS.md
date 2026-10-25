@@ -1013,3 +1013,13 @@ $env:E2E_REBUILD="1"; .\venv\Scripts\python.exe -m pytest tests\e2e -q
 .\venv\Scripts\python.exe scripts\eval_drafts.py --stub --no-report   # no model, no report
 .\venv\Scripts\python.exe scripts\eval_drafts.py --only s138-05  # one matter
 ```
+
+## SSO users now live in Neon (`sso-neon-fix`)
+
+`routes/sso_routes.py` finds and creates accounts through the SQLAlchemy `User` model, so SSO sign-in uses the same
+Neon users table and ids as password sign-in. Two points are known and left for the owner to decide:
+
+1. An SSO user that only existed in the old `lex_assistant.db` gets a new Neon id on first sign-in, exactly as the
+   startup migration already does for old password users.
+2. SSO sign-in now matches ANY Neon user by email, including password users. The Microsoft email claim can be
+   unverified on multi-tenant ("common") setups; whether to require a verified Microsoft email is a product decision.
