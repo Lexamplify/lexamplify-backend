@@ -335,11 +335,19 @@ def save_case_to_vault(cursor, case_id, title, content, doc_type="Judgment"):
 
     Caller MUST hold db_lock — this function is not safe to call concurrently
     on the same connection without it."""
-    row = cursor.execute("SELECT content FROM case_vault WHERE case_id = ? LIMIT 1", (case_id,)).fetchone()
+    try:
+        cursor.execute("ALTER TABLE case_vault ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    row = cursor.execute(
+        "SELECT content FROM case_vault WHERE case_id = ? AND is_public = 1 LIMIT 1",
+        (case_id,),
+    ).fetchone()
 
     if row is None:
         cursor.execute(
-            "INSERT INTO case_vault (case_id, title, doc_type, content) VALUES (?, ?, ?, ?)",
+            "INSERT INTO case_vault (case_id, title, doc_type, content, is_public) VALUES (?, ?, ?, ?, 1)",
             (case_id, title, doc_type, content),
         )
         return "inserted"
@@ -347,7 +355,7 @@ def save_case_to_vault(cursor, case_id, title, content, doc_type="Judgment"):
     existing_content = row[0] or ""
     if len(content) > len(existing_content) + FORCE_UPDATE_MIN_CHAR_DELTA:
         cursor.execute(
-            "UPDATE case_vault SET content = ?, title = ? WHERE case_id = ?",
+            "UPDATE case_vault SET content = ?, title = ? WHERE case_id = ? AND is_public = 1",
             (content, title, case_id),
         )
         return "updated"

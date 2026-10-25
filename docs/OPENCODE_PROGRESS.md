@@ -1023,3 +1023,13 @@ Neon users table and ids as password sign-in. Two points are known and left for 
    startup migration already does for old password users.
 2. SSO sign-in now matches ANY Neon user by email, including password users. The Microsoft email claim can be
    unverified on multi-tenant ("common") setups; whether to require a verified Microsoft email is a product decision.
+
+## Part 2 — Case Vault Privacy Fix (`vault-privacy-fix`)
+
+### Batch 1 of 6 — `is_public` marker, one-time backfill, and strict central owner check (DONE)
+
+- **Schema & backfill (`app.py`, `tests/conftest.py`):** Added `is_public INTEGER NOT NULL DEFAULT 0` to `case_vault` in both `init_db()` and `create_app()` (never on `vault_folders`), plus `VAULT_SCHEMA` in `tests/conftest.py`. Added `_backfill_public_vault_rows(conn)` which runs once only when the `ALTER TABLE case_vault ADD COLUMN is_public ...` succeeds, setting `is_public = 1` where `user_id IS NULL AND doc_type = 'Judgment' AND folder_id IS NULL AND smart_title IS NULL AND tags IS NULL AND file_blob IS NULL AND file_format IS NULL AND ratio_headnote IS NULL`, and logging only the counts (`marked` and `null_owner_hidden`).
+- **Central authorization (`app.py`):** `_vault_owner_ok(row_user_id, current_user_id)` now requires `row_user_id is not None and int(row_user_id) == int(current_user_id)`. `_vault_access_ok` grants read-only (`require_edit=False`) access when `node_type == 'document'`, `row_user_id is None`, and `case_vault.is_public == 1` (wrapped in `try/except`), while never allowing `require_edit=True` on public rows and never treating folders as public.
+- **Mass ingestion (`mass_ingestion.py`):** `save_case_to_vault` ensures `is_public` exists on `case_vault`, inserts with `is_public = 1`, and restricts its existing-row `SELECT` and force-update `UPDATE` to `WHERE case_id = ? AND is_public = 1` so re-runs cannot overwrite a user-owned row with the same `case_id`.
+- **Accepted risk & deployment warning:** A private legacy `user_id IS NULL` document with `doc_type = 'Judgment'` and no folder, smart title, tags, file blob/format, or ratio headnote could match the backfill fingerprint by accident and remain readable (read-only) on public surfaces. Additionally, list queries still include `user_id IS NULL` rows until Batches 2–4 land — **do not deploy between batches**.
+
