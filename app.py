@@ -2107,7 +2107,10 @@ def create_app():
                         select_cols.append(optional_col)
                 where, params = [_dms_hidden_sql('case_vault')], []
                 if 'user_id' in table_cols:
-                    where.append('(user_id = ? OR user_id IS NULL)')
+                    if 'is_public' in table_cols:
+                        where.append('(user_id = ? OR is_public = 1)')
+                    else:
+                        where.append('user_id = ?')
                     params.append(uid)
                 if _dms_present() and 'file_blob' in table_cols:
                     # Files that went in through the Document Hub have no text or blob in this row, so

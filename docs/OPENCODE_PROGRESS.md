@@ -1040,4 +1040,12 @@ Neon users table and ids as password sign-in. Two points are known and left for 
 - **Tests (`tests/test_vault_private_lists.py`):** Added regression tests verifying that `user_id IS NULL` folders and documents (both `is_public = 0` and `is_public = 1`) never appear in `GET /api/vault/documents`, `GET /api/vault/meta`, `GET /api/vault/folders` (and `doc_counts`), `GET /api/vault/overview`, `GET /api/vault/timeline` (normal and `?deep=1`), or `GET /api/vault/destinations`, while shared documents/folders still appear for recipients and `POST /api/vault/folders/init-blueprint` ignores unowned root folders.
 - **Deployment warning:** The Firm Library (`GET /api/firm-library`), document/legal-research APIs, chat tools, audit/provenance feeds, and folder delete paths are still unchanged until Batches 3–6 land — **do not deploy yet**.
 
+### Batch 3 of 6 — Public judgments on Firm Library & Legal Research; owner-only documents API, matter documents, and case autocomplete (DONE)
+
+- **Public judgment read surfaces (`app.py`, `routes/legal_research_routes.py`):** Updated `GET /api/firm-library` in `app.py` to filter by `(user_id = ? OR is_public = 1)` when `is_public` is present in `case_vault` (falling back to `user_id = ?` otherwise), and updated `GET /api/legal-research/document/<case_id>` in `routes/legal_research_routes.py` from `(user_id = ? OR user_id IS NULL)` to `(user_id = ? OR is_public = 1)`.
+- **Owner-only endpoints (`routes/document_routes.py`, `routes/matter_routes.py`, `routes/cases_routes.py`):** Scoped `GET /api/documents` (both with and without `case_id`) and `GET /api/documents/<id>` in `routes/document_routes.py`, `GET /api/matters/<id>/documents` in `routes/matter_routes.py`, and `GET /api/cases/autocomplete` in `routes/cases_routes.py` strictly to the signed-in user's own rows (`user_id = ?` / `row["user_id"] is not None and int(row["user_id"]) == user_id`).
+- **Tests (`tests/test_vault_public_reads.py`, `tests/test_app_vault_patch.py`):** Updated `test_firm_library_needs_a_login_and_is_scoped` in `tests/test_app_vault_patch.py` so unowned non-public rows stay hidden while `is_public = 1` rows appear for all signed-in users, and added `tests/test_vault_public_reads.py` covering all five surfaces.
+- **Deployment warning:** The chat/AI routes, audit/provenance feeds, and delete paths are still unchanged until Batches 4–6 land — **do not deploy yet**.
+
+
 

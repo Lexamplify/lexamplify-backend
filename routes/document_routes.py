@@ -460,14 +460,14 @@ def list_documents():
         if case_id_raw:
             rows = conn.execute(
                 "SELECT id AS doc_id, case_id, title, doc_type, tags, created_at "
-                "FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+                "FROM case_vault WHERE case_id = ? AND user_id = ? "
                 "ORDER BY created_at DESC",
                 (case_id_raw, user_id)
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT id AS doc_id, case_id, title, doc_type, tags, created_at "
-                "FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC",
+                "FROM case_vault WHERE user_id = ? ORDER BY created_at DESC",
                 (user_id,)
             ).fetchall()
     except Exception as e:
@@ -505,7 +505,7 @@ def get_document_details(doc_id):
             "FROM case_vault WHERE id = ?",
             (doc_id,)
         ).fetchone()
-        if not row or not (row["user_id"] is None or row["user_id"] == user_id):
+        if not row or row["user_id"] is None or int(row["user_id"]) != user_id:
             return jsonify({"error": "Document not found."}), 404
 
         chunk_rows = conn.execute(

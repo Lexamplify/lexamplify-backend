@@ -27,7 +27,7 @@ def api_cases_autocomplete():
         # Parameterized placeholder — the LIKE wildcard is built into the
         # bound value, never concatenated into the SQL string itself.
         c.execute(
-            "SELECT id, title FROM case_vault WHERE title LIKE ? AND (user_id = ? OR user_id IS NULL) "
+            "SELECT id, title FROM case_vault WHERE title LIKE ? AND user_id = ? "
             "ORDER BY created_at DESC LIMIT 10",
             (f'%{q}%', uid)
         )
