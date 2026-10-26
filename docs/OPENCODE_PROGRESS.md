@@ -1023,3 +1023,65 @@ Neon users table and ids as password sign-in. Two points are known and left for 
    startup migration already does for old password users.
 2. SSO sign-in now matches ANY Neon user by email, including password users. The Microsoft email claim can be
    unverified on multi-tenant ("common") setups; whether to require a verified Microsoft email is a product decision.
+
+## Part 2 — Case Vault Privacy Fix (`vault-privacy-fix`)
+
+### Batch 1 of 6 — `is_public` marker, one-time backfill, and strict central owner check (DONE)
+
+- **Schema & backfill (`app.py`, `tests/conftest.py`):** Added `is_public INTEGER NOT NULL DEFAULT 0` to `case_vault` in both `init_db()` and `create_app()` (never on `vault_folders`), plus `VAULT_SCHEMA` in `tests/conftest.py`. Added `_backfill_public_vault_rows(conn)` which runs once only when the `ALTER TABLE case_vault ADD COLUMN is_public ...` succeeds, setting `is_public = 1` where `user_id IS NULL AND doc_type = 'Judgment' AND folder_id IS NULL AND smart_title IS NULL AND tags IS NULL AND file_blob IS NULL AND file_format IS NULL AND ratio_headnote IS NULL`, and logging only the counts (`marked` and `null_owner_hidden`).
+- **Central authorization (`app.py`):** `_vault_owner_ok(row_user_id, current_user_id)` now requires `row_user_id is not None and int(row_user_id) == int(current_user_id)`. `_vault_access_ok` grants read-only (`require_edit=False`) access when `node_type == 'document'`, `row_user_id is None`, and `case_vault.is_public == 1` (wrapped in `try/except`), while never allowing `require_edit=True` on public rows and never treating folders as public.
+- **Mass ingestion (`mass_ingestion.py`):** `save_case_to_vault` ensures `is_public` exists on `case_vault`, inserts with `is_public = 1`, and restricts its existing-row `SELECT` and force-update `UPDATE` to `WHERE case_id = ? AND is_public = 1` so re-runs cannot overwrite a user-owned row with the same `case_id`.
+- **Accepted risk & deployment warning:** A private legacy `user_id IS NULL` document with `doc_type = 'Judgment'` and no folder, smart title, tags, file blob/format, or ratio headnote could match the backfill fingerprint by accident and remain readable (read-only) on public surfaces. Additionally, list queries still include `user_id IS NULL` rows until Batches 2–4 land — **do not deploy between batches**.
+
+### Batch 2 of 6 — Private vault lists, counts, overview, timeline, destinations, and blueprint collision check (DONE)
+
+- **Private queries in `app.py`:** Removed `OR cv.user_id IS NULL` / `OR user_id IS NULL` from `_vw_scope` (passed as `deps['scope']` to `routes/vault_workspace_routes.py`, used by `visible_docs` at `:151` for `GET /api/vault/overview` at `:166` and `GET /api/vault/timeline` at `:260`, plus deep timeline at `:273`), `GET /api/vault/folders` folder list and per-folder document counts, `GET /api/vault/documents`, and `GET /api/vault/meta`. Updated `_visible_shared_vault_ids` docstring accordingly.
+- **Workspace routes (`routes/vault_workspace_routes.py`):** Scoped `GET /api/vault/destinations` folder query to `WHERE user_id = ?` (removing the now-dead `r["user_id"] is None` branch) and scoped `POST /api/vault/folders/init-blueprint`'s root-folder name collision query to `WHERE parent_id IS NULL AND user_id = ?`.
+- **Tests (`tests/test_vault_private_lists.py`):** Added regression tests verifying that `user_id IS NULL` folders and documents (both `is_public = 0` and `is_public = 1`) never appear in `GET /api/vault/documents`, `GET /api/vault/meta`, `GET /api/vault/folders` (and `doc_counts`), `GET /api/vault/overview`, `GET /api/vault/timeline` (normal and `?deep=1`), or `GET /api/vault/destinations`, while shared documents/folders still appear for recipients and `POST /api/vault/folders/init-blueprint` ignores unowned root folders.
+- **Deployment warning:** The Firm Library (`GET /api/firm-library`), document/legal-research APIs, chat tools, audit/provenance feeds, and folder delete paths are still unchanged until Batches 3–6 land — **do not deploy yet**.
+
+### Batch 3 of 6 — Public judgments on Firm Library & Legal Research; owner-only documents API, matter documents, and case autocomplete (DONE)
+
+- **Public judgment read surfaces (`app.py`, `routes/legal_research_routes.py`):** Updated `GET /api/firm-library` in `app.py` to filter by `(user_id = ? OR is_public = 1)` when `is_public` is present in `case_vault` (falling back to `user_id = ?` otherwise), and updated `GET /api/legal-research/document/<case_id>` in `routes/legal_research_routes.py` from `(user_id = ? OR user_id IS NULL)` to `(user_id = ? OR is_public = 1)`.
+- **Owner-only endpoints (`routes/document_routes.py`, `routes/matter_routes.py`, `routes/cases_routes.py`):** Scoped `GET /api/documents` (both with and without `case_id`) and `GET /api/documents/<id>` in `routes/document_routes.py`, `GET /api/matters/<id>/documents` in `routes/matter_routes.py`, and `GET /api/cases/autocomplete` in `routes/cases_routes.py` strictly to the signed-in user's own rows (`user_id = ?` / `row["user_id"] is not None and int(row["user_id"]) == user_id`).
+- **Tests (`tests/test_vault_public_reads.py`, `tests/test_app_vault_patch.py`):** Updated `test_firm_library_needs_a_login_and_is_scoped` in `tests/test_app_vault_patch.py` so unowned non-public rows stay hidden while `is_public = 1` rows appear for all signed-in users, and added `tests/test_vault_public_reads.py` covering all five surfaces.
+- **Deployment warning:** The chat/AI routes, audit/provenance feeds, and delete paths are still unchanged until Batches 4–6 land — **do not deploy yet**.
+
+### Batch 4 of 6 — AI and chat vault reads use owner-only or public-judgment access (DONE)
+
+- **AI simulation reads (`routes/ai_routes.py`):** Changed both `case_vault` queries in `POST /api/ai/simulate` (`:395` Pass 1 `document_reference` match and `:435` Pass 3 most-recent document fallback) from `AND (user_id = ? OR user_id IS NULL)` to `AND user_id = ?` and updated their comments to state they are scoped to the user's own documents only.
+- **Chat assistant tools (`routes/assistant_routes.py`):** In `POST /api/chat`, changed `run_courtroom_simulation` (`:713`) and the `search_case_vault` no-argument fallback list (`:885`) to `user_id = ?` (own documents only). Changed `search_case_vault` by `case_id` (`:858`) and by `search_query` (`:865`) to `(user_id = ? OR is_public = 1)` when `is_public` exists on `case_vault` (falling back to `user_id = ?` if missing).
+- **Tests (`tests/test_vault_ai_reads.py`):** Added end-to-end handler tests with mocked Groq completions for two users, an unowned `is_public = 0` row, and an unowned `is_public = 1` row across all six queries.
+- **Deployment warning:** Audit/provenance feeds and delete paths are still unchanged until Batches 5–6 land — **do not deploy yet**.
+
+
+
+### Batch 5 of 6 — Audit and provenance feeds show only the owner's records (DONE)
+
+- **Provenance feed (`routes/vault_workspace_routes.py`):** In `GET /api/vault/provenance`, changed the `vault_provenance` filter from `(owner_user_id = ? OR owner_user_id IS NULL OR actor_user_id = ?)` to `(owner_user_id = ? OR actor_user_id = ?)` (keeping actor visibility) and changed the folded-in `vault_audit` filter from `(cv.user_id = ? OR cv.user_id IS NULL)` to `cv.user_id = ?`. Left `GET /api/vault/provenance/verify` untouched so it continues to verify the full hash chain.
+- **Audit trail (`routes/vault_workspace_routes.py`):** In `GET /api/vault/audit-trail`, changed both the `folder_id` query (`WHERE va.folder_id = ? AND cv.user_id = ?`) and the vault-wide query (`WHERE cv.user_id = ?`) to require `cv.user_id = ?`, hiding both unowned documents and deleted-document (`LEFT JOIN` NULL) audit threads.
+- **Tests (`tests/test_vault_audit_feeds.py`):** Added end-to-end tests for two users covering owned, unowned, cross-actor, and deleted-document rows across `GET /api/vault/provenance` and `GET /api/vault/audit-trail` (with and without `folder_id`, plus cross-user `folder_id` and `node_type`/`node_id` attack cases).
+- **Deployment warning:** Folder and document delete paths (`app.py`) remain for Batch 6 — **do not deploy yet**.
+
+### Batch 6 of 6 — Delete paths are strictly owner-only and covered by tests (DONE)
+
+- **Old document delete (`routes/document_routes.py:544`):** Changed `delete_document` from `if not row or not (row[1] is None or row[1] == user_id):` to `if not row or row[1] is None or int(row[1]) != user_id:`, preventing any signed-in user from deleting unowned (`user_id IS NULL`) rows or their `document_chunks`.
+- **Vault delete paths (`app.py`, `tests/test_vault_delete_paths.py`):** Added end-to-end tests proving `DELETE /api/documents/<id>`, `DELETE /api/vault/documents/<id>`, and `DELETE /api/vault/folders/<id>` return 404 for another user's rows and for `user_id IS NULL` rows (`is_public = 0` and `is_public = 1`), leaving rows and `document_chunks` intact while allowing the owner to delete their own.
+- **Repo-wide sweep of remaining NULL checks & `case_vault` deletes:**
+  - `app.py:150,156` — one-time backfill `WHERE user_id IS NULL` for public judgments (`is_public = 1`) and hidden count; `app.py:970` — `_vault_access_ok` read-only (`not require_edit`) check for `row_user_id is None` when `is_public == 1`.
+  - `app.py:765,891,962` and `routes/vault_workspace_routes.py:1141` — comments/docstrings explaining `user_id IS NULL` / `owner_user_id IS NULL` exclusion; `routes/dms_f_filing.py:46` and `routes/document_routes.py:508,544` — strict owner-only guards rejecting `None`.
+  - `app.py:1758,1860`, `routes/document_routes.py:548`, `utils/dms_worker.py:326` — `DELETE FROM case_vault` statements (all gated by owner/edit access, legal hold, or DMS trash expiry; none in `tasks/`).
+
+
+### Batch 7 — Review follow-ups: autocomplete public judgments; precedent check public-only (DONE)
+
+- **Case autocomplete (`routes/cases_routes.py`):** `GET /api/cases/autocomplete` checks `PRAGMA table_info('case_vault')` inside the handler and uses `(user_id = ? OR is_public = 1)` when `is_public` exists (else `user_id = ?`), so the CaseVault and ConflictEngine citation pickers see public judgments again. Same params, JSON shape, ORDER BY and LIMIT 10.
+- **Contract precedent check (`tasks/contract_tasks.py`):** Both `check_case_in_vault` selects now read `WHERE (case_id = ? OR case_id = ? OR case_id = ?) AND is_public = 1` and `WHERE (title = ? OR title LIKE ?) AND is_public = 1`, so a guessed title or case_id can no longer reveal the id of a private document. Name, signature, params, return values and try/except unchanged (no `is_public` column -> `(False, None)`).
+- **Tests:** `tests/test_vault_public_reads.py` autocomplete assertions now expect the public row for both users and never the other user's or the unowned private row. New `tests/test_vault_precedent_check.py` calls the real `check_case_in_vault` in a temp folder (`monkeypatch.chdir`) with its own `lex_assistant.db`: private and unowned non-public rows -> `(False, None)`; public row by case_id and by title -> `(True, id)`.
+- No URL, JSON shape, status code or message changes; `tests/route_snapshot.txt` unchanged.
+
+#### Later list
+
+- Before running `mass_ingestion.py` on an old database, start the app once so the `is_public` backfill runs.
+- `check_case_in_vault` returns "not in vault" if the database has no `is_public` column (safe, but start the app once first).
+- Open (not fixed, by design or later): shared "edit" users can delete or move shared items; teammates cannot see each other's matter documents; library search shows no public judgments; upload accepts any `matter:`/`lpms:` case_id; 403 vs 404 differences on share routes; Save-As does not list shared folders; `/provenance/verify` returns global counts.

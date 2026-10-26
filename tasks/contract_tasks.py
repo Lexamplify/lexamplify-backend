@@ -47,7 +47,7 @@ def check_case_in_vault(title, case_id):
             clean_cid_no_en = clean_cid
             if clean_cid_no_en.endswith('_EN'):
                 clean_cid_no_en = clean_cid_no_en[:-3]
-            cursor.execute("SELECT id FROM case_vault WHERE case_id = ? OR case_id = ? OR case_id = ?", (case_id, clean_cid, clean_cid_no_en))
+            cursor.execute("SELECT id FROM case_vault WHERE (case_id = ? OR case_id = ? OR case_id = ?) AND is_public = 1", (case_id, clean_cid, clean_cid_no_en))
             row = cursor.fetchone()
             if row:
                 conn.close()
@@ -55,7 +55,7 @@ def check_case_in_vault(title, case_id):
             
         # 2. Try match on title
         if title:
-            cursor.execute("SELECT id FROM case_vault WHERE title = ? OR title LIKE ?", (title, f"%{title}%"))
+            cursor.execute("SELECT id FROM case_vault WHERE (title = ? OR title LIKE ?) AND is_public = 1", (title, f"%{title}%"))
             row = cursor.fetchone()
             if row:
                 conn.close()

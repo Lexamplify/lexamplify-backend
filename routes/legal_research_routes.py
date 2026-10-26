@@ -145,7 +145,7 @@ def api_legal_research_document(case_id):
         conn = app_module.db
         c = conn.cursor()
         c.execute(
-            "SELECT title, content FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+            "SELECT title, content FROM case_vault WHERE case_id = ? AND (user_id = ? OR is_public = 1) "
             "ORDER BY created_at DESC LIMIT 1",
             (case_id, uid)
         )

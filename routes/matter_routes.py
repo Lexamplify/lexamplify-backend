@@ -491,7 +491,7 @@ def list_matter_documents(matter_id):
         rows = conn.execute(
             "SELECT id, COALESCE(smart_title, title) AS title, file_format, tags, "
             "LENGTH(file_blob) AS size_bytes, created_at "
-            "FROM case_vault WHERE case_id = ? AND (user_id IS NULL OR user_id = ?) "
+            "FROM case_vault WHERE case_id = ? AND user_id = ? "
             "ORDER BY created_at DESC",
             (case_id, uid)
         ).fetchall()

@@ -132,6 +132,35 @@ class _ThreadLocalDB:
 
 db = _ThreadLocalDB('lex_assistant.db')
 
+def _backfill_public_vault_rows(conn):
+    """One-time backfill run only when the is_public column is first added.
+    Marks mass-ingested public judgments and leaves all other NULL-owner or
+    owned rows untouched."""
+    for _col, _type in (
+        ('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'),
+        ('file_blob', 'BLOB'), ('file_format', 'TEXT'), ('ratio_headnote', 'TEXT'),
+        ('user_id', 'INTEGER'),
+    ):
+        try:
+            conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
+        except Exception:
+            pass
+    cur = conn.execute(
+        "UPDATE case_vault SET is_public = 1 "
+        "WHERE user_id IS NULL AND doc_type = 'Judgment' "
+        "AND folder_id IS NULL AND smart_title IS NULL AND tags IS NULL "
+        "AND file_blob IS NULL AND file_format IS NULL AND ratio_headnote IS NULL"
+    )
+    marked = cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
+    hidden_row = conn.execute(
+        "SELECT COUNT(*) FROM case_vault WHERE user_id IS NULL AND is_public = 0"
+    ).fetchone()
+    hidden = hidden_row[0] if hidden_row else 0
+    conn.commit()
+    print(f"[vault] is_public backfill: marked={marked}, null_owner_hidden={hidden}")
+    return marked, hidden
+
+
 def init_db():
     conn = db
     c = conn.cursor()
@@ -167,8 +196,8 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Migration: add folder_id + smart_title + tags + file_blob + file_format to case_vault if not present
-    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'), ('file_blob', 'BLOB'), ('file_format', 'TEXT')):
+    # Migration: add folder_id + smart_title + tags + file_blob + file_format + ratio_headnote to case_vault if not present
+    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'), ('file_blob', 'BLOB'), ('file_format', 'TEXT'), ('ratio_headnote', 'TEXT')):
         try:
             c.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
         except Exception:
@@ -176,8 +205,7 @@ def init_db():
     # Ownership boundary — nullable, and deliberately NEVER backfilled for
     # pre-existing rows (see the vault authorization audit): every row that
     # predates this column has no reliable owner in the data itself, so it
-    # stays NULL rather than being fabricated. NULL is treated as "legacy/
-    # shared" at the authorization layer, not as "owned by nobody = locked".
+    # stays NULL rather than being fabricated.
     # New rows written through the now-authenticated vault endpoints always
     # get a real user_id going forward.
     for _tbl in ('case_vault', 'vault_folders'):
@@ -185,6 +213,12 @@ def init_db():
             c.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
         except Exception:
             pass
+    try:
+        c.execute('ALTER TABLE case_vault ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0')
+    except Exception:
+        pass
+    else:
+        _backfill_public_vault_rows(conn)
     # Standard-blueprint folders (see /api/vault/folders/init-blueprint) are
     # marked protected so they can't be renamed/deleted out from under a
     # matter with linked documents — everything else defaults unprotected.
@@ -727,17 +761,13 @@ def resolve_vault_title(raw_title, case_id, content):
 
 
 # ── Case Vault authorization ────────────────────────────────────────────
-# case_vault/vault_folders predate any per-user boundary — 912 rows already
-# exist with no attributable owner (case_id is a free-text label, not a
-# user reference). Rather than fabricate ownership for them, `user_id`
-# stays NULL on that legacy data and is treated here as "shared/legacy":
-# readable and mutable by any authenticated user, exactly as all vault data
-# behaved before this boundary existed — a deliberate, disclosed decision,
-# not an oversight. Every row created from this point on gets a real
-# user_id from the authenticated session and is then strictly private to
-# that user. See the Case Vault authorization audit for the full rationale.
+# Strict ownership check: a vault row is owned by the current user only when
+# row_user_id is non-NULL and equals current_user_id. Unowned (user_id IS NULL)
+# rows are never treated as owned; mass-ingested public judgments carry an
+# explicit is_public = 1 marker on case_vault and are granted read-only access
+# in _vault_access_ok instead.
 def _vault_owner_ok(row_user_id, current_user_id):
-    return row_user_id is None or int(row_user_id) == int(current_user_id)
+    return row_user_id is not None and int(row_user_id) == int(current_user_id)
 
 
 def _current_vault_user_id():
@@ -855,9 +885,10 @@ def _effective_permission(node_type, node_id, member_ids):
 
 def _visible_shared_vault_ids(current_user_id, include_nav=True, member_ids=None):
     """Additional folder/document ids a non-owner can see through sharing —
-    composes with the existing `user_id = ? OR user_id IS NULL` filters via
-    `OR id IN (...)` rather than replacing them, so every pre-Phase-2 query
-    keeps its ownership semantics unchanged and only gains extra rows.
+    composes with the `user_id = ?` owner filter via `OR id IN (...)` (and
+    `OR folder_id IN (...)`) rather than replacing it, so private vault
+    queries show only the signed-in user's own rows plus rows shared with
+    them (rows with `user_id IS NULL` are never included in private lists).
 
     Sharing a folder grants access to everything nested inside it, so a
     shared folder's entire descendant subtree is included even though only
@@ -928,14 +959,21 @@ def _visible_shared_vault_ids(current_user_id, include_nav=True, member_ids=None
 
 
 def _vault_access_ok(node_type, node_id, row_user_id, current_user_id, require_edit=False):
-    """Owner (or legacy/unowned) access always passes — identical to
-    _vault_owner_ok's behavior, which every mutation/read guard in the vault
-    routes now calls through here instead. On top of that, a non-owner can
-    pass if a team_members row resolved to their account holds an explicit
-    share (own or cascaded from an ancestor folder) at or above the
-    requested permission level."""
+    """Owner access always passes. Public documents (user_id IS NULL and
+    is_public = 1 on case_vault) are readable by any authenticated user when
+    require_edit is False, but never editable or deletable; folders are never
+    public. Otherwise, a non-owner can pass if a team_members row resolved to
+    their account holds an explicit share (own or cascaded from an ancestor
+    folder) at or above the requested permission level."""
     if _vault_owner_ok(row_user_id, current_user_id):
         return True
+    if node_type == 'document' and row_user_id is None and not require_edit:
+        try:
+            pub_row = db.execute('SELECT is_public FROM case_vault WHERE id = ?', (node_id,)).fetchone()
+            if pub_row and pub_row[0] == 1:
+                return True
+        except Exception:
+            pass
     member_ids = _current_user_team_member_ids(current_user_id)
     perm = _effective_permission(node_type, node_id, member_ids)
     if perm is None:
@@ -1541,7 +1579,7 @@ def create_app():
         def _vw_scope(user_id):
             sf, sd = _visible_shared_vault_ids(user_id, include_nav=False)
             return (
-                '(cv.user_id = ? OR cv.user_id IS NULL OR cv.folder_id IN (SELECT value FROM json_each(?)) '
+                '(cv.user_id = ? OR cv.folder_id IN (SELECT value FROM json_each(?)) '
                 'OR cv.id IN (SELECT value FROM json_each(?))) AND ' + _dms_hidden_sql('cv'),
                 [user_id, json.dumps(sorted(sf)), json.dumps(sorted(sd))],
             )
@@ -1587,7 +1625,7 @@ def create_app():
             try:
                 rows = conn.execute(
                     'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
-                    'WHERE user_id = ? OR user_id IS NULL OR id IN (SELECT value FROM json_each(?)) ORDER BY name ASC',
+                    'WHERE user_id = ? OR id IN (SELECT value FROM json_each(?)) ORDER BY name ASC',
                     (uid, json.dumps(sorted(tree_folder_ids)))
                 ).fetchall()
 
@@ -1623,7 +1661,7 @@ def create_app():
                 # display must reflect nested contents too.
                 count_rows = conn.execute(
                     'SELECT cv.folder_id, COUNT(*) AS cnt FROM case_vault cv '
-                    'WHERE (cv.user_id = ? OR cv.user_id IS NULL '
+                    'WHERE (cv.user_id = ? '
                     '       OR cv.folder_id IN (SELECT value FROM json_each(?)) '
                     '       OR cv.id IN (SELECT value FROM json_each(?))) '
                     f'AND {_dms_hidden_sql("cv")} GROUP BY cv.folder_id',
@@ -1922,7 +1960,7 @@ def create_app():
                 offset = 0
 
             # Never list what is in the Document Hub's trash.
-            where_clauses = ['(cv.user_id = ? OR cv.user_id IS NULL)', _dms_hidden_sql('cv')]
+            where_clauses = ['(cv.user_id = ?)', _dms_hidden_sql('cv')]
             params = [uid]
             if q:
                 like = f'%{q}%'
@@ -2019,7 +2057,7 @@ def create_app():
                     'SELECT cv.id, cv.title, cv.smart_title, cv.doc_type, cv.folder_id, cv.file_format, cv.tags, '
                     f'{size_sql} AS size_bytes, cv.created_at '
                     f'FROM case_vault cv {join_sql} '
-                    'WHERE (cv.user_id = ? OR cv.user_id IS NULL '
+                    'WHERE (cv.user_id = ? '
                     '       OR cv.folder_id IN (SELECT value FROM json_each(?)) '
                     '       OR cv.id IN (SELECT value FROM json_each(?))) '
                     f'AND {_dms_hidden_sql("cv")} ORDER BY cv.created_at DESC',
@@ -2069,7 +2107,10 @@ def create_app():
                         select_cols.append(optional_col)
                 where, params = [_dms_hidden_sql('case_vault')], []
                 if 'user_id' in table_cols:
-                    where.append('(user_id = ? OR user_id IS NULL)')
+                    if 'is_public' in table_cols:
+                        where.append('(user_id = ? OR is_public = 1)')
+                    else:
+                        where.append('user_id = ?')
                     params.append(uid)
                 if _dms_present() and 'file_blob' in table_cols:
                     # Files that went in through the Document Hub have no text or blob in this row, so
@@ -2393,6 +2434,12 @@ def create_app():
                 conn.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
             except Exception:
                 pass
+        try:
+            conn.execute('ALTER TABLE case_vault ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0')
+        except Exception:
+            pass
+        else:
+            _backfill_public_vault_rows(conn)
         try:
             conn.execute('ALTER TABLE vault_folders ADD COLUMN protected BOOLEAN DEFAULT 0')
         except Exception:

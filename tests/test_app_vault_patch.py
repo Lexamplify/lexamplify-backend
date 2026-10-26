@@ -255,11 +255,13 @@ def test_firm_library_needs_a_login_and_is_scoped(hub, old):
     assert r.status_code in (200, 201), r.get_json()
     hub.sql("INSERT INTO case_vault (case_id, title, doc_type, content, user_id) VALUES ('secret', 'Private strategy note', 'note', 'privileged', 2)")
     hub.sql("INSERT INTO case_vault (case_id, title, doc_type, content, user_id) VALUES ('old', 'Legacy shared precedent', 'note', 'legacy', NULL)")
+    hub.sql("INSERT INTO case_vault (case_id, title, doc_type, content, user_id, is_public) VALUES ('pub1', 'Public judgment sample', 'Judgment', 'public text', NULL, 1)")
     titles_a = {d["title"] for d in a.get("/api/firm-library").get_json()}
     titles_b = {d["title"] for d in b.get("/api/firm-library").get_json()}
     assert "Sale deed draft" in titles_a and "Private strategy note" not in titles_a
     assert "Private strategy note" in titles_b and "Sale deed draft" not in titles_b
-    assert "Legacy shared precedent" in titles_a and "Legacy shared precedent" in titles_b       # legacy unowned rows behave as before
+    assert "Legacy shared precedent" not in titles_a and "Legacy shared precedent" not in titles_b
+    assert "Public judgment sample" in titles_a and "Public judgment sample" in titles_b
 
 
 # ── plumbing used by the blueprint registration ────────────────────────────────────────

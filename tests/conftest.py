@@ -29,7 +29,7 @@ if ROOT not in sys.path:
 VAULT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS case_vault (id INTEGER PRIMARY KEY AUTOINCREMENT, case_id TEXT, title TEXT, doc_type TEXT, content TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP, folder_id INTEGER, smart_title TEXT, tags TEXT, file_blob BLOB, file_format TEXT,
-    user_id INTEGER, link_shared BOOLEAN DEFAULT 0);
+    user_id INTEGER, link_shared BOOLEAN DEFAULT 0, is_public INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS vault_folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, parent_id INTEGER, user_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP, protected BOOLEAN DEFAULT 0, link_shared BOOLEAN DEFAULT 0);
 CREATE TABLE IF NOT EXISTS document_vault_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, node_type TEXT NOT NULL, node_id INTEGER NOT NULL,

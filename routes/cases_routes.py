@@ -24,10 +24,14 @@ def api_cases_autocomplete():
     try:
         conn = app_module.db
         c = conn.cursor()
+        # Own rows plus public judgments (is_public = 1) for the citation pickers;
+        # owner-only if the is_public column does not exist yet.
+        table_cols = {row[1] for row in conn.execute("PRAGMA table_info('case_vault')").fetchall()}
+        owner_sql = "(user_id = ? OR is_public = 1)" if 'is_public' in table_cols else "user_id = ?"
         # Parameterized placeholder — the LIKE wildcard is built into the
         # bound value, never concatenated into the SQL string itself.
         c.execute(
-            "SELECT id, title FROM case_vault WHERE title LIKE ? AND (user_id = ? OR user_id IS NULL) "
+            "SELECT id, title FROM case_vault WHERE title LIKE ? AND " + owner_sql + " "
             "ORDER BY created_at DESC LIMIT 10",
             (f'%{q}%', uid)
         )
