@@ -75,4 +75,4 @@ def test_the_snapshot_file_is_not_stale(app):
     for line in current:
         groups[line.rsplit(" | ", 1)[1]] = groups.get(line.rsplit(" | ", 1)[1], 0) + 1
     assert groups.get("public", 0) == 19, f"the public list changed: {groups}"
-    assert groups.get("signed-in", 0) == 335, f"the signed-in routes changed: {groups}"
+    assert groups.get("signed-in", 0) == 340, f"the signed-in routes changed: {groups}"

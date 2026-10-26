@@ -1085,3 +1085,26 @@ Neon users table and ids as password sign-in. Two points are known and left for 
 - Before running `mass_ingestion.py` on an old database, start the app once so the `is_public` backfill runs.
 - `check_case_in_vault` returns "not in vault" if the database has no `is_public` column (safe, but start the app once first).
 - Open (not fixed, by design or later): shared "edit" users can delete or move shared items; teammates cannot see each other's matter documents; library search shows no public judgments; upload accepts any `matter:`/`lpms:` case_id; 403 vs 404 differences on share routes; Save-As does not list shared folders; `/provenance/verify` returns global counts.
+
+
+## Step 3 — Move last 9 vault & firm-library handlers (`step3-last-handlers`)
+
+### Commit 1 of 3 — Dual-location test harness in `tests/test_app_vault_patch.py` (DONE)
+- Stubbed `app` as a real `types.ModuleType("app")` whose `__dict__` is `ns`, installed via `monkeypatch.setitem(sys.modules, "app", o.stub)` in the `old` fixture so module-based handlers see live test state (`_DMS_BP`, `_current_user_team_member_ids`, `db`) and `sys.modules` is cleaned up after every test.
+- Updated `mount_routes` and added `_discover_module_routes` so each of the 9 handlers in `ROUTES` is discovered from either `create_app` in `app.py` or (`routes.vault_files_routes`, `routes.firm_library_routes`), enforced to exist in exactly one place, and checked against `EXPECTED_RULES` (comparing method sets without `OPTIONS`/`HEAD`).
+- Added `test_every_handler_found_once` and `test_module_discovery_works` (proving module discovery today against `routes.firm_library_routes.get_saved_firm_library_drafts`); all existing test functions are byte-for-byte unchanged.
+
+### Commit 2 of 3 — Move 7 `/api/vault` handlers into `routes/vault_files_routes.py`; keep audit-log events (DONE)
+- Moved `get_vault_folders`, `delete_vault_folder`, `upload_vault_document`, `delete_vault_document`, `download_vault_document`, `get_vault_documents`, and `get_vault_meta` verbatim out of `create_app()` in `app.py` into `routes/vault_files_routes.py` (`vault_files_bp = Blueprint("vault_files", __name__, url_prefix="/api/vault")`), registered after both `vault_workspace` and `firm_library_bp` with no `try/except`.
+- Kept these 7 handlers on their own module-level blueprint (`vault_files`) rather than the `vault_workspace` factory so `tests/test_app_vault_patch.py` can discover and mount them directly alongside `app_module` state (`db`, `_DMS_BP`, `_current_user_team_member_ids`, etc.) without factory dependency wiring.
+- Updated `utils/audit_log.py` (`WATCHED` and `_detail`) from bare `upload_vault_document`, `delete_vault_document`, and `delete_vault_folder` to `vault_files.upload_vault_document`, `vault_files.delete_vault_document`, and `vault_files.delete_vault_folder`, and added `tests/test_audit_log_endpoints.py` asserting every watched/referenced endpoint exists in `app.url_map` and verifying real-app upload/delete audit events.
+- Regenerated `tests/route_snapshot.txt`: exactly 7 lines changed (only the endpoint column updated to `vault_files.<name>`), total route count unchanged at 364.
+- **Later list:** the old inline comment in `upload_vault_document` (`# module-global is shadowed as a create_app local here` on `from utils import doc_storage`) was preserved verbatim for the move and is now out of date.
+
+### Commit 3 of 3 — Move the last 2 Firm Library handlers into `routes/firm_library_routes.py` (DONE)
+- Moved `get_firm_library` (`GET/OPTIONS /api/firm-library`) and `create_firm_library_entry` (`POST /api/firm-library`) verbatim out of `create_app()` into the existing `firm_library_bp`; each starts with `import app as app_module` and reaches `db`, `_current_vault_user_id`, `_dms_hidden_sql`, `_dms_present` and `format_vault_title` through it. `index_document` is still imported inside the handler. `time` and `uuid` were added to the module imports.
+- The rule string is `""` (empty), never `"/"`: with the blueprint prefix `/api/firm-library` the path stays exactly `/api/firm-library`; `"/"` would make it `/api/firm-library/` and turn the real URL into a redirect. `tests/test_firm_library_paths.py` (4 tests) pins GET without login (401), GET with login (200), POST with login (201, `index_document` patched) and the trailing-slash URL (404), asserts none is 301/302/307/308, and passed before and after the move.
+- `tests/route_snapshot.txt`: exactly 2 lines changed, endpoint column only (`firm_library.get_firm_library`, `firm_library.create_firm_library_entry`); paths unchanged, 364 routes. Neither name is in `utils/audit_log.py`, so no audit key changed.
+- Comments only: the `routes/firm_library_routes.py` module docstring and the `firm_library_bp` registration comment in `app.py` no longer say the core handlers stay inline. AST `VERBATIM_MOVE=OK` for both handlers; pyflakes: 0 undefined names.
+- Full backend suite (`pytest tests -q --ignore=tests/e2e`): 892 passed, 9 skipped, 0 failed (884.66s).
+- Step 3 is complete: no inline data route is left in `create_app()`.

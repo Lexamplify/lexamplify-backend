@@ -10,16 +10,19 @@ is re-implemented here: if app.py's code is wrong, these tests fail.
 import ast
 import concurrent.futures as cf
 import hashlib
+import importlib
 import json
 import os
 import re
 import sqlite3
+import sys
 import threading
 import time
+import types
 import uuid
 
 import pytest
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from conftest import ORDER_TEXT, make_pdf
@@ -34,6 +37,18 @@ MODULE_FUNCS = ["_vault_owner_ok", "_current_vault_user_id", "_get_ancestor_fold
 MODULE_ASSIGNS = ["_PERMISSION_RANK", "_PROVENANCE_LOCK", "_DMS_BP", "_dms_table_seen", "_DMS_MEMBER_CACHE", "_DMS_MEMBER_LOCK", "_DMS_MEMBER_TTL"]
 ROUTES = ["get_vault_folders", "get_vault_documents", "get_vault_meta", "download_vault_document", "delete_vault_document", "delete_vault_folder",
           "upload_vault_document", "get_firm_library", "create_firm_library_entry"]
+ROUTE_MODULES = ("routes.vault_files_routes", "routes.firm_library_routes")
+EXPECTED_RULES = {
+    "get_vault_folders": ("/api/vault/folders", {"GET"}),
+    "delete_vault_folder": ("/api/vault/folders/<int:folder_id>", {"DELETE"}),
+    "upload_vault_document": ("/api/vault/documents/upload", {"POST"}),
+    "delete_vault_document": ("/api/vault/documents/<int:doc_id>", {"DELETE"}),
+    "download_vault_document": ("/api/vault/documents/<int:doc_id>/download", {"GET"}),
+    "get_vault_documents": ("/api/vault/documents", {"GET"}),
+    "get_vault_meta": ("/api/vault/meta", {"GET"}),
+    "get_firm_library": ("/api/firm-library", {"GET"}),
+    "create_firm_library_entry": ("/api/firm-library", {"POST"}),
+}
 
 
 def _segment(node):
@@ -41,9 +56,11 @@ def _segment(node):
 
 
 def load_app_code(db, member_ids):
-    ns = {"sqlite3": sqlite3, "json": json, "time": time, "hashlib": hashlib, "threading": threading, "re": re, "uuid": uuid, "os": os,
-          "jsonify": jsonify, "request": request, "jwt_required": jwt_required, "get_jwt_identity": get_jwt_identity, "db": db,
-          "_current_user_team_member_ids": lambda uid: list(member_ids.get(uid, []))}
+    stub = types.ModuleType("app")
+    ns = stub.__dict__
+    ns.update({"sqlite3": sqlite3, "json": json, "time": time, "hashlib": hashlib, "threading": threading, "re": re, "uuid": uuid, "os": os,
+               "jsonify": jsonify, "request": request, "jwt_required": jwt_required, "get_jwt_identity": get_jwt_identity, "db": db,
+               "_current_user_team_member_ids": lambda uid: list(member_ids.get(uid, []))})
     for node in TREE.body:
         if isinstance(node, ast.FunctionDef) and node.name in MODULE_FUNCS:
             exec(compile(ast.parse(_segment(node)), APP_PY, "exec"), ns)
@@ -51,7 +68,37 @@ def load_app_code(db, member_ids):
             exec(compile(ast.parse(_segment(node)), APP_PY, "exec"), ns)
     missing = [n for n in MODULE_FUNCS if n not in ns]
     assert not missing, f"not found in app.py: {missing}"
+    ns["__stub__"] = stub
     return ns
+
+
+def _discover_module_routes(flask_app, module_names, wanted_names):
+    found = {}
+    for mod_name in module_names:
+        try:
+            mod = importlib.import_module(mod_name)
+        except ModuleNotFoundError as exc:
+            if exc.name == mod_name:
+                continue
+            raise
+        bps = [v for v in vars(mod).values() if isinstance(v, Blueprint)]
+        assert len(bps) == 1, f"expected 1 Blueprint in {mod_name}, found {len(bps)}"
+        bp = bps[0]
+        mod_handlers = {name: getattr(mod, name) for name in wanted_names if callable(getattr(mod, name, None))}
+        if not mod_handlers:
+            continue
+        if bp.name not in flask_app.blueprints:
+            flask_app.register_blueprint(bp)
+        for name, fn in mod_handlers.items():
+            assert name not in found, f"handler {name} found in multiple places"
+            ep = f"{bp.name}.{name}"
+            rules = [r for r in flask_app.url_map.iter_rules() if r.endpoint == ep]
+            assert rules, f"no url_map rule for {ep}"
+            paths = {r.rule for r in rules}
+            assert len(paths) == 1, f"multiple paths for {ep}: {paths}"
+            methods = {m for r in rules for m in (r.methods or ()) if m not in ("OPTIONS", "HEAD")}
+            found[name] = (next(iter(paths)), methods, fn, False)
+    return found
 
 
 def mount_routes(flask_app, ns):
@@ -59,6 +106,7 @@ def mount_routes(flask_app, ns):
     found = {}
     for node in ast.walk(create_app):
         if isinstance(node, ast.FunctionDef) and node.name in ROUTES:
+            assert node.name not in found, f"handler {node.name} found twice in create_app"
             route = next(d for d in node.decorator_list if isinstance(d, ast.Call) and getattr(d.func, "attr", "") == "route")
             path = route.args[0].value
             methods = [e.value for kw in route.keywords if kw.arg == "methods" for e in kw.value.elts]
@@ -69,10 +117,19 @@ def mount_routes(flask_app, ns):
             exec(compile(textwrap.dedent(code), APP_PY, "exec"), ns)
             fn = ns[node.name]
             found[node.name] = (path, methods, fn, needs_jwt)
-    assert set(found) == set(ROUTES), set(ROUTES) - set(found)
     for name, (path, methods, fn, needs_jwt) in found.items():
         flask_app.add_url_rule(path, endpoint="old_" + name, view_func=jwt_required()(fn) if needs_jwt else fn, methods=methods)
-    return found
+    mod_found = _discover_module_routes(flask_app, ROUTE_MODULES, ROUTES)
+    overlap = set(found) & set(mod_found)
+    assert not overlap, f"handlers found in both create_app and route modules: {overlap}"
+    all_found = {}
+    for name, (path, methods, fn, needs_jwt) in found.items():
+        all_found[name] = (path, {m for m in methods if m not in ("OPTIONS", "HEAD")}, fn, needs_jwt)
+    all_found.update(mod_found)
+    assert set(all_found) == set(ROUTES), f"missing or extra handlers: {set(ROUTES) ^ set(all_found)}"
+    for name, (path, methods, _, _) in all_found.items():
+        assert (path, methods) == EXPECTED_RULES[name], f"rule mismatch for {name}: {(path, methods)} != {EXPECTED_RULES[name]}"
+    return all_found
 
 
 class Old:
@@ -83,7 +140,8 @@ class Old:
         self.db.execute("PRAGMA busy_timeout = 15000")
         self.member_ids = member_ids if member_ids is not None else {}
         self.ns = load_app_code(self.db, self.member_ids)
-        mount_routes(hub.app, self.ns)
+        self.stub = self.ns["__stub__"]
+        self.found = mount_routes(hub.app, self.ns)
         self.ns["_DMS_BP"] = hub.bp
         hub.shared_override = self.ns["_dms_shared"]                # the hub now uses app.py's own sharing rules
         hub.folder_override = self.ns["_dms_folder_access"]
@@ -100,8 +158,9 @@ class Old:
 
 
 @pytest.fixture
-def old(hub):
+def old(hub, monkeypatch):
     o = Old(hub, member_ids={2: [200]})
+    monkeypatch.setitem(sys.modules, "app", o.stub)
     yield o
     o.db.close()
 
@@ -280,3 +339,18 @@ def test_shared_dependency_reports_content_folders_only(hub, old):
     for _ in range(5):
         old.ns["_dms_shared"](2)
     assert len(calls) <= 1, "member-id resolution (a scan of every account) must not repeat on each request"
+
+
+
+def test_every_handler_found_once(old):
+    assert sys.modules.get("app") is old.stub
+    assert set(old.found) == set(ROUTES) == set(EXPECTED_RULES) and len(old.found) == 9
+    assert {name: (path, methods) for name, (path, methods, _, _) in old.found.items()} == EXPECTED_RULES
+
+
+def test_module_discovery_works(hub):
+    found = _discover_module_routes(hub.app, ("routes.vault_files_routes", "routes.firm_library_routes"), ["get_saved_firm_library_drafts"])
+    assert set(found) == {"get_saved_firm_library_drafts"}
+    path, methods, fn, needs_jwt = found["get_saved_firm_library_drafts"]
+    assert path == "/api/firm-library/saved" and methods == {"GET"} and callable(fn) and needs_jwt is False
+    assert "firm_library" in hub.app.blueprints
