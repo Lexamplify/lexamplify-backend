@@ -188,8 +188,8 @@ GET | /api/drafts/types/<type_id> | drafts.type_detail | signed-in
 POST | /api/drafts/verify | drafts.verify_text | signed-in
 POST | /api/ecourts/sync | calendar.sync_ecourts_cnr | signed-in
 GET | /api/events/<event_id> | court.get_event_detail | signed-in
-GET | /api/firm-library | get_firm_library | signed-in
-POST | /api/firm-library | create_firm_library_entry | signed-in
+GET | /api/firm-library | firm_library.get_firm_library | signed-in
+POST | /api/firm-library | firm_library.create_firm_library_entry | signed-in
 GET | /api/firm-library/external-search | firm_library.firm_library_external_search | signed-in
 GET | /api/firm-library/saved | firm_library.get_saved_firm_library_drafts | signed-in
 GET | /api/forms/fetch-dynamic | court.fetch_dynamic_form | signed-in
