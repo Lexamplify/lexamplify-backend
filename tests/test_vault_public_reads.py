@@ -165,7 +165,9 @@ def test_public_reads_and_owner_only_document_matter_autocomplete_routes(real):
     # ── 5. GET /api/cases/autocomplete ────────────────────────────────────────
     ac_a = user_a.get("/api/cases/autocomplete?q=SharedPrefix").get_json()
     ac_b = user_b.get("/api/cases/autocomplete?q=SharedPrefix").get_json()
-    assert [r["id"] for r in ac_a] == [doc_a]
-    assert [r["title"] for r in ac_a] == ["SharedPrefix Alice Strategy Memo"]
-    assert [r["id"] for r in ac_b] == [doc_b]
-    assert [r["title"] for r in ac_b] == ["SharedPrefix Bob Defense Brief"]
+    assert set(r["id"] for r in ac_a) == {doc_a, doc_null_pub}
+    assert doc_b not in [r["id"] for r in ac_a] and doc_null_priv not in [r["id"] for r in ac_a]
+    assert "SharedPrefix Public SC Judgment" in [r["title"] for r in ac_a]
+    assert set(r["id"] for r in ac_b) == {doc_b, doc_null_pub}
+    assert doc_a not in [r["id"] for r in ac_b] and doc_null_priv not in [r["id"] for r in ac_b]
+    assert "SharedPrefix Public SC Judgment" in [r["title"] for r in ac_b]

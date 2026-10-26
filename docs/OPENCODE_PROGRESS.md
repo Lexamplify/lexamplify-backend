@@ -1071,3 +1071,17 @@ Neon users table and ids as password sign-in. Two points are known and left for 
   - `app.py:150,156` — one-time backfill `WHERE user_id IS NULL` for public judgments (`is_public = 1`) and hidden count; `app.py:970` — `_vault_access_ok` read-only (`not require_edit`) check for `row_user_id is None` when `is_public == 1`.
   - `app.py:765,891,962` and `routes/vault_workspace_routes.py:1141` — comments/docstrings explaining `user_id IS NULL` / `owner_user_id IS NULL` exclusion; `routes/dms_f_filing.py:46` and `routes/document_routes.py:508,544` — strict owner-only guards rejecting `None`.
   - `app.py:1758,1860`, `routes/document_routes.py:548`, `utils/dms_worker.py:326` — `DELETE FROM case_vault` statements (all gated by owner/edit access, legal hold, or DMS trash expiry; none in `tasks/`).
+
+
+### Batch 7 — Review follow-ups: autocomplete public judgments; precedent check public-only (DONE)
+
+- **Case autocomplete (`routes/cases_routes.py`):** `GET /api/cases/autocomplete` checks `PRAGMA table_info('case_vault')` inside the handler and uses `(user_id = ? OR is_public = 1)` when `is_public` exists (else `user_id = ?`), so the CaseVault and ConflictEngine citation pickers see public judgments again. Same params, JSON shape, ORDER BY and LIMIT 10.
+- **Contract precedent check (`tasks/contract_tasks.py`):** Both `check_case_in_vault` selects now read `WHERE (case_id = ? OR case_id = ? OR case_id = ?) AND is_public = 1` and `WHERE (title = ? OR title LIKE ?) AND is_public = 1`, so a guessed title or case_id can no longer reveal the id of a private document. Name, signature, params, return values and try/except unchanged (no `is_public` column -> `(False, None)`).
+- **Tests:** `tests/test_vault_public_reads.py` autocomplete assertions now expect the public row for both users and never the other user's or the unowned private row. New `tests/test_vault_precedent_check.py` calls the real `check_case_in_vault` in a temp folder (`monkeypatch.chdir`) with its own `lex_assistant.db`: private and unowned non-public rows -> `(False, None)`; public row by case_id and by title -> `(True, id)`.
+- No URL, JSON shape, status code or message changes; `tests/route_snapshot.txt` unchanged.
+
+#### Later list
+
+- Before running `mass_ingestion.py` on an old database, start the app once so the `is_public` backfill runs.
+- `check_case_in_vault` returns "not in vault" if the database has no `is_public` column (safe, but start the app once first).
+- Open (not fixed, by design or later): shared "edit" users can delete or move shared items; teammates cannot see each other's matter documents; library search shows no public judgments; upload accepts any `matter:`/`lpms:` case_id; 403 vs 404 differences on share routes; Save-As does not list shared folders; `/provenance/verify` returns global counts.
