@@ -25,9 +25,9 @@ WATCHED = {
     "contract.extract_text": ("file_read", (200,)),
     "document.upload_document": ("document_uploaded", (200, 201)),
     "document.delete_document": ("document_deleted", (200,)),
-    "upload_vault_document": ("vault_uploaded", (200, 201)),
-    "delete_vault_document": ("vault_deleted", (200,)),
-    "delete_vault_folder": ("vault_folder_deleted", (200,)),
+    "vault_files.upload_vault_document": ("vault_uploaded", (200, 201)),
+    "vault_files.delete_vault_document": ("vault_deleted", (200,)),
+    "vault_files.delete_vault_folder": ("vault_folder_deleted", (200,)),
     "vault_workspace.delete_vault_share": ("vault_share_removed", (200,)),
 }
 _EMAIL = re.compile(r"[^\s@]{1,64}@[^\s@]{1,120}")
@@ -42,7 +42,7 @@ def _detail(endpoint, resp):
         if endpoint == "drafts.export_doc":
             body = request.get_json(silent=True) or {}
             return f"{str((body.get('document') or {}).get('title') or '')[:80]} as {str(body.get('format') or '')[:8]}"
-        if endpoint in ("contract.extract_text", "contract.analyze", "document.upload_document", "upload_vault_document"):
+        if endpoint in ("contract.extract_text", "contract.analyze", "document.upload_document", "vault_files.upload_vault_document"):
             f = request.files.get("file")
             return f"{(f.filename or '')[:120]}" if f else "pasted text"
     except Exception:  # noqa: BLE001
