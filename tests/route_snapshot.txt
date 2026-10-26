@@ -1,4 +1,6 @@
 GET | / | pages.landing | non-api
+GET,POST | /api/admin/daily-refresh | court.daily_refresh | signed-in
+GET | /api/admin/refresh-status | court.refresh_status | signed-in
 GET | /api/admin/sync-court-data | court.trigger_court_sync | signed-in
 POST | /api/ai/chat | ai.general_chat | signed-in
 POST | /api/ai/extract-file | ai.extract_file_text | signed-in
@@ -72,8 +74,11 @@ POST | /api/contract/rewrite-clause | contract.rewrite | signed-in
 POST | /api/contract/start-analysis | contract.analyze | signed-in
 GET | /api/contract/stream/<job_id> | contract.stream_job | signed-in
 POST | /api/contract/summary | contract.contract_summary | signed-in
+GET | /api/court-bar-associations | court.get_bar_associations | signed-in
 GET | /api/court-data/<state> | court.get_court_data | signed-in
 GET | /api/court-globals | court.get_court_globals | signed-in
+GET | /api/court-pdf | court.court_pdf | signed-in
+GET | /api/court-rosters | court.get_court_rosters | signed-in
 GET | /api/courts/high-courts | court.get_high_courts | signed-in
 GET | /api/courts/judges | court.get_judges_directory | signed-in
 GET | /api/directory/judges | court.get_directory_judges | signed-in
