@@ -541,7 +541,7 @@ def delete_document(doc_id):
     conn = sqlite3.connect(DB_PATH)
     try:
         row = conn.execute("SELECT id, user_id FROM case_vault WHERE id = ?", (doc_id,)).fetchone()
-        if not row or not (row[1] is None or row[1] == user_id):
+        if not row or row[1] is None or int(row[1]) != user_id:
             return jsonify({"error": "Document not found."}), 404
 
         conn.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))

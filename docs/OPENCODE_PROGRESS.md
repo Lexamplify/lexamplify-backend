@@ -1062,3 +1062,12 @@ Neon users table and ids as password sign-in. Two points are known and left for 
 - **Audit trail (`routes/vault_workspace_routes.py`):** In `GET /api/vault/audit-trail`, changed both the `folder_id` query (`WHERE va.folder_id = ? AND cv.user_id = ?`) and the vault-wide query (`WHERE cv.user_id = ?`) to require `cv.user_id = ?`, hiding both unowned documents and deleted-document (`LEFT JOIN` NULL) audit threads.
 - **Tests (`tests/test_vault_audit_feeds.py`):** Added end-to-end tests for two users covering owned, unowned, cross-actor, and deleted-document rows across `GET /api/vault/provenance` and `GET /api/vault/audit-trail` (with and without `folder_id`, plus cross-user `folder_id` and `node_type`/`node_id` attack cases).
 - **Deployment warning:** Folder and document delete paths (`app.py`) remain for Batch 6 — **do not deploy yet**.
+
+### Batch 6 of 6 — Delete paths are strictly owner-only and covered by tests (DONE)
+
+- **Old document delete (`routes/document_routes.py:544`):** Changed `delete_document` from `if not row or not (row[1] is None or row[1] == user_id):` to `if not row or row[1] is None or int(row[1]) != user_id:`, preventing any signed-in user from deleting unowned (`user_id IS NULL`) rows or their `document_chunks`.
+- **Vault delete paths (`app.py`, `tests/test_vault_delete_paths.py`):** Added end-to-end tests proving `DELETE /api/documents/<id>`, `DELETE /api/vault/documents/<id>`, and `DELETE /api/vault/folders/<id>` return 404 for another user's rows and for `user_id IS NULL` rows (`is_public = 0` and `is_public = 1`), leaving rows and `document_chunks` intact while allowing the owner to delete their own.
+- **Repo-wide sweep of remaining NULL checks & `case_vault` deletes:**
+  - `app.py:150,156` — one-time backfill `WHERE user_id IS NULL` for public judgments (`is_public = 1`) and hidden count; `app.py:970` — `_vault_access_ok` read-only (`not require_edit`) check for `row_user_id is None` when `is_public == 1`.
+  - `app.py:765,891,962` and `routes/vault_workspace_routes.py:1141` — comments/docstrings explaining `user_id IS NULL` / `owner_user_id IS NULL` exclusion; `routes/dms_f_filing.py:46` and `routes/document_routes.py:508,544` — strict owner-only guards rejecting `None`.
+  - `app.py:1758,1860`, `routes/document_routes.py:548`, `utils/dms_worker.py:326` — `DELETE FROM case_vault` statements (all gated by owner/edit access, legal hold, or DMS trash expiry; none in `tasks/`).
