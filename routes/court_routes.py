@@ -1376,6 +1376,41 @@ def get_court_rosters():
         conn.close()
 
 
+@court_bp.route('/api/court-pdf', methods=['GET', 'OPTIONS'])
+def court_pdf():
+    """Stream a whitelisted government PDF same-origin so the frontend can show
+    it inline in the in-app viewer instead of bouncing the user to an external
+    site. SSRF-guarded by `_proxy_validate_url` (ALLOWED_DOMAINS: *.nic.in /
+    *.gov.in / etc.); only `.pdf` URLs pass; the global sign-in gate already
+    requires a session; Content-Type is forced to application/pdf with nosniff."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    url = (request.args.get('url') or '').strip()
+    ok, safe = _proxy_validate_url(url)
+    if not ok:
+        return jsonify({'error': 'That document link is not on the allowed list.'}), 400
+    basename = safe.lower().split('?', 1)[0].rsplit('/', 1)[-1]
+    if not basename.endswith('.pdf'):
+        return jsonify({'error': 'Only PDF documents can be previewed here.'}), 400
+    try:
+        r = requests.get(safe, headers=_SCRAPER_HDRS, timeout=_PROXY_TIMEOUT)
+        r.raise_for_status()
+    except requests.Timeout:
+        return jsonify({'error': 'The court server took too long to respond.'}), 504
+    except requests.RequestException as exc:
+        return jsonify({'error': f'Could not fetch the document: {exc}'}), 502
+    data = r.content
+    if len(data) > _PROXY_MAX_BYTES:
+        return jsonify({'error': 'This document is too large to preview — use the download link.'}), 413
+    fname = (urlparse(safe).path.rsplit('/', 1)[-1] or 'document.pdf')[:80]
+    resp = make_response(data)
+    resp.headers['Content-Type']           = 'application/pdf'
+    resp.headers['Content-Disposition']    = f'inline; filename="{fname}"'
+    resp.headers['Cache-Control']          = 'private, max-age=600'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
+
+
 # ── Dynamic SC form scraper ───────────────────────────────────────────────────
 # Fetches https://www.sci.gov.in/forms/, finds the row whose text contains
 # the requested sc_title fragment, extracts the PDF href, fetches the binary,
