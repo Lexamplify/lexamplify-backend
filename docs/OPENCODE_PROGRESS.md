@@ -1047,5 +1047,12 @@ Neon users table and ids as password sign-in. Two points are known and left for 
 - **Tests (`tests/test_vault_public_reads.py`, `tests/test_app_vault_patch.py`):** Updated `test_firm_library_needs_a_login_and_is_scoped` in `tests/test_app_vault_patch.py` so unowned non-public rows stay hidden while `is_public = 1` rows appear for all signed-in users, and added `tests/test_vault_public_reads.py` covering all five surfaces.
 - **Deployment warning:** The chat/AI routes, audit/provenance feeds, and delete paths are still unchanged until Batches 4–6 land — **do not deploy yet**.
 
+### Batch 4 of 6 — AI and chat vault reads use owner-only or public-judgment access (DONE)
+
+- **AI simulation reads (`routes/ai_routes.py`):** Changed both `case_vault` queries in `POST /api/ai/simulate` (`:395` Pass 1 `document_reference` match and `:435` Pass 3 most-recent document fallback) from `AND (user_id = ? OR user_id IS NULL)` to `AND user_id = ?` and updated their comments to state they are scoped to the user's own documents only.
+- **Chat assistant tools (`routes/assistant_routes.py`):** In `POST /api/chat`, changed `run_courtroom_simulation` (`:713`) and the `search_case_vault` no-argument fallback list (`:885`) to `user_id = ?` (own documents only). Changed `search_case_vault` by `case_id` (`:858`) and by `search_query` (`:865`) to `(user_id = ? OR is_public = 1)` when `is_public` exists on `case_vault` (falling back to `user_id = ?` if missing).
+- **Tests (`tests/test_vault_ai_reads.py`):** Added end-to-end handler tests with mocked Groq completions for two users, an unowned `is_public = 0` row, and an unowned `is_public = 1` row across all six queries.
+- **Deployment warning:** Audit/provenance feeds and delete paths are still unchanged until Batches 5–6 land — **do not deploy yet**.
+
 
 

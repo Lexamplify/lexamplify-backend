@@ -710,7 +710,7 @@ def api_chat():
                 conn = app_module.db
                 c = conn.cursor()
                 c.execute(
-                    "SELECT content FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+                    "SELECT content FROM case_vault WHERE case_id = ? AND user_id = ? "
                     "ORDER BY created_at DESC LIMIT 1",
                     (str(case_id), chat_uid)
                 )
@@ -850,19 +850,21 @@ def api_chat():
                 conn.row_factory = sqlite3.Row
                 try:
                     c = conn.cursor()
+                    table_cols = {row[1] for row in conn.execute("PRAGMA table_info('case_vault')").fetchall()}
+                    pub_cond = "(user_id = ? OR is_public = 1)" if "is_public" in table_cols else "user_id = ?"
                     case_id = args.get("case_id")
                     search_query = args.get("search_query")
 
                     if case_id and str(case_id).lower() != "null":
                         c.execute(
-                            "SELECT * FROM case_vault WHERE case_id = ? AND (user_id = ? OR user_id IS NULL) "
+                            f"SELECT * FROM case_vault WHERE case_id = ? AND {pub_cond} "
                             "ORDER BY created_at DESC",
                             (str(case_id), chat_uid)
                         )
                         rows = c.fetchall()
                     elif search_query:
                         c.execute(
-                            "SELECT * FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC",
+                            f"SELECT * FROM case_vault WHERE {pub_cond} ORDER BY created_at DESC",
                             (chat_uid,)
                         )
                         all_docs = c.fetchall()
@@ -882,7 +884,7 @@ def api_chat():
                         rows = [best_doc] if best_doc else []
                     else:
                         c.execute(
-                            "SELECT * FROM case_vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC",
+                            "SELECT * FROM case_vault WHERE user_id = ? ORDER BY created_at DESC",
                             (chat_uid,)
                         )
                         rows = c.fetchall()
