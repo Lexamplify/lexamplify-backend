@@ -1085,3 +1085,11 @@ Neon users table and ids as password sign-in. Two points are known and left for 
 - Before running `mass_ingestion.py` on an old database, start the app once so the `is_public` backfill runs.
 - `check_case_in_vault` returns "not in vault" if the database has no `is_public` column (safe, but start the app once first).
 - Open (not fixed, by design or later): shared "edit" users can delete or move shared items; teammates cannot see each other's matter documents; library search shows no public judgments; upload accepts any `matter:`/`lpms:` case_id; 403 vs 404 differences on share routes; Save-As does not list shared folders; `/provenance/verify` returns global counts.
+
+
+## Step 3 — Move last 9 vault & firm-library handlers (`step3-last-handlers`)
+
+### Commit 1 of 3 — Dual-location test harness in `tests/test_app_vault_patch.py` (DONE)
+- Stubbed `app` as a real `types.ModuleType("app")` whose `__dict__` is `ns`, installed via `monkeypatch.setitem(sys.modules, "app", o.stub)` in the `old` fixture so module-based handlers see live test state (`_DMS_BP`, `_current_user_team_member_ids`, `db`) and `sys.modules` is cleaned up after every test.
+- Updated `mount_routes` and added `_discover_module_routes` so each of the 9 handlers in `ROUTES` is discovered from either `create_app` in `app.py` or (`routes.vault_files_routes`, `routes.firm_library_routes`), enforced to exist in exactly one place, and checked against `EXPECTED_RULES` (comparing method sets without `OPTIONS`/`HEAD`).
+- Added `test_every_handler_found_once` and `test_module_discovery_works` (proving module discovery today against `routes.firm_library_routes.get_saved_firm_library_drafts`); all existing test functions are byte-for-byte unchanged.
