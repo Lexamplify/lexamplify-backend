@@ -784,17 +784,12 @@ def get_live_legal_events():
             and (now - _LIVE_EVENTS_CACHE['ts']) < _LIVE_EVENTS_TTL):
         return jsonify({'events': _LIVE_EVENTS_CACHE['data'], 'cached': True}), 200
 
-    # Prefer the daily-captured snapshot persisted in event_cache. It survives
-    # worker cold starts and per-worker memory, and lets us serve instantly
-    # without hitting LiveLaw / Bar & Bench on the user's request path.
-    if not force_refresh:
-        snapshot = _read_events_from_db()
-        if snapshot:
-            _LIVE_EVENTS_CACHE['data'] = snapshot
-            _LIVE_EVENTS_CACHE['ts']   = now
-            return jsonify({'events': snapshot, 'cached': True,
-                            'source': 'daily-snapshot'}), 200
-
+    # The legal feed stays LIVE (news should be fresh): live fetch is primary,
+    # the 30-min in-memory cache above absorbs tab-switching, and the daily
+    # event_cache snapshot is used only as a fallback when the live feeds fail
+    # (see below) so the screen is never empty on a cold start or an upstream
+    # outage. Rosters / forms / bar directory are the daily-to-DB domains, not
+    # this feed.
     all_events: list[dict] = []
     errors: list[str]      = []
 
@@ -1139,6 +1134,15 @@ _ROSTER_UA = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 }
 
+# Court sites often label the roster link only "Download" / "View" / "PDF" and
+# keep the real title in a separate cell. Treat those as non-descriptive and
+# derive the title from the filename instead (roster_w.e.f._7.10.26.pdf → a
+# readable name), so the UI never shows ten identical "Download" rows.
+_GENERIC_LINK_TEXT = {
+    'download', 'view', 'pdf', 'open', 'link', 'click here', 'here',
+    'read', 'read more', 'file', 'document', 'download pdf', 'view pdf',
+}
+
 
 def _roster_category(text: str) -> str:
     t = (text or '').lower()
@@ -1240,7 +1244,10 @@ def _scrape_roster_target(target: dict) -> list[dict]:
         seen.add(url)
         text  = a.get_text(' ', strip=True)
         fname = urlparse(url).path.rsplit('/', 1)[-1]
-        title = text if len(text) >= 6 else _name_from_href_roster(fname)
+        if text and len(text) >= 6 and text.strip().lower() not in _GENERIC_LINK_TEXT:
+            title = text
+        else:
+            title = _name_from_href_roster(fname)
         out.append({
             'court':          target['court'],
             'title':          title[:255],
