@@ -1056,3 +1056,9 @@ Neon users table and ids as password sign-in. Two points are known and left for 
 
 
 
+### Batch 5 of 6 — Audit and provenance feeds show only the owner's records (DONE)
+
+- **Provenance feed (`routes/vault_workspace_routes.py`):** In `GET /api/vault/provenance`, changed the `vault_provenance` filter from `(owner_user_id = ? OR owner_user_id IS NULL OR actor_user_id = ?)` to `(owner_user_id = ? OR actor_user_id = ?)` (keeping actor visibility) and changed the folded-in `vault_audit` filter from `(cv.user_id = ? OR cv.user_id IS NULL)` to `cv.user_id = ?`. Left `GET /api/vault/provenance/verify` untouched so it continues to verify the full hash chain.
+- **Audit trail (`routes/vault_workspace_routes.py`):** In `GET /api/vault/audit-trail`, changed both the `folder_id` query (`WHERE va.folder_id = ? AND cv.user_id = ?`) and the vault-wide query (`WHERE cv.user_id = ?`) to require `cv.user_id = ?`, hiding both unowned documents and deleted-document (`LEFT JOIN` NULL) audit threads.
+- **Tests (`tests/test_vault_audit_feeds.py`):** Added end-to-end tests for two users covering owned, unowned, cross-actor, and deleted-document rows across `GET /api/vault/provenance` and `GET /api/vault/audit-trail` (with and without `folder_id`, plus cross-user `folder_id` and `node_type`/`node_id` attack cases).
+- **Deployment warning:** Folder and document delete paths (`app.py`) remain for Batch 6 — **do not deploy yet**.

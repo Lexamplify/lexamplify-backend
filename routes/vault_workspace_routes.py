@@ -1133,12 +1133,12 @@ def create_vault_workspace_blueprint(deps):
         mock (INITIAL_PROVENANCE/generateQuickHash()) entirely.
 
         Scoped by owner_user_id/actor_user_id rather than trying to
-        re-check current access on possibly-deleted nodes: a user sees an
-        entry if they own (or owned, at write time) the node, it was
-        legacy/shared-to-everyone, or they personally performed the action
-        — the same "owned or legacy" convention used everywhere else in
-        this vault, just captured as a snapshot since a deleted node has no
-        current owner to re-check against.
+        re-check current access on possibly-deleted nodes: only the owner
+        (or the actor who personally performed the action) sees these
+        records; deleted-document threads and unowned rows are hidden.
+        A deleted node has no current owner to re-check against, so the
+        ownership and actor columns recorded at write time are used.
+        Unowned rows (owner_user_id IS NULL) are only shown to the actor.
 
         node_type+node_id optionally filters to one item's own history
         (folder/document detail view); otherwise this is the vault-wide
@@ -1159,7 +1159,7 @@ def create_vault_workspace_blueprint(deps):
             old_rf = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
-                where = ['(owner_user_id = ? OR owner_user_id IS NULL OR actor_user_id = ?)']
+                where = ['(owner_user_id = ? OR actor_user_id = ?)']
                 params = [uid, uid]
                 if node_type in ('folder', 'document') and node_id is not None:
                     where.append('node_type = ? AND node_id = ?')
@@ -1183,8 +1183,8 @@ def create_vault_workspace_blueprint(deps):
 
                 # Fold in vault_audit, scoped the same way vault_audit_trail
                 # already scopes it (via the case_vault row's own
-                # ownership, since vault_audit itself carries no user_id).
-                audit_where = ['(cv.user_id = ? OR cv.user_id IS NULL)']
+                # ownership, since vault_audit itself carries no user_id): only the owner sees these records; deleted-document threads and unowned rows are hidden.
+                audit_where = ['cv.user_id = ?']
                 audit_params = [uid]
                 if node_type == 'folder' and node_id is not None:
                     audit_where.append('va.folder_id = ?')
@@ -1545,7 +1545,7 @@ def create_vault_workspace_blueprint(deps):
                 c = conn.cursor()
                 # An audit record's owner is transitive through the vault
                 # document it documents — vault_audit itself carries no
-                # user_id, so ownership is resolved via the case_vault join.
+                # user_id, so ownership is resolved via the case_vault join: only the owner sees these records; deleted-document threads and unowned rows are hidden.
                 if folder_id is not None:
                     c.execute('''
                         SELECT va.id, va.folder_id, va.vault_doc_id, va.session_title,
@@ -1555,7 +1555,7 @@ def create_vault_workspace_blueprint(deps):
                         FROM   vault_audit va
                         LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
                         LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
-                        WHERE  va.folder_id = ? AND (cv.user_id = ? OR cv.user_id IS NULL)
+                        WHERE  va.folder_id = ? AND cv.user_id = ?
                         ORDER  BY va.created_at DESC
                     ''', (folder_id, uid))
                 else:
@@ -1567,7 +1567,7 @@ def create_vault_workspace_blueprint(deps):
                         FROM   vault_audit va
                         LEFT JOIN case_vault    cv ON va.vault_doc_id = cv.id
                         LEFT JOIN vault_folders vf ON va.folder_id    = vf.id
-                        WHERE  cv.user_id = ? OR cv.user_id IS NULL
+                        WHERE  cv.user_id = ?
                         ORDER  BY va.created_at DESC
                         LIMIT  60
                     ''', (uid,))
