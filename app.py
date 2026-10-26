@@ -2607,7 +2607,11 @@ def create_app():
     # credits. Instead of trusting every route to remember, every /api/ call needs a valid session unless it is on
     # this short public list. OPTIONS (CORS preflight) always passes.
     _PUBLIC_API_PREFIXES = ("/api/auth/",)
-    _PUBLIC_API_EXACT = {"/api/ping"}
+    # The court-resources daily-capture endpoints are triggered by an external
+    # cron (GitHub Actions) that sends ADMIN_SYNC_TOKEN but no login cookie, so
+    # they must bypass this JWT gate. They enforce their own ADMIN_SYNC_TOKEN
+    # check and fail closed when it is unset, so they are not a data-exposure path.
+    _PUBLIC_API_EXACT = {"/api/ping", "/api/admin/daily-refresh", "/api/admin/refresh-status"}
 
     @app.before_request
     def _require_sign_in_for_api():
