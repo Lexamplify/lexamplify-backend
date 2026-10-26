@@ -7,7 +7,7 @@ import re
 import sqlite3
 import traceback
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse, quote
 
 import requests
@@ -1320,10 +1320,45 @@ def get_bar_associations():
         conn.close()
 
 
+# On-demand refresh keeps the rosters current with no external cron or token:
+# the first request after the TTL lapses scrapes the official pages and caches
+# the result. One fast GET per court (Delhi HC responds in ~1-2s), well under
+# the worker timeout, and fully fail-safe.
+_ROSTER_TTL_HOURS = 12
+
+
+def _rosters_need_refresh(conn) -> bool:
+    """True if court_rosters is empty or its newest row is older than the TTL."""
+    try:
+        row = conn.execute("SELECT MAX(updated_at) AS m FROM court_rosters").fetchone()
+    except Exception:
+        return True
+    newest = row['m'] if row else None
+    if not newest:
+        return True
+    try:
+        last = datetime.strptime(newest, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+    except Exception:
+        return True
+    return (datetime.now(timezone.utc) - last) > timedelta(hours=_ROSTER_TTL_HOURS)
+
+
 @court_bp.route('/api/court-rosters', methods=['GET', 'OPTIONS'])
 def get_court_rosters():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
+    # Refresh on demand when stale/empty — scrape failures fall through to
+    # whatever is already cached, so this never turns into a request error.
+    probe = _bar_conn()
+    try:
+        stale = _rosters_need_refresh(probe)
+    finally:
+        probe.close()
+    if stale:
+        try:
+            _capture_rosters()
+        except Exception:
+            pass
     conn = _bar_conn()
     try:
         q = "SELECT court,title,category,effective_date,url,updated_at FROM court_rosters"
