@@ -784,6 +784,17 @@ def get_live_legal_events():
             and (now - _LIVE_EVENTS_CACHE['ts']) < _LIVE_EVENTS_TTL):
         return jsonify({'events': _LIVE_EVENTS_CACHE['data'], 'cached': True}), 200
 
+    # Prefer the daily-captured snapshot persisted in event_cache. It survives
+    # worker cold starts and per-worker memory, and lets us serve instantly
+    # without hitting LiveLaw / Bar & Bench on the user's request path.
+    if not force_refresh:
+        snapshot = _read_events_from_db()
+        if snapshot:
+            _LIVE_EVENTS_CACHE['data'] = snapshot
+            _LIVE_EVENTS_CACHE['ts']   = now
+            return jsonify({'events': snapshot, 'cached': True,
+                            'source': 'daily-snapshot'}), 200
+
     all_events: list[dict] = []
     errors: list[str]      = []
 
@@ -798,12 +809,529 @@ def get_live_legal_events():
             errors.append(f"{src['source']}: {exc}")
 
     if not all_events:
+        # Every live feed failed — fall back to the last captured snapshot so the
+        # screen is never empty.
+        snapshot = _read_events_from_db()
+        if snapshot:
+            return jsonify({'events': snapshot, 'cached': True,
+                            'source': 'daily-snapshot-fallback', 'errors': errors}), 200
         return jsonify({'error': 'All RSS feeds failed', 'details': errors}), 502
 
     _LIVE_EVENTS_CACHE['data'] = all_events
     _LIVE_EVENTS_CACHE['ts']   = now
+    _persist_events(all_events)   # keep the daily snapshot warm on organic fetches too
 
     return jsonify({'events': all_events, 'cached': False, 'errors': errors}), 200
+
+
+# ── Daily capture: persistence + unified refresh job ──────────────────────────
+# The pieces above each already CAPTURE fresh public data (cron_form_indexer →
+# misc_forms; services.court_scraper → judges rosters & judges-on-leave;
+# /api/legal-events → LiveLaw + Bar&Bench RSS). What was missing is something
+# that RUNS them on a schedule and keeps a durable snapshot. This block adds:
+#   • event_cache persistence for the legal-events feed (survives cold starts),
+#   • a capture_runs log for observability,
+#   • one token-gated /api/admin/daily-refresh an external cron (GitHub Actions)
+#     hits once a day to refresh everything ON the Render box (where the SQLite
+#     disk lives), and /api/admin/refresh-status to read the last run.
+# Heavy scraping runs in a background thread so it never trips Gunicorn's ~30s
+# worker timeout — the same lesson /api/admin/sync-court-data already encodes by
+# seeding locally by default. All writes target instance/client_data.db.
+
+import threading as _threading
+
+_CAPTURE_RUNS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS capture_runs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task       TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    detail     TEXT,
+    item_count INTEGER,
+    ran_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+_capture_lock  = _threading.Lock()
+_capture_state = {'running': False, 'started_at': None}
+
+
+def _capture_conn() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(_DB_PATH, timeout=15)
+    conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.executescript(_EVENT_CACHE_SCHEMA)
+    conn.executescript(_CAPTURE_RUNS_SCHEMA)
+    return conn
+
+
+def _persist_events(events: list[dict]) -> int:
+    """Replace the event_cache snapshot with the latest captured events.
+    raw_content holds the full original dict so the read path is loss-free."""
+    if not events:
+        return 0
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    conn = _capture_conn()
+    try:
+        conn.execute("DELETE FROM event_cache")
+        for ev in events:
+            conn.execute(
+                """INSERT OR REPLACE INTO event_cache
+                   (event_id, title, description, event_date, venue, organizer,
+                    register_url, raw_content, source_url, cached_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    str(ev.get('id') or ev.get('link') or '')[:200],
+                    ev.get('title', ''),
+                    ev.get('description', ''),
+                    ev.get('date', ''),
+                    '',
+                    ev.get('source', ''),
+                    ev.get('link', ''),
+                    json.dumps(ev, ensure_ascii=False),
+                    ev.get('link', ''),
+                    now,
+                ),
+            )
+        conn.commit()
+        return len(events)
+    finally:
+        conn.close()
+
+
+def _read_events_from_db() -> list[dict]:
+    """Return the persisted legal-events snapshot (original dicts), or []."""
+    try:
+        conn = _capture_conn()
+        # event_cache has a TEXT primary key (event_id) and no `id` column, so
+        # order by the implicit rowid to preserve insertion (source) order.
+        rows = conn.execute(
+            "SELECT raw_content FROM event_cache ORDER BY rowid"
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return []
+    out: list[dict] = []
+    for r in rows:
+        try:
+            out.append(json.loads(r['raw_content']))
+        except Exception:
+            continue
+    return out
+
+
+def _log_run(task: str, status: str, detail: str = '', item_count=None) -> None:
+    try:
+        conn = _capture_conn()
+        conn.execute(
+            "INSERT INTO capture_runs (task, status, detail, item_count) VALUES (?,?,?,?)",
+            (task, status, (detail or '')[:500], item_count),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _capture_legal_events():
+    """Fetch the RSS feeds and persist the snapshot → (status, count, detail)."""
+    all_events: list[dict] = []
+    errs: list[str] = []
+    for src in _RSS_SOURCES:
+        try:
+            all_events.extend(_parse_rss_feed(src))
+        except Exception as exc:
+            errs.append(f"{src['source']}: {exc}")
+    if not all_events:
+        return ('error', 0, '; '.join(errs) or 'no events parsed')
+    n = _persist_events(all_events)
+    _LIVE_EVENTS_CACHE['data'] = all_events
+    _LIVE_EVENTS_CACHE['ts']   = _time.monotonic()
+    return ('ok', n, ('partial: ' + '; '.join(errs)) if errs else 'ok')
+
+
+def _capture_forms():
+    """Run the nightly forms indexer in-process. It has its own fail-safe guard
+    and writes misc_forms itself → (status, count, detail)."""
+    try:
+        import cron_form_indexer
+        code = cron_form_indexer.run()
+        if code == 0:
+            try:
+                conn = _capture_conn()
+                n = conn.execute("SELECT COUNT(*) AS c FROM misc_forms").fetchone()['c']
+                conn.close()
+            except Exception:
+                n = -1
+            return ('ok', n, 'form indexer exit=0')
+        return ('warn', 0, f'form indexer exit={code} (fail-safe/db — DB left untouched)')
+    except Exception as exc:
+        return ('error', 0, str(exc))
+
+
+def _capture_judges(app, live: bool):
+    """Seed district judges + SC roster via the same functions the sync route
+    uses. live=True scrapes rosters with tight timeouts + local fallback;
+    default re-seeds from the bundled JSON → (status, count, detail)."""
+    try:
+        with app.app_context():
+            from database import db
+            db.create_all()
+            from services.court_scraper import seed_district_from_json
+            from services.supreme_court_seeder import seed_supreme_court_roster
+            district_keys = ['delhi_rohini', 'delhi_rohini_nw']
+            total = 0
+            if live:
+                from services.court_scraper import (
+                    scrape_and_upsert_roster, scrape_vc_links_from_pdf,
+                    sync_judges_on_leave, DISTRICT_PDF_URLS,
+                )
+                for d in district_keys:
+                    try:
+                        if not scrape_and_upsert_roster(d, timeout=6):
+                            raise RuntimeError('roster scrape returned failure')
+                        scrape_vc_links_from_pdf(DISTRICT_PDF_URLS[d], d, timeout=6)
+                        sync_judges_on_leave(d, timeout=6)
+                    except Exception:
+                        db.session.rollback()
+                        seed_district_from_json(d, _load_district_json(d))
+                    total += JudicialOfficer.query.filter_by(district_key=d).count()
+            else:
+                for d in district_keys:
+                    total += seed_district_from_json(d, _load_district_json(d))
+            seed_supreme_court_roster(db, SupremeCourtRoster)
+            return ('ok', total, 'live' if live else 'local-seed')
+    except Exception as exc:
+        return ('error', 0, str(exc))
+
+
+def _run_daily_capture(app, live: bool) -> None:
+    with _capture_lock:
+        if _capture_state['running']:
+            return
+        _capture_state['running']    = True
+        _capture_state['started_at'] = datetime.now(timezone.utc).isoformat()
+    try:
+        for task, fn in (
+            ('legal_events',     lambda: _capture_legal_events()),
+            ('forms',            lambda: _capture_forms()),
+            ('judges',           lambda: _capture_judges(app, live)),
+            ('bar_associations', lambda: _capture_bar_associations()),
+            ('rosters',          lambda: _capture_rosters()),
+        ):
+            try:
+                status, count, detail = fn()
+            except Exception as exc:
+                status, count, detail = 'error', 0, str(exc)
+            _log_run(task, status, detail, count)
+    finally:
+        with _capture_lock:
+            _capture_state['running'] = False
+
+
+@court_bp.route('/api/admin/daily-refresh', methods=['GET', 'POST'])
+def daily_refresh():
+    """Token-gated unified daily capture (legal events + forms + judges/roster).
+    Designed to be hit once a day by an external scheduler — see
+    .github/workflows/daily-court-refresh.yml. Returns 202 immediately; the work
+    runs in a background thread so it never trips the Gunicorn worker timeout.
+    ?source=live also scrapes the live district rosters (tight 6s timeouts with a
+    local-JSON fallback); the default re-seeds judges locally and still captures
+    forms + legal events live (those sources don't hang like dcourts.gov.in)."""
+    expected = os.environ.get('ADMIN_SYNC_TOKEN')
+    if not expected or request.args.get('token') != expected:
+        return jsonify({'error': 'Unauthorized'}), 403
+    with _capture_lock:
+        if _capture_state['running']:
+            return jsonify({'status': 'already_running',
+                            'started_at': _capture_state['started_at']}), 202
+    live = request.args.get('source') == 'live'
+    from flask import current_app
+    app = current_app._get_current_object()
+    _threading.Thread(target=_run_daily_capture, args=(app, live), daemon=True).start()
+    return jsonify({'status': 'started',
+                    'mode': 'live' if live else 'local',
+                    'started_at': datetime.now(timezone.utc).isoformat()}), 202
+
+
+@court_bp.route('/api/admin/refresh-status', methods=['GET'])
+def refresh_status():
+    """Token-gated: the last 20 capture_runs rows + whether a run is in flight."""
+    expected = os.environ.get('ADMIN_SYNC_TOKEN')
+    if not expected or request.args.get('token') != expected:
+        return jsonify({'error': 'Unauthorized'}), 403
+    try:
+        conn = _capture_conn()
+        rows = conn.execute(
+            "SELECT task, status, detail, item_count, ran_at FROM capture_runs "
+            "ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+        conn.close()
+        return jsonify({'running': _capture_state['running'],
+                        'runs': [dict(r) for r in rows]}), 200
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+# ── Bar associations directory + court rosters (daily capture) ────────────────
+# Two more public-data domains, kept honest about what is scrapable:
+#   • Court rosters (sitting / duty / bail / vacation benches) ARE published as
+#     plain PDF links on court sites (e.g. Delhi HC /web/judges/current, no
+#     CAPTCHA), so we capture the links + effective dates + a category. We link
+#     the official PDF rather than parsing bench assignments (per-court, fragile).
+#   • Bar associations have no clean machine-readable source. Rather than ship
+#     guessed/unverifiable URLs into a legal product, this is a curated directory:
+#     a small set of VERIFIED apex bodies plus an admin-maintained JSON
+#     (instance/bar_associations.json), the same seed pattern the judges
+#     directory uses. Add verified entries to that file; the capture upserts them.
+
+_BAR_ASSOC_SCHEMA = """
+CREATE TABLE IF NOT EXISTS bar_associations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    kind       TEXT,
+    state      TEXT,
+    url        TEXT NOT NULL UNIQUE,
+    phone      TEXT,
+    email      TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+_ROSTER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS court_rosters (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    court          TEXT NOT NULL,
+    title          TEXT NOT NULL,
+    category       TEXT,
+    effective_date TEXT,
+    url            TEXT NOT NULL UNIQUE,
+    captured_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+# Only URLs confirmed reachable are seeded here. Everything else (State Bar
+# Councils, HC / district bar associations) goes into instance/bar_associations.json
+# as a list of {name, kind, state, url, phone?, email?} — do NOT hardcode
+# unverified URLs in this list.
+_BAR_ASSOC_SEED = [
+    {'name': 'Bar Council of India', 'kind': 'Apex', 'state': 'All India',
+     'url': 'https://www.barcouncilofindia.org/', 'phone': '', 'email': ''},
+    {'name': 'Supreme Court Advocates-on-Record Association (SCAORA)',
+     'kind': 'Apex', 'state': 'All India',
+     'url': 'https://www.scaora.org/', 'phone': '', 'email': ''},
+]
+
+_BAR_ASSOC_JSON = os.path.join(os.path.dirname(__file__), '..', 'instance', 'bar_associations.json')
+
+_ROSTER_TARGETS = [
+    {'court': 'Delhi High Court',
+     'url':  'https://delhihighcourt.nic.in/web/judges/current',
+     'base': 'https://delhihighcourt.nic.in',
+     'match': 'judges-roster'},
+]
+
+_ROSTER_UA = {
+    'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'),
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+}
+
+
+def _roster_category(text: str) -> str:
+    t = (text or '').lower()
+    if 'vacation' in t:
+        return 'vacation'
+    if 'bail' in t:
+        return 'bail'
+    if 'duty' in t:
+        return 'duty'
+    if 'sitting' in t or 'roster' in t:
+        return 'sitting'
+    return 'roster'
+
+
+def _roster_date(text: str) -> str:
+    """Pull a dd.mm.yy(yy) effective date out of a filename/title; '' if none."""
+    m = re.search(r'(\d{1,2})[._\-/](\d{1,2})[._\-/](\d{2,4})', text or '')
+    if not m:
+        return ''
+    d, mo, y = m.groups()
+    if len(y) == 2:
+        y = '20' + y
+    try:
+        return f'{int(d):02d}-{int(mo):02d}-{y}'
+    except ValueError:
+        return ''
+
+
+def _name_from_href_roster(fname: str) -> str:
+    base = re.sub(r'\.pdf$', '', fname, flags=re.IGNORECASE)
+    return base.replace('_', ' ').replace('-', ' ').strip().title() or fname
+
+
+def _bar_conn() -> sqlite3.Connection:
+    conn = _capture_conn()
+    conn.executescript(_BAR_ASSOC_SCHEMA)
+    conn.executescript(_ROSTER_SCHEMA)
+    return conn
+
+
+def _upsert_bar_assocs(conn, rows: list[dict]) -> int:
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    n = 0
+    for r in rows:
+        url  = (r.get('url') or '').strip()
+        name = (r.get('name') or '').strip()
+        if not url or not name:
+            continue
+        conn.execute(
+            """INSERT INTO bar_associations (name, kind, state, url, phone, email, updated_at)
+               VALUES (:name,:kind,:state,:url,:phone,:email,:now)
+               ON CONFLICT(url) DO UPDATE SET
+                   name=excluded.name, kind=excluded.kind, state=excluded.state,
+                   phone=excluded.phone, email=excluded.email, updated_at=excluded.updated_at""",
+            {'name': name[:255], 'kind': r.get('kind', ''), 'state': r.get('state', ''),
+             'url': url, 'phone': r.get('phone', ''), 'email': r.get('email', ''), 'now': now},
+        )
+        n += 1
+    conn.commit()
+    return n
+
+
+def _capture_bar_associations():
+    """Upsert the verified apex seed + any admin-maintained JSON directory."""
+    rows  = list(_BAR_ASSOC_SEED)
+    extra = ''
+    if os.path.exists(_BAR_ASSOC_JSON):
+        try:
+            with open(_BAR_ASSOC_JSON, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                rows.extend(data)
+                extra = f'; +{len(data)} from JSON'
+        except Exception as exc:
+            extra = f'; JSON load failed: {exc}'
+    conn = _bar_conn()
+    try:
+        n = _upsert_bar_assocs(conn, rows)
+        total = conn.execute("SELECT COUNT(*) AS c FROM bar_associations").fetchone()['c']
+    finally:
+        conn.close()
+    return ('ok', total, f'upserted {n} ({len(_BAR_ASSOC_SEED)} seed{extra})')
+
+
+def _scrape_roster_target(target: dict) -> list[dict]:
+    r = requests.get(target['url'], headers=_ROSTER_UA, timeout=(8, 20))
+    r.raise_for_status()
+    soup = BeautifulSoup(r.content, 'html.parser')
+    out, seen = [], set()
+    for a in soup.find_all('a', href=True):
+        href = a['href'].strip()
+        if not re.search(r'\.pdf(\?[^#"]*)?$', href, re.IGNORECASE):
+            continue
+        if target.get('match') and target['match'] not in href.lower():
+            continue
+        url = urljoin(target['base'], href)
+        if not url.startswith('http') or url in seen:
+            continue
+        seen.add(url)
+        text  = a.get_text(' ', strip=True)
+        fname = urlparse(url).path.rsplit('/', 1)[-1]
+        title = text if len(text) >= 6 else _name_from_href_roster(fname)
+        out.append({
+            'court':          target['court'],
+            'title':          title[:255],
+            'category':       _roster_category(text + ' ' + fname),
+            'effective_date': _roster_date(fname) or _roster_date(text),
+            'url':            url,
+        })
+    return out
+
+
+def _capture_rosters():
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    all_rows, errs = [], []
+    for tgt in _ROSTER_TARGETS:
+        try:
+            rows = _scrape_roster_target(tgt)
+            if rows:
+                all_rows.extend(rows)
+            else:
+                errs.append(f"{tgt['court']}: 0 roster PDFs")
+        except Exception as exc:
+            errs.append(f"{tgt['court']}: {exc}")
+    # Fail-safe: only upsert what we found; never delete existing rosters.
+    if not all_rows:
+        return ('error', 0, '; '.join(errs) or 'no rosters found')
+    conn = _bar_conn()
+    try:
+        for r in all_rows:
+            conn.execute(
+                """INSERT INTO court_rosters (court,title,category,effective_date,url,updated_at)
+                   VALUES (:court,:title,:category,:effective_date,:url,:now)
+                   ON CONFLICT(url) DO UPDATE SET
+                       court=excluded.court, title=excluded.title,
+                       category=excluded.category, effective_date=excluded.effective_date,
+                       updated_at=excluded.updated_at""",
+                {**r, 'now': now},
+            )
+        conn.commit()
+        total = conn.execute("SELECT COUNT(*) AS c FROM court_rosters").fetchone()['c']
+    finally:
+        conn.close()
+    detail = f'upserted {len(all_rows)}; total {total}'
+    if errs:
+        detail += ' (partial: ' + '; '.join(errs) + ')'
+    return ('ok', len(all_rows), detail)
+
+
+@court_bp.route('/api/court-bar-associations', methods=['GET', 'OPTIONS'])
+def get_bar_associations():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    conn = _bar_conn()
+    try:
+        if conn.execute("SELECT COUNT(*) AS c FROM bar_associations").fetchone()['c'] == 0:
+            conn.close()
+            _capture_bar_associations()          # seed on first access
+            conn = _bar_conn()
+        q = "SELECT name,kind,state,url,phone,email FROM bar_associations"
+        clauses, params = [], {}
+        if request.args.get('state'):
+            clauses.append("LOWER(state)=LOWER(:state)"); params['state'] = request.args['state']
+        if request.args.get('kind'):
+            clauses.append("LOWER(kind)=LOWER(:kind)");   params['kind']  = request.args['kind']
+        if clauses:
+            q += " WHERE " + " AND ".join(clauses)
+        q += " ORDER BY kind, name"
+        rows = conn.execute(q, params).fetchall()
+        return jsonify({'bar_associations': [dict(r) for r in rows]}), 200
+    finally:
+        conn.close()
+
+
+@court_bp.route('/api/court-rosters', methods=['GET', 'OPTIONS'])
+def get_court_rosters():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    conn = _bar_conn()
+    try:
+        q = "SELECT court,title,category,effective_date,url,updated_at FROM court_rosters"
+        clauses, params = [], {}
+        if request.args.get('court'):
+            clauses.append("LOWER(court) LIKE LOWER(:court)"); params['court'] = f"%{request.args['court']}%"
+        if request.args.get('category'):
+            clauses.append("LOWER(category)=LOWER(:category)"); params['category'] = request.args['category']
+        if clauses:
+            q += " WHERE " + " AND ".join(clauses)
+        q += " ORDER BY id DESC LIMIT 100"
+        rows = conn.execute(q, params).fetchall()
+        return jsonify({'rosters': [dict(r) for r in rows]}), 200
+    finally:
+        conn.close()
 
 
 # ── Dynamic SC form scraper ───────────────────────────────────────────────────
