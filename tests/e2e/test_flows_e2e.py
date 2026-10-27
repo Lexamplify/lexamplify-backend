@@ -1,8 +1,58 @@
 """Check conflicts and Analyze a contract, driven in a real browser against the real backend (AI replaced by a fake)."""
 import io
 import re
+import time
 
 import pytest
+from playwright.sync_api import TimeoutError as PWTimeout
+
+# The WordCraft editor draws on a canvas inside an iframe, so its text is read the way the app's
+# bridge reads it (frontend/src/services/wordcraftBridge.js): wc_text() on the frame's wasmBindings.
+_WC_HAS_TEXT = "typeof window.wc_text === 'function' || !!(window.wasmBindings && typeof window.wasmBindings.wc_text === 'function')"
+_WC_READ = r"""async () => {
+  const b = window.wasmBindings;
+  const f = (b && typeof b.wc_text === 'function') ? b.wc_text.bind(b) : window.wc_text;
+  return String((await f()) || '').replace(/\s+/g, ' ').trim();
+}"""
+_WC_CONTAINS = r"""async (needles) => {
+  const b = window.wasmBindings;
+  const f = (b && typeof b.wc_text === 'function') ? b.wc_text.bind(b) : window.wc_text;
+  const text = String((await f()) || '').replace(/\s+/g, ' ').trim();
+  return needles.every((n) => text.includes(n));
+}"""
+# Elements built from the XSS payload: a <script> whose text, or any element with an attribute whose value, holds the marker.
+_FROM_PAYLOAD = r"""(marker) => {
+  let n = 0;
+  for (const el of document.querySelectorAll('*')) {
+    if (el.tagName === 'SCRIPT' && (el.textContent || '').includes(marker)) n += 1;
+    for (const a of el.attributes) { if (a.value.includes(marker)) { n += 1; break; } }
+  }
+  return n;
+}"""
+
+
+def _editor_text(page, needles, timeout=20000):
+    """Whitespace-collapsed text of the open WordCraft document, once it contains every needle."""
+    deadline = time.monotonic() + timeout / 1000
+    frame = None
+    while frame is None:
+        for f in page.frames:
+            try:
+                if f.evaluate(_WC_HAS_TEXT):
+                    frame = f
+                    break
+            except Exception:  # a frame that is detached or still navigating
+                pass
+        if frame is None:
+            if time.monotonic() > deadline:
+                pytest.fail("no frame exposes wc_text: the WordCraft editor never loaded")
+            page.wait_for_timeout(250)
+    try:
+        frame.wait_for_function(_WC_CONTAINS, arg=list(needles), timeout=max(1, int((deadline - time.monotonic()) * 1000)))
+    except PWTimeout:
+        pytest.fail(f"editor text never contained {list(needles)}; it has: {frame.evaluate(_WC_READ)[:300]!r}")
+    return frame.evaluate(_WC_READ)
+
 
 CONTRACT = """SERVICE AGREEMENT
 
@@ -247,7 +297,12 @@ def test_script_in_a_name_never_runs_on_the_conflict_page_or_in_the_editor(advoc
     page.get_by_role("heading", name="Check the draft").wait_for()
     page.get_by_role("button", name="Looks good, continue").click()
     page.get_by_role("button", name="Open in the editor").click()
-    page.wait_for_url(re.compile("/auto-draft"))
-    page.get_by_text("Kumar").first.wait_for(timeout=20000)
+    page.wait_for_url(re.compile(r"/editor($|[/?#])"))
+    text = _editor_text(page, ["Kumar"], timeout=20000)
     page.wait_for_timeout(1500)
     assert page.evaluate("window.__xss === undefined"), "script from a party name ran in the editor"
+    assert "Kumar" in text
+    # a script run inside the editor iframe would set the flag on that frame's window, not the top page's
+    for frame in page.frames:
+        assert frame.evaluate("window.__xss === undefined"), f"script from a party name ran in frame {frame.url}"
+        assert frame.evaluate(_FROM_PAYLOAD, "__xss") == 0, f"an element built from the payload exists in frame {frame.url}"

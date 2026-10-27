@@ -4,6 +4,46 @@ import re
 import time
 
 import pytest
+from playwright.sync_api import TimeoutError as PWTimeout
+
+# The WordCraft editor draws on a canvas inside an iframe, so its text is read the way the app's
+# bridge reads it (frontend/src/services/wordcraftBridge.js): wc_text() on the frame's wasmBindings.
+_WC_HAS_TEXT = "typeof window.wc_text === 'function' || !!(window.wasmBindings && typeof window.wasmBindings.wc_text === 'function')"
+_WC_READ = r"""async () => {
+  const b = window.wasmBindings;
+  const f = (b && typeof b.wc_text === 'function') ? b.wc_text.bind(b) : window.wc_text;
+  return String((await f()) || '').replace(/\s+/g, ' ').trim();
+}"""
+_WC_CONTAINS = r"""async (needles) => {
+  const b = window.wasmBindings;
+  const f = (b && typeof b.wc_text === 'function') ? b.wc_text.bind(b) : window.wc_text;
+  const text = String((await f()) || '').replace(/\s+/g, ' ').trim();
+  return needles.every((n) => text.includes(n));
+}"""
+
+
+def _editor_text(page, needles, timeout=20000):
+    """Whitespace-collapsed text of the open WordCraft document, once it contains every needle."""
+    deadline = time.monotonic() + timeout / 1000
+    frame = None
+    while frame is None:
+        for f in page.frames:
+            try:
+                if f.evaluate(_WC_HAS_TEXT):
+                    frame = f
+                    break
+            except Exception:  # a frame that is detached or still navigating
+                pass
+        if frame is None:
+            if time.monotonic() > deadline:
+                pytest.fail("no frame exposes wc_text: the WordCraft editor never loaded")
+            page.wait_for_timeout(250)
+    try:
+        frame.wait_for_function(_WC_CONTAINS, arg=list(needles), timeout=max(1, int((deadline - time.monotonic()) * 1000)))
+    except PWTimeout:
+        pytest.fail(f"editor text never contained {list(needles)}; it has: {frame.evaluate(_WC_READ)[:300]!r}")
+    return frame.evaluate(_WC_READ)
+
 
 S138 = {
     "sender_name": "M/s Sundaram Agencies", "sender_address": "14 Cross Street, T. Nagar, Chennai - 600017",
@@ -274,16 +314,17 @@ def test_indic_and_special_characters_reach_the_word_file(advocate, tmp_path):
     assert "குமார்" in text and "कुमार" in text and "<b>bold</b>" in text      # shown as typed, never interpreted as markup
 
 
-def test_open_in_editor_loads_the_finished_draft_into_the_studio(advocate):
+def test_open_in_editor_loads_the_finished_draft_into_the_editor(advocate):
     page = advocate
     _open_s138(page)
     _fill(page, S138)
     page.get_by_role("button", name="Review the draft").click()
     page.get_by_role("button", name="Looks good, continue").click()
     page.get_by_role("button", name="Open in the editor").click()
-    page.wait_for_url(re.compile("/auto-draft"))
-    page.get_by_text("004817").first.wait_for(timeout=20000)
-    assert page.get_by_text("M/s Kumar Traders Pvt Ltd").first.is_visible()
+    page.wait_for_url(re.compile(r"/editor($|[/?#])"))
+    text = _editor_text(page, ["004817", "M/s Kumar Traders Pvt Ltd"], timeout=20000)
+    assert "004817" in text
+    assert "M/s Kumar Traders Pvt Ltd" in text
 
 
 def test_start_over_deletes_the_draft_after_confirmation(advocate):
