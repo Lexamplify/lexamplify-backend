@@ -295,36 +295,6 @@ Do not break character. Do not use markdown blocks. Reply purely with your court
         return jsonify({"error": str(e)}), 500
 
 
-@argument_bp.route("/api/vault/save", methods=["POST"])
-def save_vault():
-    data = request.get_json(silent=True) or {}
-    case_facts = data.get("case_facts", "")
-    history = data.get("history", [])
-    title = data.get("title", "VC Session")
-    
-    import uuid
-    vault_path = os.path.join(os.getcwd(), "vc_vault_data.json")
-    try:
-        if os.path.exists(vault_path):
-            with open(vault_path, "r", encoding="utf-8") as f:
-                vault_data = json.load(f)
-        else:
-            vault_data = {}
-            
-        case_id = "VC_" + str(uuid.uuid4())[:8]
-        vault_data[case_id] = {
-            "title": title,
-            "case_facts": case_facts,
-            "history": history
-        }
-        
-        with open(vault_path, "w", encoding="utf-8") as f:
-            json.dump(vault_data, f, indent=4)
-            
-        return jsonify({"status": "success", "message": f"Session locked to VC Vault (ID: {case_id}).", "id": case_id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @argument_bp.route("/api/vc/simulate", methods=["POST"])
 def vc_simulate():
     """
