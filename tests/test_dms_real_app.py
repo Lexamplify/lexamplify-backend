@@ -45,7 +45,8 @@ def real(tmp_path_factory):
     # left the process-wide limiter off, which is why this module used to see no 429s at all when it ran as
     # part of the full suite (and passed when it ran alone).
     limiter.enabled = True
-    flask_app = app_module.create_app()
+    from tests.helpers_app import create_app_here
+    flask_app = create_app_here(app_module, mp)
     flask_app.config.update(TESTING=True)
     yield flask_app, app_module
     try:

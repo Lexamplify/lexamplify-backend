@@ -36,7 +36,8 @@ def real(tmp_path_factory):
     mp.setenv("LPMS_SCHEDULER", "0")
     import app as app_module
     importlib.reload(app_module)
-    flask_app = app_module.create_app()
+    from tests.helpers_app import create_app_here
+    flask_app = create_app_here(app_module, mp)
     flask_app.config.update(TESTING=True)
     # never reach for the network: the AI call fails instantly and the viewer must fall back to a plain read-out
     import utils.ai_helper as ai

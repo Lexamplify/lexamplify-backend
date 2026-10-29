@@ -20,7 +20,7 @@ import requests as requests_lib
 import pytest
 from unittest.mock import patch, MagicMock
 
-import app as app_module
+from tests.helpers_app import make_app
 
 
 class _SignedInClient:
@@ -44,13 +44,8 @@ class _SignedInClient:
 def client(tmp_path, monkeypatch):
     # Isolated database and a real signed-in user: these routes now require sign-in,
     # and nothing here may touch the developer's own database.
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'full_test.db'}")
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-backend-full-0123456789")
-    monkeypatch.setenv("PHONE_OTP_REQUIRED", "false")
-    flask_app = app_module.create_app()
-    flask_app.config.update(TESTING=True)
-    from utils.limiter import limiter
-    limiter.enabled = False
+    # make_app runs from tmp_path with a throw-away database, and redirects every data path the app can reach.
+    flask_app = make_app(tmp_path, monkeypatch, "full_test.db")
     with flask_app.test_client() as test_client:
         r = test_client.post("/api/auth/register", json={"email": "full@example.com", "password": "TestPass123!", "name": "Full Test"})
         assert r.status_code == 201, r.get_json()

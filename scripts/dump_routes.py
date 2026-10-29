@@ -1,7 +1,7 @@
 """Print every Flask route (method, path, endpoint, auth guard) from an isolated app.
 
 Run:  python scripts/dump_routes.py [--json]
-Uses a throw-away SQLite database and an ephemeral secret, so it never touches real data.
+Builds the app with tests/helpers_app.make_app (temp working folder, throw-away SQLite database), so it never touches real data.
 Reused by the red-team tests to walk app.url_map automatically.
 """
 import json
@@ -17,14 +17,14 @@ PUBLIC_EXACT = {"/api/ping"}
 
 
 def build_app():
-    tmp = tempfile.mkdtemp(prefix="lex_routes_")
-    os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(tmp, 'routes.db')}"
-    os.environ.setdefault("JWT_SECRET_KEY", "routes-dump-secret-0123456789abcdef0123456789")
-    os.environ.setdefault("PHONE_OTP_REQUIRED", "false")
-    import app as app_module
-    flask_app = app_module.create_app()
-    flask_app.config.update(TESTING=True)
-    return flask_app
+    """The real app in a throw-away folder, built by the same helper the tests use (tests/helpers_app.make_app): the working
+    folder, database and every data path are redirected into the temp folder. The MonkeyPatch is never undone: this is a
+    short-lived script, and the redirects must stay in force for as long as the app is used."""
+    import pathlib
+    import pytest
+    from tests.helpers_app import make_app
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="lex_routes_"))
+    return make_app(tmp, pytest.MonkeyPatch(), "routes.db")
 
 
 def list_routes(flask_app):

@@ -62,32 +62,34 @@ def test_rate_limit_answers_in_plain_words_with_retry_after(tmp_path, monkeypatc
 
 def test_production_refuses_to_start_with_weak_or_missing_secrets(tmp_path, monkeypatch):
     import app as app_module
+    from tests.helpers_app import create_app_here
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'x.db'}")
     monkeypatch.setenv("JWT_SECRET_KEY", "changeme")
     with pytest.raises(RuntimeError, match="JWT_SECRET_KEY is too short or guessable"):
-        app_module.create_app()
+        create_app_here(app_module, monkeypatch)
     monkeypatch.setenv("JWT_SECRET_KEY", "a" * 31)
     with pytest.raises(RuntimeError, match="too short"):
-        app_module.create_app()
+        create_app_here(app_module, monkeypatch)
     monkeypatch.setenv("JWT_SECRET_KEY", "k" * 48)
     monkeypatch.setenv("DATABASE_URL", "")
     with pytest.raises(RuntimeError, match="DATABASE_URL is not set"):
-        app_module.create_app()
+        create_app_here(app_module, monkeypatch)
 
 
 def test_the_start_up_error_names_the_exact_missing_variable_in_plain_words(tmp_path, monkeypatch):
     """The person reading the Render log must be able to see, without reading the code, which variable is
     missing and what to put in it."""
     import app as app_module
+    from tests.helpers_app import create_app_here
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'x.db'}")
 
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     with pytest.raises(RuntimeError) as excinfo:
-        app_module.create_app()
+        create_app_here(app_module, monkeypatch)
     text = str(excinfo.value)
     assert "JWT_SECRET_KEY is missing" in text, text
     assert "32 random characters" in text, text            # what a good value looks like
@@ -98,7 +100,7 @@ def test_the_start_up_error_names_the_exact_missing_variable_in_plain_words(tmp_
     monkeypatch.setenv("JWT_SECRET_KEY", "k" * 48)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(RuntimeError) as excinfo:
-        app_module.create_app()
+        create_app_here(app_module, monkeypatch)
     text = str(excinfo.value)
     assert "DATABASE_URL is not set" in text, text
     assert "Neon" in text, text                             # where the value comes from
@@ -106,7 +108,7 @@ def test_the_start_up_error_names_the_exact_missing_variable_in_plain_words(tmp_
     # both at once: one message, both names, so nothing has to be fixed twice
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     with pytest.raises(RuntimeError) as excinfo:
-        app_module.create_app()
+        create_app_here(app_module, monkeypatch)
     text = str(excinfo.value)
     assert "JWT_SECRET_KEY is missing" in text and "DATABASE_URL is not set" in text, text
     assert "1." in text and "2." in text, text             # both are listed
@@ -115,12 +117,13 @@ def test_the_start_up_error_names_the_exact_missing_variable_in_plain_words(tmp_
 def test_a_development_server_starts_without_a_secret_and_says_so(tmp_path, monkeypatch, capsys):
     """Only production is strict: a developer must still be able to run the app with nothing set."""
     import app as app_module
+    from tests.helpers_app import create_app_here
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     monkeypatch.delenv("FLASK_ENV", raising=False)
     monkeypatch.delenv("RENDER", raising=False)
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'dev.db'}")
-    flask_app = app_module.create_app()
+    flask_app = create_app_here(app_module, monkeypatch)
     assert flask_app.config["JWT_SECRET_KEY"]
     assert len(flask_app.config["JWT_SECRET_KEY"]) >= 32
     assert "ephemeral dev key" in capsys.readouterr().out

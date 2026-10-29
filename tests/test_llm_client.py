@@ -121,16 +121,17 @@ def test_the_secret_key_never_appears_in_an_error_message(monkeypatch):
     assert "gsk_SECRET_VALUE_123" not in str(e.value)
 
 
-def test_the_app_no_longer_loads_litellm_at_start():
+def test_the_app_no_longer_loads_litellm_at_start(tmp_path):
     """The whole point: litellm is about 150 MB. Run in a clean process so other tests cannot have loaded it."""
     import subprocess
     import os
-    code = ("import os, sys, tempfile;"
-            "os.environ.update(LPMS_SCHEDULER='0', LEGACY_USER_MIGRATION='off', GROQ_API_KEY='', JWT_SECRET_KEY='x'*40,"
-            "DATABASE_URL='sqlite:///'+tempfile.mkdtemp().replace(chr(92),'/')+'/m.db');"
-            "import app as a; a.create_app();"
+    # The child builds the app through tests/helpers_app.make_app (temp working folder and database, every data path redirected),
+    # started with cwd=tmp_path so nothing is opened relative to the repo.
+    code = ("import sys, pathlib, pytest;"
+            "from tests.helpers_app import make_app;"
+            "make_app(pathlib.Path(sys.argv[1]), pytest.MonkeyPatch());"
             "bad=[m for m in ('litellm','chromadb','sentence_transformers','torch','groq','tavily') if m in sys.modules];"
             "print('LOADED', bad)")
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    out = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, timeout=180, env={**os.environ, "PYTHONPATH": root})
+    out = subprocess.run([sys.executable, "-c", code, str(tmp_path)], cwd=str(tmp_path), capture_output=True, text=True, timeout=180, env={**os.environ, "PYTHONPATH": root})
     assert "LOADED []" in out.stdout, out.stdout[-500:] + out.stderr[-800:]
