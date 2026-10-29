@@ -35,7 +35,8 @@ def real(tmp_path_factory):
     importlib.reload(app_module)
     from utils.limiter import limiter
     limiter.enabled = True
-    flask_app = app_module.create_app()
+    from tests.helpers_app import create_app_here
+    flask_app = create_app_here(app_module, mp)
     flask_app.config.update(TESTING=True)
     yield flask_app, app_module
     try:

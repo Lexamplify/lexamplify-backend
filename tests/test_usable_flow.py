@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import pytest
 from unittest.mock import patch
 
-import app as app_module
+from tests.helpers_app import make_app
 
 
 class _Client:
@@ -32,13 +32,7 @@ class _Client:
 
 @pytest.fixture()
 def anon(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'usable.db'}")
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-usable-flow-0123456789abc")
-    monkeypatch.setenv("PHONE_OTP_REQUIRED", "false")
-    a = app_module.create_app()
-    a.config.update(TESTING=True)
-    from utils.limiter import limiter
-    limiter.enabled = False
+    a = make_app(tmp_path, monkeypatch, "usable.db")
     with a.test_client() as c:
         yield c
 

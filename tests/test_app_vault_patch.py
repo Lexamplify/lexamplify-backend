@@ -102,9 +102,9 @@ def _discover_module_routes(flask_app, module_names, wanted_names):
 
 
 def mount_routes(flask_app, ns):
-    create_app = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "create_app")
+    create_app_node = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "create_app")
     found = {}
-    for node in ast.walk(create_app):
+    for node in ast.walk(create_app_node):
         if isinstance(node, ast.FunctionDef) and node.name in ROUTES:
             assert node.name not in found, f"handler {node.name} found twice in create_app"
             route = next(d for d in node.decorator_list if isinstance(d, ast.Call) and getattr(d.func, "attr", "") == "route")

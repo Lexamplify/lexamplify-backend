@@ -42,7 +42,8 @@ def real(tmp_path_factory):
     # off, and an app built that way never enforces a limit. Another test file can have left the
     # process-wide limiter off, which would make this module's limit test meaningless.
     limiter.enabled = True
-    flask_app = app_module.create_app()
+    from tests.helpers_app import create_app_here
+    flask_app = create_app_here(app_module, mp)
     flask_app.config.update(TESTING=True)
     yield flask_app, app_module
     try:

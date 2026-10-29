@@ -27,7 +27,8 @@ def client(tmp_path, monkeypatch):
     import app as app_module
     importlib.reload(app_module)
 
-    flask_app = app_module.create_app()
+    from tests.helpers_app import create_app_here
+    flask_app = create_app_here(app_module, monkeypatch)
     flask_app.config.update(TESTING=True)
     with flask_app.test_client() as test_client:
         yield test_client
