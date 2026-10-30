@@ -15,6 +15,7 @@ def TavilyClient(*args, **kwargs):
     return _real(*args, **kwargs)
 
 from utils.ai_helper import extract_json_from_llm_response
+from utils.upload_guard import read_checked_upload, problem_json
 
 # Blueprint definition
 argument_bp = Blueprint("argument", __name__)
@@ -93,8 +94,10 @@ def upload_case():
     
     f = request.files["file"]
     fname = f.filename.lower()
-    data = f.read()
-    
+    kind, data, problem = read_checked_upload(f)
+    if problem:
+        return jsonify(problem_json(problem)), problem["status"]
+
     try:
         text = ""
         if fname.endswith(".pdf"):
@@ -309,7 +312,9 @@ def vc_simulate():
     if "file" in request.files and request.files["file"].filename:
         f = request.files["file"]
         fname = f.filename.lower()
-        raw_bytes = f.read()
+        kind, raw_bytes, problem = read_checked_upload(f)
+        if problem:
+            return jsonify(problem_json(problem)), problem["status"]
         try:
             from utils.pdf_helper import extract_text_for_summary
             if fname.endswith(".pdf"):

@@ -580,11 +580,13 @@ def extract_file_text():
     f = request.files.get('file')
     if not f or not f.filename:
         return jsonify({'error': 'No file provided'}), 400
-    ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else 'txt'
     try:
         from utils.pdf_helper import extract_text_for_summary
-        raw_bytes = f.read()
-        text = extract_text_for_summary(raw_bytes, ext)
+        from utils.upload_guard import read_checked_upload, problem_json
+        kind, raw_bytes, problem = read_checked_upload(f)
+        if problem:
+            return jsonify(problem_json(problem)), problem['status']
+        text = extract_text_for_summary(raw_bytes, kind)
         if not text or not text.strip():
             text = raw_bytes.decode('utf-8', errors='ignore')
         return jsonify({'text': text[:12000], 'filename': f.filename})
