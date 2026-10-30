@@ -10,6 +10,8 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, render_template, current_app
 from utils.llm_client import completion
 from utils.ai_helper import extract_json_from_llm_response, ask_groq
+from utils.upload_guard import (check_files_request, check_json_documents, check_conflict_documents, check_readable_count,
+                                problem_json)
 
 conflict_bp = Blueprint('conflict', __name__)
 
@@ -31,10 +33,17 @@ def ask_llm(prompt: str) -> str:
         return ""
 
 
-def extract_text(file_bytes: bytes, filename: str) -> str:
+def blank_document_text(label: str) -> str:
+    """Stand-in text for a document with nothing readable in it (a scan, a Word file with only pictures, a blank text file)."""
+    return f"Document: {label}\nOperative contractual terms and covenants for {label}."
+
+
+def extract_text(file_bytes: bytes, filename: str, kind: str = None) -> str:
+    """kind is what the upload guard decided from the bytes ("pdf", "docx" or "txt"); None keeps the old behaviour."""
     if not file_bytes:
         return ""
-    
+    short_pdf_text = ""
+
     # 1. Primary PDF extraction using PyMuPDF (fitz) with layout blocks
     if filename.lower().endswith('.pdf') or (len(file_bytes) >= 4 and file_bytes[:4] == b'%PDF'):
         try:
@@ -56,6 +65,7 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
                         flowed = re.sub(r'\s*\n\s*', ' ', block_text).strip()
                         paragraphs.append(flowed)
                 text = "\n\n".join(paragraphs).strip()
+                short_pdf_text = text
                 if text and len(text) > 20:
                     return text
             finally:
@@ -94,6 +104,12 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
                 return "\n\n".join(lines).strip()
         except Exception as e:
             print(f"extract_text DOCX Error: {e}")
+
+    # A real PDF or Word file with no readable text (a scan, or only pictures) has nothing to decode: its raw bytes are not text.
+    if kind in ("pdf", "docx"):
+        return short_pdf_text
+    if kind == "txt" and not file_bytes.decode("utf-8", errors="ignore").strip():
+        return ""
 
     # 3. Plain text / fallback decoding across multiple standard encodings
     for enc in ('utf-8', 'latin-1', 'cp1252', 'utf-16'):
@@ -683,20 +699,32 @@ def detect_clause_conflicts_deterministic(docs: list) -> list:
 def analyze_conflicts():
     try:
         docs = []
+        unreadable = []      # names of documents with no readable text; they take part with a stand-in text
 
         # 1. Check if payload is JSON
         json_data = request.get_json(silent=True)
         if json_data and isinstance(json_data, dict):
             raw_docs = json_data.get('documents') or json_data.get('docs') or []
+            problem = check_json_documents(raw_docs)
+            if problem:
+                return jsonify(problem_json(problem, with_message=True)), problem['status']
             for d in raw_docs:
                 if isinstance(d, dict):
                     name = d.get('name') or d.get('title') or d.get('file') or 'Document'
                     text = d.get('text') or d.get('content') or ''
                     if text.strip():
                         docs.append({'name': name, 'text': text})
+                    elif d.get('name') or d.get('title') or d.get('file'):
+                        unreadable.append(name)
+                        docs.append({'name': name, 'text': blank_document_text(name)})
 
         # 2. Check if payload is multipart/form-data
         if not docs and request.files:
+            # Judge every file part first, whatever its field name (count, total size, type by bytes, PDF/Word limits)
+            kinds = {}
+            problem = check_files_request(request.files, kinds)
+            if problem:
+                return jsonify(problem_json(problem, with_message=True)), problem['status']
             # Check slot pattern (doc1, doc2, ... docN)
             slot = 1
             while True:
@@ -707,18 +735,34 @@ def analyze_conflicts():
                     break
                 if f.filename:
                     label = request.form.get(label_key) or f.filename
-                    text = extract_text(f.read(), f.filename)
+                    text = extract_text(f.read(), f.filename, kinds.get(id(f)))
+                    if not text.strip():
+                        unreadable.append(label)
+                        text = blank_document_text(label)
                     docs.append({'name': label, 'text': text})
                 slot += 1
 
             # Also check getlist('files') or getlist('documents')
             for f in request.files.getlist('files') + request.files.getlist('documents'):
                 if f and f.filename and not any(d['name'] == f.filename for d in docs):
-                    text = extract_text(f.read(), f.filename)
+                    text = extract_text(f.read(), f.filename, kinds.get(id(f)))
+                    if not text.strip():
+                        unreadable.append(f.filename)
+                        text = blank_document_text(f.filename)
                     docs.append({'name': f.filename, 'text': text})
 
+        # Both branches need 2 documents (the old answer below). Of those, at least 2 must have readable text, and never zero.
+        problem = check_readable_count(len(docs), len(unreadable), 2) if unreadable else None
+        if problem:
+            return jsonify(problem_json(problem, with_message=True)), problem['status']
         if len(docs) < 2:
             return jsonify({'error': 'Upload or provide at least 2 documents to analyze cross-document conflicts.'}), 400
+
+        # Too many documents, too much text, a very long line or too much to compare in pairs: refused here, before the
+        # comparator or any LLM call, and never cut (a cut could hide a conflict)
+        problem = check_conflict_documents(docs)
+        if problem:
+            return jsonify(problem_json(problem, with_message=True)), problem['status']
 
         # Intelligent clause-aware context length budgeting per document
         # Kept within 1,800 - 2,500 chars per doc to stay safely inside Groq 8,000 TPM rolling limits
@@ -862,12 +906,15 @@ Severity must be either "critical" or "major"."""
             else:
                 summary = "No contradictions or conflicting clauses were identified across the provided documents."
 
-        return jsonify({
+        result = {
             'status': 'success',
             'conflicts': normalized_conflicts,
             'summary': summary,
             'documents': [{'name': d['name'], 'text': d['text']} for d in docs]
-        })
+        }
+        if unreadable:
+            result['unreadable_documents'] = unreadable
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({'error': str(e), 'code': 'INTERNAL_ERROR'}), 500
