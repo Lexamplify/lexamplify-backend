@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Contract Viewer - LexAI India</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://unpkg.com/html-docx-js@0.3.1/dist/html-docx.js"></script>
+    <style>
+        :root {
+            --ink: #1a1208;
+            --gold: #c8922a;
+            --gold-light: #f0c060;
+            --cream: #faf6ee;
+            --parchment: #f2ead8;
+            --border: #d4c4a0;
+            --red: #c0392b;
+            --amber: #b7770d;
+            --green: #1e8449;
+            --text-muted: #6B7280;
+            --bg-base: #e5e5e5;
+        }
+        [data-theme="dark"] {
+            --ink: #e8e6e3;
+            --cream: #121212;
+            --parchment: #1a1a1a;
+            --border: #333333;
+            --text-muted: #aaaaaa;
+            --bg-base: #050505;
+        }
+        body { font-family: 'DM Sans', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--bg-base); color: var(--ink); transition: background-color 0.3s, color 0.3s; }
+        h1, h2, h3 { font-family: 'Cormorant Garamond', serif; }
+        
+        /* Header */
+        header { background: var(--ink); color: var(--cream); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-family: 'Cormorant Garamond', serif; font-size: 24px; font-weight: 700; color: var(--gold); }
+        .header-title { font-weight: 500; letter-spacing: 1px; }
+        .back-btn { color: var(--cream); text-decoration: none; border: 1px solid var(--cream); padding: 6px 15px; border-radius: 4px; font-size: 14px; transition: 0.2s; cursor: pointer; background: transparent;}
+        .back-btn:hover { background: var(--cream); color: var(--ink); }
+        
+        /* Summary Banner */
+        #executive-summary-banner { background: var(--parchment); padding: 15px 30px; border-bottom: 2px solid var(--border); display: flex; flex-direction: column; }
+        #executive-summary-banner h4 { margin: 0 0 5px 0; color: var(--ink); }
+        #executive-summary-content { font-size: 14px; color: #333; line-height: 1.5; font-style: italic;}
+
+        /* Summary Bar */
+        .summary-bar { background: white; padding: 10px 30px; display: flex; gap: 30px; border-bottom: 1px solid #ccc; font-size: 14px; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 10; }
+        .stat-item { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .dot.red { background: var(--red); }
+        .dot.amber { background: var(--amber); }
+        .dot.green { background: var(--green); }
+        
+        /* Layout */
+        .viewer-container { display: flex; flex: 1; overflow: hidden; }
+        
+        /* Left Panel - Native PDF */
+        .document-panel { flex: 1; min-width: 50%; max-width: 50%; border-right: 2px solid var(--border); background: var(--bg-base); display: flex; flex-direction: column; transition: 0.3s; padding: 0 !important; overflow: hidden; }
+        
+        /* Right Panel - AI Dashboard */
+        .sidebar-right { flex: 1; min-width: 50%; max-width: 50%; background: var(--cream); display: flex; flex-direction: column; overflow-y: hidden; transition: 0.3s;}
+        .sidebar-panel { display: none; flex-direction: column; flex: 1; overflow-y: auto;}
+        .sidebar-panel.active { display: flex; }
+
+        .document-page { background: var(--cream) !important; width: 100%; flex: 1; display: flex; flex-direction: column; transition: 0.3s;}
+        
+        /* Quill Editor Styling Overrides */
+        #document-editor { flex: 1; font-family: 'DM Sans', sans-serif; font-size: 16px; background: var(--cream) !important; border: none; transition: 0.3s;}
+        .ql-editor { line-height: 1.8; color: var(--ink) !important; padding: 40px; transition: 0.3s;}
+        .ql-toolbar { background: var(--cream) !important; width: 100%; border: none !important; border-bottom: 1px solid var(--border) !important; transition: 0.3s;}
+
+        /* Clause Styling */
+        .clause { display: inline; position: relative; cursor: pointer; transition: 0.2s; border-radius: 3px; padding: 2px 0; border: 1px solid transparent; }
+        .clause:hover { background-color: rgba(200,200,200,0.1); border-color: rgba(0,0,0,0.1); }
+        .clause.active { outline: 2px solid var(--gold); outline-offset: 2px; }
+        
+        /* Track Changes / Collaborative */
+        .ai-modified { background-color: rgba(30,132,73,0.15) !important; text-decoration: none !important; border-bottom: 2px solid var(--green) !important; color: #1e8449;}
+        .comment-tag { background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 3px; padding: 0 4px; font-size: 12px; margin-left: 5px; cursor: help;}
+        
+        .risk-RED { background-color: rgba(192,57,43,0.13); border-left: 3px solid var(--red); padding-left: 5px; }
+        .risk-AMBER { background-color: rgba(183,119,13,0.13); border-left: 3px solid var(--amber); padding-left: 5px; }
+        .risk-GREEN { background-color: rgba(30,132,73,0.10); border-left: 3px solid var(--green); padding-left: 5px; }
+        
+        /* Gutter UI */
+        .gutter-btn { position: absolute; left: -25px; top: 0; width: 18px; height: 18px; border-radius: 50%; background: var(--gold); color: white; display: none; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; cursor: pointer; text-decoration:none !important; line-height:1; }
+        .clause:hover .gutter-btn { display: flex; }
+        
+        /* Sidebar Tab Toggle */
+        .sidebar-tabs { display: flex; flex-direction: row; width: 100%; border-bottom: 1px solid var(--border); border-right: none; background: var(--parchment);}
+        .sidebar-tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; font-size: 14px; font-weight: bold; color: var(--text-muted); border-bottom: 2px solid transparent; border-left: none;}
+        .sidebar-tab.active { color: var(--ink); border-bottom-color: var(--gold); background: var(--cream);}
+
+        .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; background: transparent; transition: 0.3s;}
+        .sidebar-header h3 { margin: 0; font-size: 18px; color: var(--ink);}
+        
+        .sidebar-content { flex: 1; padding: 20px; }
+        
+        .label-block { margin-bottom: 20px; }
+        .label-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 5px; font-weight: bold; }
+        .clause-preview { font-family: 'Cormorant Garamond', serif; font-size: 16px; background: white; padding: 15px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 20px; max-height: 150px; overflow-y: auto; color: #444; }
+        .issue-text { font-size: 15px; color: #333; line-height: 1.5; background: rgba(192,57,43,0.05); padding: 15px; border-radius: 8px; border-left: 3px solid var(--red); margin-bottom: 25px; }
+        
+        /* Rewrite Form */
+        textarea.intent-input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-family: 'DM Sans', sans-serif; resize: vertical; min-height: 80px; margin-bottom: 15px; background: white; font-size:14px; }
+        
+        .btn-gold { width: 100%; background: var(--gold); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 15px; }
+        .btn-gold:hover { background: #b08020; }
+        
+        #rewritten-box { display: none; margin-top: 25px; }
+        .rewritten-clause-display { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #eef7f2; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px; color: #155724; line-height: 1.6; margin-bottom: 15px; }
+        
+        .btn-approve { width: 100%; background: var(--green); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; margin-bottom: 10px; }
+        .btn-approve:hover { background: #176638; }
+        
+        .loader-sm { display: none; font-size: 13px; color: var(--gold); text-align: center; margin-bottom: 10px; font-style: italic; }
+        .success-msg { display: none; color: var(--green); text-align: center; font-weight: bold; font-size: 14px; margin-top: 10px; }
+        
+        /* Comments/Recommendations list styling */
+        .recs-box, .sidebar-header, .summary-bar, .sidebar-tabs, .clause-preview, textarea.intent-input { background: var(--cream) !important; color: var(--ink) !important; border-color: var(--border) !important; transition: 0.3s; }
+        .recs-box { padding: 15px; border-radius: 6px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; margin-top: 15px;}
+        #history-panel { background: var(--cream) !important; border: 2px solid var(--gold) !important; }
+
+        /* ═══ Document Scanner (Left Panel) ═══ */
+        .scanner-toolbar { padding: 12px 25px; background: var(--parchment); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+        .scanner-body { flex: 1; overflow-y: auto; padding: 40px 50px; font-family: 'Cormorant Garamond', serif; font-size: 17px; line-height: 1.95; color: var(--ink); background: var(--cream); }
+        .scanner-body p { margin: 0 0 18px 0; text-align: justify; }
+        .scanner-loading { text-align: center; color: var(--text-muted); font-style: italic; padding: 60px; font-family: 'DM Sans', sans-serif; font-size: 14px; }
+
+        /* Inline Clause Highlights */
+        .clause-highlight-red { background: rgba(192,57,43,0.16); border-bottom: 2px solid var(--red); padding: 1px 3px; border-radius: 3px; cursor: pointer; transition: background 0.2s; }
+        .clause-highlight-red:hover { background: rgba(192,57,43,0.30); }
+        .clause-highlight-amber { background: rgba(183,119,13,0.16); border-bottom: 2px solid var(--amber); padding: 1px 3px; border-radius: 3px; cursor: pointer; transition: background 0.2s; }
+        .clause-highlight-amber:hover { background: rgba(183,119,13,0.30); }
+
+        /* Strikethrough + Approved */
+        .clause-struck-container { background: rgba(0,0,0,0.03) !important; border-bottom: none !important; }
+        .clause-approved-text { color: #1e8449; font-weight: 600; background: rgba(30,132,73,0.08); padding: 2px 5px; border-radius: 3px; border-bottom: 2px solid #1e8449; display: inline; }
+
+        /* ═══ Action Center Risk Pills ═══ */
+        .action-center-list { padding: 15px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex: 1; }
+        .risk-pill { background: var(--cream); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: all 0.3s ease; }
+        .risk-pill:hover { border-color: var(--gold); box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+        .risk-pill-header { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; }
+        .risk-pill-badge { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px rgba(0,0,0,0.15); }
+        .risk-pill-badge.red { background: var(--red); }
+        .risk-pill-badge.amber { background: var(--amber); }
+        .risk-pill-snippet { flex: 1; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .risk-pill-btn { background: var(--gold); color: white; border: none; padding: 6px 16px; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+        .risk-pill-btn:hover { background: #b08020; }
+        .risk-pill-btn.approved { background: var(--green); cursor: default; pointer-events: none; }
+        .risk-pill-btn.rejected { background: #888; cursor: default; pointer-events: none; }
+
+        /* Expanded Card Body */
+        .risk-pill-body { display: none; padding: 0 16px 16px 16px; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); animation: fadeSlide 0.25s ease; }
+        .risk-pill.expanded .risk-pill-body { display: flex; }
+        @keyframes fadeSlide { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+        .risk-pill-issue { font-size: 12px; color: #555; background: rgba(192,57,43,0.05); padding: 10px 12px; border-radius: 6px; border-left: 3px solid; line-height: 1.5; margin-top: 4px; }
+        .risk-pill-suggestion { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #eef7f2; border: 1px solid #c3e6cb; padding: 12px; border-radius: 6px; color: #155724; line-height: 1.6; max-height: 100px; overflow-y: auto; white-space: pre-wrap; }
+        .action-suggestion-edit { width: 100%; box-sizing: border-box; min-height: 80px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 13px; resize: vertical; background: white; color: var(--ink); }
+        .risk-pill-actions { display: flex; gap: 10px; }
+        .btn-pill-approve { flex: 1; background: var(--green); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+        .btn-pill-approve:hover { background: #176638; }
+        .btn-pill-reject { flex: 1; background: transparent; color: var(--text-muted); border: 1px solid var(--border); padding: 10px; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .btn-pill-reject:hover { background: rgba(0,0,0,0.05); color: var(--ink); }
+        .risk-pill-loader { text-align: center; font-size: 12px; color: var(--gold); font-style: italic; padding: 8px 0; }
+
+        /* Dark mode overrides for new components */
+        [data-theme="dark"] .clause-highlight-red { background: rgba(192,57,43,0.25); }
+        [data-theme="dark"] .clause-highlight-amber { background: rgba(183,119,13,0.25); }
+        [data-theme="dark"] .risk-pill { background: #1e1e1e; border-color: #333; }
+        [data-theme="dark"] .risk-pill-suggestion { background: #1a2e1f; border-color: #2d5a3a; color: #7dcea0; }
+        [data-theme="dark"] .action-suggestion-edit { background: #1a1a1a; color: #e8e6e3; border-color: #333; }
+        [data-theme="dark"] .risk-pill-issue { background: rgba(192,57,43,0.1); color: #bbb; }
+
+        /* Force left-panel document-scanner to row layout */
+        #document-scanner-panel {
+            flex-direction: row !important;
+        }
+
+    </style>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+</head>
+<body>
+
+    <header>
+        <div class="logo">LexAI India</div>
+        <div class="header-title">Professional Editor</div>
+        <div style="display:flex; gap: 15px; align-items: center;">
+            <select id="theme-selector" style="background:var(--cream); color:var(--ink); border:1px solid var(--border); border-radius:4px; padding:6px; cursor:pointer;">
+                <option value="system">🖥️ System</option>
+                <option value="light">☀️ Light</option>
+                <option value="dark">🌙 Dark</option>
+            </select>
+            <button class="back-btn" id="btn-open-vault" style="border-color:var(--cream); color:var(--cream); font-weight:bold;">📁 Open Vault</button>
+            <div style="position:relative;">
+                <button class="back-btn" id="btn-save-case" style="border-color:var(--gold); color:var(--gold); font-weight:bold; height:100%;">💾 Save Case</button>
+                <div id="history-panel" style="display:none; position:absolute; top:45px; right:0; width:330px; background:var(--ink); border:2px solid var(--gold); border-radius:6px; z-index:100; max-height:400px; overflow-y:auto; padding:15px; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+                    <h4 style="margin:0 0 10px 0; color:var(--gold); border-bottom:1px solid rgba(200,146,42,0.3); padding-bottom:5px;">Activity Feed</h4>
+                    <ul id="history-list" style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+                        <li style="color:#aaa; font-size:12px; font-style:italic;">No changes recorded.</li>
+                    </ul>
+                </div>
+            </div>
+            <button class="back-btn" id="btn-toggle-history" style="border-color:#aaa; color:#ccc;">⏱ History Logs</button>
+            <a href="/dashboard" class="back-btn">&#8592; Back</a>
+        </div>
+    </header>
+    
+    <div id="executive-summary-banner">
+        <h4>Executive Summary</h4>
+        <div id="executive-summary-content">Analyzing contract core purpose... <span style="font-size:12px;">(Loading)</span></div>
+    </div>
+
+    <div class="viewer-container">
+        <!-- Left Panel: Document Scanner + Auto-Draft (Tabbed) -->
+        <div class="document-panel" id="document-scanner-panel" style="flex-direction:row;">
+
+            <!-- Left panel vertical tab sidebar — pure inline flex, no class dependency -->
+            <div id="left-tab-bar" style="display:flex; flex-direction:column; width:145px; min-width:145px; background:var(--parchment); border-right:2px solid var(--border); flex-shrink:0;">
+                <div id="left-tab-scanner"
+                     style="padding:14px 16px; font-size:12px; font-weight:bold; cursor:pointer; color:var(--ink); border-left:3px solid var(--gold); background:var(--cream); user-select:none; transition:0.2s; line-height:1.6;">
+                    📄 Document Scanner
+                </div>
+                <div id="left-tab-autodraft"
+                     style="padding:14px 16px; font-size:12px; font-weight:bold; cursor:pointer; color:var(--text-muted); border-left:3px solid transparent; user-select:none; transition:0.2s; line-height:1.6;">
+                    ✍️ Auto-Draft
+                </div>
+            </div>
+
+            <!-- Content views (fill remaining width beside the vertical tab sidebar) -->
+            <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+
+                <!-- View 1: Document Scanner -->
+                <div id="left-view-scanner" style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
+                    <div class="scanner-toolbar">
+                        <div style="display:flex; align-items:center; gap:0;">
+                            <span style="font-weight:600; color:var(--ink); font-family:'Cormorant Garamond',serif; font-size:16px;">📄 Document Scanner</span>
+                            <div style="margin-left: 20px; display: flex; align-items: center; gap: 8px;">
+                                <label style="font-size: 12px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">Mode:</label>
+                                <select id="inline-strategy-select" style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--cream); color: var(--ink); font-size: 12px; font-family: 'DM Sans', sans-serif; cursor: pointer;">
+                                    <option value="Defensive">🛡️ Defensive (Deal-Breakers)</option>
+                                    <option value="Aggressive">⚔️ Aggressive (Micro-Risks)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:18px; align-items:center; font-size:13px;">
+                            <div class="stat-item"><span class="dot red"></span> <span id="count-red">0</span> High</div>
+                            <div class="stat-item"><span class="dot amber"></span> <span id="count-amber">0</span> Medium</div>
+                            <div class="stat-item"><span class="dot green"></span> <span id="count-green">0</span> Low</div>
+                        </div>
+                    </div>
+                    <div id="global-format-toolbar" style="display: flex; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--cream); align-items: center; position: sticky; top: 0; z-index: 10;">
+                        <button type="button" onmousedown="event.preventDefault(); LexHistory.undo()" style="cursor:pointer; background:none; border:none; font-size:15px; padding:4px;" title="Undo">↩️</button>
+                        <button type="button" onmousedown="event.preventDefault(); LexHistory.redo()" style="cursor:pointer; background:none; border:none; font-size:15px; padding:4px;" title="Redo">↪️</button>
+
+                        <div style="width: 1px; height: 18px; background: var(--border);"></div>
+
+                        <button type="button" onmousedown="event.preventDefault(); document.execCommand('bold', false, null)" style="cursor:pointer; background:none; border:none; font-weight:bold; font-family:serif; font-size:15px; padding:4px;" title="Bold">B</button>
+                        <button type="button" onmousedown="event.preventDefault(); document.execCommand('italic', false, null)" style="cursor:pointer; background:none; border:none; font-style:italic; font-family:serif; font-size:15px; padding:4px;" title="Italic">I</button>
+                        <button type="button" onmousedown="event.preventDefault(); document.execCommand('underline', false, null)" style="cursor:pointer; background:none; border:none; text-decoration:underline; font-family:serif; font-size:15px; padding:4px;" title="Underline">U</button>
+
+                        <div style="width: 1px; height: 18px; background: var(--border);"></div>
+
+                        <button type="button" onmousedown="event.preventDefault(); document.execCommand('justifyLeft', false, null)" style="cursor:pointer; background:none; border:none; font-size:15px; padding:4px;" title="Align Left">⬅️</button>
+                        <button type="button" onmousedown="event.preventDefault(); document.execCommand('justifyCenter', false, null)" style="cursor:pointer; background:none; border:none; font-size:15px; padding:4px;" title="Align Center">↔️</button>
+                        <button type="button" onmousedown="event.preventDefault(); document.execCommand('justifyRight', false, null)" style="cursor:pointer; background:none; border:none; font-size:15px; padding:4px;" title="Align Right">➡️</button>
+                        <button type="button" onmousedown="event.preventDefault(); document.execCommand('justifyFull', false, null)" style="cursor:pointer; background:none; border:none; font-size:15px; padding:4px;" title="Justify">🔤</button>
+                    </div>
+                    <div id="document-scanner" class="scanner-body" contenteditable="true" style="outline: none;">
+                        <div class="scanner-loading">Rendering contract text…</div>
+                    </div>
+                </div>
+
+                <!-- View 2: Auto-Draft output — plain text, pre-wrap preserves court formatting -->
+                <div id="left-view-autodraft"
+                     style="display:none; flex:1; overflow-y:auto; padding:40px 50px; font-family:'Cormorant Garamond',serif; font-size:16px; line-height:2; color:var(--ink); background:var(--cream); white-space:pre-wrap; word-break:break-word;">
+                    <div id="autodraft-placeholder" style="color:var(--text-muted); font-style:italic; text-align:center; padding:60px 20px;">
+                        No draft generated yet.<br>Use the ✍️ Auto-Draft panel on the right →
+                    </div>
+                </div>
+
+            </div><!-- end content views -->
+
+        </div>
+        
+        <!-- Right Panel: AI Dashboard -->
+        <div class="sidebar-right">
+            <div class="sidebar-tabs">
+                <div class="sidebar-tab active" id="tab-risks">⚡ Actions</div>
+                <div class="sidebar-tab" id="tab-recs">🛡️ Extensions</div>
+                <div class="sidebar-tab" id="tab-draft">🤖 Auto-Draft</div>
+                <div class="sidebar-tab" id="tab-chat">💬 Chat</div>
+                <div class="sidebar-tab" id="tab-citations">📚 Citations</div>
+            </div>
+            
+            <!-- Panel 1: Contextual Analysis (Default) -->
+            <div class="sidebar-panel active" id="panel-risks" style="position:relative; padding:20px; overflow-y:auto;">
+                <div class="sidebar-header" style="margin-bottom: 20px;">
+                    <h3>Contextual Analysis</h3>
+                    <span style="font-size:12px; color:var(--text-muted); margin-left:auto;">Select a risk overlay</span>
+                </div>
+
+                <div id="inspector-empty" style="color:var(--text-muted); text-align:center; padding:40px; font-style:italic;">
+                    Click on any highlighted risk in the document to analyze it.
+                </div>
+
+                <div id="inspector-content" style="display:none; flex-direction:column; gap:15px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span id="inspector-badge" class="risk-pill-badge" style="width:12px; height:12px; display:inline-block; border-radius:50%;"></span>
+                        <strong id="inspector-title" style="font-size:16px;">Risk Detected</strong>
+                    </div>
+
+                    <div>
+                        <label style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); font-weight:bold;">Original Clause</label>
+                        <div id="inspector-original" style="background:var(--parchment); border:1px solid var(--border); padding:12px; border-radius:4px; font-size:13px; color:var(--ink); margin-top:5px; max-height:120px; overflow-y:auto; line-height:1.5;"></div>
+                    </div>
+
+                    <div>
+                        <label style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); font-weight:bold;">Identified Risk (Indian Law)</label>
+                        <div id="inspector-issue" class="risk-pill-issue" style="margin-top:5px; padding:12px; background:rgba(192,57,43,0.05); border-left:3px solid #c0392b; color:var(--ink); font-size:13px;"></div>
+                    </div>
+
+                    <div>
+                        <label style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); font-weight:bold;">Rewrite Intent</label>
+                        <div style="position: relative;">
+                            <textarea id="inspector-intent" class="action-suggestion-edit" style="width:100%; box-sizing:border-box; min-height:80px; margin-top:5px; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:'DM Sans'; font-size:13px;" placeholder="E.g., Make this mutual and limit liability..."></textarea>
+
+                            <!-- Google-style Autocomplete Dropdown -->
+                            <div id="intent-suggestions" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--cream); border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; box-shadow:0 8px 16px rgba(0,0,0,0.15); z-index:1000; max-height:180px; overflow-y:auto;"></div>
+                        </div>
+                        <button id="btn-inspector-rewrite" class="btn-gold" style="width:100%; margin-top:10px; padding: 12px; font-weight:bold; cursor:pointer; border:none; border-radius:6px; background:var(--gold); color:white;">Rewrite This Clause</button>
+                    </div>
+
+                    <div id="inspector-loader" class="loader-sm" style="display:none; margin-top:10px; text-align:center;">Drafting safe clause…</div>
+
+                    <div id="inspector-suggestion-container" style="display:none; margin-top:10px;">
+                        <label style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#1e8449; font-weight:bold;">AI Suggested Output</label>
+                        <textarea id="inspector-suggestion" class="action-suggestion-edit" style="width:100%; box-sizing:border-box; min-height:100px; margin-top:5px; padding:10px; border:1px solid #c3e6cb; background:#eef7f2; color:#155724; border-radius:4px; font-family:'DM Sans'; font-size:13px;"></textarea>
+                        <button id="btn-inspector-apply" class="btn-pill-approve" style="width:100%; margin-top:10px; background:#1e8449; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Apply Changes</button>
+                    </div>
+                </div>
+            </div>
+
+
+            
+            <!-- Panel 3: Smart Extensions -->
+            <div class="sidebar-panel" id="panel-recs" style="position:relative; padding-bottom:70px;">
+                <div class="sidebar-header">
+                    <h3>Smart Shield Extensions</h3>
+                </div>
+                <div class="sidebar-content" style="display:flex; flex-direction:column; padding-bottom:0; flex:1;">
+                    <p style="font-size:14px; color:var(--text-muted); margin-top:0;">Scan the entire document to surface missing critical protection clauses (e.g. Mutual Indemnification, Force Majeure, Severability).</p>
+                    <button class="btn-gold" id="btn-fetch-recs">🔍 Analyze Missing Protections</button>
+                    <div class="loader-sm" id="recs-loader" style="margin-top:20px;">Executing deep sector analysis...</div>
+                    <div id="recs-result-container" style="flex:1; overflow-y:auto; margin-top:20px; display:none; flex-direction:column; gap:15px; padding-bottom:20px;">
+                        <!-- JS renders extension cards here -->
+                    </div>
+                </div>
+                
+                <div id="sticky-recs-bar" style="display: none; position: sticky; bottom: 0; background-color: #faf6ee; padding: 15px 0; z-index: 999; border-top: 1px solid #e0d9cc; margin-top: auto;">
+                    <button class="btn-approve" id="btn-add-recs" onclick="window.addMissingClauses()" style="your-existing-styles-here">+ Add Selected Missing Clauses</button>
+                </div>
+            </div>
+
+            <!-- Panel 4: RAG Chat UI -->
+            <div class="sidebar-panel" id="panel-chat">
+                <div class="sidebar-header">
+                    <h3>Strict RAG Assistant</h3>
+                </div>
+                <div class="sidebar-content" style="display:flex; flex-direction:column; padding:0; flex:1;">
+                    <div id="chat-stream" style="flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:15px; background:var(--parchment);">
+                        <div style="background:var(--cream); border:1px solid var(--border); padding:12px 15px; border-radius:8px; border-top-left-radius:0; color:var(--ink); font-size:14px; max-width:85%; align-self:flex-start;">
+                            I am locked exclusively to this document. What specific contractual terms would you like me to find?
+                        </div>
+                    </div>
+                    <div style="padding:15px; background:var(--cream); border-top:1px solid var(--border); display:flex; gap:10px;">
+                        <input type="text" id="rag-chat-input" placeholder="Ask a grounded question..." style="flex:1; padding:10px; border:1px solid var(--border); border-radius:4px; font-family:'DM Sans'; background:var(--bg-base); color:var(--ink);">
+                        <button class="btn-gold" id="btn-send-chat" style="width:auto; padding:0 20px;">Send</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Panel 5: Auto-Drafting -->
+            <div class="sidebar-panel" id="panel-draft" style="padding: 20px; overflow-y: auto;">
+                <div class="sidebar-header" style="padding:0 0 15px 0;">
+                    <h3>🤖 Auto-Drafting Assistant</h3>
+                </div>
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Generate legal documents instantly using the contextual data bounds of your Document Management file.</p>
+                
+                <div id="draft-context-status" style="margin-bottom: 20px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffbb33; border-radius: 4px; font-size: 13px; color: #856404;">
+                    <strong>Context Status:</strong> Detecting bound files...
+                </div>
+                
+                <label style="display:block; font-size:12px; font-weight:bold; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase;">Drafting Instructions</label>
+                <textarea id="draft-prompt" class="intent-input" placeholder="E.g., Draft a bail application based on the selected FIR report, grounding the application strictly to Section 439 CrPC..."></textarea>
+                
+                <button id="btn-auto-draft" class="btn-gold" style="margin-top: 10px;">⚡ Synthesize Document</button>
+                <div id="draft-loader" class="loader-sm" style="margin-top: 15px;">Initializing LLM pipeline...</div>
+                <div id="draft-error" style="color: red; margin-top: 10px; font-size: 13px; display: none;"></div>
+            </div>
+
+            <!-- Panel 6: Citations -->
+            <div id="right-view-citations" style="display:none; padding: 20px; height: 100%; overflow-y: auto; background: var(--parchment);">
+                <div style="margin-bottom: 20px;">
+                    <h3 style="font-size: 16px; color: var(--ink); margin: 0 0 5px 0;">Relevant Legal Precedents</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Landmark Indian judgments applicable to this document.</p>
+                </div>
+                <div id="citations-list" style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Dynamic Citations will load here -->
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Case Vault Modal -->
+    <div id="vault-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(26,18,8,0.9); z-index:9999; justify-content:center; align-items:center;">
+        <div style="background:var(--ink); width:80%; max-width:900px; height:80%; border-radius:12px; border:2px solid var(--gold); display:flex; flex-direction:column; overflow:hidden;">
+            <div style="padding:20px 30px; border-bottom:1px solid rgba(200,146,42,0.3); display:flex; justify-content:space-between; align-items:center;">
+                <h2 style="margin:0; color:var(--gold); font-family:'Cormorant Garamond', serif;">My Case Vault</h2>
+                <button id="close-vault" style="background:transparent; border:none; color:var(--cream); font-size:24px; cursor:pointer;">&times;</button>
+            </div>
+            
+            <div style="flex:1; padding:30px; overflow-y:auto;">
+                <div id="vault-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:20px;">
+                    <!-- Cards will be populated here via JS -->
+                    <div id="vault-loading" style="color:var(--cream); text-align:center; grid-column:1/-1;">Loading saved cases...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="save-case-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(26,18,8,0.85); z-index:9999; justify-content:center; align-items:center;">
+        <div style="background:var(--cream); width:460px; border-radius:12px; border:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; font-family:'DM Sans', sans-serif; box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+            <!-- Header -->
+            <div style="padding:20px 25px; border-bottom:1px solid var(--border); background:var(--ink); display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <div style="font-family:'Cormorant Garamond',serif; font-size:20px; font-weight:700; color:var(--gold);">Export Document</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">Download to your local device</div>
+                </div>
+                <button id="close-save-modal" style="background:transparent; border:none; color:#e8e6e3; font-size:26px; cursor:pointer; line-height:1; padding:0 4px;">&times;</button>
+            </div>
+            <!-- Body -->
+            <div style="padding:28px 30px; display:flex; flex-direction:column; gap:22px;">
+                <!-- Content Checkboxes -->
+                <div>
+                    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Content to Include</div>
+                    <label style="display:flex; align-items:center; gap:12px; padding:13px 16px; border:1px solid var(--border); border-radius:8px; cursor:pointer; margin-bottom:8px; background:var(--parchment);">
+                        <input type="checkbox" id="export-include-doc" checked style="width:16px; height:16px; accent-color:var(--gold); cursor:pointer; flex-shrink:0;">
+                        <div>
+                            <div style="font-weight:600; font-size:14px; color:var(--ink);">Document Scanner Text</div>
+                            <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">The analyzed contract with all flagged clauses</div>
+                        </div>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:12px; padding:13px 16px; border:1px solid var(--border); border-radius:8px; cursor:pointer; background:var(--parchment);">
+                        <input type="checkbox" id="export-include-draft" style="width:16px; height:16px; accent-color:var(--gold); cursor:pointer; flex-shrink:0;">
+                        <div>
+                            <div style="font-weight:600; font-size:14px; color:var(--ink);">Auto-Draft Text</div>
+                            <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">The AI-generated legal document</div>
+                        </div>
+                    </label>
+                </div>
+                <!-- Format Radio Buttons -->
+                <div>
+                    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Export Format</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        <label id="fmt-pdf-label" style="display:flex; align-items:center; gap:10px; padding:14px; border:2px solid var(--gold); border-radius:8px; cursor:pointer; background:rgba(200,146,42,0.08);">
+                            <input type="radio" name="export-format" id="export-fmt-pdf" value="pdf" checked style="accent-color:var(--gold); width:16px; height:16px; cursor:pointer;">
+                            <div>
+                                <div style="font-weight:700; font-size:14px; color:var(--ink);">📄 PDF</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">*.pdf file</div>
+                            </div>
+                        </label>
+                        <label id="fmt-docx-label" style="display:flex; align-items:center; gap:10px; padding:14px; border:1px solid var(--border); border-radius:8px; cursor:pointer;">
+                            <input type="radio" name="export-format" id="export-fmt-docx" value="docx" style="accent-color:var(--gold); width:16px; height:16px; cursor:pointer;">
+                            <div>
+                                <div style="font-weight:700; font-size:14px; color:var(--ink);">📝 Word</div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">*.docx file</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <!-- Footer -->
+            <div style="padding:16px 30px 24px; border-top:1px solid var(--border);">
+                <div id="export-status-msg" style="display:none; font-size:13px; color:var(--amber); margin-bottom:10px; text-align:center; padding:8px; border-radius:6px; background:rgba(183,119,13,0.1);"></div>
+                <button id="btn-execute-save" style="width:100%; padding:14px; background:var(--gold); border:none; border-radius:8px; color:white; font-weight:700; font-size:15px; cursor:pointer; letter-spacing:0.5px; transition:filter 0.2s;" onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter='none'">⬇️ Export & Download</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Logic Separation -->
+    <script>window.addEventListener('DOMContentLoaded', () => { window.initThemeSelector('theme-selector'); });</script>
+    <script src="{{ url_for('static', filename='js/editor_core.js') }}"></script>
+</body>
+</html>

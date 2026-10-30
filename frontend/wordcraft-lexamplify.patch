@@ -1,0 +1,369 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 2a7e9aa..01b05e7 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -98,9 +98,13 @@ opt-level = 2
+ opt-level = 1
+ 
+ [profile.release]
+-opt-level = 3
++# Lexamplify web build: optimize the wasm for SIZE (opt-level "z") not speed, and strip symbols.
++# This profile is only used by our patched CI build of the web bundle; it does not affect upstream
++# desktop builds. Paired with wasm-opt -Oz + gzip delivery it roughly thirds the download.
++opt-level = "z"
+ lto = "thin"
+ codegen-units = 16
++strip = true
+ debug = 0
+ 
+ # Required by craft-pdf: the backend rejects writers that failed during unwinding.
+diff --git a/apps/wordcraft-web/index.html b/apps/wordcraft-web/index.html
+index ca6ad46..bd9721d 100644
+--- a/apps/wordcraft-web/index.html
++++ b/apps/wordcraft-web/index.html
+@@ -5,7 +5,7 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+   <title>WordCraft</title>
+   <link data-trunk rel="icon" href="../../assets/app-icon/wordcraft.ico" />
+-  <link data-trunk rel="rust" data-bin="wordcraft-web" data-wasm-opt="z" data-weak-refs />
++  <link data-trunk rel="rust" data-bin="wordcraft-web" data-wasm-opt="0" data-weak-refs />
+   <style>
+     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #e6e6e6; }
+     #wordcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+diff --git a/apps/wordcraft-web/src/bridge.rs b/apps/wordcraft-web/src/bridge.rs
+new file mode 100644
+index 0000000..9816731
+--- /dev/null
++++ b/apps/wordcraft-web/src/bridge.rs
+@@ -0,0 +1,208 @@
++//! JS ⇄ WordCraft bridge.
++//!
++//! Lets the host page drive the running editor without touching egui input events:
++//!  - `wc_load(name, base64)`      — open a document (HTML / Markdown / text / .docx bytes)
++//!  - `wc_exec(id, params_json)`   — run any engine command (the same vocabulary the agent/MCP
++//!                                   surface uses: `text.insert`, `edit.replaceAll`, `select.text`,
++//!                                   `document.setText`, ribbon formatting, …)
++//!  - `wc_text()` / `wc_html()`    — read the current document out (for autosave / export)
++//!  - `wc_rev()` / `wc_doc_id()`   — change counter + which document is open (autosave triggers)
++//!  - `wc_request_bytes(ext)` + `wc_take_bytes(ext)` — export the document to bytes (docx/pdf/…)
++//!
++//! Commands are queued and applied on the next frame by [`crate::web::WebShell`] through
++//! `WordApp::execute` (the "never asks first" agent path). There is no realtime collaboration;
++//! the host layers sharing/roles/presence and persistence on top of these primitives.
++
++use std::cell::RefCell;
++use std::collections::HashMap;
++use std::rc::Rc;
++
++use serde_json::{json, Value};
++use wasm_bindgen::prelude::*;
++
++#[derive(Default)]
++pub struct BridgeState {
++    pub ctx: Option<egui::Context>,
++    pub commands: Vec<(String, Value)>,
++    pub bytes_req: Vec<String>,
++    pub bytes_out: HashMap<String, Vec<u8>>,
++    pub text: String,
++    pub html: String,
++    pub selection: String,
++    pub rev: u64,
++    pub doc_id: u64,
++    pub ready: bool,
++}
++
++pub type Bridge = Rc<RefCell<BridgeState>>;
++
++thread_local! {
++    static BRIDGE: RefCell<Option<Bridge>> = const { RefCell::new(None) };
++}
++
++/// Create the shared bridge and register it for the JS exports. Called once from `web::start`.
++pub fn install() -> Bridge {
++    let b: Bridge = Rc::new(RefCell::new(BridgeState::default()));
++    BRIDGE.with(|slot| *slot.borrow_mut() = Some(b.clone()));
++    b
++}
++
++fn read<T>(default: T, f: impl FnOnce(&BridgeState) -> T) -> T {
++    BRIDGE.with(|slot| match slot.borrow().as_ref() {
++        Some(b) => f(&b.borrow()),
++        None => default,
++    })
++}
++
++fn write(f: impl FnOnce(&mut BridgeState)) {
++    BRIDGE.with(|slot| {
++        if let Some(b) = slot.borrow().as_ref() {
++            f(&mut b.borrow_mut());
++        }
++    });
++}
++
++fn repaint() {
++    BRIDGE.with(|slot| {
++        if let Some(b) = slot.borrow().as_ref()
++            && let Some(ctx) = b.borrow().ctx.clone()
++        {
++            ctx.request_repaint();
++        }
++    });
++}
++
++/// True once the editor has mounted and mirrored its first document.
++#[wasm_bindgen]
++pub fn wc_ready() -> bool {
++    read(false, |s| s.ready)
++}
++
++/// Open a document from bytes. `name` only names the format (by extension); `base64` is the data.
++#[wasm_bindgen]
++pub fn wc_load(name: String, base64: String) {
++    write(|s| s.commands.push(("file.open".into(), json!({ "path": name, "data": base64 }))));
++    repaint();
++}
++
++/// Run an engine command. `params_json` is a JSON object (or empty/`null` for none).
++#[wasm_bindgen]
++pub fn wc_exec(id: String, params_json: String) {
++    let params: Value = serde_json::from_str(&params_json).unwrap_or(Value::Null);
++    write(|s| s.commands.push((id, params)));
++    repaint();
++}
++
++/// The current document body as plain text.
++#[wasm_bindgen]
++pub fn wc_text() -> String {
++    read(String::new(), |s| s.text.clone())
++}
++
++/// The current document as HTML.
++#[wasm_bindgen]
++pub fn wc_html() -> String {
++    read(String::new(), |s| s.html.clone())
++}
++
++/// The currently selected text (empty when nothing is selected). Lets the host run a
++/// selection-scoped AI edit and write the result back.
++#[wasm_bindgen]
++pub fn wc_selection() -> String {
++    read(String::new(), |s| s.selection.clone())
++}
++
++/// Revision counter — bumped by every change. Host polls this to know when to autosave.
++#[wasm_bindgen]
++pub fn wc_rev() -> f64 {
++    read(0.0, |s| s.rev as f64)
++}
++
++/// Which document is open — changes when a new document replaces the current one.
++#[wasm_bindgen]
++pub fn wc_doc_id() -> f64 {
++    read(0.0, |s| s.doc_id as f64)
++}
++
++/// Ask the editor to serialise the document to `ext` (docx, pdf, html, md, txt, …).
++/// The bytes are produced next frame; collect them with [`wc_take_bytes`].
++#[wasm_bindgen]
++pub fn wc_request_bytes(ext: String) {
++    write(|s| s.bytes_req.push(ext));
++    repaint();
++}
++
++/// Collect bytes produced by [`wc_request_bytes`]. Empty until they are ready (poll).
++#[wasm_bindgen]
++pub fn wc_take_bytes(ext: String) -> Vec<u8> {
++    let mut out = Vec::new();
++    write(|s| {
++        if let Some(bytes) = s.bytes_out.remove(&ext) {
++            out = bytes;
++        }
++    });
++    out
++}
++
++/// Apply everything the host queued and mirror the document out. Called once per frame by the shell.
++pub fn pump(bridge: &Bridge, app: &mut wordcraft_ui_egui::WordApp) {
++    // 1) run queued commands (carry-in, AI edits, formatting, …)
++    let commands = std::mem::take(&mut bridge.borrow_mut().commands);
++    for (id, params) in commands {
++        if let Err(e) = app.execute(&id, params) {
++            log::warn!("wc_exec '{id}' failed: {e}");
++        }
++    }
++
++    // 2) serve export-bytes requests
++    let reqs = std::mem::take(&mut bridge.borrow_mut().bytes_req);
++    for ext in reqs {
++        let name = format!("document.{ext}");
++        match wordcraft_engine::io::save_bytes(&name, &app.session.doc) {
++            Ok(bytes) => {
++                bridge.borrow_mut().bytes_out.insert(ext, bytes);
++            }
++            Err(e) => log::warn!("export .{ext} failed: {e}"),
++        }
++    }
++
++    // 3) mirror the document out when it has changed (cheap revision check)
++    let rev = app.session.rev();
++    let doc_id = app.session.document_id();
++    let (last_rev, last_id, ready) = {
++        let s = bridge.borrow();
++        (s.rev, s.doc_id, s.ready)
++    };
++    if rev != last_rev || doc_id != last_id || !ready {
++        // Pure serialisation — never mutates the document (so it can't bump `rev`).
++        let serialise = |ext: &str| {
++            wordcraft_engine::io::save_bytes(&format!("document.{ext}"), &app.session.doc)
++                .ok()
++                .map(|b| String::from_utf8_lossy(&b).into_owned())
++                .unwrap_or_default()
++        };
++        let text = serialise("txt");
++        let html = serialise("html");
++        let mut s = bridge.borrow_mut();
++        s.text = text;
++        s.html = html;
++        s.rev = rev;
++        s.doc_id = doc_id;
++        s.ready = true;
++    }
++
++    // Mirror the current selection every frame (it changes on caret move, independent of `rev`).
++    let sel = app.session.selected_text();
++    {
++        let mut s = bridge.borrow_mut();
++        if s.selection != sel {
++            s.selection = sel;
++        }
++    }
++
++    // Heartbeat: keep a gentle repaint pending so queued host commands are always applied
++    // promptly, even when the user isn't interacting (an idle egui app stops running frames).
++    if let Some(ctx) = bridge.borrow().ctx.clone() {
++        ctx.request_repaint_after(std::time::Duration::from_millis(200));
++    }
++}
+diff --git a/apps/wordcraft-web/src/main.rs b/apps/wordcraft-web/src/main.rs
+index 39c2f98..683807b 100644
+--- a/apps/wordcraft-web/src/main.rs
++++ b/apps/wordcraft-web/src/main.rs
+@@ -18,6 +18,9 @@ mod save_fallback;
+ #[cfg(target_arch = "wasm32")]
+ mod web;
+ 
++#[cfg(target_arch = "wasm32")]
++mod bridge;
++
+ #[cfg(target_arch = "wasm32")]
+ fn main() {
+     web::start();
+diff --git a/apps/wordcraft-web/src/web.rs b/apps/wordcraft-web/src/web.rs
+index b2e698c..84b87b8 100644
+--- a/apps/wordcraft-web/src/web.rs
++++ b/apps/wordcraft-web/src/web.rs
+@@ -79,7 +79,11 @@ pub fn start() {
+                     if !sample {
+                         app.start_screen();
+                     }
+-                    Ok(Box::new(WebShell { app, inbox, messages, prefs }))
++                    // The JS ⇄ WordCraft bridge: the host page loads drafts, drives edits and reads
++                    // the document out through this (see `crate::bridge`).
++                    let bridge = crate::bridge::install();
++                    bridge.borrow_mut().ctx = Some(cc.egui_ctx.clone());
++                    Ok(Box::new(WebShell { app, inbox, messages, prefs, bridge }))
+                 }),
+             )
+             .await;
+@@ -103,6 +107,7 @@ struct WebShell {
+     inbox: Inbox,
+     messages: Rc<RefCell<Vec<String>>>,
+     prefs: crate::prefs::PrefsSync,
++    bridge: crate::bridge::Bridge,
+ }
+ 
+ fn local_storage() -> Option<web_sys::Storage> {
+@@ -136,6 +141,8 @@ impl eframe::App for WebShell {
+             self.app.status(msg);
+         }
+         self.app.logic(ctx);
++        // Apply anything the host page queued (carry-in, AI edits) and mirror the document out.
++        crate::bridge::pump(&self.bridge, &mut self.app);
+         // Store changed preferences straight away: a reload or closed tab runs no exit code (#2132).
+         if let Some(json) = self.prefs.changed(&self.app) {
+             match local_storage() {
+diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
+index 1bcda16..04e18af 100644
+--- a/crates/ui-egui/src/backstage.rs
++++ b/crates/ui-egui/src/backstage.rs
+@@ -123,7 +123,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+                 }
+             }
+             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+-                for (label, id) in [("About", "about"), ("Discord community", "discord")] {
++                for (label, id) in [("About", "about")] {
+                     let (r, resp) = ui.allocate_exact_size(vec2(200.0, 32.0), Sense::click());
+                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
+                     if resp.hovered() {
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index ae63597..e7769a5 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -2691,7 +2691,6 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                     ));
+                     ui.add_space(6.0);
+                     ui.hyperlink_to(tl!("getartcraft.com/apps/wordcraft"), "https://getartcraft.com/apps/wordcraft");
+-                    ui.hyperlink_to(tl!("Join us on Discord: discord.gg/artcraft"), "https://discord.gg/artcraft");
+                     ui.hyperlink_to(tl!("Source code: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
+                     ui.add_space(6.0);
+                     ui.label(
+diff --git a/crates/ui-egui/src/keytips.rs b/crates/ui-egui/src/keytips.rs
+index 7b5c307..ad591db 100644
+--- a/crates/ui-egui/src/keytips.rs
++++ b/crates/ui-egui/src/keytips.rs
+@@ -385,7 +385,7 @@ fn controls(tab: &str) -> Vec<Control> {
+             c("Full Screen", "view.fullScreen"),
+             c("Macros", "tools.macros"),
+         ],
+-        "Help" => vec![d("Help", "about"), c("Community Discord", "ui.discord"), d("Commands", "commands")],
++        "Help" => vec![d("Help", "about"), d("Commands", "commands")],
+         "Table Design" => {
+             vec![m("Shading", "table.shading"), m("Borders", "table.borders"), c("Border Painter", "table.borderPainter")]
+         }
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 6c9cde7..cb0dc7e 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -381,7 +381,7 @@ impl Default for UiState {
+             legacy_dark: None,
+             nav_tab: "headings".into(),
+             nav_pane: false,
+-            show_discord: true,
++            show_discord: false,
+             author: String::new(),
+             window: None,
+             language: i18n::AUTO.into(),
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index b9c1239..6050601 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -5,8 +5,8 @@ use std::sync::Arc;
+ use egui::{Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Rect, Stroke, Visuals};
+ 
+ /// WordCraft's app colour (and its darker ink for text on light backgrounds).
+-pub const APP_COLOR: Color32 = Color32::from_rgb(0x3B, 0x5B, 0xDB);
+-pub const APP_INK: Color32 = Color32::from_rgb(0x2B, 0x47, 0xB5);
++pub const APP_COLOR: Color32 = Color32::from_rgb(0x25, 0x63, 0xC9);
++pub const APP_INK: Color32 = Color32::from_rgb(0x1E, 0x54, 0xAD);
+ 
+ /// The interface theme setting (File › Options › General, View › Interface Theme): a fixed light or
+ /// dark palette, or `System`, which follows the OS light/dark appearance live (#115). Dark page
+@@ -323,7 +323,7 @@ impl Tokens {
+             ruler_margin: Color32::from_rgb(0xD4, 0xD4, 0xD4),
+             ruler_tick: Color32::from_rgb(0x70, 0x70, 0x70),
+             status_bar: Color32::from_rgb(0xF0, 0xF0, 0xF0),
+-            selection: Color32::from_rgba_unmultiplied(0x3B, 0x5B, 0xDB, 0x48),
++            selection: Color32::from_rgba_unmultiplied(0x25, 0x63, 0xC9, 0x48),
+             find_highlight: Color32::from_rgba_unmultiplied(0xFF, 0xE0, 0x3D, 0x90),
+             page_shadow: Color32::from_rgba_unmultiplied(0, 0, 0, 0x22),
+             handle: Color32::WHITE,

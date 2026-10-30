@@ -1,0 +1,90 @@
+name: build-wordcraft
+
+# Builds the Lexamplify WordCraft web (WASM) bundle. WordCraft is MIT/Apache-2.0; we build a
+# pinned upstream commit and apply wordcraft-lexamplify.patch, which:
+#   - adds a JS<->WordCraft bridge (apps/wordcraft-web/src/bridge.rs + web.rs/main.rs) so the host
+#     page can load a draft, drive edits through the engine, read the doc out and export bytes;
+#   - removes the Discord links; re-themes the accent to Slate Pro blue (#2563C9).
+# Run manually (workflow_dispatch); download the 'wordcraft-web-lexamplify' artifact into public/wordcraft/.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Checkout template (for the patch)
+        uses: actions/checkout@v4
+
+      - name: Fetch WordCraft source (pinned commit)
+        run: |
+          set -e
+          mkdir wc && cd wc
+          git init -q
+          git remote add origin https://github.com/storytold/wordcraft.git
+          git fetch --depth 1 origin 5a6d2b6070bdfb7d1a41bb55b60e86bf09a1fc52
+          git checkout -q FETCH_HEAD
+
+      - name: Apply Lexamplify patch (bridge + de-brand + Slate Pro)
+        working-directory: wc
+        run: |
+          set -e
+          git apply --verbose --whitespace=nowarn ../wordcraft-lexamplify.patch
+          echo "--- verify ---"
+          test -f apps/wordcraft-web/src/bridge.rs && echo "bridge.rs present"
+          grep -q "pub fn wc_load" apps/wordcraft-web/src/bridge.rs && echo "wc_load export present"
+          grep -q "crate::bridge::pump" apps/wordcraft-web/src/web.rs && echo "pump wired"
+          grep -q "show_discord: false" crates/ui-egui/src/lib.rs && echo "discord off"
+          grep -q "0x25, 0x63, 0xC9" crates/ui-egui/src/theme.rs && echo "slate pro accent"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            wc/target
+          key: wc-5a6d2b6-${{ runner.os }}
+
+      - name: Install trunk
+        run: cargo install trunk --locked || cargo install trunk
+
+      - name: Build web (WASM)
+        working-directory: wc/apps/wordcraft-web
+        run: trunk build --release
+
+      - name: Shrink wasm (wasm-opt -Oz) + gzip for delivery
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq binaryen
+          cd wc/dist/web
+          # Enable ONLY the stable features rustc emits for wasm32 (NOT -all, which turns on GC /
+          # memory64 and produces a binary browsers reject with "unknown type form").
+          FEATURES="--enable-bulk-memory --enable-mutable-globals --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types"
+          for f in *_bg.wasm; do
+            echo "built:   $(du -h "$f" | cut -f1)"
+            wasm-opt -Oz $FEATURES --strip-debug --strip-dwarf --vacuum "$f" -o "$f.opt"
+            # Validate the optimized wasm actually loads in a JS engine; fail the build if not.
+            node -e "const b=require('fs').readFileSync('$f.opt'); if(!WebAssembly.validate(b)){console.error('INVALID wasm after wasm-opt'); process.exit(1)} console.log('wasm validates')"
+            mv "$f.opt" "$f"
+            echo "opt -Oz: $(du -h "$f" | cut -f1)"
+            # Pre-gzip for client-side decompression (GitHub Pages won't compress wasm itself).
+            gzip -9 -k -f "$f"
+            echo "gzip -9: $(du -h "$f.gz" | cut -f1)"
+          done
+
+      - name: Show output
+        run: ls -la wc/dist/web
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: wordcraft-web-lexamplify
+          path: wc/dist/web
+          if-no-files-found: error

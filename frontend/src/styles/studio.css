@@ -1,0 +1,69 @@
+/* ── THEME STUDIO (in-app switcher) ────────────────────── */
+.studio-fab {
+  position: fixed; right: 22px; bottom: 22px; z-index: 90;
+  display: inline-flex; align-items: center; gap: 9px;
+  height: 46px; padding: 0 18px; border-radius: 999px;
+  background: var(--ink); color: var(--paper);
+  font-size: 13px; font-weight: 600; border: 1px solid var(--rule);
+  box-shadow: var(--sh-3); cursor: pointer; transition: transform .3s var(--ease);
+}
+.studio-fab:hover { transform: translateY(-2px); }
+
+.studio-overlay { position: fixed; inset: 0; z-index: 95; background: rgba(10,14,11,.28); backdrop-filter: blur(2px); animation: st-fade .3s ease; }
+@keyframes st-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.studio {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 96;
+  width: 390px; max-width: 94vw;
+  background: var(--paper); border-left: 1px solid var(--rule);
+  box-shadow: var(--sh-3); display: flex; flex-direction: column;
+  animation: st-slide .4s var(--ease);
+}
+@keyframes st-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+.studio__head { display: flex; align-items: center; justify-content: space-between; padding: 22px 24px; border-bottom: 1px solid var(--rule); }
+.studio__head h3 { font-family: var(--font-serif); font-size: 20px; }
+.studio__head p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.studio__body { flex: 1; overflow-y: auto; padding: 22px 24px 30px; }
+.studio__foot { padding: 16px 24px; border-top: 1px solid var(--rule); display: flex; gap: 10px; align-items: center; }
+
+.studio-sec { margin-bottom: 26px; }
+.studio-sec__label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-ink); margin-bottom: 14px; }
+
+.sw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sw {
+  text-align: left; padding: 12px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--bg-card); transition: border-color .25s, transform .25s var(--ease);
+}
+.sw:hover { transform: translateY(-2px); }
+.sw.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.sw__dots { display: flex; gap: 5px; margin-bottom: 9px; }
+.sw__dots i { width: 20px; height: 20px; border-radius: 6px; display: block; border: 1px solid rgba(0,0,0,.08); }
+.sw__name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.sw__mood { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+.opt-row { display: flex; gap: 8px; }
+.opt {
+  flex: 1; text-align: center; padding: 13px 8px; border-radius: 11px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--bg-card); transition: border-color .25s, background .25s;
+}
+.opt.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.opt__name { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.opt__desc { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.opt__glyph { font-family: var(--font-serif); font-size: 22px; color: var(--ink); line-height: 1; margin-bottom: 6px; }
+
+.acc-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.acc { padding: 3px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; background: none; transition: border-color .2s; }
+.acc.is-on { border-color: var(--ink); }
+.acc__dot { display: block; width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(0,0,0,.1); }
+
+.seg { display: flex; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.seg button { flex: 1; padding: 9px; font-size: 12.5px; font-weight: 500; background: var(--bg-card); color: var(--ink-soft); border: 0; cursor: pointer; }
+.seg button.is-on { background: var(--ink); color: var(--paper); }
+
+/* mini layout diagrams */
+.lay { display: flex; gap: 3px; height: 26px; margin-bottom: 8px; }
+.lay i { display: block; border-radius: 3px; background: var(--rule); }
+.lay--rail i:first-child { width: 7px; background: var(--accent); } .lay--rail i:last-child { flex: 1; }
+.lay--top { flex-direction: column; } .lay--top i:first-child { height: 6px; background: var(--accent); } .lay--top i:last-child { flex: 1; }
+.lay--focus { justify-content: center; } .lay--focus i:first-child { width: 5px; background: var(--accent); } .lay--focus i:last-child { width: 60%; }

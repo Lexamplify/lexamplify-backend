@@ -1,0 +1,237 @@
+{
+  "id": "plaint_skeleton",
+  "label": "Plaint (skeleton for a civil suit)",
+  "short": "Plaint (skeleton)",
+  "category": "court",
+  "minutes": 10,
+  "review": {
+    "status": "unreviewed",
+    "note": "This is a skeleton only: it sets out the headings a plaint needs and uses only the facts you give. An advocate must complete and settle it."
+  },
+  "statutes": [
+    "Section 26, Code of Civil Procedure, 1908"
+  ],
+  "notes": [
+    "This skeleton follows Order VII Rule 1 of the Code of Civil Procedure, 1908 in outline. It does not check limitation, court fee or the court's jurisdiction. Settle those before filing.",
+    "A plaint must be signed and verified by the plaintiff, and accompanied by a list of documents."
+  ],
+  "slots": [
+    {
+      "id": "court_name",
+      "label": "Name of the court",
+      "group": "The court",
+      "type": "text",
+      "required": true,
+      "example": "Court of the Principal District Judge, Coimbatore",
+      "from_case": "court"
+    },
+    {
+      "id": "plaintiff_name",
+      "label": "Plaintiff's full name",
+      "group": "The parties",
+      "type": "name",
+      "required": true,
+      "example": "Mr. K. Murugan",
+      "from_case": "client_name"
+    },
+    {
+      "id": "plaintiff_address",
+      "label": "Plaintiff's address",
+      "group": "The parties",
+      "type": "address",
+      "required": true,
+      "example": "45 Gandhi Street, Coimbatore - 641001"
+    },
+    {
+      "id": "defendant_name",
+      "label": "Defendant's full name",
+      "group": "The parties",
+      "type": "name",
+      "required": true,
+      "example": "M/s Annai Builders",
+      "from_case": "opposite_party"
+    },
+    {
+      "id": "defendant_address",
+      "label": "Defendant's address",
+      "group": "The parties",
+      "type": "address",
+      "required": true,
+      "example": "22 Anna Salai, Chennai - 600002"
+    },
+    {
+      "id": "facts",
+      "label": "The facts of the case. Write one fact per line, in date order",
+      "group": "The case",
+      "type": "longtext",
+      "required": true,
+      "example": "That the Plaintiff entered into an agreement dated 3 January 2024 with the Defendant.\nThat the Defendant has not delivered possession."
+    },
+    {
+      "id": "cause_of_action_date",
+      "label": "Date the cause of action arose",
+      "group": "The case",
+      "type": "date",
+      "required": true,
+      "example": "30 June 2025"
+    },
+    {
+      "id": "cause_of_action",
+      "label": "What happened on that date",
+      "group": "The case",
+      "type": "text",
+      "required": true,
+      "example": "the Defendant failed to hand over possession as agreed"
+    },
+    {
+      "id": "jurisdiction_facts",
+      "label": "Why does this court have jurisdiction? (where the defendant lives or the cause arose, and the value)",
+      "group": "The case",
+      "type": "text",
+      "required": true,
+      "example": "the property is situated, and the cause of action arose, within the local limits of this Court"
+    },
+    {
+      "id": "suit_value",
+      "label": "Value of the suit for court fee and jurisdiction",
+      "group": "The case",
+      "type": "amount",
+      "required": true,
+      "example": "45,00,000"
+    },
+    {
+      "id": "reliefs",
+      "label": "What the plaintiff asks the court for. Write one relief per line",
+      "group": "The relief",
+      "type": "longtext",
+      "required": true,
+      "example": "Direct the Defendant to hand over possession of the suit property.\nAward costs of the suit."
+    },
+    {
+      "id": "advocate_name",
+      "label": "Advocate for the plaintiff",
+      "group": "Signing",
+      "type": "name",
+      "required": true,
+      "example": "Adv. Priya Raman"
+    },
+    {
+      "id": "place",
+      "label": "Place",
+      "group": "Signing",
+      "type": "text",
+      "required": true,
+      "example": "Coimbatore"
+    },
+    {
+      "id": "signing_date",
+      "label": "Date",
+      "group": "Signing",
+      "type": "date",
+      "required": true,
+      "example": "15 July 2026"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "center",
+      "bold": true,
+      "text": "IN THE {{court_name}}"
+    },
+    {
+      "type": "center",
+      "text": "ORIGINAL SUIT NO. ______ OF ______"
+    },
+    {
+      "type": "center",
+      "text": "{{plaintiff_name}} ... Plaintiff"
+    },
+    {
+      "type": "center",
+      "text": "versus"
+    },
+    {
+      "type": "center",
+      "text": "{{defendant_name}} ... Defendant"
+    },
+    {
+      "type": "title",
+      "text": "PLAINT"
+    },
+    {
+      "type": "para",
+      "text": "The Plaintiff states as follows:"
+    },
+    {
+      "type": "numbered",
+      "text": "The Plaintiff is {{plaintiff_name}}, residing at {{plaintiff_address}}."
+    },
+    {
+      "type": "numbered",
+      "text": "The Defendant is {{defendant_name}}, residing or carrying on business at {{defendant_address}}."
+    },
+    {
+      "type": "numbered",
+      "each": "facts"
+    },
+    {
+      "type": "numbered",
+      "text": "Cause of action. The cause of action arose on {{cause_of_action_date|date}}, when {{cause_of_action}}."
+    },
+    {
+      "type": "numbered",
+      "text": "Jurisdiction. This Court has jurisdiction to try this suit because {{jurisdiction_facts}}."
+    },
+    {
+      "type": "numbered",
+      "text": "Valuation. For the purposes of jurisdiction and court fee, the suit is valued at {{suit_value|inr}} ({{suit_value|words}})."
+    },
+    {
+      "type": "heading",
+      "text": "PRAYER"
+    },
+    {
+      "type": "para",
+      "text": "The Plaintiff therefore prays that this Court may be pleased to:"
+    },
+    {
+      "type": "lettered",
+      "each": "reliefs"
+    },
+    {
+      "type": "lettered",
+      "text": "Grant such other relief as this Court deems fit in the circumstances of the case."
+    },
+    {
+      "type": "para",
+      "text": "Place: {{place}}"
+    },
+    {
+      "type": "para",
+      "text": "Date: {{signing_date|date}}"
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "{{advocate_name}}",
+        "Advocate for the Plaintiff"
+      ]
+    },
+    {
+      "type": "heading",
+      "text": "VERIFICATION"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "I, {{plaintiff_name}}, the Plaintiff, verify at {{place}} on {{signing_date|date}} that the contents of the above plaint are true to my knowledge and belief, and that I have not suppressed any material fact."
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "PLAINTIFF",
+        "{{plaintiff_name}}"
+      ]
+    }
+  ]
+}

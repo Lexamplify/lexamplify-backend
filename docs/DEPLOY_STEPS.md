@@ -1,0 +1,78 @@
+# Deploy steps
+
+Nothing here has been run against your live Render or Firebase projects. I cannot reach them from this environment. Everything below was checked as far as it can be locally: the frontend builds, the backend starts with the same code, and `scripts/smoke.py` passes against a local copy.
+
+## 0. Before you start (5 minutes)
+
+1. **Back up.** Render: take a database snapshot in Neon (Branches → create a branch from now). Code: the previous version is commit `db66ab8`; the files changed in Part 2 are also copied in `_backup_before_part2/`.
+2. **Check these Render environment variables** (names only; never paste values into chat or code):
+
+| Variable | Needed | Note |
+|---|---|---|
+| `JWT_SECRET_KEY` | yes | At least 32 random characters. **The server now refuses to start otherwise** (clear line in the Render log: "Refusing to start"). |
+| `DATABASE_URL` | yes | Neon connection string. Also refuses to start without it. |
+| `GROQ_API_KEY` | yes for AI | Without it drafting from the guided form still works; free-writing and analysis show "the AI service did not respond". |
+| `MAX_CONTENT_LENGTH` | **change** | Set to `33554432` (32 MB). The screens promise 25 MB; a smaller value (the local `.env` has 16 MB) makes bigger files fail with a polite "too large" message. |
+| `LLM_TPM_BUDGET` | recommended | Your Groq account's tokens-per-minute limit (default 8000, the free tier). The analyzer paces its calls to fit it. If you are on a paid tier, set the real number: contract analysis gets much faster. |
+| `LLM_TIMEOUT_SECONDS`, `ANALYSIS_MAX_SECONDS`, `ANALYSIS_CALL_TIMEOUT` | optional | Time limits for one AI call (75 s), one whole analysis (4 to 15 minutes, depending on size) and one analyzer call (50 s). The defaults are fine. |
+| `MALLOC_ARENA_MAX` | **recommended** | Set to `2`. On Linux, Python programs that use threads can hold far more memory than they need; this one setting commonly saves 50 to 100 MB. Important on the free plan (512 MB). |
+| `LOCAL_VECTOR_SEARCH` | leave unset | Meaning-based Firm Library search needs about 500 MB. Leave it off on the free plan; keyword search still works. |
+| `FLASK_ENV` | yes | `production` (turns on HSTS and the strict cookie settings). |
+| `SENTRY_DSN` | optional | Error reporting. Needs `pip install sentry-sdk` first; ignored if missing. |
+| `PHONE_OTP_REQUIRED`, `SMS_PROVIDER`, `MSG91_*` | leave as they are | Phone sign-in stays on hold. |
+| `LEGACY_USER_MIGRATION` | leave unset | Defaults to on. Tests and local browser runs switch it off. |
+
+3. **Persistent disk (please check, it matters).** Practice (cases, clients, hearings), the Case Vault and the Document Hub keep their data in SQLite files inside the Render service (`lex_assistant.db`, `instance/client_data.db`, the Hub's file folder). Render's disk is **wiped on every redeploy unless a persistent Disk is attached**. If none is attached, a redeploy loses that data. Confirm in the Render dashboard (service → Disks) before deploying. This is how the product was built, not something Part 2 changed, but Part 2 makes Practice the source for drafting and conflict checks, so it matters more now.
+
+## 1. Backend (Render)
+
+1. Merge or push the branch to the branch Render deploys (`main`). Render redeploys.
+2. Watch the log for: `Database tables verified successfully!`. New tables are created automatically on first start: `draft_sessions`, `draft_versions`, `user_flags`, `revoked_tokens`, `audit_events`.
+3. The older SQLite tables (clients, billing, tracked cases, IP assets, roster, tasks, calendar) get an `owner_user_id` column the first time each is used. **Rows that existed before belong to the earliest registered account and are shown to nobody else.** If your real data was entered under a different account, tell me and I will add a one-line reassign command.
+4. Fonts for PDF export are bundled in `static/fonts/` (DejaVu Serif); nothing to install.
+
+## 2. Frontend (Firebase)
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+firebase deploy --only hosting
+```
+
+`frontend/.env.production` supplies the API address (`https://api.lexamplify.com`); do not override it.
+
+**New in `firebase.json`:** a strict Content-Security-Policy (`script-src 'self' https://accounts.google.com`, no inline scripts). All 46 browser tests run under exactly this policy with no violation, but **Google sign-in could not be exercised here**. After deploying, open the login page in a private window and try "Continue with Google". If it fails, open the browser console, look for a "Refused to…" line naming a host, and add that host to the matching directive in `firebase.json`; redeploy hosting.
+
+## 3. Smoke test against the live API (2 minutes)
+
+Make a test account first (sign up on the site with an address you control; use it only for this).
+
+```bash
+set SMOKE_EMAIL=your-test-account@example.com
+set SMOKE_PASSWORD=its password
+python scripts/smoke.py https://api.lexamplify.com
+```
+
+Expect 15 lines starting `PASS` and "All checks passed." Any `FAIL` line says what to look at. The script creates one throw-away draft and deletes it. The full order of operations, including both Firebase sites and how to roll back in two minutes, is in `docs/GO_LIVE.md`; the environment variables are listed in `docs/RENDER_ENV_CHECKLIST.md`.
+
+Also open `https://api.lexamplify.com/api/ping` (should say the database replied) and, signed in, `/api/status` (all checks "ok"; add `?deep=1` once to confirm the AI provider answers).
+
+## 4. Then, once, by hand (10 minutes)
+
+1. Start → Draft → cheque bounce notice → From a file → upload `tests/fixtures/indian_legal/s138_return_memo_1.pdf` → fill the rest → Review → Download Word and PDF. Open both.
+2. Start → Analyze → upload `commercial_contract_40pages.docx`. This is the first run against the real AI: read the flagged clauses and check that each quoted sentence is really in the contract.
+3. Start → Check conflicts with an empty Practice (should say "nothing to check against").
+
+## Rolling back
+
+- Frontend: the release list and the rollback button are in the Firebase console (**Hosting → the site →
+  Releases → "Rollback to this release"**). There is no `firebase hosting:rollback` command in the Firebase
+  CLI; the alternative is to rebuild the previous commit and redeploy it. See `docs/GO_LIVE.md`.
+- Backend: redeploy commit `db66ab8` on Render. The new tables are harmless if left in place; the ownership columns are additive.
+- If sign-in itself breaks, set `JWT_SECRET_KEY` correctly first (the new start-up check is the most likely thing to stop a misconfigured server).
+
+
+## Checking memory after a deploy (free plan)
+Open `https://<backend>/api/status` while signed in and read `memory_mb`. A healthy idle server shows well under 250. Run one contract analysis and look again: it should stay under about 350. In Render, Metrics → Memory shows the same over time. If it climbs towards 512, send me the `[analyze] job ... started, server memory N MB` log lines.

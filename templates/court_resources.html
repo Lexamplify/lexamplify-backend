@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Court Resources – LexAI India</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --navy: #0d1b2a;
+  --navy2: #112233;
+  --navy3: #1a2f45;
+  --gold: #c9a84c;
+  --gold2: #e6c97a;
+  --gold-dim: rgba(201,168,76,0.15);
+  --text: #e8e4d8;
+  --text2: #9ca3af;
+  --border: rgba(201,168,76,0.2);
+  --red: #e53e3e;
+  --green: #38a169;
+  --blue: #3182ce;
+  --card: rgba(255,255,255,0.04);
+  --card-hover: rgba(255,255,255,0.07);
+  --radius: 10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--navy);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;}
+
+/* ── TOP BAR ── */
+.topbar{background:var(--navy2);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;}
+.topbar h1{font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--gold);white-space:nowrap;}
+.state-select{background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:var(--radius);font-size:0.85rem;cursor:pointer;min-width:200px;}
+.state-select:focus{outline:none;border-color:var(--gold);}
+.search-bar{flex:1;max-width:360px;position:relative;}
+.search-bar input{width:100%;background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:8px 14px 8px 36px;border-radius:var(--radius);font-size:0.85rem;}
+.search-bar input:focus{outline:none;border-color:var(--gold);}
+.search-bar svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:0.4;pointer-events:none;}
+.badge-new{background:var(--red);color:#fff;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:.5px;}
+.badge-soon{background:var(--navy3);color:var(--text2);font-size:10px;padding:2px 7px;border-radius:20px;}
+
+/* ── NAV TABS ── */
+.tabs{display:flex;gap:4px;background:var(--navy2);padding:0 28px;border-bottom:1px solid var(--border);overflow-x:auto;}
+.tabs::-webkit-scrollbar{height:3px;}
+.tabs::-webkit-scrollbar-thumb{background:var(--border);}
+.tab{padding:13px 18px;font-size:0.82rem;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;display:flex;align-items:center;gap:6px;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+
+/* ── MAIN CONTENT ── */
+.content{padding:28px;max-width:1300px;}
+.section{display:none;}
+.section.active{display:block;}
+
+/* ── SECTION HEADER ── */
+.section-header{margin-bottom:22px;}
+.section-header h2{font-family:'Playfair Display',serif;font-size:1.5rem;color:var(--gold);margin-bottom:4px;}
+.section-header p{font-size:0.85rem;color:var(--text2);}
+
+/* ── COURT STATUS BANNER ── */
+.court-banner{background:var(--navy2);border-bottom:1px solid var(--border);padding:7px 28px;display:flex;align-items:center;justify-content:space-between;font-size:0.82rem;color:var(--text2);}
+.session-pill{display:inline-flex;align-items:center;gap:7px;font-weight:600;padding:4px 13px;border-radius:20px;}
+.session-pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0;}
+.session-pill.in{color:#68d391;background:rgba(56,161,105,.13);border:1px solid rgba(56,161,105,.3);}
+.session-pill.holiday{color:#9ca3af;background:rgba(156,163,175,.1);border:1px solid rgba(156,163,175,.25);}
+
+/* ── TODAY'S CAUSE LIST CARD ── */
+.today-card{background:var(--gold);color:var(--navy);border-radius:var(--radius);padding:22px 26px;margin-bottom:26px;display:flex;align-items:center;justify-content:space-between;gap:20px;box-shadow:0 4px 18px rgba(201,168,76,.35);}
+.today-card h3{font-family:'Playfair Display',serif;font-size:1.15rem;margin:0 0 4px;}
+.today-card p{margin:0;font-size:0.82rem;opacity:.75;}
+.today-card-btn{background:var(--navy);color:var(--gold);border:2px solid var(--navy);padding:11px 22px;border-radius:var(--radius);font-weight:700;font-size:0.88rem;cursor:pointer;white-space:nowrap;transition:opacity .2s;text-decoration:none;display:inline-block;}
+.today-card-btn:hover{opacity:.85;}
+
+/* ── QUICK LINKS GRID ── */
+.quick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:28px;}
+.quick-btn{background:var(--navy3);color:var(--gold);padding:16px 18px;border-radius:var(--radius);font-size:0.85rem;font-weight:600;cursor:pointer;border:1.5px solid var(--gold);text-align:left;display:flex;align-items:center;gap:10px;transition:all .2s;text-decoration:none;}
+.quick-btn:hover{background:var(--gold-dim);transform:translateY(-1px);}
+.quick-btn.outline{background:var(--navy3);color:var(--gold);border:1.5px solid var(--gold);}
+.quick-btn.outline:hover{background:var(--gold-dim);}
+.quick-btn.green-btn{background:var(--navy3);color:var(--gold);border:1.5px solid var(--gold);}
+.quick-btn.green-btn:hover{background:var(--gold-dim);}
+.quick-btn .icon{font-size:1.1rem;min-width:20px;}
+
+/* ── TABLE ── */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;}
+thead th{background:var(--navy3);padding:12px 16px;text-align:left;font-size:0.78rem;font-weight:600;color:var(--gold);letter-spacing:.5px;text-transform:uppercase;}
+tbody tr{border-top:1px solid var(--border);}
+tbody tr:hover{background:var(--card-hover);}
+td{padding:12px 16px;font-size:0.84rem;vertical-align:top;}
+td.label{color:var(--text2);font-weight:500;white-space:nowrap;}
+.copy-link{color:var(--gold);font-size:0.78rem;cursor:pointer;text-decoration:underline;margin-left:8px;background:none;border:none;}
+.vc-link{color:#60a5fa;font-size:0.82rem;word-break:break-all;}
+
+/* ── CARDS GRID ── */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-bottom:24px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;transition:all .2s;cursor:pointer;}
+.card:hover{background:var(--card-hover);border-color:var(--gold);transform:translateY(-2px);}
+.card-title{font-weight:600;font-size:0.9rem;color:var(--text);margin-bottom:4px;}
+.card-sub{font-size:0.78rem;color:var(--text2);}
+.card-icon{font-size:1.4rem;margin-bottom:10px;}
+
+/* ── JUDGE CARD ── */
+.judge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;}
+.judge-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+.judge-card-head{background:var(--navy3);padding:14px 16px;font-weight:600;font-size:0.88rem;color:var(--text);border-bottom:1px solid var(--border);}
+.judge-card-body{padding:0;}
+.judge-row{display:flex;border-bottom:1px solid rgba(255,255,255,0.05);padding:9px 16px;}
+.judge-row:last-child{border-bottom:none;}
+.jr-label{color:var(--text2);font-size:0.78rem;font-weight:500;min-width:110px;padding-right:10px;}
+.jr-value{font-size:0.82rem;color:var(--text);word-break:break-all;}
+.jr-value a{color:#60a5fa;text-decoration:none;}
+.jr-value a:hover{text-decoration:underline;}
+
+/* ── LIST ── */
+.list-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+.list-item{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;transition:background .15s;}
+.list-item:last-child{border-bottom:none;}
+.list-item:hover{background:var(--card-hover);}
+.list-item-text{font-size:0.85rem;font-weight:500;}
+.list-item-sub{font-size:0.75rem;color:var(--text2);margin-top:2px;}
+.list-arrow{color:var(--text2);font-size:0.9rem;}
+
+/* ── DISTRICT ACCORDION ── */
+.district-item{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;}
+.district-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;cursor:pointer;transition:background .15s;}
+.district-head:hover{background:var(--card-hover);}
+.district-head-title{font-weight:600;font-size:0.88rem;}
+.district-body{display:none;padding:14px 18px;border-top:1px solid var(--border);}
+.district-body.open{display:block;}
+.district-links{display:flex;flex-wrap:wrap;gap:8px;}
+.district-link{background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:7px 14px;border-radius:20px;font-size:0.78rem;text-decoration:none;transition:all .15s;}
+.district-link:hover{border-color:var(--gold);color:var(--gold);}
+
+/* ── SEARCH INPUT ── */
+.section-search{width:100%;background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:var(--radius);font-size:0.85rem;margin-bottom:16px;}
+.section-search:focus{outline:none;border-color:var(--gold);}
+
+/* ── FORM ITEMS ── */
+.form-item{padding:13px 18px;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .15s;}
+.form-item:hover{background:var(--card-hover);}
+.form-item:last-child{border-bottom:none;}
+.form-item-name{font-size:0.84rem;font-weight:500;}
+.dl-btn{background:transparent;border:1px solid var(--border);color:var(--text2);padding:5px 12px;border-radius:20px;font-size:0.75rem;cursor:pointer;transition:all .15s;}
+.dl-btn:hover{border-color:var(--gold);color:var(--gold);}
+
+/* ── CAUSE LIST FORM ── */
+.cause-form{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:480px;}
+.cause-form label{display:block;font-size:0.8rem;color:var(--text2);margin-bottom:6px;font-weight:500;}
+.cause-form input{width:100%;background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:var(--radius);font-size:0.9rem;margin-bottom:16px;}
+.cause-form input:focus{outline:none;border-color:var(--gold);}
+.cause-form-btn{background:var(--gold);color:var(--navy);padding:12px 28px;border-radius:var(--radius);font-weight:600;font-size:0.88rem;cursor:pointer;border:none;width:100%;}
+.cause-form-btn:hover{background:var(--gold2);}
+
+
+/* ── 2-COL LAYOUT ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media(max-width:768px){.two-col{grid-template-columns:1fr;}}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#fff;padding:10px 18px;border-radius:var(--radius);font-size:0.85rem;font-weight:500;z-index:9999;display:none;animation:fadeIn .2s;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ── INFO BOX ── */
+.info-box{background:rgba(49,130,206,0.12);border:1px solid rgba(49,130,206,0.3);border-radius:var(--radius);padding:14px 18px;font-size:0.82rem;color:#90cdf4;margin-bottom:20px;display:flex;gap:10px;align-items:flex-start;}
+
+/* ── EVENTS ── */
+.event-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:12px;}
+.event-date{font-size:0.75rem;color:var(--gold);font-weight:600;margin-bottom:6px;}
+.event-title{font-size:0.9rem;font-weight:600;margin-bottom:4px;}
+.event-sub{font-size:0.78rem;color:var(--text2);}
+
+/* ── EVENT DETAIL MODAL ── */
+#event-detail-modal{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.78);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+  z-index:8000;align-items:center;justify-content:center;padding:16px;
+}
+#event-detail-card{
+  background:#0d1b2a;border:1px solid rgba(201,168,76,0.25);border-radius:16px;
+  width:min(660px,96vw);max-height:88vh;overflow-y:auto;position:relative;
+  box-shadow:0 32px 80px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.06);
+  animation:evSlide .22s cubic-bezier(0.34,1.06,0.64,1);
+}
+@keyframes evSlide{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
+.evmod-header{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+  padding:24px 24px 0;
+}
+.evmod-close{
+  background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9ca3af;
+  width:32px;height:32px;border-radius:50%;font-size:1rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;
+}
+.evmod-close:hover{border-color:var(--gold);color:var(--gold);}
+.evmod-close:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.evmod-body{padding:20px 24px 24px;}
+
+/* skeleton shimmer */
+@keyframes shimmer{0%{background-position:-600px 0}100%{background-position:600px 0}}
+.skel{
+  background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.09) 50%,rgba(255,255,255,.04) 75%);
+  background-size:600px 100%;animation:shimmer 1.4s infinite linear;
+  border-radius:6px;
+}
+.skel-title{height:22px;width:72%;margin-bottom:14px;}
+.skel-line{height:13px;margin-bottom:9px;border-radius:4px;}
+.skel-line.w90{width:90%;}
+.skel-line.w75{width:75%;}
+.skel-line.w55{width:55%;}
+.skel-para{height:13px;margin-bottom:8px;}
+.skel-para.w100{width:100%;}
+.skel-para.w95{width:95%;}
+.skel-para.w80{width:80%;}
+.skel-pills{display:flex;gap:10px;margin-top:20px;}
+.skel-pill{height:32px;width:110px;border-radius:20px;}
+
+/* content state */
+.evmod-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px;
+  text-transform:capitalize;letter-spacing:.4px;margin-bottom:10px;
+}
+.evmod-badge.webinar{background:rgba(49,130,206,.15);color:#90cdf4;border:1px solid rgba(49,130,206,.3);}
+.evmod-badge.conference{background:rgba(56,161,105,.12);color:#68d391;border:1px solid rgba(56,161,105,.25);}
+.evmod-badge.media{background:rgba(236,201,75,.12);color:#f6e05e;border:1px solid rgba(236,201,75,.25);}
+.evmod-title{font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--text);margin:0 0 16px;line-height:1.4;}
+.evmod-meta-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:9px;font-size:0.82rem;}
+.evmod-meta-icon{font-size:1rem;flex-shrink:0;margin-top:1px;}
+.evmod-meta-label{color:var(--text2);min-width:70px;font-weight:500;}
+.evmod-meta-val{color:var(--text);}
+.evmod-divider{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:18px 0;}
+.evmod-desc{font-size:0.84rem;color:#d1d5db;line-height:1.7;}
+.evmod-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;}
+.evmod-btn-primary{
+  background:var(--gold);color:var(--navy);padding:10px 20px;border-radius:8px;
+  font-size:0.84rem;font-weight:700;text-decoration:none;display:inline-flex;
+  align-items:center;gap:6px;transition:opacity .15s;border:none;cursor:pointer;
+  font-family:'DM Sans',sans-serif;
+}
+.evmod-btn-primary:hover{opacity:.88;}
+.evmod-btn-secondary{
+  background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text2);
+  padding:10px 18px;border-radius:8px;font-size:0.84rem;font-weight:600;
+  text-decoration:none;display:inline-flex;align-items:center;gap:6px;
+  transition:border-color .15s,color .15s;
+}
+.evmod-btn-secondary:hover{border-color:var(--gold);color:var(--gold);}
+
+/* error state */
+.evmod-error-box{
+  display:flex;flex-direction:column;align-items:center;gap:14px;
+  padding:32px 20px;text-align:center;
+}
+.evmod-error-icon{font-size:2.5rem;}
+.evmod-error-title{font-size:1rem;font-weight:700;color:var(--text);}
+.evmod-error-msg{font-size:0.82rem;color:var(--text2);max-width:340px;line-height:1.55;}
+.evmod-error-retry{
+  background:transparent;border:1px solid var(--border);color:var(--text2);
+  padding:8px 18px;border-radius:8px;font-size:0.82rem;cursor:pointer;
+  font-family:'DM Sans',sans-serif;transition:border-color .15s,color .15s;
+}
+.evmod-error-retry:hover{border-color:var(--gold);color:var(--gold);}
+
+/* view-event-btn inside event cards */
+.view-event-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  background:transparent;border:1px solid var(--border);color:var(--gold);
+  padding:6px 14px;border-radius:20px;font-size:0.78rem;font-weight:600;
+  cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;
+  text-decoration:none;
+}
+.view-event-btn:hover{background:var(--gold-dim);border-color:var(--gold);}
+
+/* Ensure buttons inherit the page font — browsers do not do this by default */
+button { font-family: 'DM Sans', sans-serif; }
+
+/* ── District sub-tab bar ── */
+.hc-tabs{display:flex;gap:4px;background:var(--navy2);padding:0;border-radius:8px 8px 0 0;overflow-x:auto;border:1px solid var(--border);border-bottom:none;}
+.hc-tab-btn{padding:11px 18px;font-size:0.82rem;font-weight:600;color:var(--text2);cursor:pointer;border:none;background:transparent;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;font-family:'DM Sans',sans-serif;}
+.hc-tab-btn:hover{color:var(--text);}
+.hc-tab-btn.active{color:var(--gold);border-bottom-color:var(--gold);}
+
+/* ── SCROLL ── */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--navy);}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <h1>⚖️ Court Resources</h1>
+  <select class="state-select" id="stateSelect" onchange="onStateChange()">
+    <option value="all">— Select State —</option>
+    <option value="delhi">Delhi</option>
+    <option value="maharashtra">Maharashtra</option>
+    <option value="tamil_nadu">Tamil Nadu</option>
+    <option value="karnataka">Karnataka</option>
+    <option value="telangana">Telangana</option>
+    <option value="up">Uttar Pradesh</option>
+    <option value="gujarat">Gujarat</option>
+    <option value="rajasthan">Rajasthan</option>
+    <option value="mp">Madhya Pradesh</option>
+    <option value="west_bengal">West Bengal</option>
+    <option value="punjab">Punjab & Haryana</option>
+    <option value="kerala">Kerala</option>
+    <option value="andhra">Andhra Pradesh</option>
+    <option value="odisha">Odisha</option>
+    <option value="jharkhand">Jharkhand</option>
+    <option value="chhattisgarh">Chhattisgarh</option>
+    <option value="assam">Assam</option>
+    <option value="himachal">Himachal Pradesh</option>
+    <option value="uttarakhand">Uttarakhand</option>
+    <option value="goa">Goa</option>
+  </select>
+  <div class="search-bar">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="text" placeholder="Search courts, judges, police stations…" id="globalSearch" oninput="globalSearchFn()"/>
+  </div>
+</div>
+
+<!-- COURT STATUS BANNER -->
+<div id="court-status-banner" class="court-banner">
+  <span id="banner-date"></span>
+  <span id="banner-session" class="session-pill"></span>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('supreme')">💻 Dashboard</div>
+  <div class="tab" onclick="switchTab('highcourt')">⚖️ High Courts</div>
+  <div class="tab" onclick="switchTab('district')">🏢 District Courts</div>
+  <div class="tab" onclick="switchTab('laws')">📚 Laws &amp; Bare Acts</div>
+  <div class="tab" onclick="switchTab('forms')">📋 Misc. Forms</div>
+  <div class="tab" onclick="switchTab('events')">📅 Events</div>
+  <div class="tab" onclick="switchTab('courtfee')">💰 Court Fee</div>
+  <div class="tab" onclick="switchTab('enotary')">🔏 e-Notarisation</div>
+  <div class="tab" onclick="switchTab('iptracker')">🏷️ IP Tracker</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  SUPREME COURT                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="content">
+<div id="sec-supreme" class="section active">
+
+  <div class="today-card">
+    <div>
+      <h3>📋 Generate Today's Cause List</h3>
+      <p id="today-card-sub">Pull today's Supreme Court cause list.</p>
+    </div>
+    <button id="today-card-link" class="today-card-btn" data-url="https://www.sci.gov.in/web/cause-list/" onclick="openInAppBrowser(this.dataset.url)">Open Cause List</button>
+  </div>
+
+  <div class="section-header">
+    <h2>Supreme Court of India</h2>
+    <p>All court rooms, VC links, display boards, and calendar — New Delhi</p>
+  </div>
+
+  <div class="quick-grid">
+    <button class="quick-btn" onclick="openInAppBrowser('https://www.sci.gov.in/cause-list/')"><span class="icon">📋</span>Court List / Cause List</button>
+    <button class="quick-btn outline" onclick="openInAppBrowser('https://www.sci.gov.in/display-boards/')"><span class="icon">📺</span>Physical Display Board</button>
+    <button class="quick-btn outline" onclick="showSCCalendarNative()"><span class="icon">📅</span>Supreme Court Calendar</button>
+    <button class="quick-btn outline" onclick="openInAppBrowser('https://efiling.sci.gov.in/')"><span class="icon">📤</span>E-Filing Portal</button>
+    <button class="quick-btn outline" onclick="openInAppBrowser('https://judgments.ecourts.gov.in/pdfsearch')"><span class="icon">📄</span>Judgements Search</button>
+  </div>
+
+  <div id="sc-calendar-panel" style="display:none;margin-top:16px;padding:20px;background:var(--navy3);border-radius:var(--radius);border:1px solid var(--gold);">
+    <h3 style="font-family:'Playfair Display',serif;color:var(--gold);margin-bottom:10px;">📅 Supreme Court Term Calendar</h3>
+    <p style="font-size:0.85rem;color:var(--text2);margin-bottom:16px;line-height:1.5;">
+      The Supreme Court releases its annual term calendar at the start of each judicial year. Vacation periods and bench schedules are published on the official website.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="quick-btn outline" onclick="openInAppBrowser('https://www.sci.gov.in/calendar/')">📋 View Full Calendar ↗</button>
+      <button class="quick-btn outline" onclick="document.getElementById('sc-calendar-panel').style.display='none'">✕ Close</button>
+    </div>
+  </div>
+
+  <div class="section-header" style="margin-top:8px;">
+    <h2 style="font-size:1.1rem;">Court Room VC Details — All 34 Courts</h2>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Court Room</th><th>VC Link (Webex)</th><th>VC Meeting ID</th><th>Court Email</th></tr></thead>
+      <tbody id="sc-table">
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  HIGH COURTS                                                     -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-highcourt" class="section">
+  <div class="section-header">
+    <h2>High Courts — State Wise</h2>
+    <p>Select a state to view court details, judges roster, cause list, and more</p>
+  </div>
+
+  <div class="info-box">ℹ️ Select your state from the dropdown at the top to see state-specific High Court information, judges list, and direct portal links.</div>
+
+  <!-- Sub-tabs for High Court -->
+  <div class="tabs" style="padding:0;margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+    <div class="tab active" id="hc-tab-overview" onclick="switchHCTab('overview')" style="font-size:0.78rem;padding:10px 14px;">Overview</div>
+    <div class="tab" id="hc-tab-causelist" onclick="switchHCTab('causelist')" style="font-size:0.78rem;padding:10px 14px;">Daily Cause List</div>
+    <div class="tab" id="hc-tab-judges" onclick="switchHCTab('judges')" style="font-size:0.78rem;padding:10px 14px;">Judges List</div>
+    <div class="tab" id="hc-tab-orders" onclick="switchHCTab('orders')" style="font-size:0.78rem;padding:10px 14px;">Orders &amp; Judgements</div>
+  </div>
+
+  <!-- Overview -->
+  <div id="hc-overview" class="section active">
+    <div class="quick-grid" id="hc-quick-links"></div>
+    <div id="hc-state-info"></div>
+  </div>
+
+  <!-- Cause List -->
+  <div id="hc-causelist" class="section">
+    <div class="two-col">
+      <div>
+        <div class="cause-form">
+          <h3 style="font-size:1rem;margin-bottom:18px;color:var(--gold);">Generate Cause List</h3>
+          <label>Select Court</label>
+          <select class="section-search" id="cl-court" style="margin-bottom:16px;"></select>
+          <label>Cause List Date (DD-MM-YYYY)</label>
+          <input type="text" id="cl-date" value="" placeholder="07-05-2026"/>
+          <label>Bench Type</label>
+          <select class="section-search" id="cl-bench" style="margin-bottom:16px;">
+            <option>Full Court</option>
+            <option>Division Bench</option>
+            <option>Single Bench</option>
+          </select>
+          <button class="cause-form-btn" onclick="openCauseList()">📋 Generate Cause List</button>
+        </div>
+      </div>
+      <div>
+        <div class="cause-form" style="background:transparent;border-color:transparent;padding:0;">
+          <h3 style="font-size:0.9rem;margin-bottom:14px;color:var(--text2);">Quick Cause List Links</h3>
+          <div class="list-wrap" id="quick-cause-list-container"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Judges List -->
+  <div id="hc-judges" class="section">
+    <input type="text" class="section-search" placeholder="Search by judge name or court room…" oninput="filterJudges(this.value)"/>
+    <div class="judge-grid" id="judges-container"></div>
+  </div>
+
+
+  <!-- Orders & Judgements -->
+  <div id="hc-orders" class="section">
+    <div class="cards">
+      <div class="card" onclick="openInAppBrowser('https://delhihighcourt.nic.in/app/')"><div class="card-icon">📑</div><div class="card-title">Delhi HC — Orders</div><div class="card-sub">All daily orders</div></div>
+      <div class="card" onclick="openInAppBrowser('https://delhihighcourt.nic.in/app/case-numbers')"><div class="card-icon">⚖️</div><div class="card-title">Delhi HC — Judgements</div><div class="card-sub">Search by case number, party</div></div>
+      <div class="card" onclick="openInAppBrowser('https://bombayhighcourt.nic.in/ord_qrywebcase.php')"><div class="card-icon">📑</div><div class="card-title">Bombay HC — Orders</div><div class="card-sub">All daily orders</div></div>
+      <div class="card" onclick="openInAppBrowser('https://mhc.tn.gov.in/judis/index.php/casestatus/caseno')"><div class="card-icon">⚖️</div><div class="card-title">Madras HC — Judgements</div><div class="card-sub">Search judgements online</div></div>
+      <div class="card" onclick="openInAppBrowser('https://judiciary.karnataka.gov.in/daily_order.php')"><div class="card-icon">📑</div><div class="card-title">Karnataka HC — Orders</div><div class="card-sub">Orders and judgements</div></div>
+      <div class="card" onclick="openInAppBrowser('https://elegalix.allahabadhighcourt.in/elegalix/StartWebSearch.do')"><div class="card-icon">⚖️</div><div class="card-title">Allahabad HC — Judgements</div><div class="card-sub">Search by year and bench</div></div>
+      <div class="card" onclick="openInAppBrowser('https://judgments.ecourts.gov.in')"><div class="card-icon">🔍</div><div class="card-title">eCourts Judgement Search</div><div class="card-sub">Search all HC & district court judgements</div></div>
+      <div class="card" onclick="window.open('https://indiankanoon.org','_blank')"><div class="card-icon">📚</div><div class="card-title">India Kanoon</div><div class="card-sub">Free legal research database</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  DISTRICT COURTS                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-district" class="section">
+  <div class="section-header">
+    <h2>District Courts — State &amp; District Wise</h2>
+    <p>eCourts portal, filing, cause list, and case tracking by district</p>
+  </div>
+
+  <div class="quick-grid" style="margin-bottom:20px;">
+    <button class="quick-btn green-btn" onclick="openInAppBrowser('https://filing.ecourts.gov.in')"><span class="icon">📤</span>E-Courts Filing Portal <span class="badge-new">NEW</span></button>
+    <button class="quick-btn outline" onclick="openInAppBrowser('https://services.ecourts.gov.in')"><span class="icon">🔍</span>Case Status Search</button>
+    <button class="quick-btn outline" onclick="openInAppBrowser('https://pay.ecourts.gov.in')"><span class="icon">💳</span>Pay Court Fee Online</button>
+    <button class="quick-btn outline" onclick="openInAppBrowser('https://efiling.ecourts.gov.in')"><span class="icon">📋</span>eCourts Services</button>
+  </div>
+
+  <div class="district-court-container">
+    <div class="district-selection-area" style="margin-bottom:25px;">
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px;">
+        <div style="flex:1;min-width:250px;">
+          <label for="districtStateSelect" style="font-weight:600;color:var(--text);display:block;margin-bottom:8px;">State *</label>
+          <select id="districtStateSelect" onchange="populateDistrictDropdown(this.value)"
+            style="width:100%;box-sizing:border-box;padding:12px;border-radius:var(--radius);background:var(--navy3);color:var(--text);border:1px solid var(--gold);font-size:1rem;font-family:'DM Sans',sans-serif;">
+            <option value="">Select State</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:250px;">
+          <label for="districtSelect" style="font-weight:600;color:var(--text);display:block;margin-bottom:8px;">District *</label>
+          <select id="districtSelect" onchange="handleDistrictSelection(this.value)" disabled
+            style="width:100%;box-sizing:border-box;padding:12px;border-radius:var(--radius);background:var(--navy3);color:var(--text);border:1px solid var(--gold);font-size:1rem;font-family:'DM Sans',sans-serif;opacity:0.5;cursor:not-allowed;">
+            <option value="">Select District</option>
+          </select>
+        </div>
+      </div>
+      <div id="districtActionContainer" style="display:none;align-items:center;gap:15px;padding:15px;background:var(--navy2);border-left:4px solid var(--gold);border-radius:var(--radius);flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <p style="margin:0;font-size:0.9rem;color:var(--text2);">Official District Court Website</p>
+          <h4 id="selectedDistrictLabel" style="margin:5px 0 0 0;color:var(--text);font-family:'Playfair Display',serif;">—</h4>
+        </div>
+        <button id="openDistrictBtn" class="quick-btn" style="padding:12px 24px;font-size:0.9rem;display:flex;align-items:center;gap:8px;white-space:nowrap;" onclick="openSelectedDistrictURL()">
+          🏛️ Take me to this District Court
+        </button>
+      </div>
+    </div>
+
+    <div id="districtTabsUI" style="display:none;">
+      <div class="hc-tabs">
+        <button class="hc-tab-btn active" onclick="renderDistrictDetails('Overview', this)">Overview</button>
+        <button class="hc-tab-btn" onclick="renderDistrictDetails('Daily Cause List', this)">Daily Cause List</button>
+        <button class="hc-tab-btn" onclick="renderDistrictDetails('Judges List', this)">Judges List</button>
+        <button class="hc-tab-btn" onclick="renderDistrictDetails('Orders & Judgements', this)">Orders &amp; Judgements</button>
+      </div>
+      <div id="districtContentContainer"
+        style="padding:22px;background:var(--navy2);border-radius:0 0 var(--radius) var(--radius);border:1px solid var(--border);border-top:none;min-height:140px;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  LAWS                                                             -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-laws" class="section">
+  <div class="section-header">
+    <h2>Laws &amp; Bare Acts</h2>
+    <p>New criminal laws, civil codes, and all major Indian legislation</p>
+  </div>
+
+  <!-- New Criminal Laws -->
+  <h3 style="color:var(--gold);font-size:1rem;margin-bottom:12px;font-family:'Playfair Display',serif;">🆕 New Criminal Laws (2024)</h3>
+  <div class="quick-grid" style="margin-bottom:28px;">
+    <button class="quick-btn" onclick="openSecureDocument('https://cdnbbsr.s3waas.gov.in/s380537a945c7aaa788ccfcdf1b99b5d8f/uploads/2023/08/2023080436.pdf')"><span class="icon">📖</span>Bharatiya Nyaya Sanhita</button>
+    <button class="quick-btn" onclick="openSecureDocument('https://cdnbbsr.s3waas.gov.in/s380537a945c7aaa788ccfcdf1b99b5d8f/uploads/2023/08/2023080497.pdf')"><span class="icon">📖</span>Bharatiya Nagarik Suraksha Sanhita</button>
+    <button class="quick-btn" onclick="openSecureDocument('https://cdnbbsr.s3waas.gov.in/s380537a945c7aaa788ccfcdf1b99b5d8f/uploads/2023/08/2023080449.pdf')"><span class="icon">📖</span>Bharatiya Sakshya Adhiniyam</button>
+  </div>
+
+  <h3 style="color:var(--gold);font-size:1rem;margin-bottom:12px;font-family:'Playfair Display',serif;">📚 All Bare Acts</h3>
+  <input type="text" class="section-search" placeholder="Search Bare Act…" oninput="filterActs(this.value)" id="actSearch"/>
+  <div class="list-wrap" id="acts-container"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  MISC FORMS                                                       -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-forms" class="section">
+  <div class="section-header">
+    <h2>Misc. Legal Forms</h2>
+    <p>Download court forms — bail bonds, vakalatnamas, affidavits, checklists</p>
+  </div>
+  <input type="text" class="section-search" placeholder="Search form…" oninput="filterForms(this.value)" id="formSearch"/>
+  <div class="list-wrap" id="forms-container"></div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  EVENTS                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-events" class="section">
+  <div class="section-header">
+    <h2>Legal Events &amp; Media</h2>
+    <p>Latest events, webinars, and media from courts and bar councils</p>
+  </div>
+  <div class="quick-grid" style="margin-bottom:20px;">
+    <div class="quick-btn outline" onclick="filterEventsType('all')">📰 All Events</div>
+    <div class="quick-btn outline" onclick="filterEventsType('webinar')">💻 Webinars</div>
+    <div class="quick-btn outline" onclick="filterEventsType('conference')">🎤 Conferences</div>
+    <div class="quick-btn outline" onclick="filterEventsType('media')">📺 Media</div>
+  </div>
+  <div class="events-filter-bar" style="margin-bottom:20px;display:flex;gap:15px;align-items:center;flex-wrap:wrap;">
+    <label for="eventSourceFilter" style="font-weight:600;color:var(--text);">Filter Source:</label>
+    <select id="eventSourceFilter" onchange="updateEventSourceFilter(this.value)"
+      style="padding:8px 12px;border-radius:var(--radius);background:var(--navy3);color:var(--text);border:1px solid var(--gold);font-size:0.84rem;cursor:pointer;">
+      <option value="All">All Sources</option>
+      <option value="Supreme Court">Supreme Court</option>
+      <option value="National Legal Services">National Legal Services</option>
+      <option value="Ministry of Law">Ministry of Law</option>
+    </select>
+  </div>
+  <div id="events-container"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  COURT FEE                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-courtfee" class="section">
+  <div class="section-header">
+    <h2>Court Fee Calculator</h2>
+    <p>Calculate court fees for civil suits, appeals, and writ petitions</p>
+  </div>
+  <div class="two-col">
+    <div class="cause-form">
+      <h3 style="font-size:1rem;margin-bottom:18px;color:var(--gold);">Court Fee Calculator</h3>
+      <label>Court Type</label>
+      <select class="section-search" id="fee-court" onchange="calcFee()" style="margin-bottom:16px;">
+        <option>District Court — Civil Suit</option>
+        <option>High Court — First Appeal</option>
+        <option>High Court — Writ Petition</option>
+        <option>Supreme Court — SLP</option>
+        <option>Consumer Forum</option>
+        <option>Labour Court</option>
+        <option>NCLT</option>
+        <option>NCLAT</option>
+      </select>
+      <label>Claim Amount (₹)</label>
+      <input type="number" id="fee-amount" placeholder="e.g. 500000" oninput="calcFee()" style="margin-bottom:16px;"/>
+      <label>State</label>
+      <select class="section-search" id="fee-state" onchange="calcFee()" style="margin-bottom:16px;">
+        <option>Delhi</option><option>Maharashtra</option><option>Tamil Nadu</option>
+        <option>Karnataka</option><option>Uttar Pradesh</option><option>Gujarat</option>
+        <option>Rajasthan</option><option>West Bengal</option><option>Kerala</option>
+      </select>
+      <div style="background:var(--navy3);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:8px;">
+        <div style="font-size:0.78rem;color:var(--text2);margin-bottom:4px;">Estimated Court Fee</div>
+        <div id="fee-result" style="font-size:1.6rem;font-weight:700;color:var(--gold);">₹ —</div>
+        <div id="fee-note" style="font-size:0.75rem;color:var(--text2);margin-top:6px;"></div>
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:0.9rem;margin-bottom:14px;color:var(--text2);">Fee Payment Portals</h3>
+      <div class="list-wrap">
+        <div class="list-item" onclick="openInAppBrowser('https://pay.ecourts.gov.in')"><span class="list-item-text">eCourts — Pay Court Fee Online</span><span>↗</span></div>
+        <div class="list-item" onclick="openInAppBrowser('https://delhihighcourt.nic.in/courtfee')"><span class="list-item-text">Delhi High Court Fee</span><span>↗</span></div>
+        <div class="list-item" onclick="openInAppBrowser('https://bombayhighcourt.nic.in')"><span class="list-item-text">Bombay High Court Fee</span><span>↗</span></div>
+        <div class="list-item" onclick="openInAppBrowser('https://hcmadras.tn.gov.in')"><span class="list-item-text">Madras High Court Fee</span><span>↗</span></div>
+        <div class="list-item" onclick="openInAppBrowser('https://sci.gov.in/fees')"><span class="list-item-text">Supreme Court Filing Fee</span><span>↗</span></div>
+        <div class="list-item" onclick="openInAppBrowser('https://efiling.sci.gov.in')"><span class="list-item-text">SCI — E-Filing Fee Payment</span><span>↗</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  e-NOTARISATION                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-enotary" class="section">
+  <div class="section-header">
+    <h2>🔏 e-Notarisation</h2>
+    <p>Legally valid digital notarisation under the IT Act, 2000 — recognised across India.</p>
+  </div>
+
+  <div class="info-box" style="margin-bottom:20px;">
+    ℹ️ <span>e-Notarisation using Aadhaar-based eSign is <strong>legally valid</strong> under the <strong>Information Technology Act, 2000 (Section 5)</strong> and the <strong>IT (Amendment) Act, 2008</strong>. Electronically signed and notarised documents carry the same legal force as paper-notarised documents in civil matters.</span>
+  </div>
+
+  <div class="cards">
+    <div class="card" onclick="window.open('https://www.nesl.co.in','_blank')">
+      <div class="card-icon">🏦</div>
+      <div class="card-title">NeSL — National e-Governance Services Ltd.</div>
+      <div class="card-sub" style="margin-top:6px;">Government-backed platform for Aadhaar eSign, digital notarisation, and document stamping. Accepted by NCLT, DRT, SEBI, and all High Courts.</div>
+      <div style="margin-top:12px;font-size:0.78rem;color:var(--gold);font-weight:600;">nesl.co.in ↗</div>
+    </div>
+    <div class="card" onclick="window.open('https://www.leegality.com','_blank')">
+      <div class="card-icon">✍️</div>
+      <div class="card-title">Leegality</div>
+      <div class="card-sub" style="margin-top:6px;">India's leading eSign and digital contract execution platform. Supports Aadhaar OTP, DSC, and biometric eSign. Trusted by 500+ corporates and law firms.</div>
+      <div style="margin-top:12px;font-size:0.78rem;color:var(--gold);font-weight:600;">leegality.com ↗</div>
+    </div>
+    <div class="card" onclick="window.open('https://www.signdesk.com','_blank')">
+      <div class="card-icon">📝</div>
+      <div class="card-title">SignDesk</div>
+      <div class="card-sub" style="margin-top:6px;">End-to-end digital agreement lifecycle — eStamping, eSign, eNotary, and contract management. MCA21 and CCA compliant.</div>
+      <div style="margin-top:12px;font-size:0.78rem;color:var(--gold);font-weight:600;">signdesk.com ↗</div>
+    </div>
+    <div class="card" onclick="window.open('https://www.digio.in','_blank')">
+      <div class="card-icon">🔐</div>
+      <div class="card-title">Digio</div>
+      <div class="card-sub" style="margin-top:6px;">Digital KYC, eSign, and eStamp platform. Integrated with MCA, RBI, SEBI workflows. Used by NBFCs, banks, and law firms nationwide.</div>
+      <div style="margin-top:12px;font-size:0.78rem;color:var(--gold);font-weight:600;">digio.in ↗</div>
+    </div>
+  </div>
+
+  <div class="section-header" style="margin-top:28px;">
+    <h2 style="font-size:1.1rem;">📋 Legal Framework</h2>
+  </div>
+  <div class="list-wrap">
+    <div class="list-item" onclick="openInAppBrowser('https://www.meity.gov.in/content/information-technology-act')">
+      <div><div class="list-item-text">IT Act, 2000 — Sections 3–5 (Electronic Records & Signatures)</div><div class="list-item-sub">Ministry of Electronics & IT — meity.gov.in</div></div>
+      <span class="list-arrow">↗</span>
+    </div>
+    <div class="list-item" onclick="openInAppBrowser('https://www.cca.gov.in')">
+      <div><div class="list-item-text">Controller of Certifying Authorities (CCA)</div><div class="list-item-sub">Licensing authority for Digital Signature Certificate providers — cca.gov.in</div></div>
+      <span class="list-arrow">↗</span>
+    </div>
+    <div class="list-item" onclick="openInAppBrowser('https://www.mca.gov.in')">
+      <div><div class="list-item-text">MCA21 eSign Integration (Companies Act Filings)</div><div class="list-item-sub">Ministry of Corporate Affairs — mca.gov.in</div></div>
+      <span class="list-arrow">↗</span>
+    </div>
+    <div class="list-item" onclick="openInAppBrowser('https://www.uidai.gov.in/en/my-aadhaar/data-and-security.html')">
+      <div><div class="list-item-text">Aadhaar eSign — UIDAI Authentication API</div><div class="list-item-sub">One-time password + biometric — UIDAI uidai.gov.in</div></div>
+      <span class="list-arrow">↗</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  IP TRACKER                                                      -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="sec-iptracker" class="section">
+  <div class="section-header">
+    <h2>🏷️ IP Tracker</h2>
+    <p>Track your clients' trademarks, patents, copyrights, and designs with renewal alerts.</p>
+  </div>
+
+  <div class="cards" style="margin-bottom:24px;">
+    <div class="card" onclick="openInAppBrowser('https://search.ipindia.gov.in/IPOJournal/Journal/Trademark')">
+      <div class="card-icon">™️</div>
+      <div class="card-title">Trademark Search — IP India</div>
+      <div class="card-sub">Official trademark registry search portal — Ministry of Commerce</div>
+    </div>
+    <div class="card" onclick="openInAppBrowser('https://search.ipindia.gov.in/IPOJournal/Journal/Patent')">
+      <div class="card-icon">⚗️</div>
+      <div class="card-title">Patent Search — IP India</div>
+      <div class="card-sub">Search granted patents and pending applications in Indian Patent Office</div>
+    </div>
+    <div class="card" onclick="openInAppBrowser('https://copyright.gov.in')">
+      <div class="card-icon">©️</div>
+      <div class="card-title">Copyright Office India</div>
+      <div class="card-sub">Register and search copyrights — Ministry of Education</div>
+    </div>
+    <div class="card" onclick="openInAppBrowser('https://online.ipindia.gov.in/eDesign/goForLogin/doLogin')">
+      <div class="card-icon">🎨</div>
+      <div class="card-title">Design Registry — IP India</div>
+      <div class="card-sub">Search registered industrial designs under Designs Act, 2000</div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+    <h3 style="font-size:1rem;color:var(--gold);">My IP Assets</h3>
+    <button class="quick-btn" style="padding:9px 18px;font-size:0.82rem;" onclick="openIPModal()">➕ Add IP Asset</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Title / Mark</th>
+          <th>Reg. Number</th>
+          <th>Filing Date</th>
+          <th>Renewal Due</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="ip-tbody">
+        <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text2);">Loading IP assets…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<!-- IP MODAL -->
+<div id="ip-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;display:none;align-items:center;justify-content:center;">
+  <div style="background:var(--navy2);border:1px solid var(--border);border-radius:14px;padding:26px;width:min(540px,95vw);max-height:90vh;overflow-y:auto;">
+    <h2 style="font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--gold);margin-bottom:18px;" id="ip-modal-title">Add IP Asset</h2>
+    <input type="hidden" id="edit-ip-id"/>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:0.78rem;color:var(--text2);font-weight:500;">IP Type</label>
+        <select id="ip-type" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;">
+          <option>Trademark</option><option>Patent</option><option>Copyright</option><option>Design</option><option>Geographical Indication</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:0.78rem;color:var(--text2);font-weight:500;">Status</label>
+        <select id="ip-status" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;">
+          <option>Active</option><option>Pending</option><option>Expired</option><option>Opposed</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">
+      <label style="font-size:0.78rem;color:var(--text2);font-weight:500;">Title / Mark / Description *</label>
+      <input type="text" id="ip-title" placeholder="e.g. LexAI — Word Mark" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;"/>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:0.78rem;color:var(--text2);font-weight:500;">Reg. / App. Number</label>
+        <input type="text" id="ip-regnum" placeholder="TM-12345" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;"/>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:0.78rem;color:var(--text2);font-weight:500;">Filing Date</label>
+        <input type="date" id="ip-filing" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;"/>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:0.78rem;color:var(--text2);font-weight:500;">Renewal Due</label>
+        <input type="date" id="ip-renewal" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;"/>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;">
+      <label style="font-size:0.78rem;color:var(--text2);font-weight:500;">Notes</label>
+      <input type="text" id="ip-notes" placeholder="Client name, class, jurisdiction…" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;"/>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="closeIPModal()" style="background:transparent;border:1px solid var(--border);color:var(--text2);padding:10px 22px;border-radius:var(--radius);font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
+      <button onclick="saveIP()" style="background:var(--gold);color:var(--navy);padding:10px 22px;border-radius:var(--radius);font-weight:600;font-size:0.85rem;cursor:pointer;border:none;">💾 Save Asset</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- EVENT DETAIL MODAL                                             -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="event-detail-modal"
+     role="dialog" aria-modal="true"
+     aria-labelledby="evmod-title-el" aria-describedby="evmod-desc-el">
+
+  <div id="event-detail-card">
+
+    <!-- ── SKELETON STATE (shown instantly on open) ────────────── -->
+    <div id="evmod-skeleton">
+      <div class="evmod-header">
+        <div style="flex:1">
+          <div class="skel skel-title"></div>
+          <div class="skel skel-line w75"></div>
+        </div>
+        <button class="evmod-close" onclick="closeEventModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="evmod-body">
+        <div class="skel skel-line w90" style="margin-bottom:16px;"></div>
+        <div class="skel skel-line w55" style="margin-bottom:24px;"></div>
+        <div class="skel skel-para w100"></div>
+        <div class="skel skel-para w95"></div>
+        <div class="skel skel-para w80"></div>
+        <div class="skel skel-para w100" style="margin-top:4px;"></div>
+        <div class="skel skel-para w90"></div>
+        <div class="skel-pills">
+          <div class="skel skel-pill"></div>
+          <div class="skel skel-pill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CONTENT STATE (populated after successful fetch) ───────── -->
+    <div id="evmod-content" style="display:none;" aria-live="polite">
+      <div class="evmod-header">
+        <div style="flex:1">
+          <span id="evmod-badge" class="evmod-badge"></span>
+          <h2 class="evmod-title" id="evmod-title-el"></h2>
+        </div>
+        <button class="evmod-close" onclick="closeEventModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="evmod-body">
+        <div class="evmod-meta-row">
+          <span class="evmod-meta-icon">📅</span>
+          <span class="evmod-meta-label">Date</span>
+          <span class="evmod-meta-val" id="evmod-date"></span>
+        </div>
+        <div class="evmod-meta-row" id="evmod-venue-row">
+          <span class="evmod-meta-icon">📍</span>
+          <span class="evmod-meta-label">Venue</span>
+          <span class="evmod-meta-val" id="evmod-venue"></span>
+        </div>
+        <div class="evmod-meta-row" id="evmod-org-row">
+          <span class="evmod-meta-icon">🏛️</span>
+          <span class="evmod-meta-label">Organiser</span>
+          <span class="evmod-meta-val" id="evmod-organizer"></span>
+        </div>
+        <hr class="evmod-divider"/>
+        <p class="evmod-desc" id="evmod-desc-el"></p>
+        <div class="evmod-actions" id="evmod-actions"></div>
+      </div>
+    </div>
+
+    <!-- ── ERROR STATE (shown when fetch fails) ───────────────────── -->
+    <div id="evmod-error" style="display:none;" aria-live="assertive">
+      <div class="evmod-header" style="padding-bottom:0;">
+        <div></div>
+        <button class="evmod-close" onclick="closeEventModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="evmod-error-box">
+        <div class="evmod-error-icon">⚠️</div>
+        <div class="evmod-error-title">Could Not Load Event Details</div>
+        <p class="evmod-error-msg" id="evmod-error-msg"></p>
+        <button class="evmod-error-retry" id="evmod-retry-btn">Try Again</button>
+        <a id="evmod-fallback-link" href="#" target="_blank" rel="noopener noreferrer"
+           class="evmod-btn-secondary" style="margin-top:4px;">
+          Open on Official Website ↗
+        </a>
+      </div>
+    </div>
+
+  </div><!-- /event-detail-card -->
+</div><!-- /event-detail-modal -->
+
+<div class="toast" id="toast">✅ Link copied!</div>
+
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────────
+let SC_COURTS=[], BARE_ACTS=[], EVENTS=[], CAUSE_LIST_URLS={};
+let _forms=[];
+
+// Populated at runtime from GET /api/districts (generated by scraper.py)
+let STATE_DISTRICT_DATA = {};
+
+// Tracks the full district object (name + url) for the currently selected district
+let currentDistrictObject = null;
+
+async function fetchDistrictDatabase() {
+  try {
+    const response = await fetch('/api/districts');
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    STATE_DISTRICT_DATA = await response.json();
+    initStateDropdown();
+  } catch (error) {
+    console.error('District database error:', error);
+    const stateSelect = document.getElementById('districtStateSelect');
+    const actionContainer = document.getElementById('districtActionContainer');
+    const tabsUI = document.getElementById('districtTabsUI');
+    if (stateSelect) {
+      stateSelect.innerHTML = '<option value="">(Database Offline — Try Again Later)</option>';
+      stateSelect.disabled = true;
+    }
+    if (actionContainer) actionContainer.style.display = 'none';
+    if (tabsUI) tabsUI.style.display = 'none';
+  }
+}
+
+// LexAmplify Internal Database (Low Frequency Data)
+const _JUDGES_DB = {
+  "Madurai District Court": [
+    { name: "Thiru. A. Muthusamy",      designation: "Principal District Judge",            room: "Court Hall 1" },
+    { name: "Tmt. K. Dakshinamoorthy",  designation: "I Additional District Judge",          room: "Court Hall 2" },
+    { name: "Thiru. S. Kasi",           designation: "Chief Judicial Magistrate",            room: "Court Hall 3" },
+    { name: "Tmt. R. Selvakumar",       designation: "Family Court Judge",                   room: "Court Hall 4" },
+    { name: "Thiru. M. Senthil",        designation: "Sub Judge",                            room: "Court Hall 5" }
+  ],
+  "Pune District Court": [
+    { name: "Shri. S. V. Yarlagadda",  designation: "Principal District Judge",              room: "Room 101" }
+  ],
+  "Delhi Tis Hazari": [
+    { name: "Shri. Narottam Kaushal",  designation: "Principal District & Sessions Judge",   room: "Room 1" }
+  ]
+};
+
+// ── INIT ──────────────────────────────────────────────────────────
+window.onload = async function(){
+  renderCourtBanner();
+  setTodayDate();
+  try{
+    const [globalsRes,hcRes,distRes]=await Promise.all([
+      fetch('/api/court-globals'),
+      fetch('/api/court-data/delhi'),
+      fetch('/api/court-data/all')
+    ]);
+    const globals  =await globalsRes.json();
+    const hcData   =await hcRes.json();
+    const distData =await distRes.json();
+    SC_COURTS        = globals.sc_courts;
+    BARE_ACTS        = globals.bare_acts;
+    EVENTS           = globals.events;
+    CAUSE_LIST_URLS  = globals.cause_list_urls;
+    renderCauseListWidgets(CAUSE_LIST_URLS);
+    updateCauseListCard('all');
+    renderSCTable(SC_COURTS);
+    renderActs('');
+    renderEvents('all');
+    renderHCOverview(hcData.hc);
+    renderJudges(hcData.judges);
+    renderForms(hcData.forms);
+    renderDistricts(distData.districts);
+  }catch(e){ console.error('Initial court data load failed', e); }
+};
+
+function renderCourtBanner(){
+  const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const d=new Date();
+  const dateEl=document.getElementById('banner-date');
+  if(dateEl)dateEl.textContent=`${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  const pillEl=document.getElementById('banner-session');
+  if(!pillEl)return;
+  const isWeekend=d.getDay()===0||d.getDay()===6;
+  if(isWeekend){
+    pillEl.className='session-pill holiday';
+    pillEl.innerHTML='<span class="dot"></span>Court Holiday';
+  } else {
+    pillEl.className='session-pill in';
+    pillEl.innerHTML='<span class="dot"></span>Court in Session';
+  }
+}
+
+// ── CAUSE LIST CARD ───────────────────────────────────────────────
+const SC_CAUSE={url:'https://www.sci.gov.in/cause-list/',label:"Pull today's Supreme Court cause list."};
+
+function updateCauseListCard(st){
+  const entry=CAUSE_LIST_URLS[st]||SC_CAUSE;
+  const link=document.getElementById('today-card-link');
+  const sub=document.getElementById('today-card-sub');
+  // Use dataset.url instead of href since the element is now a <button>
+  if(link)link.dataset.url=entry.url;
+  if(sub)sub.textContent=entry.label;
+}
+
+function setTodayDate(){
+  const d=new Date();
+  const s=`${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+  const el=document.getElementById('cl-date');
+  if(el)el.value=s;
+}
+
+// ── SUPREME COURT TABLE ───────────────────────────────────────────
+function renderSCTable(courts){
+  const tb=document.getElementById('sc-table');
+  tb.innerHTML=(courts||SC_COURTS).map(c=>`
+    <tr>
+      <td><b>Court ${c.room}</b></td>
+      <td><a class="vc-link" href="${c.vc}" target="_blank" rel="noopener noreferrer">${c.vc}</a>
+          <button class="copy-link" onclick="copyText('${c.vc}')">Copy</button></td>
+      <td><button class="copy-link vc-link" style="font-size:0.78rem;text-decoration:underline;"
+            onclick="openInAppBrowser('https://sci.gov.in/display-board')">📺 ${c.meetId} ↗</button></td>
+      <td style="font-size:0.78rem;">${c.email}</td>
+    </tr>
+  `).join('');
+}
+
+// ── HIGH COURT ────────────────────────────────────────────────────
+function renderHCOverview(hc){
+  if(!hc)return;
+  // HIGH-FREQUENCY: route directly through proxy popup
+  const highFreqLinks=[
+    {label:'Regular Court',      icon:'🏛️', url:hc.url},
+    {label:'Physical Display Board',icon:'📺',url:hc.displayboard||hc.url},
+    {label:'Daily Cause List',   icon:'📅', url:hc.causelist},
+    {label:'E-Filing Portal',    icon:'📤', url:hc.efiling},
+    {label:'E-Gate Pass',        icon:'🎫', url:hc.epass||hc.url},
+    {label:'Case History',       icon:'📂', url:hc.casestatus},
+    {label:'Orders',             icon:'📑', url:hc.orders||hc.url},
+    {label:'Judgements',         icon:'⚖️', url:hc.judgments||hc.url},
+  ];
+  // LOW-FREQUENCY: native judge roster already rendered in the Judges tab
+  document.getElementById('hc-quick-links').innerHTML =
+    highFreqLinks.map(l=>
+      `<button class="quick-btn outline" onclick="openInAppBrowser('${l.url}')"><span class="icon">${l.icon}</span>${l.label}</button>`
+    ).join('') +
+    `<button class="quick-btn outline" onclick="switchHCTab('judges')"><span class="icon">📋</span>Current Roster</button>`;
+  document.getElementById('hc-state-info').innerHTML=`
+    <div class="info-box">🏛️ <b>${hc.name}</b> — Showing direct links for this High Court. Switch state from the dropdown above to view another High Court.</div>`;
+}
+
+function renderJudges(judges){
+  const ct=document.getElementById('judges-container');
+  if(!judges||!judges.length){
+    ct.innerHTML=`<div class="info-box" style="grid-column:1/-1;">ℹ️ Detailed judges roster not available for this High Court. Visit the court website for the current roster.</div>`;
+    return;
+  }
+  ct.innerHTML=judges.map(j=>`
+    <div class="judge-card">
+      <div class="judge-card-head">⚖️ ${j.name}</div>
+      <div class="judge-card-body">
+        <div class="judge-row"><span class="jr-label">Court Room</span><span class="jr-value">${j.room}</span></div>
+        <div class="judge-row"><span class="jr-label">VC Link</span><span class="jr-value"><a href="${j.vc}" target="_blank">${j.vc}</a> <button class="copy-link" onclick="copyText('${j.vc}')">Copy</button></span></div>
+        <div class="judge-row"><span class="jr-label">VC Meeting ID</span><span class="jr-value">${j.meetId}</span></div>
+        <div class="judge-row"><span class="jr-label">Email ID</span><span class="jr-value">${j.email||'—'}</span></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterJudges(q){
+  const cards=document.querySelectorAll('#judges-container .judge-card');
+  cards.forEach(c=>{c.style.display=c.innerText.toLowerCase().includes(q.toLowerCase())?'':'none';});
+}
+
+
+
+// ── DISTRICT COURTS ───────────────────────────────────────────────
+function renderDistricts(districtsObj){
+  // #district-container was replaced by the sub-tab UI — this function is
+  // retained for API compatibility but no longer renders into the DOM.
+  const ct=document.getElementById('district-container');
+  if(!ct) return;
+  if(!districtsObj||!Object.keys(districtsObj).length){
+    ct.innerHTML='<div class="info-box">ℹ️ Select a state to view district courts.</div>';
+    return;
+  }
+  ct.innerHTML=Object.entries(districtsObj).map(([st,districts])=>`
+    <div class="district-item">
+      <div class="district-head" onclick="toggleDistrict(this)">
+        <span class="district-head-title">${stateLabel(st)}</span>
+        <span style="color:var(--text2);">▼</span>
+      </div>
+      <div class="district-body">
+        <div class="district-links">
+          ${districts.map(d=>`
+            <button class="district-link" onclick="openInAppBrowser('${d.url}')">${d.name}</button>
+          `).join('')}
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="quick-btn outline" style="font-size:0.75rem;padding:6px 12px;" onclick="openInAppBrowser('https://services.ecourts.gov.in')">🔍 Case Status</button>
+          <button class="quick-btn outline" style="font-size:0.75rem;padding:6px 12px;" onclick="openInAppBrowser('https://filing.ecourts.gov.in')">📤 E-Filing</button>
+          <button class="quick-btn outline" style="font-size:0.75rem;padding:6px 12px;" onclick="openInAppBrowser('https://services.ecourts.gov.in/ecourtindia_v6/?p=casestatus/index')">📋 Cause List</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleDistrict(el){
+  const body=el.nextElementSibling;
+  body.classList.toggle('open');
+  el.querySelector('span:last-child').textContent=body.classList.contains('open')?'▲':'▼';
+}
+
+function filterDistricts(q){
+  document.querySelectorAll('.district-item').forEach(item=>{
+    item.style.display=item.innerText.toLowerCase().includes(q.toLowerCase())?'':'none';
+  });
+}
+
+// ── BARE ACTS ─────────────────────────────────────────────────────
+function renderActs(q){
+  const ct=document.getElementById('acts-container');
+  const filtered=BARE_ACTS.filter(a=>!q||a.name.toLowerCase().includes(q.toLowerCase()));
+  ct.innerHTML=filtered.map(a=>`
+    <div class="form-item" onclick="openInAppBrowser('${a.url}')">
+      <span class="form-item-name">📖 ${a.name}</span>
+      <button class="dl-btn">View</button>
+    </div>
+  `).join('')||'<div style="padding:20px;text-align:center;color:var(--text2);">No results found</div>';
+}
+function filterActs(q){renderActs(q);}
+
+// ── MISC FORMS ────────────────────────────────────────────────────
+function renderForms(forms){
+  _forms = forms || [];
+  _drawForms('');
+}
+function _drawForms(q){
+  const ct=document.getElementById('forms-container');
+  const filtered=_forms.filter(f=>!q||f.name.toLowerCase().includes(q.toLowerCase()));
+  ct.innerHTML=filtered.map(f=>`
+    <div class="form-item">
+      <div>
+        <div class="form-item-name">📋 ${f.name}</div>
+        <div style="font-size:0.72rem;color:var(--text2);">${f.cat}</div>
+      </div>
+      <button class="dl-btn" onclick="openInAppBrowser('${f.url}')">📥 Download</button>
+    </div>
+  `).join('')||'<div style="padding:20px;text-align:center;color:var(--text2);">No results found</div>';
+}
+function filterForms(q){_drawForms(q);}
+
+
+
+// ── EVENTS ────────────────────────────────────────────────────────
+// ── EVENT STATE — dual filter (type + source) ────────────────────
+let currentEventState = { type: 'all', source: 'All' };
+
+function updateEventSourceFilter(source) {
+  currentEventState.source = source;
+  renderEvents(currentEventState.type);
+}
+
+function renderEvents(type) {
+  currentEventState.type = type;
+  const ct = document.getElementById('events-container');
+  if (!ct) return;
+
+  const filtered = EVENTS.filter(e => {
+    const matchesType = currentEventState.type === 'all' ? true : e.type === currentEventState.type;
+    let matchesSource = true;
+    if (currentEventState.source !== 'All') {
+      const searchKeyword = currentEventState.source.toLowerCase();
+      const eventDataString = `${e.title || ''} ${e.venue || ''} ${e.source || ''}`.toLowerCase();
+      matchesSource = eventDataString.includes(searchKeyword);
+    }
+    return matchesType && matchesSource;
+  });
+
+  if (!filtered.length) {
+    ct.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text2);">No events match the selected filters.</div>';
+    return;
+  }
+
+  ct.innerHTML = filtered.map(e => `
+    <div class="event-card">
+      <div class="event-date">📅 ${e.date || '—'} &nbsp;|&nbsp;
+        <span style="text-transform:capitalize;background:var(--gold);color:#000;padding:2px 6px;border-radius:4px;font-size:0.8rem;">${e.type || 'event'}</span>
+      </div>
+      <h3 style="margin:10px 0;font-size:1.1rem;font-family:'Playfair Display',serif;">${e.title}</h3>
+      <p style="font-size:0.9rem;opacity:0.8;">📍 ${e.venue || '—'} | 🏢 ${e.source || 'General'}</p>
+      <div style="margin-top:15px;display:flex;gap:10px;">
+        ${e.id ? `<button class="view-event-btn quick-btn outline"
+            data-id="${e.id}"
+            data-title="${e.title.replace(/"/g,'&quot;')}">View In-App Details</button>` : ''}
+        ${e.url ? `<button class="quick-btn outline" onclick="openInAppBrowser('${e.url}')">Official Site ↗</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+function filterEventsType(t) { renderEvents(t); }
+
+// ── EVENT DETAIL MODAL ────────────────────────────────────────────
+let _evCurrentId  = null;
+let _evCurrentUrl = null;
+
+// Delegated click: catches .view-event-btn[data-id] buttons injected by renderEvents().
+// Looks up the full event record from EVENTS[] so the modal has date/url/type
+// even though the new card template only embeds id + title.
+document.addEventListener('click', function(e){
+  const btn = e.target.closest('button.view-event-btn[data-id]');
+  if(!btn) return;
+  const id    = btn.dataset.id;
+  const title = btn.dataset.title;
+  const ev    = EVENTS.find(x => x.id === id) || {};
+  openEventModal(id, title, ev.url || '', ev.type || '', ev.date || '');
+});
+
+function _evShowState(state){
+  document.getElementById('evmod-skeleton').style.display = state==='skeleton' ? 'block' : 'none';
+  document.getElementById('evmod-content').style.display  = state==='content'  ? 'block' : 'none';
+  document.getElementById('evmod-error').style.display    = state==='error'    ? 'block' : 'none';
+}
+
+function _evEsc(txt){
+  return String(txt||'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function openEventModal(id, title, sourceUrl, type, date){
+  _evCurrentId  = id;
+  _evCurrentUrl = sourceUrl;
+
+  const modal = document.getElementById('event-detail-modal');
+
+  // ── OPTIMISTIC UI: show skeleton INSTANTLY, then fetch ────────────
+  // The modal is visible to the user before any network round-trip begins.
+  // This prevents the "frozen app illusion" where the UI appears locked
+  // while waiting for a slow government server.
+  _evShowState('skeleton');
+  modal.style.display = 'flex';
+
+  // A11y: make background content inert while modal is open
+  document.querySelector('.content')?.setAttribute('inert','');
+  document.querySelector('.topbar')?.setAttribute('inert','');
+  document.querySelector('.tabs:not([style])')?.setAttribute('inert','');
+
+  // Wire retry button for this specific event
+  document.getElementById('evmod-retry-btn').onclick = ()=>openEventModal(id, title, sourceUrl, type, date);
+  document.getElementById('evmod-fallback-link').href = sourceUrl || '#';
+
+  // Focus the close button for keyboard users
+  requestAnimationFrame(()=>
+    document.querySelector('#evmod-skeleton .evmod-close')?.focus()
+  );
+
+  // THEN make the network call
+  fetch(`/api/events/${encodeURIComponent(id)}`)
+    .then(res => {
+      if(!res.ok) return res.json().then(d=>{ throw new Error(d.error || `HTTP ${res.status}`); });
+      return res.json();
+    })
+    .then(data => {
+      // ── Populate content state ───────────────────────────────────────
+      const badge = document.getElementById('evmod-badge');
+      badge.textContent  = type || data.type || 'event';
+      badge.className    = `evmod-badge ${(type||data.type||'').toLowerCase()}`;
+
+      document.getElementById('evmod-title-el').textContent =
+        data.title || title || 'Event Details';
+      document.getElementById('evmod-date').textContent =
+        data.event_date || date || '—';
+
+      const venueRow = document.getElementById('evmod-venue-row');
+      const venueEl  = document.getElementById('evmod-venue');
+      if(data.venue){ venueEl.textContent = data.venue; venueRow.style.display='flex'; }
+      else           { venueRow.style.display = 'none'; }
+
+      const orgRow = document.getElementById('evmod-org-row');
+      const orgEl  = document.getElementById('evmod-organizer');
+      if(data.organizer){ orgEl.textContent = data.organizer; orgRow.style.display='flex'; }
+      else              { orgRow.style.display = 'none'; }
+
+      const descEl = document.getElementById('evmod-desc-el');
+      descEl.textContent = data.description || '—';
+
+      // Action buttons — use createElement to avoid URL-in-string XSS risks
+      const actions = document.getElementById('evmod-actions');
+      actions.innerHTML = '';
+      if(data.register_url){
+        const btn = document.createElement('button');
+        btn.className   = 'evmod-btn-primary';
+        btn.textContent = '📝 Register / RSVP';
+        btn.addEventListener('click', () => { closeEventModal(); openInAppBrowser(data.register_url); });
+        actions.appendChild(btn);
+      }
+      if(sourceUrl){
+        const btn = document.createElement('button');
+        btn.className   = 'evmod-btn-secondary';
+        btn.textContent = '🔗 Official Page';
+        btn.addEventListener('click', () => { closeEventModal(); openInAppBrowser(sourceUrl); });
+        actions.appendChild(btn);
+      }
+
+      _evShowState('content');
+      document.getElementById('evmod-title-el').focus?.();
+    })
+    .catch(err => {
+      // ── ERROR STATE: replaces skeleton immediately ────────────────────
+      // The .catch() fires as soon as the promise rejects — there is no
+      // scenario where the skeleton stays visible indefinitely.
+      document.getElementById('evmod-error-msg').textContent =
+        err.message || 'An unexpected error occurred. Please try again.';
+      _evShowState('error');
+    });
+}
+
+function closeEventModal(){
+  const modal = document.getElementById('event-detail-modal');
+  modal.style.display = 'none';
+  document.querySelector('.content')?.removeAttribute('inert');
+  document.querySelector('.topbar')?.removeAttribute('inert');
+  document.querySelector('.tabs:not([style])')?.removeAttribute('inert');
+  _evCurrentId = _evCurrentUrl = null;
+}
+
+// Close on backdrop click
+document.getElementById('event-detail-modal')?.addEventListener('click', function(e){
+  if(e.target === this) closeEventModal();
+});
+
+// Close on Escape
+document.addEventListener('keydown', function(e){
+  if(e.key==='Escape' && document.getElementById('event-detail-modal')?.style.display==='flex')
+    closeEventModal();
+});
+
+// ── COURT FEE CALC ────────────────────────────────────────────────
+async function calcFee(){
+  const amt=parseFloat(document.getElementById('fee-amount').value)||0;
+  const ct=document.getElementById('fee-court').value;
+  const res=document.getElementById('fee-result');
+  const note=document.getElementById('fee-note');
+  try{
+    const r=await fetch('/api/calculate-fee',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({amount:amt,court_type:ct})
+    });
+    const d=await r.json();
+    res.textContent=`₹ ${d.fee.toLocaleString('en-IN')}`;
+    note.textContent=d.note;
+  }catch(e){
+    res.textContent='Error';
+    note.textContent='Could not calculate fee. Please try again.';
+  }
+}
+
+// ── TAB SWITCHING ─────────────────────────────────────────────────
+function switchTab(id){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function switchHCTab(id){
+  ['overview','causelist','judges','orders'].forEach(t=>{
+    const el=document.getElementById('hc-'+t);
+    const tab=document.getElementById('hc-tab-'+t);
+    if(el)el.classList.toggle('active',t===id);
+    if(tab)tab.classList.toggle('active',t===id);
+  });
+}
+
+// ── STATE CHANGE ──────────────────────────────────────────────────
+async function onStateChange(){
+  const st=document.getElementById('stateSelect').value;
+  updateCauseListCard(st);
+  const fetchState=st==='all'?'delhi':st;
+  try{
+    const hcRes=await fetch('/api/court-data/'+fetchState);
+    const hcData=await hcRes.json();
+    renderHCOverview(hcData.hc);
+    renderJudges(hcData.judges);
+    renderForms(hcData.forms);
+    if(st==='all'){
+      const distRes=await fetch('/api/court-data/all');
+      const distData=await distRes.json();
+      renderDistricts(distData.districts);
+    } else {
+      renderDistricts(hcData.districts);
+    }
+  }catch(e){ console.error('Court data fetch failed', e); }
+}
+
+// ── GLOBAL SEARCH ─────────────────────────────────────────────────
+function globalSearchFn(){
+  const q=document.getElementById('globalSearch').value.toLowerCase();
+  if(!q)return;
+  filterActs(q);
+  _drawForms(q);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────
+function copyText(txt){
+  navigator.clipboard.writeText(txt).then(()=>showToast('Copied!'));
+}
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent='✅ '+msg;
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',2000);
+}
+function openCauseList(){
+  const url=document.getElementById('cl-court').value;
+  if(url)openInAppBrowser(url);
+}
+function renderCauseListWidgets(urlsObj){
+  const keyToLabel={
+    delhi:'Delhi High Court',maharashtra:'Bombay High Court',tamil_nadu:'Madras High Court',
+    karnataka:'Karnataka High Court',up:'Allahabad High Court',west_bengal:'Calcutta High Court',
+    gujarat:'Gujarat High Court',rajasthan:'Rajasthan High Court'
+  };
+  const sel=document.getElementById('cl-court');
+  const list=document.getElementById('quick-cause-list-container');
+  sel.innerHTML='';
+  list.innerHTML='';
+  Object.entries(urlsObj).forEach(([k,v])=>{
+    const label=keyToLabel[k]||k;
+    sel.innerHTML+=`<option value="${v.url}">${label}</option>`;
+    list.innerHTML+=`<div class="list-item" onclick="openInAppBrowser('${v.url}')"><span class="list-item-text">${label} Cause List</span><span>↗</span></div>`;
+  });
+}
+function stateLabel(k){
+  const m={delhi:'Delhi',maharashtra:'Maharashtra',tamil_nadu:'Tamil Nadu',karnataka:'Karnataka',up:'Uttar Pradesh',gujarat:'Gujarat',rajasthan:'Rajasthan',west_bengal:'West Bengal',kerala:'Kerala',telangana:'Telangana',andhra:'Andhra Pradesh'};
+  return m[k]||k;
+}
+
+// ── IP TRACKER ────────────────────────────────────────────────────
+let allIP = [];
+
+async function loadIP() {
+  try {
+    const r = await fetch('/api/ip/list');
+    allIP = await r.json();
+    renderIP();
+  } catch(e) { console.error('IP load error', e); }
+}
+
+function renderIP() {
+  const tbody = document.getElementById('ip-tbody');
+  if (!tbody) return;
+  if (!allIP.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text2);">No IP assets tracked yet. Click ➕ Add IP Asset to begin.</td></tr>';
+    return;
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  tbody.innerHTML = allIP.map(ip => {
+    let renewalHtml = ip.renewal_due ? formatIPDate(ip.renewal_due) : '—';
+    if (ip.renewal_due) {
+      const days = Math.round((new Date(ip.renewal_due + 'T00:00:00') - today) / 86400000);
+      if (days < 0) renewalHtml = `<span style="color:#fc8181;font-weight:600;">${formatIPDate(ip.renewal_due)} ⚠️ OVERDUE</span>`;
+      else if (days <= 30) renewalHtml = `<span style="color:#f6e05e;font-weight:600;">${formatIPDate(ip.renewal_due)} ⚠️ ${days}d</span>`;
+    }
+    const statusColors = { Active:'rgba(56,161,105,.15):#68d391:rgba(56,161,105,.3)', Pending:'rgba(236,201,75,.12):#f6e05e:rgba(236,201,75,.25)', Expired:'rgba(229,62,62,.12):#fc8181:rgba(229,62,62,.25)', Opposed:'rgba(49,130,206,.12):#90cdf4:rgba(49,130,206,.25)' };
+    const [bg, col, brd] = (statusColors[ip.status] || 'rgba(156,163,175,.1):#9ca3af:rgba(156,163,175,.25)').split(':');
+    return `<tr>
+      <td><strong>${escIP(ip.ip_type)}</strong></td>
+      <td>${escIP(ip.title)}${ip.notes ? '<br><span style="font-size:0.73rem;color:var(--text2);">'+escIP(ip.notes)+'</span>' : ''}</td>
+      <td>${escIP(ip.registration_number||'—')}</td>
+      <td>${ip.filing_date ? formatIPDate(ip.filing_date) : '—'}</td>
+      <td>${renewalHtml}</td>
+      <td><span style="background:${bg};color:${col};border:1px solid ${brd};padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:600;">${escIP(ip.status)}</span></td>
+      <td>
+        <button onclick="editIP(${ip.id})" style="background:transparent;border:1px solid var(--border);color:var(--text2);padding:5px 11px;border-radius:6px;font-size:0.76rem;cursor:pointer;margin-right:4px;">✏️</button>
+        <button onclick="deleteIP(${ip.id})" style="background:transparent;border:1px solid rgba(229,62,62,.3);color:#fc8181;padding:5px 11px;border-radius:6px;font-size:0.76rem;cursor:pointer;">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openIPModal(ip) {
+  document.getElementById('ip-modal-title').textContent = ip ? 'Edit IP Asset' : 'Add IP Asset';
+  document.getElementById('edit-ip-id').value = ip ? ip.id : '';
+  document.getElementById('ip-type').value = ip ? ip.ip_type : 'Trademark';
+  document.getElementById('ip-status').value = ip ? ip.status : 'Active';
+  document.getElementById('ip-title').value = ip ? ip.title : '';
+  document.getElementById('ip-regnum').value = ip ? (ip.registration_number||'') : '';
+  document.getElementById('ip-filing').value = ip ? (ip.filing_date||'') : '';
+  document.getElementById('ip-renewal').value = ip ? (ip.renewal_due||'') : '';
+  document.getElementById('ip-notes').value = ip ? (ip.notes||'') : '';
+  document.getElementById('ip-modal').style.display = 'flex';
+}
+function closeIPModal() { document.getElementById('ip-modal').style.display = 'none'; }
+
+async function saveIP() {
+  const id = document.getElementById('edit-ip-id').value;
+  const body = {
+    ip_type: document.getElementById('ip-type').value,
+    title: document.getElementById('ip-title').value.trim(),
+    registration_number: document.getElementById('ip-regnum').value.trim(),
+    filing_date: document.getElementById('ip-filing').value || null,
+    renewal_due: document.getElementById('ip-renewal').value || null,
+    status: document.getElementById('ip-status').value,
+    notes: document.getElementById('ip-notes').value.trim(),
+  };
+  if (!body.title) { showToast('Title is required'); return; }
+  const url = id ? `/api/ip/update/${id}` : '/api/ip/add';
+  const method = id ? 'PUT' : 'POST';
+  await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  closeIPModal();
+  loadIP();
+  showToast('IP asset saved!');
+}
+function editIP(id) { const ip = allIP.find(x => x.id === id); if (ip) openIPModal(ip); }
+async function deleteIP(id) {
+  if (!confirm('Delete this IP asset?')) return;
+  await fetch(`/api/ip/delete/${id}`, { method: 'DELETE' });
+  loadIP();
+  showToast('IP asset deleted');
+}
+function formatIPDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function escIP(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.getElementById('ip-modal').addEventListener('click', e => { if (e.target === document.getElementById('ip-modal')) closeIPModal(); });
+loadIP();
+fetchDistrictDatabase();
+renderEvents('all');
+
+// ── DISTRICT COURTS — Cascading Dropdown Handlers ────────────────
+function initStateDropdown() {
+  const stateSelect = document.getElementById('districtStateSelect');
+  if (!stateSelect) return;
+  const states = Object.keys(STATE_DISTRICT_DATA).sort();
+  let optionsHTML = '<option value="">Select State</option>';
+  states.forEach(state => { optionsHTML += `<option value="${state}">${state}</option>`; });
+  stateSelect.innerHTML = optionsHTML;
+}
+
+function populateDistrictDropdown(selectedState) {
+  const districtSelect = document.getElementById('districtSelect');
+  const actionContainer = document.getElementById('districtActionContainer');
+  const tabsUI = document.getElementById('districtTabsUI');
+  districtSelect.innerHTML = '<option value="">Select District</option>';
+  actionContainer.style.display = 'none';
+  if (tabsUI) tabsUI.style.display = 'none';
+  currentDistrictObject = null;
+  if (!selectedState) {
+    districtSelect.disabled = true;
+    districtSelect.style.opacity = '0.5';
+    districtSelect.style.cursor = 'not-allowed';
+    return;
+  }
+  districtSelect.disabled = false;
+  districtSelect.style.opacity = '1';
+  districtSelect.style.cursor = 'pointer';
+  const districts = (STATE_DISTRICT_DATA[selectedState] || [])
+    .slice().sort((a, b) => a.name.localeCompare(b.name));
+  let optionsHTML = '<option value="">Select District</option>';
+  districts.forEach(d => { optionsHTML += `<option value="${d.name}">${d.name}</option>`; });
+  districtSelect.innerHTML = optionsHTML;
+}
+
+function handleDistrictSelection(districtName) {
+  const actionContainer = document.getElementById('districtActionContainer');
+  const tabsUI = document.getElementById('districtTabsUI');
+  const selectedState = document.getElementById('districtStateSelect').value;
+  if (!districtName) {
+    actionContainer.style.display = 'none';
+    if (tabsUI) tabsUI.style.display = 'none';
+    currentDistrictObject = null;
+    return;
+  }
+  currentDistrictObject = (STATE_DISTRICT_DATA[selectedState] || [])
+    .find(d => d.name === districtName) || null;
+  document.getElementById('selectedDistrictLabel').textContent = districtName;
+  actionContainer.style.display = 'flex';
+  if (typeof initDistrictTabs === 'function') initDistrictTabs(districtName);
+}
+
+function openSelectedDistrictURL() {
+  if (currentDistrictObject && currentDistrictObject.url) {
+    openInAppBrowser(currentDistrictObject.url);
+  } else {
+    alert('Official URL not found for this district.');
+  }
+}
+
+// ── DISTRICT COURTS — Sub-Tab Architecture ────────────────────────
+let currentSelectedDistrict = '';
+
+function initDistrictTabs(districtName) {
+  if (!districtName) return;
+  currentSelectedDistrict = districtName;
+  document.getElementById('districtTabsUI').style.display = 'block';
+  // Reset tab bar: mark first button active and render Overview
+  const firstTab = document.querySelector('#districtTabsUI .hc-tab-btn');
+  document.querySelectorAll('#districtTabsUI .hc-tab-btn').forEach(b => b.classList.remove('active'));
+  if (firstTab) firstTab.classList.add('active');
+  renderDistrictDetails('Overview', firstTab);
+}
+
+function renderDistrictDetails(tabName, btnElement) {
+  document.querySelectorAll('#districtTabsUI .hc-tab-btn').forEach(b => b.classList.remove('active'));
+  if (btnElement) btnElement.classList.add('active');
+
+  const container = document.getElementById('districtContentContainer');
+  const name = currentSelectedDistrict;
+
+  // Base URLs — TODO: replace with district-specific URLs from DB
+  const eCourtsUrl  = 'https://districts.ecourts.gov.in/';
+  const payUrl      = 'https://pay.ecourts.gov.in/';
+  const servicesUrl = 'https://services.ecourts.gov.in/ecourtindia_v6/';
+  const judgmentsUrl = 'https://judgments.ecourts.gov.in/';
+
+  if (tabName === 'Overview') {
+    container.innerHTML = `
+      <h3 style="font-family:'Playfair Display',serif;color:var(--gold);margin-bottom:14px;">${name}</h3>
+      <p style="font-size:0.84rem;color:var(--text2);margin-bottom:18px;">
+        Access official portals for this district court via the LexAI Secure Browser.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="quick-btn outline" onclick="openInAppBrowser('${eCourtsUrl}')">🏛️ eCourts Portal</button>
+        <button class="quick-btn outline" onclick="openInAppBrowser('${payUrl}')">💳 Pay Court Fee</button>
+      </div>`;
+
+  // ── HIGH-FREQUENCY: DIRECT POPUP ─────────────────────────────────
+  } else if (tabName === 'Daily Cause List') {
+    container.innerHTML = `
+      <h3 style="font-family:'Playfair Display',serif;color:var(--gold);margin-bottom:14px;">${name} — Daily Cause List</h3>
+      <p style="font-size:0.84rem;color:var(--text2);margin-bottom:20px;line-height:1.5;">
+        Cause lists are highly volatile and updated daily by the courts. To ensure complete accuracy,
+        please view this data directly on the live court portal.
+      </p>
+      <button class="quick-btn" onclick="openInAppBrowser('${servicesUrl}')">🔍 Open Live Cause List</button>`;
+
+  // ── LOW-FREQUENCY: NATIVE TABLE + ESCAPE HATCH ───────────────────
+  } else if (tabName === 'Judges List') {
+    const judges = _JUDGES_DB[name.trim()] || [];
+    let tableHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px;">
+        <h3 style="font-family:'Playfair Display',serif;color:var(--gold);margin:0;">${name} — Roster of Judges</h3>
+        <button class="quick-btn outline" onclick="openInAppBrowser('${eCourtsUrl}')">Official Site ↗</button>
+      </div>`;
+
+    if (judges.length > 0) {
+      tableHTML += `
+        <div style="overflow-x:auto;width:100%;">
+          <table style="width:100%;border-collapse:collapse;background:var(--navy3);border-radius:8px;overflow:hidden;border:1px solid var(--gold);color:var(--text);min-width:520px;">
+            <thead style="background:#0f172a;border-bottom:1px solid var(--gold);">
+              <tr>
+                <th style="padding:12px;text-align:left;">Judge Name</th>
+                <th style="padding:12px;text-align:left;">Designation</th>
+                <th style="padding:12px;text-align:left;">Court Room No</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${judges.map(j => `
+                <tr style="border-bottom:1px solid #2a3553;">
+                  <td style="padding:12px;"><strong>${j.name}</strong></td>
+                  <td style="padding:12px;opacity:0.8;">${j.designation}</td>
+                  <td style="padding:12px;opacity:0.8;">${j.room || '-'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text2);margin-top:10px;">
+          *Data synced periodically from LexAmplify DB. Click 'Official Site' for the absolute latest updates.
+        </p>`;
+    } else {
+      tableHTML += `
+        <div style="padding:20px;background:var(--navy3);border-radius:8px;border:1px dashed var(--gold);text-align:center;">
+          <p style="color:var(--text2);">No native roster data available for this district yet.</p>
+          <button class="quick-btn" style="margin-top:10px;" onclick="openInAppBrowser('${eCourtsUrl}')">View on Official Site</button>
+        </div>`;
+    }
+    container.innerHTML = tableHTML;
+
+  } else if (tabName === 'Orders & Judgements') {
+    container.innerHTML = `
+      <h3 style="font-family:'Playfair Display',serif;color:var(--gold);margin-bottom:14px;">${name} — Orders &amp; Judgements</h3>
+      <p style="font-size:0.84rem;color:var(--text2);margin-bottom:20px;">Search official court orders and final judgements.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="quick-btn outline" onclick="openInAppBrowser('${judgmentsUrl}')">🔍 eCourts Judgements Search</button>
+        <button class="quick-btn outline" onclick="openInAppBrowser('${servicesUrl}')">📑 View Orders</button>
+      </div>`;
+  }
+}
+
+// ── IN-APP BROWSER ENGINE (Google-style popup) ───────────────────
+// Routes all government links through the Flask reverse proxy
+// (/api/proxy?target_url=...) and opens the result in a named popup
+// window. Using a fixed window name ('LexAISecureBrowser') means
+// successive clicks reuse the same popup tab instead of spawning new ones.
+// Must be called from a synchronous click handler to avoid popup blockers.
+
+function openInAppBrowser(targetUrl) {
+  const proxyUrl = '/api/proxy?target_url=' + encodeURIComponent(targetUrl);
+  const windowFeatures = 'width=1000,height=700,left=200,top=100,resizable=yes,scrollbars=yes,status=no,toolbar=no';
+  const popup = window.open(proxyUrl, 'LexAISecureBrowser', windowFeatures);
+  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    alert('⚠️ Your browser blocked the secure LexAI pop-up. Please click \'Always allow pop-ups\' for this site in your address bar.');
+  }
+}
+
+// Bypasses the proxy for strict S3 bucket PDFs to allow native browser referer headers
+function openSecureDocument(targetUrl) {
+  const newTab = window.open(targetUrl, '_blank');
+  if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+    alert('⚠️ Your browser blocked the secure document. Please allow pop-ups for this site to view official PDFs.');
+  }
+}
+
+function showSCCalendarNative() {
+  const panel = document.getElementById('sc-calendar-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+</body>
+</html>

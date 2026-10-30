@@ -1,0 +1,21 @@
+# Netlify test environment for the REAL LexAmplify product.
+# Site: lexamplify-app.netlify.app (team "stev" / account goutham037).
+# Production hosting is Firebase (app.lexamplify.com) and ignores this file —
+# these settings only affect Netlify builds.
+#
+# Deploy (builds + bundles the edge function):
+#   netlify deploy --site 53839d7e-20fd-4b57-b588-8e5972052568 --prod
+# To make it auto-deploy, connect THIS repo to the lexamplify-app site in Netlify.
+
+[build]
+  command = "npm --prefix frontend run build -- --mode netlify"
+  publish = "frontend/dist"
+  edge_functions = "netlify/edge-functions"
+
+# /api/* is handled by the edge function netlify/edge-functions/api-proxy.js
+# (it proxies to api.lexamplify.com AND rewrites Set-Cookie so auth works on the
+# netlify.app domain). Only the SPA fallback is declared as a redirect here.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,231 @@
+/*
+ * DelhiHighCourtJudges.module.css
+ * Scoped CSS Module — every class below is locally scoped by the build
+ * tool (Vite hashes each name at build time), so nothing here can leak
+ * into or collide with the rest of CourtResources.jsx's global styles.
+ * Zero Tailwind utility classes. Colors/spacing reuse the app's existing
+ * native CSS custom properties (--bg-dark-*, --text-dark-*, --accent-*)
+ * so this panel matches the surrounding theme, including automatic
+ * light/dark handling, without redefining a second token system.
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.noticeBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--accent-blue-subtle, rgba(59, 130, 246, 0.08));
+  border: 1px solid var(--accent-blue-border, rgba(59, 130, 246, 0.2));
+  color: var(--text-dark-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.noticeBar strong {
+  color: var(--text-dark-primary);
+}
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 12px;
+  background: var(--bg-dark-panel);
+}
+
+.searchInput {
+  flex: 1 1 280px;
+  min-width: 220px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--bg-dark-card);
+  border: 1px solid var(--border-dark-subtle);
+  color: var(--text-dark-primary);
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--accent-primary);
+}
+
+.resultCount {
+  font-size: 12px;
+  color: var(--text-dark-muted);
+  white-space: nowrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--bg-dark-card);
+  border: 1px solid var(--border-dark-subtle);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.card:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.roomBadge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: var(--accent-blue-subtle, rgba(59, 130, 246, 0.12));
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-blue-border, rgba(59, 130, 246, 0.25));
+  white-space: nowrap;
+}
+
+.benchType {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dark-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.hmj {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-dark-primary);
+  line-height: 1.4;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border-dark-subtle);
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.rowLabel {
+  color: var(--text-dark-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.vcLink {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vcLink:hover {
+  text-decoration: underline;
+}
+
+.meetingId {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-dark-primary);
+}
+
+.copyBtn {
+  border: 1px solid var(--border-dark-subtle);
+  background: transparent;
+  color: var(--text-dark-muted);
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.copyBtn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.copyBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.emailList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.emailLink {
+  color: var(--text-dark-muted);
+  text-decoration: none;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 190px;
+}
+
+.emailLink:hover {
+  color: var(--accent-primary);
+  text-decoration: underline;
+}
+
+.muted {
+  color: var(--text-dark-muted);
+  font-style: italic;
+}
+
+.emptyState {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--text-dark-muted);
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .emailLink {
+    max-width: 140px;
+  }
+}

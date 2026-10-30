@@ -1,0 +1,265 @@
+/* ============================================================
+   LANDING MOTION — section-by-section motion graphics
+   Scrubbed scroll timelines · stroke-draw underlines · stamp seal ·
+   signature path · drifting ember particles · ambient background orbs.
+   Pure CSS keyframes + SVG. No deps.
+   ============================================================ */
+
+/* ──────────────────────────────────────────────────────────
+   Ambient background orbs — drift slowly behind every section.
+   Scoped per section so they move at different speeds / sizes.
+   ────────────────────────────────────────────────────────── */
+.ambient {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+}
+.ambient__orb {
+  position: absolute; border-radius: 50%;
+  filter: blur(60px); opacity: .35; mix-blend-mode: multiply;
+  animation: ambDrift 24s cubic-bezier(.6,.1,.4,.9) infinite;
+}
+@keyframes ambDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(60px, -40px) scale(1.1); }
+  66%      { transform: translate(-50px, 40px) scale(0.9); }
+}
+
+/* Hero section orbs — subtle, high up and off to the sides */
+.ambient__orb--hero-0 { top: 8%; left: -6%; width: 360px; height: 360px; background: color-mix(in srgb, var(--accent) 20%, transparent); animation-duration: 34s; }
+.ambient__orb--hero-1 { bottom: 10%; right: -4%; width: 280px; height: 280px; background: color-mix(in srgb, var(--accent) 14%, transparent); animation-duration: 30s; animation-delay: -12s; }
+.ambient__orb--hero-2 { top: 40%; left: 30%; width: 200px; height: 200px; background: color-mix(in srgb, var(--accent) 10%, transparent); animation-duration: 38s; animation-delay: -22s; }
+
+/* Manifesto orbs — very subtle, behind the quote */
+.ambient__orb--man-0 { top: 20%; left: 8%; width: 260px; height: 260px; background: color-mix(in srgb, var(--accent) 12%, transparent); animation-duration: 36s; }
+.ambient__orb--man-1 { bottom: 15%; right: 10%; width: 220px; height: 220px; background: color-mix(in srgb, var(--accent) 10%, transparent); animation-duration: 32s; animation-delay: -14s; }
+
+/* HowItWorks section orbs */
+.ambient__orb--how-0 { top: 20%; left: -8%; width: 320px; height: 320px; background: color-mix(in srgb, var(--accent) 25%, transparent); animation-duration: 28s; }
+.ambient__orb--how-1 { bottom: 10%; right: -5%; width: 260px; height: 260px; background: color-mix(in srgb, #4ea86b 10%, transparent); animation-duration: 22s; animation-delay: -8s; }
+.ambient__orb--how-2 { top: 50%; left: 40%; width: 180px; height: 180px; background: color-mix(in srgb, var(--accent) 15%, transparent); animation-duration: 32s; animation-delay: -14s; }
+
+/* BuiltForIndia orbs */
+.ambient__orb--india-0 { top: 10%; left: 10%; width: 240px; height: 240px; background: color-mix(in srgb, var(--accent) 22%, transparent); animation-duration: 26s; }
+.ambient__orb--india-1 { bottom: 20%; right: 15%; width: 300px; height: 300px; background: color-mix(in srgb, #4ea86b 8%, transparent); animation-duration: 32s; animation-delay: -10s; }
+.ambient__orb--india-2 { top: 60%; left: 55%; width: 200px; height: 200px; background: color-mix(in srgb, var(--accent) 15%, transparent); animation-duration: 24s; animation-delay: -16s; }
+.ambient__orb--india-3 { top: 5%; right: 30%; width: 160px; height: 160px; background: color-mix(in srgb, #c0392b 7%, transparent); animation-duration: 20s; animation-delay: -6s; }
+
+/* Pricing orbs */
+.ambient__orb--pricing-0 { top: 15%; left: 5%; width: 280px; height: 280px; background: color-mix(in srgb, var(--accent) 20%, transparent); animation-duration: 30s; }
+.ambient__orb--pricing-1 { bottom: 10%; right: 5%; width: 220px; height: 220px; background: color-mix(in srgb, var(--accent) 15%, transparent); animation-duration: 26s; animation-delay: -12s; }
+.ambient__orb--pricing-2 { top: 55%; left: 45%; width: 180px; height: 180px; background: color-mix(in srgb, #4ea86b 10%, transparent); animation-duration: 28s; animation-delay: -18s; }
+
+/* FAQ orbs */
+.ambient__orb--faq-0 { top: 10%; right: -5%; width: 320px; height: 320px; background: color-mix(in srgb, var(--accent) 18%, transparent); animation-duration: 32s; }
+.ambient__orb--faq-1 { bottom: 15%; left: 5%; width: 240px; height: 240px; background: color-mix(in srgb, var(--accent) 12%, transparent); animation-duration: 28s; animation-delay: -14s; }
+
+/* Lift section content above the ambient layer */
+.lx-section__inner,
+.lx-india__inner,
+.lx-finalcta__inner,
+.lx-hero__grid,
+.lx-manifesto__inner { position: relative; z-index: 1; }
+.lx-hero, .lx-manifesto { position: relative; overflow: hidden; }
+
+/* ──────────────────────────────────────────────────────────
+   §03 How it works — scrubbed scroll timeline
+   ────────────────────────────────────────────────────────── */
+.lx-how { position: relative; }
+.lx-how .lx-section__h em { font-style: italic; color: var(--accent-ink); }
+
+.lx-how__timeline {
+  position: relative;
+  max-width: 900px; margin: 0 auto 60px;
+  height: 50px;
+}
+.lx-how__spine {
+  position: absolute; top: 50%; left: 16%; right: 16%; height: 1px;
+  background: var(--rule); transform: translateY(-50%);
+}
+.lx-how__fill {
+  position: absolute; top: 50%; left: 16%; height: 2px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 50%, transparent));
+  transform: translateY(-50%);
+  transition: width .2s ease;
+  max-width: 68%;
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.lx-how__node {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--paper); border: 1.5px solid var(--rule);
+  display: grid; place-items: center;
+  font-family: var(--font-serif); font-weight: 600; font-size: 18px;
+  color: var(--ink-soft);
+  transition: all .5s cubic-bezier(.4,.1,.1,1);
+  z-index: 1;
+}
+.lx-how__node.is-on {
+  background: var(--accent); border-color: var(--accent); color: var(--on-accent);
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.lx-steps--motion { grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.lx-step--motion { transition: opacity .4s ease, transform .4s ease; }
+
+/* ──────────────────────────────────────────────────────────
+   §04 Built for Indian practice — stroke-draw cards
+   ────────────────────────────────────────────────────────── */
+.lx-india { position: relative; }
+.lx-india__h em { font-style: italic; color: var(--accent-ink); }
+
+.lx-forum {
+  position: relative;
+  padding: 32px 24px 36px; background: var(--paper);
+  border: 1px solid var(--rule); border-radius: var(--lx-r);
+  text-align: center; overflow: hidden;
+  opacity: 0; transform: translateY(20px);
+  transition: opacity .7s cubic-bezier(.4,.1,.1,1), transform .7s cubic-bezier(.4,.1,.1,1);
+}
+.lx-forum.is-in { opacity: 1; transform: translateY(0); }
+.lx-forum__icon {
+  width: 44px; height: 44px; margin: 0 auto 14px;
+  display: grid; place-items: center;
+  background: var(--ink); color: var(--paper);
+  border-radius: 10px;
+  font-family: var(--font-serif); font-weight: 600; font-size: 15px;
+  letter-spacing: .04em;
+}
+.lx-forum strong {
+  display: block; font-family: var(--font-serif); font-weight: 600;
+  font-size: 17px; color: var(--ink); margin-bottom: 6px;
+}
+.lx-forum span {
+  display: block; font-size: 12px; letter-spacing: .04em; color: var(--muted);
+}
+.lx-forum__stroke {
+  position: absolute; left: 20%; right: 20%; bottom: 14px;
+  width: 60%; height: 6px;
+}
+.lx-forum__stroke path {
+  stroke-dasharray: 120; stroke-dashoffset: 120;
+  animation: strokeIn 1.2s cubic-bezier(.5,.1,.1,1) forwards;
+  animation-play-state: paused;
+}
+.lx-forum.is-in .lx-forum__stroke path { animation-play-state: running; }
+@keyframes strokeIn { to { stroke-dashoffset: 0; } }
+
+/* ──────────────────────────────────────────────────────────
+   §05 Pricing — motion stagger + featured lift + shimmer
+   ────────────────────────────────────────────────────────── */
+.lx-pricing-sec { position: relative; }
+
+.lx-pricing--motion .lx-plan {
+  opacity: 0; transform: translateY(24px);
+  transition: opacity .7s cubic-bezier(.4,.1,.1,1), transform .7s cubic-bezier(.4,.1,.1,1), box-shadow .4s ease, border-color .4s ease;
+}
+.lx-pricing--motion.is-in .lx-plan { opacity: 1; transform: translateY(0); }
+.lx-pricing--motion.is-in .lx-plan:nth-child(1) { transition-delay: 100ms; }
+.lx-pricing--motion.is-in .lx-plan:nth-child(2) { transition-delay: 240ms; }
+.lx-pricing--motion.is-in .lx-plan:nth-child(3) { transition-delay: 380ms; }
+
+.lx-pricing--motion .lx-plan:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--lx-shadow-3);
+  border-color: var(--lx-gold-line);
+}
+.lx-pricing--motion .lx-plan--featured { position: relative; overflow: hidden; }
+.lx-pricing--motion .lx-plan--featured::after {
+  content: ""; position: absolute; top: 0; left: -50%; width: 50%; height: 100%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 20%, transparent), transparent);
+  animation: shimmer 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes shimmer {
+  0%, 100% { left: -50%; }
+  50% { left: 100%; }
+}
+
+/* ──────────────────────────────────────────────────────────
+   §06 FAQ — animated stamp seal + headline sweep
+   ────────────────────────────────────────────────────────── */
+.lx-faq-sec { position: relative; }
+.lx-faq__left { position: relative; }
+
+.lx-faq__left .lx-section__h {
+  opacity: 0; transform: translateY(14px);
+  transition: opacity .9s cubic-bezier(.4,.1,.1,1), transform .9s cubic-bezier(.4,.1,.1,1);
+}
+.lx-faq__left .lx-section__h.is-in { opacity: 1; transform: translateY(0); }
+.lx-faq__left .lx-section__h em { font-style: italic; color: var(--accent-ink); }
+
+.lx-faq__stamp {
+  margin-top: 40px; width: 140px; height: 140px;
+  opacity: 0; transform: rotate(-8deg) scale(.9);
+  animation: stampIn 1.4s cubic-bezier(.4,.1,.3,1.2) .8s forwards;
+}
+@keyframes stampIn {
+  0%   { opacity: 0; transform: rotate(-18deg) scale(.6); }
+  60%  { opacity: 1; transform: rotate(0deg) scale(1.1); }
+  100% { opacity: 1; transform: rotate(-6deg) scale(1); }
+}
+.lx-faq__stamp svg { width: 100%; height: 100%; overflow: visible; }
+/* Spin only the outer dashed ring; keep the text and inner ring static. */
+.lx-faq__stamp svg > circle:first-of-type {
+  transform-origin: 60px 60px;
+  transform-box: fill-box;
+  animation: stampSpin 42s linear infinite;
+}
+@keyframes stampSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* FAQ accordion polish — chevron rotates smoothly */
+.lx-faq__chev { transition: transform .4s cubic-bezier(.4,.1,.1,1); }
+.lx-faq__item.is-open .lx-faq__chev { transform: rotate(45deg); }
+.lx-faq__item { transition: background .4s ease; }
+.lx-faq__item.is-open { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.lx-faq__num { transition: color .3s ease; }
+.lx-faq__item.is-open .lx-faq__num { color: var(--accent); font-weight: 700; }
+
+/* ──────────────────────────────────────────────────────────
+   §07 Final CTA — signature stroke + drifting embers
+   ────────────────────────────────────────────────────────── */
+.lx-finalcta { position: relative; overflow: hidden; }
+.lx-finalcta__inner { position: relative; z-index: 2; }
+
+/* Signature stroke that draws under the headline */
+.lx-finalcta__sig {
+  display: block; width: min(90%, 760px); height: 50px;
+  margin: 20px auto 10px;
+}
+.lx-finalcta__sig path {
+  stroke-dasharray: 1600; stroke-dashoffset: 1600;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 50%, transparent));
+}
+.lx-finalcta__sig circle {
+  opacity: 0;
+}
+.lx-finalcta__sig.is-in path {
+  animation: sigDraw 2.2s cubic-bezier(.65,0,.35,1) .3s forwards;
+}
+.lx-finalcta__sig.is-in circle {
+  animation: sigDot .5s ease 2.4s forwards;
+}
+@keyframes sigDraw { to { stroke-dashoffset: 0; } }
+@keyframes sigDot  { to { opacity: 1; } }
+
+/* Drifting ember particles */
+.lx-finalcta__particles {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+}
+.lx-finalcta__particles span {
+  position: absolute; bottom: -10px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+  opacity: 0;
+  animation: emberRise 12s linear infinite;
+}
+@keyframes emberRise {
+  0%   { opacity: 0; transform: translate(0, 0) scale(.8); }
+  10%  { opacity: .9; }
+  90%  { opacity: .4; }
+  100% { opacity: 0; transform: translate(30px, -110vh) scale(1.4); }
+}

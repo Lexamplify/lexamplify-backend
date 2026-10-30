@@ -1,0 +1,260 @@
+{
+ "_note": "Whitelist for the draft verifier. An Act not listed here, or a section number above max_section for its Act, is flagged. It checks that the citation can exist, not that it is the right provision. Extend it with a lawyer's review.",
+ "acts": [
+  {
+   "name": "Negotiable Instruments Act, 1881",
+   "aliases": [
+    "NI Act",
+    "N.I. Act",
+    "Negotiable Instruments Act"
+   ],
+   "max_section": 148
+  },
+  {
+   "name": "Bharatiya Nyaya Sanhita, 2023",
+   "aliases": [
+    "BNS",
+    "Bharatiya Nyaya Sanhita"
+   ],
+   "max_section": 358
+  },
+  {
+   "name": "Bharatiya Nagarik Suraksha Sanhita, 2023",
+   "aliases": [
+    "BNSS",
+    "Bharatiya Nagarik Suraksha Sanhita"
+   ],
+   "max_section": 531
+  },
+  {
+   "name": "Bharatiya Sakshya Adhiniyam, 2023",
+   "aliases": [
+    "BSA",
+    "Bharatiya Sakshya Adhiniyam"
+   ],
+   "max_section": 170
+  },
+  {
+   "name": "Indian Penal Code, 1860",
+   "aliases": [
+    "IPC",
+    "Indian Penal Code"
+   ],
+   "max_section": 511
+  },
+  {
+   "name": "Code of Criminal Procedure, 1973",
+   "aliases": [
+    "CrPC",
+    "Cr.P.C.",
+    "Code of Criminal Procedure"
+   ],
+   "max_section": 484
+  },
+  {
+   "name": "Code of Civil Procedure, 1908",
+   "aliases": [
+    "CPC",
+    "C.P.C.",
+    "Code of Civil Procedure"
+   ],
+   "max_section": 158
+  },
+  {
+   "name": "Indian Contract Act, 1872",
+   "aliases": [
+    "Contract Act",
+    "Indian Contract Act"
+   ],
+   "max_section": 238
+  },
+  {
+   "name": "Transfer of Property Act, 1882",
+   "aliases": [
+    "TP Act",
+    "Transfer of Property Act"
+   ],
+   "max_section": 137
+  },
+  {
+   "name": "Registration Act, 1908",
+   "aliases": [
+    "Registration Act"
+   ],
+   "max_section": 91
+  },
+  {
+   "name": "Indian Stamp Act, 1899",
+   "aliases": [
+    "Stamp Act",
+    "Indian Stamp Act"
+   ],
+   "max_section": 78
+  },
+  {
+   "name": "Limitation Act, 1963",
+   "aliases": [
+    "Limitation Act"
+   ],
+   "max_section": 32
+  },
+  {
+   "name": "Specific Relief Act, 1963",
+   "aliases": [
+    "Specific Relief Act"
+   ],
+   "max_section": 44
+  },
+  {
+   "name": "Arbitration and Conciliation Act, 1996",
+   "aliases": [
+    "Arbitration Act",
+    "Arbitration & Conciliation Act",
+    "Arbitration and Conciliation Act"
+   ],
+   "max_section": 87
+  },
+  {
+   "name": "Information Technology Act, 2000",
+   "aliases": [
+    "IT Act",
+    "Information Technology Act"
+   ],
+   "max_section": 90
+  },
+  {
+   "name": "Sale of Goods Act, 1930",
+   "aliases": [
+    "Sale of Goods Act"
+   ],
+   "max_section": 66
+  },
+  {
+   "name": "Oaths Act, 1969",
+   "aliases": [
+    "Oaths Act"
+   ],
+   "max_section": 14
+  },
+  {
+   "name": "Indian Evidence Act, 1872",
+   "aliases": [
+    "Evidence Act",
+    "Indian Evidence Act"
+   ],
+   "max_section": 167
+  },
+  {
+   "name": "Companies Act, 2013",
+   "aliases": [
+    "Companies Act"
+   ],
+   "max_section": 470
+  },
+  {
+   "name": "Advocates Act, 1961",
+   "aliases": [
+    "Advocates Act"
+   ],
+   "max_section": 60
+  },
+  {
+   "name": "Hindu Marriage Act, 1955",
+   "aliases": [
+    "Hindu Marriage Act"
+   ],
+   "max_section": 30
+  },
+  {
+   "name": "Protection of Women from Domestic Violence Act, 2005",
+   "aliases": [
+    "DV Act",
+    "Protection of Women from Domestic Violence Act"
+   ],
+   "max_section": 37
+  },
+  {
+   "name": "Consumer Protection Act, 2019",
+   "aliases": [
+    "Consumer Protection Act"
+   ],
+   "max_section": 107
+  },
+  {
+   "name": "Commercial Courts Act, 2015",
+   "aliases": [
+    "Commercial Courts Act"
+   ],
+   "max_section": 26
+  },
+  {
+   "name": "Indian Partnership Act, 1932",
+   "aliases": [
+    "Partnership Act",
+    "Indian Partnership Act"
+   ],
+   "max_section": 72
+  },
+  {
+   "name": "Copyright Act, 1957",
+   "aliases": [
+    "Copyright Act"
+   ],
+   "max_section": 79
+  },
+  {
+   "name": "Trade Marks Act, 1999",
+   "aliases": [
+    "Trade Marks Act"
+   ],
+   "max_section": 159
+  },
+  {
+   "name": "Real Estate (Regulation and Development) Act, 2016",
+   "aliases": [
+    "RERA",
+    "Real Estate (Regulation and Development) Act"
+   ],
+   "max_section": 92
+  },
+  {
+   "name": "Insolvency and Bankruptcy Code, 2016",
+   "aliases": [
+    "IBC",
+    "Insolvency and Bankruptcy Code"
+   ],
+   "max_section": 255
+  },
+  {
+   "name": "Limited Liability Partnership Act, 2008",
+   "aliases": [
+    "LLP Act"
+   ],
+   "max_section": 81
+  },
+  {
+   "name": "Digital Personal Data Protection Act, 2023",
+   "aliases": [
+    "DPDP Act",
+    "Digital Personal Data Protection Act"
+   ],
+   "max_section": 44
+  },
+  {
+   "name": "Goods and Services Tax Act, 2017",
+   "aliases": [
+    "CGST Act",
+    "Central Goods and Services Tax Act",
+    "Goods and Services Tax Act"
+   ],
+   "max_section": 174
+  },
+  {
+   "name": "Maintenance and Welfare of Parents and Senior Citizens Act, 2007",
+   "aliases": [
+    "Senior Citizens Act"
+   ],
+   "max_section": 32
+  }
+ ]
+}

@@ -1,0 +1,276 @@
+{
+  "id": "notice_138",
+  "label": "Legal notice for a dishonoured cheque (Section 138, Negotiable Instruments Act, 1881)",
+  "short": "Cheque bounce notice (s.138 NI Act)",
+  "category": "notice",
+  "minutes": 4,
+  "review": {
+    "status": "unreviewed",
+    "note": "Fixed wording follows the statutory sequence of Sections 138 and 142. It has not yet been reviewed by a practising advocate."
+  },
+  "statutes": [
+    "Section 138, Negotiable Instruments Act, 1881",
+    "Section 142, Negotiable Instruments Act, 1881"
+  ],
+  "timelines": [
+    "The notice must be sent within 30 days of the payee receiving the bank's information that the cheque was returned unpaid (Section 138(b)).",
+    "The drawer gets 15 days from receiving the notice to pay (Section 138(c)).",
+    "The complaint is filed within one month after those 15 days end (Section 142(1)(b)).",
+    "The cheque must be presented within three months of its date, or within its validity if that is shorter (Section 138, first proviso)."
+  ],
+  "checks": [
+    "cheque_validity",
+    "notice_within_30_days"
+  ],
+  "slots": [
+    {
+      "id": "sender_name",
+      "label": "Your client's name (the person who was to be paid)",
+      "group": "Your client",
+      "type": "name",
+      "required": true,
+      "example": "M/s Sundaram Agencies, a proprietorship of Mr. R. Sundaram",
+      "from_case": "client_name"
+    },
+    {
+      "id": "sender_address",
+      "label": "Your client's address",
+      "group": "Your client",
+      "type": "address",
+      "required": true,
+      "example": "No. 14, Cross Street, T. Nagar, Chennai - 600017"
+    },
+    {
+      "id": "advocate_name",
+      "label": "Your name, as the advocate issuing the notice",
+      "group": "Your client",
+      "type": "name",
+      "required": true,
+      "example": "Adv. Priya Raman"
+    },
+    {
+      "id": "advocate_enrolment",
+      "label": "Your Bar Council enrolment number",
+      "group": "Your client",
+      "type": "text",
+      "required": false,
+      "example": "MS/1234/2015"
+    },
+    {
+      "id": "advocate_address",
+      "label": "Your office address",
+      "group": "Your client",
+      "type": "address",
+      "required": false,
+      "example": "Chamber 5, High Court Campus, Chennai - 600104"
+    },
+    {
+      "id": "drawer_name",
+      "label": "Name of the person or firm who gave the cheque",
+      "group": "The person who gave the cheque",
+      "type": "name",
+      "required": true,
+      "example": "M/s Kumar Traders Pvt Ltd",
+      "from_case": "opposite_party"
+    },
+    {
+      "id": "drawer_address",
+      "label": "Their address",
+      "group": "The person who gave the cheque",
+      "type": "address",
+      "required": true,
+      "example": "Plot 22, Industrial Estate, Hosur - 635109"
+    },
+    {
+      "id": "cheque_no",
+      "label": "Cheque number (6 digits)",
+      "group": "The cheque",
+      "type": "cheque_no",
+      "required": true,
+      "example": "004817"
+    },
+    {
+      "id": "cheque_date",
+      "label": "Date written on the cheque",
+      "group": "The cheque",
+      "type": "date",
+      "required": true,
+      "example": "12 June 2026"
+    },
+    {
+      "id": "cheque_amount",
+      "label": "Amount of the cheque",
+      "group": "The cheque",
+      "type": "amount",
+      "required": true,
+      "example": "4,75,000"
+    },
+    {
+      "id": "drawn_bank",
+      "label": "Bank and branch the cheque was drawn on",
+      "group": "The cheque",
+      "type": "text",
+      "required": true,
+      "example": "State Bank of India, Hosur Main Branch"
+    },
+    {
+      "id": "payee_bank",
+      "label": "Your client's bank and branch where it was presented",
+      "group": "Presentation and return",
+      "type": "text",
+      "required": true,
+      "example": "HDFC Bank, T. Nagar Branch"
+    },
+    {
+      "id": "presentation_date",
+      "label": "Date the cheque was presented",
+      "group": "Presentation and return",
+      "type": "date",
+      "required": true,
+      "example": "20 June 2026"
+    },
+    {
+      "id": "return_reason",
+      "label": "Reason given by the bank for returning it",
+      "group": "Presentation and return",
+      "type": "text",
+      "required": true,
+      "example": "Funds insufficient"
+    },
+    {
+      "id": "return_memo_date",
+      "label": "Date on the bank's return memo",
+      "group": "Presentation and return",
+      "type": "date",
+      "required": true,
+      "example": "22 June 2026"
+    },
+    {
+      "id": "info_received_date",
+      "label": "Date your client received the return memo",
+      "group": "Presentation and return",
+      "type": "date",
+      "required": true,
+      "example": "23 June 2026"
+    },
+    {
+      "id": "debt_nature",
+      "label": "In one or two sentences, how did the amount become due?",
+      "group": "The debt",
+      "type": "longtext",
+      "required": true,
+      "example": "That my client supplied goods to you under invoice no. 2231 dated 2 May 2026, and the cheque was issued towards the price of those goods."
+    },
+    {
+      "id": "legal_cost",
+      "label": "Cost of this notice you want to claim (optional)",
+      "group": "The debt",
+      "type": "amount",
+      "required": false,
+      "example": "5,000"
+    },
+    {
+      "id": "notice_date",
+      "label": "Date of this notice",
+      "group": "This notice",
+      "type": "date",
+      "required": true,
+      "example": "30 June 2026"
+    },
+    {
+      "id": "mode_of_service",
+      "label": "How the notice will be sent",
+      "group": "This notice",
+      "type": "text",
+      "required": false,
+      "example": "Registered Post A.D. and E-mail"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "title",
+      "text": "LEGAL NOTICE"
+    },
+    {
+      "type": "right",
+      "when": [
+        "mode_of_service"
+      ],
+      "text": "{{mode_of_service}}"
+    },
+    {
+      "type": "right",
+      "text": "Date: {{notice_date|date}}"
+    },
+    {
+      "type": "para",
+      "text": "To,"
+    },
+    {
+      "type": "address",
+      "lines": [
+        "{{drawer_name}}",
+        "{{drawer_address}}"
+      ]
+    },
+    {
+      "type": "para",
+      "bold": true,
+      "text": "Subject: Statutory notice under Section 138 read with Section 142 of the Negotiable Instruments Act, 1881 for dishonour of cheque no. {{cheque_no}} dated {{cheque_date|date}} for {{cheque_amount|inr}}."
+    },
+    {
+      "type": "para",
+      "text": "Sir/Madam,"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "Under instructions from and on behalf of my client, {{sender_name}}, {{sender_address}} (\"my client\"), I serve upon you the following notice:"
+    },
+    {
+      "type": "numbered",
+      "text": "{{debt_nature}}"
+    },
+    {
+      "type": "numbered",
+      "text": "That, in discharge of the said liability, you issued cheque no. {{cheque_no}} dated {{cheque_date|date}} for {{cheque_amount|inr}} ({{cheque_amount|words}}), drawn on {{drawn_bank}}, in favour of my client."
+    },
+    {
+      "type": "numbered",
+      "text": "That my client presented the said cheque for encashment through {{payee_bank}} on {{presentation_date|date}}. The cheque was returned unpaid with the remark \"{{return_reason}}\", as shown in the bank's return memo dated {{return_memo_date|date}}, which my client received on {{info_received_date|date}}."
+    },
+    {
+      "type": "numbered",
+      "text": "That the dishonour of the said cheque for the reason stated above makes you liable for an offence punishable under Section 138 of the Negotiable Instruments Act, 1881."
+    },
+    {
+      "type": "numbered",
+      "text": "That my client hereby calls upon you to pay the said sum of {{cheque_amount|inr}} ({{cheque_amount|words}}) to my client within fifteen (15) days of receipt of this notice, failing which my client shall be constrained to initiate criminal proceedings against you under Sections 138 and 142 of the Negotiable Instruments Act, 1881, in addition to such other remedies as are available in law, at your risk as to costs and consequences."
+    },
+    {
+      "type": "numbered",
+      "when": [
+        "legal_cost"
+      ],
+      "text": "That you shall also pay {{legal_cost|inr}} to my client towards the cost of this notice."
+    },
+    {
+      "type": "numbered",
+      "text": "That a copy of this notice has been kept in my office for record and for further action."
+    },
+    {
+      "type": "para",
+      "text": "Yours faithfully,"
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "{{advocate_name}}",
+        "Advocate",
+        "Enrolment No. {{advocate_enrolment}}",
+        "{{advocate_address}}",
+        "Counsel for {{sender_name}}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2221 @@
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { getSharedFiles, subscribeSharedFiles, addSharedFile } from '../utils/sharedWorkspaceStore';
+import { renderWithCitations } from './CitationLink';
+import useLibraryHeadnoteStream from '../hooks/useLibraryHeadnoteStream.js';
+import { uploadDocument } from '../services/api';
+import { searchDisputes, formFields } from '../utils/disputeDraft.js';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+const LS_KEY = 'lexai_firm_library_v3'; // the user's own entries only
+const LS_KEY_LEGACY = 'lexai_firm_library_v2';
+
+// ── Icons matching SVG specifications ──────────────────────────────────────────
+const ICONS = {
+  template: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M6 3h9l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M15 3v5h5" />
+      <line x1="8" y1="13" x2="16" y2="13" strokeDasharray="2 2" />
+      <line x1="8" y1="17" x2="13" y2="17" strokeDasharray="2 2" />
+    </svg>
+  ),
+  precedent: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M8 4h9l4 4v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
+      <path d="M4 8v12a1 1 0 0 0 1 1h9" strokeOpacity=".55" />
+      <line x1="11" y1="12" x2="17" y2="12" />
+      <line x1="11" y1="16" x2="17" y2="16" />
+    </svg>
+  ),
+  memo: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <rect x="4" y="3" width="16" height="18" rx="1.5" />
+      <line x1="8" y1="8" x2="16" y2="8" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+      <line x1="8" y1="16" x2="13" y2="16" />
+    </svg>
+  ),
+  form: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <rect x="5" y="4" width="14" height="17" rx="1.5" />
+      <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
+      <polyline points="8.5 11 10 12.5 13.5 9" />
+      <line x1="9" y1="16" x2="15" y2="16" />
+    </svg>
+  ),
+  guide: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />
+      <path d="M4 5.5v15" />
+      <line x1="8" y1="8" x2="16" y2="8" />
+      <line x1="8" y1="11" x2="14" y2="11" />
+    </svg>
+  ),
+  check: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  ),
+  clock: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 16 14" />
+    </svg>
+  ),
+  warn: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 3l10 18H2Z" />
+      <line x1="12" y1="10" x2="12" y2="15" />
+      <circle cx="12" cy="18" r=".6" fill="currentColor" />
+    </svg>
+  ),
+  person: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M5 20c1.2-4 4-6 7-6s5.8 2 7 6" />
+    </svg>
+  ),
+  sparkle: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+    </svg>
+  ),
+  file: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M13 3v5h5" />
+    </svg>
+  ),
+  download: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 3v12" />
+      <polyline points="7 10 12 15 17 10" />
+      <path d="M5 21h14" />
+    </svg>
+  ),
+  draft: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  ),
+  link: (
+    <svg className="icon" viewBox="0 0 24 24">
+      <path d="M9 15l6-6" />
+      <path d="M13 5l1-1a3.5 3.5 0 0 1 5 5l-1 1" />
+      <path d="M11 19l-1 1a3.5 3.5 0 0 1-5-5l1-1" />
+    </svg>
+  ),
+};
+
+const CAT_META = {
+  Template: { icon: ICONS.template, desc: 'A blank-slate starting point for a new document.' },
+  Precedent: { icon: ICONS.precedent, desc: 'A real prior document kept as a worked example.' },
+  'Research Memo': { icon: ICONS.memo, desc: 'Internal legal analysis on a specific question.' },
+  'Standard Form': { icon: ICONS.form, desc: "The firm's approved version of a routine filing." },
+  'Practice Guide': { icon: ICONS.guide, desc: 'A how-to reference for a recurring procedure.' },
+};
+
+const TODAY = new Date('2026-09-17');
+function daysAgo(n) {
+  const d = new Date(TODAY);
+  d.setDate(d.getDate() - n);
+  return d;
+}
+
+function relTime(d) {
+  const dateObj = typeof d === 'string' ? new Date(d) : d;
+  const days = Math.round((TODAY - dateObj) / 86400000);
+  if (days < 1) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.round(days / 7)} week${Math.round(days / 7) === 1 ? '' : 's'} ago`;
+  if (days < 365) return `${Math.round(days / 30)} month${Math.round(days / 30) === 1 ? '' : 's'} ago`;
+  return `${Math.round(days / 365)} year${Math.round(days / 365) === 1 ? '' : 's'} ago`;
+}
+
+function exactDate(d) {
+  const dateObj = typeof d === 'string' ? new Date(d) : d;
+  return dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// The seven demo entries this page used to ship with. They are no longer shown; this list is only
+// used to drop them from a browser that had already saved them (matched on BOTH id and title so a
+// user's own entry is never touched).
+const LEGACY_DEMO = [
+  ['1', 'Standard Vendor Service Agreement — SaaS'],
+  ['2', 'Employment Agreement — Fixed Term (Chennai)'],
+  ['3', 'Precedent — Commercial Lease Deed, Nungambakkam'],
+  ['4', 'Research Memo — Force Majeure under S.56, Indian Contract Act'],
+  ['5', 'Practice Guide — Filing a Caveat under CPC O. XXXIX'],
+  ['6', 'Precedent — Founders’ Agreement, Private Limited'],
+  ['7', 'Standard Non-Disclosure Agreement — Vendor'],
+];
+
+function loadOwnEntries() {
+  try {
+    const v3 = localStorage.getItem(LS_KEY);
+    if (v3) {
+      const parsed = JSON.parse(v3);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    const v2 = localStorage.getItem(LS_KEY_LEGACY);
+    if (v2) {
+      const parsed = JSON.parse(v2);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((e) => !LEGACY_DEMO.some(([id, title]) => String(e.id) === id && e.title === title));
+      }
+    }
+  } catch {}
+  return [];
+}
+
+const FORM_TYPE_LABEL = {
+  petition: 'Petition / application',
+  notice: 'Legal notice',
+  reply: 'Reply to notice',
+  rti: 'RTI application',
+};
+
+function computeValidity(entry) {
+  if (entry.validity) return entry.validity;
+  if (entry.validity_status) {
+    const s = String(entry.validity_status).toLowerCase();
+    if (s.includes('green') || s.includes('current')) return 'current';
+    if (s.includes('yellow') || s.includes('review')) return 'review';
+    if (s.includes('red') || s.includes('outdated')) return 'outdated';
+  }
+  const dateObj = new Date(entry.updated || Date.now());
+  const diffDays = Math.round((TODAY - dateObj) / 86400000);
+  if (diffDays > 365) return 'outdated';
+  if (diffDays > 90) return 'review';
+  return 'current';
+}
+
+const styles = `
+  .lib-root {
+    --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
+    --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
+    --accent:#937243; --accent-soft:#EFDCD1;
+    --major:#9C7A2E; --major-soft:#F1E6C9;
+    --on-accent:#FBF7EE;
+    font-family: 'IBM Plex Sans', sans-serif;
+    color: var(--ink-soft);
+  }
+  html[data-theme="dark"] .lib-root,
+  :root[data-theme="dark"] .lib-root {
+    --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
+    --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
+    --accent:#B08D57; --accent-soft:#3B281F;
+    --major:#D9AD5C; --major-soft:#35301C;
+    --on-accent:#FBF7EE;
+  }
+  .lib-root svg.icon {
+    width: 16px; height: 16px; flex-shrink: 0;
+  }
+  .lib-root svg.icon path,
+  .lib-root svg.icon line,
+  .lib-root svg.icon rect,
+  .lib-root svg.icon circle,
+  .lib-root svg.icon polyline {
+    stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  .lib-page {
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 0 32px 80px;
+  }
+
+  /* ---------- Header ---------- */
+  .lib-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 8px; flex-wrap: wrap;
+  }
+  .lib-title {
+    font-family: 'Fraunces', serif; font-style: italic; font-weight: 600; font-size: 30px; color: var(--ink);
+  }
+  .lib-sub {
+    font-size: 13.5px; color: var(--muted); margin-top: 7px; max-width: 520px; line-height: 1.55;
+  }
+  .lib-actions {
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+  .lib-btn {
+    display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; border-radius: 8px; padding: 10px 16px; cursor: pointer; white-space: nowrap; border: 1px solid transparent; font-family: inherit; transition: all 0.15s ease;
+  }
+  .lib-btn-primary {
+    color: var(--on-accent); background: var(--accent);
+  }
+  .lib-btn-primary:hover {
+    background: #9C3E26;
+  }
+  html[data-theme="dark"] .lib-btn-primary:hover {
+    background: #B85A3B;
+  }
+  .lib-btn-ghost {
+    color: var(--ink-soft); background: var(--paper); border-color: var(--rule);
+  }
+  .lib-btn-ghost:hover {
+    border-color: var(--ink); color: var(--ink);
+  }
+
+  .lib-stats {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); margin: 20px 0 22px; padding-bottom: 20px; border-bottom: 1px solid var(--rule);
+  }
+  .lib-stats b {
+    color: var(--ink); font-weight: 600;
+  }
+  .lib-stats .flag {
+    color: var(--major); font-weight: 600;
+  }
+
+  /* ---------- Tabs ---------- */
+  .lib-tabs {
+    display: flex; gap: 8px; margin-bottom: 22px;
+  }
+  .lib-tab {
+    display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--paper); border: 1px solid var(--rule); border-radius: 9px; padding: 10px 16px; cursor: pointer; font-family: inherit; transition: all 0.15s ease;
+  }
+  .lib-tab .icon {
+    color: var(--muted-2);
+  }
+  .lib-tab.on {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+  }
+  .lib-tab.on .icon {
+    color: var(--accent);
+  }
+
+  .tab-panel {
+    display: none;
+  }
+  .tab-panel.on {
+    display: block;
+  }
+
+  /* ---------- Search + Filters ---------- */
+  .search-row {
+    position: relative; margin-bottom: 14px;
+  }
+  .search-row .icon {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted);
+  }
+  .search-input {
+    width: 100%; border: 1px solid var(--rule); border-radius: 9px; padding: 12px 14px 12px 40px; font-family: inherit; font-size: 13.5px; background: var(--paper); color: var(--ink-soft); box-sizing: border-box;
+  }
+  .search-input::placeholder {
+    color: var(--muted);
+  }
+  .search-input:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .search-hint {
+    font-size: 11.5px; color: var(--muted); margin: 8px 2px 0; font-style: italic; font-family: 'Fraunces', serif;
+  }
+
+  .filter-row {
+    display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 20px;
+  }
+  .filter-pill {
+    font-size: 12px; color: var(--muted); background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; padding: 6px 13px; cursor: pointer; font-family: inherit; transition: all 0.15s ease;
+  }
+  .filter-pill .count {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+  }
+  .filter-pill.on {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600;
+  }
+
+  /* ---------- Table ---------- */
+  .lib-table-wrap {
+    border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; background: var(--paper);
+  }
+  .lib-table {
+    width: 100%; border-collapse: collapse;
+  }
+  .lib-table thead th {
+    text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .03em; color: var(--muted); text-transform: uppercase; padding: 13px 18px; border-bottom: 1px solid var(--rule); cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .lib-table thead th:hover {
+    color: var(--ink-soft);
+  }
+  .lib-table thead th.sorted {
+    color: var(--accent);
+  }
+  .th-flex {
+    display: flex; align-items: center; gap: 5px;
+  }
+  .sort-arrow {
+    width: 10px; height: 10px; opacity: .5;
+  }
+  .th-flex.sorted .sort-arrow {
+    opacity: 1; color: var(--accent);
+  }
+
+  .lib-row {
+    border-bottom: 1px solid var(--paper-2); cursor: pointer; transition: background 0.12s ease;
+  }
+  .lib-row:last-child {
+    border-bottom: none;
+  }
+  .lib-row:hover {
+    background: var(--paper-2);
+  }
+  .lib-row td {
+    padding: 14px 18px; vertical-align: middle; font-size: 13px;
+  }
+
+  .cat-cell {
+    display: flex; align-items: center; gap: 11px;
+  }
+  .cat-icon-wrap {
+    width: 32px; height: 32px; border-radius: 8px; background: var(--paper-2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--ink-soft);
+  }
+  .row-title {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 14px; color: var(--ink); line-height: 1.35;
+  }
+  .row-cat-label {
+    font-size: 11px; color: var(--muted); margin-top: 2px;
+  }
+
+  .cat-pill {
+    display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--ink-soft); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 5px; padding: 3px 8px;
+  }
+
+  .updated-cell {
+    color: var(--ink-soft); white-space: nowrap;
+  }
+  .updated-exact {
+    font-size: 10.5px; color: var(--muted); margin-top: 2px;
+  }
+
+  .author-cell {
+    display: flex; align-items: center; gap: 7px; color: var(--ink-soft);
+  }
+  .author-cell .icon {
+    color: var(--muted-2); width: 14px; height: 14px;
+  }
+  .author-cell.ai {
+    color: var(--ink-soft);
+  }
+  .author-cell.ai .icon {
+    color: var(--accent);
+  }
+
+  .valid-pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 6px; white-space: nowrap;
+  }
+  .valid-current {
+    color: var(--ink-soft); background: var(--paper-2); border: 1px solid var(--rule);
+  }
+  .valid-review {
+    color: var(--major); background: var(--major-soft); border: 1px solid transparent;
+  }
+  .valid-outdated {
+    color: var(--accent); background: var(--accent-soft); border: 1px solid transparent;
+  }
+  .valid-pill .icon {
+    width: 12px; height: 12px;
+  }
+
+  /* ---------- Empty state ---------- */
+  .empty-zone {
+    border: 1.5px dashed var(--rule); border-radius: 12px; padding: 56px 30px; text-align: center; background: var(--paper);
+  }
+  .empty-zone.dragover {
+    border-color: var(--accent); background: var(--accent-soft);
+  }
+  .empty-icon {
+    width: 52px; height: 52px; border-radius: 12px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; margin: 0 auto 18px;
+  }
+  .empty-icon .icon {
+    width: 24px; height: 24px; color: var(--accent);
+  }
+  .empty-title {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 18px; color: var(--ink);
+  }
+  .empty-sub {
+    font-size: 13px; color: var(--muted); margin: 9px auto 20px; max-width: 400px; line-height: 1.6;
+  }
+  .empty-formats {
+    display: flex; gap: 8px; justify-content: center; margin-bottom: 20px;
+  }
+  .empty-tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); border: 1px solid var(--rule); padding: 3px 9px; border-radius: 5px;
+  }
+
+  .forum-cell { color: var(--ink-soft); font-size: 12.5px; max-width: 240px; }
+  .limit-cell { color: var(--muted); font-size: 12px; max-width: 260px; }
+  .lib-root .limit-cell, .lib-root .forum-cell { line-height: 1.45; }
+  .drop-strip {
+    margin-top: 18px; border: 1.5px dashed var(--rule); border-radius: 10px; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--muted); background: var(--paper);
+  }
+  .drop-strip.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .drop-strip .lib-btn { padding: 7px 12px; }
+  .so-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
+  .so-list li { margin-bottom: 5px; }
+  .so-list .so-note { color: var(--muted); font-size: 12px; }
+  .so-caution { border: 1px solid var(--major); background: var(--major-soft); color: var(--ink); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5; }
+
+  .demo-toggle {
+    font-size: 11px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; background: none; border: none; margin-top: 18px; display: block; font-family: inherit;
+  }
+  .demo-toggle:hover {
+    color: var(--accent);
+  }
+
+  /* ---------- External DB shell ---------- */
+  .ext-shell {
+    max-width: 760px;
+  }
+  .ext-hint {
+    font-size: 12px; color: var(--muted); margin-top: 10px; font-style: italic; font-family: 'Fraunces', serif;
+  }
+  .ext-note {
+    margin-top: 26px; padding: 14px 16px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 9px; font-size: 11.5px; color: var(--muted); line-height: 1.6;
+  }
+
+  /* ---------- Slide-over detail panel ---------- */
+  .lib-overlay {
+    position: fixed; inset: 0; background: rgba(20,23,26,.45); display: none; z-index: 40;
+  }
+  .lib-overlay.on {
+    display: block;
+  }
+  .slideover {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 92vw; background: var(--paper); border-left: 1px solid var(--rule); z-index: 41; transform: translateX(100%); transition: transform .28s cubic-bezier(.32,.72,0,1); overflow-y: auto;
+  }
+  .slideover.on {
+    transform: translateX(0);
+  }
+  .so-head {
+    padding: 22px 24px 18px; border-bottom: 1px solid var(--rule);
+  }
+  .so-close {
+    float: right; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 4px;
+  }
+  .so-close:hover {
+    color: var(--accent);
+  }
+  .so-cat {
+    display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-bottom: 10px;
+  }
+  .so-title {
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: 21px; color: var(--ink); line-height: 1.3; padding-right: 20px;
+  }
+  .so-body {
+    padding: 20px 24px;
+  }
+  .so-section {
+    margin-bottom: 22px;
+  }
+  .so-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--muted); letter-spacing: .03em; margin-bottom: 8px; text-transform: uppercase;
+  }
+  .so-text {
+    font-size: 13.5px; line-height: 1.65; color: var(--ink-soft);
+  }
+  .so-tags {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .so-tag {
+    font-size: 11px; color: var(--ink-soft); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 4px 11px;
+  }
+  .so-meta-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .so-meta-item .so-label {
+    margin-bottom: 4px;
+  }
+  .so-meta-item .so-text {
+    font-size: 12.5px;
+  }
+  .so-actions {
+    display: flex; flex-direction: column; gap: 9px; padding: 20px 24px 26px; border-top: 1px solid var(--rule);
+  }
+  .so-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; font-weight: 600; border-radius: 8px; padding: 11px 16px; cursor: pointer; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); font-family: inherit; transition: all 0.15s ease;
+  }
+  .so-btn:hover {
+    border-color: var(--ink); color: var(--ink);
+  }
+  .so-btn.primary {
+    background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+  }
+  .so-btn.primary:hover {
+    background: #9C3E26;
+  }
+  html[data-theme="dark"] .so-btn.primary:hover {
+    background: #B85A3B;
+  }
+
+  /* ---------- Add Entry Modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(20,23,26,.5); display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px;
+  }
+  .modal-backdrop.on {
+    display: flex;
+  }
+  .modal-card {
+    width: 520px; max-width: 100%; max-height: 88vh; overflow-y: auto; background: var(--paper); border-radius: 14px; border: 1px solid var(--rule); box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--rule);
+  }
+  .modal-title {
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: 18px; color: var(--ink);
+  }
+  .modal-close {
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 4px;
+  }
+  .modal-close:hover {
+    color: var(--accent);
+  }
+  .modal-body {
+    padding: 22px 24px;
+  }
+
+  .m-drop {
+    border: 1.5px dashed var(--rule); border-radius: 10px; padding: 20px; text-align: center; margin-bottom: 20px; cursor: pointer; transition: all 0.15s ease;
+  }
+  .m-drop:hover {
+    border-color: var(--accent); background: var(--accent-soft);
+  }
+  .m-drop .icon {
+    width: 18px; height: 18px; color: var(--accent); margin: 0 auto 8px; display: block;
+  }
+  .m-drop-text {
+    font-size: 12px; color: var(--ink-soft);
+  }
+  .m-drop-sub {
+    font-size: 10.5px; color: var(--muted); margin-top: 3px;
+  }
+  .m-file-chip {
+    display: flex; align-items: center; gap: 9px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 12px; margin-bottom: 20px; font-size: 12px; color: var(--ink-soft);
+  }
+  .m-file-chip .icon {
+    color: var(--accent);
+  }
+  .m-file-chip button {
+    margin-left: auto; background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px 4px;
+  }
+  .m-file-chip button:hover {
+    color: var(--accent);
+  }
+
+  .m-field {
+    margin-bottom: 16px;
+  }
+  .m-field label {
+    display: block; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--muted); letter-spacing: .03em; margin-bottom: 7px; text-transform: uppercase;
+  }
+  .m-field input, .m-field select, .m-field textarea {
+    width: 100%; border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-family: inherit; font-size: 13px; background: var(--bg); color: var(--ink-soft); box-sizing: border-box;
+  }
+  .m-field input:focus, .m-field select:focus, .m-field textarea:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .m-field textarea {
+    resize: vertical; min-height: 70px;
+  }
+  .m-row2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .modal-footer {
+    display: flex; justify-content: flex-end; gap: 10px; padding: 18px 24px; border-top: 1px solid var(--rule);
+  }
+
+  /* ---------- Toast ---------- */
+  .lib-toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 1000; background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.25); opacity: 0; transform: translateY(10px); transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none;
+  }
+  .lib-toast.show {
+    opacity: 1; transform: translateY(0);
+  }
+
+  /* ---------- Document Viewer Modal (External DB View) ----------
+     Portaled to document.body (see createPortal below) so it can never be
+     trapped by an ancestor's overflow/transform — but that also means it
+     sits OUTSIDE .lib-root in the DOM, so the --bg/--paper/--ink/... custom
+     properties declared on .lib-root above never reach it (CSS variables
+     inherit through the real DOM tree, not JSX nesting). .dv-portal-root
+     re-declares the same light/dark token set as its own inheritance root
+     so every var(--x) below actually resolves instead of rendering
+     transparent. */
+  .dv-portal-root {
+    --bg:#DFE1E0; --paper:#EAEBE8; --paper-2:#E3E4E1;
+    --ink:#181B1D; --ink-soft:#494E51; --muted:#868C8E; --muted-2:#B3B8B9; --rule:#D2D5D4;
+    --accent:#937243; --accent-soft:#EFDCD1;
+    --major:#9C7A2E; --major-soft:#F1E6C9;
+    --on-accent:#FBF7EE;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  html[data-theme="dark"] .dv-portal-root,
+  :root[data-theme="dark"] .dv-portal-root {
+    --bg:#191C1D; --paper:#212527; --paper-2:#2A2F31;
+    --ink:#D6D9D9; --ink-soft:#AAAEAE; --muted:#727776; --muted-2:#494E4D; --rule:#333939;
+    --accent:#B08D57; --accent-soft:#3B281F;
+    --major:#D9AD5C; --major-soft:#35301C;
+    --on-accent:#FBF7EE;
+  }
+  .document-viewer-backdrop {
+    position: fixed; inset: 0; background: rgba(15,17,18,0.6); backdrop-filter: blur(2px); z-index: 9000; animation: fl-fade-in 0.2s ease;
+  }
+  @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .document-viewer-modal {
+    position: fixed; inset: 16px; z-index: 9001; background: var(--paper); color: var(--ink-soft); border: 1px solid var(--rule); border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35); display: flex; flex-direction: column; overflow: hidden; animation: fl-fade-in 0.2s ease;
+  }
+  @media (min-width: 768px) {
+    .document-viewer-modal { inset: 40px; max-width: 1180px; max-height: 860px; margin: auto; }
+  }
+  .dv-header {
+    display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; border-bottom: 1px solid var(--rule); flex-shrink: 0; background: var(--paper);
+  }
+  .dv-header-top {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  }
+  .dv-title-group {
+    min-width: 0;
+  }
+  .document-viewer-title {
+    font-family: 'Fraunces', serif; font-style: italic; font-size: 18px; font-weight: 600; line-height: 1.4; color: var(--ink);
+  }
+  .document-viewer-close {
+    background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 8px; border-radius: 8px; flex-shrink: 0; display: flex;
+  }
+  .document-viewer-close:hover {
+    background: rgba(0,0,0,0.08); color: var(--accent);
+  }
+  html[data-theme="dark"] .document-viewer-close:hover {
+    background: rgba(255,255,255,0.1);
+  }
+  .dv-action-bar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .dv-action-btn {
+    display: flex; align-items: center; gap: 6px; background: var(--paper-2); border: 1px solid var(--rule); color: var(--ink-soft); font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 7px; cursor: pointer; font-family: inherit; transition: all 0.15s;
+  }
+  .dv-action-btn:hover {
+    border-color: var(--ink); color: var(--ink);
+  }
+  .dv-action-btn:disabled {
+    opacity: 0.5; cursor: default; pointer-events: none;
+  }
+  .dv-action-btn.done {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+  }
+
+  /* ---------- AI Summary accordion ---------- */
+  .dv-ai-summary {
+    margin: 16px 22px 0; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; flex-shrink: 0;
+  }
+  .dv-ai-summary-title {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace;
+  }
+  .dv-ai-summary-body {
+    font-size: 13px; line-height: 1.7; color: var(--ink-soft); white-space: pre-wrap;
+  }
+  .dv-shimmer-line {
+    height: 12px; border-radius: 4px; margin-bottom: 8px; background: linear-gradient(90deg, var(--paper) 25%, var(--rule) 37%, var(--paper) 63%); background-size: 400% 100%; animation: dv-shimmer 1.4s ease infinite;
+  }
+  @keyframes dv-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+  /* ---------- Loading / error states ---------- */
+  .dv-loading {
+    display: flex; align-items: center; gap: 10px; padding: 22px; font-size: 13px; color: var(--muted);
+  }
+  .dv-spinner {
+    width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; flex-shrink: 0; animation: dv-spin 0.8s linear infinite;
+  }
+  @keyframes dv-spin { to { transform: rotate(360deg); } }
+  .document-viewer-error {
+    margin: 22px; color: var(--accent); font-size: 13px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px;
+  }
+
+  /* min-height:0 is load-bearing: without it a flex child refuses to shrink
+     below its content's height, so a 300,000+ character reconstructed
+     judgment would grow .dv-body (and the whole fixed-height modal) past
+     its container instead of scrolling internally. */
+  .dv-body {
+    flex: 1 1 0%; min-height: 0; overflow: hidden; width: 100%; box-sizing: border-box; background: var(--bg);
+  }
+  .dv-content-layout {
+    display: flex; height: 100%; width: 100%;
+  }
+  .dv-sidebar-outline {
+    width: 240px; background: var(--paper); border-right: 1px solid var(--rule); padding: 16px; display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; overflow-y: auto;
+  }
+  .dv-main-viewer {
+    flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%; padding: 20px 26px;
+  }
+  .dv-outline-title {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 4px; font-family: 'IBM Plex Mono', monospace;
+  }
+  .dv-outline-list {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .dv-outline-item {
+    font-size: 11.5px; color: var(--ink-soft); padding: 6px 9px; border-radius: 6px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent;
+  }
+  .dv-outline-item:hover {
+    background: var(--paper-2); color: var(--ink);
+  }
+  .dv-outline-item.header {
+    font-weight: 600; color: var(--accent);
+  }
+  .dv-outline-item.meta {
+    font-size: 11px; color: var(--muted);
+  }
+  .dv-outline-empty {
+    font-size: 11px; color: var(--muted); font-style: italic;
+  }
+
+  /* ---------- In-document search bar (sits above .dv-text-wrap, does not
+     scroll with it) ---------- */
+  .dv-search-container {
+    display: flex; align-items: center; gap: 10px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; flex-shrink: 0;
+  }
+  .dv-search-container .icon {
+    color: var(--muted); flex-shrink: 0;
+  }
+  .dv-search-input {
+    flex: 1; min-width: 0; background: transparent; border: none; color: var(--ink); font-size: 13px; font-family: inherit;
+  }
+  .dv-search-input:focus {
+    outline: none;
+  }
+  .dv-search-actions {
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  }
+  .dv-search-count {
+    font-size: 11px; color: var(--muted); margin-right: 2px; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; white-space: nowrap;
+  }
+  .dv-search-btn {
+    background: var(--paper); border: 1px solid var(--rule); color: var(--ink-soft); padding: 4px 9px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s;
+  }
+  .dv-search-btn:hover:not(:disabled) {
+    border-color: var(--ink); color: var(--ink);
+  }
+  .dv-search-btn:disabled {
+    opacity: 0.45; cursor: not-allowed;
+  }
+  .dv-search-divider {
+    width: 1px; height: 18px; background: var(--rule); margin: 0 2px; flex-shrink: 0;
+  }
+
+  .dv-text-wrap {
+    flex: 1; overflow-y: auto; max-width: 780px; margin: 0 auto; width: 100%;
+  }
+  .document-viewer-text {
+    font-family: 'Fraunces', serif; font-size: 15px; line-height: 1.75; color: var(--ink-soft);
+  }
+
+  /* ---------- Reconstructed judgment typography ---------- */
+  .judg-header-center {
+    text-align: center; font-weight: 700; font-size: 15px; margin: 22px 0 12px; color: var(--ink); text-transform: uppercase; letter-spacing: 0.05em; font-style: normal;
+  }
+  .judg-party-role {
+    text-align: center; font-style: italic; margin: 8px 0; color: var(--muted); font-size: 13.5px;
+  }
+  .judg-bench-box {
+    text-align: center; background: var(--paper-2); border: 1px solid var(--rule); padding: 10px 14px; border-radius: 8px; margin: 16px 0; font-size: 13px; color: var(--ink-soft); font-style: normal;
+  }
+  .judg-blockquote {
+    border-left: 3px solid var(--accent); margin: 16px 20px; padding: 8px 16px; background: var(--accent-soft); color: var(--ink-soft); font-style: italic; border-radius: 0 6px 6px 0;
+  }
+  .judg-para {
+    margin: 0 0 1.2em; text-align: justify; text-justify: inter-word; color: inherit;
+  }
+  .judg-para-num {
+    font-weight: bold; margin-right: 6px; color: var(--accent); font-style: normal;
+  }
+  .judg-inline-link {
+    color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent); font-weight: 500; font-style: normal;
+  }
+  .judg-inline-link:hover {
+    border-bottom-style: solid;
+  }
+  .judg-search-match {
+    background: var(--major-soft); border-bottom: 2px solid var(--major); color: inherit; border-radius: 2px;
+  }
+  .judg-search-match.active-match {
+    background: var(--accent-soft); border-bottom-color: var(--accent);
+  }
+
+  @media (max-width: 880px) {
+    .m-row2 { grid-template-columns: 1fr; }
+    .so-meta-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .lib-page { padding: 0 16px 60px; }
+    .lib-header { flex-direction: column; }
+    .lib-actions { width: 100%; }
+    .lib-btn { flex: 1; justify-content: center; }
+    .lib-title { font-size: 23px; }
+    .lib-tabs { flex-wrap: wrap; }
+    .lib-tab { flex: 1; justify-content: center; }
+    .filter-row { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+    .lib-table thead { display: none; }
+    .lib-table, .lib-table tbody, .lib-table tr, .lib-table td { display: block; width: 100%; }
+    .lib-row { padding: 14px 16px; }
+    .lib-row td { padding: 3px 0; border: none; }
+    .cat-cell { margin-bottom: 8px; }
+    .updated-cell, .author-cell { font-size: 12px; }
+    .slideover { width: 100vw; max-width: 100vw; }
+  }
+`;
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Auto-links citations (e.g. "AIR 2014 SC 1356", "(2012) 9 SCC 552") and
+// statute section references out to an Indian Kanoon search — the same
+// treatment applied throughout the rest of the app wherever cited case law
+// appears in AI-generated text (see CitationLink.jsx).
+function linkifyCitationsAndStatutes(text) {
+  if (!text) return "";
+  let escaped = escapeHtml(text);
+
+  const citationPattern = /\b(?:AIR|SCR|SCC|JT|SCALE|CRLJ)\s+\d{4}\s+(?:SC|HC)?\s*\d+|\(\d{4}\)\s+\d+\s+(?:SCC|JT|SCALE|SCR)\s+\d+|\[\d{4}\]\s+\d+\s+(?:SCR|SCC)\s+\d+/gi;
+  const statutePattern = /\b(?:Section|Sec\.)\s+\d+\b(?:\s+(?:of|in)\s+[^,.;()]*Act)?|\bOrder\s+\d+\s+Rule\s+\d+\b(?:\s+of\s+[^,.;()]*Code)?|\bOrder\s+\d+\s+Rule\s+\d+\s+CPC\b/gi;
+
+  escaped = escaped.replace(citationPattern, (match) => {
+    const query = encodeURIComponent(`cite: ${match}`);
+    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">⚖️ ${match}</a>`;
+  });
+  escaped = escaped.replace(statutePattern, (match) => {
+    const query = encodeURIComponent(match);
+    return `<a class="judg-inline-link" href="https://indiankanoon.org/search/?formInput=${query}" target="_blank" rel="noopener noreferrer">📜 ${match}</a>`;
+  });
+
+  return escaped;
+}
+
+// Reconstructs a readable judgment (headers, bench boxes, numbered
+// paragraphs, block quotes) out of the flat text /api/document/<case_id>
+// returns — that endpoint joins raw Pinecone chunk text with no structural
+// markup of its own, so paragraph boundaries have to be inferred here from
+// line length, punctuation, and list-marker heuristics. Also builds the
+// outline (jump-to-paragraph) list consumed by the sidebar: capped to the
+// first 15 paragraphs plus every 5th one after that, since a full judgment
+// can run to several hundred numbered paragraphs and listing every one
+// would make the outline itself unusable.
+function parseAndFormatJudgment(rawText) {
+  if (!rawText) return { html: "", outline: [] };
+
+  let text = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rawLines = text.split('\n');
+  const processedLines = [];
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const current = rawLines[i].trim();
+    if (!current) {
+      processedLines.push("");
+      continue;
+    }
+
+    const isListMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\b[IVXDivxd]+\.|\(\d{1,2}\)|\([a-zA-Z]\))$/.test(current);
+    if (isListMarker && i + 1 < rawLines.length) {
+      let nextLine = rawLines[i + 1].trim();
+      while (!nextLine && i + 2 < rawLines.length) {
+        i++;
+        nextLine = rawLines[i + 1].trim();
+      }
+      if (nextLine) {
+        processedLines.push(current + " " + nextLine);
+        i++;
+        continue;
+      }
+    }
+    processedLines.push(current);
+  }
+
+  const paragraphs = [];
+  let currentPara = "";
+
+  for (let i = 0; i < processedLines.length; i++) {
+    const line = processedLines[i];
+
+    if (line === "") {
+      if (currentPara) {
+        paragraphs.push(currentPara);
+        currentPara = "";
+      }
+      continue;
+    }
+
+    if (!currentPara) {
+      currentPara = line;
+      continue;
+    }
+
+    const startsWithMarker = /^(?:\d{1,2}\.|\b[a-zA-Z]\.|\(\d{1,2}\)|\([a-zA-Z]\))\s+/.test(line);
+    const isHeader = /^(?:IN THE SUPREME COURT|CIVIL APPELLATE|CIVIL APPEAL|WRIT PETITION|CRIMINAL APPEAL|SLP|JUDGMENT|ORDER|Bench:|Author:)/i.test(line);
+    const prevIsShort = currentPara.length < 55;
+    const prevEndsWithPunct = /[.?!:]$/.test(currentPara);
+    const startsWithCapital = /^[A-Z]/.test(line);
+
+    if (startsWithMarker || isHeader || prevIsShort || (prevEndsWithPunct && startsWithCapital)) {
+      paragraphs.push(currentPara);
+      currentPara = line;
+    } else {
+      currentPara += " " + line;
+    }
+  }
+
+  if (currentPara) {
+    paragraphs.push(currentPara);
+  }
+
+  const outline = [];
+  let paraCount = 0;
+
+  const htmlParagraphs = paragraphs.map((para, index) => {
+    let cleanPara = para.replace(/\s+/g, ' ').trim();
+    if (!cleanPara) return "";
+
+    const id = `judg-para-block-${index}`;
+
+    if (/^(?:IN THE SUPREME COURT OF INDIA|CIVIL APPELLATE JURISDICTION|JUDGMENT|ORDER)$/i.test(cleanPara)) {
+      outline.push({ id, label: cleanPara, type: 'header' });
+      return `<h2 id="${id}" class="judg-header-center">${cleanPara}</h2>`;
+    }
+
+    if (/^(?:Versus|Appellant|Respondent|Appellants|Respondents|\.\.\.\s*Appellant|\.\.\.\s*Respondent)$/i.test(cleanPara) || cleanPara === ".. Appellant" || cleanPara === ".. Respondent") {
+      return `<div class="judg-party-role">${cleanPara}</div>`;
+    }
+
+    if (cleanPara.startsWith('[') && cleanPara.endsWith(']')) {
+      outline.push({ id, label: cleanPara.slice(0, 35) + '...', type: 'meta' });
+      return `<div id="${id}" class="judg-bench-box">${cleanPara}</div>`;
+    }
+
+    const isQuoted = (cleanPara.startsWith('"') && cleanPara.endsWith('"')) || (cleanPara.startsWith('“') && cleanPara.endsWith('”'));
+    let formattedText = linkifyCitationsAndStatutes(cleanPara);
+
+    if (isQuoted && cleanPara.length > 80) {
+      return `<blockquote id="${id}" class="judg-blockquote">${formattedText}</blockquote>`;
+    }
+
+    const paraNumMatch = cleanPara.match(/^(\d{1,3})\.\s+(.*)/);
+    if (paraNumMatch) {
+      paraCount++;
+      const pNum = paraNumMatch[1];
+      if (paraCount <= 15 || paraCount % 5 === 0) {
+        outline.push({ id, label: `Paragraph ${pNum}`, type: 'para' });
+      }
+      return `<p id="${id}" class="judg-para"><span class="judg-para-num">${pNum}.</span> ${linkifyCitationsAndStatutes(paraNumMatch[2])}</p>`;
+    }
+
+    return `<p id="${id}" class="judg-para">${formattedText}</p>`;
+  });
+
+  return {
+    html: htmlParagraphs.filter(p => p).join('\n'),
+    outline,
+  };
+}
+
+export default function FirmLibrary() {
+  const navigate = useNavigate();
+
+  // ── State ───────────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('internal'); // 'internal' = the Dispute Library tab
+  const [localEntries, setEntries] = useState(loadOwnEntries); // entries added on this page (kept in this browser)
+  // Documents filed into the Firm Library from the editor's "Save a copy", Legal Forms and Auto-Draft Studio live on the server.
+  const [savedDrafts, setSavedDrafts] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_BASE}/api/firm-library/saved`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => { if (alive && Array.isArray(d)) setSavedDrafts(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const entries = useMemo(() => [
+    ...savedDrafts.map((d) => ({
+      id: `srv-${d.id}`, title: d.title, category: d.category || 'Draft',
+      updated: d.timestamp ? `${String(d.timestamp).replace(' ', 'T')}Z` : new Date().toISOString(),
+      author: 'Saved from your documents', aiAssisted: false, validity: 'current', tags: [d.category || 'Draft'],
+      description: d.text || '', content: d.html || '', fromServer: true,
+    })),
+    ...localEntries,
+  ], [savedDrafts, localEntries]);
+
+  // Dispute catalog (the same 112 entries Auto-Draft Studio uses), loaded on demand.
+  const [catalog, setCatalog] = useState(null);
+  const [catalogError, setCatalogError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    import('../data/disputeCatalog.json')
+      .then((m) => { if (alive) setCatalog(m.default || m); })
+      .catch(() => { if (alive) setCatalogError(true); });
+    return () => { alive = false; };
+  }, []);
+
+  const [filterCat, setFilterCat] = useState('all'); // 'all' | dispute area id | '__mine'
+  const [searchText, setSearchText] = useState('');
+  const [sortKey, setSortKey] = useState('default'); // 'default' = library order / search relevance
+  const [sortDir, setSortDir] = useState('asc');
+
+  // Slide-over detail state
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [isSlideoverOpen, setIsSlideoverOpen] = useState(false);
+
+  // Add Entry Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalCategory, setModalCategory] = useState('Template');
+  const [modalAuthor, setModalAuthor] = useState('Firm Library');
+  const [modalTags, setModalTags] = useState('');
+  const [modalDescription, setModalDescription] = useState('');
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const modalFileInputRef = useRef(null);
+  const emptyFileInputRef = useRef(null);
+  const [isDropActive, setIsDropActive] = useState(false);
+
+  // Toast
+  const [toastMsg, setToastMsg] = useState('');
+  const [showToast, setShowToast] = useState(false);
+  const showToastNotification = (msg) => {
+    setToastMsg(msg);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2600);
+  };
+
+  // ── External DB State (Pinecone search & Document Viewer) ─────────────────
+  const [extQuery, setExtQuery] = useState('');
+  const [externalResults, setExternalResults] = useState([]);
+  const [extLoading, setExtLoading] = useState(false);
+  const [extError, setExtError] = useState(null);
+  const [sortMode, setSortMode] = useState('relevance');
+
+  // Document viewer modal state
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerDoc, setViewerDoc] = useState(null); // { case_id, title, content }
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState(null);
+  const [copyDone, setCopyDone] = useState(false);
+  const [pinDone, setPinDone] = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [matchCount, setMatchCount] = useState(0);
+
+  const parsedResult = useMemo(() => {
+    if (!viewerDoc || !viewerDoc.content) return { html: "", outline: [] };
+    return parseAndFormatJudgment(viewerDoc.content);
+  }, [viewerDoc]);
+
+  // Wraps each match in <mark> after the fact rather than during parsing —
+  // parseAndFormatJudgment's output is real markup (headers, links, blank
+  // paragraphs), so the highlighter has to skip over tags and only touch
+  // text nodes, or it would corrupt href attributes/entities containing the
+  // search term.
+  const highlightedHtml = useMemo(() => {
+    if (!parsedResult.html) return "";
+    if (!searchTerm || searchTerm.length < 3) return parsedResult.html;
+    try {
+      const escapedTerm = searchTerm.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regex = new RegExp(`(${escapedTerm})`, 'gi');
+      let index = 0;
+      const output = parsedResult.html.replace(/(<[^>]+>)|([^<]+)/g, (match, tag, textChunk) => {
+        if (tag) return tag;
+        return textChunk.replace(regex, (m) => {
+          const id = `search-match-${index}`;
+          index++;
+          return `<mark id="${id}" class="judg-search-match">${m}</mark>`;
+        });
+      });
+      setTimeout(() => setMatchCount(index), 0);
+      return output;
+    } catch (e) {
+      console.error('[Document Search] highlight error:', e);
+      return parsedResult.html;
+    }
+  }, [parsedResult.html, searchTerm]);
+
+  useEffect(() => {
+    if (matchCount > 0 && searchTerm) {
+      const matches = document.querySelectorAll('.judg-search-match');
+      matches.forEach((el, idx) => {
+        if (idx === activeMatchIndex) {
+          el.classList.add('active-match');
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          el.classList.remove('active-match');
+        }
+      });
+    }
+  }, [activeMatchIndex, matchCount, searchTerm]);
+
+  // Save entries to localStorage
+  const persistEntries = (newEntries) => {
+    setEntries(newEntries);
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(newEntries));
+    } catch {}
+  };
+
+  // ── Rows: the dispute library plus the user's own entries ─────────────────
+  const catLabelById = useMemo(() => {
+    const m = new Map();
+    if (catalog) catalog.categories.forEach((c) => m.set(c.id, c.label));
+    return m;
+  }, [catalog]);
+
+  const rows = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    const out = [];
+    if (filterCat === 'all' || filterCat === '__mine') {
+      entries.forEach((e) => {
+        if (q) {
+          const tagString = Array.isArray(e.tags) ? e.tags.join(' ') : '';
+          if (!`${e.title || ''} ${e.author || ''} ${tagString} ${e.description || ''}`.toLowerCase().includes(q)) return;
+        }
+        out.push({ key: `own-${e.id}`, own: true, title: e.title, catLabel: 'Your entry', forum: e.author || '—', formType: e.category, limitation: '—', entry: e });
+      });
+    }
+    if (catalog && filterCat !== '__mine') {
+      searchDisputes(catalog.disputes, searchText, filterCat).forEach((d) => {
+        out.push({
+          key: d.id, own: false, title: d.title, blurb: d.blurb, catLabel: catLabelById.get(d.cat) || '',
+          forum: d.forum, formType: FORM_TYPE_LABEL[d.kind] || d.kind, limitation: d.limitation || '—', dispute: d,
+        });
+      });
+    }
+    if (sortKey !== 'default') {
+      const get = (r) => String(sortKey === 'title' ? r.title : sortKey === 'forum' ? r.forum : r.catLabel).toLowerCase();
+      out.sort((a, b) => (get(a) < get(b) ? -1 : get(a) > get(b) ? 1 : 0) * (sortDir === 'asc' ? 1 : -1));
+    }
+    return out;
+  }, [entries, catalog, catLabelById, filterCat, searchText, sortKey, sortDir]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      if (sortDir === 'asc') setSortDir('desc');
+      else { setSortKey('default'); setSortDir('asc'); }
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  // ── Row / Detail Slideover Handlers ───────────────────────────────────────
+  const openDetail = (row) => {
+    setSelectedEntry(row.dispute ? { _dispute: row.dispute } : row.entry);
+    setIsSlideoverOpen(true);
+  };
+
+  // /firm-library?dispute=<id> opens that dispute's panel (used by "Copy Link").
+  useEffect(() => {
+    if (!catalog) return;
+    try {
+      const id = new URLSearchParams(window.location.search).get('dispute');
+      const d = id && catalog.disputes.find((x) => x.id === id);
+      if (d) { setSelectedEntry({ _dispute: d }); setIsSlideoverOpen(true); }
+    } catch {}
+  }, [catalog]);
+
+  const handleDraftDispute = (d) => navigate('/auto-draft', { state: { disputeId: d.id } });
+  const handleFillDispute = (d) => navigate('/firm-library/draft', { state: { templateId: `dp_${d.id}` } });
+  const handleCopyDisputeLink = (d) => {
+    const link = `${window.location.origin}/firm-library?dispute=${encodeURIComponent(d.id)}`;
+    navigator.clipboard.writeText(link).then(() => showToastNotification('Link copied to clipboard.'));
+  };
+
+  const closeDetail = () => {
+    setIsSlideoverOpen(false);
+  };
+
+  const handleUseAsStartingPoint = (entry) => {
+    if (!entry) return;
+    // Route to Auto-Draft Studio with template details
+    navigate('/auto-draft', {
+      state: {
+        templateTitle: entry.title,
+        templateContent: entry.description || entry.content || '',
+        templateCategory: entry.category,
+      },
+    });
+    showToastNotification(`Loaded "${entry.title}" into Auto-Draft Studio.`);
+  };
+
+  const handleDownloadOriginal = (entry) => {
+    if (!entry) return;
+    const content = entry.description || `Document Title: ${entry.title}
+Category: ${entry.category}
+Author: ${entry.author}
+
+[Full text of ${entry.title}]`;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${entry.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToastNotification('Download started.');
+  };
+
+  const handleCopyLink = (entry) => {
+    if (!entry) return;
+    const link = `${window.location.origin}/firm-library?entry=${encodeURIComponent(entry.id)}`;
+    navigator.clipboard.writeText(link).then(() => {
+      showToastNotification('Link copied to clipboard.');
+    });
+  };
+
+  // ── Modal Actions & File Drop ─────────────────────────────────────────────
+  const openAddModal = (initialFile = null) => {
+    setModalTitle(initialFile ? initialFile.name.replace(/\.[^/.]+$/, '') : '');
+    setModalCategory('Template');
+    setModalAuthor('Firm Library');
+    setModalTags('');
+    setModalDescription('');
+    setAttachedFile(initialFile);
+    setIsModalOpen(true);
+  };
+
+  const closeAddModal = () => {
+    setIsModalOpen(false);
+    setAttachedFile(null);
+  };
+
+  const handleModalSubmit = async (e) => {
+    e.preventDefault();
+    if (!modalTitle.trim()) {
+      showToastNotification('Please enter a Document Title.');
+      return;
+    }
+
+    setIsUploading(true);
+    let uploadedFileId = null;
+
+    if (attachedFile) {
+      try {
+        const res = await uploadDocument(attachedFile, null, modalTags);
+        if (res && res.id) {
+          uploadedFileId = res.id;
+        }
+      } catch (err) {
+        console.error('File upload error:', err);
+      }
+    }
+
+    const tagsArray = modalTags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    const newEntry = {
+      id: uploadedFileId ? String(uploadedFileId) : String(Date.now()),
+      title: modalTitle.trim(),
+      category: modalCategory,
+      updated: new Date().toISOString(),
+      author: modalAuthor.trim() || 'Firm Library',
+      aiAssisted: false,
+      validity: 'current',
+      tags: tagsArray.length ? tagsArray : [modalCategory],
+      description: modalDescription.trim() || `Official firm ${modalCategory.toLowerCase()} for ${modalTitle.trim()}.`,
+    };
+
+    persistEntries([newEntry, ...localEntries]);
+    setIsUploading(false);
+    closeAddModal();
+    showToastNotification(`Added "${newEntry.title}" to Firm Library.`);
+  };
+
+  // ── External DB Search Execution ──────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab !== 'external') return;
+    if (extQuery.trim().length < 3) {
+      setExternalResults([]);
+      setExtError(null);
+      return;
+    }
+
+    setExtLoading(true);
+    setExtError(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/firm-library/external-search?query=${encodeURIComponent(extQuery.trim())}`);
+        const data = await res.json();
+        if (!res.ok) {
+          // `data.error` is a boolean status flag on this backend (see
+          // tests/test_backend_full.py), not a message — the human-readable
+          // string is always in `data.message`. Falling back to `data.error`
+          // here previously rendered the literal string "true" in the banner.
+          const rawMsg = data.message;
+          throw new Error(typeof rawMsg === 'string' && rawMsg ? rawMsg : 'External search request failed.');
+        }
+        setExternalResults(Array.isArray(data.results) ? data.results : []);
+      } catch (err) {
+        setExtError(err.message || 'External search service offline.');
+      } finally {
+        setExtLoading(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [extQuery, activeTab]);
+
+  // External Database rows are Pinecone chunks — entry.case_id is the
+  // real key to the FULL judgment, reconstructed server-side from every
+  // chunk sharing that case_id (see /api/document/<case_id> in app.py,
+  // which re-queries Pinecone directly — it's unrelated to, and doesn't
+  // collide with, the case_vault-backed /api/documents/<int:doc_id> route
+  // used by internal vault entries). encodeURIComponent is required: real
+  // case_ids are raw ingestion filenames like "2022_13_342_356_EN.pdf",
+  // and an un-encoded "." in a path segment is otherwise indistinguishable
+  // from a route boundary.
+  const openDocumentViewer = async (entry) => {
+    const sourceCaseId = entry.case_id || entry.id;
+    setViewerOpen(true);
+    setViewerLoading(true);
+    setViewerError(null);
+    setViewerDoc(null);
+    setCopyDone(false);
+    setPinDone(false);
+    setSummaryOpen(false);
+    setSummaryText('');
+    setSearchTerm('');
+    setActiveMatchIndex(0);
+    setMatchCount(0);
+    setSidebarOpen(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(sourceCaseId)}`);
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.message || 'Document not found.');
+      setViewerDoc({ case_id: data.case_id || sourceCaseId, title: data.title || entry.title, content: data.content });
+    } catch (err) {
+      setViewerError(err.message || 'Failed to load the full judgment text.');
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+
+  const closeDocumentViewer = () => {
+    setViewerOpen(false);
+    setViewerDoc(null);
+    setViewerError(null);
+  };
+
+  // onMouseDown (not onClick) fires before the browser clears the text
+  // selection on focus change, so window.getSelection() still has it —
+  // this copies whatever passage the reader actually highlighted, not a
+  // fixed excerpt.
+  const handleCopyExcerpt = () => {
+    const selected = window.getSelection().toString().trim();
+    if (!selected || !viewerDoc) return;
+    const tagged = `${selected} — Extracted from ${viewerDoc.title}, LexAmplify`;
+    navigator.clipboard.writeText(tagged).then(() => {
+      setCopyDone(true);
+      showToastNotification('Excerpt copied with citation tag.');
+      setTimeout(() => setCopyDone(false), 2200);
+    });
+  };
+
+  const handlePinToVault = async () => {
+    if (!viewerDoc || pinLoading) return;
+    setPinLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/vault/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: viewerDoc.case_id,
+          title: viewerDoc.title,
+          content: viewerDoc.content,
+          doc_type: 'Pinned Precedent',
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.message || 'Pin failed.');
+      setPinDone(true);
+      showToastNotification('Pinned to Case Vault.');
+      setTimeout(() => setPinDone(false), 2200);
+    } catch (err) {
+      showToastNotification(err.message || 'Pin to Vault failed.');
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
+  const handleSummarize = async () => {
+    if (!viewerDoc || summaryLoading) return;
+    if (summaryOpen && summaryText) return;
+    setSummaryOpen(true);
+    setSummaryLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/summarize-judgment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: viewerDoc.content }),
+      });
+      const data = await res.json();
+      if (data.error || data.status !== 'success') throw new Error(data.message || 'Summarization failed.');
+      setSummaryText(data.summary);
+    } catch (err) {
+      setSummaryText(`⚠ ${err.message || 'Summarization failed.'}`);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    if (!viewerDoc) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${escapeHtml(viewerDoc.title || 'Legal Document')}</title>
+          <style>
+            body { font-family: Georgia, serif; line-height: 1.8; color: #111; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+            h2 { text-align: center; margin-top: 30px; font-size: 18px; }
+            p { text-align: justify; text-justify: inter-word; margin-bottom: 1.2em; }
+            blockquote { border-left: 3px solid #555; margin: 15px 25px; padding-left: 15px; font-style: italic; color: #444; }
+            .judg-bench-box { border: 1px solid #ddd; padding: 10px; border-radius: 6px; text-align: center; margin: 20px 0; background: #f9f9f9; }
+            .judg-para-num { font-weight: bold; margin-right: 6px; }
+            .judg-party-role { text-align: center; font-style: italic; margin: 10px 0; }
+          </style>
+        </head>
+        <body>
+          <h2>${escapeHtml(viewerDoc.title || 'Legal Document')}</h2>
+          <div>${parsedResult.html}</div>
+          <script>window.onload = function() { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Stats
+  const disputeCount = catalog ? catalog.disputes.length : 0;
+  const ownCount = entries.length;
+  const visibleCount = rows.length;
+
+  return (
+    <div className="lib-root">
+      <style>{styles}</style>
+      <div className="lib-page">
+        {/* ── Top Header ── */}
+        <div className="lib-header">
+          <div>
+            <div className="lib-title">Firm Library</div>
+            <div className="lib-sub">
+              Every dispute format your practice is likely to file — petitions, notices, replies and RTI applications — with the governing law, forum, limitation and pre-filing checklist. Open one to draft it, or search the external case-law database.
+            </div>
+          </div>
+          <div className="lib-actions">
+            <button className="lib-btn lib-btn-ghost" onClick={() => navigate('/auto-draft')}>
+              {ICONS.draft}
+              Draft from Template
+            </button>
+            <button className="lib-btn lib-btn-primary" onClick={() => openAddModal()}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Add Entry
+            </button>
+          </div>
+        </div>
+
+        {/* ── Stats Bar ── */}
+        <div className="lib-stats">
+          {catalog ? (
+            <>
+              <b>{disputeCount}</b> dispute formats across <b>{catalog.categories.length}</b> practice areas
+              {ownCount > 0 && <> &nbsp;·&nbsp; <b>{ownCount}</b> of your own {ownCount === 1 ? 'entry' : 'entries'}</>}
+              {' '}&nbsp;·&nbsp; showing <b>{visibleCount}</b>
+            </>
+          ) : catalogError ? (
+            <span className="flag">The dispute library could not be loaded.</span>
+          ) : (
+            <>Loading the dispute library…</>
+          )}
+        </div>
+
+        {/* ── Tab Switcher ── */}
+        <div className="lib-tabs">
+          <button className={`lib-tab ${activeTab === 'internal' ? 'on' : ''}`} onClick={() => setActiveTab('internal')}>
+            <svg className="icon" viewBox="0 0 24 24">
+              <path d="M12 3v18" />
+              <path d="M5 7h14" />
+              <path d="M5 7l-3 7a3 3 0 0 0 6 0z" />
+              <path d="M19 7l-3 7a3 3 0 0 0 6 0z" />
+            </svg>
+            Dispute Library
+          </button>
+          <button className={`lib-tab ${activeTab === 'external' ? 'on' : ''}`} onClick={() => setActiveTab('external')}>
+            <svg className="icon" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+            </svg>
+            External Database
+          </button>
+        </div>
+
+        {/* ════ TAB 1: DISPUTE LIBRARY ════ */}
+        <div className={`tab-panel ${activeTab === 'internal' ? 'on' : ''}`}>
+          {/* Search bar */}
+          <div className="search-row">
+            <svg className="icon" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.6" y2="16.6" />
+            </svg>
+            <input
+              className="search-input"
+              placeholder="Search disputes — e.g. bail, cheque bounce, divorce, eviction, RTI, 138…"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
+          </div>
+
+          {/* Practice-area filter pills */}
+          <div className="filter-row">
+            <button className={`filter-pill ${filterCat === 'all' ? 'on' : ''}`} onClick={() => setFilterCat('all')}>
+              All <span className="count">{disputeCount + ownCount}</span>
+            </button>
+            {catalog && catalog.categories.map((c) => (
+              <button key={c.id} title={c.blurb} className={`filter-pill ${filterCat === c.id ? 'on' : ''}`} onClick={() => setFilterCat(c.id)}>
+                {c.label} <span className="count">{c.count}</span>
+              </button>
+            ))}
+            {ownCount > 0 && (
+              <button className={`filter-pill ${filterCat === '__mine' ? 'on' : ''}`} onClick={() => setFilterCat('__mine')}>
+                Your entries <span className="count">{ownCount}</span>
+              </button>
+            )}
+          </div>
+
+          {rows.length > 0 ? (
+            <div className="lib-table-wrap">
+              <table className="lib-table">
+                <thead>
+                  <tr>
+                    {[['title', 'Dispute'], ['forum', 'Forum']].map(([key, label]) => (
+                      <th key={key} onClick={() => handleSort(key)} className={sortKey === key ? 'sorted' : ''}>
+                        <div className={`th-flex ${sortKey === key ? 'sorted' : ''}`}>
+                          {label}{' '}
+                          <svg className="icon sort-arrow" viewBox="0 0 24 24" style={{ transform: sortKey === key && sortDir === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                            <polyline points="7 10 12 15 17 10" />
+                          </svg>
+                        </div>
+                      </th>
+                    ))}
+                    <th>Document</th>
+                    <th>Limitation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const cat = row.own ? (CAT_META[row.formType] || { icon: ICONS.template }) : { icon: ICONS.form };
+                    return (
+                      <tr key={row.key} className="lib-row" onClick={() => openDetail(row)}>
+                        <td>
+                          <div className="cat-cell">
+                            <div className="cat-icon-wrap">{cat.icon}</div>
+                            <div>
+                              <div className="row-title">{row.title}</div>
+                              <div className="row-cat-label">
+                                <span className="cat-pill">{row.catLabel}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="forum-cell">{row.forum}</td>
+                        <td className="forum-cell">{row.formType}</td>
+                        <td className="limit-cell" title={row.limitation}>{row.limitation}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="empty-zone">
+              <div className="empty-title">{catalog ? 'No disputes match your search' : catalogError ? 'The dispute library could not be loaded' : 'Loading the dispute library…'}</div>
+              {catalog && (
+                <>
+                  <div className="empty-sub">Try a broader word — for example the kind of relief (bail, injunction, divorce) or a section number.</div>
+                  <button className="lib-btn lib-btn-ghost" style={{ margin: '0 auto' }} onClick={() => { setSearchText(''); setFilterCat('all'); }}>
+                    Clear search
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Add your own document - drag & drop or button */}
+          <div
+            className={`drop-strip ${isDropActive ? 'dragover' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setIsDropActive(true); }}
+            onDragLeave={() => setIsDropActive(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDropActive(false);
+              if (e.dataTransfer.files && e.dataTransfer.files[0]) openAddModal(e.dataTransfer.files[0]);
+            }}
+          >
+            <span>Have your own precedent? Drop a PDF, DOCX or TXT here to add it to this library.</span>
+            <button className="lib-btn lib-btn-ghost" onClick={() => openAddModal()}>Add Entry</button>
+          </div>
+        </div>
+
+        {/* ════ TAB 2: EXTERNAL DATABASE ════ */}
+        <div className={`tab-panel ${activeTab === 'external' ? 'on' : ''}`}>
+          <div className="ext-shell" style={{ maxWidth: '100%' }}>
+            <div className="search-row">
+              <svg className="icon" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.6" y2="16.6" />
+              </svg>
+              <input
+                className="search-input"
+                placeholder="Search Acts, Judgments, and case law by name, citation, or court…"
+                value={extQuery}
+                onChange={(e) => setExtQuery(e.target.value)}
+              />
+            </div>
+            <div className="ext-hint">Type at least 3 characters to search external Acts and Judgments.</div>
+
+            {extLoading && (
+              <div style={{ padding: '24px 0', fontSize: '13px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 14, height: 14, border: '2px solid var(--rule)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
+                Querying external case-law index…
+              </div>
+            )}
+
+            {!extLoading && extError && (
+              <div style={{ marginTop: '18px', padding: '16px', background: 'var(--paper-2)', border: '1px solid var(--rule)', borderRadius: '9px', fontSize: '13px', color: 'var(--accent)' }}>
+                ⚠ {extError}
+              </div>
+            )}
+
+            {!extLoading && !extError && externalResults.length > 0 && (
+              <div style={{ marginTop: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    {externalResults.length} {externalResults.length === 1 ? 'result' : 'results'} found
+                  </div>
+                  <div style={{ fontSize: '11px', fontWeight: 600 }}>
+                    <span style={{ color: 'var(--muted)', marginRight: 6 }}>Sort:</span>
+                    <button onClick={() => setSortMode('relevance')} style={{ background: 'none', border: 'none', color: sortMode === 'relevance' ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', padding: 0 }}>Relevance</button>
+                    <span style={{ margin: '0 6px', color: 'var(--muted)' }}>|</span>
+                    <button onClick={() => setSortMode('date')} style={{ background: 'none', border: 'none', color: sortMode === 'date' ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', padding: 0 }}>Date</button>
+                  </div>
+                </div>
+
+                <div className="lib-table-wrap">
+                  <table className="lib-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '45%' }}>Document Title</th>
+                        <th style={{ width: '15%' }}>Category</th>
+                        <th style={{ width: '15%' }}>Date</th>
+                        <th style={{ width: '25%' }}>Author / Court</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {externalResults.map((entry) => (
+                        <tr key={entry.id} className="lib-row" onClick={() => openDocumentViewer(entry)}>
+                          <td>
+                            <div className="row-title" style={{ color: 'var(--accent)' }}>{entry.title}</div>
+                            {entry.snippet && <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: 3 }}>{entry.snippet}</div>}
+                          </td>
+                          <td><span className="cat-pill">{entry.category || 'Judgment'}</span></td>
+                          <td className="updated-cell">{fmtDate(entry.updated)}</td>
+                          <td style={{ color: 'var(--ink-soft)' }}>{entry.author || 'Court Record'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {!extLoading && !extError && extQuery.trim().length >= 3 && externalResults.length === 0 && (
+              <div className="ext-note">
+                No external matching cases found for "{extQuery}". Try another case citation or party name.
+              </div>
+            )}
+
+            <div className="ext-note">
+              Powered by your firm's external case-law index. Results, document previews, and citation tools render with full fidelity.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ════ Slide-over Detail Panel ════ */}
+      <div className={`lib-overlay ${isSlideoverOpen ? 'on' : ''}`} onClick={closeDetail} />
+      <div className={`slideover ${isSlideoverOpen ? 'on' : ''}`}>
+        {selectedEntry && selectedEntry._dispute && (() => {
+          const d = selectedEntry._dispute;
+          const askFor = catalog ? formFields(d, catalog.bases).matter : [];
+          return (
+            <>
+              <div className="so-head">
+                <button className="so-close" onClick={closeDetail}>✕</button>
+                <div className="so-cat">
+                  {ICONS.form}
+                  <span>{catLabelById.get(d.cat) || 'Dispute'} · {FORM_TYPE_LABEL[d.kind] || d.kind}</span>
+                </div>
+                <div className="so-title">{d.title}</div>
+              </div>
+              <div className="so-body">
+                <div className="so-section">
+                  <div className="so-label">WHAT THIS IS</div>
+                  <div className="so-text">{d.blurb}</div>
+                </div>
+                <div className="so-section">
+                  <div className="so-meta-grid">
+                    <div className="so-meta-item">
+                      <div className="so-label">FORUM</div>
+                      <div className="so-text">{d.forum}</div>
+                    </div>
+                    <div className="so-meta-item">
+                      <div className="so-label">DOCUMENT</div>
+                      <div className="so-text">{d.doc}</div>
+                    </div>
+                  </div>
+                </div>
+                {d.statutes && d.statutes.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">GOVERNING PROVISIONS</div>
+                    <ul className="so-list">
+                      {d.statutes.map((st) => (
+                        <li key={st.ref}>{st.ref}{st.note ? <span className="so-note"> — {st.note}</span> : null}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div className="so-section">
+                  <div className="so-label">LIMITATION</div>
+                  <div className="so-text">{d.limitation || 'Not stated — check the governing statute.'}</div>
+                </div>
+                {d.pre && d.pre.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">BEFORE YOU FILE</div>
+                    <ul className="so-list">{d.pre.map((x) => <li key={x}>{x}</li>)}</ul>
+                  </div>
+                )}
+                {askFor.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">FACTS THE DRAFT ASKS FOR</div>
+                    <div className="so-tags">{askFor.map((f) => <span key={f.key} className="so-tag">{f.label}</span>)}</div>
+                  </div>
+                )}
+                {d.annex && d.annex.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">ANNEXURES TO ATTACH</div>
+                    <ul className="so-list">{d.annex.map((x) => <li key={x}>{x}</li>)}</ul>
+                  </div>
+                )}
+                {d.cautions && d.cautions.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">CAUTIONS</div>
+                    <div className="so-caution">{d.cautions.map((x) => <div key={x}>{x}</div>)}</div>
+                  </div>
+                )}
+                <div className="so-section">
+                  <div className="so-text" style={{ fontSize: '11.5px', color: 'var(--muted)' }}>
+                    {catalog && catalog.meta && catalog.meta.notice}
+                  </div>
+                </div>
+              </div>
+              <div className="so-actions">
+                <button className="so-btn primary" onClick={() => handleDraftDispute(d)}>
+                  {ICONS.draft} Draft in Auto-Draft Studio
+                </button>
+                <button className="so-btn" onClick={() => handleFillDispute(d)}>
+                  {ICONS.form} Fill as Legal Form
+                </button>
+                <button className="so-btn" onClick={() => handleCopyDisputeLink(d)}>
+                  {ICONS.link} Copy Link
+                </button>
+              </div>
+            </>
+          );
+        })()}
+        {selectedEntry && !selectedEntry._dispute && (() => {
+          const cat = CAT_META[selectedEntry.category] || { icon: ICONS.template, desc: '' };
+          const valid = computeValidity(selectedEntry);
+          const validityNote =
+            valid === 'current'
+              ? 'Reviewed recently and safe to reuse as-is.'
+              : valid === 'review'
+              ? 'Still usable, but due for a check against current law before relying on it in a new matter.'
+              : 'Do not reuse without a fresh review — this may reference superseded provisions.';
+
+          return (
+            <>
+              <div className="so-head">
+                <button className="so-close" onClick={closeDetail}>✕</button>
+                <div className="so-cat">
+                  {cat.icon}
+                  <span>{selectedEntry.category} · {cat.desc}</span>
+                </div>
+                <div className="so-title">{selectedEntry.title}</div>
+              </div>
+              <div className="so-body">
+                <div className="so-section">
+                  <div className="so-label">VALIDITY</div>
+                  {valid === 'current' && <span className="valid-pill valid-current">{ICONS.check}Current</span>}
+                  {valid === 'review' && <span className="valid-pill valid-review">{ICONS.clock}Review Due</span>}
+                  {valid === 'outdated' && <span className="valid-pill valid-outdated">{ICONS.warn}Outdated</span>}
+                  <div className="so-text" style={{ marginTop: '9px' }}>{validityNote}</div>
+                </div>
+                <div className="so-section">
+                  <div className="so-label">DESCRIPTION</div>
+                  <div className="so-text">{selectedEntry.description}</div>
+                </div>
+                <div className="so-section">
+                  <div className="so-meta-grid">
+                    <div className="so-meta-item">
+                      <div className="so-label">AUTHOR / SOURCE</div>
+                      <div className="so-text">{selectedEntry.author}{selectedEntry.aiAssisted ? ' (AI-assisted)' : ''}</div>
+                    </div>
+                    <div className="so-meta-item">
+                      <div className="so-label">LAST UPDATED</div>
+                      <div className="so-text">{exactDate(selectedEntry.updated)}</div>
+                    </div>
+                  </div>
+                </div>
+                {selectedEntry.tags && selectedEntry.tags.length > 0 && (
+                  <div className="so-section">
+                    <div className="so-label">TAGS</div>
+                    <div className="so-tags">
+                      {selectedEntry.tags.map((t) => (
+                        <span key={t} className="so-tag">{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="so-actions">
+                <button className="so-btn primary" onClick={() => handleUseAsStartingPoint(selectedEntry)}>
+                  {ICONS.draft} Use as Starting Point
+                </button>
+                <button className="so-btn" onClick={() => handleDownloadOriginal(selectedEntry)}>
+                  {ICONS.download} Download Original
+                </button>
+                <button className="so-btn" onClick={() => handleCopyLink(selectedEntry)}>
+                  {ICONS.link} Copy Link
+                </button>
+              </div>
+            </>
+          );
+        })()}
+      </div>
+
+      {/* ════ Add Entry Modal ════ */}
+      <div className={`modal-backdrop ${isModalOpen ? 'on' : ''}`} onClick={(e) => { if (e.target.classList.contains('modal-backdrop')) closeAddModal(); }}>
+        <div className="modal-card">
+          <div className="modal-head">
+            <div className="modal-title">Add to Firm Library</div>
+            <button className="modal-close" onClick={closeAddModal}>✕</button>
+          </div>
+          <form onSubmit={handleModalSubmit}>
+            <div className="modal-body">
+              {/* File Dropzone */}
+              {!attachedFile ? (
+                <div
+                  className="m-drop"
+                  onClick={() => modalFileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      setAttachedFile(e.dataTransfer.files[0]);
+                      if (!modalTitle) setModalTitle(e.dataTransfer.files[0].name.replace(/\.[^/.]+$/, ''));
+                    }
+                  }}
+                >
+                  <svg className="icon" viewBox="0 0 24 24">
+                    <path d="M12 16V4" />
+                    <path d="M7 9l5-5 5 5" />
+                    <path d="M4 18v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                  </svg>
+                  <div className="m-drop-text">Attach a file (optional)</div>
+                  <div className="m-drop-sub">Drag &amp; drop, or click to browse — PDF, DOCX, TXT</div>
+                  <input
+                    type="file"
+                    ref={modalFileInputRef}
+                    style={{ display: 'none' }}
+                    accept=".pdf,.docx,.txt"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setAttachedFile(e.target.files[0]);
+                        if (!modalTitle) setModalTitle(e.target.files[0].name.replace(/\.[^/.]+$/, ''));
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="m-file-chip">
+                  <svg className="icon" viewBox="0 0 24 24">
+                    <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                    <path d="M13 3v5h5" />
+                  </svg>
+                  <span>{attachedFile.name}</span>
+                  <button type="button" onClick={() => setAttachedFile(null)}>✕</button>
+                </div>
+              )}
+
+              <div className="m-field">
+                <label>Document Title *</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Standard Lease Agreement — Residential"
+                  value={modalTitle}
+                  onChange={(e) => setModalTitle(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="m-row2">
+                <div className="m-field">
+                  <label>Category</label>
+                  <select value={modalCategory} onChange={(e) => setModalCategory(e.target.value)}>
+                    <option>Template</option>
+                    <option>Precedent</option>
+                    <option>Research Memo</option>
+                    <option>Standard Form</option>
+                    <option>Practice Guide</option>
+                  </select>
+                </div>
+                <div className="m-field">
+                  <label>Author / Source</label>
+                  <input
+                    type="text"
+                    placeholder="Firm Library"
+                    value={modalAuthor}
+                    onChange={(e) => setModalAuthor(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="m-field">
+                <label>Tags (comma-separated)</label>
+                <input
+                  type="text"
+                  placeholder="Contract Act, Commercial, High Court"
+                  value={modalTags}
+                  onChange={(e) => setModalTags(e.target.value)}
+                />
+              </div>
+
+              <div className="m-field">
+                <label>Description</label>
+                <textarea
+                  placeholder="Brief description of this document's use case and legal basis…"
+                  value={modalDescription}
+                  onChange={(e) => setModalDescription(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="lib-btn lib-btn-ghost" onClick={closeAddModal}>
+                Cancel
+              </button>
+              <button type="submit" className="lib-btn lib-btn-primary" disabled={isUploading}>
+                {isUploading ? 'Adding…' : 'Add to Library'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* ════ Document Viewer Portal Modal ════
+          Mounted on document.body via createPortal so it can never be
+          trapped by an ancestor's overflow/transform; .dv-portal-root
+          re-declares the Slate & Rust tokens so it also renders correctly
+          once outside .lib-root's CSS-variable scope (see the stylesheet
+          comment above .dv-portal-root). */}
+      {viewerOpen &&
+        createPortal(
+          <div className="dv-portal-root">
+            <div className="document-viewer-backdrop" onClick={closeDocumentViewer} />
+            <div className="document-viewer-modal">
+              <div className="dv-header">
+                <div className="dv-header-top">
+                  <div className="dv-title-group">
+                    <div className="document-viewer-title">
+                      {viewerLoading ? 'Loading…' : (viewerDoc?.title || 'Document')}
+                    </div>
+                  </div>
+                  <button type="button" className="document-viewer-close" onClick={closeDocumentViewer} aria-label="Close document viewer">
+                    ✕
+                  </button>
+                </div>
+
+                {!viewerLoading && !viewerError && viewerDoc && (
+                  <div className="dv-action-bar">
+                    <button type="button" className={`dv-action-btn ${copyDone ? 'done' : ''}`} onMouseDown={handleCopyExcerpt}>
+                      {copyDone ? '✓ Copied' : '📋 Copy Excerpt'}
+                    </button>
+                    <button type="button" className={`dv-action-btn ${pinDone ? 'done' : ''}`} onClick={handlePinToVault} disabled={pinLoading}>
+                      {pinLoading ? '⋯ Pinning' : pinDone ? '✓ Pinned' : '📌 Pin to Vault'}
+                    </button>
+                    <button type="button" className="dv-action-btn" onClick={handleSummarize} disabled={summaryLoading}>
+                      {summaryLoading ? '⋯ Summarizing' : '⚡ AI Summarize'}
+                    </button>
+                    <button type="button" className="dv-action-btn" onClick={handlePrint}>
+                      🖨️ Print / Export PDF
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {summaryOpen && (
+                <div className="dv-ai-summary">
+                  <div className="dv-ai-summary-title">⚡ AI Legal Takeaways</div>
+                  {summaryLoading ? (
+                    <>
+                      <div className="dv-shimmer-line" style={{ width: '92%' }} />
+                      <div className="dv-shimmer-line" style={{ width: '78%' }} />
+                      <div className="dv-shimmer-line" style={{ width: '85%', marginBottom: 0 }} />
+                    </>
+                  ) : (
+                    <div className="dv-ai-summary-body">{summaryText}</div>
+                  )}
+                </div>
+              )}
+
+              <div className="dv-body">
+                {viewerLoading && (
+                  <div className="dv-loading">
+                    <span className="dv-spinner" />
+                    Retrieving full judgment text from the case-law index…
+                  </div>
+                )}
+                {!viewerLoading && viewerError && (
+                  <div className="document-viewer-error">{viewerError}</div>
+                )}
+                {!viewerLoading && !viewerError && viewerDoc && (
+                  <div className="dv-content-layout">
+                    {sidebarOpen && (
+                      <div className="dv-sidebar-outline">
+                        <div className="dv-outline-title">Document Outline</div>
+                        <div className="dv-outline-list">
+                          {parsedResult.outline.length === 0 ? (
+                            <div className="dv-outline-empty">No sections found.</div>
+                          ) : (
+                            parsedResult.outline.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className={`dv-outline-item ${item.type}`}
+                                onClick={() => {
+                                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }}
+                              >
+                                {item.label}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="dv-main-viewer">
+                      <div className="dv-search-container">
+                        <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                        </svg>
+                        <input
+                          type="text"
+                          placeholder="Search in document text (min 3 chars)..."
+                          className="dv-search-input"
+                          value={searchTerm}
+                          onChange={(e) => { setSearchTerm(e.target.value); setActiveMatchIndex(0); }}
+                        />
+                        {searchTerm.length >= 3 && (
+                          <div className="dv-search-actions">
+                            <span className="dv-search-count">
+                              {matchCount > 0 ? `${activeMatchIndex + 1} of ${matchCount}` : 'No results'}
+                            </span>
+                            <button
+                              type="button"
+                              className="dv-search-btn"
+                              disabled={matchCount === 0}
+                              onClick={() => setActiveMatchIndex((prev) => (prev - 1 + matchCount) % matchCount)}
+                            >
+                              Prev
+                            </button>
+                            <button
+                              type="button"
+                              className="dv-search-btn"
+                              disabled={matchCount === 0}
+                              onClick={() => setActiveMatchIndex((prev) => (prev + 1) % matchCount)}
+                            >
+                              Next
+                            </button>
+                            <button type="button" className="dv-search-btn" onClick={() => { setSearchTerm(''); setActiveMatchIndex(0); }}>
+                              Clear
+                            </button>
+                          </div>
+                        )}
+                        <div className="dv-search-divider" />
+                        <button
+                          type="button"
+                          className="dv-search-btn"
+                          onClick={() => setSidebarOpen((prev) => !prev)}
+                          title="Toggle document outline panel"
+                        >
+                          {sidebarOpen ? '📖 Hide Outline' : '📖 Show Outline'}
+                        </button>
+                      </div>
+
+                      <div className="dv-text-wrap">
+                        <div className="document-viewer-text" dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ════ Toast ════ */}
+      <div className={`lib-toast ${showToast ? 'show' : ''}`}>{toastMsg}</div>
+    </div>
+  );
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch {
+    return String(d);
+  }
+}

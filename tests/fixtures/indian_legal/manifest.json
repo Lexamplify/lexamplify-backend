@@ -1,0 +1,296 @@
+{
+ "note": "Synthetic documents. No real people, firms or cases.",
+ "files": [
+  {
+   "file": "s138_return_memo_1.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "942936",
+    "cheque_amount": "Rs. 1,25,000/-",
+    "cheque_date": "19 May 2026",
+    "return_reason": "Exceeds arrangement",
+    "return_memo_date": "16 June 2026",
+    "presentation_date": "15 June 2026",
+    "drawn_bank": "Canara Bank, Chennai Main Branch"
+   },
+   "parties": {
+    "payee": "M/s Gupta Builders Pvt Ltd",
+    "drawer": "M/s Bose Logistics Pvt Ltd"
+   }
+  },
+  {
+   "file": "s138_notice_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "942936",
+    "cheque_amount": "Rs. 1,25,000/-",
+    "cheque_date": "19 May 2026",
+    "return_reason": "Exceeds arrangement"
+   }
+  },
+  {
+   "file": "s138_return_memo_2.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "489063",
+    "cheque_amount": "Rs. 2,50,000/-",
+    "cheque_date": "20 February 2026",
+    "return_reason": "Account closed",
+    "return_memo_date": "20 March 2026",
+    "presentation_date": "18 March 2026",
+    "drawn_bank": "Indian Bank, Hosur Main Branch"
+   },
+   "parties": {
+    "payee": "M/s Kumar Traders Pvt Ltd",
+    "drawer": "M/s Nair Foods Pvt Ltd"
+   }
+  },
+  {
+   "file": "s138_notice_2.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "489063",
+    "cheque_amount": "Rs. 2,50,000/-",
+    "cheque_date": "20 February 2026",
+    "return_reason": "Account closed"
+   }
+  },
+  {
+   "file": "s138_return_memo_3.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "229586",
+    "cheque_amount": "Rs. 8,80,000/-",
+    "cheque_date": "2 February 2026",
+    "return_reason": "Account closed",
+    "return_memo_date": "23 February 2026",
+    "presentation_date": "22 February 2026",
+    "drawn_bank": "Axis Bank, Hyderabad Main Branch"
+   },
+   "parties": {
+    "payee": "M/s Bose Traders Pvt Ltd",
+    "drawer": "M/s Das Infra Pvt Ltd"
+   }
+  },
+  {
+   "file": "s138_notice_3.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "229586",
+    "cheque_amount": "Rs. 8,80,000/-",
+    "cheque_date": "2 February 2026",
+    "return_reason": "Account closed"
+   }
+  },
+  {
+   "file": "s138_return_memo_4.txt",
+   "kind": "txt",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "120119",
+    "cheque_amount": "Rs. 21,50,000/-",
+    "cheque_date": "11 April 2026",
+    "return_reason": "Funds insufficient",
+    "return_memo_date": "3 May 2026",
+    "presentation_date": "29 April 2026",
+    "drawn_bank": "Canara Bank, Delhi Main Branch"
+   }
+  },
+  {
+   "file": "s138_return_memo_5_scanned.pdf",
+   "kind": "pdf",
+   "expect": "BLANK_DOCUMENT",
+   "doc_type": "notice_138",
+   "note": "image-only: the system must say it is scanned, never guess"
+  },
+  {
+   "file": "rent_agreement_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "rent_agreement"
+  },
+  {
+   "file": "rent_agreement_2.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "rent_agreement"
+  },
+  {
+   "file": "rent_agreement_3.txt",
+   "kind": "txt",
+   "expect": "ok",
+   "doc_type": "rent_agreement"
+  },
+  {
+   "file": "sale_deed_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "sale_deed"
+  },
+  {
+   "file": "sale_deed_2.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "sale_deed"
+  },
+  {
+   "file": "plaint_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "plaint_skeleton"
+  },
+  {
+   "file": "plaint_2.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "plaint_skeleton"
+  },
+  {
+   "file": "affidavit_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "affidavit"
+  },
+  {
+   "file": "affidavit_2.txt",
+   "kind": "txt",
+   "expect": "ok",
+   "doc_type": "affidavit"
+  },
+  {
+   "file": "nda_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "nda"
+  },
+  {
+   "file": "nda_2.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "nda"
+  },
+  {
+   "file": "bail_application_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "bail_application"
+  },
+  {
+   "file": "bail_application_2.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "bail_application"
+  },
+  {
+   "file": "vakalatnama_1.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "vakalatnama"
+  },
+  {
+   "file": "commercial_contract_40pages.pdf",
+   "kind": "pdf",
+   "expect": "ok",
+   "doc_type": "contract",
+   "pages_at_least": 40,
+   "key_dates": [
+    "1 August 2026",
+    "90 days",
+    "3 years"
+   ],
+   "risky": [
+    "without notice",
+    "24% per month"
+   ]
+  },
+  {
+   "file": "commercial_contract_40pages.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "contract",
+   "key_dates": [
+    "1 August 2026",
+    "90 days",
+    "3 years"
+   ],
+   "risky": [
+    "without notice",
+    "24% per month"
+   ]
+  },
+  {
+   "file": "scanned_contract.pdf",
+   "kind": "pdf",
+   "expect": "BLANK_DOCUMENT",
+   "doc_type": "contract"
+  },
+  {
+   "file": "mixed_script_notice.docx",
+   "kind": "docx",
+   "expect": "ok",
+   "doc_type": "notice_138",
+   "facts": {
+    "cheque_no": "004817",
+    "return_reason": "Funds Insufficient"
+   }
+  },
+  {
+   "file": "mixed_script_note.txt",
+   "kind": "txt",
+   "expect": "ok"
+  },
+  {
+   "file": "messy_tables_1.docx",
+   "kind": "docx",
+   "expect": "ok"
+  },
+  {
+   "file": "messy_tables_2.docx",
+   "kind": "docx",
+   "expect": "ok"
+  },
+  {
+   "file": "old_word_renamed.docx",
+   "kind": "docx",
+   "expect": "NOT_A_DOCX"
+  },
+  {
+   "file": "password_protected.pdf",
+   "kind": "pdf",
+   "expect": "EXTRACTION_ERROR"
+  },
+  {
+   "file": "empty.pdf",
+   "kind": "pdf",
+   "expect": "EMPTY_FILE"
+  },
+  {
+   "file": "macro_enabled.docx",
+   "kind": "docx",
+   "expect": "MACRO_DOCUMENT"
+  },
+  {
+   "file": "fake_pdf.pdf",
+   "kind": "pdf",
+   "expect": "NOT_A_PDF"
+  },
+  {
+   "file": "truncated.pdf",
+   "kind": "pdf",
+   "expect": "EXTRACTION_ERROR"
+  }
+ ]
+}

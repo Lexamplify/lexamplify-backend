@@ -1,0 +1,90 @@
+/* ============================================================
+   LexAI India — Global Design System
+   Premium Navy · Elegant Gold · Crisp White
+   ============================================================ */
+
+/* ── Design Tokens ── */
+:root {
+    /* Surfaces */
+    --bg:           #f8fafc;
+    --bg-panel:     #ffffff;
+    --bg-subtle:    #f1f5f9;
+    --bg-hover:     #e8edf5;
+
+    /* Typography */
+    --text:         #0f172a;
+    --text-muted:   #64748b;
+    --text-faint:   #94a3b8;
+
+    /* Brand */
+    --gold:         #d4af37;
+    --gold-hover:   #b8960c;
+    --gold-light:   #f0d060;
+    --gold-dim:     rgba(212, 175, 55, 0.15);
+    --gold-glow:    rgba(212, 175, 55, 0.22);
+    --navy:         #0B132B;
+    --navy-mid:     #16213E;
+    --navy-light:   #1e3a5f;
+
+    /* Borders */
+    --border:       rgba(15, 23, 42, 0.10);
+    --border-strong:rgba(15, 23, 42, 0.20);
+
+    /* Shadows */
+    --shadow-xs:    0 1px 3px rgba(15, 23, 42, 0.06);
+    --shadow-sm:    0 2px 8px rgba(15, 23, 42, 0.08);
+    --shadow-md:    0 4px 20px rgba(15, 23, 42, 0.10);
+    --shadow-lg:    0 12px 48px rgba(15, 23, 42, 0.12);
+    --shadow-xl:    0 20px 60px rgba(15, 23, 42, 0.15);
+
+    /* Radius */
+    --r-xs:  6px;
+    --r-sm:  10px;
+    --r-md:  16px;
+    --r-lg:  22px;
+    --r-xl:  30px;
+}
+
+[data-theme="dark"] {
+    --bg:           #0B132B;
+    --bg-panel:     #131D3B;
+    --bg-subtle:    #1a2748;
+    --bg-hover:     #1f2f55;
+
+    --text:         #f1f5f9;
+    --text-muted:   #94a3b8;
+    --text-faint:   #64748b;
+
+    --gold:         #d4af37;
+    --gold-hover:   #e8c84a;
+    --gold-light:   #f0d060;
+    --gold-dim:     rgba(212, 175, 55, 0.12);
+    --gold-glow:    rgba(212, 175, 55, 0.20);
+    --navy:         #060d1e;
+    --navy-mid:     #0B132B;
+    --navy-light:   #131D3B;
+
+    --border:       rgba(241, 245, 249, 0.08);
+    --border-strong:rgba(241, 245, 249, 0.16);
+
+    --shadow-xs:    0 1px 3px rgba(0, 0, 0, 0.25);
+    --shadow-sm:    0 2px 8px rgba(0, 0, 0, 0.30);
+    --shadow-md:    0 4px 20px rgba(0, 0, 0, 0.35);
+    --shadow-lg:    0 12px 48px rgba(0, 0, 0, 0.45);
+    --shadow-xl:    0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* ── Global Smooth Transition ── */
+*, *::before, *::after {
+    transition:
+        background-color 0.3s ease,
+        color            0.3s ease,
+        border-color     0.3s ease,
+        box-shadow       0.3s ease,
+        opacity          0.2s ease;
+}
+
+/* Opt-out for elements where transitions cause jank */
+*:where(svg, path, circle, line, polyline, polygon, rect) {
+    transition: none;
+}

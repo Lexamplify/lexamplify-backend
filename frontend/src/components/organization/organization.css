@@ -1,0 +1,1408 @@
+/* ==========================================================================
+   ORGANIZATION & MATTER GATEWAY (SLATE & RUST DESIGN TOKENS)
+   ========================================================================== */
+
+.org-gateway-container {
+  max-width: 1140px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 36px 24px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  font-family: Calibri, Carlito, 'Segoe UI', Candara, Optima, sans-serif;
+  color: var(--ink);
+}
+
+/* Identity-text hooks — used throughout this suite's markup on titles,
+   matter names, the firm name (.serif) and reference data/hashes/stat
+   lines (.mono). Neither swaps to a second typeface anymore (Home Gateway
+   v4: one typeface everywhere, no italics) — .serif is now just a mild
+   weight/spacing distinction, .mono keeps digits tabular so numbers still
+   line up in columns. Class names are legacy from the old two-typeface
+   system; rename to something like .identity-text when this suite is
+   next touched, since neither name describes what it does anymore. */
+.serif { font-weight: 600; letter-spacing: -0.01em; }
+.mono { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+
+/* index.css declares a global `h1,h2,h3,h4,h5,h6 { font-family:
+   var(--font-serif) }` (Merriweather) app-wide — a direct rule on the
+   element itself always wins over an inherited value regardless of
+   container, so headings inside .org-gateway-container would otherwise
+   render in Merriweather despite the container's own Calibri override
+   above. This overrides it back to inherited (Calibri) specifically
+   within this suite, without touching the global rule other features
+   still rely on. .modal-title gets the same treatment since New Matter/
+   New Team modals portal outside .org-gateway-container's DOM subtree. */
+.org-gateway-container h1,
+.org-gateway-container h2,
+.org-gateway-container h3,
+.org-gateway-container h4,
+.org-gateway-container h5,
+.org-gateway-container h6,
+.modal-title {
+  font-family: inherit;
+}
+
+/* ── TRIAL BANNER ───────────────────────────────────────────────────────── */
+.trial-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--major-soft);
+  border: 1px solid var(--major);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--ink);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.trial-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.trial-banner .btn-upgrade {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.trial-banner .btn-upgrade:hover {
+  background: var(--paper-2);
+  border-color: var(--ink-soft);
+}
+
+/* ── MASTHEAD HERO ──────────────────────────────────────────────────────── */
+.launcher-masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.masthead-info {
+  max-width: 640px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.masthead-title {
+  font-size: 32px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+.masthead-desc {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ── BUTTONS ────────────────────────────────────────────────────────────── */
+.btn-org {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.btn-org-secondary {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.btn-org-secondary:hover {
+  background: var(--paper-2);
+  border-color: var(--ink-soft);
+}
+
+.btn-org-primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 2px 8px rgba(178, 74, 46, 0.25);
+}
+
+.btn-org-primary:hover {
+  filter: brightness(1.08);
+}
+
+/* ── FILTER BAR ─────────────────────────────────────────────────────────── */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 8px 16px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.filter-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.filter-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.filter-input::placeholder {
+  color: var(--muted-2);
+}
+
+.status-filter-select {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 8px 16px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.status-filter-select:focus {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* ── MATTERS GRID ───────────────────────────────────────────────────────── */
+.matters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.matter-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  position: relative;
+  text-align: left;
+}
+
+.matter-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.matter-card.active-card {
+  border-color: var(--accent);
+  background: var(--paper);
+}
+
+.matter-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.open {
+  background: var(--accent);
+}
+
+.status-dot.active {
+  background: var(--major);
+}
+
+.status-dot.on_hold {
+  background: var(--major);
+}
+
+.status-dot.closed {
+  background: var(--muted);
+}
+
+.last-used-tag {
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.matter-title {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.matter-meta {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.matter-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--rule);
+  padding-top: 14px;
+  margin-top: auto;
+  gap: 10px;
+}
+
+.user-avatar-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.avatar-circle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  flex-shrink: 0;
+}
+
+.team-pill {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-matters-state {
+  text-align: center;
+  padding: 64px 20px;
+  background: var(--paper);
+  border: 1px dashed var(--rule);
+  border-radius: 16px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── TOPBAR 3-SEGMENT CONTEXT CAPSULE ───────────────────────────────────── */
+.context-capsule-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── TOPBAR CONTEXT TRAIL (v3 Redesign) ─────────────────────────────────── */
+.trail {
+  display: inline-flex;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 4px;
+  gap: 0;
+}
+
+.trail-seg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 190px;
+  transition: all 0.15s ease;
+}
+
+.trail-seg .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.trail-seg span.txt {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trail-seg .chev {
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.trail-seg:not(.current):hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.trail-seg.current {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.trail-seg.current .dot {
+  background: var(--on-accent);
+}
+
+.trail-seg.current span.txt {
+  color: var(--on-accent);
+}
+
+.trail-seg.current .chev {
+  opacity: 0.85;
+}
+
+.trail-sep {
+  color: var(--muted);
+  padding: 0 1px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  user-select: none;
+}
+
+.context-capsule {
+  display: flex;
+  align-items: center;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 24px;
+  padding: 3px;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.context-seg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  border-radius: 18px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  text-decoration: none;
+  white-space: nowrap;
+  background: transparent;
+}
+
+.context-seg:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.context-seg.active {
+  background: var(--paper);
+  color: var(--accent);
+  border-color: var(--rule);
+  font-weight: 600;
+}
+
+.seg-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.context-seg.active .seg-dot {
+  background: var(--accent);
+}
+
+.seg-label-matter {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seg-label-team {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Dropdown menu for switching matters quickly */
+.capsule-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 280px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 8px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.capsule-dropdown-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  padding: 6px 10px 4px;
+}
+
+.capsule-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.12s ease;
+}
+
+.capsule-dropdown-item:hover {
+  background: var(--paper-2);
+}
+
+.capsule-dropdown-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.capsule-dropdown-footer {
+  border-top: 1px solid var(--rule);
+  margin-top: 4px;
+  padding-top: 6px;
+}
+
+.capsule-dropdown-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.capsule-dropdown-link:hover {
+  background: var(--paper-2);
+}
+
+/* ── MODAL ARCHITECTURE (PORTAL RENDERING) ──────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  opacity: 0;
+  animation: fadeInModal 0.2s ease forwards;
+  /* New Matter/New Team modals portal to document.body, outside
+     .org-gateway-container's DOM subtree, so they don't inherit that
+     container's Calibri override from the surrounding page — declared
+     here instead so the whole Home Gateway suite (including its modals)
+     is visually consistent without touching the app's global body font. */
+  font-family: Calibri, Carlito, 'Segoe UI', Candara, Optima, sans-serif;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-box {
+  width: 100%;
+  max-width: 480px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: scaleInModal 0.2s ease forwards;
+}
+
+@keyframes scaleInModal {
+  from { transform: scale(0.96); }
+  to { transform: scale(1); }
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+}
+
+.modal-close:hover {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+.modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.form-input:focus,
+.form-select:focus {
+  border-color: var(--accent);
+}
+
+.form-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: var(--paper-2);
+}
+
+/* ── 3-TIER OPERATING SYSTEM WORKSPACE STYLES ────────────────────────── */
+
+/* Workspace Banner */
+.org-workspace-banner {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.org-banner-greeting {
+  font-size: 15px;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.org-banner-greeting strong {
+  color: var(--ink);
+}
+
+.org-active-chip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.org-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Matter Workspace header meta row (Home Gateway v4) — was one long
+   run-on sentence ("Open · My Chambers · Lead counsel __ · Opened __")
+   set as plain .page-sub text, reading as a wall. Now discrete chip-like
+   pieces with real gaps between them. */
+.meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.meta-chip { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.meta-sep { color: var(--rule); }
+.team-chip-static { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; background: var(--paper-2); color: var(--ink-soft); font-size: 11.5px; }
+.team-chip-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; border: 1px dashed var(--accent); background: transparent; color: var(--accent); font-size: 11.5px; font-weight: 500; cursor: pointer; }
+.team-chip-btn:hover { background: var(--accent-soft); }
+
+/* Assign-to-team modal (Home Gateway v4 §7.2) — team picker rows */
+.team-pick-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; cursor: pointer; margin-bottom: 8px; }
+.team-pick-row:hover { border-color: var(--accent); }
+.team-pick-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.team-pick-radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--rule); flex-shrink: 0; }
+.team-pick-row.selected .team-pick-radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px var(--paper); }
+.team-pick-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.team-pick-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+.org-chip-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--accent);
+  border: 1px solid var(--rule);
+}
+
+/* 5 Dynamic Metrics Grid / 4 Metrics Tiles
+   Unprefixed .metric-* aliases added alongside .org-metric-* below —
+   MatterDashboard.jsx/TeamDashboard.jsx/OrgDashboard.jsx all render the
+   unprefixed class names, which had no matching CSS anywhere in this file
+   (a real class-name mismatch, not a missing property), so every metric
+   tile on all three screens rendered as run-on inline text with none of
+   this flex/column/gap/padding layout applied. Kept as one shared rule set
+   rather than renaming the class in three JSX files. */
+.org-metric-grid, .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.org-metric-tile, .metric-tile {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.org-metric-label, .metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.org-metric-value, .metric-value {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.org-metric-sub, .metric-sub {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* Module Quick Jump Bar */
+.org-quick-jump-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+
+.org-jump-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.6px;
+}
+
+.org-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.org-jump-btn:hover {
+  background: var(--paper);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Two-Column Collaborative Grid */
+.org-collaborative-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+}
+
+.org-grid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.org-widget-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.org-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.org-widget-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Deadlines & Tasks Lists */
+.org-deadline-list,
+.org-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.org-deadline-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.org-badge-urgent {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.org-task-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.org-task-item:hover {
+  border-color: var(--accent);
+}
+
+.org-task-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.org-task-text {
+  flex: 1;
+  color: var(--ink);
+  transition: all 0.15s ease;
+}
+
+.org-task-text.completed {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.org-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.org-inline-input {
+  flex: 1;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--ink);
+  outline: none;
+}
+
+.org-inline-input:focus {
+  border-color: var(--accent);
+}
+
+.org-btn-sm {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Activity Stream & Notes */
+.org-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.org-activity-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.org-activity-time {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Documents & People Widgets */
+.org-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.org-doc-meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.org-people-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--paper-2);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.org-avatar-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.org-role-chip {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--muted);
+}
+
+/* Guarded Team Performance Bar */
+.org-perf-bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.org-perf-bar {
+  display: flex;
+  height: 12px;
+  width: 100%;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.org-perf-seg {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.org-perf-seg.open { background: var(--accent); }
+.org-perf-seg.active { background: var(--major); }
+.org-perf-seg.hold { background: var(--muted-2); }
+.org-perf-seg.closed { background: var(--muted); }
+
+.org-perf-chips {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.org-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+/* Team Header & Roster Table */
+.org-team-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.org-team-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.org-team-avatar-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.org-team-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.org-team-desc {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.org-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.org-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.org-table th {
+  background: var(--paper-2);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.org-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.org-table-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.org-table-row:hover {
+  background: var(--paper-2);
+}
+
+/* Firm Console (OrgDashboard) Teams Grid */
+.org-teams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.org-team-summary-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.org-team-summary-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.org-team-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.org-team-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.org-btn-open-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.org-btn-open-team:hover {
+  background: var(--paper);
+  border-color: var(--accent);
+}
+
+/* ── RESPONSIVE CONSTRAINTS ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .org-collaborative-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .launcher-masthead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .action-group {
+    justify-content: flex-start;
+  }
+  .context-capsule .context-seg:nth-child(2),
+  .context-capsule .context-seg:nth-child(3) {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   HOME GATEWAY v2 STYLES (MATCHING home-gateway-v2.html)
+   ========================================================================== */
+
+/* Personalized Hero Banner */
+.hero {
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  padding: 26px 30px;
+  background: linear-gradient(135deg, var(--paper-2), var(--paper));
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-title {
+  font-size: 30px;
+  margin: 8px 0 0;
+  line-height: 1.2;
+}
+
+.hero-title .accent-word {
+  color: var(--accent);
+}
+
+.hero-sub {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin-top: 10px;
+  max-width: 640px;
+  line-height: 1.55;
+}
+
+.hero-sub strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.hero-sub .placeholder {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Current active card indicator */
+.matter-card.current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Quick Dock */
+.quick-dock {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qd-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-radius: 11px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.qd-item:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.qd-item svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Empty note for litigation details */
+.empty-note {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 10px 0;
+  line-height: 1.55;
+}
+
+/* Muted metric value (e.g. Hours logged not tracked yet) */
+.metric-value.muted-val {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--muted) !important;
+}
+

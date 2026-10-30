@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Case Management – LexAI India</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{--navy:#0d1b2a;--navy2:#112233;--navy3:#1a2f45;--gold:#c9a84c;--gold2:#e6c97a;--gold-dim:rgba(201,168,76,0.15);--text:#e8e4d8;--text2:#9ca3af;--border:rgba(201,168,76,0.2);--red:#e53e3e;--green:#38a169;--blue:#3182ce;--card:rgba(255,255,255,0.04);--card-hover:rgba(255,255,255,0.07);--radius:10px;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--navy);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;}
+.topbar{background:var(--navy2);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;}
+.topbar h1{font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--gold);}
+.back-btn{background:var(--navy3);border:1px solid var(--border);color:var(--text2);padding:7px 14px;border-radius:var(--radius);font-size:0.82rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:all .2s;}
+.back-btn:hover{border-color:var(--gold);color:var(--gold);}
+.tabs{display:flex;gap:4px;background:var(--navy2);padding:0 28px;border-bottom:1px solid var(--border);overflow-x:auto;}
+.tab{padding:13px 20px;font-size:0.83rem;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+.content{padding:28px;max-width:1200px;}
+.section{display:none;}
+.section.active{display:block;}
+.section-header{margin-bottom:22px;}
+.section-header h2{font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--gold);margin-bottom:4px;}
+.section-header p{font-size:0.84rem;color:var(--text2);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:22px;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.form-row.three{grid-template-columns:1fr 1fr 1fr;}
+@media(max-width:600px){.form-row,.form-row.three{grid-template-columns:1fr;}}
+.form-group{display:flex;flex-direction:column;gap:6px;}
+.form-group label{font-size:0.78rem;color:var(--text2);font-weight:500;}
+.form-group input,.form-group select,.form-group textarea{background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:var(--radius);font-size:0.85rem;font-family:inherit;width:100%;}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--gold);}
+.form-group textarea{min-height:70px;resize:vertical;}
+.form-group select option{background:var(--navy2);}
+.btn{padding:10px 22px;border-radius:var(--radius);font-weight:600;font-size:0.85rem;cursor:pointer;border:none;transition:all .2s;}
+.btn-primary{background:var(--gold);color:var(--navy);}
+.btn-primary:hover{background:var(--gold2);}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text2);}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold);}
+.btn-danger{background:transparent;border:1px solid rgba(229,62,62,0.3);color:#fc8181;font-size:0.78rem;padding:6px 12px;}
+.btn-danger:hover{background:rgba(229,62,62,0.1);}
+.btn-sm{padding:6px 14px;font-size:0.78rem;}
+.flex-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);margin-top:18px;}
+table{width:100%;border-collapse:collapse;}
+thead th{background:var(--navy3);padding:11px 15px;text-align:left;font-size:0.77rem;font-weight:600;color:var(--gold);letter-spacing:.5px;text-transform:uppercase;}
+tbody tr{border-top:1px solid var(--border);}
+tbody tr:hover{background:var(--card-hover);}
+td{padding:11px 15px;font-size:0.83rem;vertical-align:middle;}
+.status-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:600;}
+.status-Active{background:rgba(56,161,105,.15);color:#68d391;border:1px solid rgba(56,161,105,.3);}
+.status-Pending{background:rgba(236,201,75,.12);color:#f6e05e;border:1px solid rgba(236,201,75,.25);}
+.status-Closed{background:rgba(156,163,175,.1);color:#9ca3af;border:1px solid rgba(156,163,175,.25);}
+.fetch-result{background:var(--navy3);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-top:16px;display:none;}
+.fetch-result h3{font-size:1rem;color:var(--gold);margin-bottom:12px;}
+.result-row{display:flex;gap:10px;margin-bottom:7px;font-size:0.84rem;}
+.result-label{color:var(--text2);min-width:110px;font-weight:500;}
+.result-val{color:var(--text);}
+.info-box{background:rgba(49,130,206,0.1);border:1px solid rgba(49,130,206,0.25);border-radius:var(--radius);padding:12px 16px;font-size:0.81rem;color:#90cdf4;margin-bottom:18px;display:flex;gap:8px;align-items:flex-start;}
+.calendar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:18px;}
+.hearing-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;transition:all .2s;}
+.hearing-card:hover{border-color:var(--gold);background:var(--card-hover);}
+.hearing-date{font-size:0.75rem;color:var(--gold);font-weight:600;margin-bottom:6px;}
+.hearing-case{font-size:0.9rem;font-weight:600;margin-bottom:4px;}
+.hearing-sub{font-size:0.78rem;color:var(--text2);}
+.days-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:600;}
+.days-urgent{background:rgba(229,62,62,.15);color:#fc8181;border:1px solid rgba(229,62,62,.3);}
+.days-soon{background:rgba(236,201,75,.12);color:#f6e05e;border:1px solid rgba(236,201,75,.25);}
+.days-ok{background:rgba(56,161,105,.12);color:#68d391;border:1px solid rgba(56,161,105,.25);}
+.empty{text-align:center;padding:40px;color:var(--text2);font-size:0.9rem;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;display:none;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--navy2);border:1px solid var(--border);border-radius:14px;padding:26px;width:min(600px,95vw);max-height:90vh;overflow-y:auto;}
+.modal h2{font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--gold);margin-bottom:18px;}
+.modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#fff;padding:10px 18px;border-radius:var(--radius);font-size:0.85rem;font-weight:500;z-index:9999;display:none;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/" class="back-btn">← Dashboard</a>
+  <h1>📋 Case Management</h1>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('causelist')">⚖️ My Cause List</div>
+  <div class="tab" onclick="switchTab('tracker')">📁 Case Tracker</div>
+  <div class="tab" onclick="switchTab('calendar')">📅 Hearing Calendar</div>
+</div>
+
+<div class="content">
+
+<!-- ── CAUSE LIST TAB ── -->
+<div id="sec-causelist" class="section active">
+  <div class="section-header">
+    <h2>My Cause List</h2>
+    <p>Fetch real-time case status by CNR number from eCourts portal.</p>
+  </div>
+
+  <div class="info-box">ℹ️ Enter a CNR (Case Number Record) to fetch live status. If the eCourts API is unavailable, we'll open the official court portal for you.</div>
+
+  <div class="card" style="max-width:520px;">
+    <div class="form-group" style="margin-bottom:14px;">
+      <label>Court</label>
+      <select id="cl-court">
+        <option>Supreme Court</option>
+        <option>Delhi HC</option>
+        <option>Bombay HC</option>
+        <option>Madras HC</option>
+        <option>Karnataka HC</option>
+        <option>Allahabad HC</option>
+        <option>District Court</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:14px;">
+      <label>CNR Number</label>
+      <input type="text" id="cl-cnr" placeholder="e.g. DLHC010012342023"/>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" onclick="fetchCauselist()">🔍 Fetch Status</button>
+      <button class="btn btn-outline" onclick="switchTab('tracker')">➕ Add Case Manually</button>
+    </div>
+
+    <div id="fetch-result" class="fetch-result">
+      <h3 id="fr-title">Case Details</h3>
+      <div class="result-row"><span class="result-label">Case Number</span><span class="result-val" id="fr-number">—</span></div>
+      <div class="result-row"><span class="result-label">Court</span><span class="result-val" id="fr-court">—</span></div>
+      <div class="result-row"><span class="result-label">Judge</span><span class="result-val" id="fr-judge">—</span></div>
+      <div class="result-row"><span class="result-label">Next Hearing</span><span class="result-val" id="fr-hearing">—</span></div>
+      <div class="result-row"><span class="result-label">Status</span><span class="result-val" id="fr-status">—</span></div>
+      <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="saveFromFetch()">💾 Save to Case Tracker</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CASE TRACKER TAB ── -->
+<div id="sec-tracker" class="section">
+  <div class="section-header">
+    <h2>Case Tracker</h2>
+    <p>Your full caseload — track hearings, clients, and case status in one place.</p>
+  </div>
+
+  <div class="flex-row">
+    <button class="btn btn-primary" onclick="openCaseModal()">➕ Add Case</button>
+    <a href="/api/causelist/export-ics" class="btn btn-outline">📅 Export to Calendar (.ics)</a>
+    <input type="text" id="case-search" placeholder="Search cases…" style="background:var(--navy3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:var(--radius);font-size:0.84rem;flex:1;max-width:260px;" oninput="filterCases()"/>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Case Name</th>
+          <th>Case No.</th>
+          <th>Client</th>
+          <th>Court</th>
+          <th>Next Hearing</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="cases-tbody">
+        <tr><td colspan="7" class="empty">Loading cases…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── CALENDAR TAB ── -->
+<div id="sec-calendar" class="section">
+  <div class="section-header">
+    <h2>Hearing Calendar</h2>
+    <p>Upcoming hearings sorted by date. Export to Google Calendar or Apple Calendar.</p>
+  </div>
+
+  <div class="flex-row">
+    <a href="/api/causelist/export-ics" class="btn btn-primary">📅 Export All to .ics</a>
+    <span style="font-size:0.82rem;color:var(--text2);">Import this file into Google Calendar / Apple Calendar</span>
+  </div>
+
+  <div id="calendar-grid" class="calendar-grid">
+    <div class="empty">Loading hearings…</div>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<!-- CASE MODAL -->
+<div id="case-modal" class="modal-overlay">
+  <div class="modal">
+    <h2 id="case-modal-title">Add Case</h2>
+    <input type="hidden" id="edit-case-id"/>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Case Name *</label>
+        <input type="text" id="m-case-name" placeholder="Sharma vs. State"/>
+      </div>
+      <div class="form-group">
+        <label>Client Name</label>
+        <input type="text" id="m-client-name" placeholder="Client's full name"/>
+      </div>
+    </div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Case Number</label>
+        <input type="text" id="m-case-number" placeholder="W.P. 123/2024"/>
+      </div>
+      <div class="form-group">
+        <label>CNR Number</label>
+        <input type="text" id="m-cnr" placeholder="DLHC010012342023"/>
+      </div>
+      <div class="form-group">
+        <label>Case Type</label>
+        <select id="m-case-type">
+          <option>Writ Petition</option>
+          <option>Civil Suit</option>
+          <option>Criminal</option>
+          <option>Arbitration</option>
+          <option>Matrimonial</option>
+          <option>Property</option>
+          <option>Consumer</option>
+          <option>Labour</option>
+          <option>Tax</option>
+          <option>IP</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Court</label>
+        <select id="m-court">
+          <option>Supreme Court</option>
+          <option>Delhi HC</option>
+          <option>Bombay HC</option>
+          <option>Madras HC</option>
+          <option>Karnataka HC</option>
+          <option>Allahabad HC</option>
+          <option>District Court</option>
+          <option>NCLAT</option>
+          <option>NCLT</option>
+          <option>SAT</option>
+          <option>NGT</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Next Hearing</label>
+        <input type="date" id="m-next-hearing"/>
+      </div>
+      <div class="form-group">
+        <label>Last Hearing</label>
+        <input type="date" id="m-last-hearing"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Status</label>
+        <select id="m-status">
+          <option>Active</option>
+          <option>Pending</option>
+          <option>Closed</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <input type="text" id="m-notes" placeholder="Brief notes…"/>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeCaseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCase()">💾 Save Case</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let allCases = [];
+let fetchedData = null;
+
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('active');
+  event.target.classList.add('active');
+  if (id === 'calendar') renderCalendar();
+}
+
+async function fetchCauselist() {
+  const cnr = document.getElementById('cl-cnr').value.trim();
+  const court = document.getElementById('cl-court').value;
+  if (!cnr) { showToast('Enter a CNR number', 'red'); return; }
+  const res = document.getElementById('fetch-result');
+  res.style.display = 'block';
+  document.getElementById('fr-title').textContent = 'Fetching…';
+  try {
+    const r = await fetch('/api/causelist/fetch', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ cnr_number: cnr, court })
+    });
+    const d = await r.json();
+    if (d.source === 'fallback') {
+      document.getElementById('fr-title').textContent = '⚠️ eCourts API unavailable';
+      document.getElementById('fr-number').textContent = cnr;
+      document.getElementById('fr-court').textContent = court;
+      document.getElementById('fr-judge').textContent = '—';
+      document.getElementById('fr-hearing').textContent = '—';
+      document.getElementById('fr-status').innerHTML = `<a href="${d.fallback_url}" target="_blank" style="color:#60a5fa;">Open ${court} Portal ↗</a>`;
+      fetchedData = { cnr_number: cnr, court, case_name: cnr, status: 'Active' };
+    } else {
+      document.getElementById('fr-title').textContent = d.case_title || cnr;
+      document.getElementById('fr-number').textContent = d.case_number || cnr;
+      document.getElementById('fr-court').textContent = d.court || court;
+      document.getElementById('fr-judge').textContent = d.judge || '—';
+      document.getElementById('fr-hearing').textContent = d.next_hearing || '—';
+      document.getElementById('fr-status').textContent = d.status || 'Active';
+      fetchedData = { cnr_number: cnr, court, case_name: d.case_title || cnr, case_number: d.case_number || '', next_hearing: d.next_hearing || '', status: d.status || 'Active' };
+    }
+  } catch (e) {
+    document.getElementById('fr-title').textContent = 'Error fetching data';
+  }
+}
+
+async function saveFromFetch() {
+  if (!fetchedData) return;
+  const r = await fetch('/api/causelist/save', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(fetchedData) });
+  const d = await r.json();
+  if (d.status === 'success') { showToast('Case saved to tracker!'); loadCases(); }
+}
+
+async function loadCases() {
+  const r = await fetch('/api/causelist/list');
+  allCases = await r.json();
+  renderCases(allCases);
+  renderCalendar();
+}
+
+function renderCases(cases) {
+  const tbody = document.getElementById('cases-tbody');
+  if (!cases.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No cases tracked yet. Add your first case!</td></tr>'; return; }
+  tbody.innerHTML = cases.map(c => `
+    <tr>
+      <td><strong>${esc(c.case_name)}</strong>${c.case_type ? '<br><span style="font-size:0.73rem;color:var(--text2);">'+esc(c.case_type)+'</span>' : ''}</td>
+      <td>${esc(c.case_number||'—')}</td>
+      <td>${esc(c.client_name||'—')}</td>
+      <td>${esc(c.court||'—')}</td>
+      <td>${c.next_hearing ? formatDate(c.next_hearing) : '—'}</td>
+      <td><span class="status-pill status-${c.status||'Active'}">${c.status||'Active'}</span></td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="editCase(${c.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCase(${c.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterCases() {
+  const q = document.getElementById('case-search').value.toLowerCase();
+  renderCases(allCases.filter(c =>
+    (c.case_name||'').toLowerCase().includes(q) ||
+    (c.client_name||'').toLowerCase().includes(q) ||
+    (c.case_number||'').toLowerCase().includes(q)
+  ));
+}
+
+function renderCalendar() {
+  const grid = document.getElementById('calendar-grid');
+  const upcoming = allCases
+    .filter(c => c.next_hearing && c.status !== 'Closed')
+    .sort((a, b) => new Date(a.next_hearing) - new Date(b.next_hearing));
+  if (!upcoming.length) { grid.innerHTML = '<div class="empty">No upcoming hearings. Add cases with hearing dates in the Case Tracker.</div>'; return; }
+  const today = new Date(); today.setHours(0,0,0,0);
+  grid.innerHTML = upcoming.map(c => {
+    const d = new Date(c.next_hearing);
+    const days = Math.round((d - today) / 86400000);
+    let badgeClass = 'days-ok', badgeText = `${days} days`;
+    if (days < 0) { badgeClass = 'days-urgent'; badgeText = 'PAST DUE'; }
+    else if (days <= 3) { badgeClass = 'days-urgent'; badgeText = `${days}d — URGENT`; }
+    else if (days <= 7) { badgeClass = 'days-soon'; badgeText = `${days}d — Soon`; }
+    return `<div class="hearing-card">
+      <div class="hearing-date">${formatDate(c.next_hearing)}</div>
+      <div class="hearing-case">${esc(c.case_name)}</div>
+      <div class="hearing-sub">${esc(c.court||'—')} • ${esc(c.client_name||'—')}</div>
+      <div style="margin-top:8px;"><span class="days-badge ${badgeClass}">${badgeText}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function openCaseModal(c) {
+  document.getElementById('case-modal-title').textContent = c ? 'Edit Case' : 'Add Case';
+  document.getElementById('edit-case-id').value = c ? c.id : '';
+  document.getElementById('m-case-name').value = c ? c.case_name : '';
+  document.getElementById('m-client-name').value = c ? (c.client_name||'') : '';
+  document.getElementById('m-case-number').value = c ? (c.case_number||'') : '';
+  document.getElementById('m-cnr').value = c ? (c.cnr_number||'') : '';
+  document.getElementById('m-case-type').value = c ? (c.case_type||'Other') : 'Writ Petition';
+  document.getElementById('m-court').value = c ? (c.court||'Supreme Court') : 'Supreme Court';
+  document.getElementById('m-next-hearing').value = c ? (c.next_hearing||'') : '';
+  document.getElementById('m-last-hearing').value = c ? (c.last_hearing||'') : '';
+  document.getElementById('m-status').value = c ? (c.status||'Active') : 'Active';
+  document.getElementById('m-notes').value = c ? (c.notes||'') : '';
+  document.getElementById('case-modal').classList.add('open');
+}
+
+function closeCaseModal() { document.getElementById('case-modal').classList.remove('open'); }
+
+async function saveCase() {
+  const id = document.getElementById('edit-case-id').value;
+  const body = {
+    case_name: document.getElementById('m-case-name').value.trim(),
+    client_name: document.getElementById('m-client-name').value.trim(),
+    case_number: document.getElementById('m-case-number').value.trim(),
+    cnr_number: document.getElementById('m-cnr').value.trim(),
+    case_type: document.getElementById('m-case-type').value,
+    court: document.getElementById('m-court').value,
+    next_hearing: document.getElementById('m-next-hearing').value || null,
+    last_hearing: document.getElementById('m-last-hearing').value || null,
+    status: document.getElementById('m-status').value,
+    notes: document.getElementById('m-notes').value.trim(),
+  };
+  if (!body.case_name) { showToast('Case name is required', 'red'); return; }
+  const url = id ? `/api/causelist/update/${id}` : '/api/causelist/save';
+  const method = id ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const d = await r.json();
+  if (d.status === 'success') { closeCaseModal(); loadCases(); showToast('Case saved!'); }
+}
+
+function editCase(id) {
+  const c = allCases.find(x => x.id === id);
+  if (c) openCaseModal(c);
+}
+
+async function deleteCase(id) {
+  if (!confirm('Delete this case?')) return;
+  await fetch(`/api/causelist/delete/${id}`, { method: 'DELETE' });
+  loadCases(); showToast('Case deleted');
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = (type === 'red' ? '❌ ' : '✅ ') + msg;
+  t.style.background = type === 'red' ? '#e53e3e' : '#38a169';
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2500);
+}
+
+document.getElementById('case-modal').addEventListener('click', e => { if (e.target === document.getElementById('case-modal')) closeCaseModal(); });
+loadCases();
+</script>
+</body>
+</html>

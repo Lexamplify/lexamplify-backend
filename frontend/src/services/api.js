@@ -1,0 +1,831 @@
+/**
+ * frontend/src/services/api.js
+ * LexAmplify Integration Services
+ * Wraps backend Flask endpoints with standardized JWT injection and robust error catching.
+ */
+
+// Dynamically use environment variables for GCP serverless URLs, falling back to localhost
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''; // relative — same-origin via Vite proxy in dev
+
+/**
+ * Generates content-type headers. Auth is no longer carried here — the JWT
+ * lives in an HttpOnly cookie and is attached automatically by the browser;
+ * `credentials:'include'` and the CSRF header are injected globally by
+ * utils/authFetch.js's fetch patch, not per-call.
+ * If isFormData is true, browser sets the multi-part boundary, so content-type is omitted.
+ */
+const getHeaders = (isFormData = false) => {
+  const headers = {};
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+};
+
+/**
+ * Inspects responses and handles parsing or raises standard JS exceptions.
+ */
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    let errorMessage = `Request failed with status ${response.status}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorMessage;
+    } catch (e) {
+      // Handle cases where server returned plain text or html errors (like a 504 gateway timeout)
+      try {
+        const textError = await response.text();
+        if (textError && textError.length < 200) {
+          errorMessage = textError;
+        }
+      } catch (textErr) {
+        // Fallback to default message
+      }
+    }
+    throw new Error(errorMessage);
+  }
+  return await response.json();
+};
+
+/**
+ * Uploads a document to the server, extracts raw text, and triggers RAG ingestion.
+ * @param {File} file 
+ * @param {number|string|null} caseId 
+ * @param {string} tags 
+ */
+export const uploadDocument = async (file, caseId = null, tags = '') => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (caseId) {
+      formData.append('case_id', caseId);
+    }
+    if (tags) {
+      formData.append('tags', tags);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: formData,
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] uploadDocument error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to upload and index document due to network or server issues.'
+    };
+  }
+};
+
+/**
+ * Fetches all document metadata belonging to the user, optionally filtered by caseId.
+ * @param {number|string|null} caseId 
+ */
+export const fetchDocuments = async (caseId = null) => {
+  try {
+    let url = `${API_BASE_URL}/api/documents`;
+    if (caseId) {
+      url += `?case_id=${caseId}`;
+    }
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchDocuments error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to retrieve case documents.'
+    };
+  }
+};
+
+/**
+ * Deletes a document from the vault and automatically wipes matching RAG chunks.
+ * @param {number|string} docId 
+ */
+export const deleteDocument = async (docId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${docId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] deleteDocument error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to delete document from server.'
+    };
+  }
+};
+
+/**
+ * Fetches a single document's full details (with text reconstructed from RAG chunks).
+ * @param {number|string} docId 
+ */
+export const fetchDocumentDetails = async (docId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${docId}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchDocumentDetails error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to retrieve document text details.'
+    };
+  }
+};
+
+/**
+ * Queries the Universal RAG Chatbot with Indian Law wrapper constraints.
+ * @param {string} query 
+ * @param {string} scope - "all_cases" | "current_case" | "open_document"
+ * @param {number|string|null} caseId 
+ * @param {number|string|null} documentId 
+ */
+export const queryRAGChat = async (query, scope = 'all_cases', caseId = null, documentId = null) => {
+  try {
+    const body = { query, scope };
+    if (caseId) {
+      body.case_id = caseId;
+    }
+    if (documentId) {
+      body.document_id = documentId;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/ai/rag-chat`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] queryRAGChat error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to process legal query. The reasoning engine may be offline or timing out.'
+    };
+  }
+};
+
+/**
+ * Fetches the live-scraped judges directory (Supreme Court + Delhi High
+ * Court). Response includes `errors` for any source that failed to
+ * scrape — a 200/502 with a partial judges list plus non-empty `errors`
+ * is a valid, expected shape, not a client-side failure to catch.
+ */
+export const fetchJudgesDirectory = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/courts/judges`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    // Backend returns {judges, errors} on both 200 (partial success) and
+    // 502 (all sources failed) — read the body either way rather than
+    // throwing on !response.ok, or the per-source error detail is lost.
+    const data = await response.json().catch(() => ({ judges: [], errors: ['Malformed response from server.'] }));
+    return { judges: data.judges || [], errors: data.errors || [] };
+  } catch (error) {
+    console.error('[API Service] fetchJudgesDirectory error:', error);
+    return { judges: [], errors: [error.message || 'Failed to reach the judges directory service.'] };
+  }
+};
+
+/**
+ * Fetches global court statistics, virtual court numbers, and upcoming events.
+ */
+export const fetchCourtGlobals = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/court-globals`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchCourtGlobals error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to retrieve global court details.'
+    };
+  }
+};
+
+/**
+ * Fetches the static list of all 25 Indian High Courts (id/name/jurisdiction)
+ * for the searchable court-selector grid. Backend returns a bare array —
+ * normalized here into {courts, error} so callers don't special-case that.
+ */
+export const fetchHighCourts = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/courts/high-courts`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    const data = await handleResponse(response);
+    if (!Array.isArray(data)) {
+      return { courts: [], error: true, message: 'Malformed response from server.' };
+    }
+    return { courts: data, error: false };
+  } catch (error) {
+    console.error('[API Service] fetchHighCourts error:', error);
+    return { courts: [], error: true, message: error.message || 'Failed to retrieve High Courts list.' };
+  }
+};
+
+/**
+ * Fetches High Court information, judges roster, and forms for a specific state.
+ * @param {string} state
+ */
+export const fetchCourtData = async (state) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/court-data/${state}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchCourtData error:', error);
+    return {
+      error: true,
+      message: error.message || `Failed to retrieve court details for ${state}.`
+    };
+  }
+};
+
+/**
+ * Fetches the district court database.
+ */
+export const fetchDistricts = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/districts`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchDistricts error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to retrieve district court details.'
+    };
+  }
+};
+
+/**
+ * Fetches causelist details from the CMS backend via CNR.
+ * @param {string} cnrNumber 
+ */
+export const fetchCauselist = async (cnrNumber) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/causelist/fetch`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ cnr_number: cnrNumber }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchCauselist error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to fetch causelist details.'
+    };
+  }
+};
+
+/**
+ * Fetches tracked cases from the CMS backend.
+ */
+export const fetchTrackedCases = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/causelist/list`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchTrackedCases error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to fetch tracked cases.'
+    };
+  }
+};
+
+/**
+ * Saves a new manually added case to the CMS.
+ * @param {object} caseData
+ */
+export const saveTrackedCase = async (caseData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/causelist/save`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(caseData),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] saveTrackedCase error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to save tracked case.'
+    };
+  }
+};
+
+/**
+ * Fetches detailed page scrape content for a legal event.
+ * @param {string} eventId 
+ */
+export const fetchEventDetails = async (eventId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/events/${encodeURIComponent(eventId)}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchEventDetails error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to retrieve event details.'
+    };
+  }
+};
+
+/**
+ * Calculates the required court fee based on suit amount and type.
+ * @param {number} amount 
+ * @param {string} courtType 
+ */
+export const calculateCourtFee = async (amount, courtType) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/calculate-fee`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ amount, court_type: courtType }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] calculateCourtFee error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to calculate court fee.'
+    };
+  }
+};
+
+/**
+ * Fetches all IP assets for the authenticated user.
+ */
+export const fetchIPAssets = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/ip/list`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchIPAssets error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to retrieve tracked IP assets.'
+    };
+  }
+};
+
+/**
+ * Tracks a new IP asset (trademark, patent, copyright, design).
+ * @param {object} asset 
+ */
+export const addIPAsset = async (asset) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/ip/add`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(asset),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] addIPAsset error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to save new IP asset.'
+    };
+  }
+};
+
+/**
+ * Updates an existing IP asset by ID.
+ * @param {number|string} id 
+ * @param {object} asset 
+ */
+export const updateIPAsset = async (id, asset) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/ip/update/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(asset),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] updateIPAsset error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to update IP asset.'
+    };
+  }
+};
+
+/**
+ * Permanently deletes a tracked IP asset.
+ * @param {number|string} id 
+ */
+export const deleteIPAsset = async (id) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/ip/delete/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] deleteIPAsset error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to delete IP asset.'
+    };
+  }
+};
+
+/**
+ * Sends a contract file or pasted text to the backend to run risk analysis.
+ * @param {File|null} file 
+ * @param {string} text 
+ * @param {string} scanStrategy 
+ */
+export const analyzeContract = async (file = null, text = '', scanStrategy = 'Defensive') => {
+  try {
+    let response;
+    if (file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('scanStrategy', scanStrategy);
+      response = await fetch(`${API_BASE_URL}/api/contract/analyze`, {
+        method: 'POST',
+        headers: getHeaders(true),
+        body: formData,
+      });
+    } else {
+      response = await fetch(`${API_BASE_URL}/api/contract/analyze`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ text, scanStrategy }),
+      });
+    }
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] analyzeContract error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to analyze contract.'
+    };
+  }
+};
+
+/**
+ * Extracts raw text from a PDF or DOCX file without running analysis.
+ * Hits the Flask backend /api/contract/extract-text — reuses the same
+ * extract_text_for_summary utility used by the main analyze route.
+ * @param {File} file
+ */
+export const extractContractText = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  // 60s, not 15s: the server may be waking from idle, and a long PDF takes a few
+  // seconds to read. Cutting the request off early looked like "upload failed".
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: formData,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      // The server answers with JSON ({error, message, code}); show its message,
+      // never the raw JSON string.
+      const raw = await response.text();
+      let message = '';
+      let code = '';
+      try { const j = JSON.parse(raw); message = j.message || ''; code = j.code || ''; } catch { /* not JSON */ }
+      const err = new Error(
+        response.status === 401 ? 'Your session has expired. Please sign in again.'
+          : response.status === 413 ? 'That file is too large. Please upload a smaller file.'
+            : message || 'We could not read that file. Try a PDF or Word file with selectable text.');
+      err.code = code || String(response.status);
+      throw err;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Reading the file took too long. Please try again, or upload a smaller file.');
+    }
+    if (error instanceof TypeError) {
+      throw new Error('We could not reach the server. Check your connection and try again.');
+    }
+    throw error;
+  }
+};
+
+/**
+ * Dispatches the (formerly ~5-minute synchronous) contract risk scan as a
+ * Celery job and returns immediately with { job_id }. Pair with
+ * hooks/useContractJobStream(job_id) to track live progress over SSE —
+ * this function does NOT wait for the analysis itself to finish.
+ * @param {string} text
+ * @param {string} ruleBook
+ * @param {string} scanStrategy
+ */
+export const startContractAnalysisJob = async (text = '', ruleBook = '', scanStrategy = 'Defensive') => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, ruleBook, scanStrategy }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { error: true, message: data.message || (typeof data.error === 'string' ? data.error : '') || `The analysis could not be started (${response.status}). Please try again.`, code: data.code };
+    }
+    return data; // { job_id, status_url }
+  } catch (error) {
+    console.error('[API Service] startContractAnalysisJob error:', error);
+    return { error: true, message: error.message || 'Failed to reach analysis service.' };
+  }
+};
+
+/**
+ * AI BubbleMenu inline rewrite: applies a free-form instruction to an
+ * arbitrary editor selection and returns HTML meant to replace it in place.
+ * @param {string} selectedText
+ * @param {string} instruction
+ */
+export const inlineEditSelection = async (selectedText, instruction) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/documents/inline-edit`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ selectedText, instruction }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] inlineEditSelection error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to rewrite selection.'
+    };
+  }
+};
+
+/**
+ * Rewrites a high-risk clause based on a specified user intent.
+ * @param {string} originalClause
+ * @param {string} issue
+ * @param {string} userIntent
+ */
+export const rewriteContractClause = async (originalClause, issue, userIntent) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/rewrite`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ original_clause: originalClause, issue, user_intent: userIntent }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] rewriteContractClause error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to rewrite clause.'
+    };
+  }
+};
+
+/**
+ * Generates an executive summary of the contract text.
+ * @param {string} rawText 
+ */
+export const fetchContractSummary = async (rawText) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/summary`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ raw_text: rawText }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchContractSummary error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to fetch contract summary.'
+    };
+  }
+};
+
+/**
+ * Identifies missing standard clauses under Indian Law for a given contract.
+ * @param {string} rawText 
+ */
+export const fetchContractRecommendations = async (rawText) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/recommendations`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ raw_text: rawText }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] fetchContractRecommendations error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to fetch contract extensions.'
+    };
+  }
+};
+
+/**
+ * Submits queries grounded strictly in the active contract text.
+ * @param {string} rawText 
+ * @param {string} query 
+ */
+export const chatWithContract = async (rawText, query) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/chat`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ raw_text: rawText, query }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] chatWithContract error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to send chat message.'
+    };
+  }
+};
+
+/**
+ * Exports contract data to PDF or DOCX format.
+ * @param {string} documentText 
+ * @param {string} draftText 
+ * @param {string} format 
+ */
+export const exportContract = async (documentText, draftText, format = 'pdf') => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/contract/export`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ document_text: documentText, draft_text: draftText, format }),
+    });
+    if (!response.ok) {
+      throw new Error(`Export failed with status ${response.status}`);
+    }
+    return await response.blob();
+  } catch (error) {
+    console.error('[API Service] exportContract error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Runs a conflict check against client databases and case documents.
+ * @param {{ targetEntity: string, opposingParty?: string, matterType?: string }} params
+ */
+export const runConflictCheck = async ({ targetEntity = '', opposingParty = '', matterType = 'Civil' } = {}) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/conflict/check`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        entity_name: targetEntity,
+        opposing_party: opposingParty,
+        matter_type: matterType,
+      }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] runConflictCheck error:', error);
+    return {
+      error: true,
+      message: error.message || 'Conflict check failed. Connection timed out or server is offline.'
+    };
+  }
+};
+
+/**
+ * Stores a clearance memo audit record in the backend.
+ * @param {object} memoData
+ */
+export const saveClearanceMemo = async (memoData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/conflict/clearance-memo`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(memoData),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] saveClearanceMemo error:', error);
+    return { error: true };
+  }
+};
+
+/**
+ * Runs a cross-document conflict check on uploaded files or JSON payload.
+ * @param {FormData|object} payload 
+ */
+export const analyzeConflicts = async (payload) => {
+  try {
+    const isFormData = typeof FormData !== 'undefined' && payload instanceof FormData;
+    const response = await fetch(`${API_BASE_URL}/api/conflict/analyze`, {
+      method: 'POST',
+      headers: isFormData
+        ? getHeaders(true)
+        : { 'Content-Type': 'application/json', ...getHeaders() },
+      body: isFormData ? payload : JSON.stringify(payload),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] analyzeConflicts error:', error);
+    return {
+      error: true,
+      message: error.message || 'Cross-document conflict analysis failed.'
+    };
+  }
+};
+
+/**
+ * Sends a universal RAG chat request with dynamic context.
+ * Parses dynamic route parameters to figure out the correct RAG scope.
+ * @param {object} payload - { query, currentPath, params }
+ */
+export const sendUniversalChat = async (payload) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getHeaders()
+      },
+      body: JSON.stringify(payload),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('[API Service] sendUniversalChat error:', error);
+    return {
+      error: true,
+      message: error.message || 'LexAmplify Chat failed. Connection timed out or server is offline.'
+    };
+  }
+};
+
+/**
+ * Generates and downloads Schedule-of-Discrepancies.docx matching the §2 Data Contract.
+ * @param {object} payload - { title, matter, documents, summary, conflicts }
+ */
+export const exportScheduleOfDiscrepanciesDocx = async (payload) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/conflict/export-docx`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getHeaders(),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`DOCX export failed with status ${response.status}`);
+    }
+    return await response.blob();
+  } catch (error) {
+    console.error('[API Service] exportScheduleOfDiscrepanciesDocx error:', error);
+    return {
+      error: true,
+      message: error.message || 'Failed to generate Schedule of Discrepancies document.',
+    };
+  }
+};

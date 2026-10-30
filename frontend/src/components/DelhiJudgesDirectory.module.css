@@ -1,0 +1,272 @@
+.container {
+  padding: 24px;
+  background-color: var(--bg-primary, #F7F8FC);
+  color: var(--text-primary, #172033);
+  min-height: 100%;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-subtle, #E2E6EF);
+  padding-bottom: 16px;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary, #172033);
+  margin: 0 0 4px 0;
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #667085);
+  margin: 0;
+}
+
+.statsBadge {
+  background-color: var(--accent-light, #EFF6FF);
+  color: var(--accent-primary, #2563EB);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--border-subtle, #BFDBFE);
+  white-space: nowrap;
+}
+
+.searchBarWrapper {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.searchInputContainer {
+  position: relative;
+  flex: 1;
+  min-width: 320px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  stroke: var(--text-secondary, #667085);
+}
+
+.searchInput {
+  width: 100%;
+  padding: 10px 36px 10px 38px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--text-primary, #172033);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--accent-primary, #2563EB);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.clearBtn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary, #667085);
+  font-size: 0.9rem;
+}
+
+.filterPills {
+  display: flex;
+  gap: 8px;
+}
+
+.pill {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--text-secondary, #667085);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pill:hover {
+  background: var(--bg-hover, #F1F5F9);
+}
+
+.activePill {
+  background: var(--accent-primary, #2563EB) !important;
+  color: #FFFFFF !important;
+  border-color: var(--accent-primary, #2563EB) !important;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E6EF);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  transition: box-shadow 0.2s ease, transform 0.1s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.courtBadge {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--accent-primary, #2563EB);
+  background: var(--accent-light, #EFF6FF);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.benchTag {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #667085);
+}
+
+.judgeName {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary, #172033);
+  line-height: 1.4;
+  margin: 0 0 14px 0;
+  min-height: 42px;
+}
+
+.detailsList {
+  background: var(--bg-subtle, #F8FAFC);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 14px;
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detailRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detailLabel {
+  color: var(--text-secondary, #667085);
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.detailValue code {
+  background: var(--bg-surface, #FFFFFF);
+  border: 1px solid var(--border-default, #E2E6EF);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  color: var(--text-primary, #172033);
+}
+
+.autoJoinText {
+  color: var(--text-muted, #94A3B8);
+  font-style: italic;
+}
+
+.inlineCopyBtn {
+  margin-left: auto;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.emailLink {
+  color: var(--accent-primary, #2563EB);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 210px;
+}
+
+.emailLink:hover {
+  text-decoration: underline;
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+}
+
+.joinBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--accent-primary, #2563EB);
+  color: #FFFFFF;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.82rem;
+  transition: opacity 0.2s ease;
+}
+
+.joinBtn:hover {
+  opacity: 0.9;
+}
+
+.copyLinkBtn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, #E2E6EF);
+  background: var(--bg-surface, #FFFFFF);
+  color: var(--text-primary, #172033);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.copyLinkBtn:hover {
+  background: var(--bg-hover, #F1F5F9);
+}

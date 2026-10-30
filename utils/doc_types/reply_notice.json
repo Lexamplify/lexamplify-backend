@@ -1,0 +1,179 @@
+{
+  "id": "reply_notice",
+  "label": "Reply to a legal notice",
+  "short": "Reply to a legal notice",
+  "category": "notice",
+  "minutes": 5,
+  "review": {
+    "status": "unreviewed",
+    "note": "Fixed wording is a standard reply format. It has not yet been reviewed by a practising advocate."
+  },
+  "statutes": [],
+  "notes": [
+    "Check the time given in the notice you are replying to. If it is a notice under Section 138 of the Negotiable Instruments Act, 1881, the 15 days run from the date your client received it."
+  ],
+  "slots": [
+    {
+      "id": "client_name",
+      "label": "Your client's name (the person who received the notice)",
+      "group": "Your client",
+      "type": "name",
+      "required": true,
+      "example": "M/s Kumar Traders Pvt Ltd",
+      "from_case": "client_name"
+    },
+    {
+      "id": "advocate_name",
+      "label": "Your name, as the advocate replying",
+      "group": "Your client",
+      "type": "name",
+      "required": true,
+      "example": "Adv. Priya Raman"
+    },
+    {
+      "id": "advocate_enrolment",
+      "label": "Your Bar Council enrolment number",
+      "group": "Your client",
+      "type": "text",
+      "required": false,
+      "example": "MS/1234/2015"
+    },
+    {
+      "id": "advocate_address",
+      "label": "Your office address",
+      "group": "Your client",
+      "type": "address",
+      "required": false,
+      "example": "Chamber 5, High Court Campus, Chennai - 600104"
+    },
+    {
+      "id": "addressee_name",
+      "label": "Who sent the notice (advocate or party you are replying to)",
+      "group": "The notice you received",
+      "type": "name",
+      "required": true,
+      "example": "Adv. R. Venkatesh"
+    },
+    {
+      "id": "addressee_address",
+      "label": "Their address",
+      "group": "The notice you received",
+      "type": "address",
+      "required": true,
+      "example": "12, Law Chambers, George Town, Chennai - 600001"
+    },
+    {
+      "id": "original_sender",
+      "label": "On whose behalf the notice was sent",
+      "group": "The notice you received",
+      "type": "name",
+      "required": true,
+      "example": "M/s Sundaram Agencies",
+      "from_case": "opposite_party"
+    },
+    {
+      "id": "original_notice_date",
+      "label": "Date of the notice you received",
+      "group": "The notice you received",
+      "type": "date",
+      "required": true,
+      "example": "30 June 2026"
+    },
+    {
+      "id": "reply_points",
+      "label": "Your client's reply. Write one point per line",
+      "group": "The reply",
+      "type": "longtext",
+      "required": true,
+      "example": "That no goods were received under invoice no. 2231, and no delivery challan was ever signed by my client.\nThat the cheque was given as security and not towards any debt."
+    },
+    {
+      "id": "admitted",
+      "label": "Facts your client admits (optional, one per line)",
+      "group": "The reply",
+      "type": "longtext",
+      "required": false,
+      "example": "That the cheque bearing no. 004817 was issued from my client's account."
+    },
+    {
+      "id": "reply_date",
+      "label": "Date of this reply",
+      "group": "The reply",
+      "type": "date",
+      "required": true,
+      "example": "10 July 2026"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "title",
+      "text": "REPLY TO LEGAL NOTICE"
+    },
+    {
+      "type": "right",
+      "text": "Date: {{reply_date|date}}"
+    },
+    {
+      "type": "para",
+      "text": "To,"
+    },
+    {
+      "type": "address",
+      "lines": [
+        "{{addressee_name}}",
+        "{{addressee_address}}"
+      ]
+    },
+    {
+      "type": "para",
+      "bold": true,
+      "text": "Subject: Reply to your notice dated {{original_notice_date|date}} issued on behalf of {{original_sender}}."
+    },
+    {
+      "type": "para",
+      "text": "Sir/Madam,"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "Under instructions from and on behalf of my client, {{client_name}} (\"my client\"), I reply as follows to your notice dated {{original_notice_date|date}}:"
+    },
+    {
+      "type": "numbered",
+      "text": "That the contents of your notice are denied, except those expressly admitted below."
+    },
+    {
+      "type": "numbered",
+      "when": [
+        "admitted"
+      ],
+      "each": "admitted"
+    },
+    {
+      "type": "numbered",
+      "each": "reply_points"
+    },
+    {
+      "type": "numbered",
+      "text": "That the allegations in your notice are therefore false and misconceived, and no cause of action arises against my client."
+    },
+    {
+      "type": "numbered",
+      "text": "That this reply is issued without prejudice to my client's rights and contentions, all of which are reserved, including the right to claim costs."
+    },
+    {
+      "type": "para",
+      "text": "Yours faithfully,"
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "{{advocate_name}}",
+        "Advocate",
+        "Enrolment No. {{advocate_enrolment}}",
+        "{{advocate_address}}",
+        "Counsel for {{client_name}}"
+      ]
+    }
+  ]
+}

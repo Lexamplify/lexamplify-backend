@@ -1,0 +1,37 @@
+{
+  "id": "contract_amendment",
+  "label": "Amendment to a contract (changing one clause)",
+  "short": "Contract amendment",
+  "category": "agreement",
+  "minutes": 4,
+  "review": {"status": "unreviewed", "note": "Fixed wording is a plain single-clause amendment. It has not yet been reviewed by a practising advocate. The new wording is exactly what you confirm; none is added."},
+  "statutes": [],
+  "notes": [
+    "An amendment usually needs to be signed by every party to the original agreement, and to be stamped as the state's stamp law requires.",
+    "If the original agreement says amendments must follow a particular procedure, follow it."
+  ],
+  "slots": [
+    {"id": "agreement_title", "label": "Name of the original agreement", "group": "The original agreement", "type": "text", "required": true, "example": "Service Agreement"},
+    {"id": "agreement_date", "label": "Date of the original agreement", "group": "The original agreement", "type": "date", "required": true, "example": "1 August 2026"},
+    {"id": "party_a_name", "label": "First party to the agreement", "group": "The original agreement", "type": "name", "required": true, "example": "Sundaram Agencies Pvt Ltd"},
+    {"id": "party_b_name", "label": "Second party to the agreement", "group": "The original agreement", "type": "name", "required": true, "example": "Kumar Infra LLP"},
+    {"id": "clause_ref", "label": "Which clause is being changed", "group": "The change", "type": "text", "required": true, "example": "Clause 3 (Termination)"},
+    {"id": "old_wording", "label": "What the clause says now (copy it exactly)", "group": "The change", "type": "longtext", "required": true, "example": "The Client may terminate this Agreement at any time without notice."},
+    {"id": "new_wording", "label": "What it should say instead", "group": "The change", "type": "longtext", "required": true, "example": "Either party may terminate this Agreement by giving 30 days' written notice to the other."},
+    {"id": "effective_date", "label": "Date the change takes effect", "group": "The change", "type": "date", "required": true, "example": "1 November 2026"},
+    {"id": "place", "label": "Place of signing", "group": "Signing", "type": "text", "required": true, "example": "Chennai"},
+    {"id": "amendment_date", "label": "Date of this amendment", "group": "Signing", "type": "date", "required": true, "example": "15 October 2026"}
+  ],
+  "blocks": [
+    {"type": "title", "text": "AMENDMENT TO THE {{agreement_title}}"},
+    {"type": "para", "align": "justify", "text": "This Amendment is made at {{place}} on {{amendment_date|date}} between {{party_a_name}} and {{party_b_name}} (together the \"Parties\")."},
+    {"type": "heading", "text": "BACKGROUND"},
+    {"type": "para", "align": "justify", "text": "The Parties entered into the {{agreement_title}} dated {{agreement_date|date}} (the \"Agreement\"). The Parties now wish to amend {{clause_ref}} of the Agreement as set out below."},
+    {"type": "numbered", "text": "Amendment. {{clause_ref}} of the Agreement, which now reads: \"{{old_wording}}\" is replaced with: \"{{new_wording}}\""},
+    {"type": "numbered", "text": "Effective date. This Amendment takes effect on {{effective_date|date}}."},
+    {"type": "numbered", "text": "Other terms. All other terms of the Agreement remain unchanged and in full force."},
+    {"type": "numbered", "text": "Law. This Amendment is governed by the laws of India."},
+    {"type": "para", "text": "The Parties have signed this Amendment on the date first written above."},
+    {"type": "table", "header": true, "rows": [["For the First Party", "For the Second Party"], ["{{party_a_name}}", "{{party_b_name}}"], ["Signature: ____________________", "Signature: ____________________"]]}
+  ]
+}

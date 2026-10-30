@@ -1,0 +1,49 @@
+{
+  "id": "rent_agreement",
+  "label": "Rent agreement (residential or commercial tenancy)",
+  "short": "Rent agreement",
+  "category": "agreement",
+  "minutes": 7,
+  "review": {"status": "unreviewed", "note": "Fixed clauses are a plain tenancy agreement. They have not yet been reviewed by a practising advocate, and state rent-control laws may add requirements."},
+  "statutes": ["Section 105, Transfer of Property Act, 1882", "Section 17, Registration Act, 1908"],
+  "timelines": [],
+  "checks": ["lease_registration"],
+  "notes": [
+    "A lease for more than one year must be registered (Section 17, Registration Act, 1908). Many landlords use an 11-month agreement for this reason.",
+    "Stamp duty and any state rent-control rules vary by state. Check them before signing."
+  ],
+  "slots": [
+    {"id": "agreement_date", "label": "Date of the agreement", "group": "The agreement", "type": "date", "required": true, "example": "1 August 2026"},
+    {"id": "place", "label": "Place of signing", "group": "The agreement", "type": "text", "required": true, "example": "Chennai"},
+    {"id": "landlord_name", "label": "Landlord's full name", "group": "Landlord", "type": "name", "required": true, "example": "Mr. R. Sundaram"},
+    {"id": "landlord_address", "label": "Landlord's address", "group": "Landlord", "type": "address", "required": true, "example": "14 Cross Street, T. Nagar, Chennai - 600017"},
+    {"id": "tenant_name", "label": "Tenant's full name", "group": "Tenant", "type": "name", "required": true, "example": "Ms. Anita Rao"},
+    {"id": "tenant_address", "label": "Tenant's permanent address", "group": "Tenant", "type": "address", "required": true, "example": "9 Park Avenue, Bengaluru - 560001"},
+    {"id": "property_address", "label": "Address of the rented property", "group": "The property", "type": "address", "required": true, "example": "Flat 3B, Lake View Apartments, Adyar, Chennai - 600020"},
+    {"id": "use", "label": "Use of the property", "group": "The property", "type": "choice", "required": true, "options": ["residential", "commercial"], "example": "residential"},
+    {"id": "start_date", "label": "Date the tenancy starts", "group": "Terms", "type": "date", "required": true, "example": "1 August 2026"},
+    {"id": "term_months", "label": "Length of the tenancy in months", "group": "Terms", "type": "number", "required": true, "example": "11"},
+    {"id": "rent_amount", "label": "Monthly rent", "group": "Terms", "type": "amount", "required": true, "example": "25,000"},
+    {"id": "rent_due_day", "label": "Day of the month rent is due by", "group": "Terms", "type": "number", "required": true, "example": "5"},
+    {"id": "deposit_amount", "label": "Security deposit", "group": "Terms", "type": "amount", "required": true, "example": "75,000"},
+    {"id": "notice_months", "label": "Months of notice needed to end the tenancy", "group": "Terms", "type": "number", "required": true, "example": "1"},
+    {"id": "outgoings", "label": "Who pays electricity, water and maintenance charges?", "group": "Terms", "type": "text", "required": true, "example": "The Tenant pays electricity and water as per meter; the Landlord pays society maintenance"},
+    {"id": "jurisdiction_city", "label": "City whose courts will decide disputes", "group": "Terms", "type": "text", "required": true, "example": "Chennai"}
+  ],
+  "blocks": [
+    {"type": "title", "text": "RENT AGREEMENT"},
+    {"type": "para", "align": "justify", "text": "This Agreement is made at {{place}} on {{agreement_date|date}} between {{landlord_name}}, residing at {{landlord_address}} (the \"Landlord\"), and {{tenant_name}}, whose permanent address is {{tenant_address}} (the \"Tenant\")."},
+    {"type": "para", "align": "justify", "text": "The Landlord is the owner of the property at {{property_address}} (the \"Property\") and the Tenant wishes to take it on rent. The Parties agree as follows:"},
+    {"type": "numbered", "text": "Tenancy and term. The Landlord lets the Property to the Tenant for {{term_months}} months from {{start_date|date}} for {{use}} use only."},
+    {"type": "numbered", "text": "Rent. The Tenant shall pay rent of {{rent_amount|inr}} ({{rent_amount|words}}) per month, on or before day {{rent_due_day}} of each month."},
+    {"type": "numbered", "text": "Security deposit. The Tenant has paid or shall pay a security deposit of {{deposit_amount|inr}} ({{deposit_amount|words}}), which carries no interest. The Landlord shall return it when the Tenant vacates and hands over the Property, after deducting only dues that are unpaid at that time."},
+    {"type": "numbered", "text": "Outgoings. {{outgoings}}."},
+    {"type": "numbered", "text": "Use. The Tenant shall use the Property only for the use stated above, keep it in good condition, and shall not sub-let it or part with possession of it without the Landlord's written consent."},
+    {"type": "numbered", "text": "Inspection and repairs. The Landlord may inspect the Property at reasonable times after giving notice. The Tenant shall bear the cost of repairs for damage caused by the Tenant."},
+    {"type": "numbered", "text": "Ending the tenancy. Either Party may end this tenancy by giving {{notice_months}} month(s) written notice to the other. On ending, the Tenant shall vacate and hand over peaceful possession of the Property."},
+    {"type": "numbered", "text": "Governing law and jurisdiction. This Agreement is governed by the laws of India. The courts at {{jurisdiction_city}} have jurisdiction over any dispute arising from it."},
+    {"type": "para", "text": "The Parties have signed this Agreement on the date first written above, in the presence of the witnesses named below."},
+    {"type": "table", "header": true, "rows": [["Landlord", "Tenant"], ["{{landlord_name}}", "{{tenant_name}}"], ["Signature: ____________________", "Signature: ____________________"]]},
+    {"type": "table", "header": true, "rows": [["Witness 1", "Witness 2"], ["Name and address:", "Name and address:"], ["Signature: ____________________", "Signature: ____________________"]]}
+  ]
+}

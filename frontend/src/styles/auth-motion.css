@@ -1,0 +1,216 @@
+/* ============================================================
+   AUTH MOTION — the dark left panel on /login and /signup.
+   Each page has its OWN motif:
+     login  → a slowly rotating verification seal (returning)
+     signup → doors swinging open + a quill writing (beginning)
+   Shared: back-to-home pill, drifting ambient orbs, scribe line.
+   Pure CSS/SVG, no deps.
+   ============================================================ */
+
+/* Extra top padding so the back-to-home pill never overlaps the logo. */
+.auth__brand { position: relative; overflow: hidden; padding-top: 96px !important; }
+
+/* ── Back-to-home pill ─────────────────────────────────────── */
+.auth__back {
+  position: absolute;
+  top: 32px; left: 40px;
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 13.5px; font-weight: 500; letter-spacing: .02em;
+  color: rgba(255,255,255,.8);
+  text-decoration: none;
+  padding: 10px 18px 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.05);
+  backdrop-filter: blur(6px);
+  transition: color .2s ease, border-color .2s ease, background .2s ease, transform .2s ease;
+  z-index: 3;
+}
+.auth__back:hover {
+  color: #fff;
+  border-color: rgba(255,255,255,.28);
+  background: rgba(255,255,255,.1);
+  transform: translateX(-3px);
+}
+.auth__back span { font-size: 16px; line-height: 1; transition: transform .2s ease; }
+.auth__back:hover span { transform: translateX(-2px); }
+
+/* ── Shared motion container ───────────────────────────────── */
+.auth__motion {
+  position: absolute; inset: 0;
+  pointer-events: none; overflow: hidden;
+  z-index: 1;
+  color: color-mix(in srgb, var(--accent) 75%, white);
+}
+
+/* ── Ambient drifting orbs ─────────────────────────────────── */
+.auth__orb {
+  position: absolute; border-radius: 50%;
+  filter: blur(70px); opacity: .4;
+  animation: authDrift 28s cubic-bezier(.6,.1,.4,.9) infinite;
+}
+@keyframes authDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(50px, -30px) scale(1.1); }
+  66%      { transform: translate(-40px, 40px) scale(.92); }
+}
+.auth__orb--login-0  { top:  6%; left: -8%; width: 360px; height: 360px; background: color-mix(in srgb, var(--accent) 36%, transparent); animation-duration: 30s; }
+.auth__orb--login-1  { bottom: 8%; right: -10%; width: 300px; height: 300px; background: color-mix(in srgb, var(--accent) 22%, transparent); animation-duration: 36s; animation-delay: -14s; }
+.auth__orb--login-2  { top: 48%; left: 60%; width: 220px; height: 220px; background: color-mix(in srgb, var(--accent) 16%, transparent); animation-duration: 42s; animation-delay: -22s; }
+
+.auth__orb--signup-0 { top: 10%; right: -8%; width: 340px; height: 340px; background: color-mix(in srgb, var(--accent) 34%, transparent); animation-duration: 32s; }
+.auth__orb--signup-1 { bottom: 4%;  left: -10%; width: 320px; height: 320px; background: color-mix(in srgb, var(--accent) 20%, transparent); animation-duration: 38s; animation-delay: -16s; }
+.auth__orb--signup-2 { top: 55%; right: 25%; width: 200px; height: 200px; background: color-mix(in srgb, var(--accent) 14%, transparent); animation-duration: 40s; animation-delay: -24s; }
+
+/* ── Scribe margin line ────────────────────────────────────── */
+.auth__scribe {
+  position: absolute; top: 15%; bottom: 15%; left: 24px; width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 60%, transparent) 20%,
+    color-mix(in srgb, var(--accent) 60%, transparent) 80%,
+    transparent 100%
+  );
+  opacity: .5;
+  animation: scribeShift 10s ease-in-out infinite;
+}
+@keyframes scribeShift {
+  0%, 100% { opacity: .3; transform: translateY(0); }
+  50%      { opacity: .7; transform: translateY(10px); }
+}
+
+/* ──────────────────────────────────────────────────────────
+   LOGIN motif — rotating verification seal
+   ────────────────────────────────────────────────────────── */
+.auth__seal {
+  position: absolute;
+  top: 70px; right: 60px;
+  width: 240px; height: 240px;
+  opacity: 0;
+  animation: sealIn 1.6s cubic-bezier(.3,.1,.3,1.2) .4s forwards;
+}
+@keyframes sealIn {
+  0%   { opacity: 0; transform: scale(.4) rotate(-20deg); }
+  60%  { opacity: 1; transform: scale(1.08) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1)   rotate(0deg); }
+}
+.auth__seal-ring,
+.auth__seal-face {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+/* Outer ring rotates slowly; inner face stays upright so text is readable */
+.auth__seal-ring {
+  animation: sealSpin 42s linear infinite;
+  animation-delay: 1.5s;
+}
+@keyframes sealSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+/* Soft pulsing halo behind the seal */
+.auth__seal-pulse {
+  position: absolute; inset: -40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent) 0%, transparent 65%);
+  animation: sealPulse 4.4s ease-in-out infinite;
+}
+@keyframes sealPulse {
+  0%, 100% { opacity: .35; transform: scale(1); }
+  50%      { opacity: .7;  transform: scale(1.12); }
+}
+
+/* ──────────────────────────────────────────────────────────
+   SIGNUP motif — doors swinging open + quill signing
+   ────────────────────────────────────────────────────────── */
+.auth__doors {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 320px; height: 240px;
+  transform: translate(-50%, -58%);
+  perspective: 900px;
+}
+.auth__door {
+  position: absolute; top: 0; bottom: 0; width: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: linear-gradient(to bottom,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    color-mix(in srgb, var(--accent) 3%, transparent));
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 25%, transparent);
+  opacity: 0;
+}
+.auth__door--l {
+  left: 0;  border-right: none;
+  transform-origin: left center;
+  animation: doorL 1.8s cubic-bezier(.4,.1,.2,1) .6s forwards;
+}
+.auth__door--r {
+  right: 0; border-left: none;
+  transform-origin: right center;
+  animation: doorR 1.8s cubic-bezier(.4,.1,.2,1) .6s forwards;
+}
+@keyframes doorL {
+  0%   { opacity: 0; transform: rotateY(0deg); }
+  10%  { opacity: 1; }
+  100% { opacity: .4; transform: rotateY(-72deg); }
+}
+@keyframes doorR {
+  0%   { opacity: 0; transform: rotateY(0deg); }
+  10%  { opacity: 1; }
+  100% { opacity: .4; transform: rotateY(72deg); }
+}
+
+/* Quill writing — the stroke draws, and the quill glyph follows along it. */
+.auth__quill {
+  position: absolute;
+  bottom: 22%; left: 32px;
+  width: min(78%, 480px); height: 140px;
+  opacity: 0;
+  animation: quillShow .4s ease 2.0s forwards;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+@keyframes quillShow { to { opacity: 1; } }
+.auth__quill path {
+  stroke-dasharray: 1400;
+  stroke-dashoffset: 1400;
+  animation: quillDraw 3.2s cubic-bezier(.6,.1,.3,1) 2.0s forwards;
+}
+@keyframes quillDraw { to { stroke-dashoffset: 0; } }
+/* The quill tip rides the same path, 2 → 4.5s window */
+.auth__quill-tip {
+  offset-path: path("M 20 110 Q 140 50, 260 100 T 500 76 Q 560 60, 580 94");
+  offset-distance: 0%;
+  offset-rotate: auto;
+  animation: quillRide 3.2s cubic-bezier(.6,.1,.3,1) 2.0s forwards;
+}
+@keyframes quillRide { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+
+/* ── Z-order inside the brand panel ────────────────────────── */
+.auth__brand > *:not(.auth__back):not(.auth__glow):not(.auth__motion) {
+  position: relative; z-index: 2;
+}
+.auth__brand > .auth__glow,
+.auth__brand > .auth__motion { z-index: 1; }
+.auth__brand > .auth__back { z-index: 3; }
+
+/* ── Accessibility: respect reduced motion ─────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .auth__orb, .auth__scribe,
+  .auth__seal, .auth__seal-ring, .auth__seal-pulse,
+  .auth__door, .auth__quill, .auth__quill path, .auth__quill-tip {
+    animation: none;
+  }
+  .auth__seal { opacity: 1; }
+  .auth__quill { opacity: 1; }
+  .auth__quill path { stroke-dashoffset: 0; }
+  .auth__quill-tip { offset-distance: 100%; }
+}
+
+/* ── Narrow stacked layout: hide the big motifs ────────────── */
+@media (max-width: 820px) {
+  .auth__back { top: 16px; left: 16px; }
+  .auth__seal, .auth__doors, .auth__quill { display: none; }
+}

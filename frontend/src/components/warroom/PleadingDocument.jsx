@@ -1,0 +1,224 @@
+import { useMemo, useState } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { rawTextToHtml } from '../../tiptap/textToHtml.js';
+import { BlankField } from '../../tiptap/BlankFieldNode.js';
+
+// Same fillable-blank conventions the backend prompt now targets and the
+// old parser recognized: bracketed placeholders, Rs.-prefixed underscores,
+// bare underscore runs, and dot-leader lines as a fallback for anything
+// that still slips through un-bracketed. The ellipsis alternative exists
+// because the model has been observed substituting repeated "…" (U+2026,
+// a single glyph, not three periods) for the same blank-line convention —
+// a plain "." run doesn't match it at all, so it rendered as a literal wall
+// of ellipsis characters instead of a fillable field.
+export const BLANK_PATTERN = /(Rs\.\s*_{2,}|_{3,}|\[[A-Za-z0-9\s,./_'-]{2,80}\]|(?:\.\s?){4,}|(?:…\s?){2,})/g;
+
+export const EXPECTED_HEADINGS = [
+  'introduction',
+  'fact',
+  'recitation',
+  'issue',
+  'determination',
+  'argument',
+  'submission',
+  'prayer',
+  'relief',
+  'conclusion',
+  'preliminary',
+  'ground',
+];
+
+// ── Defensive validation: Malformed Output Detection (§2b) ───────────────────
+export function validateOpeningDraft(rawArgumentText) {
+  if (!rawArgumentText || !rawArgumentText.trim()) {
+    return {
+      isValid: false,
+      reason: 'No argument draft content was generated. Please regenerate this section.',
+      emptyCount: 0,
+    };
+  }
+
+  const text = rawArgumentText.trim();
+  const lower = text.toLowerCase();
+
+  // 1. Repetition rule (primary):
+  // If the generated content contains a run of 8 or more consecutive fill-value/blank
+  // markers with no substantive text between them, treat the section as malformed.
+  const matches = [...text.matchAll(BLANK_PATTERN)];
+  const emptyCount = matches.length;
+
+  if (matches.length >= 8) {
+    let consecutiveCount = 1;
+    let maxConsecutive = 1;
+
+    for (let i = 0; i < matches.length - 1; i++) {
+      const currentEnd = matches[i].index + matches[i][0].length;
+      const nextStart = matches[i + 1].index;
+      const betweenText = text.slice(currentEnd, nextStart).trim();
+      const substantiveWordMatch = betweenText.match(/[a-zA-Z]{3,}/);
+      if (!substantiveWordMatch) {
+        consecutiveCount++;
+        if (consecutiveCount > maxConsecutive) {
+          maxConsecutive = consecutiveCount;
+        }
+      } else {
+        consecutiveCount = 1;
+      }
+    }
+
+    if (maxConsecutive >= 8) {
+      return {
+        isValid: false,
+        reason: `The draft produced ${emptyCount} empty fields and no readable argument text — likely an incomplete generation rather than a document that genuinely needs this many blanks. Showing this instead of the broken output so it isn't mistaken for a finished draft.`,
+        emptyCount,
+      };
+    }
+  }
+
+  // 2. Structure rule (secondary):
+  // If none of the expected section headings for the document type are present anywhere
+  // in the generated content, treat it as incomplete regardless of length.
+  const hasExpectedHeading = EXPECTED_HEADINGS.some((heading) => lower.includes(heading));
+  if (!hasExpectedHeading) {
+    return {
+      isValid: false,
+      reason: `The draft produced no readable argument sections (missing Introduction, Facts, Issues, Arguments, Prayer/Relief, or Conclusion). Showing this instead of the incomplete output.`,
+      emptyCount,
+    };
+  }
+
+  return { isValid: true, emptyCount };
+}
+
+// Tags blanks on the RAW text before marked() ever sees it, not after HTML
+// conversion — a raw run of 3+ underscores is ambiguous markdown emphasis
+// syntax, and letting marked() parse it first risks it mangling exactly the
+// placeholders we're trying to preserve.   sentinels are inert to
+// markdown and HTML-safe, so they survive the marked() pass untouched and
+// get swapped for real blank-field spans afterward.
+function buildEditorHtml(rawArgumentText) {
+  if (!rawArgumentText) return '<p></p>';
+  const blanksMeta = [];
+  let counter = 0;
+
+  const tokenized = rawArgumentText.replace(BLANK_PATTERN, (raw) => {
+    const id = `blank_${counter++}`;
+    let label;
+    if (raw.startsWith('[') && raw.endsWith(']')) label = raw.slice(1, -1).trim();
+    else if (/Rs\./i.test(raw)) label = 'Rs. Amount';
+    else label = 'Fill value';
+    blanksMeta.push({ id, label });
+    return ` ${id} `;
+  });
+
+  let html = rawTextToHtml(tokenized);
+
+  blanksMeta.forEach(({ id, label }) => {
+    const token = ` ${id} `;
+    const span = `<span data-blank-id="${id}" data-blank-label="${label.replace(/"/g, '&quot;')}" data-blank-value=""></span>`;
+    html = html.split(token).join(span);
+  });
+
+  return html;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export default function PleadingDocument({ rawArgumentText, matterTitle, apiBase, onRegenerate }) {
+  const validation = useMemo(() => validateOpeningDraft(rawArgumentText), [rawArgumentText]);
+  const initialHtml = useMemo(
+    () => (validation.isValid ? buildEditorHtml(rawArgumentText) : '<p></p>'),
+    [rawArgumentText, validation.isValid]
+  );
+  const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  const editor = useEditor({
+    extensions: [StarterKit, BlankField],
+    content: initialHtml,
+    editable: false, // the surrounding legal text is read-only; only the
+    // blank fields (real <input>s inside their NodeView) accept typing —
+    // that works regardless of this flag, since it only gates ProseMirror's
+    // own contentEditable input handling, not plain DOM form elements.
+  });
+
+  const handleCopyText = () => {
+    if (!editor) return;
+    const el = document.createElement('div');
+    el.innerHTML = editor.getHTML();
+    navigator.clipboard.writeText(el.innerText || el.textContent || '');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExportDocx = async () => {
+    if (!editor) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const res = await fetch(`${apiBase}/api/contract/export-form-docx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: editor.getHTML(), title: matterTitle }),
+      });
+      if (!res.ok) throw new Error(`Export failed (HTTP ${res.status})`);
+      const blob = await res.blob();
+      downloadBlob(blob, `${matterTitle.replace(/[^A-Za-z0-9]+/g, '_')}.docx`);
+    } catch (err) {
+      setExportError(err.message || 'Export failed.');
+    }
+    setExporting(false);
+  };
+
+  return (
+    <div>
+      <div className="doc-toolbar vc-doc-toolbar">
+        <button type="button" className="tool-btn vc-tool-btn" onClick={handleCopyText} disabled={!validation.isValid}>
+          {copied ? '✓ Copied' : 'Copy text'}
+        </button>
+        <button type="button" className="tool-btn vc-tool-btn" onClick={handleExportDocx} disabled={exporting || !validation.isValid}>
+          {exporting ? 'Exporting…' : 'Export as .docx'}
+        </button>
+        {onRegenerate && (
+          <button type="button" className="tool-btn vc-tool-btn" onClick={onRegenerate}>
+            Regenerate section
+          </button>
+        )}
+      </div>
+      {exportError && <div className="vc-doc-error">{exportError}</div>}
+      {!validation.isValid ? (
+        <div className="warning-card on" id="warningCard">
+          <div className="warn-head">
+            <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+              <path d="M10.3 3.8 2.3 18a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-14.2a2 2 0 0 0-3.4 0Z" />
+            </svg>
+            <span className="warn-title">This section didn't generate correctly</span>
+          </div>
+          <div className="warn-body">{validation.reason}</div>
+          {onRegenerate && (
+            <button type="button" className="warn-btn" onClick={onRegenerate}>
+              Regenerate this section
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="paper-doc vc-paper" id="goodDoc">
+          <EditorContent editor={editor} />
+        </div>
+      )}
+    </div>
+  );
+}

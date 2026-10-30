@@ -1,0 +1,246 @@
+{
+  "id": "bail_application",
+  "label": "Regular bail application (accused in custody)",
+  "short": "Bail application (regular)",
+  "category": "court",
+  "minutes": 8,
+  "review": {
+    "status": "unreviewed",
+    "note": "Fixed wording is a standard bail application. It has not yet been reviewed by a practising advocate. Grounds are exactly what you type; none are added."
+  },
+  "statutes": [
+    "Section 480, Bharatiya Nagarik Suraksha Sanhita, 2023",
+    "Section 483, Bharatiya Nagarik Suraksha Sanhita, 2023",
+    "Section 437, Code of Criminal Procedure, 1973",
+    "Section 439, Code of Criminal Procedure, 1973"
+  ],
+  "notes": [
+    "Choose the section that matches both the court and the date of the FIR. For FIRs registered on or after 1 July 2024 the Bharatiya Nagarik Suraksha Sanhita, 2023 applies; earlier FIRs continue under the Code of Criminal Procedure, 1973.",
+    "Type the offences and sections exactly as written in the FIR. This tool does not look up or convert section numbers."
+  ],
+  "slots": [
+    {
+      "id": "court_name",
+      "label": "Name of the court",
+      "group": "The court",
+      "type": "text",
+      "required": true,
+      "example": "Court of the Principal Sessions Judge, Coimbatore",
+      "from_case": "court"
+    },
+    {
+      "id": "bail_section",
+      "label": "Section the application is made under",
+      "group": "The court",
+      "type": "choice",
+      "required": true,
+      "options": [
+        "Section 483 of the Bharatiya Nagarik Suraksha Sanhita, 2023",
+        "Section 480 of the Bharatiya Nagarik Suraksha Sanhita, 2023",
+        "Section 439 of the Code of Criminal Procedure, 1973",
+        "Section 437 of the Code of Criminal Procedure, 1973"
+      ],
+      "example": "Section 483 of the Bharatiya Nagarik Suraksha Sanhita, 2023"
+    },
+    {
+      "id": "applicant_name",
+      "label": "Applicant (accused) full name",
+      "group": "The applicant",
+      "type": "name",
+      "required": true,
+      "example": "Arun Kumar",
+      "from_case": "client_name"
+    },
+    {
+      "id": "applicant_parentage",
+      "label": "Father's name, with the relation, and age",
+      "group": "The applicant",
+      "type": "text",
+      "required": true,
+      "example": "S/o Mr. Ramesh Kumar, aged 34 years"
+    },
+    {
+      "id": "applicant_address",
+      "label": "Applicant's address",
+      "group": "The applicant",
+      "type": "address",
+      "required": true,
+      "example": "45 Gandhi Street, Coimbatore - 641001"
+    },
+    {
+      "id": "police_station",
+      "label": "Police station",
+      "group": "The FIR",
+      "type": "text",
+      "required": true,
+      "example": "R.S. Puram Police Station, Coimbatore"
+    },
+    {
+      "id": "fir_no",
+      "label": "FIR / Crime number",
+      "group": "The FIR",
+      "type": "text",
+      "required": true,
+      "example": "Crime No. 245/2026"
+    },
+    {
+      "id": "fir_date",
+      "label": "Date of the FIR",
+      "group": "The FIR",
+      "type": "date",
+      "required": true,
+      "example": "2 June 2026"
+    },
+    {
+      "id": "offences",
+      "label": "Offences and sections as written in the FIR",
+      "group": "The FIR",
+      "type": "text",
+      "required": true,
+      "example": "as stated in the FIR"
+    },
+    {
+      "id": "arrest_date",
+      "label": "Date the applicant was arrested",
+      "group": "Custody",
+      "type": "date",
+      "required": true,
+      "example": "5 June 2026"
+    },
+    {
+      "id": "custody_status",
+      "label": "Present custody (for example: remanded to judicial custody and lodged in a named prison)",
+      "group": "Custody",
+      "type": "text",
+      "required": true,
+      "example": "has been remanded to judicial custody and is lodged in Central Prison, Coimbatore"
+    },
+    {
+      "id": "grounds",
+      "label": "Grounds for bail. Write one ground per line",
+      "group": "Grounds",
+      "type": "longtext",
+      "required": true,
+      "example": "That the applicant has been falsely implicated.\nThat the applicant has no previous criminal record.\nThat the investigation is complete and the applicant's custody is no longer required."
+    },
+    {
+      "id": "undertaking",
+      "label": "What the applicant will undertake if released (optional)",
+      "group": "Grounds",
+      "type": "text",
+      "required": false,
+      "example": "appear before the Court and the Investigating Officer whenever required"
+    },
+    {
+      "id": "advocate_name",
+      "label": "Advocate for the applicant",
+      "group": "Signing",
+      "type": "name",
+      "required": true,
+      "example": "Adv. Priya Raman"
+    },
+    {
+      "id": "place",
+      "label": "Place",
+      "group": "Signing",
+      "type": "text",
+      "required": true,
+      "example": "Coimbatore"
+    },
+    {
+      "id": "signing_date",
+      "label": "Date",
+      "group": "Signing",
+      "type": "date",
+      "required": true,
+      "example": "15 June 2026"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "center",
+      "bold": true,
+      "text": "IN THE {{court_name}}"
+    },
+    {
+      "type": "center",
+      "text": "CRIMINAL MISCELLANEOUS PETITION NO. ______ OF ______"
+    },
+    {
+      "type": "center",
+      "text": "{{applicant_name}} ... Petitioner / Accused"
+    },
+    {
+      "type": "center",
+      "text": "versus"
+    },
+    {
+      "type": "center",
+      "text": "The State, represented by the Public Prosecutor ... Respondent"
+    },
+    {
+      "type": "title",
+      "text": "APPLICATION FOR REGULAR BAIL"
+    },
+    {
+      "type": "para",
+      "bold": true,
+      "text": "Application under {{bail_section}}."
+    },
+    {
+      "type": "para",
+      "text": "The Petitioner respectfully states as follows:"
+    },
+    {
+      "type": "numbered",
+      "text": "The Petitioner is {{applicant_name}}, {{applicant_parentage}}, residing at {{applicant_address}}."
+    },
+    {
+      "type": "numbered",
+      "text": "{{fir_no}} dated {{fir_date|date}} was registered at {{police_station}} for the offences: {{offences}}."
+    },
+    {
+      "type": "numbered",
+      "text": "The Petitioner was arrested on {{arrest_date|date}} and {{custody_status}}."
+    },
+    {
+      "type": "numbered",
+      "each": "grounds"
+    },
+    {
+      "type": "numbered",
+      "when": [
+        "undertaking"
+      ],
+      "text": "The Petitioner undertakes to {{undertaking}}."
+    },
+    {
+      "type": "numbered",
+      "text": "The Petitioner is ready to furnish bail bond and surety to the satisfaction of this Court and to abide by any condition this Court may impose."
+    },
+    {
+      "type": "heading",
+      "text": "PRAYER"
+    },
+    {
+      "type": "para",
+      "align": "justify",
+      "text": "The Petitioner therefore prays that this Court may be pleased to release the Petitioner on bail in {{fir_no}} registered at {{police_station}}, on such terms and conditions as this Court deems fit."
+    },
+    {
+      "type": "para",
+      "text": "Place: {{place}}"
+    },
+    {
+      "type": "para",
+      "text": "Date: {{signing_date|date}}"
+    },
+    {
+      "type": "signature",
+      "lines": [
+        "{{advocate_name}}",
+        "Advocate for the Petitioner"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LexAI India - AI-Powered Legal Assistant for Indian Lawyers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-dark: #1A1A2E;
+            --accent: #E94560;
+            --secondary: #16213E;
+            --surface: #0F3460;
+            --background: #F8F9FA;
+            --card: #FFFFFF;
+            --text-primary: #1A1A2E;
+            --text-muted: #6B7280;
+        }
+        [data-theme="dark"] {
+            --primary-dark: #FFFFFF;
+            --secondary: #111111;
+            --surface: #1e1e1e;
+            --background: #121212;
+            --card: #1f1f1f;
+            --text-primary: #f0f0f0;
+            --text-muted: #aaaaaa;
+        }
+        body { font-family: 'DM Sans', sans-serif; margin: 0; padding: 0; background: var(--background); color: var(--text-primary); transition: background-color 0.3s, color 0.3s;}
+        h1, h2, h3, h4 { font-family: 'Playfair Display', serif; }
+        a { text-decoration: none; color: inherit; }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+        
+        /* Navbar */
+        .navbar { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; }
+        .logo { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 700; color: var(--primary-dark); }
+        .nav-links { display: flex; gap: 20px; align-items: center; }
+        .btn { padding: 10px 20px; border-radius: 10px; font-weight: 500; transition: 0.2s; cursor: pointer; border: none; }
+        .btn-outline { border: 2px solid var(--primary-dark); color: var(--primary-dark); background: transparent; }
+        .btn-outline:hover { background: var(--primary-dark); color: white; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { opacity: 0.9; }
+
+        /* Hero */
+        .hero { text-align: center; padding: 80px 0; }
+        .hero h1 { font-size: 48px; margin-bottom: 20px; color: var(--primary-dark); }
+        .hero p { font-size: 20px; color: var(--text-muted); margin-bottom: 40px; max-width: 600px; margin-left: auto; margin-right: auto; }
+        .hero-buttons { display: flex; gap: 20px; justify-content: center; }
+
+        /* Sections */
+        .section { padding: 80px 0; }
+        .section-title { text-align: center; font-size: 36px; margin-bottom: 40px; color: var(--primary-dark); }
+        
+        /* Cards */
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; }
+        .card { background: var(--card); padding: 30px; border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; }
+        .card h3 { color: var(--primary-dark); margin-bottom: 15px; }
+        .card p { color: var(--text-muted); }
+
+        /* Pricing */
+        .pricing-card { background: var(--card); padding: 40px; border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; border: 1px solid #eaeaea; }
+        .pricing-card.pro { border: 2px solid var(--accent); position: relative; }
+        .pricing-card h3 { font-size: 24px; margin-bottom: 10px; }
+        .pricing-price { font-size: 36px; font-weight: 700; color: var(--primary-dark); margin-bottom: 20px; }
+        .pricing-features { list-style: none; padding: 0; margin-bottom: 30px; text-align: left; }
+        .pricing-features li { margin-bottom: 10px; color: var(--text-muted); }
+
+        /* Comparison Table */
+        .table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        th, td { padding: 20px; text-align: left; border-bottom: 1px solid #eaeaea; }
+        th { background: var(--primary-dark); color: white; font-family: 'Playfair Display', serif; }
+        
+        /* Footer */
+        footer { background: var(--primary-dark); color: var(--background); padding: 40px 0; text-align: center; }
+    </style>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+</head>
+<body>
+
+<div class="container">
+    <nav class="navbar">
+        <div class="logo">LexAI India</div>
+        <div class="nav-links">
+            <select id="nav-theme-select" style="background:var(--background); color:var(--text-primary); border:1px solid var(--text-muted); border-radius:4px; padding:6px; margin-right:10px; cursor:pointer;">
+                <option value="system">🖥️ System</option>
+                <option value="light">☀️ Light</option>
+                <option value="dark">🌙 Dark</option>
+            </select>
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <a href="/login" class="btn btn-outline">Login</a>
+            <a href="/signup" class="btn btn-primary">Get Started</a>
+        </div>
+    </nav>
+</div>
+<script>
+    window.onload = function() { window.initThemeSelector('nav-theme-select'); }
+</script>
+
+<section class="hero bg-light">
+    <div class="container">
+        <h1>AI-Powered Legal Assistant for Indian Lawyers</h1>
+        <p>Automate document reading, legal research, contract review, and case management with LexAI. Save hours of manual work every day.</p>
+        <div class="hero-buttons">
+            <a href="/signup" class="btn btn-primary">Get Started</a>
+            <a href="/contract-viewer" class="btn btn-outline">Try Contract Analyzer</a>
+        </div>
+    </div>
+</section>
+
+<section class="section container">
+    <h2 class="section-title">What Indian lawyers struggle with</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>Hours of Reading</h3>
+            <p>Spending countless hours reading 100+ page contracts and case files.</p>
+        </div>
+        <div class="card">
+            <h3>Tedious Legal Research</h3>
+            <p>Manually searching through IPC, CrPC, and past judgments.</p>
+        </div>
+        <div class="card">
+            <h3>Contract Risks</h3>
+            <p>Missing hidden clauses and vague language in complex agreements.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section container" style="background: var(--primary-dark); color: white; border-radius: 16px; padding: 60px;">
+    <h2 class="section-title" style="color: white;">How LexAI fixes it</h2>
+    <div class="grid">
+        <div class="card" style="background: var(--surface); color: white;">
+            <h3 style="color: white;">Instant Summaries</h3>
+            <p style="color: #ccc;">Get 4-sentence summaries of any legal document in seconds.</p>
+        </div>
+        <div class="card" style="background: var(--surface); color: white;">
+            <h3 style="color: white;">AI Chatbot</h3>
+            <p style="color: #ccc;">Ask legal questions and get answers referenced with Indian Laws.</p>
+        </div>
+        <div class="card" style="background: var(--surface); color: white;">
+            <h3 style="color: white;">Risk Analysis</h3>
+            <p style="color: #ccc;">Upload contracts to instantly flag RED, AMBER, and GREEN risks.</p>
+        </div>
+    </div>
+</section>
+
+<section id="features" class="section container">
+    <h2 class="section-title">Features</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>Contract Analyzer</h3>
+            <p>Intelligent viewer rendering inline clauses with rewriting capabilities based on user intent.</p>
+        </div>
+        <div class="card">
+            <h3>Legal Chatbot</h3>
+            <p>Your knowledgeable Indian legal assistant ready to answer specific queries.</p>
+        </div>
+        <div class="card">
+            <h3>Document Summarizer</h3>
+            <p>Extract key points and mentioned law sections automatically.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section container">
+    <h2 class="section-title">How It Works</h2>
+    <div class="grid" style="text-align: center;">
+        <div>
+            <div style="font-size: 48px; color: var(--accent); margin-bottom: 20px;">1</div>
+            <h3>Upload</h3>
+            <p>Upload your PDF or DOCX file.</p>
+        </div>
+        <div>
+            <div style="font-size: 48px; color: var(--accent); margin-bottom: 20px;">2</div>
+            <h3>AI Analyzes</h3>
+            <p>LexAI processes and flags issues under Indian Law.</p>
+        </div>
+        <div>
+            <div style="font-size: 48px; color: var(--accent); margin-bottom: 20px;">3</div>
+            <h3>Get Results</h3>
+            <p>Review, rewrite, and export.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section container">
+    <h2 class="section-title">LexAI India vs Manual Work</h2>
+    <div class="table-wrapper">
+        <table>
+            <tr>
+                <th>Task</th>
+                <th>Manual Work</th>
+                <th>LexAI India</th>
+            </tr>
+            <tr>
+                <td>Contract Review (50 pages)</td>
+                <td>4 - 6 hours</td>
+                <td>2 Minutes</td>
+            </tr>
+            <tr>
+                <td>Identifying Risk Clauses</td>
+                <td>High chance of missing issues</td>
+                <td>Automated Highlighting</td>
+            </tr>
+            <tr>
+                <td>Rewriting Clauses</td>
+                <td>Drafting from scratch</td>
+                <td>1-click Intent Rewrite</td>
+            </tr>
+        </table>
+    </div>
+</section>
+
+<section class="section container">
+    <h2 class="section-title">What Lawyers Say</h2>
+    <div class="grid">
+        <div class="card">
+            <p>"LexAI has completely transformed how our firm reviews vendor agreements."</p>
+            <h4 style="margin-top: 20px;">- Advocate Rajesh Kumar</h4>
+        </div>
+        <div class="card">
+            <p>"The exact references to the Indian Contract Act save me hours of research."</p>
+            <h4 style="margin-top: 20px;">- Priya Sharma, Corporate Counsel</h4>
+        </div>
+        <div class="card">
+            <p>"A must-have for any independent practitioner managing multiple cases."</p>
+            <h4 style="margin-top: 20px;">- Advocate Vikram Singh</h4>
+        </div>
+    </div>
+</section>
+
+<section id="pricing" class="section container">
+    <h2 class="section-title">Pricing</h2>
+    <div class="grid">
+        <div class="pricing-card">
+            <h3>Free</h3>
+            <div class="pricing-price">₹0<span>/mo</span></div>
+            <ul class="pricing-features">
+                <li>Basic Document Summarization</li>
+                <li>Limited Legal Chat queries</li>
+                <li>Standard Support</li>
+            </ul>
+            <a href="/signup" class="btn btn-outline" style="display: block; width: 100%; box-sizing: border-box;">Start Free</a>
+        </div>
+        <div class="pricing-card pro">
+            <h3>Pro</h3>
+            <div class="pricing-price">₹999<span>/mo</span></div>
+            <ul class="pricing-features">
+                <li>Advanced Contract Analyzer</li>
+                <li>Unlimited Chat & Summaries</li>
+                <li>Priority Support</li>
+            </ul>
+            <a href="/signup" class="btn btn-primary" style="display: block; width: 100%; box-sizing: border-box;">Upgrade to Pro</a>
+        </div>
+        <div class="pricing-card">
+            <h3>Enterprise</h3>
+            <div class="pricing-price">Custom</div>
+            <ul class="pricing-features">
+                <li>Custom Integrations</li>
+                <li>Dedicated Account Manager</li>
+                <li>On-premise Deployment Options</li>
+            </ul>
+            <a href="/contact" class="btn btn-outline" style="display: block; width: 100%; box-sizing: border-box;">Contact Us</a>
+        </div>
+    </div>
+</section>
+
+<section class="section" style="background: var(--background); text-align: center; padding: 60px 20px;">
+    <h2>Ready to transform your legal practice?</h2>
+    <br>
+    <a href="/signup" class="btn btn-primary" style="font-size: 18px; padding: 15px 30px;">Start your free trial today</a>
+</section>
+
+<footer>
+    <div class="container">
+        <h2 style="margin-bottom: 20px;">LexAI India</h2>
+        <p style="color: #aaa;">© 2024 LexAI India. All rights reserved.</p>
+    </div>
+</footer>
+
+</body>
+</html>

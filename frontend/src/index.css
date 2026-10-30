@@ -1,0 +1,2609 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
+
+:root {
+  /* ── WARM LUXURY (default light) — ivory · deep forest green · brushed gold ── */
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --accent-primary: #B08D57;
+  --accent-hover: #937243;
+  --accent-muted: rgba(176, 141, 87, 0.12);
+  --accent-success: #3E7256;
+  --accent-danger: #B4442F;
+  --accent-warning: #C08A2E;
+
+  --bg-app: #F5F1E8;
+  --bg-sidebar: #EFE9DB;
+  --bg-panel: #FBF9F3;
+  --bg-card: #FFFFFF;
+  --text-primary: #1A2E22;
+  --text-muted: #7A857D;
+  --border-subtle: rgba(26, 46, 34, 0.10);
+
+  --bg-dark-app: #F5F1E8;
+  --bg-dark-sidebar: #EFE9DB;
+  --bg-dark-panel: #FBF9F3;
+  --bg-dark-card: #FFFFFF;
+  --text-dark-primary: #1A2E22;
+  --text-dark-muted: #7A857D;
+  --text-dark-secondary: #4A5A4F;
+  --border-dark-subtle: rgba(26, 46, 34, 0.10);
+
+  --bg-surface: #FFFFFF;
+  --border-default: #D8CFBE;
+
+  --link-blue: #937243;
+  --link-blue-hover: #B08D57;
+  --modal-bg-rgb: 245, 241, 232;
+  --shadow-xl: 0 28px 70px rgba(26, 46, 34, 0.13), 0 8px 20px rgba(26, 46, 34, 0.06);
+
+  --bg-paper-viewer: #FBF9F3;
+  --text-paper-primary: #1A2E22;
+  --text-paper-secondary: #4A5A4F;
+  --border-paper-subtle: #E0D7C4;
+  --highlight-paper-risk: rgba(176, 141, 87, 0.08);
+  --highlight-paper-border: var(--accent-warning);
+
+  /* Slate & Rust tokens → re-tuned to warm luxury (light) */
+  --bg: #F5F1E8;
+  --paper: #FBF9F3;
+  --paper-2: #EFE9DB;
+  --ink: #1A2E22;
+  --ink-soft: #4A5A4F;
+  --muted: #7A857D;
+  --muted-2: #9AA29A;
+  --accent-ink: #937243;
+  --rule: #D8CFBE;
+  --accent: #B08D57;
+  --accent-soft: #EFE4D2;
+  --major: #B08D57;
+  --major-soft: #F1E6CF;
+  --on-accent: #2A2113;
+  --shadow: 0 20px 50px rgba(26, 46, 34, .12);
+  --overlay: rgba(26, 46, 34, .45);
+}
+
+:root[data-theme="light"], [data-theme="light"] {
+  /* Warm luxury — light (ivory / deep green / gold) */
+  --bg-app:        #F5F1E8;
+  --bg-sidebar:    #EFE9DB;
+  --bg-panel:      #FBF9F3;
+  --bg-card:       #FFFFFF;
+  --text-primary:  #1A2E22;
+  --text-muted:    #7A857D;
+  --border-subtle: rgba(26, 46, 34, 0.10);
+
+  --bg-surface:    #FFFFFF;
+  --border-default:#D8CFBE;
+
+  --bg-dark-app:    #F5F1E8;
+  --bg-dark-sidebar:#EFE9DB;
+  --bg-dark-panel:  #FBF9F3;
+  --bg-dark-card:   #FFFFFF;
+  --text-dark-primary: #1A2E22;
+  --text-dark-muted:   #7A857D;
+  --text-dark-secondary: #4A5A4F;
+  --border-dark-subtle: rgba(26, 46, 34, 0.10);
+
+  --link-blue: #937243;
+  --link-blue-hover: #B08D57;
+  --modal-bg-rgb: 245, 241, 232;
+  --shadow-xl: 0 28px 70px rgba(26, 46, 34, 0.13), 0 8px 20px rgba(26, 46, 34, 0.06);
+
+  --bg: #F5F1E8;
+  --paper: #FBF9F3;
+  --paper-2: #EFE9DB;
+  --ink: #1A2E22;
+  --ink-soft: #4A5A4F;
+  --muted: #7A857D;
+  --muted-2: #9AA29A;
+  --accent-ink: #937243;
+  --rule: #D8CFBE;
+  --accent: #B08D57;
+  --accent-soft: #EFE4D2;
+  --major: #B08D57;
+  --major-soft: #F1E6CF;
+  --on-accent: #2A2113;
+  --shadow: 0 20px 50px rgba(26, 46, 34, .12);
+  --overlay: rgba(26, 46, 34, .45);
+}
+
+:root[data-theme="dark"], [data-theme="dark"], .dark {
+  /* Warm luxury — dark (deep forest green / cream / gold) */
+  --accent-primary: #C9A46B;
+  --accent-hover: #B08D57;
+  --accent-muted: rgba(201, 164, 107, 0.14);
+
+  --bg-app: #141E18;
+  --bg-sidebar: #0F1712;
+  --bg-panel: #1A2820;
+  --bg-card: #1E2D24;
+  --text-primary: #ECE8DC;
+  --text-muted: #A7AFA6;
+  --border-subtle: rgba(245, 241, 232, 0.08);
+
+  --bg-dark-app: #141E18;
+  --bg-dark-sidebar: #0F1712;
+  --bg-dark-panel: #1A2820;
+  --bg-dark-card: #1E2D24;
+  --text-dark-primary: #ECE8DC;
+  --text-dark-muted: #A7AFA6;
+  --text-dark-secondary: #CFD3C6;
+  --border-dark-subtle: rgba(245, 241, 232, 0.08);
+
+  --bg-surface: #1E2D24;
+  --border-default: rgba(245, 241, 232, 0.12);
+  --link-blue: #C9A46B;
+  --link-blue-hover: #D7B882;
+  --modal-bg-rgb: 15, 23, 18;
+  --shadow-xl: 0 32px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(245, 241, 232, 0.05);
+
+  --bg-paper-viewer: #1E2D24;
+  --text-paper-primary: #ECE8DC;
+  --text-paper-secondary: #CFD3C6;
+  --border-paper-subtle: rgba(245, 241, 232, 0.10);
+
+  /* Slate & Rust tokens → warm luxury (dark) */
+  --bg: #141E18;
+  --paper: #1A2820;
+  --paper-2: #22332A;
+  --ink: #ECE8DC;
+  --ink-soft: #B6BCB2;
+  --muted: #9AA29A;
+  --muted-2: #717A72;
+  --accent-ink: #C9A46B;
+  --rule: #2C3A30;
+  --accent: #B08D57;
+  --accent-soft: #2E2A1C;
+  --major: #C9A46B;
+  --major-soft: #2E2A1C;
+  --on-accent: #1A140B;
+  --shadow: 0 20px 50px rgba(0,0,0,.45);
+  --overlay: rgba(10,14,11,.6);
+}
+
+body,
+.app-container,
+.sidebar,
+.topbar,
+.main-content,
+.analysis-panel,
+.command-palette-card,
+.premium-card,
+.resources-container,
+.tab-btn,
+.sub-tab-btn,
+.form-input,
+.palette-input,
+.landing-container,
+.landing-header,
+.feature-card,
+.workflow-step {
+  transition: background-color 0.5s ease-in-out, color 0.5s ease-in-out, border-color 0.5s ease-in-out, box-shadow 0.5s ease-in-out;
+}
+
+/* Scroll Animation Classes */
+.scroll-animate {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scroll-animate.animated {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+
+/* Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-dark-app);
+  color: var(--text-dark-primary);
+  overflow-x: hidden;
+  height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  color: var(--text-dark-primary);
+}
+
+/* Global Layout Grid */
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-dark-app);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar styling */
+.sidebar {
+  width: 260px;
+  background-color: var(--bg-dark-sidebar) !important;
+  opacity: 1 !important;
+  border-right: 1px solid var(--border-dark-subtle);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: visible;
+}
+
+.sidebar.sidebar-collapsed {
+  width: 64px;
+  overflow: visible !important;
+}
+
+.sidebar.sidebar-collapsed nav,
+.sidebar.sidebar-collapsed .sidebar-nav {
+  overflow: visible !important;
+  overflow-x: visible !important;
+}
+
+/* Main workspace */
+.workspace-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  overflow-x: hidden;
+  position: relative;
+  z-index: 0;
+  min-width: 0;
+}
+
+.topbar {
+  height: 64px;
+  background-color: var(--bg-dark-sidebar);
+  border-bottom: 1px solid var(--border-dark-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.main-content {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  background-color: var(--bg-dark-app);
+}
+
+/* Split Pane Layout (Document-Centric Viewer) */
+.document-view-layout {
+  display: flex;
+  height: calc(100vh - 64px);
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Left Panel: Analysis & Controls (Dark Theme) */
+.analysis-panel {
+  flex: 1;
+  background-color: var(--bg-dark-app);
+  border-right: 1px solid var(--border-dark-subtle);
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* Right Panel: Document Viewer (Paper theme to prevent fatigue) */
+.document-viewer-panel {
+  flex: 1.2;
+  background-color: var(--bg-paper-viewer);
+  color: var(--text-paper-primary);
+  padding: 40px;
+  overflow-y: auto;
+  font-family: var(--font-serif);
+  line-height: 1.7;
+  font-size: 16px;
+  box-shadow: inset 5px 0 15px rgba(0, 0, 0, 0.05);
+}
+
+.document-viewer-panel h1, 
+.document-viewer-panel h2, 
+.document-viewer-panel h3 {
+  color: var(--text-paper-primary);
+  margin-bottom: 16px;
+  line-height: 1.3;
+}
+
+/* Micro-Risk Highlights in Paper Viewer */
+.risk-clause-highlight {
+  background-color: var(--highlight-paper-risk);
+  border-left: 3px solid var(--highlight-paper-border);
+  padding: 8px 12px;
+  margin: 12px 0;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.risk-clause-highlight:hover {
+  background-color: #FEEBAD; /* slightly darker amber on hover */
+}
+
+/* Focus Mode — Tactical Icon Rail.
+   The sidebar stays at 64px icon-only width with ZERO reflow. */
+.focus-mode-active .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 64px;
+  flex-shrink: 0;
+  opacity: 1 !important;
+  background-color: #0B0F17 !important;
+  border-right: 1px solid var(--border-dark-subtle);
+  box-shadow: none;
+  transition: width 0.3s ease, box-shadow 0.3s ease;
+  z-index: 50;
+  overflow: visible !important;
+}
+
+.focus-mode-active .sidebar nav,
+.focus-mode-active .sidebar .sidebar-nav {
+  overflow: visible !important;
+  overflow-x: visible !important;
+}
+
+.focus-mode-active .topbar {
+  opacity: 0.2;
+  transition: opacity 0.3s;
+}
+.focus-mode-active .topbar:hover {
+  opacity: 1;
+}
+
+/* ── Focus Mode exit pill — centered glassmorphic float ─────────────────── */
+.focus-exit-pill {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s ease, border-color 0.2s ease;
+}
+.focus-exit-pill:hover {
+  transform: translateX(-50%) translateY(-3px);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.focus-exit-pill:active {
+  transform: translateX(-50%) translateY(-1px);
+}
+
+/* Bug #2: the pill floats centered above the bottom edge and, on a short mobile
+   viewport, ends up sitting directly on top of in-flow content (e.g. the
+   Contract Analyzer textarea / "Start Contract Risk Scan" button), blocking
+   taps rather than just looking wrong. It also advertises a keyboard shortcut
+   that doesn't exist on touch. Hide it below the tablet breakpoint — the
+   sidebar's "Focus Mode" toggle (kept reachable on mobile, see AppRouter.jsx)
+   remains as the tap-accessible way out. */
+@media (max-width: 768px) {
+  .focus-exit-pill {
+    display: none;
+  }
+}
+
+/* ── LexAmplify global FAB — persistent assistant trigger (bottom-right) ──────
+   Sits at right:32px so it never collides with the centered focus pill. */
+.LexAmplify-fab {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  z-index: 90;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #3b82f6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  box-shadow: 0 8px 28px rgba(59, 130, 246, 0.35), 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+}
+.LexAmplify-fab:hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 14px 40px rgba(59, 130, 246, 0.5), 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+.LexAmplify-fab:active {
+  transform: translateY(-1px) scale(1.0);
+}
+@media (max-width: 768px) {
+  .LexAmplify-fab { bottom: 20px; right: 20px; width: 48px; height: 48px; }
+}
+
+/* Floating Command Palette (Ctrl + K) */
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 100px;
+  z-index: 9999;
+}
+
+.command-palette-card {
+  width: 600px;
+  background-color: var(--bg-dark-panel);
+  border: 1px solid var(--border-dark-subtle);
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+/* Interactive Utility Classes */
+.btn-accent {
+  background-color: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: background-color 0.2s;
+}
+.btn-accent:hover {
+  background-color: var(--accent-hover);
+}
+
+.form-input {
+  background-color: var(--bg-dark-sidebar);
+  border: 1px solid var(--border-dark-subtle);
+  color: var(--text-dark-primary);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: var(--font-sans);
+  outline: none;
+}
+.form-input:focus {
+  border-color: var(--accent-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SHARED RESPONSIVE TABLE (Bug #4)
+   Desktop (>=768px): renders as a normal <table>, unchanged.
+   Mobile (<768px): each row becomes a stacked card, each cell becomes a
+   label/value line using its data-label attribute — no separate mobile
+   markup needed. Apply by adding class="lex-responsive-table" to the
+   <table> and data-label="Column Name" to every <td> in its body rows.
+   Used by: Court Directory (Webex links, judges roster), Legal Forms
+   Library table view, Document Vault table.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .lex-responsive-table thead { display: none; }
+  .lex-responsive-table,
+  .lex-responsive-table tbody,
+  .lex-responsive-table tr,
+  .lex-responsive-table td {
+    display: block;
+    width: 100%;
+  }
+  .lex-responsive-table tr {
+    margin-bottom: 12px;
+    border: 1px solid var(--border-dark-subtle);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg-dark-panel);
+  }
+  .lex-responsive-table tr:last-child { margin-bottom: 0; }
+  .lex-responsive-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    text-align: right;
+    min-width: 0;
+  }
+  .lex-responsive-table td > * { min-width: 0; }
+  .lex-responsive-table td:last-child { border-bottom: none; }
+  .lex-responsive-table td:empty { display: none; }
+  .lex-responsive-table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dark-muted);
+    text-align: left;
+    flex-shrink: 0;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TASK 1 & 2: MOBILE RESPONSIVENESS — OFF-CANVAS SIDEBAR DRAWER
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Hamburger button — hidden on desktop, shown on mobile */
+.hamburger-btn {
+  display: none;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: all 0.15s ease-in-out;
+  margin-right: 12px;
+}
+.hamburger-btn:hover { background-color: var(--bg-panel); }
+
+/* Dark overlay that appears behind the open sidebar on mobile */
+.sidebar-overlay {
+  display: none;
+}
+
+/* ── Mobile breakpoint (max-width: 768px) ─────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Show hamburger button */
+  .hamburger-btn {
+    display: flex;
+  }
+
+  /* Sidebar leaves the flex flow and becomes a fixed off-canvas drawer */
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    width: 260px;
+    z-index: 1000;
+    transform: translateX(-260px);
+    border-right: 1px solid var(--border-subtle) !important;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-panel) !important; /* solid opaque background color to fix transparency */
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5) !important;
+  }
+
+  /* Drawer open state — toggled by .sidebar-open class from React */
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 28px rgba(0, 0, 0, 0.7);
+  }
+
+  /* Dark overlay sits below the open sidebar, above workspace */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  
+  .sidebar-overlay.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  /* Force workspace-container to take up full screen width, preventing flex squishing */
+  .workspace-container {
+    width: 100vw;
+    flex: none;
+  }
+
+  /* The header's matter/firm capsule is wider than a phone (431px). That made the whole workspace box scrollable
+     sideways, so any focus() or scrollIntoView() inside a page shifted it 16-40px off the left edge. Let the capsule
+     scroll inside itself instead. */
+  .context-capsule-wrapper {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  /* Task 2: Typography & Breathing Room */
+  .workspace-container p, 
+  .workspace-container span, 
+  .workspace-container li {
+    line-height: 1.6 !important;
+  }
+  .workspace-container h1, 
+  .workspace-container h2, 
+  .workspace-container h3 {
+    line-height: 1.3 !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  /* Main content wrappers & pages should not touch the bezel */
+  .resources-container, 
+  .analysis-panel, 
+  .document-viewer-panel, 
+  .premium-card, 
+  .panel, 
+  .card, 
+  main {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  /* Task 3: Topbar / Header Clean-up */
+  .topbar {
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* Breadcrumbs Clean-up to prevent overflow */
+  .breadcrumbs-container {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Bug #6: hamburger + title get priority and never truncate on their own;
+     the theme toggle stays put next to them; the "Operating strictly under
+     Indian Law" tagline is lowest priority and drops to its own full-width
+     line beneath that row instead of competing for space. */
+  .topbar {
+    height: auto;
+    flex-shrink: 0; /* keep its wrapped second line from being squeezed over the page below */
+    min-height: 64px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .topbar-tagline {
+    flex: 1 1 100%;
+    margin-left: 0 !important;
+    padding-left: 48px; /* aligns under the title, past the hamburger button */
+  }
+
+  /* Bug #7: Dashboard "Morning Triage" split-screen — the flex:2 / flex:1
+     two-column layout squeezes the right-hand "Recent Workspaces" card so
+     narrow its heading clips ("...WORKSPACI"). Stack the two cards instead. */
+  .morning-triage-grid {
+    flex-direction: column !important;
+  }
+  .morning-triage-grid > div {
+    flex: 1 1 auto !important;
+    width: 100%;
+  }
+
+  /* Task 2: Fix Nested Card Overflow (Court Resources) */
+  .resources-container .premium-card,
+  .resources-container .resource-panel,
+  .resources-container .banner-card,
+  .resources-container .modal-card,
+  .resources-container .card,
+  .resources-container .panel,
+  .resources-container [style*="width: 400px"],
+  .resources-container [style*="width:400px"],
+  .resources-container div[style*="background-color: var(--bg-dark-card)"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Ensure grid containers stack on mobile inside Court Resources */
+  .resources-container div[style*="display: grid"],
+  .resources-container div[style*="display:grid"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Task 3: Fix Calendar Overlap & Grid (Legal Calendar) */
+  .calendar-header-container {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
+    justify-content: flex-start !important;
+    position: static !important;
+  }
+
+  .calendar-grid-container {
+    display: grid !important;
+    grid-template-columns: repeat(7, 1fr) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .calendar-grid-cell {
+    aspect-ratio: 1 !important;
+    padding: 10px 0 !important;
+    text-align: center !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+  }
+
+  /* Make mobile calendar grid cells breathable, hiding long event text into neat dots */
+  .calendar-grid-cell div[style*="display: flex; flex-direction: column; gap: 3px"],
+  .calendar-grid-cell div[style*="display:flex;flex-direction:column;gap:3px"] {
+    margin-top: 4px !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .calendar-grid-cell div[style*="display: flex; flex-direction: column; gap: 3px"] > div,
+  .calendar-grid-cell div[style*="display:flex;flex-direction:column;gap:3px"] > div {
+    font-size: 0 !important;
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+    border-left-width: 6px !important;
+    background: transparent !important;
+    display: inline-block !important;
+    overflow: hidden !important;
+  }
+
+  .calendar-grid-cell div[style*="display: flex; flex-direction: column; gap: 3px"] > div[style*="color: var(--accent-primary)"],
+  .calendar-grid-cell div[style*="display:flex;flex-direction:column;gap:3px"] > div[style*="color:var(--accent-primary)"] {
+    font-size: 8px !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    border: none !important;
+    background: transparent !important;
+  }
+}
+
+/* ── Desktop breakpoint (min-width: 769px) ─────────────────────────────────── */
+@media (min-width: 769px) {
+  .hamburger-btn {
+    display: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TASK 3: PROFESSIONAL MICRO-ANIMATIONS & TACTILE FEEDBACK
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Snappy hover transitions for buttons and links */
+button,
+.sidebar a {
+  transition: all 0.15s ease-in-out;
+}
+
+/* Tactile feedback on click / active state */
+button:active,
+.sidebar a:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+
+/* Page-enter animation */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-enter {
+  animation: page-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Base styles / overrides */
+.btn-accent {
+  transition: all 0.15s ease-in-out;
+}
+.btn-accent:hover {
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.28);
+}
+
+/* Sidebar nav link style overrides */
+.sidebar-nav a {
+  border-radius: 6px;
+  margin: 0 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.sidebar-nav a:hover {
+  background-color: rgba(59, 130, 246, 0.07);
+}
+
+/* Glassmorphism Restraint on Sidebar and Topbar */
+.sidebar {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+.topbar {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+/* Typography Color Hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-primary) !important;
+}
+p, span, li, td, th {
+  color: var(--text-primary);
+}
+.text-muted,
+.sidebar-nav a:not([style*="color: var(--accent-primary)"]) {
+  color: var(--text-dark-muted) !important;
+}
+
+/* Form Controls — adapts to dark and light themes */
+input[type="text"]:not(.lx-input),
+input[type="number"]:not(.lx-input),
+input[type="email"]:not(.lx-input),
+input[type="password"]:not(.lx-input),
+select:not(.lx-input),
+textarea:not(.lx-input),
+.form-input,
+.select-element,
+.search-input-field,
+.dark-input,
+.input-textarea {
+  background-color: var(--bg-dark-app, #0A0E17) !important;
+  border: 1px solid var(--border-dark-subtle, rgba(255,255,255,0.08)) !important;
+  color: var(--text-dark-primary, #FFFFFF) !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  font-family: var(--font-sans);
+  font-size: 13.5px !important;
+  outline: none !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-sizing: border-box !important;
+  max-width: 100%;
+}
+
+/* Bug #5: single-line text inputs/selects clip long placeholder/value text
+   mid-word by default (the native input just hard-crops at the box edge).
+   Applied globally so every search box — eCourts CNR, Legal Forms, Bare
+   Acts, Document Vault, Firm Library external search, etc. — gets a clean
+   "…" instead, without needing a per-input fix. Excludes <textarea>, which
+   should keep wrapping normally. */
+input[type="text"]:not(.lx-input),
+input[type="number"]:not(.lx-input),
+input[type="email"]:not(.lx-input),
+input[type="password"]:not(.lx-input),
+input[type="search"]:not(.lx-input),
+select:not(.lx-input),
+.form-input,
+.select-element,
+.search-input-field,
+.dark-input {
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+}
+
+input[type="text"]:not(.lx-input):focus,
+input[type="number"]:not(.lx-input):focus,
+input[type="email"]:not(.lx-input):focus,
+input[type="password"]:not(.lx-input):focus,
+select:not(.lx-input):focus,
+textarea:not(.lx-input):focus,
+.form-input:focus,
+.select-element:focus,
+.search-input-field:focus,
+.dark-input:focus,
+.input-textarea:focus {
+  border-color: #3B82F6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+}
+
+/* File Upload Dropzones */
+.drop-zone,
+.drag-drop-zone {
+  border: 2px dashed rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.01) !important;
+  border-radius: 12px !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.drop-zone:hover,
+.drag-drop-zone:hover,
+.drop-zone.dragover,
+.drag-drop-zone.dragover {
+  border-color: #3B82F6 !important;
+  background-color: rgba(59, 130, 246, 0.03) !important;
+}
+
+/* Hover States: Interactive Dashboard Cards & Lift transitions */
+.premium-card,
+.vault-grid-card,
+.trust-card,
+.bento-card,
+.conflict-detail-card,
+.precedent-card,
+.rec-protection-card,
+.inspected-risk-card,
+.card,
+.panel,
+.resource-panel,
+.upload-slot {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.premium-card:hover,
+.vault-grid-card:hover,
+.trust-card:hover,
+.bento-card:hover,
+.conflict-detail-card:hover,
+.precedent-card:hover,
+.rec-protection-card:hover,
+.inspected-risk-card:hover,
+.card:hover,
+.panel:hover,
+.resource-panel:hover,
+.upload-slot:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Active states: Tactical Mechanical click scale */
+button:active,
+.btn-accent:active,
+.btn-luxury-primary:active,
+.btn-luxury-secondary:active,
+.tab-btn:active,
+.sub-tab-btn:active,
+.mode-tab-btn:active,
+.analysis-tab-btn:active,
+.editor-tab-btn:active,
+.toolbar-btn:active,
+.sidebar-nav a:active {
+  transform: scale(0.98) !important;
+  transition: transform 0.08s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TASK 1: ENTERPRISE-GRADE LEGAL DATA TABLES (.premium-table & .doc-table)
+   ───────────────────────────────────────────────────────────────────────── */
+.premium-table, .doc-table {
+  width: 100% !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-family: var(--font-sans) !important;
+  font-size: 13px !important;
+  margin-top: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  background-color: var(--bg-dark-panel) !important;
+}
+
+.premium-table th, .doc-table th {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  font-size: 11px !important;
+  letter-spacing: 0.8px !important;
+  padding: 14px 20px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+.premium-table th:last-child, .doc-table th:last-child {
+  border-right: none !important;
+}
+
+.premium-table td, .doc-table td {
+  padding: 14px 20px !important;
+  color: var(--text-dark-primary) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.04) !important;
+  vertical-align: middle !important;
+  background-color: var(--bg-dark-panel) !important;
+  line-height: 1.5 !important;
+}
+
+.premium-table td:last-child, .doc-table td:last-child {
+  border-right: none !important;
+}
+
+.premium-table tr:last-child td, .doc-table tr:last-child td {
+  border-bottom: none !important;
+}
+
+.premium-table tr:hover td, .doc-table tr:hover td {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+  color: #FFFFFF !important;
+}
+
+/* Custom enhancements for upload zone and active state glow */
+.upload-zone {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.upload-zone:hover {
+  border-color: #3B82F6 !important;
+  background-color: rgba(59, 130, 246, 0.03) !important;
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.08) !important;
+}
+
+/* Interactive input hover */
+input[type="text"]:hover,
+input[type="number"]:hover,
+input[type="email"]:hover,
+input[type="password"]:hover,
+select:hover,
+textarea:hover,
+.form-input:hover,
+.select-element:hover,
+.search-input-field:hover,
+.dark-input:hover,
+.input-textarea:hover {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Focus Ring Glow enhancements */
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus,
+.form-input:focus,
+.select-element:focus,
+.search-input-field:focus,
+.dark-input:focus,
+.input-textarea:focus {
+  border-color: #3B82F6 !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SIDEBAR NAV ITEMS — icon + label with active state left-border indicator
+   ───────────────────────────────────────────────────────────────────────── */
+.sidebar-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  display: block;
+}
+
+.sidebar-live-tag {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1.5px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+}
+
+.live-pulse-dot {
+  font-size: 8px;
+  line-height: 1;
+  animation: pulseLive 1.8s infinite ease-in-out;
+}
+
+@keyframes pulseLive {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.6; }
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 14px;
+  margin: 2px 8px;
+  border-radius: 7px;
+  color: #94A3B8;
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  background: transparent;
+  box-shadow: inset 3px 0 0 transparent;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  position: relative;
+}
+.sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #F8FAFC !important;
+  transform: translateX(1.5px);
+}
+.sidebar-nav-item.active {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.18), rgba(37, 99, 235, 0.08)) !important;
+  color: #93C5FD !important;
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 #3B82F6 !important;
+}
+.sidebar-nav-item .nav-icon {
+  color: inherit;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  transition: all 0.15s ease;
+}
+.sidebar-nav-item:hover .nav-icon {
+  opacity: 1;
+  color: #60A5FA;
+}
+.sidebar-nav-item.active .nav-icon {
+  opacity: 1 !important;
+  color: #60A5FA !important;
+}
+.sidebar-nav-item .nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+/* ── Sidebar collapsed (icon-only) mode ───────────────────────────────────── */
+.sidebar.sidebar-collapsed .sidebar-nav-item {
+  justify-content: center;
+  padding: 10px;
+  margin: 2px 6px;
+  box-shadow: none !important;
+}
+.sidebar.sidebar-collapsed .sidebar-nav-item:hover {
+  transform: none;
+}
+.sidebar.sidebar-collapsed .sidebar-nav-item.active {
+  box-shadow: none !important;
+  background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(59,130,246,0.12)) !important;
+}
+.sidebar.sidebar-collapsed .nav-label {
+  display: none;
+}
+.sidebar.sidebar-collapsed .nav-icon {
+  opacity: 1 !important;
+}
+
+/* -----------------------------------------
+   Focus Mode Tooltip Implementation
+----------------------------------------- */
+
+/* Anchor the tooltip */
+.sidebar-nav-item,
+.navItem,
+.sidebar-bottom-link,
+.sidebar-bottom-btn,
+.sidebar-focus-toggle,
+.sidebar-collapse-btn {
+  position: relative;
+}
+
+/* 
+  Target the hover state ONLY when collapsed / in Focus Mode. 
+  The :not([data-tooltip=""]) prevents empty ghost boxes.
+*/
+.sidebar.sidebar-collapsed .sidebar-nav-item[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar.sidebar-collapsed .navItem[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar.sidebar-collapsed .sidebar-bottom-link[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar.sidebar-collapsed .sidebar-bottom-btn[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar.sidebar-collapsed .sidebar-focus-toggle[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar.sidebar-collapsed .sidebar-collapse-btn[data-tooltip]:not([data-tooltip=""]):hover::after,
+.focus-mode-active .sidebar .sidebar-nav-item[data-tooltip]:not([data-tooltip=""]):hover::after,
+.focus-mode-active .sidebar .navItem[data-tooltip]:not([data-tooltip=""]):hover::after,
+.focus-mode-active .sidebar .sidebar-bottom-link[data-tooltip]:not([data-tooltip=""]):hover::after,
+.focus-mode-active .sidebar .sidebar-bottom-btn[data-tooltip]:not([data-tooltip=""]):hover::after,
+.focus-mode-active .sidebar .sidebar-focus-toggle[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar.collapsed .sidebar-nav-item[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar.collapsed .navItem[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar-collapsed .navItem[data-tooltip]:not([data-tooltip=""]):hover::after,
+.sidebar-collapsed .sidebar-nav-item[data-tooltip]:not([data-tooltip=""]):hover::after,
+.navItem.collapsed[data-tooltip]:not([data-tooltip=""]):hover::after,
+.collapsed .navItem[data-tooltip]:not([data-tooltip=""]):hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 14px); 
+  top: 50%;
+  transform: translateY(-50%);
+  
+  /* Theme Resilience */
+  background-color: var(--bg-surface, var(--bg-card, #1e293b));
+  color: var(--text-primary, #ffffff);
+  border: 1px solid var(--border-default, var(--border-subtle, #334155));
+  
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.1);
+  
+  opacity: 0;
+  z-index: 99999;
+  pointer-events: none; 
+  animation: tooltipFadeIn 0.2s ease 0.1s forwards;
+}
+
+@keyframes tooltipFadeIn {
+  to { opacity: 1; }
+}
+/* ── Brand header + logo (Task 1) ─────────────────────────────────────── */
+.sidebar-header {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transform-origin: center center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Collapsed: text is unmounted; the mark scales down and centers in the strip */
+.sidebar.sidebar-collapsed .sidebar-logo-mark {
+  transform: scale(0.86);
+}
+/* Expanded brand text fades/slides in via the container transition */
+.sidebar-brand-text {
+  overflow: hidden;
+  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-dark-subtle);
+  background: transparent;
+  color: var(--text-dark-muted);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  padding: 0;
+}
+.sidebar-collapse-btn:hover {
+  background: rgba(255,255,255,0.06);
+  color: white;
+  border-color: rgba(255,255,255,0.15);
+}
+
+/* ── Collapsed: button sits at bottom of header, always visible ──────── */
+.sidebar-collapse-btn.merged {
+  position: absolute;
+  bottom: 6px;
+  right: 50%;
+  transform: translateX(50%);
+  width: 28px;
+  height: 18px;
+  border-radius: 5px;
+  border-color: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-dark-muted);
+  z-index: 3;
+}
+.sidebar-collapse-btn.merged:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.2);
+  color: white;
+}
+@media (max-width: 768px) {
+  .sidebar.sidebar-collapsed {
+    width: 260px;
+  }
+  .sidebar.sidebar-collapsed .nav-label {
+    display: block;
+  }
+  .sidebar.sidebar-collapsed .sidebar-nav-item {
+    justify-content: flex-start;
+    padding: 9px 16px;
+    margin: 2px 8px;
+  }
+
+  /* Bug #2 follow-through: desktop focus mode dims the sidebar/topbar to a
+     hover-to-reveal "stealth rail" (opacity 0.2-0.3) — there's no hover on
+     touch, so on mobile that would make the only remaining exit route
+     (Focus Mode toggle in the sidebar, reached via the hamburger button)
+     nearly invisible. Keep both at full opacity on mobile. */
+  .focus-mode-active .sidebar {
+    opacity: 1;
+  }
+  .focus-mode-active .topbar {
+    opacity: 1;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DASHBOARD STAT CARDS
+   ───────────────────────────────────────────────────────────────────────── */
+.stat-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 18px 20px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   QUICK ACTION CARDS
+   ───────────────────────────────────────────────────────────────────────── */
+.quick-action-card {
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+.quick-action-card:hover {
+  border-color: rgba(59, 130, 246, 0.4) !important;
+  background: rgba(59, 130, 246, 0.04) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.08);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   UNIVERSAL AGENT BOTTOM BUTTON (sidebar glow button)
+   ───────────────────────────────────────────────────────────────────────── */
+.universal-agent-btn:hover {
+  background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(37,99,235,0.16)) !important;
+  border-color: rgba(59,130,246,0.4) !important;
+  box-shadow: 0 0 16px rgba(59,130,246,0.15);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   STATUS BADGE PILL
+   ───────────────────────────────────────────────────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SIDEBAR scrollbar
+   ───────────────────────────────────────────────────────────────────────── */
+.sidebar nav::-webkit-scrollbar { width: 4px; }
+.sidebar nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+.sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FOCUS MODE TOGGLE pill enhancement
+   ───────────────────────────────────────────────────────────────────────── */
+.focus-toggle-track {
+  width: 32px; height: 17px;
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.focus-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: white;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+   Applied on top of base styles when [data-theme="light"] is set.
+   Fixes: headings invisible on white, dark form inputs in light bg,
+          hardcoded white/rgba text colours becoming invisible on light bg.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar ── */
+:root[data-theme="light"] .sidebar {
+  background-color: #F8FAFC !important;
+  border-right: 1px solid #E2E8F0 !important;
+}
+:root[data-theme="light"] .sidebar-header {
+  border-bottom-color: #E2E8F0 !important;
+}
+:root[data-theme="light"] .sidebar-group-title {
+  color: #475569 !important;
+  font-weight: 800 !important;
+}
+:root[data-theme="light"] .sidebar-nav-item {
+  color: #1E293B !important;
+  font-weight: 550 !important;
+}
+:root[data-theme="light"] .sidebar-nav-item .nav-icon {
+  color: #475569 !important;
+  opacity: 1 !important;
+}
+:root[data-theme="light"] .sidebar-nav-item:hover {
+  background: #EFF6FF !important;
+  color: #1D4ED8 !important;
+  transform: translateX(1.5px);
+}
+:root[data-theme="light"] .sidebar-nav-item:hover .nav-icon {
+  color: #2563EB !important;
+}
+:root[data-theme="light"] .sidebar-nav-item.active {
+  background: #EFF6FF !important;
+  color: #1D4ED8 !important;
+  font-weight: 600 !important;
+  box-shadow: inset 3px 0 0 #2563EB !important;
+}
+:root[data-theme="light"] .sidebar-nav-item.active .nav-icon {
+  color: #2563EB !important;
+  opacity: 1 !important;
+}
+:root[data-theme="light"] .sidebar.sidebar-collapsed .sidebar-nav-item.active {
+  background: #EFF6FF !important;
+}
+:root[data-theme="light"] .sidebar-live-tag {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #047857 !important;
+  border: 1px solid rgba(16, 185, 129, 0.4) !important;
+  font-weight: 800 !important;
+}
+:root[data-theme="light"] .sidebar-bottom-btn {
+  background: #EFF6FF !important;
+  border: 1px solid #BFDBFE !important;
+  color: #1D4ED8 !important;
+}
+:root[data-theme="light"] .sidebar-bottom-link button {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #334155 !important;
+}
+:root[data-theme="light"] .sidebar-bottom-link button:hover {
+  background: #FEF2F2 !important;
+  border-color: #FCA5A5 !important;
+  color: #DC2626 !important;
+}
+
+/* ── Topbar ── */
+:root[data-theme="light"] .topbar {
+  background-color: #EAEBE8 !important;
+  border-bottom: 1px solid #D2D5D4 !important;
+}
+
+/* ── Tables ── */
+:root[data-theme="light"] .premium-table th,
+:root[data-theme="light"] .doc-table th {
+  background-color: #E8ECF4 !important;
+  color: #1A2234 !important;
+  border-bottom: 1px solid #C8CEDC !important;
+  border-right: 1px solid #C8CEDC !important;
+}
+:root[data-theme="light"] .premium-table td,
+:root[data-theme="light"] .doc-table td {
+  background-color: #FFFFFF !important;
+  color: #374151 !important;
+  border-bottom: 1px solid #E5E7EB !important;
+  border-right: 1px solid #E5E7EB !important;
+}
+:root[data-theme="light"] .premium-table tr:hover td,
+:root[data-theme="light"] .doc-table tr:hover td {
+  background-color: #F5F7FC !important;
+  color: #1A2234 !important;
+}
+
+/* ── Cards & panels ── */
+:root[data-theme="light"] .premium-card,
+:root[data-theme="light"] .stat-card,
+:root[data-theme="light"] .quick-action-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+
+/* ── Form inputs in light mode ── */
+:root[data-theme="light"] input[type="text"],
+:root[data-theme="light"] input[type="number"],
+:root[data-theme="light"] input[type="email"],
+:root[data-theme="light"] input[type="password"],
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .form-input,
+:root[data-theme="light"] .select-element,
+:root[data-theme="light"] .search-input-field,
+:root[data-theme="light"] .dark-input,
+:root[data-theme="light"] .input-textarea {
+  background-color: #FFFFFF !important;
+  border: 1px solid #C8CEDC !important;
+  color: #1A2234 !important;
+  box-shadow: none !important;
+}
+:root[data-theme="light"] input[type="text"]:focus,
+:root[data-theme="light"] input[type="number"]:focus,
+:root[data-theme="light"] input[type="email"]:focus,
+:root[data-theme="light"] input[type="password"]:focus,
+:root[data-theme="light"] select:focus,
+:root[data-theme="light"] textarea:focus,
+:root[data-theme="light"] .form-input:focus,
+:root[data-theme="light"] .input-textarea:focus {
+  border-color: #3B82F6 !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.15) !important;
+}
+
+/* ── Scrollbar (light) ── */
+:root[data-theme="light"] .sidebar nav::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); }
+:root[data-theme="light"] .sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.22); }
+
+/* ── Main content text ── */
+:root[data-theme="light"] .main-content,
+:root[data-theme="light"] .analysis-panel,
+:root[data-theme="light"] .resources-container {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ── Tab buttons (CourtResources, ContractAnalyzer) ── */
+:root[data-theme="light"] .tab-btn,
+:root[data-theme="light"] .sub-tab-btn,
+:root[data-theme="light"] .analysis-tab-btn,
+:root[data-theme="light"] .editor-tab-btn {
+  color: #4A5568 !important;
+  background: transparent !important;
+}
+:root[data-theme="light"] .tab-btn:hover,
+:root[data-theme="light"] .sub-tab-btn:hover,
+:root[data-theme="light"] .analysis-tab-btn:hover,
+:root[data-theme="light"] .editor-tab-btn:hover {
+  color: #1A2234 !important;
+  background: rgba(0,0,0,.04) !important;
+}
+:root[data-theme="light"] .tab-btn.active,
+:root[data-theme="light"] .sub-tab-btn.active,
+:root[data-theme="light"] .analysis-tab-btn.active,
+:root[data-theme="light"] .editor-tab-btn.active {
+  color: #2563EB !important;
+  border-bottom-color: #2563EB !important;
+}
+
+/* ── Contract Analyzer light mode ── */
+:root[data-theme="light"] .analyzer-container,
+:root[data-theme="light"] .editor-column,
+:root[data-theme="light"] .analysis-column {
+  background: var(--bg-panel) !important;
+}
+:root[data-theme="light"] .analyzer-header,
+:root[data-theme="light"] .editor-header-bar,
+:root[data-theme="light"] .analysis-tabs-bar {
+  background: var(--bg-sidebar) !important;
+  border-color: var(--border-subtle) !important;
+}
+:root[data-theme="light"] .analyzer-title { color: #1A2234 !important; }
+:root[data-theme="light"] .analyzer-subtitle { color: #4A5568 !important; }
+:root[data-theme="light"] .clause-text-preview { color: #374151 !important; }
+:root[data-theme="light"] .clause-number { color: #6B7280 !important; }
+:root[data-theme="light"] .inspected-risk-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .original-clause-box {
+  background: #F8FAFC !important;
+  border-color: #C8CEDC !important;
+  color: #374151 !important;
+}
+:root[data-theme="light"] .chat-message-bubble.bot {
+  background: #F0F2F8 !important;
+  border-color: #C8CEDC !important;
+  color: #374151 !important;
+}
+:root[data-theme="light"] .precedent-card { background: #F8FAFC !important; border-color: #C8CEDC !important; }
+:root[data-theme="light"] .rec-protection-card { background: rgba(245,158,11,.05) !important; }
+:root[data-theme="light"] .upload-hero { background: linear-gradient(135deg, #F0F2F8 0%, #E8ECF4 100%) !important; }
+
+/* ── Vault & dashboard cards ── */
+:root[data-theme="light"] .vault-grid-card,
+:root[data-theme="light"] .bento-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+  color: #374151 !important;
+}
+
+/* ── Status badges & pills (muted text in light mode) ── */
+:root[data-theme="light"] .text-muted,
+:root[data-theme="light"] .sidebar-nav a:not(.active) {
+  color: #4A5568 !important;
+}
+
+/* ── Buttons (ensure visible in light mode) ── */
+:root[data-theme="light"] .btn-accent {
+  background-color: #3B82F6 !important;
+  color: #FFFFFF !important;
+}
+:root[data-theme="light"] .btn-accent:hover { background-color: #2563EB !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEMANTIC TOKEN ADDITIONS
+   New variables consumed by ConflictEngine and shared components.
+   Added as a separate :root block so they extend (not override) existing vars.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Card depth shadow — used across ConflictEngine & dashboard cards */
+  --shadow-card:   0 4px 20px rgba(0, 0, 0, 0.15);
+  /* Hover overlay — neutral across light and dark */
+  --hover-bg:      rgba(255, 255, 255, 0.04);
+  /* Stat boxes inside summary cards */
+  --stat-bg:       rgba(255, 255, 255, 0.02);
+  --stat-border:   rgba(255, 255, 255, 0.06);
+  /* Badge visible in all themes */
+  --text-badge:    var(--text-muted);
+  /* Form field tokens (ConflictEngine field-input / field-select) */
+  --input-bg:          #1f2937;
+  --input-border:      rgba(255, 255, 255, 0.12);
+  --input-color:       var(--text-primary);
+  --input-focus-shadow: rgba(59, 130, 246, 0.25);
+  /* Status badge semantic tokens */
+  --badge-clear-bg:     rgba(16, 185, 129, 0.15);
+  --badge-clear-color:  #10B981;
+  --badge-clear-border: rgba(16, 185, 129, 0.3);
+  --badge-warn-bg:      rgba(245, 158, 11, 0.15);
+  --badge-warn-color:   #F59E0B;
+  --badge-warn-border:  rgba(245, 158, 11, 0.3);
+  --badge-danger-bg:    rgba(239, 68, 68, 0.15);
+  --badge-danger-color: #EF4444;
+  --badge-danger-border:rgba(239, 68, 68, 0.3);
+  /* Skeleton shimmer — dark defaults */
+  --skeleton-from:  rgba(255, 255, 255, 0.04);
+  --skeleton-to:    rgba(255, 255, 255, 0.09);
+  /* Clause excerpt boxes */
+  --excerpt-a-bg:     rgba(239, 68, 68, 0.05);
+  --excerpt-a-border: rgba(239, 68, 68, 0.20);
+  --excerpt-b-bg:     rgba(245, 158, 11, 0.05);
+  --excerpt-b-border: rgba(245, 158, 11, 0.20);
+}
+
+/* Override semantic tokens for existing light theme */
+:root[data-theme="light"] {
+  --shadow-card:   0 2px 12px rgba(0, 0, 0, 0.08);
+  --hover-bg:      rgba(0, 0, 0, 0.04);
+  --stat-bg:       rgba(0, 0, 0, 0.02);
+  --stat-border:   rgba(0, 0, 0, 0.08);
+  --text-badge:    #475569;
+  --input-bg:      #FFFFFF;
+  --input-border:  #C8CEDC;
+  --input-color:   #1A2234;
+  --badge-clear-color:   #059669;
+  --badge-clear-bg:      rgba(5, 150, 105, 0.10);
+  --badge-clear-border:  rgba(5, 150, 105, 0.25);
+  --badge-warn-color:    #D97706;
+  --badge-warn-bg:       rgba(217, 119, 6, 0.10);
+  --badge-warn-border:   rgba(217, 119, 6, 0.25);
+  --badge-danger-color:  #DC2626;
+  --badge-danger-bg:     rgba(220, 38, 38, 0.10);
+  --badge-danger-border: rgba(220, 38, 38, 0.25);
+  --skeleton-from:  rgba(0, 0, 0, 0.04);
+  --skeleton-to:    rgba(0, 0, 0, 0.09);
+  --excerpt-a-bg:     rgba(220, 38, 38, 0.04);
+  --excerpt-a-border: rgba(220, 38, 38, 0.18);
+  --excerpt-b-bg:     rgba(217, 119, 6, 0.04);
+  --excerpt-b-border: rgba(217, 119, 6, 0.18);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EXECUTIVE LINEN THEME  [data-theme="light-matte"]
+   Premium warm-white "bond paper" canvas for senior-lawyer environments.
+   • Canvas:  #FDFBF7 (soft alabaster)
+   • Cards:   #F4F1EA (muted bond paper) — never pure #FFFFFF
+   • Depth:   diffuse drop-shadows replace harsh borders
+   • Spinners & skeletons use --accent-primary, not washed-out gray
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="light-matte"] {
+  /* Core palette */
+  --bg-app:           #FDFBF7;
+  --bg-sidebar:       #F0EDE6;
+  --bg-panel:         #F4F1EA;
+  --bg-card:          #F4F1EA;
+  --text-primary:     #1C1C1E;
+  --text-muted:       #5C5C6E;
+  --border-subtle:    rgba(0, 0, 0, 0.07);
+
+  /* Dark-alias overrides so existing dark-prefixed vars also adapt */
+  --bg-dark-app:       #FDFBF7;
+  --bg-dark-sidebar:   #F0EDE6;
+  --bg-dark-panel:     #F4F1EA;
+  --bg-dark-card:      #F4F1EA;
+  --text-dark-primary: #1C1C1E;
+  --text-dark-muted:   #5C5C6E;
+  --border-dark-subtle:rgba(0, 0, 0, 0.07);
+
+  /* Depth architecture — no harsh borders */
+  --shadow-card: 0 4px 15px -3px rgba(0, 0, 0, 0.08), 0 1px 4px -1px rgba(0, 0, 0, 0.04);
+  --hover-bg:    rgba(0, 0, 0, 0.04);
+  --stat-bg:     rgba(0, 0, 0, 0.02);
+  --stat-border: rgba(0, 0, 0, 0.06);
+
+  /* Badge tokens — darker for high-contrast on warm light */
+  --text-badge:          #475569;
+  --badge-clear-color:   #047857;
+  --badge-clear-bg:      rgba(4, 120, 87, 0.10);
+  --badge-clear-border:  rgba(4, 120, 87, 0.22);
+  --badge-warn-color:    #B45309;
+  --badge-warn-bg:       rgba(180, 83, 9, 0.10);
+  --badge-warn-border:   rgba(180, 83, 9, 0.22);
+  --badge-danger-color:  #B91C1C;
+  --badge-danger-bg:     rgba(185, 28, 28, 0.10);
+  --badge-danger-border: rgba(185, 28, 28, 0.22);
+
+  /* Skeleton shimmer — warm tones */
+  --skeleton-from:  rgba(0, 0, 0, 0.04);
+  --skeleton-to:    rgba(0, 0, 0, 0.10);
+
+  /* Clause excerpt boxes */
+  --excerpt-a-bg:     rgba(185, 28, 28, 0.04);
+  --excerpt-a-border: rgba(185, 28, 28, 0.16);
+  --excerpt-b-bg:     rgba(180, 83, 9, 0.04);
+  --excerpt-b-border: rgba(180, 83, 9, 0.16);
+
+  /* Form field tokens */
+  --input-bg:           #FDFBF7;
+  --input-border:       rgba(0, 0, 0, 0.12);
+  --input-color:        #1C1C1E;
+  --input-focus-shadow: rgba(59, 130, 246, 0.12);
+}
+
+/* ── light-matte: Sidebar ── */
+:root[data-theme="light-matte"] .sidebar {
+  background-color: var(--bg-sidebar) !important;
+  border-right: none !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06) !important;
+}
+:root[data-theme="light-matte"] .sidebar-nav-item {
+  color: #4A5568 !important;
+}
+:root[data-theme="light-matte"] .sidebar-nav-item:hover {
+  background: rgba(59, 130, 246, 0.07) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light-matte"] .sidebar-nav-item.active {
+  background: rgba(59, 130, 246, 0.10) !important;
+  color: #2563EB !important;
+  box-shadow: inset 3px 0 0 #2563EB !important;
+}
+
+/* ── light-matte: Topbar ── */
+:root[data-theme="light-matte"] .topbar {
+  background-color: var(--bg-sidebar) !important;
+  border-bottom: none !important;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ── light-matte: Main content areas ── */
+:root[data-theme="light-matte"] .main-content,
+:root[data-theme="light-matte"] .analysis-panel,
+:root[data-theme="light-matte"] .resources-container {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ── light-matte: Cards (no harsh borders — shadow-only depth) ── */
+:root[data-theme="light-matte"] .premium-card,
+:root[data-theme="light-matte"] .stat-card,
+:root[data-theme="light-matte"] .quick-action-card,
+:root[data-theme="light-matte"] .vault-grid-card,
+:root[data-theme="light-matte"] .bento-card {
+  background: var(--bg-card) !important;
+  border: none !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+/* ── light-matte: Form inputs ── */
+:root[data-theme="light-matte"] input[type="text"],
+:root[data-theme="light-matte"] input[type="number"],
+:root[data-theme="light-matte"] input[type="email"],
+:root[data-theme="light-matte"] input[type="password"],
+:root[data-theme="light-matte"] select,
+:root[data-theme="light-matte"] textarea,
+:root[data-theme="light-matte"] .form-input,
+:root[data-theme="light-matte"] .select-element,
+:root[data-theme="light-matte"] .search-input-field,
+:root[data-theme="light-matte"] .dark-input,
+:root[data-theme="light-matte"] .field-input,
+:root[data-theme="light-matte"] .field-select,
+:root[data-theme="light-matte"] .input-textarea {
+  background-color: var(--input-bg) !important;
+  border: 1px solid var(--input-border) !important;
+  color: var(--input-color) !important;
+  box-shadow: none !important;
+}
+:root[data-theme="light-matte"] input[type="text"]:focus,
+:root[data-theme="light-matte"] textarea:focus,
+:root[data-theme="light-matte"] .dark-input:focus,
+:root[data-theme="light-matte"] .field-input:focus,
+:root[data-theme="light-matte"] .field-select:focus {
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 3px var(--input-focus-shadow) !important;
+}
+
+/* ── light-matte: Tables ── */
+:root[data-theme="light-matte"] .premium-table th {
+  background-color: var(--bg-sidebar) !important;
+  color: var(--text-badge) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-right: none !important;
+}
+:root[data-theme="light-matte"] .premium-table td {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  border-right: none !important;
+}
+:root[data-theme="light-matte"] .premium-table tr:hover td {
+  background-color: var(--hover-bg) !important;
+}
+
+/* ── light-matte: Tab buttons ── */
+:root[data-theme="light-matte"] .tab-btn,
+:root[data-theme="light-matte"] .sub-tab-btn,
+:root[data-theme="light-matte"] .analysis-tab-btn,
+:root[data-theme="light-matte"] .editor-tab-btn {
+  color: var(--text-muted) !important;
+  background: transparent !important;
+}
+:root[data-theme="light-matte"] .tab-btn.active,
+:root[data-theme="light-matte"] .sub-tab-btn.active,
+:root[data-theme="light-matte"] .analysis-tab-btn.active,
+:root[data-theme="light-matte"] .editor-tab-btn.active {
+  color: #2563EB !important;
+  border-bottom-color: #2563EB !important;
+}
+:root[data-theme="light-matte"] .tab-btn:hover,
+:root[data-theme="light-matte"] .sub-tab-btn:hover {
+  color: var(--text-primary) !important;
+  background: var(--hover-bg) !important;
+}
+
+/* ── light-matte: Contract Analyzer ── */
+:root[data-theme="light-matte"] .analyzer-container,
+:root[data-theme="light-matte"] .editor-column,
+:root[data-theme="light-matte"] .analysis-column {
+  background: var(--bg-panel) !important;
+}
+:root[data-theme="light-matte"] .analyzer-header,
+:root[data-theme="light-matte"] .editor-header-bar,
+:root[data-theme="light-matte"] .analysis-tabs-bar {
+  background: var(--bg-sidebar) !important;
+  border-color: var(--border-subtle) !important;
+}
+:root[data-theme="light-matte"] .analyzer-title  { color: var(--text-primary) !important; }
+:root[data-theme="light-matte"] .analyzer-subtitle { color: var(--text-muted) !important; }
+:root[data-theme="light-matte"] .clause-text-preview { color: var(--text-muted) !important; }
+:root[data-theme="light-matte"] .inspected-risk-card {
+  background: var(--bg-card) !important;
+  border: none !important;
+  box-shadow: var(--shadow-card) !important;
+}
+:root[data-theme="light-matte"] .original-clause-box {
+  background: var(--bg-app) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  color: var(--text-muted) !important;
+}
+:root[data-theme="light-matte"] .chat-message-bubble.bot {
+  background: var(--bg-card) !important;
+  border-color: rgba(0, 0, 0, 0.07) !important;
+  color: var(--text-muted) !important;
+}
+:root[data-theme="light-matte"] .precedent-card {
+  background: var(--bg-card) !important;
+  border: none !important;
+  box-shadow: var(--shadow-card) !important;
+}
+:root[data-theme="light-matte"] .upload-hero {
+  background: linear-gradient(135deg, var(--bg-panel) 0%, var(--bg-sidebar) 100%) !important;
+}
+
+/* ── light-matte: Vault & dashboard ── */
+:root[data-theme="light-matte"] .vault-grid-card,
+:root[data-theme="light-matte"] .bento-card {
+  color: var(--text-primary) !important;
+}
+
+/* ── light-matte: Muted text ── */
+:root[data-theme="light-matte"] .text-muted,
+:root[data-theme="light-matte"] .sidebar-nav a:not(.active) {
+  color: var(--text-muted) !important;
+}
+
+/* ── light-matte: Loading spinner uses brand accent ── */
+:root[data-theme="light-matte"] .loading-spinner {
+  border-color: rgba(59, 130, 246, 0.18) !important;
+  border-top-color: var(--accent-primary) !important;
+}
+
+/* ── light-matte: Buttons ── */
+:root[data-theme="light-matte"] .btn-accent {
+  background-color: var(--accent-primary) !important;
+  color: #FFFFFF !important;
+}
+:root[data-theme="light-matte"] .btn-accent:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+/* ── light-matte: Scrollbar (warm tones) ── */
+:root[data-theme="light-matte"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); }
+:root[data-theme="light-matte"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.22); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME — COMPONENT-INJECTED CSS OVERRIDES
+   These rules fix CSS injected via <style> tags inside React components
+   (VaultView.jsx vaultStyles, CourtResources.jsx, CaseWorkspace.jsx WS_CSS).
+   They use :root[data-theme="light"] prefix (specificity 0-2-0) which beats
+   the component's plain class selectors (specificity 0-1-0), so they win
+   regardless of injection order.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Drop zones — replace dark rgba borders with visible light-mode borders ── */
+:root[data-theme="light"] .drop-zone,
+:root[data-theme="light"] .drag-drop-zone {
+  border: 2px dashed #B0B9CC !important;
+  background-color: #F8FAFC !important;
+}
+:root[data-theme="light"] .drop-zone:hover,
+:root[data-theme="light"] .drag-drop-zone:hover,
+:root[data-theme="light"] .drop-zone.dragover,
+:root[data-theme="light"] .drag-drop-zone.dragover {
+  border-color: #3B82F6 !important;
+  background-color: rgba(59,130,246,.04) !important;
+}
+
+/* ── Form input hover — replace white-on-white rgba with visible border ── */
+:root[data-theme="light"] input[type="text"]:hover,
+:root[data-theme="light"] input[type="number"]:hover,
+:root[data-theme="light"] input[type="email"]:hover,
+:root[data-theme="light"] input[type="password"]:hover,
+:root[data-theme="light"] select:hover,
+:root[data-theme="light"] textarea:hover,
+:root[data-theme="light"] .form-input:hover,
+:root[data-theme="light"] .select-element:hover,
+:root[data-theme="light"] .search-input-field:hover {
+  border-color: #94A3B8 !important;
+}
+
+/* ── Sidebar collapse button hover — was white text on light bg ── */
+:root[data-theme="light"] .sidebar-collapse-btn:hover {
+  background: rgba(0,0,0,.06) !important;
+  color: #1A2234 !important;
+  border-color: #94A3B8 !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CourtResources.jsx — component-injected CSS class overrides
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Banner card gradient — dark-only gradient becomes light */
+:root[data-theme="light"] .banner-card {
+  background: linear-gradient(135deg, #F0F2F8 0%, #E4E8F4 100%) !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06) !important;
+}
+
+/* Card headings hardcoded white */
+:root[data-theme="light"] .card-h3 { color: #1A2234 !important; }
+:root[data-theme="light"] .panel-header h2 { color: #1A2234 !important; }
+
+/* Modal meta value hardcoded white */
+:root[data-theme="light"] .modal-meta-value { color: #374151 !important; }
+:root[data-theme="light"] .modal-card {
+  background-color: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+:root[data-theme="light"] .modal-header,
+:root[data-theme="light"] .modal-footer {
+  border-color: #E5E7EB !important;
+}
+
+/* Resource panel background */
+:root[data-theme="light"] .resource-panel {
+  background-color: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06) !important;
+}
+
+/* Skeleton shimmer — replace dark shimmer with light version */
+:root[data-theme="light"] .skeleton-line {
+  background: linear-gradient(90deg, #E8ECF4 25%, #F0F2F8 50%, #E8ECF4 75%) !important;
+  background-size: 200% 100% !important;
+}
+:root[data-theme="light"] .skel-line {
+  background: linear-gradient(90deg, rgba(0,0,0,.04) 25%, rgba(0,0,0,.08) 50%, rgba(0,0,0,.04) 75%) !important;
+  background-size: 200% 100% !important;
+}
+:root[data-theme="light"] .events-skeleton-card {
+  background: #FFFFFF !important;
+  border-color: #C8CEDC !important;
+}
+
+/* Events source pill — visible on light bg */
+:root[data-theme="light"] .events-source-pill {
+  background: rgba(0,0,0,.05) !important;
+  border-color: rgba(0,0,0,.1) !important;
+  color: #4A5568 !important;
+}
+
+/* Events error state dashed border */
+:root[data-theme="light"] .events-error-state {
+  border-color: rgba(0,0,0,.1) !important;
+}
+
+/* Tab separator borders */
+:root[data-theme="light"] .sub-tabs-wrapper {
+  border-bottom-color: #C8CEDC !important;
+}
+
+/* Sub-tab active state was hardcoded white */
+:root[data-theme="light"] .sub-tab-btn.active {
+  color: #1A2234 !important;
+  background-color: rgba(0,0,0,.06) !important;
+}
+:root[data-theme="light"] .sub-tab-btn:hover {
+  color: #1A2234 !important;
+  background-color: rgba(0,0,0,.04) !important;
+}
+
+/* Copy button link hover was hardcoded white */
+:root[data-theme="light"] .copy-btn-link:hover { color: #1D4ED8 !important; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   VaultView.jsx & CaseWorkspace.jsx — High-Contrast Light Theme Overrides
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Workspace Container & Content Background */
+:root[data-theme="light"] .cw-container,
+:root[data-theme="light"] .cw-content {
+  background: #F8FAFC !important;
+}
+
+/* Header */
+:root[data-theme="light"] .cw-header {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CBD5E1 !important;
+}
+:root[data-theme="light"] .cw-case-title {
+  color: #0F172A !important;
+  font-weight: 800 !important;
+}
+:root[data-theme="light"] .cw-case-subtitle {
+  color: #475569 !important;
+}
+:root[data-theme="light"] .cw-badge-active {
+  background: rgba(16,185,129,0.1) !important;
+  color: #059669 !important;
+  border: 1px solid rgba(16,185,129,0.3) !important;
+  font-weight: 700 !important;
+}
+:root[data-theme="light"] .cw-badge-suit {
+  background: #EFF6FF !important;
+  color: #1D4ED8 !important;
+  border: 1px solid #BFDBFE !important;
+  font-weight: 600 !important;
+}
+
+/* Tabs */
+:root[data-theme="light"] .cw-tab-bar,
+:root[data-theme="light"] .tabs-wrapper {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CBD5E1 !important;
+}
+:root[data-theme="light"] .cw-tab-btn,
+:root[data-theme="light"] .tab-btn {
+  color: #475569 !important;
+  font-weight: 600 !important;
+}
+:root[data-theme="light"] .cw-tab-btn:hover,
+:root[data-theme="light"] .tab-btn:hover {
+  color: #0F172A !important;
+}
+:root[data-theme="light"] .cw-tab-btn.cw-active,
+:root[data-theme="light"] .tab-btn.active {
+  color: #2563EB !important;
+  border-bottom: 2px solid #2563EB !important;
+  font-weight: 700 !important;
+}
+
+/* Vault Search Bar */
+:root[data-theme="light"] .vault-search-bar {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03) !important;
+}
+:root[data-theme="light"] .vault-search-input {
+  color: #0F172A !important;
+  font-weight: 500 !important;
+}
+:root[data-theme="light"] .vault-search-input::placeholder {
+  color: #64748B !important;
+}
+
+/* Matter Blueprint Empty Hero Card */
+:root[data-theme="light"] .vault-empty-hero {
+  background: radial-gradient(ellipse at 50% -10%, rgba(59,130,246,0.06) 0%, transparent 65%), #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.06) !important;
+}
+:root[data-theme="light"] .vault-empty-icon-ring {
+  background: linear-gradient(135deg, rgba(37,99,235,0.12) 0%, rgba(59,130,246,0.04) 100%) !important;
+  border: 1px solid rgba(37,99,235,0.3) !important;
+}
+:root[data-theme="light"] .vault-empty-title {
+  color: #0F172A !important;
+  font-weight: 800 !important;
+}
+:root[data-theme="light"] .vault-empty-sub {
+  color: #475569 !important;
+  font-weight: 500 !important;
+}
+:root[data-theme="light"] .vault-blueprint-tags {
+  max-width: 520px !important;
+}
+:root[data-theme="light"] .vault-blueprint-tag {
+  background: #F1F5F9 !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #1E293B !important;
+  font-weight: 600 !important;
+}
+:root[data-theme="light"] .vault-btn-blueprint-hero {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 16px rgba(37,99,235,0.3) !important;
+}
+:root[data-theme="light"] .vault-btn-blueprint-hero:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
+  box-shadow: 0 8px 24px rgba(37,99,235,0.4) !important;
+}
+:root[data-theme="light"] .vault-empty-link {
+  color: #2563EB !important;
+  font-weight: 600 !important;
+}
+:root[data-theme="light"] .vault-empty-link:hover {
+  color: #1D4ED8 !important;
+}
+:root[data-theme="light"] .vault-empty-sep {
+  color: #94A3B8 !important;
+}
+
+/* Breadcrumb */
+:root[data-theme="light"] .vault-breadcrumb {
+  background: #F1F5F9 !important;
+  border-color: #CBD5E1 !important;
+}
+:root[data-theme="light"] .vault-bc-current {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+:root[data-theme="light"] .vault-bc-btn {
+  color: #2563EB !important;
+  font-weight: 600 !important;
+}
+:root[data-theme="light"] .vault-bc-new-btn {
+  color: #374151 !important;
+  border-color: #CBD5E1 !important;
+  background: #FFFFFF !important;
+}
+:root[data-theme="light"] .vault-bc-new-btn:hover {
+  color: #1D4ED8 !important;
+  background: #EFF6FF !important;
+  border-color: #3B82F6 !important;
+}
+
+/* Folder Cards */
+:root[data-theme="light"] .vault-folder-card {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03) !important;
+}
+:root[data-theme="light"] .vault-folder-card:hover {
+  background: #EFF6FF !important;
+  border-color: #3B82F6 !important;
+}
+:root[data-theme="light"] .vault-folder-name {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+:root[data-theme="light"] .vault-folder-meta {
+  color: #475569 !important;
+}
+
+/* Folder & Document Menus */
+:root[data-theme="light"] .vault-folder-menu,
+:root[data-theme="light"] .vault-doc-menu {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important;
+}
+:root[data-theme="light"] .vault-folder-menu-item,
+:root[data-theme="light"] .vault-doc-menu-item {
+  color: #374151 !important;
+}
+:root[data-theme="light"] .vault-folder-menu-item:hover,
+:root[data-theme="light"] .vault-doc-menu-item:hover {
+  background: rgba(0,0,0,0.04) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .vault-folder-menu-sep,
+:root[data-theme="light"] .vault-doc-menu-sep {
+  background: #E5E7EB !important;
+}
+:root[data-theme="light"] .vault-folder-dots:hover,
+:root[data-theme="light"] .vault-doc-dots:hover {
+  background: rgba(0,0,0,0.06) !important;
+  color: #374151 !important;
+}
+
+/* Folder Rename & New Folder Input */
+:root[data-theme="light"] .vault-folder-rename-input,
+:root[data-theme="light"] .vault-new-folder-input {
+  background: #FFFFFF !important;
+  border-color: rgba(59,130,246,0.5) !important;
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .vault-new-folder-row {
+  background: rgba(59,130,246,0.04) !important;
+  border-color: rgba(59,130,246,0.18) !important;
+}
+:root[data-theme="light"] .vault-nf-confirm {
+  color: #2563EB !important;
+}
+:root[data-theme="light"] .vault-nf-cancel {
+  color: #4A5568 !important;
+  border-color: #CBD5E1 !important;
+}
+:root[data-theme="light"] .vault-nf-cancel:hover {
+  color: #1A2234 !important;
+  border-color: #94A3B8 !important;
+}
+
+/* Document Grid Card */
+:root[data-theme="light"] .vault-grid-card {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.04) !important;
+}
+:root[data-theme="light"] .vault-grid-card:hover {
+  border-color: #2563EB !important;
+  box-shadow: 0 8px 24px rgba(37,99,235,0.12) !important;
+}
+:root[data-theme="light"] .vault-card-preview {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+  color: #334155 !important;
+}
+
+/* Drag-Drop Zone */
+:root[data-theme="light"] .drag-drop-zone {
+  background-color: #F8FAFC !important;
+  border-color: #93C5FD !important;
+}
+:root[data-theme="light"] .drag-drop-zone:hover,
+:root[data-theme="light"] .drag-drop-zone.dragover {
+  background-color: #EFF6FF !important;
+  border-color: #3B82F6 !important;
+}
+
+/* Dashboard Panel & Cards */
+:root[data-theme="light"] .dashboard-panel,
+:root[data-theme="light"] .cw-card,
+:root[data-theme="light"] .cw-metric-card,
+:root[data-theme="light"] .cw-draft-item {
+  background: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+}
+:root[data-theme="light"] .cw-card-head {
+  background: #F8FAFC !important;
+  border-bottom-color: #E5E7EB !important;
+}
+:root[data-theme="light"] .cw-card-title {
+  color: #0F172A !important;
+  font-weight: 800 !important;
+}
+:root[data-theme="light"] .cw-metric-value {
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .cw-synopsis-output,
+:root[data-theme="light"] .cw-tl-desc {
+  color: #374151 !important;
+}
+:root[data-theme="light"] .cw-draft-title,
+:root[data-theme="light"] .cw-empty-title {
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .cw-btn-ghost {
+  color: #4A5568 !important;
+  border-color: #CBD5E1 !important;
+}
+:root[data-theme="light"] .cw-btn-ghost:hover {
+  color: #1A2234 !important;
+}
+:root[data-theme="light"] .cw-skeleton,
+:root[data-theme="light"] .vault-shimmer-row {
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(59,130,246,0.07) 50%, rgba(0,0,0,0.04) 75%) !important;
+  background-size: 800px 100% !important;
+}
+
+/* Library Drawer */
+:root[data-theme="light"] .lib-drawer {
+  background: #FFFFFF !important;
+  border-left: 1px solid #CBD5E1 !important;
+  box-shadow: -16px 0 48px rgba(0,0,0,0.12) !important;
+}
+:root[data-theme="light"] .lib-drawer-head {
+  background: #F8FAFC !important;
+  border-bottom: 1px solid #E2E8F0 !important;
+}
+:root[data-theme="light"] .lib-drawer-title {
+  color: #0F172A !important;
+}
+:root[data-theme="light"] .lib-drawer-sub {
+  color: #475569 !important;
+}
+:root[data-theme="light"] .lib-search-wrap {
+  background: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+}
+:root[data-theme="light"] .lib-search-input {
+  color: #0F172A !important;
+}
+:root[data-theme="light"] .lib-item {
+  background: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+}
+:root[data-theme="light"] .lib-item:hover {
+  background: #EFF6FF !important;
+  border-color: #3B82F6 !important;
+}
+:root[data-theme="light"] .lib-item-title {
+  color: #0F172A !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+/* ── MS-Word Rich Text Toolbar & TipTap Editor Global Styling ───────────── */
+.rich-text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 16px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-subtle);
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+  margin: 0;
+  flex-wrap: wrap;
+  min-height: 40px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.toolbar-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  transition: all 0.15s ease-in-out;
+  flex-shrink: 0;
+}
+
+.toolbar-btn:hover {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent-primary);
+}
+
+.toolbar-btn.active {
+  background: var(--accent-primary);
+  color: #FFFFFF !important;
+  border-color: var(--accent-primary);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-subtle);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.toolbar-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 550;
+  border-radius: 6px;
+  padding: 4px 8px;
+  height: 32px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  appearance: auto;
+  -webkit-appearance: auto;
+  outline: none;
+  vertical-align: middle;
+}
+
+.toolbar-select-font {
+  min-width: 155px;
+  width: auto;
+}
+
+.toolbar-select-size {
+  min-width: 110px;
+  width: auto;
+}
+
+.toolbar-select option {
+  background: #111827;
+  color: #F8FAFC;
+  font-size: 12.5px;
+  padding: 6px 10px;
+}
+
+.toolbar-select:hover {
+  border-color: var(--accent-primary);
+}
+
+.toolbar-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.25);
+}
+
+/* Light Theme Overrides for Rich Text Toolbar */
+:root[data-theme="light"] .rich-text-toolbar {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #E2E8F0 !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-radius: 0 !important;
+}
+
+:root[data-theme="light"] .toolbar-btn {
+  color: #4A5568 !important;
+}
+
+:root[data-theme="light"] .toolbar-btn:hover {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #2563EB !important;
+}
+
+:root[data-theme="light"] .toolbar-btn.active {
+  background: #2563EB !important;
+  color: #FFFFFF !important;
+}
+
+:root[data-theme="light"] .toolbar-select {
+  background-color: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #0F172A !important;
+  font-weight: 600 !important;
+}
+
+:root[data-theme="light"] .toolbar-select option {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+:root[data-theme="light"] .toolbar-select:hover {
+  background-color: #F8FAFC !important;
+  border-color: #94A3B8 !important;
+}
+
+:root[data-theme="light"] .toolbar-select:focus {
+  border-color: #2563EB !important;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.2) !important;
+}
+
+:root[data-theme="light"] .toolbar-divider {
+  background: #E2E8F0 !important;
+}
+
+/* ── Selection BubbleMenu: Comment / Draft Revision / AI Rewrite ────────
+   Global (not page-scoped) because ContractTiptapEditor.jsx — and this
+   bubble menu — is shared between ContractAnalyzer.jsx and
+   AutoDraftWorkspace.jsx; a page-scoped <style> block would leave it
+   unstyled wherever it's used outside the page that happened to define it.
+   Intentionally NOT theme-varianted: it floats over arbitrary document
+   content in both themes, so a fixed dark chrome (like a native OS/browser
+   context menu) reads correctly regardless of page background. */
+.ca-bubble-menu {
+  display: flex; gap: 4px; padding: 4px; align-items: center;
+  background: #171c26; border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+}
+.ca-bubble-menu-btn {
+  background: transparent; border: none; color: #E2E8F0;
+  font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px;
+  cursor: pointer; white-space: nowrap; font-family: inherit; transition: background 0.15s;
+}
+.ca-bubble-menu-btn:hover { background: rgba(59,130,246,0.18); }
+.ca-bubble-menu-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ca-bubble-menu-btn:disabled:hover { background: transparent; }
+
+.ca-bubble-ai-input {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16);
+  color: #E2E8F0; font-size: 12px; font-family: inherit;
+  padding: 6px 8px; border-radius: 6px; min-width: 220px; outline: none;
+}
+.ca-bubble-ai-input:focus { border-color: rgba(59,130,246,0.6); }
+.ca-bubble-ai-input::placeholder { color: rgba(226,232,240,0.45); }
+.ca-bubble-ai-error {
+  font-size: 11px; color: #FCA5A5; padding: 0 4px; max-width: 220px;
+}
+

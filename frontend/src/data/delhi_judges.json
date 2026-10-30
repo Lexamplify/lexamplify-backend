@@ -1,0 +1,272 @@
+[
+  {
+    "id": "dhc-01",
+    "court_room": "1 (DB- 1)",
+    "bench_type": "Division Bench (DB-I)",
+    "hmj": "HON'BLE THE CHIEF JUSTICE DEVENDRA KUMAR UPADHYAYA & HON'BLE MR. JUSTICE TEJAS KARIA",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt9",
+    "vc_meeting_id": "25125678824",
+    "email_id": "courtmasterdbone@gmail.com / courtmaster253@gmail.com"
+  },
+  {
+    "id": "dhc-02",
+    "court_room": "37 (BD- ll )",
+    "bench_type": "Division Bench (DB-II)",
+    "hmj": "HON'BLE MR.JUSTICE V KAMESWAR RAO & HON'BLE MR.JUSTICE MANMEET PRITAM SINGH ARORA",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt18",
+    "vc_meeting_id": "1664 12 4933",
+    "email_id": "cmrajeevkumar.dhc@gov.in"
+  },
+  {
+    "id": "dhc-03",
+    "court_room": "38 (DB-III)",
+    "bench_type": "Division Bench (DB-III)",
+    "hmj": "HON'BLE MR. JUSTICE NITIN WASUDEO SAMBRE & HON'BLE MR. JUSTICE AMIT SHARMA",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt15",
+    "vc_meeting_id": "25161366727",
+    "email_id": "cmatishgoel@gmail.com / faisal.zaki@dhc.nic.in"
+  },
+  {
+    "id": "dhc-04",
+    "court_room": "41 (BD- IV )",
+    "bench_type": "Division Bench (DB-IV)",
+    "hmj": "HON'BLE MR. JUSTICE DINESH MEHTA HON'BLE MR. JUSTICE RAJNEESH KUMAR GUPTA",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc8",
+    "vc_meeting_id": "25158151075",
+    "email_id": "tarun.915@dhc.nic.in"
+  },
+  {
+    "id": "dhc-05",
+    "court_room": "42 (DB- V)",
+    "bench_type": "Division Bench (DB-V)",
+    "hmj": "HON'BLE MR.JUSTICE VIVEK CHAUDHARY HON'BLE MS. JUSTICE RENU BHATNAGAR",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc10",
+    "vc_meeting_id": "25127330441",
+    "email_id": "sumanchawala575@gmail.com"
+  },
+  {
+    "id": "dhc-06",
+    "court_room": "33 (DB-VI)",
+    "bench_type": "Division Bench (DB-VI)",
+    "hmj": "HON'BLE MS. JUSTICE PRATHIBA M.SINGH HON'BLE MR. JUSTICE VIKAS MAHAJAN",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt6",
+    "vc_meeting_id": "1669 92 0249",
+    "email_id": "courtmaster@pmsingh.in"
+  },
+  {
+    "id": "dhc-07",
+    "court_room": "34. (DB-VII)",
+    "bench_type": "Division Bench (DB-VII)",
+    "hmj": "HON'BLE MR.JUSTICE NAVIN CHAWLA HON'BLE MR. JUSTICE RAVINDER DUDEJA",
+    "vc_link": "https://delhihighcourt.webex.com/join/dhcecourtvc5",
+    "vc_meeting_id": "",
+    "email_id": "cmrajeshmalhotra@dhc.nic.in"
+  },
+  {
+    "id": "dhc-08",
+    "court_room": "05. (DB-VIII)",
+    "bench_type": "Division Bench (DB-VIII)",
+    "hmj": "HON'BLE MR. JUSTICE C.HARI SHANKAR HON'BLE MR.JUSTICE VINOD KUMAR",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt19",
+    "vc_meeting_id": "572527376",
+    "email_id": "cmpraveenkumar.dhc@gov.in"
+  },
+  {
+    "id": "dhc-09",
+    "court_room": "06. ( DB-IX)",
+    "bench_type": "Division Bench (DB-IX)",
+    "hmj": "HON'BLE MR.JUSTICE ANIL KSHETARPAL HON'BLE MS. JUSTICE SHAIL JAIN",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc7",
+    "vc_meeting_id": "572527376",
+    "email_id": "rohit.643@dhc.nic.in"
+  },
+  {
+    "id": "dhc-10",
+    "court_room": "07",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR.JUSTICE SANJEEV NARULA",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc9",
+    "vc_meeting_id": "",
+    "email_id": "cmnandansingh.dhc@gov.in"
+  },
+  {
+    "id": "dhc-11",
+    "court_room": "08",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE MANOJ KUMAR OHRI",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt14",
+    "vc_meeting_id": "2528 229 8537",
+    "email_id": "cmpankajgoel.dhc@gov.in"
+  },
+  {
+    "id": "dhc-12",
+    "court_room": "10",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE JASMEET SINGH",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc8",
+    "vc_meeting_id": "",
+    "email_id": "pramod@dhc.nic.in"
+  },
+  {
+    "id": "dhc-13",
+    "court_room": "13",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE AMIT BANSAL",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc12",
+    "vc_meeting_id": "",
+    "email_id": "devender@dhc.nic.in"
+  },
+  {
+    "id": "dhc-14",
+    "court_room": "15",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MS. JUSTICE NEENA BANSAL KRISHNA",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc1",
+    "vc_meeting_id": "2512 399 8226 AND PASSWORD: 1234",
+    "email_id": "cmpankaj.dhc@gov.in"
+  },
+  {
+    "id": "dhc-15",
+    "court_room": "25",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE SWARANA KANTA SHARMA",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc",
+    "vc_meeting_id": "",
+    "email_id": "cmbharatgulati.dhc@gov.in"
+  },
+  {
+    "id": "dhc-16",
+    "court_room": "50",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MS. JUSTICE MINI PUSHKARNA",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc2",
+    "vc_meeting_id": "",
+    "email_id": "n.shubhankar@dhc.nic.in"
+  },
+  {
+    "id": "dhc-17",
+    "court_room": "14",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE AMIT MAHAJAN",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc7",
+    "vc_meeting_id": "",
+    "email_id": "cmpooja.dhc@gov.in"
+  },
+  {
+    "id": "dhc-18",
+    "court_room": "16",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE ANISH DAYAL",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc12",
+    "vc_meeting_id": "",
+    "email_id": "cmatishgoel@gmail.com"
+  },
+  {
+    "id": "dhc-19",
+    "court_room": "03",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE AJAY DIGPAUL",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt5",
+    "vc_meeting_id": "1763 05 1581",
+    "email_id": "vikram.224@dhc.nic.in"
+  },
+  {
+    "id": "dhc-20",
+    "court_room": "04",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE HARISH VAIDYANATHAN SHANKAR",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt10",
+    "vc_meeting_id": "2516 788 5222",
+    "email_id": ""
+  },
+  {
+    "id": "dhc-21",
+    "court_room": "35",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE PRATEEK JALAN",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt3",
+    "vc_meeting_id": "",
+    "email_id": "anand.pinani@dhc.nic.in"
+  },
+  {
+    "id": "dhc-22",
+    "court_room": "29",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE PURUSHAINDRA KUMAR KAURAV",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc11",
+    "vc_meeting_id": "",
+    "email_id": "daya.nidhi@dhc.nic.in"
+  },
+  {
+    "id": "dhc-23",
+    "court_room": "36",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MS. JUSTICE CHANDRASEKHARAN SUDHA",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc2",
+    "vc_meeting_id": "1766397421",
+    "email_id": "annu.255@dhc.nic.in"
+  },
+  {
+    "id": "dhc-24",
+    "court_room": "31",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MS. JUSTICE SAURABH BANERJEE",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc9",
+    "vc_meeting_id": "",
+    "email_id": "prakash.aggarwal@dhc.nic.in"
+  },
+  {
+    "id": "dhc-25",
+    "court_room": "32",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE GIRISH KATHPALIA",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc014",
+    "vc_meeting_id": "",
+    "email_id": "manish.prasad@dhc.nic.in"
+  },
+  {
+    "id": "dhc-26",
+    "court_room": "30",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE MANOJ JAIN",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc015",
+    "vc_meeting_id": "",
+    "email_id": "mjcourtmaster@gmail.com"
+  },
+  {
+    "id": "dhc-27",
+    "court_room": "27",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MS. JUSTICE MADHU JAIN",
+    "vc_link": "https://dhcvirtualcourt.webex.com/meet/dhcvirtualcourt",
+    "vc_meeting_id": "",
+    "email_id": "umesh.umapati@gmail.com"
+  },
+  {
+    "id": "dhc-28",
+    "court_room": "26",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE VIMAL KUMAR YADAV",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc10",
+    "vc_meeting_id": "2513 574 5227",
+    "email_id": "nitin.010@dhc.nic.in"
+  },
+  {
+    "id": "dhc-29",
+    "court_room": "45 (F Court)",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE AVNEESH JHINGAN",
+    "vc_link": "https://virtualcourtdhc.webex.com/meet/virtualcourtdhc1",
+    "vc_meeting_id": "25128221186",
+    "email_id": "akhil.saxena@dhc.nic.in"
+  },
+  {
+    "id": "dhc-30",
+    "court_room": "46 (C Court)",
+    "bench_type": "Single Bench",
+    "hmj": "HON'BLE MR. JUSTICE SUBRAMONIUM PRASAD",
+    "vc_link": "https://delhihighcourt.webex.com/meet/dhcecourtvc13",
+    "vc_meeting_id": "",
+    "email_id": "pankaj.shukla@dhc.nic.in"
+  }
+]

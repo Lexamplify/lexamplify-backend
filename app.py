@@ -1,0 +1,2287 @@
+from flask import Flask, render_template, jsonify, request, redirect
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, verify_jwt_in_request
+from dotenv import load_dotenv
+from database import db as sqlalchemy_db
+from datetime import timedelta
+from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
+from sqlalchemy.exc import SQLAlchemyError
+import os
+from utils import doc_storage
+import re
+import secrets
+import click
+import sqlite3
+import json
+import io
+import time
+import hashlib
+import threading
+import uuid
+import requests
+import urllib.parse
+from bs4 import BeautifulSoup
+def Groq(*args, **kwargs):
+    """Imported on first use: the package costs about 25 MB of memory, and the free server has 512 MB in total."""
+    from groq import Groq as _real
+    return _real(*args, **kwargs)
+
+
+def TavilyClient(*args, **kwargs):
+    """Imported on first use: the package costs about 25 MB of memory, and the free server has 512 MB in total."""
+    from tavily import TavilyClient as _real
+    return _real(*args, **kwargs)
+
+from pinecone import Pinecone
+from utils.ai_helper import extract_json_from_llm_response
+
+# Render's filesystem is ephemeral — anything written to the working
+# directory (including a bare-relative-path SQLite file like
+# lex_assistant.db) is wiped on every deploy/restart unless it lives on an
+# attached Persistent Disk. Every sqlite3.connect('lex_assistant.db') call
+# across this codebase (10+ files: app.py, document_routes.py,
+# auth_routes.py, ai_routes.py, conflict_routes.py, rag_pipeline.py, ...)
+# uses that same bare relative path, resolved against the process's CWD —
+# rather than threading an env-var-driven absolute path through every one
+# of those call sites, this symlinks the CWD-relative name to the
+# Persistent Disk's mount path ONCE, at import time, before anything
+# connects. Every existing sqlite3.connect('lex_assistant.db') call then
+# transparently resolves through the symlink with zero further changes.
+# PERSISTENT_DATA_DIR is only set on Render once a Disk is attached and
+# this env var points at its mount path — locally it's unset, so this
+# block is a no-op and lex_assistant.db resolves exactly as it always has.
+load_dotenv()
+_persistent_data_dir = os.getenv('PERSISTENT_DATA_DIR')
+
+
+def _symlink_onto_persistent_disk(relative_path):
+    """Symlinks a CWD-relative sqlite path onto the Persistent Disk mount so
+    it survives Render's ephemeral-filesystem wipes on every deploy/restart.
+    Originally only lex_assistant.db went through this; Phase 2 of Case
+    Vault v2 sharing makes instance/client_data.db (team_members) load-
+    bearing for real access control too — an unshared team roster silently
+    reset on every deploy would look like shares randomly disappearing.
+    relative_path may include subdirectories (e.g. 'instance/client_data.db');
+    the parent directory is created before the symlink is placed since
+    os.symlink doesn't create intermediate dirs itself."""
+    parent = os.path.dirname(relative_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    _persistent_path = os.path.join(_persistent_data_dir, os.path.basename(relative_path))
+    if not os.path.exists(_persistent_path):
+        # First boot after attaching a fresh disk — nothing to link to yet;
+        # the table-creation code will populate real tables into this empty
+        # file once it runs against it through the symlink.
+        open(_persistent_path, 'a').close()
+    if not os.path.islink(relative_path):
+        if os.path.exists(relative_path):
+            # A non-symlink file already exists here (e.g. this is the very
+            # first deploy after attaching the disk) — never silently
+            # discard it; back it up once instead of overwriting.
+            os.rename(relative_path, relative_path + '.pre-disk-backup')
+        os.symlink(_persistent_path, relative_path)
+
+
+# Render's filesystem is ephemeral — anything written to the working
+# directory (including a bare-relative-path SQLite file like
+# lex_assistant.db) is wiped on every deploy/restart unless it lives on an
+# attached Persistent Disk. Every sqlite3.connect('lex_assistant.db') call
+# across this codebase (10+ files: app.py, document_routes.py,
+# auth_routes.py, ai_routes.py, conflict_routes.py, rag_pipeline.py, ...)
+# uses that same bare relative path, resolved against the process's CWD —
+# rather than threading an env-var-driven absolute path through every one
+# of those call sites, this symlinks the CWD-relative name to the
+# Persistent Disk's mount path ONCE, at import time, before anything
+# connects. Every existing sqlite3.connect('lex_assistant.db') call then
+# transparently resolves through the symlink with zero further changes.
+# PERSISTENT_DATA_DIR is only set on Render once a Disk is attached and
+# this env var points at its mount path — locally it's unset, so this
+# block is a no-op and both paths resolve exactly as they always have.
+if _persistent_data_dir and os.path.isdir(_persistent_data_dir):
+    _symlink_onto_persistent_disk('lex_assistant.db')
+    _symlink_onto_persistent_disk(os.path.join('instance', 'client_data.db'))
+
+# timeout: the Document Hub's extraction workers write to this same file from their own
+# connections, so a write here may have to wait a moment for one of theirs to finish. sqlite3's
+# default of 5 s is too short while a large batch is being indexed.
+class _ThreadLocalDB:
+    """The app shares one `db` object everywhere and many handlers briefly switch its row_factory. With one connection
+    shared by several request threads those switches collide ("tuple indices must be integers or slices, not str" on a
+    page that loads several endpoints at once). Each thread therefore gets its own connection to the same file; every
+    attribute and method behaves exactly as on a plain sqlite3 connection."""
+    def __init__(self, path):
+        object.__setattr__(self, "_path", path)
+        object.__setattr__(self, "_local", threading.local())
+    def _conn(self):
+        c = getattr(self._local, "c", None)
+        if c is None:
+            c = sqlite3.connect(self._path, check_same_thread=False, timeout=30)
+            self._local.c = c
+        return c
+    def __getattr__(self, name):
+        return getattr(self._conn(), name)
+    def __setattr__(self, name, value):
+        setattr(self._conn(), name, value)
+    def __enter__(self):
+        return self._conn().__enter__()
+    def __exit__(self, *a):
+        return self._conn().__exit__(*a)
+    def __iter__(self):
+        return iter(self._conn())
+
+db = _ThreadLocalDB('lex_assistant.db')
+
+def _backfill_public_vault_rows(conn):
+    """One-time backfill run only when the is_public column is first added.
+    Marks mass-ingested public judgments and leaves all other NULL-owner or
+    owned rows untouched."""
+    for _col, _type in (
+        ('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'),
+        ('file_blob', 'BLOB'), ('file_format', 'TEXT'), ('ratio_headnote', 'TEXT'),
+        ('user_id', 'INTEGER'),
+    ):
+        try:
+            conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
+        except Exception:
+            pass
+    cur = conn.execute(
+        "UPDATE case_vault SET is_public = 1 "
+        "WHERE user_id IS NULL AND doc_type = 'Judgment' "
+        "AND folder_id IS NULL AND smart_title IS NULL AND tags IS NULL "
+        "AND file_blob IS NULL AND file_format IS NULL AND ratio_headnote IS NULL"
+    )
+    marked = cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
+    hidden_row = conn.execute(
+        "SELECT COUNT(*) FROM case_vault WHERE user_id IS NULL AND is_public = 0"
+    ).fetchone()
+    hidden = hidden_row[0] if hidden_row else 0
+    conn.commit()
+    print(f"[vault] is_public backfill: marked={marked}, null_owner_hidden={hidden}")
+    return marked, hidden
+
+
+def init_db():
+    conn = db
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_date TEXT,
+            event_type TEXT,
+            title TEXT,
+            related_case_id TEXT,
+            location TEXT,
+            opposing_counsel TEXT,
+            google_event_id TEXT,
+            owner_user_id TEXT
+        )
+    ''')
+    for _col in ('google_event_id', 'owner_user_id'):
+        try:
+            c.execute(f'ALTER TABLE calendar_events ADD COLUMN {_col} TEXT')
+        except Exception:
+            pass
+    # Contract analyses — persisted so results survive page refresh and server restarts.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS contract_analyses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_user_id TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            document_name TEXT,
+            raw_text TEXT,
+            results_json TEXT,
+            scan_strategy TEXT,
+            page_count INTEGER,
+            word_count INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(owner_user_id, job_id)
+        )
+    ''')
+    c.execute('CREATE INDEX IF NOT EXISTS contract_analyses_owner ON contract_analyses(owner_user_id, created_at DESC)')
+
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS user_notification_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_user_id TEXT NOT NULL UNIQUE,
+            email_alerts_enabled INTEGER DEFAULT 0,
+            alert_email TEXT DEFAULT '',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS case_vault (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id TEXT,
+            title TEXT,
+            doc_type TEXT,
+            content TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Adjacency-list folder hierarchy for Case Vault
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS vault_folders (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT    NOT NULL,
+            parent_id INTEGER REFERENCES vault_folders(id) ON DELETE CASCADE,
+            user_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Migration: add folder_id + smart_title + tags + file_blob + file_format + ratio_headnote to case_vault if not present
+    for _col, _type in (('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'), ('file_blob', 'BLOB'), ('file_format', 'TEXT'), ('ratio_headnote', 'TEXT')):
+        try:
+            c.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
+        except Exception:
+            pass
+    # Ownership boundary — nullable, and deliberately NEVER backfilled for
+    # pre-existing rows (see the vault authorization audit): every row that
+    # predates this column has no reliable owner in the data itself, so it
+    # stays NULL rather than being fabricated.
+    # New rows written through the now-authenticated vault endpoints always
+    # get a real user_id going forward.
+    for _tbl in ('case_vault', 'vault_folders'):
+        try:
+            c.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
+        except Exception:
+            pass
+    try:
+        c.execute('ALTER TABLE case_vault ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0')
+    except Exception:
+        pass
+    else:
+        _backfill_public_vault_rows(conn)
+    # Standard-blueprint folders (see /api/vault/folders/init-blueprint) are
+    # marked protected so they can't be renamed/deleted out from under a
+    # matter with linked documents — everything else defaults unprotected.
+    try:
+        c.execute('ALTER TABLE vault_folders ADD COLUMN protected BOOLEAN DEFAULT 0')
+    except Exception:
+        pass
+    # Per-node "Anyone with the link" toggle (Phase 2 sharing) — distinct
+    # from an explicit per-person share row in document_vault_shares below.
+    for _tbl in ('case_vault', 'vault_folders'):
+        try:
+            c.execute(f'ALTER TABLE {_tbl} ADD COLUMN link_shared BOOLEAN DEFAULT 0')
+        except Exception:
+            pass
+    # Explicit per-person shares (Phase 2 sharing), uniform across folders
+    # and documents. Cascade is NOT stored here — sharing a folder grants
+    # access to its contents by walking the ancestor chain at
+    # permission-check time (see _effective_permission), so moving a folder
+    # or adding new children later can never leave a stale/duplicated grant
+    # behind. UNIQUE lets a re-share just update the existing row's
+    # permission instead of accumulating duplicates.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS document_vault_shares (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            node_type      TEXT    NOT NULL CHECK (node_type IN ('folder', 'document')),
+            node_id        INTEGER NOT NULL,
+            team_member_id INTEGER NOT NULL,
+            permission     TEXT    NOT NULL DEFAULT 'view' CHECK (permission IN ('view', 'edit')),
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(node_type, node_id, team_member_id)
+        )
+    ''')
+    # AI Provenance / Audit Trail — links saved docs to the agent conversation that produced them
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS vault_audit (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            folder_id      INTEGER REFERENCES vault_folders(id) ON DELETE SET NULL,
+            vault_doc_id   INTEGER,
+            session_title  TEXT,
+            messages_json  TEXT,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Phase 3 — the real Provenance Trail. Kept separate from vault_audit
+    # above (which stays exactly as-is, still serving its narrower "AI
+    # conversation behind one saved document" purpose) since this instead
+    # records every mutation across the whole vault: folder/document
+    # create/rename/move/delete, upload, share/unshare, link-share toggle.
+    # One GLOBAL linear hash chain, not per-node — content_hash chains off
+    # the previous row's content_hash (see _write_provenance), so altering
+    # or deleting any past row breaks every hash after it. node_id and
+    # owner_user_id are snapshots at write time and are NOT re-validated
+    # against current state, since a deleted node's history must survive
+    # its own deletion for this to be worth anything as a real audit trail.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS vault_provenance (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            node_type      TEXT NOT NULL CHECK (node_type IN ('folder', 'document')),
+            node_id        INTEGER,
+            node_name      TEXT NOT NULL,
+            action         TEXT NOT NULL,
+            actor_user_id  INTEGER,
+            owner_user_id  INTEGER,
+            detail         TEXT,
+            content_hash   TEXT NOT NULL,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # ── Home Gateway v4 — real Matter/Team backend ──────────────────────────
+    # Replaces the old client-only Zustand+localStorage "organization" store.
+    # Lives alongside case_vault/vault_folders in this same lex_assistant.db
+    # connection (not instance/client_data.db) — the most recent, most
+    # structurally similar precedent in this app, and Matter Documents
+    # deliberately reuse case_vault directly (case_id = 'matter:<id>', see
+    # the /api/matters/<id>/documents route) rather than a parallel storage
+    # table, so keeping them in the same physical database avoids any
+    # cross-database join question for that reuse.
+    #
+    # Every row here gets a real owner_user_id from creation onward (unlike
+    # Case Vault's legacy NULL-is-shared carve-out, which exists only for
+    # pre-existing unowned rows that predate any ownership boundary) —
+    # there is no such legacy data for Matter/Team, so ownership is a plain
+    # equality check, or team membership for team-scoped matters.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS teams (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT    NOT NULL,
+            description    TEXT,
+            is_private     BOOLEAN NOT NULL DEFAULT 0,
+            owner_user_id  INTEGER NOT NULL,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS team_memberships (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            user_id     INTEGER NOT NULL,
+            role        TEXT    NOT NULL DEFAULT 'member',
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(team_id, user_id)
+        )
+    ''')
+    # team_id is genuinely nullable — this is the actual fix for "a matter
+    # cannot exist without immediately belonging to a team" (Home Gateway
+    # v4 brief §7): a lawyer working solo can create a matter with no team
+    # at all, and assign one later via PATCH /api/matters/<id>/team.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS matters (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            title          TEXT    NOT NULL,
+            status         TEXT    NOT NULL DEFAULT 'open',
+            team_id        INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+            lead_counsel   TEXT,
+            opened_date    DATE,
+            owner_user_id  INTEGER NOT NULL,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS deadlines (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id     INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            title         TEXT    NOT NULL,
+            date          DATE,
+            description   TEXT,
+            ai_extracted  BOOLEAN NOT NULL DEFAULT 0,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Named tasks_matter (not `tasks`) — that name is already the Team
+    # screen's own task board (routes/team_routes.py), an unrelated feature.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS tasks_matter (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            title       TEXT    NOT NULL,
+            done        BOOLEAN NOT NULL DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS handoff_notes (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id       INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            author_user_id  INTEGER NOT NULL,
+            text            TEXT    NOT NULL,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Named matter_activity (not reusing vault_audit/vault_provenance) —
+    # this is Matter Workspace's own activity spine, a different feature
+    # from Case Vault's audit/provenance trails.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS matter_activity (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+            text        TEXT    NOT NULL,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Auto-Draft Studio v1 — real per-user persistence for letterheads
+    # (previously localStorage only) and saved drafts (previously a single
+    # unauthenticated global saved_drafts_data.json file that let any
+    # logged-in user see/delete every other user's drafts). Both owned
+    # outright, same convention as teams/matters above.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS letterheads (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_user_id   INTEGER NOT NULL,
+            name            TEXT    NOT NULL,
+            tagline         TEXT,
+            address         TEXT,
+            contact         TEXT,
+            auto_detected   BOOLEAN NOT NULL DEFAULT 0,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # id stays a client-generated TEXT primary key (e.g. `draft_<ts>_<rand>`)
+    # rather than an autoincrement surrogate — DraftsModal.jsx/
+    # AutoDraftWorkspace.jsx already mint and pass this id, and its own
+    # optimistic localStorage fallback (dropped below) relied on the same
+    # id being stable across both writes, so keeping it avoids a shape
+    # change on the frontend.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS saved_drafts (
+            id             TEXT    PRIMARY KEY,
+            owner_user_id  INTEGER NOT NULL,
+            title          TEXT    NOT NULL,
+            raw_text       TEXT,
+            clauses_json   TEXT,
+            summary        TEXT,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS document_chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            case_id INTEGER,
+            document_id INTEGER NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            chunk_text TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            user_message TEXT NOT NULL,
+            bot_response TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+
+load_dotenv()
+
+jwt = JWTManager()
+
+DB_PATH = os.path.join('instance', 'client_data.db')
+
+def init_sqlite_db():
+    os.makedirs('instance', exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS tracked_cases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        case_name TEXT NOT NULL,
+        case_number TEXT,
+        cnr_number TEXT,
+        court TEXT,
+        client_name TEXT,
+        case_type TEXT,
+        next_hearing DATE,
+        last_hearing DATE,
+        status TEXT DEFAULT 'Active',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        cnr TEXT,
+        title TEXT,
+        next_hearing_date DATE
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        email TEXT,
+        address TEXT,
+        client_type TEXT DEFAULT 'Individual',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        contact TEXT,
+        company TEXT
+    )''')
+    
+    # Ensure missing schema columns are dynamically appended
+    for col, col_type in [("cnr", "TEXT"), ("title", "TEXT"), ("next_hearing_date", "DATE")]:
+        try:
+            c.execute(f"ALTER TABLE tracked_cases ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+            
+    for col, col_type in [("contact", "TEXT"), ("company", "TEXT")]:
+        try:
+            c.execute(f"ALTER TABLE clients ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+    c.execute('''CREATE TABLE IF NOT EXISTS time_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id INTEGER,
+        case_id INTEGER,
+        date DATE,
+        hours REAL,
+        rate REAL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id INTEGER,
+        invoice_number TEXT,
+        amount REAL,
+        gst REAL,
+        total REAL,
+        status TEXT DEFAULT 'Draft',
+        due_date DATE,
+        paid_date DATE,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS ip_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip_type TEXT,
+        title TEXT,
+        registration_number TEXT,
+        filing_date DATE,
+        renewal_due DATE,
+        status TEXT DEFAULT 'Active',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS team_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        email TEXT,
+        role TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    # Resolved lazily (case-insensitive email match against the real `users`
+    # table) whenever the roster is listed or a share is created — see
+    # _resolve_team_member_user_ids() in app.py. team_members lives in this
+    # sqlite file; `users` is a SQLAlchemy model against Postgres/Neon in
+    # production, so there is no SQL JOIN across them, only this cached,
+    # self-healing column. A member with no matching registered account
+    # stays NULL and is still shown in Share's people-picker for
+    # visibility/intent, but grants them no actual access — see the Case
+    # Vault v2 Phase 2 sharing notes.
+    try:
+        c.execute('ALTER TABLE team_members ADD COLUMN user_id INTEGER')
+    except sqlite3.OperationalError:
+        pass
+    c.execute('''CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        assigned_to INTEGER,
+        case_id INTEGER,
+        due_date DATE,
+        priority TEXT DEFAULT 'Normal',
+        status TEXT DEFAULT 'todo',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    conn.commit()
+    conn.close()
+
+
+def generate_pdf_blob(title, content):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm,
+                            leftMargin=2.5*cm, rightMargin=2.5*cm)
+    styles = getSampleStyleSheet()
+    story = [Paragraph(str(title), styles['Title']), Spacer(1, 0.4*cm)]
+    for line in str(content).split('\n'):
+        stripped = line.strip()
+        if stripped:
+            story.append(Paragraph(stripped, styles['Normal']))
+            story.append(Spacer(1, 0.15*cm))
+        else:
+            story.append(Spacer(1, 0.25*cm))
+    doc.build(story)
+    return buf.getvalue()
+
+
+def generate_docx_blob(title, content):
+    from docx import Document
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_heading(str(title), level=1)
+    for line in str(content).split('\n'):
+        doc.add_paragraph(line)
+    doc.save(buf)
+    return buf.getvalue()
+
+
+# Matches any http(s) localhost/127.0.0.1 origin regardless of port, so a
+# Vite dev-server port bump (5173 -> 5174 -> ...) never silently breaks CORS.
+# Anchored start-to-end so it can't be satisfied by a lookalike host like
+# "http://localhost.evil.com:5173".
+LOCAL_DEV_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1):\d+$")
+PROD_ORIGINS = {
+    'https://lexamplify-4.web.app',
+    'https://lexamplify-4.firebaseapp.com',
+    'https://test.lexamplify.com',
+    'https://lexamplify.com',
+    'https://www.lexamplify.com',
+}
+# Firebase Hosting preview channels get their own subdomain per deploy
+# (e.g. lexamplify-4--pr123-abc12.web.app), which PROD_ORIGINS' exact-match
+# set can't cover without listing every past/future channel by hand.
+# Anchored start-to-end, like LOCAL_DEV_ORIGIN_RE above, so a lookalike host
+# such as "https://evilweb.app" or "https://x.web.app.evil.com" can't slip
+# through — the subdomain must be followed by a literal '.' immediately
+# before 'web.app'/'firebaseapp.com', and the match must end there.
+FIREBASE_HOSTING_ORIGIN_RE = re.compile(r"^https://[a-zA-Z0-9][a-zA-Z0-9-]*\.(web\.app|firebaseapp\.com)$")
+
+# Strict allow-list for the document-retrieval route's case_id path segment —
+# alphanumeric plus underscore/hyphen only, anchored start-to-end, so a
+# value like "../../etc/passwd" can never reach the SQL query.
+CASE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+# worker.py's Pinecone vector IDs are hashlib.md5(...).hexdigest() of
+# "{case_id}_chunk_{n}" — opaque 32-char hashes that don't decode back to a
+# case_id. A URL path segment matching this shape means the caller only had
+# the raw vector id (e.g. a metadata-less search hit), not the real case_id.
+MD5_HASH_RE = re.compile(r'^[A-Za-z0-9]{32}$')
+
+# Same strict allow-list intent as CASE_ID_RE, but worker.py's real case_ids
+# are raw S3 filenames like "2022_13_342_356_EN.pdf" — CASE_ID_RE (built for
+# the case_vault route's slug-style ids) has no '.', which would reject
+# every single legitimately-ingested judgment. Still anchored start-to-end
+# and still excludes '/', quotes, and shell/SQL metacharacters.
+PINECONE_CASE_ID_RE = re.compile(r'^[A-Za-z0-9_.-]+$')
+
+# Must exactly match the ingestion pipeline's embedding model/index
+# dimension (worker.py EMBED_MODEL = "llama-text-embed-v2") — verified
+# empirically against the live index via describe_index_stats(): dimension
+# 1024, metric cosine. A true zero vector is undefined under cosine
+# similarity (division by zero); this dummy is only ever used for
+# filter-only "give me everything matching this case_id" queries where the
+# similarity score itself is discarded, so its direction is irrelevant —
+# it only needs to be non-zero.
+EMBED_DIMENSION = 1024
+EMBED_MODEL = "llama-text-embed-v2"
+DUMMY_QUERY_VECTOR = [1e-5] * EMBED_DIMENSION
+
+
+def format_case_title(filename):
+    """Builds a display title from a worker.py-style case_id, e.g.
+    "2022_13_342_356_EN.pdf" -> "Supreme Court Judgment (2022) - 2022_13_342_356".
+    Null-safe: the caller may pass metadata straight from Pinecone, which is
+    pipeline-controlled and not guaranteed to have every field.
+    """
+    if not filename:
+        return "Supreme Court Judgment (Unknown) - Untitled"
+
+    clean_name = filename
+    if clean_name.endswith('_EN.pdf'):
+        clean_name = clean_name[:-len('_EN.pdf')]
+    elif clean_name.endswith('.pdf'):
+        clean_name = clean_name[:-len('.pdf')]
+
+    parts = clean_name.split('_')
+    year = parts[0] if parts and parts[0] else "Unknown"
+    return f"Supreme Court Judgment ({year}) - {clean_name}"
+
+
+def _get_pinecone_index(pc):
+    """Resolves the Pinecone index by host if PINECONE_HOST is configured
+    (adding the https:// scheme if the env var was saved without one),
+    else by name — shared by every route that queries the case-law index
+    so a malformed/missing env var can't crash it differently in two
+    places. Callers are expected to wrap this in their own try/except;
+    it deliberately does not swallow errors itself."""
+    raw_host = (os.getenv("PINECONE_HOST") or "").strip()
+    index_name = (os.getenv("PINECONE_INDEX_NAME") or "legal-cases").strip()
+    if raw_host:
+        if not raw_host.startswith("https://"):
+            raw_host = f"https://{raw_host}"
+        return pc.Index(host=raw_host)
+    return pc.Index(name=index_name)
+
+
+# Distinct from format_case_title above — that one parses worker.py's S3
+# filename-style ids ("2022_13_342_356_EN.pdf"). This is for case_vault
+# rows, which use a different id scheme entirely (bulk INSC neutral
+# citations like "2025INSC738", or hand-entered ids like "case_101").
+# Confirmed empirically against the live table: title is NEVER null/empty,
+# but 894 of 911 rows have title == case_id verbatim (a bulk-ingest job set
+# title to a bare copy of the docket id instead of a real case name) — so
+# "does a title exist" is the wrong check; "is the title actually different
+# information from the id" is the one that matches real data.
+INSC_CITATION_RE = re.compile(r'^(\d{4})INSC(\d+)$', re.IGNORECASE)
+
+
+def format_vault_title(raw_title, case_id):
+    candidate = (raw_title or '').strip()
+    fallback_id = (case_id or '').strip()
+    if candidate and candidate != fallback_id:
+        return candidate
+
+    source = candidate or fallback_id
+    if not source:
+        return 'Untitled Document'
+
+    m = INSC_CITATION_RE.match(source)
+    if m:
+        year, num = m.groups()
+        return f"{year} INSC {num}"
+    return source
+
+
+# Party-name extraction for case_vault rows whose title is uninformative
+# (title == case_id). Scans line-by-line rather than running the regex
+# against the whole document: judgments in this table can be hundreds of
+# KB, and a pattern like ".*v\..*" applied with DOTALL/re.search over the
+# full text risks catastrophic backtracking and would happily match across
+# paragraph boundaries, picking up garbage. Anchoring to one line at a time
+# keeps each match bounded to at most ~120 chars of work.
+PARTY_VS_LINE_RE = re.compile(r"([^\n]{3,60}\s+(?:v\.|vs\.|vs|VERSUS)\s+[^\n]{3,60})", re.IGNORECASE)
+STANDALONE_VS_RE = re.compile(r'^(?:v\.|vs\.|vs|versus)$', re.IGNORECASE)
+
+# Case captions live in the first few lines of a judgment; a "Case Law
+# Cited" section further down is full of other "Party v. Party" lines
+# (precedents, not the case's own parties) and must never win.
+CAPTION_SCAN_WINDOW = 60
+
+
+def extract_case_title_from_content(content):
+    if not content:
+        return None
+    lines = [l.strip() for l in content.split('\n')]
+    non_empty = [l for l in lines if l][:CAPTION_SCAN_WINDOW]
+    for i, line in enumerate(non_empty):
+        m = PARTY_VS_LINE_RE.search(line)
+        if m:
+            cleaned = re.sub(r'\s+', ' ', m.group(1)).strip(' .,-:;')
+            if cleaned:
+                return cleaned
+        # Official SCR-style captions often put the separator on its own
+        # line ("Party A\nv.\nParty B") — join it with its immediate
+        # neighbours rather than a document-wide greedy/DOTALL match.
+        if STANDALONE_VS_RE.match(line) and 0 < i < len(non_empty) - 1:
+            party_a, party_b = non_empty[i - 1], non_empty[i + 1]
+            if 3 <= len(party_a) <= 80 and 3 <= len(party_b) <= 80:
+                cleaned = re.sub(r'\s+', ' ', f'{party_a} {line} {party_b}').strip(' .,-:;')
+                if cleaned:
+                    return cleaned
+    return None
+
+
+def resolve_vault_title(raw_title, case_id, content):
+    """Best available title for a case_vault row: a genuinely descriptive
+    stored title, else a 'Party v. Party' line extracted from the document
+    body, else the INSC-citation-formatted case_id (format_vault_title)."""
+    candidate = (raw_title or '').strip()
+    fallback_id = (case_id or '').strip()
+    if candidate and candidate != fallback_id:
+        return candidate
+    extracted = extract_case_title_from_content(content)
+    if extracted:
+        return extracted
+    return format_vault_title(raw_title, case_id)
+
+
+# ── Case Vault authorization ────────────────────────────────────────────
+# Strict ownership check: a vault row is owned by the current user only when
+# row_user_id is non-NULL and equals current_user_id. Unowned (user_id IS NULL)
+# rows are never treated as owned; mass-ingested public judgments carry an
+# explicit is_public = 1 marker on case_vault and are granted read-only access
+# in _vault_access_ok instead.
+def _vault_owner_ok(row_user_id, current_user_id):
+    return row_user_id is not None and int(row_user_id) == int(current_user_id)
+
+
+def _current_vault_user_id():
+    """int user id from the verified JWT identity. Routes calling this are
+    always behind @jwt_required(), so the identity is always present."""
+    return int(get_jwt_identity())
+
+
+# ── Case Vault sharing (Phase 2) ────────────────────────────────────────
+def _resolve_team_member_user_ids(conn=None):
+    """Case-insensitive email match of every team_members row against the
+    real `users` table, writing the result into team_members.user_id.
+    team_members lives in instance/client_data.db (sqlite); `users` is a
+    SQLAlchemy model against Postgres/Neon in production — there is no SQL
+    JOIN possible across the two, so this resolves in Python and caches the
+    result column. Called opportunistically (roster list, share creation,
+    permission checks) rather than on a schedule, so a newly-registered
+    account is picked up the next time anyone touches sharing rather than
+    drifting indefinitely. Unmatched members are left NULL — expected, not
+    an error; see the Phase 2 sharing notes on team_members having no real
+    user_id FK."""
+    from models.user import User
+    own_conn = conn is None
+    if own_conn:
+        conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute(
+            "SELECT id, email FROM team_members WHERE email IS NOT NULL AND email != ''"
+        ).fetchall()
+        if not rows:
+            return
+        users = User.query.filter(User.email.isnot(None)).all()
+        by_email = {u.email.strip().lower(): u.id for u in users if u.email}
+        for member_id, email in rows:
+            resolved_uid = by_email.get((email or '').strip().lower())
+            conn.execute('UPDATE team_members SET user_id = ? WHERE id = ?', (resolved_uid, member_id))
+        conn.commit()
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def _current_user_team_member_ids(current_user_id):
+    """team_members.id values whose resolved user_id matches the current
+    session. Re-resolves first so a share created right after someone's
+    first login/registration is honored immediately rather than waiting for
+    the next opportunistic resolution elsewhere."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _resolve_team_member_user_ids(conn)
+        rows = conn.execute('SELECT id FROM team_members WHERE user_id = ?', (current_user_id,)).fetchall()
+        return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def _get_ancestor_folder_ids(folder_id):
+    """Walks vault_folders.parent_id upward from folder_id to the root,
+    returning every ancestor's id (excluding folder_id itself). Cycle-
+    guarded defensively even though nothing in this app can create one."""
+    ancestors = []
+    seen = set()
+    current = folder_id
+    while current is not None and current not in seen:
+        seen.add(current)
+        row = db.execute('SELECT parent_id FROM vault_folders WHERE id = ?', (current,)).fetchone()
+        if not row:
+            break
+        current = row[0]
+        if current is not None:
+            ancestors.append(current)
+    return ancestors
+
+
+_PERMISSION_RANK = {'view': 1, 'edit': 2}
+
+
+def _effective_permission(node_type, node_id, member_ids):
+    """Highest permission any of the given team_member ids holds on this
+    node, unioned with every ancestor folder's own explicit shares — a
+    folder share cascades to everything nested inside it. Computed at
+    check time by walking the ancestor chain rather than duplicating grants
+    into descendants on share/move, so moving a folder or adding new
+    children later can never leave a stale or missing grant behind (see
+    document_vault_shares' schema comment). Returns None if nothing grants
+    access. A document's own ancestor chain starts at its containing
+    folder, since documents have no children of their own to cascade to."""
+    if not member_ids:
+        return None
+    if node_type == 'document':
+        folder_row = db.execute('SELECT folder_id FROM case_vault WHERE id = ?', (node_id,)).fetchone()
+        start_folder = folder_row[0] if folder_row else None
+    else:
+        start_folder = node_id
+
+    nodes_to_check = {(node_type, node_id)}
+    if start_folder is not None:
+        nodes_to_check.add(('folder', start_folder))
+        for ancestor_id in _get_ancestor_folder_ids(start_folder):
+            nodes_to_check.add(('folder', ancestor_id))
+
+    best = None
+    placeholders = ','.join('?' for _ in member_ids)
+    for ntype, nid in nodes_to_check:
+        rows = db.execute(
+            f'SELECT permission FROM document_vault_shares WHERE node_type = ? AND node_id = ? '
+            f'AND team_member_id IN ({placeholders})',
+            (ntype, nid, *member_ids)
+        ).fetchall()
+        for (perm,) in rows:
+            if best is None or _PERMISSION_RANK.get(perm, 0) > _PERMISSION_RANK.get(best, 0):
+                best = perm
+    return best
+
+
+def _visible_shared_vault_ids(current_user_id, include_nav=True, member_ids=None):
+    """Additional folder/document ids a non-owner can see through sharing —
+    composes with the `user_id = ?` owner filter via `OR id IN (...)` (and
+    `OR folder_id IN (...)`) rather than replacing it, so private vault
+    queries show only the signed-in user's own rows plus rows shared with
+    them (rows with `user_id IS NULL` are never included in private lists).
+
+    Sharing a folder grants access to everything nested inside it, so a
+    shared folder's entire descendant subtree is included even though only
+    the root folder has an explicit document_vault_shares row (walked
+    downward here rather than duplicated into every descendant on share/
+    move — see that table's schema comment). A directly-shared document
+    that lives inside a folder the recipient otherwise can't see would
+    dangle with no browsable path to it, so that document's whole ancestor
+    chain is added too, read-only-visible for navigation even though the
+    share itself doesn't grant rights to the intermediate folders.
+
+    That ancestor chain is for showing the folder TREE only. Callers that
+    use the folder ids to decide which DOCUMENTS to return (document
+    lists, counts, the Document Hub) must pass include_nav=False: only
+    folders whose whole content was shared are returned then. Without it,
+    sharing one document also exposed every other document in the same
+    folder and in each parent folder. member_ids lets a caller that
+    already resolved the user's team-member ids (the hub caches them) skip
+    the account scan."""
+    if member_ids is None:
+        member_ids = _current_user_team_member_ids(current_user_id)
+    if not member_ids:
+        return set(), set()
+    placeholders = ','.join('?' for _ in member_ids)
+
+    shared_folder_roots = {
+        r[0] for r in db.execute(
+            f"SELECT node_id FROM document_vault_shares WHERE node_type = 'folder' AND team_member_id IN ({placeholders})",
+            member_ids
+        ).fetchall()
+    }
+    shared_doc_ids = {
+        r[0] for r in db.execute(
+            f"SELECT node_id FROM document_vault_shares WHERE node_type = 'document' AND team_member_id IN ({placeholders})",
+            member_ids
+        ).fetchall()
+    }
+
+    all_folders = db.execute('SELECT id, parent_id FROM vault_folders').fetchall()
+    children_of, parent_of = {}, {}
+    for fid, pid in all_folders:
+        parent_of[fid] = pid
+        children_of.setdefault(pid, []).append(fid)
+
+    visible_folder_ids = set(shared_folder_roots)
+    stack = list(shared_folder_roots)
+    while stack:
+        fid = stack.pop()
+        for child in children_of.get(fid, []):
+            if child not in visible_folder_ids:
+                visible_folder_ids.add(child)
+                stack.append(child)
+
+    if shared_doc_ids and include_nav:
+        doc_ph = ','.join('?' for _ in shared_doc_ids)
+        doc_folder_rows = db.execute(
+            f'SELECT DISTINCT folder_id FROM case_vault WHERE id IN ({doc_ph}) AND folder_id IS NOT NULL',
+            list(shared_doc_ids)
+        ).fetchall()
+        for (fid,) in doc_folder_rows:
+            cur, seen = fid, set()
+            while cur is not None and cur not in seen:
+                seen.add(cur)
+                visible_folder_ids.add(cur)
+                cur = parent_of.get(cur)
+
+    return visible_folder_ids, shared_doc_ids
+
+
+def _vault_access_ok(node_type, node_id, row_user_id, current_user_id, require_edit=False):
+    """Owner access always passes. Public documents (user_id IS NULL and
+    is_public = 1 on case_vault) are readable by any authenticated user when
+    require_edit is False, but never editable or deletable; folders are never
+    public. Otherwise, a non-owner can pass if a team_members row resolved to
+    their account holds an explicit share (own or cascaded from an ancestor
+    folder) at or above the requested permission level."""
+    if _vault_owner_ok(row_user_id, current_user_id):
+        return True
+    if node_type == 'document' and row_user_id is None and not require_edit:
+        try:
+            pub_row = db.execute('SELECT is_public FROM case_vault WHERE id = ?', (node_id,)).fetchone()
+            if pub_row and pub_row[0] == 1:
+                return True
+        except Exception:
+            pass
+    member_ids = _current_user_team_member_ids(current_user_id)
+    perm = _effective_permission(node_type, node_id, member_ids)
+    if perm is None:
+        return False
+    return perm == 'edit' if require_edit else True
+
+
+def _fetch_vault_node_owner(node_type, node_id):
+    table = 'vault_folders' if node_type == 'folder' else 'case_vault'
+    row = db.execute(f'SELECT user_id FROM {table} WHERE id = ?', (node_id,)).fetchone()
+    return row[0] if row else None
+
+
+def _fetch_vault_node_name(node_type, node_id):
+    if node_type == 'folder':
+        row = db.execute('SELECT name FROM vault_folders WHERE id = ?', (node_id,)).fetchone()
+    else:
+        row = db.execute('SELECT COALESCE(smart_title, title) FROM case_vault WHERE id = ?', (node_id,)).fetchone()
+    return row[0] if row else f'{node_type} {node_id}'
+
+
+# Standard blueprint — the 5 canonical top-level folders every matter
+# starts with. Idempotent: no-ops (200, not an error) if this user
+# already has any of them at root, mirroring the pre-existing
+# client-side "already initialized" check rather than erroring on a
+# repeat click. Created server-side with protected=1 so Delete/Rename
+# can enforce it — the client can no longer request protection itself
+# for arbitrary folders, since that would just be a trust boundary with
+# no real purpose (protection here is a safety guard, not a security
+# control, but it should still only ever apply to these 5 real folders).
+_BLUEPRINT_FOLDER_NAMES = [
+    '01 · Pleadings & Drafts',
+    '02 · Court Filings',
+    '03 · Evidence & Exhibits',
+    '04 · Correspondence',
+    '05 · Research & Precedents',
+]
+
+# ── Case Vault Provenance Trail (Phase 3) ───────────────────────────────
+_PROVENANCE_LOCK = threading.Lock()
+
+
+def _write_provenance(node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail=None):
+    """Appends one entry to the vault's global, linear, tamper-evident hash
+    chain — one chain across the whole vault, not per-node (mirrored in how
+    /api/vault/provenance/verify recomputes and checks it in one pass), with
+    entries filtered per-node/per-case for DISPLAY the same way
+    vault_audit_trail already filters, rather than claiming a filtered
+    slice is independently verifiable on its own.
+
+    Each entry's content_hash covers the previous entry's content_hash plus
+    this entry's own fields, so altering or deleting any past row breaks
+    every hash after it. node_id/node_name/owner_user_id are snapshots at
+    write time and are never re-validated against current state — a
+    deleted node's history has to survive its own deletion for this to be
+    a real audit trail rather than decoration. owner_user_id (distinct from
+    actor_user_id, who performed the action) is what lets a folder's owner
+    see everything a shared editor did inside it, not just their own
+    actions — see GET /api/vault/provenance's scoping."""
+    detail_json = json.dumps(detail or {}, sort_keys=True, default=str)
+    # Reading "the last hash" and inserting the next entry must be ONE step. Two writers that each read
+    # the same last hash both append after it and the chain forks, which /api/vault/provenance/verify
+    # then reports as tampering. The in-process lock covers this app's own threads; BEGIN IMMEDIATE takes
+    # SQLite's write lock up front, which is what also keeps the Document Hub's workers (separate
+    # connections, same file, same BEGIN IMMEDIATE) and any second server process in line.
+    with _PROVENANCE_LOCK:
+        if db.in_transaction:
+            db.commit()                     # the caller's pending change; this function always committed it anyway
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            prev_row = db.execute('SELECT content_hash FROM vault_provenance ORDER BY id DESC LIMIT 1').fetchone()
+            prev_hash = prev_row[0] if prev_row else '0' * 64
+            payload = '|'.join(str(x) for x in (
+                prev_hash, node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json
+            ))
+            content_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+            db.execute(
+                'INSERT INTO vault_provenance '
+                '(node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail, content_hash) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (node_type, node_id, node_name, action, actor_user_id, owner_user_id, detail_json, content_hash)
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+
+# Citations are stored as a JSON array of {id, title} objects inside
+# case_vault.tags. Both mutations below run as a single atomic SQL
+# UPDATE (no Python-side read-modify-write), wrapped in BEGIN IMMEDIATE
+# so SQLite grabs a RESERVED lock up front instead of deferring — this
+# is what makes concurrent rapid-fire clicks land every citation instead
+# of one write clobbering another. tags may already hold a legacy
+# comma-joined string from /api/vault/save's older format; the
+# json_valid() guard treats anything non-JSON as an empty array rather
+# than erroring or corrupting existing data.
+_CITATION_INSERT_SQL = """
+        UPDATE case_vault
+        SET tags = (
+            SELECT CASE WHEN EXISTS (SELECT 1 FROM json_each(base) WHERE json_extract(value, '$.id') = ?)
+                THEN base
+                ELSE json_insert(base, '$[#]', json(?))
+            END
+            FROM (SELECT CASE WHEN tags IS NULL OR tags = '' OR json_valid(tags) = 0 THEN '[]' ELSE tags END AS base
+                  FROM case_vault WHERE id = ?)
+        )
+        WHERE id = ?
+    """
+_CITATION_DELETE_SQL = """
+        UPDATE case_vault
+        SET tags = (
+            SELECT json_group_array(json(value))
+            FROM json_each((SELECT CASE WHEN tags IS NULL OR tags = '' OR json_valid(tags) = 0 THEN '[]' ELSE tags END
+                            FROM case_vault WHERE id = ?))
+            WHERE json_extract(value, '$.id') != ?
+        )
+        WHERE id = ?
+    """
+
+
+# ── Document Hub glue (/api/dms — routes/dms_routes.py) ─────────────────
+# The hub keeps its own tables (dms_*) next to case_vault: one dms_docs row per case_vault row, so the
+# old Case Vault screens keep working on the same documents. These helpers are what keeps the two
+# consistent. Everything here degrades to "the old behaviour" when the hub is not mounted.
+_DMS_BP = None                      # the mounted blueprint, set in create_app(); None = hub unavailable
+_dms_table_seen = [False]           # a cached "the hub tables exist" - they never disappear once created
+_DMS_MEMBER_CACHE = {}              # user id -> (monotonic time, [team_members ids])
+_DMS_MEMBER_LOCK = threading.Lock()
+_DMS_MEMBER_TTL = 30                # seconds
+
+
+def _dms_rate_key():
+    """Rate-limit bucket for hub requests: the signed-in user, else the client address."""
+    try:
+        verify_jwt_in_request(optional=True)
+        ident = get_jwt_identity()
+    except Exception:
+        ident = None
+    return f'dms-user:{ident}' if ident else f'dms-ip:{request.remote_addr}'
+
+
+def _dms_present():
+    """True once the hub's tables exist (they are created when the blueprint boots)."""
+    if _dms_table_seen[0]:
+        return True
+    row = db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dms_docs'").fetchone()
+    if row:
+        _dms_table_seen[0] = True
+    return bool(row)
+
+
+def _dms_hidden_sql(alias='cv'):
+    """SQL predicate for case_vault rows the OLD screens may show: everything except documents sitting
+    in the hub's trash (deleted there, restorable for 30 days, and not supposed to be listed, counted
+    or downloadable anywhere else meanwhile). `alias` is always a literal from this file."""
+    if not _dms_present():
+        return '1 = 1'
+    return f'NOT EXISTS (SELECT 1 FROM dms_docs _dd WHERE _dd.doc_id = {alias}.id AND _dd.deleted_at IS NOT NULL)'
+
+
+def _dms_legal_hold_titles(doc_id=None, folder_id=None, limit=200):
+    """Titles of documents under legal hold - either one document, or anything anywhere inside a folder
+    (the folder itself and every subfolder). The old Delete buttons call this first: legal hold has to
+    hold no matter which screen the delete comes from."""
+    if not _dms_present():
+        return []
+    if doc_id is not None:
+        rows = db.execute(
+            "SELECT COALESCE(cv.smart_title, cv.title, 'Document ' || cv.id) FROM dms_docs d "
+            "JOIN case_vault cv ON cv.id = d.doc_id WHERE d.legal_hold = 1 AND d.doc_id = ?", (doc_id,)).fetchall()
+    elif folder_id is not None:
+        rows = db.execute(
+            "WITH RECURSIVE sub(id) AS (SELECT ? UNION SELECT f.id FROM vault_folders f JOIN sub ON f.parent_id = sub.id) "
+            "SELECT COALESCE(cv.smart_title, cv.title, 'Document ' || cv.id) FROM dms_docs d "
+            "JOIN case_vault cv ON cv.id = d.doc_id WHERE d.legal_hold = 1 AND cv.folder_id IN (SELECT id FROM sub) "
+            "ORDER BY cv.id LIMIT ?", (folder_id, limit)).fetchall()
+    else:
+        return []
+    return [r[0] for r in rows]
+
+
+def _dms_adopt_best_effort(user_id, doc_id):
+    """Hand a row the OLD upload route just stored to the hub so it is searchable and classified straight
+    away. The old upload has already succeeded by now: nothing here may turn it into an error."""
+    try:
+        if _DMS_BP is not None:
+            _DMS_BP.adopt_rows(user_id, only_id=doc_id, limit=1)
+    except Exception as exc:
+        print(f'[dms] could not register vault document {doc_id} with the Document Hub: {exc}')
+
+
+def _dms_member_ids(user_id):
+    """team_members ids of this user, cached for a short time. Working them out compares every team
+    member's e-mail with every registered account (a query against Postgres), and the hub asks on every
+    request - lists, polling, thumbnails - so it must not be repeated each time. Shares themselves are
+    always read fresh; only "which roster entries are me" is cached."""
+    now = time.monotonic()
+    with _DMS_MEMBER_LOCK:
+        hit = _DMS_MEMBER_CACHE.get(user_id)
+        if hit and now - hit[0] < _DMS_MEMBER_TTL:
+            return hit[1]
+    ids = list(_current_user_team_member_ids(user_id))       # outside the lock: it talks to two databases
+    with _DMS_MEMBER_LOCK:
+        if len(_DMS_MEMBER_CACHE) > 2000:
+            _DMS_MEMBER_CACHE.clear()
+        _DMS_MEMBER_CACHE[user_id] = (now, ids)
+    return ids
+
+
+def _dms_shared(user_id):
+    """What the hub needs to know about sharing: (folders whose whole content is shared with this user,
+    documents shared directly, permission_of(doc_id) -> 'view' | 'edit' | None). Folders that only exist
+    to navigate to a shared document are not included - see _visible_shared_vault_ids."""
+    member_ids = _dms_member_ids(user_id)
+    if not member_ids:
+        return set(), set(), (lambda doc_id: None)
+    folders, docs = _visible_shared_vault_ids(user_id, include_nav=False, member_ids=member_ids)
+    return folders, docs, (lambda doc_id: _effective_permission('document', doc_id, member_ids))
+
+
+def _dms_folder_access(folder_id, user_id, require_edit=True):
+    """May this user put documents into this folder (or, with require_edit=False, look inside it)?"""
+    row = db.execute('SELECT user_id FROM vault_folders WHERE id = ?', (folder_id,)).fetchone()
+    if not row:
+        return False
+    return bool(_vault_access_ok('folder', folder_id, row[0], user_id, require_edit=require_edit))
+
+
+# ── Practice (Legal Practice Management — /api/practice, routes/lpms_routes.py) ─────────────
+# Cases, hearings, daily proceedings, clients, RTI, calendar, reports and the firm's team. It keeps its own
+# tables (lpms_*) in this database file; accounts stay in the users database like everywhere else. These small
+# adapters are all it needs from the rest of the app.
+_LPMS_BP = None                     # the mounted blueprint, set in create_app(); None = Practice unavailable
+
+
+def _lpms_user(uid):
+    from models.user import User
+    u = sqlalchemy_db.session.get(User, int(uid))
+    return {'id': u.id, 'name': u.name, 'email': u.email, 'phone': u.phone} if u else None
+
+
+def _lpms_find_user(email):
+    from models.user import User
+    u = User.query.filter_by(email=(email or '').strip().lower()).first()
+    return {'id': u.id, 'name': u.name, 'email': u.email} if u else None
+
+
+def _lpms_create_user(name, email, password, phone=None):
+    from models.user import User
+    from werkzeug.security import generate_password_hash
+    u = User(name=name, email=email.strip().lower(), password=generate_password_hash(password), phone=phone or None)
+    try:
+        sqlalchemy_db.session.add(u)
+        sqlalchemy_db.session.commit()
+    except Exception:
+        sqlalchemy_db.session.rollback()
+        raise
+    return u.id
+
+
+def _lpms_set_password(uid, password):
+    from models.user import User
+    from werkzeug.security import generate_password_hash
+    u = sqlalchemy_db.session.get(User, int(uid))
+    if not u:
+        raise ValueError('No such account')
+    u.password = generate_password_hash(password)
+    sqlalchemy_db.session.commit()
+
+
+def _lpms_email_configured():
+    return bool(os.getenv('SMTP_HOST') and os.getenv('SMTP_USER') and os.getenv('SMTP_PASSWORD'))
+
+
+def _lpms_send_email(to, subject, body):
+    from utils.mailer import send_email
+    return send_email(to, subject, body)
+
+
+def _lpms_document_hook(case_id, doc_id, title, uid, action):
+    """The Document Hub reports a file added to a Practice case (timeline, audit log, notifications)."""
+    from utils.lpms_store import record_document_event
+    record_document_event(os.path.realpath('lex_assistant.db'), case_id, doc_id, title, uid, action)
+
+
+def _lpms_db_path():
+    """The very file the Practice blueprint was mounted on (fixed at start-up, so a changed working directory cannot point the gate elsewhere)."""
+    from flask import current_app
+    return current_app.extensions.get('lpms_db_path') or os.path.realpath('lex_assistant.db')
+
+
+def _lpms_login_gate(user, otp):
+    """Two-step sign-in check, called by the login route once the password is right. None = carry on."""
+    from utils.lpms_store import login_gate
+    return login_gate(_lpms_db_path(), user.id, otp, request.remote_addr)
+
+
+def _lpms_mfa_probe(user_id):
+    from utils.lpms_store import mfa_probe
+    return mfa_probe(_lpms_db_path(), user_id)
+
+
+def _lpms_login_event(user, ok, reason=None):
+    from utils.lpms_store import login_event
+    login_event(_lpms_db_path(), user.id if user else None, None, ok, reason, request.remote_addr, request.headers.get('User-Agent'))
+
+
+def create_app():
+    app = Flask(__name__)
+    # Render terminates TLS at its edge and proxies to this app over plain
+    # HTTP internally — without this, request.scheme (and therefore every
+    # url_for(..., _external=True) call, including Authlib's own
+    # redirect_uri = url_for("sso.google_callback", _external=True) in
+    # sso_routes.py) sees "http", not "https". Google/Microsoft OAuth
+    # reject or silently mismatch a callback URL whose scheme doesn't match
+    # what's registered in their console. x_for/x_proto/x_host/x_prefix=1
+    # each trust exactly one hop of the corresponding X-Forwarded-* header —
+    # correct here because Render's edge is the only thing that can sit
+    # between the client and this process, never more than one hop.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    # Only affects URL generation OUTSIDE an active request context (this
+    # app has none in its OAuth flow — ProxyFix above already fixes the
+    # request-scoped case). Harmless to set unconditionally: it never
+    # overrides the scheme ProxyFix derives from a real request.
+    app.config['PREFERRED_URL_SCHEME'] = 'https'
+
+    @app.after_request
+    def add_cors_headers(response):
+        origin = request.headers.get('Origin')
+        if origin and (
+            origin in PROD_ORIGINS
+            or LOCAL_DEV_ORIGIN_RE.match(origin)
+            or FIREBASE_HOSTING_ORIGIN_RE.match(origin)
+        ):
+            # Echo back the validated origin rather than hardcoding one — never
+            # assign '*', since Allow-Credentials requires a specific origin.
+            # Use direct assignment so we never produce duplicate CORS headers
+            # (SSE responses pre-set these; .add() would append a second value)
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,Accept,X-Requested-With,X-CSRF-TOKEN'
+            # PATCH was missing: a cross-origin PATCH (folder rename/move, and every edit in the Document
+            # Hub) is preflighted, and the preflight was refused. Max-Age lets the browser remember the
+            # answer instead of preflighting every one of thousands of uploads. Content-Disposition has to
+            # be exposed or a cross-origin page cannot read the file name of a download.
+            response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,PATCH,DELETE,OPTIONS'
+            response.headers['Access-Control-Max-Age'] = '600'
+            response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition,Retry-After'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+
+    # Local dev's .env sets DATABASE_URL=sqlite:///database.db explicitly (not
+    # unset), so "is DATABASE_URL truthy" can't be the signal for "apply
+    # Postgres-only engine options" — connect_args like sslmode/connect_timeout
+    # are psycopg2 kwargs that SQLite's DBAPI doesn't accept and would crash
+    # on the very first connection. Branch on the URL's actual scheme instead.
+    _raw_db_url = os.getenv('DATABASE_URL', 'sqlite:///database.db')
+    if _raw_db_url.startswith('postgres://') or _raw_db_url.startswith('postgresql://'):
+        # Neon (and Heroku-style providers) hand out postgres:// — normalize
+        # both that and plain postgresql:// to the psycopg2 dialect
+        # Flask-SQLAlchemy actually needs.
+        _db_url = re.sub(r'^postgres(?:ql)?://', 'postgresql+psycopg2://', _raw_db_url, count=1)
+        # Neon appends channel_binding=require, which psycopg2's URL parser
+        # doesn't understand and raises on — strip it, leave sslmode etc. alone.
+        _db_url = re.sub(r'[?&]channel_binding=[^&]+', '', _db_url)
+        if '?' not in _db_url and '&' in _db_url:
+            _db_url = _db_url.replace('&', '?', 1)
+
+        app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_pre_ping': True,   # Neon's serverless Postgres can drop idle
+                                     # connections; a dead one is detected and
+                                     # replaced instead of surfacing as an error.
+            'pool_recycle': 300,     # recycle before PgBouncer's own idle timeout
+            # Kept small deliberately: Neon's pooled connection string sits in
+            # front of PgBouncer (transaction-pooling mode), which itself caps
+            # concurrent server connections tightly — a large Flask-side pool
+            # just queues up connections PgBouncer will reject anyway. 3+2=5
+            # max concurrent connections from this process is enough for a
+            # low-traffic admin/auth path without starving the shared pooler.
+            'pool_size': 3,
+            'max_overflow': 2,
+            'connect_args': {
+                'connect_timeout': 15,  # generous enough to ride out a Neon cold start
+                'sslmode': 'require',
+                # TCP keepalives so a connection Neon silently dropped is noticed instead of hanging.
+                'keepalives': 1,
+                'keepalives_idle': 30,
+                'keepalives_interval': 10,
+                'keepalives_count': 3,
+            },
+        }
+    else:
+        # SQLite (the local dev default, or DATABASE_URL explicitly set to
+        # one) — none of the Postgres engine options above are meaningful
+        # here, so SQLALCHEMY_ENGINE_OPTIONS is simply left unset.
+        app.config['SQLALCHEMY_DATABASE_URI'] = _raw_db_url
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # ── JWT secret: no static fallback, ever ─────────────────────────────
+    # A hardcoded 'secret' default meant every unconfigured deployment
+    # shared the same signing key. In production, an unset key is a hard
+    # failure — fail fast at boot, not silently sign tokens with a guessable
+    # key. In dev, generate a real 32-byte key per process so
+    # InsecureKeyLengthWarning can't fire even when .env is untouched;
+    # restarting invalidates existing sessions, which is acceptable for a
+    # local dev loop and not something production should ever do.
+    _jwt_secret = os.getenv('JWT_SECRET_KEY')
+    _is_prod = os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true'
+    if not _jwt_secret and not _is_prod:
+        _jwt_secret = secrets.token_hex(32)
+        print('[app] JWT_SECRET_KEY not set — generated an ephemeral dev key (sessions will not survive a restart).')
+    _weak = {'secret', 'changeme', 'change-me', 'password', 'jwt-secret', 'dev', 'test', 'your-secret-key', 'supersecret'}
+    if _is_prod:
+        # Every problem is listed at once and each line names the exact variable and what to do about it, so
+        # the person reading the Render log does not have to guess what is missing.
+        problems = []
+        if not _jwt_secret:
+            problems.append('JWT_SECRET_KEY is missing. Set it to at least 32 random characters '
+                            '(for example: openssl rand -hex 32). The server will not start without it, '
+                            'and a weak key would let anyone forge a session.')
+        elif len(_jwt_secret) < 32 or _jwt_secret.lower() in _weak:
+            problems.append('JWT_SECRET_KEY is too short or guessable. Use at least 32 random characters '
+                            '(for example: openssl rand -hex 32).')
+        if not os.getenv('DATABASE_URL'):
+            problems.append('DATABASE_URL is not set. Put the Postgres connection string from Neon into the '
+                            'Render environment (service -> Environment). The server will not start without a '
+                            'database, and it must never fall back to a local file.')
+        if problems:
+            msg = ("[app] Refusing to start: this deployment is not ready to serve.\n"
+                   + "\n".join(f"  {i}. {p}" for i, p in enumerate(problems, 1))
+                   + "\nFix the variables above in the Render environment (service -> Environment) and redeploy. "
+                     "Every variable the app reads is listed in docs/RENDER_ENV_CHECKLIST.md.")
+            print(msg)
+            raise RuntimeError(msg)
+    app.config['JWT_SECRET_KEY'] = _jwt_secret
+
+    # Optional error reporting. Does nothing unless SENTRY_DSN is set AND the sentry-sdk package is installed.
+    if os.getenv('SENTRY_DSN'):
+        try:
+            import sentry_sdk
+            sentry_sdk.init(dsn=os.getenv('SENTRY_DSN'), traces_sample_rate=0.0, send_default_pii=False)
+            print('[app] error reporting is on.')
+        except Exception as _exc:
+            print(f'[app] SENTRY_DSN is set but error reporting could not start: {_exc}')
+
+    app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'static/uploads')
+    app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 104857600))  # 100 MB
+    app.config['SQLITE_DB_PATH'] = DB_PATH
+
+    # ── JWT: HttpOnly cookie transport, never localStorage ──────────────
+    # Short-lived access token + long-lived refresh token is what makes
+    # this "persistent" without keeping a broadly-scoped token alive for
+    # 30 days — /api/auth/refresh silently rotates a new access cookie
+    # from the refresh cookie, so the session survives reloads without the
+    # frontend ever holding the JWT itself in JS-reachable storage.
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
+    app.config['JWT_TOKEN_LOCATION'] = ['cookies', 'headers']  # 'headers' kept only for any not-yet-migrated caller; cookies are primary
+    app.config['JWT_COOKIE_HTTPONLY'] = True
+    # RENDER is a real, Render-set env var (true on every Render service,
+    # regardless of whether FLASK_ENV was also configured in the dashboard)
+    # — a backstop against exactly that omission, not a replacement for it.
+    is_prod = _is_prod        # the same test as the start-up safety check above, read once
+    # Strict/no-domain works end-to-end in dev because frontend/vite.config.js
+    # proxies /api to Flask — the browser only ever talks to the Vite origin,
+    # so the cookie is first-party from its point of view.
+    #
+    # Production now runs frontend (test.lexamplify.com) and API
+    # (api.lexamplify.com) as sibling subdomains of the same registrable
+    # domain — same-site, not cross-site, by the browser's own SameSite
+    # definition (SITE = eTLD+1, not exact host). That makes Lax correct
+    # and sufficient: same-site cross-subdomain requests aren't restricted
+    # by Lax at all, and Lax is strictly tighter than the None this used to
+    # need back when the API lived on a separate onrender.com domain.
+    #
+    # Domain must be widened to the shared parent (.lexamplify.com) for a
+    # second, unrelated reason: the CSRF double-submit cookie is
+    # deliberately non-HttpOnly so frontend JS can read it
+    # (utils/authFetch.js's getCsrfToken() parses it straight out of
+    # document.cookie) and attach X-CSRF-TOKEN on every mutating request.
+    # With no Domain attribute, a cookie set by api.lexamplify.com defaults
+    # to that exact host — invisible to document.cookie running on
+    # test.lexamplify.com's origin. Every POST/PUT/PATCH/DELETE would
+    # silently lose its CSRF header and get rejected. Widening Domain to
+    # the shared parent is what makes the cookie visible cross-subdomain
+    # for both the browser's auto-attach (HttpOnly cookies) and this
+    # manual JS read (the CSRF cookie).
+    app.config['JWT_COOKIE_SAMESITE'] = 'Lax' if is_prod else 'Strict'
+    app.config['JWT_COOKIE_DOMAIN'] = '.lexamplify.com' if is_prod else None
+    # Secure is mandatory whenever SameSite=None (kept here defensively —
+    # true today only if SAMESITE above is ever rolled back to None) and is
+    # good practice in production regardless. The env var still applies for
+    # anyone who explicitly wants Secure on local HTTPS testing too — it
+    # just can't turn Secure OFF when SameSite=None or is_prod requires it on.
+    app.config['JWT_COOKIE_SECURE'] = (
+        app.config['JWT_COOKIE_SAMESITE'] == 'None'
+        or is_prod
+        or os.getenv('JWT_COOKIE_SECURE', 'False').lower() == 'true'
+    )
+    # CSRF protection stays ON regardless of SameSite — SameSite=None does
+    # not require disabling it, and the double-submit X-CSRF-TOKEN header
+    # (JWT_CSRF_IN_COOKIES below) already works over cross-site requests
+    # unchanged. Turning this off would remove CSRF protection on the
+    # cookie-based flow for zero benefit — Bearer/header-based requests are
+    # already CSRF-exempt by Flask-JWT-Extended automatically.
+    app.config['JWT_COOKIE_CSRF_PROTECT'] = True
+    app.config['JWT_CSRF_IN_COOKIES'] = True  # readable (non-HttpOnly) CSRF cookie for the double-submit header
+
+    # Flask's OWN session cookie (distinct from the JWT cookies above) —
+    # used only by Authlib to hold OAuth `state` across the redirect to
+    # Microsoft/Google and back. Must be Lax, not Strict: the IdP's
+    # callback redirect is itself a cross-site top-level navigation, and a
+    # Strict session cookie would not be sent on it, breaking SSO outright.
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_SECURE'] = app.config['JWT_COOKIE_SECURE']
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+
+    # ── Celery (Redis broker/backend) ────────────────────────────────────
+    # Docker provisions ONLY Redis (docker-compose.yml) — the Celery worker
+    # runs locally via `celery -A celery_worker.celery worker`, sharing this
+    # same venv/dependencies. Registering the extension here (not calling
+    # celery_init_app itself, to avoid a celery_app<->app.py import cycle at
+    # module load time) is what lets routes reach current_app.extensions
+    # 'celery' without re-importing app.py from inside a task module.
+    app.config['CELERY_BROKER_URL'] = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+    app.config['CELERY_RESULT_BACKEND'] = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+    from celery_app import celery_init_app
+    celery_init_app(app)
+
+    sqlalchemy_db.init_app(app)
+    jwt.init_app(app)
+
+    from utils.limiter import limiter
+    limiter.init_app(app)
+
+    from routes.sso_routes import init_sso
+    init_sso(app)
+
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    init_sqlite_db()
+
+    # ── Document Hub (/api/dms) ─────────────────────────────────────────
+    # Bulk import, OCR, full-text search, classification and review for thousands of documents. It shares
+    # this app's database file, login and vault sharing rules (the _dms_* helpers above). A problem
+    # starting it must not take the rest of the application down, so a failure is logged loudly and the
+    # hub routes are simply absent (the hub screen then shows its own error).
+    global _DMS_BP
+    try:
+        from routes.dms_routes import create_dms_blueprint
+        _DMS_BP = create_dms_blueprint({
+            'db_path': os.path.realpath('lex_assistant.db'),
+            'shared': _dms_shared,
+            'folder_access': _dms_folder_access,
+            'on_lpms_document': _lpms_document_hook,
+            'user_name': lambda uid: (_lpms_user(uid) or {}).get('name'),
+            'log': lambda msg: print(f'[dms] {msg}'),
+        })
+        # Its own per-user allowance instead of the app-wide default (a bulk upload legitimately makes
+        # hundreds of requests, and one office often shares one IP). Preflights do not count.
+        limiter.limit(os.getenv('DMS_RATE_LIMIT', '1200 per minute'), key_func=_dms_rate_key,
+                      exempt_when=lambda: request.method == 'OPTIONS')(_DMS_BP)
+        app.register_blueprint(_DMS_BP)
+    except Exception as exc:
+        import traceback
+        _DMS_BP = None
+        print(f'[dms] Document Hub is NOT available: {exc}')
+        traceback.print_exc()
+
+    # ── Practice (/api/practice) ────────────────────────────────────────
+    # Same rule as the hub: a problem starting it is logged loudly and must not take the app down.
+    global _LPMS_BP
+    try:
+        from routes.lpms_routes import create_lpms_blueprint
+        _lpms_db = os.path.realpath('lex_assistant.db')
+        _LPMS_BP = create_lpms_blueprint({
+            'db_path': _lpms_db,
+            'get_user': _lpms_user, 'find_user': _lpms_find_user, 'create_user': _lpms_create_user, 'set_password': _lpms_set_password,
+            'send_email': _lpms_send_email, 'email_configured': _lpms_email_configured,
+            'log': lambda msg: print(f'[practice] {msg}'),
+        })
+        limiter.limit(os.getenv('LPMS_RATE_LIMIT', '900 per minute'), key_func=_dms_rate_key,
+                      exempt_when=lambda: request.method == 'OPTIONS')(_LPMS_BP)
+        app.register_blueprint(_LPMS_BP)
+        app.extensions['lpms_db_path'] = _lpms_db
+        app.extensions['lpms_login_gate'] = _lpms_login_gate
+        app.extensions['lpms_mfa_probe'] = _lpms_mfa_probe
+        app.extensions['lpms_login_event'] = _lpms_login_event
+    except Exception as exc:
+        import traceback
+        _LPMS_BP = None
+        print(f'[practice] Practice module is NOT available: {exc}')
+        traceback.print_exc()
+
+    # ── Case Vault workspace (/api/vault/overview, /timeline, /documents/<id>/view|content|save-edit|assistant) ──
+    # Live numbers, a timeline built from real Practice/Hub records, and the in-app viewer/editor. A problem starting
+    # it is logged loudly and must not take the app down (the vault screens then show their own error).
+    try:
+        from routes.vault_workspace_routes import create_vault_workspace_blueprint
+
+        def _vw_scope(user_id):
+            sf, sd = _visible_shared_vault_ids(user_id, include_nav=False)
+            return (
+                '(cv.user_id = ? OR cv.folder_id IN (SELECT value FROM json_each(?)) '
+                'OR cv.id IN (SELECT value FROM json_each(?))) AND ' + _dms_hidden_sql('cv'),
+                [user_id, json.dumps(sorted(sf)), json.dumps(sorted(sd))],
+            )
+
+        def _vw_access(user_id, doc_id, require_edit=False):
+            row = db.execute('SELECT user_id FROM case_vault cv WHERE id = ? AND ' + _dms_hidden_sql('cv'), (doc_id,)).fetchone()
+            return bool(row and _vault_access_ok('document', doc_id, row[0], user_id, require_edit=require_edit))
+
+        app.register_blueprint(create_vault_workspace_blueprint({
+            'db_path': os.path.realpath('lex_assistant.db'),
+            'scope': _vw_scope,
+            'access': _vw_access,
+            'folder_ok': lambda folder_id, user_id: _dms_folder_access(folder_id, user_id, require_edit=True),
+            'adopt': _dms_adopt_best_effort,
+            'provenance': _write_provenance,
+            'practice_event': lambda case_id, doc_id, title, user_id: _lpms_document_hook(case_id, doc_id, title, user_id, 'upload'),
+            'log': lambda msg: print(f'[vault] {msg}'),
+        }))
+    except Exception as exc:
+        import traceback
+        print(f'[vault] Case Vault workspace routes are NOT available: {exc}')
+        traceback.print_exc()
+
+    # /api/ai/extract-file moved to routes/ai_routes.py (ai_bp), registered above.
+
+    # ── Vault Folders API ─────────────────────────────────────────────────────
+
+
+    # Real multipart file upload into the vault — distinct from /api/vault/save,
+    # which only ever renders app-generated text content into a blob. This is
+    # the actual "Upload here" / dropzone target: the caller's own file bytes,
+    # unmodified, stored in file_blob. No real auto-classification pipeline
+    # exists anywhere in the app yet (uploads everywhere else in the product
+    # get a placeholder tag too), so this deliberately doesn't invent one here.
+
+
+    # The Vault Sharing API (four handlers) moved to routes/vault_workspace_routes.py
+    # (vault_workspace); _fetch_vault_node_owner/_fetch_vault_node_name now live at module level.
+
+    # The provenance API (GET /provenance, GET /provenance/verify) moved to
+    # routes/vault_workspace_routes.py (vault_workspace).
+
+    # Auto-Draft Studio v1 — was a single unauthenticated global
+    # saved_drafts_data.json file (any logged-in user could see/delete
+    # every other user's drafts). Now sqlite-backed and owner-scoped via
+    # the `saved_drafts` table (see init_db()); response shape kept
+    # identical to the old file-based version so DraftsModal.jsx and
+    # AutoDraftWorkspace.jsx's handleSaveToDrafts need no changes beyond
+    # dropping their localStorage fallback.
+    # /api/drafts (GET, POST) and /api/drafts/<draft_id> (DELETE) moved to
+    # routes/draft_engine_routes.py (drafts_bp), registered above.
+
+    # /api/cases/autocomplete moved to routes/cases_routes.py (cases_bp), registered above.
+
+    # The citation API (POST/DELETE) moved to routes/vault_workspace_routes.py
+    # (vault_workspace); _CITATION_INSERT_SQL/_CITATION_DELETE_SQL now live at module level.
+
+
+
+
+
+
+
+    # Register blueprints
+    from routes.auth_routes import auth_bp
+    from routes.sso_routes import sso_bp
+    from routes.library_routes import library_bp
+    from routes.firm_library_routes import firm_library_bp
+    from routes.legal_research_routes import legal_research_bp
+    from routes.assistant_routes import assistant_bp
+    from routes.ai_routes import ai_bp
+    from routes.document_routes import doc_bp
+    from routes.contract_routes import contract_bp
+    from routes.argument_routes import argument_bp
+    from routes.court_routes import court_bp
+    from routes.causelist_routes import causelist_bp
+    from routes.client_routes import client_bp
+    from routes.billing_routes import billing_bp
+    from routes.conflict_routes import conflict_bp
+    from routes.team_routes import team_bp
+    from routes.matter_routes import matter_bp
+    from routes.letterhead_routes import letterhead_bp
+    from routes.dispute_routes import dispute_bp
+
+    app.register_blueprint(court_bp)
+    app.register_blueprint(argument_bp)
+    app.register_blueprint(causelist_bp)
+    app.register_blueprint(client_bp)
+    app.register_blueprint(billing_bp)
+    app.register_blueprint(conflict_bp)
+    app.register_blueprint(team_bp)
+    app.register_blueprint(matter_bp)
+    app.register_blueprint(letterhead_bp)
+    app.register_blueprint(dispute_bp)  # url_prefix baked into dispute_bp: /api/disputes
+    from routes.draft_engine_routes import drafts_bp
+    from routes.audit_routes import audit_bp
+    app.register_blueprint(drafts_bp)  # /api/drafts (guided drafting engine); url_prefix baked in
+    app.register_blueprint(audit_bp)   # /api/audit (own activity + CSV); url_prefix baked in
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
+    app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
+    app.register_blueprint(firm_library_bp)  # /api/firm-library, /saved and /external-search; url_prefix baked in
+    from routes.vault_files_routes import vault_files_bp
+    app.register_blueprint(vault_files_bp)  # /api/vault/folders, /documents, /meta
+    app.register_blueprint(legal_research_bp)  # /api/legal-research and /document/<case_id>; no prefix
+    app.register_blueprint(assistant_bp)  # /api/document/<case_id>, /api/chat, /api/kanoon-redirect; no prefix
+    app.register_blueprint(ai_bp, url_prefix='/api/ai')
+    app.register_blueprint(doc_bp, url_prefix='/api/documents')
+    app.register_blueprint(contract_bp, url_prefix='/api/contract')
+    from routes.page_routes import page_bp
+    app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer
+    from routes.health_routes import health_bp
+    app.register_blueprint(health_bp)  # /api/ping, /api/status
+    from routes.calendar_routes import calendar_bp
+    app.register_blueprint(calendar_bp)  # /api/calendar/*, /api/ecourts/sync, /api/districts
+    from routes.cases_routes import cases_bp
+    app.register_blueprint(cases_bp)  # /api/cases/autocomplete
+
+    # Keep-alive health check — always 200 while the server is up.
+    # The client clears its interval on 401/403 from other protected endpoints.
+    # /api/ping moved to routes/health_routes.py (health_bp).
+
+    # Keep Neon's compute from suspending while this process is up: it suspends after ~5 idle minutes and the
+    # next login would otherwise wait for it to wake. A cheap SELECT 1 every 3 minutes, in the background.
+    # (Render itself is kept up by the cron job calling /api/ping.)
+    if str(app.config.get('SQLALCHEMY_DATABASE_URI', '')).startswith('postgresql') and not app.config.get('TESTING') and os.getenv('DB_KEEPALIVE', '1') != '0':
+        def _db_keepalive():
+            import time as _t
+            from sqlalchemy import text as _txt
+            while True:
+                _t.sleep(180)
+                try:
+                    with app.app_context():
+                        sqlalchemy_db.session.execute(_txt('SELECT 1'))
+                except Exception as exc:
+                    print(f'[db-keepalive] {exc}')
+                finally:
+                    try:
+                        with app.app_context():
+                            sqlalchemy_db.session.remove()
+                    except Exception:
+                        pass
+        import threading as _th
+        _th.Thread(target=_db_keepalive, name='db-keepalive', daemon=True).start()
+
+    # /api/ai/summarize-judgment moved to routes/ai_routes.py (ai_bp), registered above.
+
+    # Calendar, eCourts and district routes moved to routes/calendar_routes.py (calendar_bp),
+    # registered above.
+    # Page routes moved to routes/page_routes.py (page_bp), registered above.
+
+    with app.app_context():
+        # Explicitly import all models to ensure SQL schemas are registered in metadata
+        from models.user import User
+        from models.case import Case
+        from models.document import Document
+        from models.court_models import JudicialOfficer, SupremeCourtRoster
+        from models.draft_session import DraftSession, DraftVersion, UserFlag  # noqa: F401 — registers the tables
+        from models.revoked_token import RevokedToken  # noqa: F401 — registers the table
+        from models.audit_event import AuditEvent  # noqa: F401 — registers the table
+        sqlalchemy_db.create_all()
+        _is_postgres = app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql+psycopg2://')
+        _db_kind = 'Neon PostgreSQL' if _is_postgres else 'SQLite'
+        app.logger.info(f"Database schema verified and initialized on {_db_kind}.")
+
+        # create_all() only creates NEW tables — it never ALTERs an existing
+        # one, so a `users` table that predates the `phone` column (true of
+        # both the local instance/database.db and, presumably, the Neon
+        # table this ticket is about) needs it added explicitly. Postgres
+        # supports ADD COLUMN IF NOT EXISTS; SQLite's parser rejects that
+        # syntax outright (confirmed), so it gets the plain form instead,
+        # relying on the try/except to no-op on a second run.
+        try:
+            with sqlalchemy_db.engine.connect() as conn:
+                if _is_postgres:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);"))
+                else:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN phone VARCHAR(20);"))
+                conn.commit()
+        except Exception as e:
+            app.logger.warning(f"users.phone column check passed or not needed: {e}")
+
+        # Same idea for users.phone_verified (mobile-code sign-in only trusts numbers the holder proved).
+        try:
+            with sqlalchemy_db.engine.connect() as conn:
+                if _is_postgres:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE;"))
+                else:
+                    conn.execute(sqlalchemy_db.text("ALTER TABLE users ADD COLUMN phone_verified BOOLEAN NOT NULL DEFAULT 0;"))
+                conn.commit()
+        except Exception as e:
+            app.logger.warning(f"users.phone_verified column check passed or not needed: {e}")
+
+        # One-time (idempotent) carry-over of anyone who registered through
+        # the old raw-sqlite auth path in routes/auth_routes.py before it
+        # was switched to this table — see services/legacy_user_migration.py.
+        from services.legacy_user_migration import migrate_legacy_sqlite_users
+        migrate_legacy_sqlite_users(sqlalchemy_db, User)
+
+    # --- START DATABASE BUILDER ---
+    import sqlite3
+    try:
+        # Connect to your exact database file
+        conn = sqlite3.connect('lex_assistant.db')
+        c = conn.cursor()
+        
+        # Build the Case Vault table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS case_vault (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id TEXT,
+                title TEXT,
+                doc_type TEXT,
+                content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Build the Calendar Events table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS calendar_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_date TEXT,
+                event_type TEXT,
+                title TEXT,
+                related_case_id TEXT,
+                location TEXT,
+                opposing_counsel TEXT
+            )
+        ''')
+        # Migrate existing DB if new columns are missing
+        for _col in ('location', 'opposing_counsel', 'google_event_id'):
+            try:
+                conn.execute(f'ALTER TABLE calendar_events ADD COLUMN {_col} TEXT')
+            except Exception:
+                pass
+
+        # Chat history table — same DDL as init_db(), so a fresh deploy and an
+        # upgraded deployment end up with the same schema. POST /api/ai/chat
+        # writes here; without this the INSERT is swallowed and history is lost.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                user_message TEXT NOT NULL,
+                bot_response TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Vault folders table + case_vault migration
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vault_folders (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                name      TEXT NOT NULL,
+                parent_id INTEGER REFERENCES vault_folders(id) ON DELETE CASCADE,
+                user_id   INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        for _col, _type in (
+            ('folder_id', 'INTEGER'), ('smart_title', 'TEXT'), ('tags', 'TEXT'),
+            ('file_blob', 'BLOB'), ('file_format', 'TEXT'),
+            # Firm Library dense-table columns — SQLite ADD COLUMN can't take
+            # a non-constant default via ALTER for existing rows in older
+            # sqlite builds, but a literal string default IS allowed and
+            # backfills every existing row to 'Green' (matches
+            # verify_citation_status()'s baseline assumption: unverified
+            # case law is presumed good law until a scrape says otherwise).
+            ('validity_status', "TEXT DEFAULT 'Green'"), ('ratio_headnote', 'TEXT'),
+        ):
+            try:
+                conn.execute(f'ALTER TABLE case_vault ADD COLUMN {_col} {_type}')
+            except Exception:
+                pass
+        # Vault authorization boundary — nullable and never backfilled for
+        # pre-existing rows. See the Case Vault authorization audit: rows
+        # that predate this column have no attributable owner in the data
+        # (case_id is a free-text string, not a user reference), so they
+        # stay NULL ("legacy/shared") rather than being assigned an owner
+        # that would be a fabrication. New rows get a real user_id from the
+        # authenticated session going forward.
+        for _tbl in ('case_vault', 'vault_folders'):
+            try:
+                conn.execute(f'ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER')
+            except Exception:
+                pass
+        try:
+            conn.execute('ALTER TABLE case_vault ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0')
+        except Exception:
+            pass
+        else:
+            _backfill_public_vault_rows(conn)
+        try:
+            conn.execute('ALTER TABLE vault_folders ADD COLUMN protected BOOLEAN DEFAULT 0')
+        except Exception:
+            pass
+        for _tbl in ('case_vault', 'vault_folders'):
+            try:
+                conn.execute(f'ALTER TABLE {_tbl} ADD COLUMN link_shared BOOLEAN DEFAULT 0')
+            except Exception:
+                pass
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS document_vault_shares (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_type      TEXT    NOT NULL CHECK (node_type IN ('folder', 'document')),
+                node_id        INTEGER NOT NULL,
+                team_member_id INTEGER NOT NULL,
+                permission     TEXT    NOT NULL DEFAULT 'view' CHECK (permission IN ('view', 'edit')),
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(node_type, node_id, team_member_id)
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vault_audit (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                folder_id      INTEGER REFERENCES vault_folders(id) ON DELETE SET NULL,
+                vault_doc_id   INTEGER,
+                session_title  TEXT,
+                messages_json  TEXT,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vault_provenance (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_type      TEXT NOT NULL CHECK (node_type IN ('folder', 'document')),
+                node_id        INTEGER,
+                node_name      TEXT NOT NULL,
+                action         TEXT NOT NULL,
+                actor_user_id  INTEGER,
+                owner_user_id  INTEGER,
+                detail         TEXT,
+                content_hash   TEXT NOT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Home Gateway v4 — Matter/Team backend (see init_db()'s copy of
+        # this schema for the full rationale comment).
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS teams (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                name           TEXT    NOT NULL,
+                description    TEXT,
+                is_private     BOOLEAN NOT NULL DEFAULT 0,
+                owner_user_id  INTEGER NOT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS team_memberships (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL,
+                role        TEXT    NOT NULL DEFAULT 'member',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(team_id, user_id)
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS matters (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                title          TEXT    NOT NULL,
+                status         TEXT    NOT NULL DEFAULT 'open',
+                team_id        INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+                lead_counsel   TEXT,
+                opened_date    DATE,
+                owner_user_id  INTEGER NOT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS deadlines (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id     INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                title         TEXT    NOT NULL,
+                date          DATE,
+                description   TEXT,
+                ai_extracted  BOOLEAN NOT NULL DEFAULT 0,
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tasks_matter (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                title       TEXT    NOT NULL,
+                done        BOOLEAN NOT NULL DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS handoff_notes (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id       INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                author_user_id  INTEGER NOT NULL,
+                text            TEXT    NOT NULL,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS matter_activity (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                matter_id   INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+                text        TEXT    NOT NULL,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS letterheads (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id   INTEGER NOT NULL,
+                name            TEXT    NOT NULL,
+                tagline         TEXT,
+                address         TEXT,
+                contact         TEXT,
+                auto_detected   BOOLEAN NOT NULL DEFAULT 0,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS saved_drafts (
+                id             TEXT    PRIMARY KEY,
+                owner_user_id  INTEGER NOT NULL,
+                title          TEXT    NOT NULL,
+                raw_text       TEXT,
+                clauses_json   TEXT,
+                summary        TEXT,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Build the Document Chunks table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS document_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                case_id INTEGER,
+                document_id INTEGER NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        print("Database tables verified successfully!")
+    except Exception as e:
+        print(f"Database setup error: {e}")
+    # --- END DATABASE BUILDER ---
+
+    # ── Default-deny sign-in gate ────────────────────────────────────────
+    # Many older endpoints (clients, billing, cause list, IP, calendar, contract tools, AI tools, the court proxy)
+    # carry no @jwt_required of their own, so anyone on the internet could read or change firm data and spend AI
+    # credits. Instead of trusting every route to remember, every /api/ call needs a valid session unless it is on
+    # this short public list. OPTIONS (CORS preflight) always passes.
+    _PUBLIC_API_PREFIXES = ("/api/auth/",)
+    _PUBLIC_API_EXACT = {"/api/ping"}
+
+    @app.before_request
+    def _require_sign_in_for_api():
+        if request.method == "OPTIONS":
+            return None
+        path = request.path or ""
+        if not path.startswith("/api/"):
+            return None
+        if path in _PUBLIC_API_EXACT or path.startswith(_PUBLIC_API_PREFIXES):
+            return None
+        verify_jwt_in_request()   # raises the JWT errors handled below (401 with a friendly body)
+        return None
+
+    # A signed-out session must stop working at once, not when the cookie happens to expire.
+    @jwt.token_in_blocklist_loader
+    def _jwt_is_revoked(jwt_header, jwt_payload):
+        try:
+            from models.revoked_token import RevokedToken
+            return sqlalchemy_db.session.query(RevokedToken.id).filter_by(jti=jwt_payload.get("jti")).first() is not None
+        except Exception:
+            app.logger.exception("revocation check failed")
+            return False   # a broken blocklist table must not lock every advocate out
+
+    @jwt.revoked_token_loader
+    def _jwt_revoked(jwt_header, jwt_payload):
+        return jsonify({"error": True, "msg": "Token has been revoked", "message": "You have been signed out. Please sign in again.", "code": "AUTH_REQUIRED"}), 401
+
+    @jwt.unauthorized_loader
+    def _jwt_missing(reason):
+        return jsonify({"error": True, "msg": reason, "message": "Please sign in to continue.", "code": "AUTH_REQUIRED"}), 401
+
+    @jwt.invalid_token_loader
+    def _jwt_invalid(reason):
+        return jsonify({"error": True, "msg": reason, "message": "Your session is not valid. Please sign in again.", "code": "AUTH_REQUIRED"}), 401
+
+    @jwt.expired_token_loader
+    def _jwt_expired(jwt_header, jwt_payload):
+        return jsonify({"error": True, "msg": "Token has expired", "message": "Your session has expired. Please sign in again.", "code": "TOKEN_EXPIRED"}), 401
+
+    @app.before_request
+    def _assign_request_id():
+        from flask import g
+        rid = re.sub(r'[^A-Za-z0-9\-]', '', request.headers.get('X-Request-ID', ''))[:40]
+        g.request_id = rid or uuid.uuid4().hex[:12]
+
+    @app.after_request
+    def _stamp_request(resp):
+        from flask import g
+        from utils import metrics
+        rid = getattr(g, 'request_id', None) or uuid.uuid4().hex[:12]     # also set when the sign-in gate answered before the id was assigned
+        g.request_id = rid
+        resp.headers['X-Request-ID'] = rid
+        metrics.count(f'responses_{resp.status_code // 100}xx')
+        if resp.status_code >= 500:
+            app.logger.error(f'[{rid}] {request.method} {request.path} -> {resp.status_code}')
+        return resp
+
+    from utils import audit_log as _audit_log
+    app.after_request(_audit_log.after_request)
+
+    @app.after_request
+    def _security_headers(resp):
+        h = resp.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if (request.path or "").startswith("/api/") and request.path != "/api/proxy":
+            h.setdefault("Cache-Control", "no-store")     # legal data must not sit in a shared cache
+        if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true':
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return resp
+
+    # A server error must never echo exception text (file paths, SQL, keys) to the browser, in any environment.
+    # Older routes still build {"error": str(e)} themselves; every newer response carries a "code", so anything
+    # 5xx without one is replaced by the same plain envelope. Upstream outages (502/503) keep their own wording.
+    @app.after_request
+    def _mask_server_errors(resp):
+        try:
+            if resp.status_code >= 500 and resp.mimetype == 'application/json':
+                body = resp.get_json(silent=True)
+                if not (isinstance(body, dict) and body.get('code')):
+                    from flask import g
+                    resp.set_data(json.dumps({"error": True, "code": "SERVER_ERROR", "request_id": getattr(g, 'request_id', None),
+                                              "message": "Something went wrong on our side. Please try again. If it keeps happening, quote the reference below."}))
+        except Exception:
+            pass
+        return resp
+
+    # ── Global JSON error handlers ───────────────────────────────────────
+    # Every API route here returns JSON; an unhandled exception previously
+    # fell through to Flask's default HTML error page, which the frontend
+    # then tried to JSON.parse() — the literal "unexpected character at
+    # line 1 column 1" crash. These guarantee every response this app
+    # sends back, error or not, is JSON.
+    @app.errorhandler(413)
+    def handle_too_large(e):
+        mb = max(1, int((app.config.get('MAX_CONTENT_LENGTH') or 0) / 1048576))
+        return jsonify({"error": True, "code": "TOO_LARGE",
+                        "message": f"That upload is too large. The limit is {mb} MB. Please upload a smaller file."}), 413
+
+    def _rid():
+        from flask import g
+        return getattr(g, 'request_id', None)
+
+    @app.errorhandler(HTTPException)
+    def handle_http_exception(e):
+        # One envelope for every error: `error` (kept as text for older screens), `message`, `code`, `request_id`.
+        text = e.description or str(e)
+        if e.code == 429:
+            resp = jsonify({"error": True, "code": "RATE_LIMITED", "request_id": _rid(),
+                            "message": "You are doing that too quickly. Please wait a minute and try again."})
+            resp.status_code = 429
+            if getattr(e, 'retry_after', None):
+                resp.headers['Retry-After'] = str(int(e.retry_after))
+            return resp
+        return jsonify({"error": text, "message": text, "code": f"HTTP_{e.code}", "request_id": _rid()}), e.code
+
+    @app.errorhandler(SQLAlchemyError)
+    def handle_db_error(e):
+        app.logger.error(f"[{_rid()}] Database Error: {e}")
+        return jsonify({"error": True, "code": "DB_UNAVAILABLE", "request_id": _rid(),
+                        "message": "The database is not responding. It may be waking up. Please try again in a few seconds."}), 503
+
+    @app.errorhandler(Exception)
+    def handle_generic_exception(e):
+        # Full detail goes to the server log with the request id; the person sees a plain sentence and the id to quote.
+        app.logger.error(f"[{_rid()}] Unhandled Exception: {e}", exc_info=True)
+        return jsonify({"error": True, "code": "SERVER_ERROR", "request_id": _rid(),
+                        "message": "Something went wrong on our side. Please try again. If it keeps happening, quote the reference below."}), 500
+
+    # /api/status moved to routes/health_routes.py (health_bp).
+
+    @app.cli.command("seed-supreme-court")
+    def seed_supreme_court_command():
+        """Idempotently (re)seeds the Supreme Court virtual-court roster from
+        the hardcoded, image-transcribed data in services/supreme_court_seeder.py."""
+        from services.supreme_court_seeder import seed_supreme_court_roster
+        count = seed_supreme_court_roster(sqlalchemy_db, SupremeCourtRoster)
+        print(f"Seeded {count} Supreme Court roster record(s).")
+
+    @app.cli.command("scrape-roster")
+    def scrape_roster_command():
+        """Scrapes official court portals and updates the JudicialOfficer database."""
+        from services.court_scraper import scrape_and_upsert_roster
+        print("Initiating official portal scrape for Rohini North-West...")
+        success = scrape_and_upsert_roster('delhi_rohini_nw')
+        if success:
+            print("Database successfully synchronized with official records.")
+        else:
+            print("Scraping failed. Check logs.")
+
+    @app.cli.command("scrape-vc-pdf")
+    @click.argument("pdf_source")
+    @click.option("--district", default="delhi_rohini_nw", help="District key identifier")
+    def scrape_vc_pdf_command(pdf_source, district):
+        """Parses a local or remote PDF circular to extract and update VC links."""
+        from services.court_scraper import scrape_vc_links_from_pdf
+        print(f"Extracting VC links from {pdf_source} for district: {district}...")
+        success = scrape_vc_links_from_pdf(pdf_source, district)
+        if success:
+            print("Database VC links successfully updated.")
+        else:
+            print("PDF scraping failed. Check logs above.")
+
+    @app.cli.command("sync-district")
+    @click.option("--district", default="all", type=click.Choice(["delhi_rohini", "delhi_rohini_nw", "all"]), help="Target district key or 'all'")
+    @click.option("--pdf-url", default=None, help="Override default PDF circular URL (applies to every district run when --district=all)")
+    def sync_district_command(district, pdf_url):
+        """Synchronizes judicial rosters and enriches VC links/emails for specified district(s)."""
+        from services.court_scraper import (
+            scrape_and_upsert_roster,
+            scrape_vc_links_from_pdf,
+            sync_judges_on_leave,
+            DISTRICT_PDF_URLS,
+        )
+
+        target_districts = ["delhi_rohini", "delhi_rohini_nw"] if district == "all" else [district]
+
+        for d_key in target_districts:
+            click.echo(f"\n==========================================")
+            click.echo(f"  Starting Sync for District: {d_key}")
+            click.echo(f"==========================================")
+
+            html_ok = scrape_and_upsert_roster(d_key)
+            if not html_ok:
+                click.secho(f"HTML scraping failed for {d_key}. Skipping VC enrichment.", fg="red")
+                continue
+
+            target_pdf = pdf_url or DISTRICT_PDF_URLS.get(d_key)
+            if target_pdf:
+                pdf_ok = scrape_vc_links_from_pdf(target_pdf, d_key)
+                if pdf_ok:
+                    click.secho(f"VC links/emails synchronized for '{d_key}'.", fg="green")
+                else:
+                    click.secho(f"VC enrichment had warnings for '{d_key}'.", fg="yellow")
+            else:
+                click.secho(f"No PDF URL configured for {d_key}. HTML roster updated only.", fg="yellow")
+
+            leave_ok = sync_judges_on_leave(d_key)
+            if leave_ok:
+                click.secho(f"District '{d_key}' fully synchronized (roster + VC + leave status).", fg="green")
+            else:
+                click.secho(f"Leave-status sync had warnings for '{d_key}'.", fg="yellow")
+
+    return app
+
+if __name__ == '__main__':
+    init_db()
+    app = create_app()
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
