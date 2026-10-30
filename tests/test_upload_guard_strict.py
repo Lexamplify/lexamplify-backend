@@ -64,12 +64,13 @@ def pdf_with_text(text="The appellant submits that the learned court erred in la
     return b
 
 
-def pdf_scanned():
-    """A page that is only a picture (no text layer), like a scan."""
+def pdf_scanned(pages=1):
+    """Pages that are only a picture (no text layer), like a scan."""
     import fitz
     d = fitz.open()
-    p = d.new_page()
-    p.insert_image(fitz.Rect(50, 50, 300, 300), pixmap=fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 60), False))
+    for _ in range(pages):
+        p = d.new_page()
+        p.insert_image(fitz.Rect(50, 50, 300, 300), pixmap=fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 60), False))
     b = d.tobytes()
     d.close()
     return b
@@ -92,6 +93,13 @@ def pdf_owner_only():
     b = d.tobytes(encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw="owner", user_pw="")
     d.close()
     return b
+
+
+def pdf_truncated():
+    """A real one-page PDF cut off in the middle of its font object: the header and the first objects only, no xref table and no
+    trailer. (A cut that leaves the page objects whole, such as keeping 60 percent of the file, is repaired by PyMuPDF and opens.)"""
+    data = pdf_with_text()
+    return data[:data.index(b"/Type/Font") + 10]
 
 
 def code_of(problem):
@@ -307,17 +315,20 @@ def test_realistic_300_page_contract_passes_all_limits():
 
 
 # ── pdf rules ───────────────────────────────────────────────────────────────────────────────────
-PDF_FIXTURES = sorted(p for p in FX.glob("*.pdf") if p.name not in ("empty.pdf", "fake_pdf.pdf", "password_protected.pdf", "truncated.pdf"))
+# PDFs are gitignored (*.pdf), so none of these may come from tests/fixtures: every one is built in memory.
+VALID_PDFS = {"text_1_page": pdf_with_text, "text_3_pages": lambda: pdf_with_text(pages=3), "owner_password_only": pdf_owner_only,
+              "scanned_1_page": pdf_scanned, "scanned_3_pages": lambda: pdf_scanned(pages=3)}
 
 
-@pytest.mark.parametrize("path", PDF_FIXTURES, ids=lambda p: p.name)
-def test_every_valid_pdf_fixture_passes(path):
-    assert ug.check_upload_strict(path.read_bytes(), path.name) == ("pdf", None)
+@pytest.mark.parametrize("name", list(VALID_PDFS))
+def test_every_valid_pdf_fixture_passes(name):
+    assert ug.check_upload_strict(VALID_PDFS[name](), name + ".pdf") == ("pdf", None)
 
 
 def test_bad_pdf_fixtures_are_refused_with_the_contract_codes():
-    for name, code in (("empty.pdf", "EMPTY_FILE"), ("fake_pdf.pdf", "NOT_A_PDF"), ("truncated.pdf", "NOT_A_PDF"), ("password_protected.pdf", "EXTRACTION_ERROR")):
-        kind, problem = ug.check_upload_strict((FX / name).read_bytes(), name)
+    for name, make, code in (("empty.pdf", lambda: b"", "EMPTY_FILE"), ("fake_pdf.pdf", lambda: b"This is only text with a .pdf name.", "NOT_A_PDF"),
+                             ("truncated.pdf", pdf_truncated, "NOT_A_PDF"), ("password_protected.pdf", pdf_password, "EXTRACTION_ERROR")):
+        kind, problem = ug.check_upload_strict(make(), name)
         assert kind is None and problem["code"] == code and problem["status"] == 422, name
 
 
@@ -327,7 +338,9 @@ def test_scanned_pdf_without_any_text_is_accepted():
     d = fitz.open(stream=data, filetype="pdf")
     assert d.page_count == 1 and not d[0].get_text().strip()
     assert ug.check_upload_strict(data, "scan.pdf") == ("pdf", None)
-    assert ug.check_upload_strict((FX / "scanned_contract.pdf").read_bytes(), "scan.pdf") == ("pdf", None)
+    big = pdf_scanned(pages=3)
+    assert len(big) < 200 * 1024
+    assert ug.check_upload_strict(big, "scan.pdf") == ("pdf", None)
 
 
 def test_password_pdf_is_refused_but_owner_password_only_pdf_is_accepted():
