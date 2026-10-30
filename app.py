@@ -1730,6 +1730,14 @@ def create_app():
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
     app.register_blueprint(doc_bp, url_prefix='/api/documents')
     app.register_blueprint(contract_bp, url_prefix='/api/contract')
+    # Workspaces refactor — register the DB consolidation CLI command.
+    # Invoke with: flask --app app db-consolidate [--dry-run] [--only=t1,t2]
+    try:
+        from scripts.consolidate_dbs import register as _register_consolidate
+        _register_consolidate(app)
+    except Exception as _e:  # noqa: BLE001 — never fail boot over a CLI command
+        app.logger.warning(f"db-consolidate CLI not registered: {_e}")
+
     from routes.page_routes import page_bp
     app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer
     from routes.health_routes import health_bp
