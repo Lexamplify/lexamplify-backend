@@ -1459,6 +1459,14 @@ def create_app():
     app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 104857600))  # 100 MB
     app.config['SQLITE_DB_PATH'] = DB_PATH
 
+    # ── Workspace refactor (phased rollout) ─────────────────────────
+    # False while the refactor is in flight — every existing code path
+    # keeps its current behaviour. Phases 2–8 of workspaces-refactor
+    # branch gate their new code on this flag. See:
+    # C:\Users\Dell\.claude\plans\as-a-feature-wise-glowing-shannon.md
+    app.config['WORKSPACES_ENABLED'] = os.getenv('WORKSPACES_ENABLED', 'false').lower() in ('1', 'true', 'yes')
+    app.config['WORKSPACE_ISOLATION_MODE'] = os.getenv('WORKSPACE_ISOLATION_MODE', 'observe').lower()
+
     # ── JWT: HttpOnly cookie transport, never localStorage ──────────────
     # Short-lived access token + long-lived refresh token is what makes
     # this "persistent" without keeping a broadly-scoped token alive for
