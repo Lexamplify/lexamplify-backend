@@ -39,14 +39,23 @@ def get_vault_folders():
         tree_folder_ids, _ = app_module._visible_shared_vault_ids(uid, member_ids=member_ids)
         content_folder_ids, shared_doc_ids = app_module._visible_shared_vault_ids(uid, include_nav=False, member_ids=member_ids)
 
+        # Phase 4 scoping: when a workspace is active, restrict own folders
+        # to that workspace + legacy (workspace_id IS NULL). Shared folders
+        # (via tree_folder_ids) are intentionally unscoped — a document
+        # someone else shared with you crosses workspace boundaries.
+        from utils.workspace_scope import current_workspace_id
+        _ws = current_workspace_id()
+        _ws_sql = ' AND (workspace_id = ? OR workspace_id IS NULL)' if _ws is not None else ''
+        _ws_params = (_ws,) if _ws is not None else ()
+
         conn = app_module.db
         old_rf = conn.row_factory
         conn.row_factory = sqlite3.Row
         try:
             rows = conn.execute(
                 'SELECT id, name, parent_id, protected, link_shared, created_at FROM vault_folders '
-                'WHERE user_id = ? OR id IN (SELECT value FROM json_each(?)) ORDER BY name ASC',
-                (uid, json.dumps(sorted(tree_folder_ids)))
+                f'WHERE (user_id = ?{_ws_sql}) OR id IN (SELECT value FROM json_each(?)) ORDER BY name ASC',
+                (uid, *_ws_params, json.dumps(sorted(tree_folder_ids)))
             ).fetchall()
 
             # Direct (own, non-inherited) share counts per folder — the
@@ -79,13 +88,17 @@ def get_vault_folders():
             # is each folder's OWN direct count — rolled up into a
             # recursive count below, since the vault's document-count
             # display must reflect nested contents too.
+            # Mirror the folder-tree workspace scope on own documents here
+            # so counts don't reflect docs from other workspaces. Shared
+            # docs ignore workspace just as shared folders do above.
+            _cnt_ws_sql = ' AND (cv.workspace_id = ? OR cv.workspace_id IS NULL)' if _ws is not None else ''
             count_rows = conn.execute(
                 'SELECT cv.folder_id, COUNT(*) AS cnt FROM case_vault cv '
-                'WHERE (cv.user_id = ? '
+                'WHERE ((cv.user_id = ?' + _cnt_ws_sql + ') '
                 '       OR cv.folder_id IN (SELECT value FROM json_each(?)) '
                 '       OR cv.id IN (SELECT value FROM json_each(?))) '
                 f'AND {app_module._dms_hidden_sql("cv")} GROUP BY cv.folder_id',
-                (uid, json.dumps(sorted(content_folder_ids)), json.dumps(sorted(shared_doc_ids)))
+                (uid, *_ws_params, json.dumps(sorted(content_folder_ids)), json.dumps(sorted(shared_doc_ids)))
             ).fetchall()
             own_counts = {
                 ('root' if r['folder_id'] is None else str(r['folder_id'])): r['cnt']
@@ -234,11 +247,16 @@ def upload_vault_document():
         from utils import doc_storage  # module-global is shadowed as a create_app local here
         file_bytes = doc_storage.store(file_bytes, ext)  # durable when DOC_STORAGE=disk; unchanged on sqlite
 
+        # Phase 4 scoping: stamp uploads with the active workspace. Older
+        # rows (workspace_id = NULL) stay visible in every workspace until
+        # Phase 7 migrates them.
+        from utils.workspace_scope import current_workspace_id
+        _ws_id = current_workspace_id()
         c = app_module.db.cursor()
         c.execute(
-            'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (case_id, f.filename, 'uploaded', '', folder_id, title, 'UNCLASSIFIED', file_bytes, ext, uid)
+            'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id, workspace_id) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (case_id, f.filename, 'uploaded', '', folder_id, title, 'UNCLASSIFIED', file_bytes, ext, uid, _ws_id)
         )
         app_module.db.commit()
         doc_id = c.lastrowid
@@ -363,9 +381,18 @@ def get_vault_documents():
         except (TypeError, ValueError):
             offset = 0
 
+        # Phase 4 scoping: restrict own docs to the active workspace when
+        # the client sent X-Workspace-Id. Legacy rows (workspace_id IS NULL)
+        # stay visible everywhere until Phase 7 migrates them.
+        from utils.workspace_scope import current_workspace_id
+        _ws = current_workspace_id()
+        _owner_cond = (
+            '(cv.user_id = ? AND (cv.workspace_id = ? OR cv.workspace_id IS NULL))'
+            if _ws is not None else '(cv.user_id = ?)'
+        )
         # Never list what is in the Document Hub's trash.
-        where_clauses = ['(cv.user_id = ?)', app_module._dms_hidden_sql('cv')]
-        params = [uid]
+        where_clauses = [_owner_cond, app_module._dms_hidden_sql('cv')]
+        params = [uid] + ([_ws] if _ws is not None else [])
         if q:
             like = f'%{q}%'
             where_clauses.append('(cv.title LIKE ? OR cv.content LIKE ? OR cv.case_id LIKE ?)')

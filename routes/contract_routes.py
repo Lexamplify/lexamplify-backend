@@ -1777,28 +1777,38 @@ def _analyses_conn():
 
 def _save_contract_analysis(owner_user_id, job_id, raw_text, results, scan_strategy):
     import json as _json
+    from utils.workspace_scope import current_workspace_id
     if owner_user_id is None:
         return
     # Pull friendly fields from results so the list view doesn't need to parse JSON.
     doc_name = (results or {}).get('document_name') or 'Contract analysis'
     page_count = int((results or {}).get('page_count') or 0)
     word_count = int((results or {}).get('word_count') or 0)
+    # Phase 4 scoping: stamp new rows with the active workspace. Older rows
+    # keep workspace_id = NULL and remain visible in every workspace until
+    # Phase 7 migrates them. Reads using the active workspace see both.
+    ws_id = None
+    try:
+        ws_id = current_workspace_id()
+    except Exception:
+        pass
     conn = _analyses_conn()
     try:
         conn.execute(
             """INSERT INTO contract_analyses
                    (owner_user_id, job_id, document_name, raw_text, results_json,
-                    scan_strategy, page_count, word_count, created_at)
-               VALUES (?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)
+                    scan_strategy, page_count, word_count, workspace_id, created_at)
+               VALUES (?,?,?,?,?,?,?,?, ?, CURRENT_TIMESTAMP)
                ON CONFLICT(owner_user_id, job_id) DO UPDATE SET
                    document_name = excluded.document_name,
                    raw_text = excluded.raw_text,
                    results_json = excluded.results_json,
                    scan_strategy = excluded.scan_strategy,
                    page_count = excluded.page_count,
-                   word_count = excluded.word_count""",
+                   word_count = excluded.word_count,
+                   workspace_id = COALESCE(excluded.workspace_id, contract_analyses.workspace_id)""",
             (str(owner_user_id), job_id, doc_name, raw_text,
-             _json.dumps(results or {}), scan_strategy, page_count, word_count),
+             _json.dumps(results or {}), scan_strategy, page_count, word_count, ws_id),
         )
         conn.commit()
     finally:
@@ -1808,21 +1818,27 @@ def _save_contract_analysis(owner_user_id, job_id, raw_text, results, scan_strat
 @contract_bp.route("/analyses", methods=["GET"])
 @jwt_required()
 def list_contract_analyses():
-    """List this user's past contract analyses (most recent first)."""
+    """List this user's past contract analyses (most recent first).
+
+    Phase 4 scoping: when the client sends X-Workspace-Id, the list is
+    restricted to that workspace's analyses + legacy rows (workspace_id
+    IS NULL). Without the header, every row is returned as before."""
+    from utils.workspace_scope import scope_filter_sql
     try:
         uid = str(get_jwt_identity())
     except Exception:
         return jsonify({"analyses": []}), 200
+    scope_sql, scope_params = scope_filter_sql("workspace_id")
     conn = _analyses_conn()
     try:
         rows = conn.execute(
-            """SELECT id, job_id, document_name, scan_strategy, page_count,
-                      word_count, created_at
-               FROM contract_analyses
-               WHERE owner_user_id = ?
-               ORDER BY created_at DESC, id DESC
-               LIMIT 100""",
-            (uid,),
+            f"""SELECT id, job_id, document_name, scan_strategy, page_count,
+                       word_count, created_at
+                FROM contract_analyses
+                WHERE owner_user_id = ?{scope_sql}
+                ORDER BY created_at DESC, id DESC
+                LIMIT 100""",
+            (uid, *scope_params),
         ).fetchall()
         return jsonify({"analyses": [dict(r) for r in rows]}), 200
     finally:

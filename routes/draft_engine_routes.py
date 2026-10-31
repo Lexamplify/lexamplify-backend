@@ -219,13 +219,23 @@ def _row(s, versions=False):
 
 @drafts_bp.route("/sessions", methods=["GET"])
 def sessions_list():
-    rows = DraftSession.query.filter_by(user_id=_uid()).order_by(DraftSession.updated_at.desc()).limit(50).all()
+    # Phase 4 scoping: filter by active workspace when the client sent the
+    # X-Workspace-Id header. NULL rows (legacy) remain visible in every
+    # workspace until Phase 7 migrates them.
+    from utils.workspace_scope import current_workspace_id
+    q = DraftSession.query.filter_by(user_id=_uid())
+    ws = current_workspace_id()
+    if ws is not None:
+        from sqlalchemy import or_
+        q = q.filter(or_(DraftSession.workspace_id == ws, DraftSession.workspace_id.is_(None)))
+    rows = q.order_by(DraftSession.updated_at.desc()).limit(50).all()
     return jsonify({"sessions": [_row(s) for s in rows]})
 
 
 @drafts_bp.route("/sessions", methods=["POST"])
 @limiter.limit("60/hour", key_func=_rate_key)
 def sessions_create():
+    from utils.workspace_scope import current_workspace_id
     data = _body()
     type_id = str(data.get("type") or "")
     if not get_type(type_id):
@@ -235,7 +245,8 @@ def sessions_create():
         return _err("BAD_FACTS", "The details could not be read.", 400)
     s = DraftSession(user_id=_uid(), doc_type=type_id, title=str(data.get("title") or get_type(type_id)["short"])[:200],
                      case_ref=(str(data.get("case_ref"))[:64] if data.get("case_ref") else None),
-                     facts_json=json.dumps(facts, ensure_ascii=False))
+                     facts_json=json.dumps(facts, ensure_ascii=False),
+                     workspace_id=current_workspace_id())
     db.session.add(s)
     db.session.commit()
     return jsonify(_row(s, versions=True)), 201

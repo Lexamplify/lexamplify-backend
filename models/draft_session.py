@@ -14,6 +14,7 @@ class DraftSession(db.Model):
     facts_json = db.Column(db.Text, nullable=False, default="{}")
     step       = db.Column(db.String(24), default="details")
     status     = db.Column(db.String(16), default="draft")   # draft | done
+    workspace_id = db.Column(db.Integer, index=True)         # Phase 4 scoping; NULL = legacy row
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

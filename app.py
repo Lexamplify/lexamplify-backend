@@ -266,6 +266,19 @@ def init_db():
             c.execute(f'ALTER TABLE {_tbl} ADD COLUMN link_shared BOOLEAN DEFAULT 0')
         except Exception:
             pass
+    # Phase 4 of workspaces-refactor — scope every vault row to a workspace.
+    # Nullable: NULL means "legacy row visible in every workspace" until
+    # Phase 7 migrates owning rows to their workspace. See
+    # C:\Users\Dell\.claude\plans\as-a-feature-wise-glowing-shannon.md
+    for _tbl in ('case_vault', 'vault_folders', 'contract_analyses', 'draft_sessions'):
+        try:
+            c.execute(f'ALTER TABLE {_tbl} ADD COLUMN workspace_id INTEGER')
+        except Exception:
+            pass
+        try:
+            c.execute(f'CREATE INDEX IF NOT EXISTS ix_{_tbl}_ws ON {_tbl}(workspace_id)')
+        except Exception:
+            pass
     # Explicit per-person shares (Phase 2 sharing), uniform across folders
     # and documents. Cascade is NOT stored here — sharing a folder grants
     # access to its contents by walking the ancestor chain at

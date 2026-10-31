@@ -29,6 +29,7 @@ from database import db
 # ──────────────────────────────────────────────────────────────────
 class CaseVault(db.Model):
     __tablename__ = "case_vault"
+    __table_args__ = (Index("ix_case_vault_ws", "workspace_id"),)
     id = Column(Integer, primary_key=True, autoincrement=True)
     case_id = Column(Text)
     title = Column(Text)
@@ -45,10 +46,12 @@ class CaseVault(db.Model):
     validity_status = Column(Text, default="Green")
     ratio_headnote = Column(Text)
     is_public = Column(Integer, nullable=False, default=0, server_default=sql_text("0"))
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class VaultFolder(db.Model):
     __tablename__ = "vault_folders"
+    __table_args__ = (Index("ix_vault_folders_ws", "workspace_id"),)
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(Text, nullable=False)
     parent_id = Column(Integer)  # self-FK — enforced in Postgres migration
@@ -56,6 +59,7 @@ class VaultFolder(db.Model):
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
     protected = Column(Boolean, default=False)
     link_shared = Column(Boolean, default=False)
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class DocumentVaultShare(db.Model):
@@ -201,6 +205,7 @@ class ContractAnalysis(db.Model):
     __table_args__ = (
         UniqueConstraint("owner_user_id", "job_id"),
         Index("ix_contract_analyses_owner", "owner_user_id", "created_at"),
+        Index("ix_contract_analyses_ws", "workspace_id"),
     )
     id = Column(Integer, primary_key=True, autoincrement=True)
     owner_user_id = Column(Text, nullable=False)
@@ -212,6 +217,7 @@ class ContractAnalysis(db.Model):
     page_count = Column(Integer)
     word_count = Column(Integer)
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class DocumentChunkLegacy(db.Model):

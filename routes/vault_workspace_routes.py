@@ -1398,10 +1398,13 @@ def create_vault_workspace_blueprint(deps):
             if existing:
                 return jsonify({'error': True, 'message': f'A folder named "{name}" already exists here.'}), 409
 
+            # Phase 4 scoping: stamp new folder with the active workspace.
+            from utils.workspace_scope import current_workspace_id
+            _ws_id = current_workspace_id()
             c = conn.cursor()
             c.execute(
-                'INSERT INTO vault_folders (name, parent_id, user_id) VALUES (?, ?, ?)',
-                (name, parent_id, uid)
+                'INSERT INTO vault_folders (name, parent_id, user_id, workspace_id) VALUES (?, ?, ?, ?)',
+                (name, parent_id, uid, _ws_id)
             )
             conn.commit()
             folder_id = c.lastrowid
