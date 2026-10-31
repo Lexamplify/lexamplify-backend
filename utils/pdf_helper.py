@@ -29,7 +29,11 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
     no internal bound on certain malformed/complex PDFs and can run for a
     very long time; fitz is both faster in the common case and, paired with
     the caller's own hard timeout (routes/contract_routes.py's
-    extract_text route), actually boundable."""
+    extract_text route), actually boundable.
+
+    Scanned-PDF fallback: if the extracted text is suspiciously thin
+    (<120 chars per page on average), the page-level OCR path in
+    utils/pdf_ocr.py kicks in (PaddleOCR with Tesseract fallback)."""
     if filetype == "pdf":
         import fitz
         doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -39,6 +43,7 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
         if doc.page_count > 1500:
             doc.close()
             raise ValueError("PDF has too many pages")
+        page_count = doc.page_count
         try:
             # page.get_text() (plain "text" mode) puts a \n at every ORIGINAL
             # PRINT LINE, not at paragraph boundaries — a sentence that wrapped
@@ -77,6 +82,22 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
             text = "\n\n".join(paragraphs)
         finally:
             doc.close()
+
+        # Scanned-PDF fallback: average <120 chars per page is a strong
+        # signal the PDF has no embedded text (fitz returned empty for
+        # most pages). Hand off to the OCR path.
+        if page_count > 0 and len(text) < 120 * page_count:
+            try:
+                from utils.pdf_ocr import ocr_pdf_bytes
+                ocr_text = ocr_pdf_bytes(file_bytes)
+                # Prefer OCR output when it beats the fitz pass; keep fitz
+                # when it is actually richer (defensive).
+                if len(ocr_text) > len(text):
+                    text = ocr_text
+            except Exception:
+                # OCR unavailable (paddle/tesseract missing) — return
+                # whatever fitz got rather than failing the request.
+                pass
     elif filetype == "docx":
         import docx
         text = docx_text_in_order(docx.Document(io.BytesIO(file_bytes)))

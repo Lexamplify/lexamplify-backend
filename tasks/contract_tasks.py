@@ -214,7 +214,21 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
 
     started = time.time()
     report('Chunking document...', 5)
-    chunks = chunk_text_by_boundary(full_text, chunk_size=CHUNK_CHARS, overlap=300)
+    # Adaptive chunk size: big contracts (300+ pages ~= 600K+ chars)
+    # get a bigger chunk so the total chunk count stays reasonable and
+    # the whole analysis finishes in ~1 minute even for a 300-page
+    # agreement. Small contracts stay on the default 10K to keep each
+    # LLM call cheap. Override explicitly with ANALYSIS_CHUNK_CHARS.
+    _env_chunk = os.getenv("ANALYSIS_CHUNK_CHARS")
+    if _env_chunk:
+        _effective_chunk = int(_env_chunk)
+    elif len(full_text) > 600_000:
+        _effective_chunk = 16000          # 300+ page: ~40 chunks
+    elif len(full_text) > 300_000:
+        _effective_chunk = 12000          # 150-300 page: ~30 chunks
+    else:
+        _effective_chunk = CHUNK_CHARS    # default 10000
+    chunks = chunk_text_by_boundary(full_text, chunk_size=_effective_chunk, overlap=300)
     if not chunks:
         chunks.append(full_text)
     total = len(chunks)
