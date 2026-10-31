@@ -182,6 +182,10 @@ def create_workspace():
         )
         return _err(E_NO_FIRM)
 
+    # Pipeline item 1 — workspace is per-CLIENT. New workspaces accept
+    # client contact fields; case_no / court / case_type are still
+    # accepted for backward compat but belong on lpms_cases going
+    # forward (the Matters tab inside a workspace adds N cases).
     ws = Workspace(
         firm_id=me.firm_id,
         name=name[:200],
@@ -194,6 +198,17 @@ def create_workspace():
         parties=(body.get("parties") or None),
         created_by=uid,
     )
+    # Also stamp client contact columns directly for the new UI.
+    for _col, _key in [
+        ("client_type", "client_type"),
+        ("client_contact_email", "client_email"),
+        ("client_contact_phone", "client_phone"),
+        ("client_address", "client_address"),
+        ("client_notes", "client_notes"),
+    ]:
+        _v = body.get(_key)
+        if _v is not None:
+            setattr(ws, _col, (str(_v).strip() or None))
     db.session.add(ws)
     db.session.flush()  # need ws.id for member row
 

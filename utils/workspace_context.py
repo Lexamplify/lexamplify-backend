@@ -65,15 +65,38 @@ def build_workspace_context(workspace_id: int | None) -> str:
     conn.row_factory = sqlite3.Row
     try:
         ws = conn.execute(
-            "SELECT id, name, case_no, court, case_type, facts, parties "
+            "SELECT id, name, case_no, court, case_type, facts, parties, "
+            "client_type, client_contact_email, client_contact_phone, "
+            "client_address, client_notes "
             "FROM workspaces WHERE id = ?", (wid,),
         ).fetchone()
         if not ws:
             return ""
 
         parts: list[str] = []
-        parts.append(f"## Workspace brief: {ws['name']}")
+        # Pipeline item 1 & 2: workspace is the CLIENT. Lead the brief
+        # with the client identity + perspective instruction so every
+        # AI reply thinks from this client's side (step 2 of pipeline).
+        parts.append(f"## Client brief: {ws['name']}")
+        parts.append(
+            f"**You are advising _{ws['name']}_**. Analyse everything "
+            f"from this client's perspective — flag anything that would "
+            f"harm them, favour anything that would help them, and never "
+            f"advise the opposing side."
+        )
 
+        client_bits: list[str] = []
+        if ws["client_type"]: client_bits.append(f"**Client type** {ws['client_type']}")
+        if ws["client_contact_email"]: client_bits.append(f"**Email** {ws['client_contact_email']}")
+        if ws["client_contact_phone"]: client_bits.append(f"**Phone** {ws['client_contact_phone']}")
+        if client_bits:
+            parts.append("  ·  ".join(client_bits))
+        if ws["client_address"]:
+            parts.append(f"**Address.** {_trim(ws['client_address'], 400)}")
+
+        # Legacy case metadata (set only on single-case workspaces from
+        # the pre-redesign era). New per-client workspaces leave these
+        # NULL — case details live on each lpms_cases row.
         meta_bits: list[str] = []
         if ws["case_no"]:  meta_bits.append(f"**Case no.** {ws['case_no']}")
         if ws["court"]:    meta_bits.append(f"**Court** {ws['court']}")
@@ -81,9 +104,28 @@ def build_workspace_context(workspace_id: int | None) -> str:
         if meta_bits:
             parts.append("  ·  ".join(meta_bits))
 
+        # Pipeline item 1: list all open cases for this client.
+        try:
+            cases = conn.execute(
+                "SELECT title, case_no, court, case_type, status "
+                "FROM lpms_cases WHERE workspace_id = ? AND archived_at IS NULL "
+                "ORDER BY updated_at DESC LIMIT 10",
+                (wid,),
+            ).fetchall()
+            if cases:
+                lines = []
+                for cs in cases:
+                    bits = [cs["title"] or "(untitled)"]
+                    if cs["case_no"]: bits.append(f"({cs['case_no']})")
+                    if cs["court"]: bits.append(f"— {cs['court']}")
+                    lines.append("  - " + " ".join(bits))
+                parts.append("**Cases on file for this client:**\n" + "\n".join(lines))
+        except Exception:
+            pass  # lpms_cases.workspace_id may not exist yet on a fresh DB
+
         facts = _trim(ws["facts"], MAX_FACTS_CHARS)
         if facts:
-            parts.append(f"**Case facts.** {facts}")
+            parts.append(f"**Client / matter facts.** {facts}")
 
         parties = _trim(ws["parties"], MAX_PARTIES_CHARS)
         if parties:

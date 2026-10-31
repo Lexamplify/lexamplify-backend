@@ -120,9 +120,9 @@ export default function WorkspaceSwitcher({ firmFallback }) {
         aria-expanded={open}
       >
         <span className="ws-switcher__label">
-          <b>{current?.name || (loading ? 'Loading…' : 'Select workspace')}</b>
+          <b>{current?.name || (loading ? 'Loading…' : 'Select client')}</b>
           <span className="ws-switcher__sub">
-            {firmFallback || user?.firm_name || 'Chambers'}
+            {current?.client_type || 'Client workspace'} · {firmFallback || user?.firm_name || 'Chambers'}
           </span>
         </span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -137,7 +137,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search workspaces…"
+              placeholder="Search clients…"
               autoFocus
             />
           </div>
@@ -145,7 +145,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
           <div className="ws-switcher__list">
             {filtered.length === 0 && (
               <div className="ws-switcher__empty">
-                {loading ? 'Loading…' : query ? 'No match.' : 'No workspaces yet.'}
+                {loading ? 'Loading…' : query ? 'No match.' : 'No clients yet.'}
               </div>
             )}
             {filtered.map((w) => (
@@ -156,7 +156,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
                 onClick={() => handleSelect(w.id)}
               >
                 <span className="ws-switcher__name">{w.name}</span>
-                {w.case_no && <span className="ws-switcher__meta">{w.case_no}</span>}
+                {w.client_type && <span className="ws-switcher__meta">{w.client_type}</span>}
                 {w.id === currentWorkspaceId && (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <polyline points="20 6 9 17 4 12" />
@@ -174,7 +174,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
                 type="text"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="New workspace name"
+                placeholder="New client name"
                 disabled={creating}
                 autoFocus
               />
@@ -187,7 +187,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
               className="ws-switcher__footer-link"
               onClick={() => { setNewName(' '); setCreating(false); setTimeout(() => setNewName(''), 0); }}
             >
-              + Create workspace…
+              + Add client
             </button>
           )}
 
@@ -196,7 +196,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
             className="ws-switcher__footer-link"
             onClick={() => setOpen(false)}
           >
-            Manage workspaces →
+            Manage clients →
           </Link>
 
           {error && (

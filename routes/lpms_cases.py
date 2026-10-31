@@ -145,31 +145,18 @@ def register(env):
         per = min(max(as_int(a.get("per_page"), 25), 1), 100)
         page = min(max(as_int(a.get("page"), 1), 1), 100000)
 
-        # Phase 6b scoping: when a workspace is active, show only the one
-        # lpms_case that workspace was migrated from. The migration map
-        # (`_lx_migration_map`) was populated by Phase 7's
-        # db-migrate-workspaces command. Setting restrict_case_id to None
-        # when nothing matches keeps the pre-refactor behaviour (all cases
-        # visible), so the switcher's "General" workspace or an orphaned
-        # workspace never hides the user's data.
-        restrict_case_id = None
+        # Pipeline item 1: workspace is now per-CLIENT. The Matters tab
+        # should show EVERY case of that client, not one. We filter by
+        # lpms_cases.workspace_id directly (populated by the redesign
+        # migration + any case created inside a workspace going forward).
         try:
             from utils.workspace_scope import current_workspace_id as _wsid
             _ws = _wsid()
             if _ws is not None:
-                mapped = c.execute(
-                    "SELECT old_id FROM _lx_migration_map "
-                    "WHERE kind='lpms_case' AND new_workspace_id = ? LIMIT 1",
-                    (_ws,),
-                ).fetchone()
-                if mapped:
-                    restrict_case_id = mapped[0] if not isinstance(mapped, dict) else mapped["old_id"]
+                extra = extra + " AND c.workspace_id = :__ws_id"
+                params["__ws_id"] = _ws
         except Exception:
-            restrict_case_id = None
-
-        if restrict_case_id is not None:
-            extra = extra + " AND c.id = :__ws_case_id"
-            params["__ws_case_id"] = restrict_case_id
+            pass
 
         total = c.execute(f"SELECT COUNT(*) FROM lpms_cases c LEFT JOIN lpms_clients cl ON cl.id = c.client_id LEFT JOIN lpms_members ad ON ad.id = c.advocate_id WHERE {vis} {extra}", params).fetchone()[0]
         order = SORTS.get(a.get("sort"), SORTS["updated"])

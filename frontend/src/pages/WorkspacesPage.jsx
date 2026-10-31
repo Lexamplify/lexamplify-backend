@@ -191,7 +191,14 @@ function FactsEditorModal({ ws, onClose, onSaved, patch }) {
 }
 
 function NewWorkspaceModal({ onClose, onCreated, create }) {
-  const [form, setForm] = useState({ name: '', case_no: '', court: '', case_type: '', facts: '' });
+  // Pipeline item 1 — workspace is per-CLIENT. The modal now collects
+  // CLIENT info (contact, type, notes). Case metadata lives on each
+  // matter inside the workspace instead.
+  const [form, setForm] = useState({
+    name: '', client_type: 'Individual',
+    client_email: '', client_phone: '', client_address: '',
+    client_notes: '', facts: '',
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -199,19 +206,21 @@ function NewWorkspaceModal({ onClose, onCreated, create }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) { setErr('Workspace name is required.'); return; }
+    if (!form.name.trim()) { setErr('Client name is required.'); return; }
     setBusy(true); setErr('');
     try {
       await create({
         name: form.name.trim(),
-        case_no: form.case_no.trim() || null,
-        court: form.court.trim() || null,
-        case_type: form.case_type.trim() || null,
+        client_type: form.client_type || null,
+        client_email: form.client_email.trim() || null,
+        client_phone: form.client_phone.trim() || null,
+        client_address: form.client_address.trim() || null,
+        client_notes: form.client_notes.trim() || null,
         facts: form.facts.trim() || null,
       });
       onCreated?.();
     } catch (e2) {
-      setErr(e2?.message || 'Could not create workspace.');
+      setErr(e2?.message || 'Could not create client workspace.');
     } finally {
       setBusy(false);
     }
@@ -221,36 +230,60 @@ function NewWorkspaceModal({ onClose, onCreated, create }) {
     <div className="ws-modal" onClick={onClose}>
       <div className="ws-modal__card" onClick={(e) => e.stopPropagation()}>
         <header>
-          <h2>New workspace</h2>
+          <h2>Add a client</h2>
           <button type="button" className="ws-modal__close" onClick={onClose} aria-label="Close">×</button>
         </header>
         <form onSubmit={submit}>
+          <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 4px' }}>
+            A workspace = one client. All their matters, contracts,
+            drafts and calendar entries live inside this workspace. Add
+            individual cases from the Matters tab after you create it.
+          </p>
           <label>
-            <span>Workspace name <em>(required)</em></span>
-            <input type="text" value={form.name} onChange={update('name')} placeholder="Sharma v. State of Maharashtra" autoFocus disabled={busy} />
+            <span>Client name <em>(required)</em></span>
+            <input type="text" value={form.name} onChange={update('name')} placeholder="Rohit Sharma  /  Acme Industries Pvt. Ltd." autoFocus disabled={busy} />
           </label>
           <div className="ws-modal__row">
             <label>
-              <span>Case no.</span>
-              <input type="text" value={form.case_no} onChange={update('case_no')} placeholder="WP 123 / 2026" disabled={busy} />
+              <span>Client type</span>
+              <select value={form.client_type} onChange={update('client_type')} disabled={busy}>
+                <option>Individual</option>
+                <option>Corporate</option>
+                <option>Government</option>
+                <option>Trust</option>
+                <option>Other</option>
+              </select>
             </label>
             <label>
-              <span>Court</span>
-              <input type="text" value={form.court} onChange={update('court')} placeholder="Delhi HC" disabled={busy} />
+              <span>Email</span>
+              <input type="email" value={form.client_email} onChange={update('client_email')} placeholder="client@example.com" disabled={busy} />
+            </label>
+          </div>
+          <div className="ws-modal__row">
+            <label>
+              <span>Phone</span>
+              <input type="tel" value={form.client_phone} onChange={update('client_phone')} placeholder="+91…" disabled={busy} />
+            </label>
+            <label>
+              <span>Address</span>
+              <input type="text" value={form.client_address} onChange={update('client_address')} placeholder="City, state" disabled={busy} />
             </label>
           </div>
           <label>
-            <span>Case type</span>
-            <input type="text" value={form.case_type} onChange={update('case_type')} placeholder="Writ / Civil / Criminal / …" disabled={busy} />
+            <span>Client / matter facts <em>(AI uses this)</em></span>
+            <textarea rows={5} value={form.facts} onChange={update('facts')}
+              placeholder="Background about this client and the general nature of their matters — the AI uses this to think from their perspective on every reply."
+              disabled={busy} />
           </label>
           <label>
-            <span>Case brief / facts <em>(AI uses this)</em></span>
-            <textarea rows={5} value={form.facts} onChange={update('facts')} placeholder="Petitioner Rohit Sharma; charge under Section 420 IPC; …" disabled={busy} />
+            <span>Internal notes</span>
+            <textarea rows={2} value={form.client_notes} onChange={update('client_notes')}
+              placeholder="Billing, retainer, points of contact, caveats…" disabled={busy} />
           </label>
           {err && <div className="ws-modal__err" role="alert">{err}</div>}
           <footer>
             <button type="button" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="submit" disabled={busy || !form.name.trim()}>{busy ? 'Creating…' : 'Create workspace'}</button>
+            <button type="submit" disabled={busy || !form.name.trim()}>{busy ? 'Creating…' : 'Create client workspace'}</button>
           </footer>
         </form>
       </div>

@@ -41,8 +41,16 @@ class Workspace(db.Model):
     lead_counsel_user_id = Column(Integer)                  # → users.id (optional)
     status = Column(Text, nullable=False, default="active") # active | archived
     archived_at = Column(DateTime)
-    facts = Column(Text)                                    # case brief, free text
+    facts = Column(Text)                                    # client brief (not case brief)
     parties = Column(Text)                                  # JSON array of {role, name, contact}
+    # Pipeline item 1 — workspace is per-CLIENT. These denormalise the
+    # most useful lpms_clients fields so the AI context builder + UI
+    # don't need an extra join.
+    client_type = Column(Text)                              # Individual | Corporate | Government | Trust
+    client_contact_email = Column(Text)
+    client_contact_phone = Column(Text)
+    client_address = Column(Text)
+    client_notes = Column(Text)
     created_by = Column(Integer, nullable=False)            # users.id of creator
     created_at = Column(DateTime, nullable=False, server_default=sql_text("CURRENT_TIMESTAMP"))
     updated_at = Column(DateTime, nullable=False, server_default=sql_text("CURRENT_TIMESTAMP"))
@@ -56,6 +64,11 @@ class Workspace(db.Model):
             "court": self.court,
             "case_type": self.case_type,
             "client_id": self.client_id,
+            "client_type": self.client_type,
+            "client_contact_email": self.client_contact_email,
+            "client_contact_phone": self.client_contact_phone,
+            "client_address": self.client_address,
+            "client_notes": self.client_notes,
             "lead_counsel_user_id": self.lead_counsel_user_id,
             "status": self.status,
             "archived_at": self.archived_at.isoformat() if self.archived_at else None,

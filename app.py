@@ -287,6 +287,31 @@ def init_db():
         c.execute('ALTER TABLE conflict_clearance_memos ADD COLUMN owner_user_id INTEGER')
     except Exception:
         pass
+
+    # Pipeline item 1 — workspace redesign: workspace is per-CLIENT, not
+    # per-case. Add client contact + metadata columns here (migration
+    # script later collapses the per-case rows into per-client rows).
+    for _col, _type in [
+        ("client_type", "TEXT"),            # Individual | Corporate | Government | Trust
+        ("client_contact_email", "TEXT"),
+        ("client_contact_phone", "TEXT"),
+        ("client_address", "TEXT"),
+        ("client_notes", "TEXT"),
+    ]:
+        try:
+            c.execute(f'ALTER TABLE workspaces ADD COLUMN {_col} {_type}')
+        except Exception:
+            pass
+    # lpms_cases gets a workspace_id FK so every case knows which
+    # client-workspace it lives under.
+    try:
+        c.execute('ALTER TABLE lpms_cases ADD COLUMN workspace_id INTEGER')
+    except Exception:
+        pass
+    try:
+        c.execute('CREATE INDEX IF NOT EXISTS ix_lpms_cases_ws ON lpms_cases(workspace_id)')
+    except Exception:
+        pass
     # Explicit per-person shares (Phase 2 sharing), uniform across folders
     # and documents. Cascade is NOT stored here — sharing a folder grants
     # access to its contents by walking the ancestor chain at
@@ -1804,6 +1829,11 @@ def create_app():
         _register_seed(app)
     except Exception as _e:  # noqa: BLE001
         app.logger.warning(f"seed-workspace-demo CLI not registered: {_e}")
+    try:
+        from scripts.redesign_workspace_as_client import register as _register_redesign
+        _register_redesign(app)
+    except Exception as _e:  # noqa: BLE001
+        app.logger.warning(f"db-redesign-client-workspaces CLI not registered: {_e}")
 
     from routes.page_routes import page_bp
     app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer
