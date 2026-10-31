@@ -1519,7 +1519,7 @@ export default function ContractAnalyzer() {
                       ? `${(contractFile.size / 1024).toFixed(1)} KB · Ready to scan`
                       : 'PDF or DOCX, any length — a 60-page facility agreement is read the same way as a 2-page NDA.'}
                   </div>
-                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--muted)', marginTop: '4px' }}>MAX 50 MB PER FILE</div>
+                  <div className="mono" style={{ fontSize: '10.5px', color: 'var(--muted)', marginTop: '4px' }}>MAX 100 MB PER FILE</div>
                 </div>
 
                 <div className="or-row">or paste text directly</div>
