@@ -1727,6 +1727,23 @@ def create_app():
     app.register_blueprint(team_bp)
     app.register_blueprint(matter_bp)
     app.register_blueprint(letterhead_bp)
+
+    # Workspaces (Phase 2 of workspaces-refactor). Gated by WORKSPACES_ENABLED
+    # so the branch stays mergeable even while partially built. The models are
+    # always imported so db.create_all() builds the two tables either way —
+    # that is safe (empty tables cost nothing) and lets Phase 4 scope features
+    # against the schema without a second migration.
+    try:
+        from models.workspace import Workspace, WorkspaceMember  # noqa: F401 — register
+    except Exception as _e:  # noqa: BLE001
+        app.logger.warning(f"workspaces models not loaded: {_e}")
+    if app.config.get("WORKSPACES_ENABLED"):
+        try:
+            from routes.workspace_routes import workspace_bp
+            app.register_blueprint(workspace_bp)
+            app.logger.info("workspaces: /api/workspaces endpoints registered")
+        except Exception as _e:  # noqa: BLE001
+            app.logger.warning(f"workspace blueprint not registered: {_e}")
     app.register_blueprint(dispute_bp)  # url_prefix baked into dispute_bp: /api/disputes
     from routes.draft_engine_routes import drafts_bp
     from routes.audit_routes import audit_bp
