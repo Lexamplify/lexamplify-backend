@@ -234,6 +234,16 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
         sessionStorage.setItem(`contract_name_${data.job_id}`, file ? file.name : (prefillName || 'Pasted contract'));
       } catch { /* storage may be blocked */ }
 
+      // Register the job in the global background-jobs store so the
+      // topbar chip shows "Analysing contract — N%" from EVERY page.
+      // Celery is already running the task server-side; this just lets
+      // the UI follow it even when the user navigates away.
+      try {
+        const { useJobsStore } = await import('../stores/useJobsStore.js');
+        useJobsStore.getState().register(data.job_id, 'contract', {
+          title: file ? file.name : (prefillName || 'Pasted contract'),
+        });
+      } catch { /* ignore */ }
       onStarted(data.job_id);
     } catch (e) {
       setErr(e.message || 'Something went wrong. Please try again.');

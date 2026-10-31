@@ -5,6 +5,7 @@ import ThemeStudio from '../components/ThemeStudio.jsx';
 import CommandBar from '../components/CommandBar.jsx';
 import Notifications from '../components/Notifications.jsx';
 import WorkspaceSwitcher from './WorkspaceSwitcher.jsx';
+import BackgroundJobsChip from './BackgroundJobsChip.jsx';
 import { useSettings } from '../store/useSettings.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -205,6 +206,7 @@ export default function Shell() {
           </nav>
 
           <div className="topbar__right">
+            <BackgroundJobsChip />
             <button className="cmdk" onClick={() => fire('lx:cmdk')}><Ic.Search size={16} /><span>Search or ask anything</span><kbd>⌘K</kbd></button>
             <button
               className="icon-btn"

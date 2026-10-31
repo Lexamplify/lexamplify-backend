@@ -1,0 +1,30 @@
+/* Topbar chip that advertises an in-flight background job (contract
+   analysis today). Hidden when nothing is running. */
+.bgjobs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--paper));
+  color: var(--ink);
+  font: 500 12.5px/1.2 var(--font-sans);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.bgjobs-chip:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--paper));
+  border-color: var(--accent);
+}
+.bgjobs-chip__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: bgjobs-pulse 1.4s ease-in-out infinite;
+}
+@keyframes bgjobs-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  50%      { box-shadow: 0 0 0 6px transparent; }
+}
+.bgjobs-chip__label { white-space: nowrap; }
