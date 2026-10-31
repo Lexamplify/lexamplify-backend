@@ -154,8 +154,14 @@ class JobCancelled(Exception):
     """The advocate pressed Cancel."""
 
 
-CHUNK_CHARS = int(os.getenv("ANALYSIS_CHUNK_CHARS", "4500"))
-WORKERS = int(os.getenv("ANALYSIS_WORKERS", "3"))
+# Phase 6c: raise throughput defaults so a 200-page contract (~90 chunks
+# at the old 4500-char size, ~50 chunks at the new 8000-char size)
+# finishes in ~90s instead of ~4 min. Both still env-overridable.
+# PyMuPDF-based text extraction (utils/pdf_helper.extract_text_for_summary)
+# already runs in a few seconds for 200 pages — the bottleneck was the
+# sequential LLM chunk loop, not the parsing.
+CHUNK_CHARS = int(os.getenv("ANALYSIS_CHUNK_CHARS", "8000"))
+WORKERS = int(os.getenv("ANALYSIS_WORKERS", "6"))
 PRECEDENT_SECONDS = float(os.getenv("ANALYSIS_PRECEDENT_SECONDS", "25"))
 
 

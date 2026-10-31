@@ -430,7 +430,11 @@ def is_near_duplicate_risk(candidate_text: str, accepted_texts: list, threshold:
 
 # At most this many provider calls run at once in the whole server, however many people are analysing: the provider's
 # per-minute token allowance is shared, and piling up requests only makes every one of them slower.
-LLM_SLOTS = threading.BoundedSemaphore(int(os.getenv("ANALYSIS_LLM_SLOTS", "4")))
+# Phase 6c: raise concurrent LLM-call cap in step with ANALYSIS_WORKERS.
+# 8 slots lets the 6 worker threads above never block on each other even
+# when a slow chunk is still finishing — bottleneck becomes the model's
+# own rate limit, not our internal semaphore.
+LLM_SLOTS = threading.BoundedSemaphore(int(os.getenv("ANALYSIS_LLM_SLOTS", "8")))
 ANALYSIS_CALL_TIMEOUT = float(os.getenv("ANALYSIS_CALL_TIMEOUT", "50"))
 ANALYSIS_MAX_OUTPUT_TOKENS = int(os.getenv("ANALYSIS_MAX_OUTPUT_TOKENS", "2500"))
 

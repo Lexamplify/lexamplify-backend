@@ -144,6 +144,33 @@ def register(env):
         extra = R.case_filters_sql(a, params)
         per = min(max(as_int(a.get("per_page"), 25), 1), 100)
         page = min(max(as_int(a.get("page"), 1), 1), 100000)
+
+        # Phase 6b scoping: when a workspace is active, show only the one
+        # lpms_case that workspace was migrated from. The migration map
+        # (`_lx_migration_map`) was populated by Phase 7's
+        # db-migrate-workspaces command. Setting restrict_case_id to None
+        # when nothing matches keeps the pre-refactor behaviour (all cases
+        # visible), so the switcher's "General" workspace or an orphaned
+        # workspace never hides the user's data.
+        restrict_case_id = None
+        try:
+            from utils.workspace_scope import current_workspace_id as _wsid
+            _ws = _wsid()
+            if _ws is not None:
+                mapped = c.execute(
+                    "SELECT old_id FROM _lx_migration_map "
+                    "WHERE kind='lpms_case' AND new_workspace_id = ? LIMIT 1",
+                    (_ws,),
+                ).fetchone()
+                if mapped:
+                    restrict_case_id = mapped[0] if not isinstance(mapped, dict) else mapped["old_id"]
+        except Exception:
+            restrict_case_id = None
+
+        if restrict_case_id is not None:
+            extra = extra + " AND c.id = :__ws_case_id"
+            params["__ws_case_id"] = restrict_case_id
+
         total = c.execute(f"SELECT COUNT(*) FROM lpms_cases c LEFT JOIN lpms_clients cl ON cl.id = c.client_id LEFT JOIN lpms_members ad ON ad.id = c.advocate_id WHERE {vis} {extra}", params).fetchone()[0]
         order = SORTS.get(a.get("sort"), SORTS["updated"])
         rows_ = L.rows(c, f"{CASE_SELECT} WHERE {vis} {extra} ORDER BY {order} LIMIT :lim OFFSET :off", {**params, "lim": per, "off": (page - 1) * per})

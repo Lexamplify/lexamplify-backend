@@ -1799,6 +1799,11 @@ def create_app():
         _register_mig(app)
     except Exception as _e:  # noqa: BLE001
         app.logger.warning(f"db-migrate-workspaces CLI not registered: {_e}")
+    try:
+        from scripts.seed_workspace_demo import register as _register_seed
+        _register_seed(app)
+    except Exception as _e:  # noqa: BLE001
+        app.logger.warning(f"seed-workspace-demo CLI not registered: {_e}")
 
     from routes.page_routes import page_bp
     app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer

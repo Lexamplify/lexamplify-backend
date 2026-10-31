@@ -44,6 +44,19 @@ const GROUPS = [
 
 const FLAT = GROUPS.flatMap((g) => g.items);
 
+// On every workspace switch, reload the current route so EVERY component
+// re-fetches its data with the new X-Workspace-Id header. This is
+// deliberately a hard reload: tracking down and manually re-querying
+// every list on every page would mean editing 20+ pages, each with its
+// own useEffect-on-mount pattern. A reload is one line and always right.
+if (typeof window !== 'undefined' && !window.__lxWorkspaceReloadBound) {
+  window.__lxWorkspaceReloadBound = true;
+  window.addEventListener('lx:workspace-changed', () => {
+    // Preserve any auth refresh events during the reload cycle.
+    setTimeout(() => window.location.reload(), 50);
+  });
+}
+
 export default function Shell() {
   const [open, setOpen] = useState(false);
   const layout = useSettings((st) => st.layout);
