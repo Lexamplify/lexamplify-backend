@@ -160,8 +160,13 @@ class JobCancelled(Exception):
 # PyMuPDF-based text extraction (utils/pdf_helper.extract_text_for_summary)
 # already runs in a few seconds for 200 pages — the bottleneck was the
 # sequential LLM chunk loop, not the parsing.
-CHUNK_CHARS = int(os.getenv("ANALYSIS_CHUNK_CHARS", "8000"))
-WORKERS = int(os.getenv("ANALYSIS_WORKERS", "6"))
+CHUNK_CHARS = int(os.getenv("ANALYSIS_CHUNK_CHARS", "10000"))
+# When OpenAI gpt-4o-mini is in play (OPENAI_API_KEY only), its 200K TPM
+# easily absorbs 10+ concurrent requests. On Groq's 8K TPM, keep 6.
+if os.getenv("OPENAI_API_KEY") and not os.getenv("GROQ_API_KEY"):
+    WORKERS = int(os.getenv("ANALYSIS_WORKERS", "10"))
+else:
+    WORKERS = int(os.getenv("ANALYSIS_WORKERS", "6"))
 PRECEDENT_SECONDS = float(os.getenv("ANALYSIS_PRECEDENT_SECONDS", "25"))
 
 

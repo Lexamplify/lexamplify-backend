@@ -43,7 +43,15 @@ _THINK_BLOCK_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
 # below sizes each individual call correctly; _call_with_rate_limit_retry
 # below handles the OTHER half — backing off and retrying when the account
 # hits the rolling ceiling regardless of this call's own size.
-_GROQ_TPM_BUDGET = 8000
+# The TPM budget was sized for Groq's on-demand tier (8000 TPM). When
+# OPENAI_API_KEY is set and GROQ_API_KEY isn't, llm_client routes every
+# call to OpenAI gpt-4o-mini which has 200K+ TPM — so throttling to 8K
+# just slow-walks the Contract Analyzer for no reason. Bump the ceiling
+# to 100K when we detect we're on OpenAI; keep the old 8K for Groq.
+if os.getenv("OPENAI_API_KEY") and not os.getenv("GROQ_API_KEY"):
+    _GROQ_TPM_BUDGET = int(os.getenv("LLM_TPM_BUDGET", "100000"))
+else:
+    _GROQ_TPM_BUDGET = int(os.getenv("LLM_TPM_BUDGET", "8000"))
 _GROQ_TPM_SAFETY_MARGIN = 400  # headroom for the char/4 estimate below being approximate
 _MIN_COMPLETION_TOKENS = 512
 _RATE_LIMIT_RETRY_DELAYS = (12, 20)  # seconds — enough for a per-minute window to partly recover

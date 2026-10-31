@@ -434,9 +434,18 @@ def is_near_duplicate_risk(candidate_text: str, accepted_texts: list, threshold:
 # 8 slots lets the 6 worker threads above never block on each other even
 # when a slow chunk is still finishing — bottleneck becomes the model's
 # own rate limit, not our internal semaphore.
-LLM_SLOTS = threading.BoundedSemaphore(int(os.getenv("ANALYSIS_LLM_SLOTS", "8")))
+# When OpenAI gpt-4o-mini is active, bump slots to 12 so parallelism is
+# never semaphore-bound; Groq keeps the tighter 8 to respect its 8K TPM.
+if os.getenv("OPENAI_API_KEY") and not os.getenv("GROQ_API_KEY"):
+    LLM_SLOTS = threading.BoundedSemaphore(int(os.getenv("ANALYSIS_LLM_SLOTS", "12")))
+else:
+    LLM_SLOTS = threading.BoundedSemaphore(int(os.getenv("ANALYSIS_LLM_SLOTS", "8")))
 ANALYSIS_CALL_TIMEOUT = float(os.getenv("ANALYSIS_CALL_TIMEOUT", "50"))
-ANALYSIS_MAX_OUTPUT_TOKENS = int(os.getenv("ANALYSIS_MAX_OUTPUT_TOKENS", "2500"))
+# Phase 6c: cap output tokens tighter. The analyzer only emits a JSON
+# list of clauses + short summary — 1500 tokens is plenty, and smaller
+# generations finish faster per call (gpt-4o-mini streams at ~100
+# tok/s, so dropping from 2500 to 1500 saves ~10s per chunk).
+ANALYSIS_MAX_OUTPUT_TOKENS = int(os.getenv("ANALYSIS_MAX_OUTPUT_TOKENS", "1500"))
 
 
 def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive", deadline=None, rule_book_text: str = "") -> dict:
