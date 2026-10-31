@@ -17,6 +17,11 @@ import './styles/pagehero.css';
 import './styles/workspace-switcher.css';
 import './styles/workspaces-page.css';
 import './store/useSettings.js'; // applies saved theme/layout on load
+// Install the global fetch patch: attaches cookies + CSRF header for mutating
+// methods, injects X-Workspace-Id for every backend call, silently refreshes
+// an expired access cookie via /api/auth/refresh. Must be imported BEFORE
+// any component kicks off its first network call.
+import './utils/authFetch.js';
 import App from './App.jsx';
 
 // StrictMode intentionally omitted: its dev double-mount would init/destroy the Yjs

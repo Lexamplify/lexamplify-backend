@@ -51,12 +51,7 @@ function pathOf(url) {
 const nativeFetch = window.fetch.bind(window);
 let refreshInFlight = null;
 
-// Imported dynamically to avoid a top-level dependency cycle (this module
-// is pulled in from main.jsx before stores are set up).
-let _readWorkspaceId = () => null;
-import('../stores/useWorkspaceStore.js')
-  .then((m) => { if (m?.readCurrentWorkspaceId) _readWorkspaceId = m.readCurrentWorkspaceId; })
-  .catch(() => {});
+import { readCurrentWorkspaceId } from '../stores/useWorkspaceStore.js';
 
 function buildAuthedInit(init, method) {
   const headers = new Headers(init.headers || {});
@@ -67,7 +62,7 @@ function buildAuthedInit(init, method) {
   // Workspace scoping — every backend request carries the current
   // workspace id. The backend ignores it on allowlisted routes.
   if (!headers.has('X-Workspace-Id')) {
-    const wid = _readWorkspaceId();
+    const wid = readCurrentWorkspaceId();
     if (wid != null) headers.set('X-Workspace-Id', String(wid));
   }
   return { ...init, credentials: 'include', headers };
