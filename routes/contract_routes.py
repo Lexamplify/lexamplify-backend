@@ -908,7 +908,13 @@ def analysis_status(job_id):
         return jsonify({"success": False, "status": "failed", "error": "We could not check the analysis. Please try again."}), 500
 
 
-EXTRACTION_TIMEOUT_SECONDS = 10
+# Was a hard 10s cap, which killed OCR on scanned PDFs long before
+# RapidOCR/Tesseract could finish even one page. A 200-page scanned
+# contract legitimately takes 2-4 minutes to OCR on CPU. Raised to
+# 300s with env override so a stricter deployment can still pin it
+# lower. Text PDFs still return in <1s — the cap only matters when
+# OCR actually runs.
+EXTRACTION_TIMEOUT_SECONDS = int(os.getenv("EXTRACTION_TIMEOUT_SECONDS", "300"))
 
 
 @contract_bp.route("/extract-text", methods=["POST", "OPTIONS"])
