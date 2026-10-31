@@ -30,11 +30,12 @@ rank-bm25
 # Document Hub (routes/dms_routes.py, utils/dms_*.py)
 Pillow==12.3.0
 pytesseract
-# PaddleOCR for scanned PDFs — CPU-only, ~5x faster than Tesseract.
-# Keeps pytesseract above as a hard fallback for environments where
-# paddlepaddle wheels can't install (e.g. Alpine).
-paddlepaddle
-paddleocr
+# RapidOCR for scanned PDFs — CPU-only, ONNX-runtime based (same model
+# architecture as PaddleOCR but ~30-50 MB models, ~100 MB RAM instead
+# of PaddlePaddle's ~400 MB combined footprint). Fits comfortably on
+# Render's 512 MB free tier. pytesseract above stays as a hard
+# fallback for the (uncommon) case where the ONNX wheels can't install.
+rapidocr-onnxruntime
 openpyxl
 cryptography
 segno

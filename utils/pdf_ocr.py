@@ -1,46 +1,54 @@
 """OCR for scanned PDFs.
 
-Try fast engine first (PaddleOCR, CPU-only), fall back to Tesseract
-(already a dep elsewhere), fall back to empty text on hard failure.
+Pipeline (lightest working engine wins):
+    1. RapidOCR (ONNX runtime, PaddleOCR models re-exported) —
+       ~30-50 MB models, ~100 MB RAM, 2-3x faster than Tesseract.
+       First choice because it fits the 512 MB Render free tier.
+    2. Tesseract (via pytesseract) — hard fallback.
+    3. Nothing — return whatever fitz got from the embedded text pass.
 
 Public entry point:
     ocr_pdf_bytes(file_bytes, min_text_chars_per_page=50) -> str
 
-The caller (contract_routes.py) is expected to first try the fast
-embedded-text path via `utils.pdf_helper.extract_text_for_summary`.
-Only if that returns suspiciously little text should this module run.
+All imports are LAZY. Importing this module never triggers OCR
+engine load. First call pays the one-time load cost (~2 s for
+RapidOCR), later calls are instant.
 
-All imports are LAZY — importing this module never triggers heavy
-Paddle load. First call pays the one-time load cost (~2-3s), later
-calls are instant.
+Why RapidOCR instead of PaddleOCR:
+  * paddlepaddle wheel is 200 MB and the full PP-OCRv4 model set is
+    another 200 MB. Combined RAM footprint > 400 MB — would OOM-kill
+    the server on Render's 512 MB free tier (see earlier memory note
+    about the free-plan server stopping at 512 MB during analysis).
+  * RapidOCR packages the same model architecture via ONNX, so
+    accuracy is comparable while the install + runtime footprint
+    drops to a tenth.
 """
 from __future__ import annotations
 import io
 import os
 import threading
 
-_paddle_lock = threading.Lock()
-_paddle_engine = None  # type: ignore
+_engine_lock = threading.Lock()
+_engine = None  # type: ignore
 
 
-def _get_paddle():
-    """Lazy-load PaddleOCR. Returns None if the package isn't installed."""
-    global _paddle_engine
-    if _paddle_engine is not None:
-        return _paddle_engine
-    with _paddle_lock:
-        if _paddle_engine is not None:
-            return _paddle_engine
+def _get_engine():
+    """Lazy-load RapidOCR. Returns None if the package isn't installed."""
+    global _engine
+    if _engine is not None:
+        return _engine
+    with _engine_lock:
+        if _engine is not None:
+            return _engine
         try:
-            from paddleocr import PaddleOCR
-            # Language codes:  en, hi for Hindi, ch for Chinese etc. English+Hindi
-            # is a common Indian-legal mix; configurable via LX_OCR_LANG env.
-            lang = os.getenv("LX_OCR_LANG", "en")
-            # use_angle_cls=True handles rotated pages; use_gpu=False forces CPU.
-            _paddle_engine = PaddleOCR(use_angle_cls=True, use_gpu=False, lang=lang, show_log=False)
-            return _paddle_engine
+            from rapidocr_onnxruntime import RapidOCR
+            # det_use_cuda / rec_use_cuda / cls_use_cuda default to False —
+            # CPU-only is explicit. First call downloads ~30-50 MB of ONNX
+            # model files into ~/.cache/.
+            _engine = RapidOCR()
+            return _engine
         except Exception:
-            _paddle_engine = False  # mark as "tried and failed"
+            _engine = False  # tried and failed — skip to Tesseract next time
             return None
 
 
@@ -59,22 +67,22 @@ def _page_image_from_pdf(pdf_bytes: bytes, page_index: int, dpi: int = 220):
         doc.close()
 
 
-def _ocr_page_with_paddle(engine, img) -> str:
-    """One page's text via PaddleOCR."""
+def _ocr_page_with_engine(engine, img) -> str:
+    """One page's text via RapidOCR. Returns '' on any failure path."""
     import numpy as np
     arr = np.array(img.convert("RGB"))
-    res = engine.ocr(arr, cls=True)
-    if not res or not res[0]:
+    try:
+        res, _elapsed = engine(arr)
+    except Exception:
+        return ""
+    if not res:
         return ""
     lines = []
-    for item in res[0]:
-        # item = [bbox, (text, confidence)]
+    for item in res:
+        # item = [bbox_list, text, confidence]
         if not item or len(item) < 2:
             continue
-        txt_tuple = item[1]
-        if not txt_tuple or len(txt_tuple) < 1:
-            continue
-        text = (txt_tuple[0] or "").strip()
+        text = (item[1] or "").strip()
         if text:
             lines.append(text)
     return "\n".join(lines)
@@ -122,12 +130,12 @@ def ocr_pdf_bytes(pdf_bytes: bytes, *, min_text_chars_per_page: int = 50,
     if not pages_needing_ocr:
         return "\n\n".join(p for p in pages_text if p)
 
-    engine = _get_paddle()
+    engine = _get_engine()
     for i in pages_needing_ocr:
         try:
             img = _page_image_from_pdf(pdf_bytes, i)
             if engine:
-                txt = _ocr_page_with_paddle(engine, img)
+                txt = _ocr_page_with_engine(engine, img)
                 if not txt:
                     txt = _ocr_page_with_tesseract(img)
             else:
