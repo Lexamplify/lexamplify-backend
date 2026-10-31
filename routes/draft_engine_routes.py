@@ -38,7 +38,10 @@ from utils.llm_client import completion as _llm_completion
 
 drafts_bp = Blueprint("drafts", __name__, url_prefix="/api/drafts")
 
-MAX_SOURCE_CHARS = 400_000
+# Was 400K (~200 pages). Draft Studio uses the extracted source as
+# facts/precedent, not as a per-chunk analysis target, so a 1M cap is
+# plenty of headroom. Env-overridable.
+MAX_SOURCE_CHARS = int(os.getenv("DRAFT_MAX_SOURCE_CHARS", "1000000"))
 MAX_VERIFY_CHARS = 200_000
 MAX_FACTS = 120
 MAX_FACTS_JSON = 200_000

@@ -994,8 +994,23 @@ def extract_text():
     else:
         return jsonify({"error": True, "message": "No file or text provided."}), 400
 
-    if len(text) > 500000:
-        return jsonify({"error": True, "message": "That is too much text for one go. Use the relevant pages only.", "code": "TOO_LARGE"}), 413
+    # Hard cap. Was 500K chars (~250 pages); raised to 2M (~1000 pages)
+    # because adaptive chunking (16K chars/chunk for 600K+ docs) scales
+    # cleanly through 1000 pages at ~1 minute end-to-end. Override with
+    # ANALYSIS_MAX_INPUT_CHARS if the deployment can afford more
+    # (chunks dispatched to the LLM scale linearly with doc size).
+    _max_chars = int(os.getenv("ANALYSIS_MAX_INPUT_CHARS", "2000000"))
+    if len(text) > _max_chars:
+        pages_est = len(text) // 2000
+        return jsonify({
+            "error": True,
+            "message": (
+                f"This document is roughly {pages_est} pages ({len(text):,} characters). "
+                f"The analyzer handles up to ~1000 pages per upload. "
+                f"Split the contract and analyze the sections separately."
+            ),
+            "code": "TOO_LARGE",
+        }), 413
 
     if not text:
         return jsonify({"error": True, "message": "No readable text found."}), 422
