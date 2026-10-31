@@ -212,7 +212,14 @@ def auto_draft():
     # users expect AND fits the token budget in one pass far more often,
     # with the continuation loop below as a safety net rather than the
     # primary mechanism for reaching the end.
+    # Phase 5: workspace brief auto-prepended to the system prompt so the
+    # model already knows the parties, case no., prior drafts, prior analyses
+    # and the user-authored case facts.
+    from utils.workspace_scope import current_workspace_id as _ws_id
+    from utils.workspace_context import build_workspace_context as _ws_ctx
+    _ws_block = _ws_ctx(_ws_id())
     system_prompt = (
+        _ws_block +
         "You are a Senior Indian Legal Advocate & Corporate Law Partner. "
         "Synthesize a complete, professionally structured legal clause or agreement draft based strictly on Indian Law, in the style of a fillable legal template — the same kind of draft a law firm hands a client to complete per-deal, not a finished contract with invented facts.\n\n"
         "FORMATTING & STRUCTURE REQUIREMENTS:\n"
@@ -615,7 +622,10 @@ def autodraft_assistant():
     )
     try:
         import utils.ai_helper as _ai
-        answer = (_ai.ask_groq(_AD_ASSIST_SYSTEM, prompt) or "").strip()
+        from utils.workspace_scope import current_workspace_id
+        from utils.workspace_context import build_workspace_context
+        _sys = build_workspace_context(current_workspace_id()) + _AD_ASSIST_SYSTEM
+        answer = (_ai.ask_groq(_sys, prompt) or "").strip()
         if not answer:
             raise ValueError("empty answer")
         return jsonify({"answer": answer, "ai": True}), 200

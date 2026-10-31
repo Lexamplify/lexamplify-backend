@@ -127,6 +127,13 @@ def general_chat():
                 "Indian Contract Act, Constitution of India, and landmarks. Always structure response clearly."
             )
 
+        # Phase 5: workspace brief auto-prepended
+        try:
+            from utils.workspace_scope import current_workspace_id as _wsid
+            from utils.workspace_context import build_workspace_context as _wsctx
+            system_prompt = _wsctx(_wsid()) + system_prompt
+        except Exception:
+            pass
         response = ask_gemini(system_prompt, message)
 
         # Persist exchange (non-blocking best-effort — never breaks the chat)

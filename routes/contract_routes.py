@@ -440,7 +440,16 @@ def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive", 
     `deadline` (epoch seconds) bounds the whole call, including waits for a free slot and rate-limit pauses.
     `rule_book_text` — optional firm playbook text. When present, is injected into the system prompt so
     the AI applies the firm's custom thresholds on top of statutory review."""
-    system_prompt = MASTER_SYSTEM_PROMPT.replace("{scanStrategy}", scan_strategy)
+    # Phase 5: workspace brief auto-prepended so the analyzer already
+    # knows what case, parties, prior docs and prior analyses this
+    # contract relates to.
+    try:
+        from utils.workspace_scope import current_workspace_id as _ws_id
+        from utils.workspace_context import build_workspace_context as _ws_ctx
+        _ws_block = _ws_ctx(_ws_id())
+    except Exception:
+        _ws_block = ""
+    system_prompt = _ws_block + MASTER_SYSTEM_PROMPT.replace("{scanStrategy}", scan_strategy)
     # Inject the firm playbook — the AI must follow it as the HIGHEST-priority rulebook.
     if rule_book_text and str(rule_book_text).strip():
         pb = str(rule_book_text).strip()[:12000]  # keep under token ceiling
@@ -1611,7 +1620,9 @@ def contract_chat():
 
     user_msg = f"User Question: {query}\n\nDocument Text:\n{raw_text[:12000]}"
     try:
-        response = ask_groq(prompt, user_msg)
+        from utils.workspace_scope import current_workspace_id as _wsid
+        from utils.workspace_context import build_workspace_context as _wsctx
+        response = ask_groq(_wsctx(_wsid()) + prompt, user_msg)
         return jsonify({"response": response})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

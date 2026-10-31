@@ -92,8 +92,14 @@ def api_legal_research():
                 "sources": []
             }), 200
 
-        # 3. Generate Answer using Groq
-        system_prompt = (
+        # 3. Generate Answer using Groq — workspace brief prepended (Phase 5)
+        try:
+            from utils.workspace_scope import current_workspace_id as _wsid
+            from utils.workspace_context import build_workspace_context as _wsctx
+            _ws = _wsctx(_wsid())
+        except Exception:
+            _ws = ""
+        system_prompt = _ws + (
             "You are an expert senior legal counsel in India. Analyze the following legal fragments "
             "and answer the user's question precisely based *only* on the context provided. If the "
             "context doesn't contain the answer, state that clearly."
