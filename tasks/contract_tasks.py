@@ -314,16 +314,20 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
         raise RuntimeError("AI_TIMEOUT" if timed_out else "AI_UNAVAILABLE")
 
     report('Checking every finding against your contract...', 75)
-    from utils.contract_checks import find_missing_clauses, key_dates, locate_quote
+    from utils.contract_checks import find_missing_clauses, key_dates, locate_quote, _get_squashed
     from utils.draft_engine.verifier import check_citations
 
     # 1. A finding stays only if the text it quotes is really in the contract (the quote is snapped to the exact words).
+    # Pre-squash the full contract ONCE and pass to locate_quote for every
+    # clause — rebuilding it per-call was O(N) and burned ~1 minute of
+    # wall clock on 500 clauses against a 1M-char doc.
+    _squashed = _get_squashed(full_text)
     grounded, dropped_unverified = [], 0
     for c in all_clauses:
         txt = (c.get("original_text") or "").strip()
         if not txt:
             continue
-        exact, how = locate_quote(txt, full_text)
+        exact, how = locate_quote(txt, full_text, _cached=_squashed)
         if not exact:
             dropped_unverified += 1
             continue

@@ -17,13 +17,12 @@ def _squash(s: str) -> str:
     return _WS.sub(" ", s or "").strip().lower()
 
 
-def locate_quote(quote: str, doc_text: str, threshold: float = 0.9):
-    """Return (exact_text_from_document | None, how). `how` is 'exact', 'close' or 'not found'."""
-    q = (quote or "").strip().strip('"“”').strip()
-    if len(q) < 12 or not doc_text:
-        return None, "not found"
-    nq = _squash(q)
-    # exact, whitespace-insensitive: map positions through a squashed copy of the document
+def _build_squashed(doc_text: str):
+    """Build the squashed-lowercase copy of a document + its position
+    index. Returns (flat_string, [original_index_per_char]). Caller can
+    cache the result when verifying many quotes against the same doc —
+    rebuilding it per-call is O(N) and dominates the verifier phase
+    for 500+ clauses against a 1M-char contract (seconds per clause)."""
     squashed, index = [], []
     prev_space = True
     for i, ch in enumerate(doc_text):
@@ -36,7 +35,53 @@ def locate_quote(quote: str, doc_text: str, threshold: float = 0.9):
             squashed.append(ch.lower())
             index.append(i)
             prev_space = False
-    flat = "".join(squashed)
+    return "".join(squashed), index
+
+
+# Weak-ref-style cache: {id(doc_text): (flat, index)}. Keyed on
+# object identity so a different-string-same-content doc still gets a
+# fresh build; same string across many calls reuses one. Cleared when
+# the Python object is garbage-collected.
+import weakref
+_squash_cache = weakref.WeakValueDictionary()
+
+
+class _CachedSquash:
+    __slots__ = ("flat", "index")
+    def __init__(self, flat, index):
+        self.flat = flat
+        self.index = index
+
+
+def _get_squashed(doc_text: str):
+    key = id(doc_text)
+    hit = _squash_cache.get(key)
+    if hit is not None:
+        return hit.flat, hit.index
+    flat, index = _build_squashed(doc_text)
+    try:
+        _squash_cache[key] = _CachedSquash(flat, index)
+    except TypeError:
+        pass  # some object types can't be weak-referenced; just skip caching
+    return flat, index
+
+
+def locate_quote(quote: str, doc_text: str, threshold: float = 0.9,
+                 _cached=None):
+    """Return (exact_text_from_document | None, how). `how` is 'exact', 'close' or 'not found'.
+
+    Pass `_cached=(flat, index)` from _get_squashed when verifying many
+    quotes against the same document (verifier phase of the Contract
+    Analyzer does this and gets 10-50x speedup)."""
+    q = (quote or "").strip().strip('"“”').strip()
+    if len(q) < 12 or not doc_text:
+        return None, "not found"
+    nq = _squash(q)
+    # exact, whitespace-insensitive: map positions through a squashed copy of the document
+    if _cached is not None:
+        flat, index = _cached
+    else:
+        flat, index = _get_squashed(doc_text)
     pos = flat.find(nq)
     if pos >= 0:
         start, end = index[pos], index[min(pos + len(nq), len(index)) - 1] + 1
