@@ -23,18 +23,67 @@ until each one is rewired in a later part of Phase 1.
 """
 from __future__ import annotations
 import os
+import re
 import sqlite3
 import time
+from datetime import datetime, date
 from pathlib import Path
 from typing import Iterable
 
 import click
 from flask import current_app
 from flask.cli import with_appcontext
+from sqlalchemy import Date, DateTime
 from sqlalchemy.exc import IntegrityError
 
 from database import db
 from models import legacy_a, legacy_b
+
+
+def _safe_echo(msg: str) -> None:
+    """Print even when the terminal (Windows cp1252) can't encode some chars."""
+    try:
+        click.echo(msg)
+    except UnicodeEncodeError:
+        stream = click.get_text_stream("stdout")
+        enc = getattr(stream, "encoding", "ascii") or "ascii"
+        click.echo(msg.encode(enc, errors="replace").decode(enc, errors="replace"))
+
+
+def _coerce_datetime(v):
+    """Turn an ISO-ish text timestamp into a Python datetime; pass through
+    None and already-datetime values. Returns None if unparseable."""
+    if v is None or isinstance(v, (datetime, date)):
+        return v
+    if not isinstance(v, str):
+        return v
+    s = v.strip()
+    if not s:
+        return None
+    # SQLite stores many flavours — try the common ones in order.
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    # Last-ditch: ISO 8601 w/ timezone.
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _coerce_date(v):
+    dt = _coerce_datetime(v)
+    if isinstance(dt, datetime):
+        return dt.date()
+    return dt
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -72,17 +121,29 @@ def _rows(conn: sqlite3.Connection, table: str) -> Iterable[dict]:
     try:
         cur = conn.execute(f'SELECT * FROM "{table}"')
     except sqlite3.OperationalError as e:
-        click.echo(f"  ! table {table} not readable: {e}")
+        _safe_echo(f"  ! table {table} not readable: {e}")
         return
     for r in cur:
         yield {k: r[k] for k in r.keys()}
 
 
 def _normalise(row: dict, model: type) -> dict:
-    """Keep only columns the SQLA model actually has, and coerce the
-    cross-DB collision tables' type mismatches to the canonical type."""
-    cols = {c.name for c in model.__table__.columns}
-    out = {k: v for k, v in row.items() if k in cols}
+    """Keep only columns the SQLA model actually has, and coerce source
+    values to the types SQLA expects. Cross-DB collision tables are also
+    normalised to the canonical type."""
+    out: dict = {}
+    for col in model.__table__.columns:
+        name = col.name
+        if name not in row:
+            continue
+        v = row[name]
+        # SQLite's legacy DBs store timestamps as TEXT. The SQLA DateTime /
+        # Date column type refuses strings on write — coerce here.
+        if isinstance(col.type, DateTime):
+            v = _coerce_datetime(v)
+        elif isinstance(col.type, Date):
+            v = _coerce_date(v)
+        out[name] = v
     tname = model.__tablename__
     if tname == "calendar_events":
         # DB A: related_case_id TEXT, owner_user_id TEXT.
@@ -109,7 +170,11 @@ def _insert_batch(model: type, rows: list[dict], dry_run: bool) -> tuple[int, in
             skipped += 1
         except Exception as e:
             db.session.rollback()
-            click.echo(f"    ! {model.__tablename__}: {type(e).__name__}: {e}")
+            # Truncate + encode-safe print — error messages often contain
+            # arbitrary unicode from the row payload which Windows cp1252
+            # cannot encode.
+            msg = f"    ! {model.__tablename__}: {type(e).__name__}: {str(e)[:200]}"
+            _safe_echo(msg)
             skipped += 1
     db.session.commit()
     return written, skipped
@@ -123,7 +188,7 @@ def _migrate_sqlite(
     dry_run: bool,
 ) -> None:
     if not src_path.exists():
-        click.echo(f"[{label}] source file {src_path} not found — skipping")
+        _safe_echo(f"[{label}] source file {src_path} not found — skipping")
         return
     conn = sqlite3.connect(str(src_path))
     try:
@@ -134,12 +199,12 @@ def _migrate_sqlite(
             model = mapping[t]
             raw = list(_rows(conn, t))
             if not raw:
-                click.echo(f"[{label}] {t:<30} 0 rows (empty)")
+                _safe_echo(f"[{label}] {t:<30} 0 rows (empty)")
                 continue
             cleaned = [_normalise(r, model) for r in raw]
             written, skipped = _insert_batch(model, cleaned, dry_run)
             verb = "would-write" if dry_run else "wrote"
-            click.echo(
+            _safe_echo(
                 f"[{label}] {t:<30} {len(raw):>6} read  "
                 f"{verb} {written:>6}  skipped {skipped:>4}"
             )
@@ -159,15 +224,15 @@ def db_consolidate_command(dry_run: bool, only: str) -> None:
     only_set = {t.strip() for t in only.split(",") if t.strip()} or None
 
     engine_url = str(db.engine.url)
-    click.echo(f"Target engine: {engine_url}")
-    click.echo(f"Mode: {'DRY RUN (no writes)' if dry_run else 'LIVE WRITE'}")
+    _safe_echo(f"Target engine: {engine_url}")
+    _safe_echo(f"Mode: {'DRY RUN (no writes)' if dry_run else 'LIVE WRITE'}")
     if only_set:
-        click.echo(f"Filtering to tables: {sorted(only_set)}")
+        _safe_echo(f"Filtering to tables: {sorted(only_set)}")
 
     # Create tables if the target engine doesn't have them yet.
     # This is safe: db.create_all() is a no-op for tables that exist.
     if not dry_run:
-        click.echo("Ensuring target tables exist (create_all)…")
+        _safe_echo("Ensuring target tables exist (create_all)…")
         db.create_all()
 
     start = time.time()
@@ -189,12 +254,12 @@ def db_consolidate_command(dry_run: bool, only: str) -> None:
         try:
             raw = list(_rows(conn, t))
             if not raw:
-                click.echo(f"[B->A merge] {t:<24} 0 rows (empty)")
+                _safe_echo(f"[B->A merge] {t:<24} 0 rows (empty)")
                 continue
             cleaned = [_normalise(r, model) for r in raw]
             written, skipped = _insert_batch(model, cleaned, dry_run)
             verb = "would-merge" if dry_run else "merged"
-            click.echo(
+            _safe_echo(
                 f"[B->A merge] {t:<24} {len(raw):>6} read  "
                 f"{verb} {written:>6}  skipped {skipped:>4}"
             )
@@ -202,7 +267,7 @@ def db_consolidate_command(dry_run: bool, only: str) -> None:
             conn.close()
 
     took = time.time() - start
-    click.echo(f"Done in {took:.1f}s")
+    _safe_echo(f"Done in {took:.1f}s")
 
 
 def register(app) -> None:
