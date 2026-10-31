@@ -21,6 +21,7 @@ export default function WorkspacesPage() {
   const [showNew, setShowNew] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
+  const [factsEditFor, setFactsEditFor] = useState(null);
 
   useEffect(() => {
     document.title = 'Workspaces — Lexamplify';
@@ -103,6 +104,7 @@ export default function WorkspacesPage() {
                 <>
                   <button type="button" onClick={() => open(ws.id)}>Open</button>
                   <button type="button" onClick={() => startRename(ws)}>Rename</button>
+                  <button type="button" onClick={() => setFactsEditFor(ws)}>Edit brief</button>
                   <button type="button" onClick={() => archive(ws.id).then(() => refresh({ includeArchived: showArchived }))}>Archive</button>
                 </>
               ) : (
@@ -120,6 +122,70 @@ export default function WorkspacesPage() {
           create={create}
         />
       )}
+
+      {factsEditFor && (
+        <FactsEditorModal
+          ws={factsEditFor}
+          onClose={() => setFactsEditFor(null)}
+          onSaved={() => { setFactsEditFor(null); refresh({ includeArchived: showArchived }); }}
+          patch={patch}
+        />
+      )}
+    </div>
+  );
+}
+
+function FactsEditorModal({ ws, onClose, onSaved, patch }) {
+  const [facts, setFacts] = useState(ws.facts || '');
+  const [parties, setParties] = useState(ws.parties || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setErr('');
+    try {
+      await patch(ws.id, { facts: facts.trim() || null, parties: parties.trim() || null });
+      onSaved?.();
+    } catch (e2) {
+      setErr(e2?.message || 'Could not save.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="ws-modal" onClick={onClose}>
+      <div className="ws-modal__card" onClick={(e) => e.stopPropagation()}>
+        <header>
+          <h2>Workspace brief — {ws.name}</h2>
+          <button type="button" className="ws-modal__close" onClick={onClose} aria-label="Close">×</button>
+        </header>
+        <form onSubmit={submit}>
+          <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 4px' }}>
+            The AI reads this on every prompt — parties, facts, charges,
+            relevant sections. The more specific, the less you need to
+            re-type each time.
+          </p>
+          <label>
+            <span>Case facts</span>
+            <textarea rows={7} value={facts} onChange={(e) => setFacts(e.target.value)}
+                      placeholder="e.g. Petitioner Rohit Sharma; FIR 1234/2024 at Andheri PS; Section 420 IPC; …"
+                      disabled={busy} />
+          </label>
+          <label>
+            <span>Parties <em>(one per line)</em></span>
+            <textarea rows={4} value={parties} onChange={(e) => setParties(e.target.value)}
+                      placeholder="Petitioner: Rohit Sharma\nRespondent: State of Maharashtra\nOpposing counsel: Adv. Patel"
+                      disabled={busy} />
+          </label>
+          {err && <div className="ws-modal__err" role="alert">{err}</div>}
+          <footer>
+            <button type="button" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save brief'}</button>
+          </footer>
+        </form>
+      </div>
     </div>
   );
 }
