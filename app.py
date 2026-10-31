@@ -1791,6 +1791,14 @@ def create_app():
         _register_consolidate(app)
     except Exception as _e:  # noqa: BLE001 — never fail boot over a CLI command
         app.logger.warning(f"db-consolidate CLI not registered: {_e}")
+    # Phase 7 of workspaces-refactor — assign existing cases + unscoped data
+    # to the new workspaces model. Invoke with:
+    #   flask --app app db-migrate-workspaces [--dry-run]
+    try:
+        from scripts.migrate_to_workspaces import register as _register_mig
+        _register_mig(app)
+    except Exception as _e:  # noqa: BLE001
+        app.logger.warning(f"db-migrate-workspaces CLI not registered: {_e}")
 
     from routes.page_routes import page_bp
     app.register_blueprint(page_bp)  # server-rendered pages: /, /login, /signup, /dashboard, /contract-viewer
