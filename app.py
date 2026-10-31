@@ -1464,7 +1464,10 @@ def create_app():
     # keeps its current behaviour. Phases 2–8 of workspaces-refactor
     # branch gate their new code on this flag. See:
     # C:\Users\Dell\.claude\plans\as-a-feature-wise-glowing-shannon.md
-    app.config['WORKSPACES_ENABLED'] = os.getenv('WORKSPACES_ENABLED', 'false').lower() in ('1', 'true', 'yes')
+    # Default ON — the workspace UI (switcher + /workspaces page) is the new
+    # normal. Opt out with WORKSPACES_ENABLED=false if you need the pre-Phase-2
+    # behaviour for debugging.
+    app.config['WORKSPACES_ENABLED'] = os.getenv('WORKSPACES_ENABLED', 'true').lower() in ('1', 'true', 'yes')
     app.config['WORKSPACE_ISOLATION_MODE'] = os.getenv('WORKSPACE_ISOLATION_MODE', 'observe').lower()
 
     # Transparent redirect from the two legacy sqlite files to the single
