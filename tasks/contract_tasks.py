@@ -232,6 +232,25 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     if not chunks:
         chunks.append(full_text)
     total = len(chunks)
+
+    # Adaptive worker count: small contracts don't need (and shouldn't
+    # pay for) 10 parallel threads. Scale with the chunk count. A
+    # 5-page contract = 1-2 chunks = 2 workers; a 900-page contract =
+    # 100+ chunks = full WORKERS pool. ANALYSIS_WORKERS env wins.
+    if os.getenv("ANALYSIS_WORKERS"):
+        _effective_workers = WORKERS
+    elif total <= 3:
+        _effective_workers = min(2, WORKERS)
+    elif total <= 10:
+        _effective_workers = min(4, WORKERS)
+    elif total <= 30:
+        _effective_workers = min(6, WORKERS)
+    elif total <= 60:
+        _effective_workers = min(8, WORKERS)
+    else:
+        _effective_workers = WORKERS
+    # Expose it to the chunk-dispatch block below without renaming the var there.
+    _WORKERS_LOCAL = _effective_workers
     deadline = started + time_budget(total)
 
     failed_sections = []
@@ -262,7 +281,7 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     not_reached = 0
 
     report(f'Reading the contract: section 0 of {total}', 15, sections_total=total, sections_done=0, deadline_at=deadline, started_at=started)
-    executor = ThreadPoolExecutor(max_workers=max(1, WORKERS))
+    executor = ThreadPoolExecutor(max_workers=max(1, _WORKERS_LOCAL))
     pending = {executor.submit(lambda c=chunk, i=i: (i, process_chunk_safe(c))) for i, chunk in enumerate(chunks)}
     try:
         while pending:
