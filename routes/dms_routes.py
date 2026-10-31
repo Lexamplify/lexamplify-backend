@@ -391,12 +391,17 @@ def create_dms_blueprint(deps):
                 shown = f"{name.rsplit('.', 1)[0]}.{sn.ext}" if (sn.mismatch and sn.ext) else name
                 begin(c)
                 try:
+                    try:
+                        from utils.workspace_scope import current_workspace_id as _wsid
+                        _ws = _wsid()
+                    except Exception:
+                        _ws = None
                     c.execute(
                         "INSERT INTO dms_docs (doc_id, sha256, store_key, enc, size, mime, ext, kind, original_name, status, warnings, class_src, "
-                        "group_id, version, is_current, batch_id, uploaded_by, meta, created_at, updated_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?, 'queued', '[]', 'auto', ?, 1, 1, ?, ?, ?, ?, ?)",
+                        "group_id, version, is_current, batch_id, uploaded_by, meta, created_at, updated_at, workspace_id) "
+                        "VALUES (?,?,?,?,?,?,?,?,?, 'queued', '[]', 'auto', ?, 1, 1, ?, ?, ?, ?, ?, ?)",
                         (cv_id, sha, key, int(enc), size, sn.mime, sn.ext, sn.kind, shown, cv_id, batch, uid,
-                         json.dumps({"adopted": True}), row["created_at"] or _now_iso(), _now_iso()))
+                         json.dumps({"adopted": True}), row["created_at"] or _now_iso(), _now_iso(), _ws))
                     W.enqueue(c, cv_id, commit=False)
                     I.refresh_meta_fts(c, cv_id)
                     _prov(c, "adopted", cv_id, (row["smart_title"] or title)[:180], uid, uid, {"file": shown, "sha256": sha[:16], "size": size})
@@ -501,12 +506,17 @@ def create_dms_blueprint(deps):
                             if old and old["class_src"] == "user":
                                 cls, csrc, review = old["doc_class"], "user", "reviewed"
                             tags = old["tags"] if old else None
+                        try:
+                            from utils.workspace_scope import current_workspace_id as _wsid
+                            _ws = _wsid()
+                        except Exception:
+                            _ws = None
                         c.execute(
                             "INSERT INTO dms_docs (doc_id, sha256, store_key, enc, size, mime, ext, kind, original_name, rel_path, status, warnings, "
-                            "doc_class, class_src, review, group_id, version, is_current, version_note, batch_id, uploaded_by, tags, created_at, updated_at) "
-                            "VALUES (?,?,?,?,?,?,?,?,?,?, 'queued', ?, ?,?,?, ?,?,1,?,?,?,?,?,?)",
+                            "doc_class, class_src, review, group_id, version, is_current, version_note, batch_id, uploaded_by, tags, created_at, updated_at, workspace_id) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?, 'queued', ?, ?,?,?, ?,?,1,?,?,?,?,?,?,?)",
                             (doc_id, sha, key, int(enc), size, sn.mime, sn.ext, sn.kind, shown_name, (rel_path or "")[:400] or None, json.dumps(warns),
-                             cls, csrc, review, gid, version, (note or "")[:300] or None, (batch_id or "")[:64] or None, uid, tags, _now_iso(), _now_iso()))
+                             cls, csrc, review, gid, version, (note or "")[:300] or None, (batch_id or "")[:64] or None, uid, tags, _now_iso(), _now_iso(), _ws))
                         W.enqueue(c, doc_id, commit=False)
                         I.refresh_meta_fts(c, doc_id)
                         _prov(c, "new-version" if group_of else "upload", doc_id, (title or stem)[:180], uid, uid,

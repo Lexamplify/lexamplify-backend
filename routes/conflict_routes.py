@@ -952,13 +952,20 @@ def save_clearance_memo():
                 memo_text       TEXT
             )
         """)
+        # Phase 6: stamp owner + workspace on new memos.
+        from utils.workspace_scope import current_workspace_id as _wsid
+        try:
+            from flask_jwt_extended import get_jwt_identity
+            _uid = int(get_jwt_identity()) if get_jwt_identity() else None
+        except Exception:
+            _uid = None
         cur.execute(
             """
             INSERT INTO conflict_clearance_memos
-                (ref_id, target_entity, opposing_party, matter_type, generated_at, memo_text)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (ref_id, target_entity, opposing_party, matter_type, generated_at, memo_text, owner_user_id, workspace_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (ref_id, target_entity, opposing_party, matter_type, timestamp, memo_text),
+            (ref_id, target_entity, opposing_party, matter_type, timestamp, memo_text, _uid, _wsid()),
         )
         conn.commit()
         inserted_id = cur.lastrowid
@@ -990,10 +997,30 @@ def list_clearance_memos():
                 memo_text       TEXT
             )
         """)
-        rows = conn.execute(
-            "SELECT id, ref_id, target_entity, opposing_party, matter_type, generated_at, memo_text "
-            "FROM conflict_clearance_memos ORDER BY id DESC LIMIT 200"
-        ).fetchall()
+        # Phase 6 scoping: filter memos by user + active workspace. Legacy
+        # memos (no owner, no workspace) remain visible to everyone until
+        # Phase 7 — matches the "observe mode" we're in for the whole app.
+        from utils.workspace_scope import current_workspace_id as _wsid
+        try:
+            from flask_jwt_extended import get_jwt_identity
+            _uid = int(get_jwt_identity()) if get_jwt_identity() else None
+        except Exception:
+            _uid = None
+        _ws = _wsid()
+        if _uid is not None and _ws is not None:
+            rows = conn.execute(
+                "SELECT id, ref_id, target_entity, opposing_party, matter_type, generated_at, memo_text "
+                "FROM conflict_clearance_memos "
+                "WHERE (owner_user_id = ? OR owner_user_id IS NULL) "
+                "  AND (workspace_id = ? OR workspace_id IS NULL) "
+                "ORDER BY id DESC LIMIT 200",
+                (_uid, _ws),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, ref_id, target_entity, opposing_party, matter_type, generated_at, memo_text "
+                "FROM conflict_clearance_memos ORDER BY id DESC LIMIT 200"
+            ).fetchall()
         conn.close()
         return jsonify({'memos': [dict(r) for r in rows]}), 200
     except Exception as e:

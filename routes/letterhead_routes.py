@@ -28,12 +28,24 @@ def list_letterheads():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     uid = _uid()
+    # Phase 6: letterheads filtered by active workspace (NULL = firm-wide,
+    # visible everywhere).
+    from utils.workspace_scope import current_workspace_id as _wsid
+    _ws = _wsid()
     conn = get_db()
     try:
-        rows = conn.execute(
-            'SELECT * FROM letterheads WHERE owner_user_id = ? ORDER BY created_at ASC',
-            (uid,)
-        ).fetchall()
+        if _ws is not None:
+            rows = conn.execute(
+                'SELECT * FROM letterheads WHERE owner_user_id = ? '
+                'AND (workspace_id = ? OR workspace_id IS NULL) '
+                'ORDER BY created_at ASC',
+                (uid, _ws),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT * FROM letterheads WHERE owner_user_id = ? ORDER BY created_at ASC',
+                (uid,)
+            ).fetchall()
         return jsonify({'letterheads': [dict(r) for r in rows]}), 200
     finally:
         conn.close()
@@ -53,11 +65,14 @@ def create_letterhead():
     address = (data.get('address') or '').strip() or None
     contact = (data.get('contact') or '').strip() or None
     auto_detected = 1 if data.get('autoDetected') else 0
+    from utils.workspace_scope import current_workspace_id as _wsid
+    _ws = _wsid()
     conn = get_db()
     try:
         cur = conn.execute(
-            'INSERT INTO letterheads (owner_user_id, name, tagline, address, contact, auto_detected) VALUES (?, ?, ?, ?, ?, ?)',
-            (uid, name, tagline, address, contact, auto_detected)
+            'INSERT INTO letterheads (owner_user_id, name, tagline, address, contact, auto_detected, workspace_id) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (uid, name, tagline, address, contact, auto_detected, _ws)
         )
         conn.commit()
         row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (cur.lastrowid,)).fetchone()

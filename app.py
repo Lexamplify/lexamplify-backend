@@ -270,7 +270,9 @@ def init_db():
     # Nullable: NULL means "legacy row visible in every workspace" until
     # Phase 7 migrates owning rows to their workspace. See
     # C:\Users\Dell\.claude\plans\as-a-feature-wise-glowing-shannon.md
-    for _tbl in ('case_vault', 'vault_folders', 'contract_analyses', 'draft_sessions'):
+    for _tbl in ('case_vault', 'vault_folders', 'contract_analyses', 'draft_sessions',
+                 'calendar_events', 'letterheads', 'conflict_clearance_memos',
+                 'chat_history', 'dms_docs', 'document_chunks'):
         try:
             c.execute(f'ALTER TABLE {_tbl} ADD COLUMN workspace_id INTEGER')
         except Exception:
@@ -279,6 +281,12 @@ def init_db():
             c.execute(f'CREATE INDEX IF NOT EXISTS ix_{_tbl}_ws ON {_tbl}(workspace_id)')
         except Exception:
             pass
+    # conflict_clearance_memos never had owner_user_id — Phase 6 adds it so
+    # the UI can filter "my memos" and scoping-by-workspace makes sense.
+    try:
+        c.execute('ALTER TABLE conflict_clearance_memos ADD COLUMN owner_user_id INTEGER')
+    except Exception:
+        pass
     # Explicit per-person shares (Phase 2 sharing), uniform across folders
     # and documents. Cascade is NOT stored here — sharing a folder grants
     # access to its contents by walking the ancestor chain at

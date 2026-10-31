@@ -19,10 +19,15 @@ from utils.kanoon_helper import find_citations_for_document
 def _log_chat(user_id, user_message, bot_response):
     """Fire-and-forget: persist a chat exchange to chat_history."""
     try:
+        try:
+            from utils.workspace_scope import current_workspace_id as _wsid
+            _ws = _wsid()
+        except Exception:
+            _ws = None
         conn = sqlite3.connect('lex_assistant.db', check_same_thread=False)
         conn.execute(
-            'INSERT INTO chat_history (user_id, user_message, bot_response) VALUES (?, ?, ?)',
-            (user_id, user_message[:4000], bot_response[:4000])
+            'INSERT INTO chat_history (user_id, user_message, bot_response, workspace_id) VALUES (?, ?, ?, ?)',
+            (user_id, user_message[:4000], bot_response[:4000], _ws)
         )
         conn.commit()
         conn.close()

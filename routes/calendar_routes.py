@@ -41,10 +41,13 @@ def save_calendar_events():
             location = event.get('location', '')
             opposing_counsel = event.get('opposing_counsel', '')
             google_event_id = event.get('google_event_id')
+            # Phase 6 scoping: stamp new events with the active workspace.
+            from utils.workspace_scope import current_workspace_id as _wsid
+            _ws = _wsid()
             c.execute('''
-                INSERT INTO calendar_events (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, owner_user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, me))
+                INSERT INTO calendar_events (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, owner_user_id, workspace_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (event_date, event_type, title, related_case_id, location, opposing_counsel, google_event_id, me, _ws))
         
         conn.commit()
         return jsonify({"success": True, "message": "Events successfully saved."}), 200
@@ -62,7 +65,22 @@ def get_calendar_events_all():
         conn.row_factory = app_module.sqlite3.Row
         tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
         c = conn.cursor()
-        c.execute("SELECT * FROM calendar_events WHERE owner_user_id=? ORDER BY event_date ASC", (tenancy.current_uid(),))
+        # Phase 6 scoping: filter by active workspace when set; legacy
+        # rows (workspace_id IS NULL) stay visible until Phase 7 migrates.
+        from utils.workspace_scope import current_workspace_id as _wsid
+        _ws = _wsid()
+        if _ws is not None:
+            c.execute(
+                "SELECT * FROM calendar_events WHERE owner_user_id=? "
+                "AND (workspace_id = ? OR workspace_id IS NULL) "
+                "ORDER BY event_date ASC",
+                (tenancy.current_uid(), _ws),
+            )
+        else:
+            c.execute(
+                "SELECT * FROM calendar_events WHERE owner_user_id=? ORDER BY event_date ASC",
+                (tenancy.current_uid(),),
+            )
         rows = c.fetchall()
         dict_rows = [dict(row) for row in rows]
         return jsonify({"events": dict_rows}), 200
