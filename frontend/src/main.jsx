@@ -14,6 +14,8 @@ import './styles/showcase-rich.css';
 import './styles/landing-motion.css';
 import './styles/auth-motion.css';
 import './styles/pagehero.css';
+import './styles/workspace-switcher.css';
+import './styles/workspaces-page.css';
 import './store/useSettings.js'; // applies saved theme/layout on load
 import App from './App.jsx';
 

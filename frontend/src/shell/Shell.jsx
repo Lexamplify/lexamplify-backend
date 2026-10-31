@@ -4,6 +4,7 @@ import * as Ic from '../icons.jsx';
 import ThemeStudio from '../components/ThemeStudio.jsx';
 import CommandBar from '../components/CommandBar.jsx';
 import Notifications from '../components/Notifications.jsx';
+import WorkspaceSwitcher from './WorkspaceSwitcher.jsx';
 import { useSettings } from '../store/useSettings.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -181,7 +182,7 @@ export default function Shell() {
           <div className="topbar__left">
             <button className="icon-btn rail-toggle" onClick={() => setOpen((v) => !v)} aria-label="Menu"><Ic.Menu size={18} /></button>
             <div className="rail__mono topbar__mono" style={{ width: 32, height: 32, fontSize: 16 }}>L</div>
-            <div className="topbar__crumb"><b>{firm}</b></div>
+            <WorkspaceSwitcher firmFallback={firm} />
           </div>
 
           <nav className="topnav">

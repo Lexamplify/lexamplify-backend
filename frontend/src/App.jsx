@@ -30,6 +30,7 @@ import Signup from './pages/Signup.jsx';
 import FeaturesPage from './pages/FeaturesPage.jsx';
 import HowPage from './pages/HowPage.jsx';
 import FaqPage from './pages/FaqPage.jsx';
+import WorkspacesPage from './pages/WorkspacesPage.jsx';
 
 // Gate the whole shell behind a real session. While the cookie is being verified
 // (GET /api/auth/me) we show a calm splash; a verified-logged-out user goes to /login.
@@ -104,6 +105,7 @@ export default function App() {
             <Route path="/practice/*" element={<Practice />} />
             <Route path="/vault" element={<CaseVault />} />
             <Route path="/document-hub" element={<DocumentHub />} />
+            <Route path="/workspaces" element={<WorkspacesPage />} />
             <Route path="*" element={<Today />} />
           </Route>
         </Routes>

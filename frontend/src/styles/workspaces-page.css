@@ -1,0 +1,274 @@
+/* ============================================================
+   /workspaces management page. Phase 3 scaffold.
+   ============================================================ */
+
+.workspaces-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 36px 32px 60px;
+}
+
+.workspaces-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.workspaces-page h1 {
+  margin: 0 0 8px;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -.01em;
+}
+.workspaces-page__sub {
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.5;
+  max-width: 620px;
+  margin: 0;
+}
+
+.workspaces-page__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.workspaces-page__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.workspaces-page__new-btn {
+  padding: 9px 16px;
+  background: var(--accent, #2563c9);
+  color: var(--on-accent, #fff);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+}
+.workspaces-page__new-btn:hover { background: color-mix(in srgb, var(--accent) 85%, #000); }
+
+.workspaces-page__error {
+  padding: 10px 14px;
+  background: color-mix(in srgb, #c0392b 10%, transparent);
+  color: #c0392b;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.workspaces-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.workspaces-page__empty {
+  grid-column: 1 / -1;
+  padding: 50px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--bg-card, #fafafa);
+  border: 1px dashed var(--rule);
+  border-radius: 10px;
+}
+
+.ws-card {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  transition: box-shadow .15s ease, border-color .15s ease;
+}
+.ws-card:hover { box-shadow: 0 6px 18px rgba(0,0,0,.06); }
+.ws-card.is-current { border-color: color-mix(in srgb, var(--accent) 55%, var(--rule)); }
+.ws-card.is-archived { opacity: .78; }
+
+.ws-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.ws-card__head h3 {
+  margin: 0;
+  flex: 1;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: text;
+  min-width: 0;
+}
+.ws-card__head input {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  color: var(--ink);
+  background: var(--paper);
+}
+.ws-card__badge {
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent-ink, var(--accent));
+}
+.ws-card__badge--archived { background: color-mix(in srgb, #777 15%, transparent); color: #777; }
+
+.ws-card__meta {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  row-gap: 4px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+.ws-card__meta dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  align-self: center;
+}
+.ws-card__meta dd { margin: 0; color: var(--ink); }
+
+.ws-card__footer {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+  flex-wrap: wrap;
+}
+.ws-card__footer button {
+  padding: 6px 11px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ws-card__footer button:first-child {
+  background: var(--accent, #2563c9);
+  color: var(--on-accent, #fff);
+  border-color: transparent;
+}
+.ws-card__footer button:hover { border-color: var(--accent); }
+.ws-card__footer button:first-child:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #000);
+  border-color: transparent;
+}
+
+/* ── Create modal ────────────────────────────────────────── */
+.ws-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0,0,0,.45);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.ws-modal__card {
+  width: 100%;
+  max-width: 540px;
+  background: var(--paper);
+  border-radius: 14px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.3);
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+  overflow: auto;
+}
+.ws-modal__card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.ws-modal__card header h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.ws-modal__close {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 6px;
+}
+.ws-modal__card form { padding: 18px 24px 20px; display: flex; flex-direction: column; gap: 14px; }
+.ws-modal__card label { display: flex; flex-direction: column; gap: 5px; }
+.ws-modal__card label span {
+  font-size: 12.5px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.ws-modal__card label em { color: var(--muted); font-weight: 400; font-style: normal; }
+.ws-modal__card input, .ws-modal__card textarea {
+  padding: 9px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--paper);
+}
+.ws-modal__card input:focus, .ws-modal__card textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.ws-modal__row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ws-modal__err {
+  padding: 9px 12px;
+  background: color-mix(in srgb, #c0392b 10%, transparent);
+  color: #c0392b;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.ws-modal__card footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 6px;
+}
+.ws-modal__card footer button {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+}
+.ws-modal__card footer button[type="submit"] {
+  background: var(--accent, #2563c9);
+  color: var(--on-accent, #fff);
+  border-color: transparent;
+}
+.ws-modal__card footer button[type="submit"]:disabled { opacity: .55; cursor: not-allowed; }

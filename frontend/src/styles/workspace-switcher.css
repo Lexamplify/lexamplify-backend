@@ -1,0 +1,189 @@
+/* ============================================================
+   WORKSPACE SWITCHER — the topbar dropdown that picks the
+   active workspace. Phase 3 of workspaces-refactor.
+   ============================================================ */
+
+.ws-switcher {
+  position: relative;
+  display: inline-flex;
+}
+
+.ws-switcher__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px 7px 14px;
+  border: 1px solid var(--rule, rgba(0,0,0,.08));
+  background: var(--paper, #fff);
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--ink, #141c2b);
+  font-family: inherit;
+  transition: border-color .15s ease, background .15s ease;
+}
+.ws-switcher__trigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--rule));
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
+}
+.ws-switcher__label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+  text-align: left;
+}
+.ws-switcher__label b {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-switcher__sub {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted, #7a7a7a);
+  margin-top: 2px;
+}
+
+.ws-switcher__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 320px;
+  max-width: 420px;
+  background: var(--paper, #fff);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(0,0,0,.14), 0 4px 10px rgba(0,0,0,.06);
+  padding: 10px;
+  z-index: 60;
+}
+
+.ws-switcher__search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--bg-card, #fafafa);
+  color: var(--ink);
+}
+.ws-switcher__search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ws-switcher__list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-right: 2px;
+}
+
+.ws-switcher__empty {
+  padding: 14px 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ws-switcher__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+}
+.ws-switcher__item:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.ws-switcher__item.is-active { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 500; }
+
+.ws-switcher__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-switcher__meta {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.ws-switcher__divider {
+  height: 1px;
+  background: var(--rule);
+  margin: 10px -10px;
+}
+
+.ws-switcher__create {
+  display: flex;
+  gap: 6px;
+  padding: 2px;
+}
+.ws-switcher__create input {
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+}
+.ws-switcher__create input:focus { outline: none; border-color: var(--accent); }
+.ws-switcher__create button {
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ws-switcher__create button[type="submit"] {
+  background: var(--accent, #2563c9);
+  color: var(--on-accent, #fff);
+}
+.ws-switcher__create button[type="submit"]:disabled { opacity: .5; cursor: not-allowed; }
+.ws-switcher__create button[type="button"] {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--muted);
+}
+
+.ws-switcher__footer-link {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--accent-ink, var(--accent, #2563c9));
+  text-align: left;
+  cursor: pointer;
+  border-radius: 7px;
+  font-size: 13px;
+  font-family: inherit;
+  text-decoration: none;
+}
+.ws-switcher__footer-link:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+.ws-switcher__error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, #c0392b 10%, transparent);
+  color: #c0392b;
+  border-radius: 7px;
+  font-size: 12px;
+}
