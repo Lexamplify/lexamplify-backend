@@ -512,7 +512,7 @@ export const extractContractText = async (file) => {
   // which on CPU takes 2-4 minutes for a 200-page document. Text PDFs still
   // return in under a second — this cap only matters when OCR actually runs.
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 360000);
+  const timeoutId = setTimeout(() => controller.abort(), 660000);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/contract/extract-text`, {

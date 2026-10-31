@@ -914,7 +914,7 @@ def analysis_status(job_id):
 # 300s with env override so a stricter deployment can still pin it
 # lower. Text PDFs still return in <1s — the cap only matters when
 # OCR actually runs.
-EXTRACTION_TIMEOUT_SECONDS = int(os.getenv("EXTRACTION_TIMEOUT_SECONDS", "300"))
+EXTRACTION_TIMEOUT_SECONDS = int(os.getenv("EXTRACTION_TIMEOUT_SECONDS", "600"))
 
 
 @contract_bp.route("/extract-text", methods=["POST", "OPTIONS"])

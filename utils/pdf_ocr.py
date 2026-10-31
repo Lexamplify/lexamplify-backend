@@ -98,16 +98,42 @@ def _ocr_page_with_tesseract(img) -> str:
         return ""
 
 
+def _ocr_single_page(args):
+    """Worker body for the parallel OCR pass. Isolated so a bad page
+    does not take out the whole batch."""
+    pdf_bytes, i, dpi, engine = args
+    try:
+        img = _page_image_from_pdf(pdf_bytes, i, dpi=dpi)
+        if engine is not None:
+            txt = _ocr_page_with_engine(engine, img)
+            if not txt:
+                txt = _ocr_page_with_tesseract(img)
+        else:
+            txt = _ocr_page_with_tesseract(img)
+        return i, (txt or "").strip()
+    except Exception:
+        return i, ""
+
+
 def ocr_pdf_bytes(pdf_bytes: bytes, *, min_text_chars_per_page: int = 50,
                   max_pages: int = 1500) -> str:
     """Extract text from a (possibly scanned) PDF. Embedded-text pages
     are returned as-is from PyMuPDF; pages with less than
     `min_text_chars_per_page` get sent through OCR.
 
+    Parallel OCR: pages that need OCR are farmed out to a thread pool
+    (default: min(8, cpu_count) workers). The RapidOCR ONNX session is
+    thread-safe for read-only inference, and page rasterisation is also
+    independent per page, so this scales close to linearly on CPU.
+    DPI is 150 (down from 220) — printed-contract scans are legible to
+    OCR at 150 and the pixel count drops ~2.1×, which is the biggest
+    single win on wall-clock time.
+
     Returns the concatenated text (blank lines between pages). On
     hard failure for a page, that page is skipped (no exception
     bubbles out)."""
     import fitz
+    from concurrent.futures import ThreadPoolExecutor
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     if doc.needs_pass:
         doc.close()
@@ -131,18 +157,12 @@ def ocr_pdf_bytes(pdf_bytes: bytes, *, min_text_chars_per_page: int = 50,
         return "\n\n".join(p for p in pages_text if p)
 
     engine = _get_engine()
-    for i in pages_needing_ocr:
-        try:
-            img = _page_image_from_pdf(pdf_bytes, i)
-            if engine:
-                txt = _ocr_page_with_engine(engine, img)
-                if not txt:
-                    txt = _ocr_page_with_tesseract(img)
-            else:
-                txt = _ocr_page_with_tesseract(img)
-            pages_text[i] = txt.strip()
-        except Exception:
-            pages_text[i] = ""
+    dpi = int(os.getenv("OCR_DPI", "150"))
+    workers = int(os.getenv("OCR_WORKERS", "0")) or min(8, (os.cpu_count() or 2))
+    tasks = [(pdf_bytes, i, dpi, engine) for i in pages_needing_ocr]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, txt in pool.map(_ocr_single_page, tasks):
+            pages_text[i] = txt
     return "\n\n".join(p for p in pages_text if p)
 
 
