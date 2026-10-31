@@ -5,11 +5,17 @@ macro-enabled Word files, files that are not what they claim to be, and oversize
 message. Nothing here opens or executes the document's contents.
 """
 import io
+import os
 import zipfile
 
-MAX_UPLOAD_BYTES = 30 * 1024 * 1024
-MAX_UNCOMPRESSED = 200 * 1024 * 1024        # all parts of a .docx together
-MAX_PART = 120 * 1024 * 1024                # one part of a .docx
+# Was a hard 30 MB cap — too restrictive for scanned contracts (a
+# 200-page scanned PDF at 150 DPI is routinely 50-80 MB; the project's
+# own TEST_scanned_200pages.pdf test file is 55 MB). Raised to 100 MB
+# to match the Flask MAX_CONTENT_LENGTH ceiling. Env-overridable so a
+# stricter deployment can still pin it lower without a code change.
+MAX_UPLOAD_BYTES = int(os.getenv("UPLOAD_GUARD_MAX_BYTES", str(100 * 1024 * 1024)))
+MAX_UNCOMPRESSED = 400 * 1024 * 1024        # all parts of a .docx together
+MAX_PART = 240 * 1024 * 1024                # one part of a .docx
 MAX_RATIO = 400                              # compressed:expanded, only judged for parts above 5 MB
 MAX_ENTRIES = 4000
 MAX_PDF_PAGES = 1500
@@ -17,7 +23,7 @@ MAX_PDF_PAGES = 1500
 _MESSAGES = {
     "UNSUPPORTED_FORMAT": "Unsupported file type. Upload a PDF, a Word .docx file or a .txt file. (For an older .doc file, open it in Word and choose Save As .docx.)",
     "EMPTY_FILE": "That file is empty.",
-    "TOO_LARGE": "That file is too large. The limit is 30 MB. Upload the relevant pages only.",
+    "TOO_LARGE": f"That file is too large. The limit is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB. Upload the relevant pages only.",
     "NOT_A_PDF": "That file is named .pdf but is not a real PDF. Open it, then save it again as a PDF.",
     "NOT_A_DOCX": "That file is named .docx but is not a real Word document. Open it in Word and save it again as .docx.",
     "MACRO_DOCUMENT": "That Word file contains macros, which we do not accept. Save a copy as a plain .docx (not .docm) and upload that.",
