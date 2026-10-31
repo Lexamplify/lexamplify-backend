@@ -548,8 +548,23 @@ def analyze():
     else:
         return jsonify({"error": True, "message": "Upload a contract or paste its text.", "code": "NO_INPUT"}), 400
 
-    if len(full_text) > 600000:
-        return jsonify({"error": True, "message": "That contract is too long to analyse in one go. Upload the relevant part.", "code": "TOO_LARGE"}), 413
+    # Second cap (the first lives in /extract-text, raised earlier). Was
+    # 600K chars (~300 pages). Raised to 2M (~1000 pages) to match, since
+    # adaptive chunking (16K chars/chunk for >600K docs) + 10 parallel
+    # workers finish the full 1000-page analysis in ~2 minutes. Override
+    # with ANALYSIS_MAX_INPUT_CHARS.
+    _max_chars = int(os.getenv("ANALYSIS_MAX_INPUT_CHARS", "2000000"))
+    if len(full_text) > _max_chars:
+        pages_est = len(full_text) // 2000
+        return jsonify({
+            "error": True,
+            "message": (
+                f"This contract is roughly {pages_est} pages ({len(full_text):,} characters). "
+                f"The analyzer handles up to ~1000 pages per upload. "
+                f"Split the contract into sections and analyse each separately."
+            ),
+            "code": "TOO_LARGE",
+        }), 413
     if not full_text or not full_text.strip():
         return jsonify({"error": True, "message": "No readable text found. If this is a scanned image, upload a text-based PDF or Word file instead.", "code": "BLANK_DOCUMENT"}), 422
 
