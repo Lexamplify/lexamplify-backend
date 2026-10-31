@@ -1467,6 +1467,19 @@ def create_app():
     app.config['WORKSPACES_ENABLED'] = os.getenv('WORKSPACES_ENABLED', 'false').lower() in ('1', 'true', 'yes')
     app.config['WORKSPACE_ISOLATION_MODE'] = os.getenv('WORKSPACE_ISOLATION_MODE', 'observe').lower()
 
+    # Transparent redirect from the two legacy sqlite files to the single
+    # consolidated one. Every raw `sqlite3.connect('lex_assistant.db')` and
+    # `sqlite3.connect(DB_PATH)` call in the ~20 remaining route/utility
+    # modules now reads from instance/database.db without any per-route edit.
+    # Removed once routes are migrated to SQLAlchemy. Opt-out with
+    # LEGACY_SQLITE_SHIM=off (useful when pointing at a Postgres target).
+    if os.getenv('LEGACY_SQLITE_SHIM', 'on').lower() not in ('0', 'false', 'off'):
+        try:
+            from utils.legacy_sqlite_shim import install as _install_shim
+            _install_shim(app)
+        except Exception as _e:  # noqa: BLE001 — never fail boot over the shim
+            app.logger.warning(f"legacy_sqlite_shim not installed: {_e}")
+
     # ── JWT: HttpOnly cookie transport, never localStorage ──────────────
     # Short-lived access token + long-lived refresh token is what makes
     # this "persistent" without keeping a broadly-scoped token alive for
