@@ -185,7 +185,19 @@ def register(env):
             if isinstance(b.get("client"), dict) and not fields.get("client_id"):
                 fields["client_id"] = new_client_inline(c, b["client"])
             now = L.now_iso()
+            # Pipeline item 1: stamp the active workspace on the new case
+            # so case_visible_sql's strict workspace_id filter can find
+            # it on the very next GET. Without this, the matter would be
+            # created with workspace_id=NULL and immediately 404 under
+            # the client's own view.
             cols = {**fields, "firm_id": m["firm_id"], "case_key": L.case_key(fields["case_no"]), "created_by": m["id"], "created_at": now, "updated_at": now}
+            try:
+                from utils.workspace_scope import current_workspace_id as _wsid
+                _ws = _wsid()
+                if _ws is not None:
+                    cols["workspace_id"] = int(_ws)
+            except Exception:
+                pass
             cid = c.execute(f"INSERT INTO lpms_cases ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})", list(cols.values())).lastrowid
             L.timeline(c, m["firm_id"], cid, "created", f"Case created — {fields['case_no']}", f"{fields['court']} · {fields['case_type']}", m["id"])
             env.audit("case_create", "case", cid, f"Case {fields['case_no']} created: {fields['title']}", {"court": fields["court"], "advocate_id": fields.get("advocate_id")})
