@@ -162,6 +162,24 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
   const [err, setErr] = useState('');
   const fileRef = useRef(null);
   const playbookRef = useRef(null);
+  // Progress UI shown while the modal is busy. "Starting review…" alone with
+  // no feedback for 2-4 minutes on a scanned PDF reads as "stuck" even though
+  // the server is working; a stage + elapsed timer makes the wait legible.
+  const [stage, setStage] = useState('');
+  const [stageHint, setStageHint] = useState('');
+  const [elapsed, setElapsed] = useState(0);
+  const elapsedTimerRef = useRef(null);
+  const startStage = (label, hint = '') => { setStage(label); setStageHint(hint); };
+  // Start / stop the per-second elapsed counter when busy flips.
+  useEffect(() => {
+    if (busy) {
+      const t0 = Date.now();
+      setElapsed(0);
+      elapsedTimerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+      return () => { if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current); };
+    }
+    setElapsed(0); setStage(''); setStageHint('');
+  }, [busy]);
 
   const pick = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -202,11 +220,23 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
     setBusy(true);
     try {
       let contractText = text.trim();
-      if (file) contractText = await extractTextFrom(file);
+      if (file) {
+        // Scanned PDFs legitimately take 2-4 min for OCR; the hint keeps
+        // the user from thinking the request has hung.
+        const looksScanned = file.size > 10 * 1024 * 1024 || /scan/i.test(file.name);
+        startStage(
+          `Reading ${file.name}…`,
+          looksScanned
+            ? 'This PDF looks scanned — the server is running OCR on every page. Expect 2-4 minutes for 200 pages.'
+            : 'Pulling text out of your document…',
+        );
+        contractText = await extractTextFrom(file);
+      }
 
       // Playbook text (optional) — the firm's custom rulebook that the AI uses as review criteria.
       let ruleBookText = '';
       if (playbook) {
+        startStage(`Reading playbook ${playbook.name}…`, 'Your firm\'s custom rulebook will override statutory defaults.');
         try {
           ruleBookText = await extractTextFrom(playbook);
         } catch (pbErr) {
@@ -215,6 +245,7 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
         }
       }
 
+      startStage('Starting the analysis…', 'Dispatching the review job to the AI pipeline.');
       const res = await fetch(`${API_BASE}/api/contract/analyze`, {
         method: 'POST',
         credentials: 'include',
@@ -257,10 +288,41 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
       onClose={busy ? () => {} : onClose}
       footer={<>
         <button className="lx-btn lx-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button>
-        <button className="lx-btn lx-btn--primary" onClick={start} disabled={busy}>{busy ? 'Starting review…' : 'Analyze contract'}</button>
+        <button className="lx-btn lx-btn--primary" onClick={start} disabled={busy}>{busy ? 'Working…' : 'Analyze contract'}</button>
       </>}
     >
       {err && <div role="alert" style={{ marginBottom: 12, color: 'var(--risk)', fontSize: 13 }}>{err}</div>}
+      {busy && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 14, padding: '28px 16px', borderRadius: 14,
+          background: 'var(--paper-2)', border: '1px solid var(--rule)',
+          marginBottom: 16,
+        }} role="status" aria-live="polite">
+          {/* Indeterminate progress bar — real stage reporting kicks in on the
+              detail page after the job starts; here we just need the user to
+              know work is happening. */}
+          <div style={{ width: '100%', height: 4, background: 'rgba(0,0,0,0.08)', borderRadius: 999, overflow: 'hidden', position: 'relative' }}>
+            <div style={{
+              position: 'absolute', top: 0, left: 0, height: '100%', width: '40%',
+              background: 'var(--accent)', borderRadius: 999,
+              animation: 'lxBarSlide 1.6s ease-in-out infinite',
+            }} />
+          </div>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 17, color: 'var(--ink)', textAlign: 'center' }}>
+            {stage || 'Preparing the review…'}
+          </div>
+          {stageHint && (
+            <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', maxWidth: 420, lineHeight: 1.5 }}>
+              {stageHint}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: '.04em' }}>
+            {`${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')} elapsed · you can leave this tab open — it keeps working in the background`}
+          </div>
+          <style>{`@keyframes lxBarSlide { 0% { left: -40%; } 100% { left: 100%; } }`}</style>
+        </div>
+      )}
 
       {/* Main contract file / paste */}
       <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.txt" style={{ display: 'none' }} onChange={pick} />
