@@ -342,6 +342,7 @@ def init_db():
                 kind TEXT NOT NULL DEFAULT 'message',
                 body TEXT,
                 parent_message_id INTEGER,
+                visibility TEXT NOT NULL DEFAULT 'public',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 edited_at DATETIME,
                 deleted_at DATETIME,
@@ -351,6 +352,12 @@ def init_db():
         """)
         c.execute("CREATE INDEX IF NOT EXISTS ix_case_messages_case ON case_messages(case_id, created_at)")
         c.execute("CREATE INDEX IF NOT EXISTS ix_case_messages_firm ON case_messages(firm_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_case_messages_vis ON case_messages(case_id, visibility, author_user_id)")
+    except Exception:
+        pass
+    # Add visibility column on existing DBs that pre-date it (idempotent).
+    try:
+        c.execute("ALTER TABLE case_messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'")
     except Exception:
         pass
     try:

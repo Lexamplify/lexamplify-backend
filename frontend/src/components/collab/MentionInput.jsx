@@ -79,11 +79,18 @@ export default function MentionInput({
     const after = value.slice(caret);
     const lastAt = before.lastIndexOf('@');
     if (lastAt === -1) return;
-    const token = `@user:${r.user_id} `;
+    // Broadcast token keeps the message public; specific user token makes
+    // it private (DM) in the backend's visibility logic.
+    const token = r.user_id === '__all__' ? '@all ' : `@user:${r.user_id} `;
     const next = before.slice(0, lastAt) + token + after;
     onChange(next);
-    const nextIds = Array.from(new Set([...(mentionedIds || []), r.user_id]));
-    onMentionsChange?.(nextIds);
+    // Don't push '__all__' into the mentions id array — it isn't a real
+    // user id and the backend wouldn't resolve it. The '@all' body token
+    // is what triggers the public broadcast on the server side.
+    if (r.user_id !== '__all__') {
+      const nextIds = Array.from(new Set([...(mentionedIds || []), r.user_id]));
+      onMentionsChange?.(nextIds);
+    }
     setShowMenu(false);
     // Return focus + caret to just after the inserted token.
     setTimeout(() => {
@@ -109,13 +116,19 @@ export default function MentionInput({
   }, [showMenu]);
 
   const q = (menuQuery || '').toLowerCase();
-  const filtered = (recipients || []).filter((r) => {
+  // Synthetic "@all" entry at the top of the picker — picking it inserts
+  // '@all' into the body, which the backend reads as a broadcast flag
+  // (message becomes public to the whole case room instead of private).
+  const broadcastEntry = { user_id: '__all__', name: 'Everyone on this case', role: 'broadcast — public to all case members' };
+  const recipientMatches = (recipients || []).filter((r) => {
     if (!q) return true;
     return (
       (r.name || '').toLowerCase().includes(q) ||
       (r.email || '').toLowerCase().includes(q)
     );
-  }).slice(0, 8);
+  });
+  const includeBroadcast = !q || 'all'.includes(q) || 'everyone'.includes(q);
+  const filtered = (includeBroadcast ? [broadcastEntry, ...recipientMatches] : recipientMatches).slice(0, 8);
 
   return (
     <div style={{ position: 'relative' }}>

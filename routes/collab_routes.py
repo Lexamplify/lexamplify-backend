@@ -91,6 +91,25 @@ def _case_or_404(case_id):
     return row, None
 
 
+def _is_firm_senior(user_id, firm_id) -> bool:
+    """A firm senior / partner / principal sees EVERY message in every
+    case room — public or private — because supervision requires it.
+    This is the 'owner / admin sees everything' rule the user specified."""
+    try:
+        c = _conn()
+        row = c.execute(
+            "SELECT role FROM lpms_members "
+            "WHERE user_id = ? AND firm_id = ? AND active = 1 LIMIT 1",
+            (int(user_id), int(firm_id)),
+        ).fetchone()
+        if not row:
+            return False
+        role = (row["role"] or "").lower()
+        return any(k in role for k in ("senior", "partner", "principal"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _message_or_404(message_id, author_only=False):
     """Fetch a message row and verify the caller may act on it. author_only
     is True for PATCH/DELETE where only the author may touch it."""
@@ -137,6 +156,13 @@ def _hydrate_messages(rows):
 
     out = []
     for r in rows:
+        # Visibility defaults to 'public' when the column doesn't exist
+        # yet (older DBs where the migration hasn't run). sqlite3.Row
+        # doesn't support .get() so we handle KeyError.
+        try:
+            vis = r["visibility"] or "public"
+        except (KeyError, IndexError):
+            vis = "public"
         out.append({
             "id": r["id"],
             "case_id": r["case_id"],
@@ -144,6 +170,7 @@ def _hydrate_messages(rows):
             "kind": r["kind"],
             "body": r["body"] or "",
             "parent_message_id": r["parent_message_id"],
+            "visibility": vis,
             "created_at": r["created_at"],
             "edited_at": r["edited_at"],
             "resources": resources.get(r["id"], []),
@@ -159,7 +186,7 @@ def _hydrate_messages(rows):
 def list_messages(case_id):
     if request.method == "OPTIONS":
         return jsonify({}), 200
-    _, err = _case_or_404(case_id)
+    case, err = _case_or_404(case_id)
     if err:
         return err
     try:
@@ -168,6 +195,23 @@ def list_messages(case_id):
         limit = 50
     before = request.args.get("before")
     c = _conn()
+    uid = _uid()
+    # Privacy filter (user's model):
+    #   PUBLIC messages        — every eligible case member sees them.
+    #   PRIVATE messages       — only author + mentioned users see them.
+    #   Firm senior / partner  — sees EVERYTHING (owner/admin override).
+    senior_bypass = _is_firm_senior(uid, case["firm_id"])
+    if senior_bypass:
+        where_vis = ""
+        vis_params: tuple = ()
+    else:
+        where_vis = (
+            " AND (visibility = 'public' "
+            "      OR author_user_id = ? "
+            "      OR id IN (SELECT message_id FROM case_message_mentions "
+            "                WHERE mentioned_user_id = ?))"
+        )
+        vis_params = (uid, uid)
     if before:
         try:
             before_id = int(before)
@@ -175,20 +219,26 @@ def list_messages(case_id):
             return jsonify({"error": True, "message": "`before` must be a message id."}), 400
         rows = c.execute(
             "SELECT * FROM case_messages "
-            "WHERE case_id = ? AND deleted_at IS NULL AND id < ? "
-            "ORDER BY id DESC LIMIT ?",
-            (int(case_id), before_id, limit),
+            "WHERE case_id = ? AND deleted_at IS NULL AND id < ?"
+            + where_vis +
+            " ORDER BY id DESC LIMIT ?",
+            (int(case_id), before_id, *vis_params, limit),
         ).fetchall()
     else:
         rows = c.execute(
             "SELECT * FROM case_messages "
-            "WHERE case_id = ? AND deleted_at IS NULL "
-            "ORDER BY id DESC LIMIT ?",
-            (int(case_id), limit),
+            "WHERE case_id = ? AND deleted_at IS NULL"
+            + where_vis +
+            " ORDER BY id DESC LIMIT ?",
+            (int(case_id), *vis_params, limit),
         ).fetchall()
     # Newest-last so the frontend can append downward without reversing.
     messages = list(reversed(_hydrate_messages(rows)))
-    return jsonify({"messages": messages, "case_id": int(case_id)}), 200
+    return jsonify({
+        "messages": messages,
+        "case_id": int(case_id),
+        "viewer_is_senior": senior_bypass,
+    }), 200
 
 
 @collab_bp.route("/cases/<case_id>/messages", methods=["POST", "OPTIONS"])
@@ -212,14 +262,38 @@ def post_message(case_id):
 
     resolved_mentions = resolve_mentions(body, mentions_raw, int(case_id))
 
+    # Visibility rule (the user's model):
+    #   @all / @everyone in the body (or the client sends 'visibility':
+    #     'public') → the message is a channel broadcast, everyone on the
+    #     case sees it.
+    #   Specific @user:<id> mentions only → the message is PRIVATE, visible
+    #     to the author + the mentioned users + any firm senior/partner.
+    #   No mentions at all → treated as a general channel message
+    #     (visibility='public'). The composer can override to 'private'
+    #     via the explicit field.
+    body_lower = (body or "").lower()
+    broadcast_tokens = ("@all", "@everyone", "@channel")
+    has_broadcast_token = any(tok in body_lower for tok in broadcast_tokens)
+    explicit_vis = (data.get("visibility") or "").strip().lower()
+    if explicit_vis in ("public", "private"):
+        visibility = explicit_vis
+    elif has_broadcast_token:
+        visibility = "public"
+    elif resolved_mentions:
+        # Mentioned specific people and no broadcast token → private DM-style.
+        visibility = "private"
+    else:
+        # No mentions and no explicit flag → open-room channel message.
+        visibility = "public"
+
     c = _conn()
     with c:  # auto commit/rollback
         cur = c.execute(
             "INSERT INTO case_messages "
-            "(firm_id, workspace_id, case_id, author_user_id, kind, body, parent_message_id) "
-            "VALUES (?, ?, ?, ?, 'message', ?, ?)",
+            "(firm_id, workspace_id, case_id, author_user_id, kind, body, parent_message_id, visibility) "
+            "VALUES (?, ?, ?, ?, 'message', ?, ?, ?)",
             (int(case["firm_id"]), case["workspace_id"], int(case_id), _uid(),
-             body, int(parent_id) if parent_id else None),
+             body, int(parent_id) if parent_id else None, visibility),
         )
         message_id = cur.lastrowid
 

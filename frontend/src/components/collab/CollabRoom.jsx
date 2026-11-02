@@ -26,10 +26,22 @@ function whenLabel(iso) {
 
 // Render a message body — replaces @user:<id> tokens with colored chips
 // using the recipients map so a mentioned user shows as their name.
+// Also renders the broadcast @all / @everyone / @channel tokens as a
+// green pill so a channel message looks visibly different from a DM.
 function renderBody(body, recipientNames) {
   if (!body) return null;
-  const parts = String(body).split(/(@user:\d+)/g);
+  const parts = String(body).split(/(@user:\d+|@all|@everyone|@channel)/gi);
   return parts.map((part, i) => {
+    const broadcast = /^@(all|everyone|channel)$/i.test(part);
+    if (broadcast) {
+      return (
+        <span key={i} style={{
+          color: 'var(--ok, #177d5d)', fontWeight: 500,
+          background: 'rgba(23, 125, 93, 0.1)',
+          padding: '0 5px', borderRadius: 4,
+        }}>@all</span>
+      );
+    }
     const m = part.match(/^@user:(\d+)$/);
     if (!m) return <span key={i}>{part}</span>;
     const uid = Number(m[1]);
@@ -185,21 +197,40 @@ export default function CollabRoom({ caseId }) {
         {messages.map((m) => {
           const author = recipientNames[m.author_user_id] || `User ${m.author_user_id}`;
           const isShare = m.kind === 'share';
+          const isPrivate = m.visibility === 'private';
           return (
             <div
               key={m.id}
               id={`collab-${m.id}`}
               style={{
                 padding: '10px 14px',
-                background: isShare ? 'rgba(178, 74, 46, 0.04)' : 'var(--paper)',
-                border: isShare ? '1px solid rgba(178, 74, 46, 0.2)' : '1px solid var(--rule)',
+                background: isPrivate
+                  ? 'rgba(70, 130, 180, 0.05)'
+                  : isShare ? 'rgba(178, 74, 46, 0.04)' : 'var(--paper)',
+                border: isPrivate
+                  ? '1px dashed rgba(70, 130, 180, 0.45)'
+                  : isShare ? '1px solid rgba(178, 74, 46, 0.2)' : '1px solid var(--rule)',
                 borderRadius: 10,
                 marginLeft: 8, marginRight: 8,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
-                  {author}{isShare && <span style={{ color: 'var(--accent)', marginLeft: 6 }}>shared</span>}
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {author}
+                  {isShare && <span style={{ color: 'var(--accent)', marginLeft: 2 }}>shared</span>}
+                  {isPrivate && (
+                    <span
+                      title="Private message — only you, the mentioned users, and firm seniors see this"
+                      style={{
+                        fontSize: 10, color: '#4682b4',
+                        background: 'rgba(70, 130, 180, 0.14)',
+                        padding: '1px 6px', borderRadius: 10, fontWeight: 600,
+                        letterSpacing: '.02em', display: 'inline-flex', alignItems: 'center', gap: 3,
+                      }}
+                    >
+                      🔒 Private
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>{whenLabel(m.created_at)}</div>
               </div>
@@ -225,7 +256,16 @@ export default function CollabRoom({ caseId }) {
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-            {mentionedIds.length > 0 && `${mentionedIds.length} mention${mentionedIds.length === 1 ? '' : 's'} will be notified.`}
+            {(() => {
+              // Live visibility preview — matches the backend's rule in
+              // collab_routes.post_message. Lets the sender see at a
+              // glance whether this will be a channel broadcast or a
+              // private DM-style note before clicking Send.
+              const broadcastInBody = /(^|\s)@(all|everyone|channel)\b/i.test(draft);
+              if (broadcastInBody) return 'Public — everyone on this case will see it.';
+              if (mentionedIds.length > 0) return `Private — only you${mentionedIds.length === 1 ? ' and 1 mentioned user' : ` and ${mentionedIds.length} mentioned users`} (plus firm seniors) will see it.`;
+              return draft.trim() ? 'Public (open channel) — mention someone with @ to make it private, or type @all to broadcast.' : '';
+            })()}
           </div>
           <button
             className="lx-btn lx-btn--primary"
