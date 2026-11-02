@@ -472,12 +472,44 @@ export default function ContractDetail() {
                       <div className="lx-item__body">
                         <div className="lx-between" style={{ alignItems: 'baseline', gap: 10 }}>
                           <div className="lx-item__title" style={{ fontSize: 15 }}>{x.title || x.location || `Clause ${i + 1}`}</div>
-                          <span className={`lx-badge lx-badge--${info.tone}`} style={{ flexShrink: 0 }}>{info.level}</span>
+                          <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'baseline' }}>
+                            {/* Client-perspective impact tag — the new AI field.
+                                Partisan color: red = harms, green = favors, muted = neutral. */}
+                            {x.impact && (
+                              <span
+                                className="lx-badge"
+                                style={{
+                                  background: /favor/i.test(x.impact) ? 'rgba(23, 125, 93, 0.14)'
+                                            : /harm/i.test(x.impact) ? 'rgba(192, 57, 43, 0.14)'
+                                            : 'rgba(0,0,0,0.06)',
+                                  color: /favor/i.test(x.impact) ? 'var(--ok, #177d5d)'
+                                        : /harm/i.test(x.impact) ? 'var(--risk, #c0392b)'
+                                        : 'var(--muted)',
+                                  border: 'none',
+                                  fontSize: 11, letterSpacing: '.02em', padding: '2px 8px',
+                                }}
+                                title="Impact on our client"
+                              >
+                                {x.impact}
+                              </span>
+                            )}
+                            <span className={`lx-badge lx-badge--${info.tone}`}>{info.level}</span>
+                          </div>
                         </div>
                         {x.location && x.title && x.location !== x.title && (
                           <div className="lx-item__meta" style={{ marginTop: 2 }}>{x.location}</div>
                         )}
                         {note && <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6, marginTop: 4 }}>{note}</p>}
+                        {/* Client-specific advice — tells the senior advocate exactly
+                            what to do about this clause before signing. */}
+                        {(x.client_specific_advice || x.clientSpecificAdvice) && (
+                          <div style={{ marginTop: 8, padding: '10px 12px', background: 'var(--paper-2)', borderLeft: '3px solid var(--accent)', borderRadius: 6 }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>What we should do</div>
+                            <p style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.55, margin: 0 }}>
+                              {x.client_specific_advice || x.clientSpecificAdvice}
+                            </p>
+                          </div>
+                        )}
 
                         {canRedline && (
                           <div style={{ marginTop: 10, display: 'flex', alignItems: 'flex-start' }}>
@@ -529,17 +561,45 @@ export default function ContractDetail() {
                   {missing.map((m, i) => {
                     const mid = m.id || `missing-${i}`;
                     const isInserted = !!insertedMissing[mid];
-                    const modelText = m.model || m.clause || m.suggested_text || m.standard_text || '';
+                    // Suggested language the AI already drafted in our favor
+                    // (new `suggested_language` field) or an older checklist's
+                    // generic template under its historical names.
+                    const modelText = m.suggested_language || m.model || m.clause || m.suggested_text || m.standard_text || '';
+                    // Partisan rationale — prefer the AI's "why we need it"
+                    // from the new schema, fall back to the deterministic
+                    // checker's generic rationale.
+                    const rationaleText = m.why_we_need_it || m.rationale || '';
+                    // Flag AI-sourced entries so the user can tell them apart
+                    // from the deterministic checklist.
+                    const isAiSourced = m.source === 'ai_proactive';
                     return (
                       <div className="lx-item" key={mid} style={{ alignItems: 'flex-start', padding: '14px 4px' }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', marginTop: 6, flexShrink: 0, background: isInserted ? 'var(--ok)' : 'var(--warn)' }} />
                         <div className="lx-item__body">
                           <div className="lx-between" style={{ alignItems: 'baseline', gap: 10 }}>
                             <div className="lx-item__title" style={{ fontSize: 14.5 }}>{m.title}</div>
-                            {isInserted && <span className="lx-badge lx-badge--ok" style={{ flexShrink: 0 }}>Inserted</span>}
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              {isAiSourced && (
+                                <span
+                                  className="lx-badge"
+                                  style={{ background: 'rgba(178, 74, 46, 0.1)', color: 'var(--accent)', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px' }}
+                                  title="Spotted by AI, not the standard checklist"
+                                >
+                                  AI-suggested
+                                </span>
+                              )}
+                              <span
+                                className="lx-badge"
+                                style={{ background: 'rgba(23, 125, 93, 0.14)', color: 'var(--ok, #177d5d)', border: 'none', fontSize: 10.5, padding: '2px 7px' }}
+                                title="Adding this clause would favor our client"
+                              >
+                                Would favor us
+                              </span>
+                              {isInserted && <span className="lx-badge lx-badge--ok">Inserted</span>}
+                            </div>
                           </div>
-                          {m.rationale && (
-                            <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6, marginTop: 4 }}>{m.rationale}</p>
+                          {rationaleText && (
+                            <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6, marginTop: 4 }}>{rationaleText}</p>
                           )}
                           {modelText && (
                             <div style={{ marginTop: 10, display: 'flex', alignItems: 'flex-start' }}>
