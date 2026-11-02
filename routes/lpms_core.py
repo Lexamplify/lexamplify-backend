@@ -216,8 +216,13 @@ def register(env):
                 tc.execute("UPDATE lpms_members SET active = 1, role = ?, name = ?, email = ?, phone = ? WHERE id = ?", (role, name, email, phone, old["id"]))
                 mid = old["id"]
             else:
-                mid = tc.execute("INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, managed, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                                 (m["firm_id"], uid, role, name, email, phone, managed, env.uid(), L.now_iso())).lastrowid
+                # `active` is NOT NULL on lpms_members and has no column
+                # default, so leaving it out of the INSERT crashes with
+                # 'NOT NULL constraint failed: lpms_members.active' when
+                # the 'link existing user' path adds a brand new member
+                # row (reported live). Always starts active = 1.
+                mid = tc.execute("INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, managed, active, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                 (m["firm_id"], uid, role, name, email, phone, managed, 1, env.uid(), L.now_iso())).lastrowid
             env.audit("member_add", "member", mid, f"{name} added as {L.ROLE_LABEL[role]}", {"email": email, "linked_existing": not managed})
             L.notify(tc, m["firm_id"], uid, "assignment", f"Welcome to {m['firm_name']}", f"{m['name']} added you as {L.ROLE_LABEL[role]}.", "/practice", None, f"welcome:{mid}")
         return jsonify({"ok": True, "member": member_dict(L.one(env.conn(), "SELECT * FROM lpms_members WHERE id = ?", (mid,)), True), "managed": bool(managed)}), 201
