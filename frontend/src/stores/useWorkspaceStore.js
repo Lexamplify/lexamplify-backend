@@ -143,6 +143,21 @@ export const useWorkspaceStore = create(
         await get().refresh();
       },
 
+      /** Permanent delete. Backend requires the workspace to be archived
+       *  first (two-step guard against mis-clicks). Caller should confirm
+       *  with the user before calling. */
+      destroy: async (id) => {
+        const res = await fetch(`${API_BASE}/api/workspaces/${id}`, { method: 'DELETE' });
+        await _json(res);
+        const remaining = get().workspaces.filter((w) => w.id !== id);
+        const current = get().currentWorkspaceId;
+        const nextCurrent = current === id ? (remaining[0]?.id ?? null) : current;
+        set({ workspaces: remaining, currentWorkspaceId: nextCurrent });
+        if (nextCurrent !== current) {
+          try { window.dispatchEvent(new CustomEvent('lx:workspace-changed', { detail: { id: nextCurrent } })); } catch { /* ignore */ }
+        }
+      },
+
       /** Clear everything (sign-out). */
       clear: () => set({ workspaces: [], currentWorkspaceId: null, loading: false, error: null, enabled: null }),
     }),

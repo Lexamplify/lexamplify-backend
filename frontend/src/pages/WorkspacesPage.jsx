@@ -17,7 +17,7 @@ import NewWorkspaceModal from '../components/workspace/NewWorkspaceModal.jsx';
 
 export default function WorkspacesPage() {
   const navigate = useNavigate();
-  const { workspaces, currentWorkspaceId, loading, error, refresh, create, patch, archive, unarchive, setCurrent } = useWorkspaceStore();
+  const { workspaces, currentWorkspaceId, loading, error, refresh, create, patch, archive, unarchive, destroy, setCurrent } = useWorkspaceStore();
   const [showArchived, setShowArchived] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -109,7 +109,35 @@ export default function WorkspacesPage() {
                   <button type="button" onClick={() => archive(ws.id).then(() => refresh({ includeArchived: showArchived }))}>Archive</button>
                 </>
               ) : (
-                <button type="button" onClick={() => unarchive(ws.id)}>Unarchive</button>
+                <>
+                  <button type="button" onClick={() => unarchive(ws.id)}>Unarchive</button>
+                  {/* Permanent delete, only on archived rows. Confirm
+                      twice-over because this is non-reversible — the
+                      backend also enforces the archive-first guard with
+                      a 409 if someone tries to DELETE on an active row. */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const ok = window.confirm(
+                        `Permanently delete "${ws.name}"?\n\n` +
+                        `This cannot be undone. The client's matters, drafts, contracts, ` +
+                        `calendar entries and vault documents stay in the firm, but they ` +
+                        `will no longer be scoped to this client.\n\n` +
+                        `Type OK to confirm.`
+                      );
+                      if (!ok) return;
+                      try {
+                        await destroy(ws.id);
+                        await refresh({ includeArchived: showArchived });
+                      } catch (e) {
+                        alert(e?.message || 'Could not delete this workspace.');
+                      }
+                    }}
+                    style={{ color: 'var(--risk, #c0392b)' }}
+                  >
+                    Delete forever
+                  </button>
+                </>
               )}
             </footer>
           </article>

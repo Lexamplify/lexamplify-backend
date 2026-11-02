@@ -285,6 +285,38 @@ def unarchive_workspace(wid: int):
     return jsonify({"workspace": ws.to_dict()})
 
 
+@workspace_bp.route("/<int:wid>", methods=["DELETE"])
+@jwt_required()
+def delete_workspace(wid: int):
+    """Permanently delete a workspace. Hard delete — only the owner may
+    do it, and only when the workspace is already archived (two-step
+    safety so a mis-click doesn't wipe a live client's data).
+
+    Related rows in lpms_cases, matters, case_vault, draft_sessions,
+    contract_analyses, calendar_events, dms_docs, document_chunks,
+    chat_history, letterheads, conflict_clearance_memos and
+    workspace_members have a nullable workspace_id — they fall back to
+    firm-wide visibility (NULL = legacy) when the workspace row goes
+    away, which matches our "NULL on either side is visible" scope
+    policy. The data isn't lost; it just stops being client-scoped.
+    """
+    ws = _load_ws(wid)
+    if ws is None:
+        return _err(E_NOT_FOUND)
+    uid = _uid()
+    if not _is_ws_owner(uid, ws):
+        return _err(E_FORBIDDEN)
+    if ws.status != "archived":
+        return jsonify({
+            "error": True,
+            "message": "Archive the client workspace first, then delete it. This two-step guard stops a mis-click from wiping a live client.",
+            "code": "MUST_ARCHIVE_FIRST",
+        }), 409
+    db.session.delete(ws)
+    db.session.commit()
+    return jsonify({"deleted": True, "id": wid})
+
+
 @workspace_bp.route("/<int:wid>/members", methods=["POST"])
 @jwt_required()
 def add_member(wid: int):
