@@ -64,15 +64,19 @@ def create_letterhead():
     tagline = (data.get('tagline') or '').strip() or None
     address = (data.get('address') or '').strip() or None
     contact = (data.get('contact') or '').strip() or None
+    # Pipeline item 5: optional dedicated footer so the firm can design
+    # footer text separately (confidentiality notice, page numbering
+    # directive, etc.) instead of being limited to address + contact.
+    footer = (data.get('footer') or '').strip() or None
     auto_detected = 1 if data.get('autoDetected') else 0
     from utils.workspace_scope import current_workspace_id as _wsid
     _ws = _wsid()
     conn = get_db()
     try:
         cur = conn.execute(
-            'INSERT INTO letterheads (owner_user_id, name, tagline, address, contact, auto_detected, workspace_id) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?)',
-            (uid, name, tagline, address, contact, auto_detected, _ws)
+            'INSERT INTO letterheads (owner_user_id, name, tagline, address, contact, footer, auto_detected, workspace_id) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (uid, name, tagline, address, contact, footer, auto_detected, _ws)
         )
         conn.commit()
         row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (cur.lastrowid,)).fetchone()

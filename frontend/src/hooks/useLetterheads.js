@@ -42,10 +42,10 @@ export function useLetterheads() {
     refresh();
   }, [refresh]);
 
-  const createLetterhead = useCallback(async ({ name, tagline = '', address = '', contact = '' }) => {
+  const createLetterhead = useCallback(async ({ name, tagline = '', address = '', contact = '', footer = '' }) => {
     const data = await request('/api/letterheads', {
       method: 'POST',
-      body: JSON.stringify({ name, tagline, address, contact }),
+      body: JSON.stringify({ name, tagline, address, contact, footer }),
     });
     await refresh();
     return data.letterhead;

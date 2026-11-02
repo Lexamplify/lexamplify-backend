@@ -1451,41 +1451,62 @@ def _apply_letterhead(doc, letterhead_data):
     tagline = (letterhead_data.get('tagline') or '').strip()
     address = (letterhead_data.get('address') or '').strip()
     contact = (letterhead_data.get('contact') or '').strip()
+    # Pipeline item 5: optional dedicated footer text + per-draft toggles.
+    # Default both include flags to True so existing callers (which don't
+    # send the flags) get the full letterhead exactly as before.
+    footer_text = (letterhead_data.get('footer') or '').strip()
+    include_header = letterhead_data.get('include_header')
+    if include_header is None:
+        include_header = letterhead_data.get('includeHeader')
+    if include_header is None:
+        include_header = True
+    include_footer = letterhead_data.get('include_footer')
+    if include_footer is None:
+        include_footer = letterhead_data.get('includeFooter')
+    if include_footer is None:
+        include_footer = True
 
     section = doc.sections[0]
 
-    header = section.header
-    header.is_linked_to_previous = False
-    name_para = header.paragraphs[0]
-    name_para.text = ''
-    name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    name_run = name_para.add_run(firm_name)
-    name_run.bold = True
-    name_run.font.size = Pt(14)
+    if include_header:
+        header = section.header
+        header.is_linked_to_previous = False
+        name_para = header.paragraphs[0]
+        name_para.text = ''
+        name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        name_run = name_para.add_run(firm_name)
+        name_run.bold = True
+        name_run.font.size = Pt(14)
 
-    rule_para = name_para
-    if tagline:
-        tagline_para = header.add_paragraph()
-        tagline_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        tagline_run = tagline_para.add_run(tagline)
-        tagline_run.font.size = Pt(9)
-        tagline_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
-        rule_para = tagline_para
-    _add_bottom_border(rule_para)
+        rule_para = name_para
+        if tagline:
+            tagline_para = header.add_paragraph()
+            tagline_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            tagline_run = tagline_para.add_run(tagline)
+            tagline_run.font.size = Pt(9)
+            tagline_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+            rule_para = tagline_para
+        _add_bottom_border(rule_para)
 
-    # Footer: whichever of address/contact were actually given, joined —
-    # a lawyer filling only one of the two still gets a sensible footer
-    # rather than a stray separator.
-    footer_line = '  ·  '.join(x for x in (address, contact) if x)
-    if footer_line:
-        footer_line += '  ·  Page '
-        footer = section.footer
-        footer.is_linked_to_previous = False
-        footer_para = footer.paragraphs[0]
-        footer_para.text = ''
-        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer_run = footer_para.add_run(footer_line)
-        footer_run.font.size = Pt(8)
+    if include_footer:
+        # Prefer the firm's custom footer_text when supplied; fall back
+        # to the auto-assembled address + contact line otherwise so a
+        # letterhead designed before the footer field existed still gets
+        # the pre-pipeline-5 behaviour.
+        if footer_text:
+            footer_line = footer_text
+        else:
+            footer_line = '  ·  '.join(x for x in (address, contact) if x)
+            if footer_line:
+                footer_line += '  ·  Page '
+        if footer_line:
+            footer = section.footer
+            footer.is_linked_to_previous = False
+            footer_para = footer.paragraphs[0]
+            footer_para.text = ''
+            footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            footer_run = footer_para.add_run(footer_line)
+            footer_run.font.size = Pt(8)
         footer_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
         _add_page_number_field(footer_para)
         page_num_run = footer_para.runs[-1]

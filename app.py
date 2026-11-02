@@ -284,6 +284,14 @@ def init_db():
             c.execute(f'CREATE INDEX IF NOT EXISTS ix_{_tbl}_ws ON {_tbl}(workspace_id)')
         except Exception:
             pass
+    # Pipeline item 5: letterheads gets a dedicated footer column so the
+    # firm can design header AND footer separately (previously the UI
+    # only exposed address + contact and treated them as the footer).
+    for _col, _type in [("footer", "TEXT")]:
+        try:
+            c.execute(f"ALTER TABLE letterheads ADD COLUMN {_col} {_type}")
+        except Exception:
+            pass
     # conflict_clearance_memos never had owner_user_id — Phase 6 adds it so
     # the UI can filter "my memos" and scoping-by-workspace makes sense.
     try:

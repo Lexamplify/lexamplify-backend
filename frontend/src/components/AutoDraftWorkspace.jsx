@@ -302,6 +302,16 @@ export default function AutoDraftWorkspace() {
   const [newLetterheadTagline, setNewLetterheadTagline] = useState('');
   const [newLetterheadAddress, setNewLetterheadAddress] = useState('');
   const [newLetterheadContact, setNewLetterheadContact] = useState('');
+  // Pipeline item 5: dedicated footer field so the firm can design a
+  // custom footer separately from address + contact (e.g. a
+  // confidentiality notice or standard disclaimer).
+  const [newLetterheadFooter, setNewLetterheadFooter] = useState('');
+  // Per-draft include toggles — the checklist the user asked for.
+  // Default both ON so just selecting a letterhead inserts the full
+  // one, same behaviour as before the toggles existed. User can
+  // untick either one to skip it on a particular draft.
+  const [includeLetterheadHeader, setIncludeLetterheadHeader] = useState(true);
+  const [includeLetterheadFooter, setIncludeLetterheadFooter] = useState(true);
   const [letterheadFormError, setLetterheadFormError] = useState('');
   // One-time carry-forward: real letterheads created before this backend
   // existed live only in localStorage. Unlike Home Gateway's seed/demo
@@ -548,12 +558,14 @@ export default function AutoDraftWorkspace() {
         tagline: newLetterheadTagline.trim(),
         address: newLetterheadAddress.trim(),
         contact: newLetterheadContact.trim(),
+        footer: newLetterheadFooter.trim(),
       });
       setSelectedLetterheadId(String(created.id));
       setNewLetterheadFirmName('');
       setNewLetterheadTagline('');
       setNewLetterheadAddress('');
       setNewLetterheadContact('');
+      setNewLetterheadFooter('');
       closeLetterheadModal();
     } catch (err) {
       setLetterheadFormError(err.message || 'Failed to save letterhead.');
@@ -915,7 +927,17 @@ export default function AutoDraftWorkspace() {
         // activeLetterhead is null for "No Letterhead" — the backend
         // treats a missing/empty firmName as "skip the header/footer
         // entirely", so this doesn't need its own special-casing here.
-        body: JSON.stringify({ html, title, letterhead_data: activeLetterhead }),
+        // Pipeline item 5: pass the per-draft include toggles so the
+        // backend's _apply_letterhead can skip header or footer per
+        // draft. Both default true, matching the pre-toggle behaviour.
+        body: JSON.stringify({
+          html, title,
+          letterhead_data: activeLetterhead ? {
+            ...activeLetterhead,
+            include_header: includeLetterheadHeader,
+            include_footer: includeLetterheadFooter,
+          } : null,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -1427,6 +1449,22 @@ export default function AutoDraftWorkspace() {
                 ))}
                 <option value="__create">+ Create Custom Letterhead&hellip;</option>
               </select>
+              {/* Pipeline item 5: per-draft include toggles. Shown only
+                  when a real letterhead is picked (not "none"); hidden
+                  for the plain default so the toolbar stays tidy for
+                  users who never use a letterhead. */}
+              {activeLetterhead && (
+                <>
+                  <label title="Insert the letterhead's firm name + tagline in the page header" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, cursor: 'pointer', color: 'var(--ink-soft)' }}>
+                    <input type="checkbox" checked={includeLetterheadHeader} onChange={(e) => setIncludeLetterheadHeader(e.target.checked)} style={{ marginRight: 2 }} />
+                    Header
+                  </label>
+                  <label title="Insert the letterhead's footer (address, contact, or your custom footer text) in the page footer" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, cursor: 'pointer', color: 'var(--ink-soft)' }}>
+                    <input type="checkbox" checked={includeLetterheadFooter} onChange={(e) => setIncludeLetterheadFooter(e.target.checked)} style={{ marginRight: 2 }} />
+                    Footer
+                  </label>
+                </>
+              )}
               <div className="overflow-wrap" ref={exportMenuRef}>
                 <button className="btn btn-sm" onClick={() => setShowExportMenu(!showExportMenu)}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path></svg>
@@ -1798,6 +1836,17 @@ export default function AutoDraftWorkspace() {
               <div className="field"><span className="field-label">Tagline</span><input value={newLetterheadTagline} onChange={e => setNewLetterheadTagline(e.target.value)} placeholder="e.g. Advocates & Solicitors, Mumbai" /></div>
               <div className="field"><span className="field-label">Address</span><input value={newLetterheadAddress} onChange={e => setNewLetterheadAddress(e.target.value)} placeholder="e.g. 4th Floor, Nariman Point, Mumbai 400021" /></div>
               <div className="field"><span className="field-label">Contact (Email / Phone)</span><input value={newLetterheadContact} onChange={e => setNewLetterheadContact(e.target.value)} placeholder="e.g. contact@firm.com · +91 98765 43210" /></div>
+              {/* Pipeline item 5: custom footer text, overrides the
+                  auto-assembled address + contact line when supplied. */}
+              <div className="field"><span className="field-label">Footer (optional, overrides address/contact)</span>
+                <textarea
+                  value={newLetterheadFooter}
+                  onChange={e => setNewLetterheadFooter(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Confidential &amp; privileged · Not for circulation · Page %p"
+                  style={{ fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5, resize: 'vertical', width: '100%', padding: '8px 10px', border: '1px solid var(--rule)', borderRadius: 6, background: 'var(--paper)', color: 'var(--ink)' }}
+                />
+              </div>
               {letterheadFormError && <div style={{ fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>{letterheadFormError}</div>}
             </div>
             <div className="modal-footer">
