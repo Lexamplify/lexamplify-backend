@@ -35,7 +35,15 @@ export default function Contracts() {
   // live cards at the top of Past Reviews with their own progress bar
   // and stage line. Polled every 2s while any job is live, so completed
   // ones flip over to the persisted shape without manual refresh.
-  const [active, setActive] = useState([]);
+  // null = first fetch hasn't landed yet (don't render anything that
+  // depends on it); [] = fetch landed and there's nothing in flight.
+  // This stops the inline panel from FLICKERING on re-mount: between
+  // navigating in and the first /active response, the user used to
+  // briefly see the "Start a new contract review" empty state before
+  // the panel re-appeared.
+  const [active, setActive] = useState(null);
+  // Error from the one-click submit (fetch failure, 401, 429, etc).
+  const [submitError, setSubmitError] = useState('');
 
   // Dashboard / Case Vault handoff: another page can navigate to /contracts with
   // location.state = { prefillText, prefillName } to open the upload modal with
@@ -68,7 +76,15 @@ export default function Contracts() {
       const r = await fetch(`${API_BASE}/api/contract/analyses/active`, { credentials: 'include' });
       if (r.ok) {
         const d = await r.json();
-        setActive(Array.isArray(d.active) ? d.active : []);
+        // Merge server rows with any optimistic placeholders already
+        // in state. A placeholder has job_id starting with 'optim_' and
+        // sticks around until the real analyze-file POST returns the
+        // server job_id (which replaces it).
+        setActive((prev) => {
+          const serverRows = Array.isArray(d.active) ? d.active : [];
+          const stillOptim = (prev || []).filter((r2) => String(r2.job_id).startsWith('optim_'));
+          return [...stillOptim, ...serverRows];
+        });
       }
     } catch { /* ignore */ }
   }, []);
@@ -80,24 +96,97 @@ export default function Contracts() {
   // 2s cadence is fine — the job store writes at every stage boundary
   // and OCR page completion, so the user sees real motion.
   useEffect(() => {
-    if (active.length === 0) return undefined;
+    if (!active || active.length === 0) return undefined;
     const t = setInterval(async () => {
       await loadActive();
-      // When a job disappears from /active, it finished — refetch /past
-      // so the new row shows up in Past Reviews immediately.
-      // (loadActive already updated `active`, so this reads the latest.)
     }, 2000);
     return () => clearInterval(t);
-  }, [active.length, loadActive]);
+  }, [active, loadActive]);
 
   // Also refetch Past when an active job vanishes (completed → persisted).
   const prevActiveIdsRef = useRef('');
   useEffect(() => {
+    if (!active) return;
     const nowIds = active.map((a) => a.job_id).sort().join(',');
     const prev = prevActiveIdsRef.current;
     if (prev && prev !== nowIds) loadPast();
     prevActiveIdsRef.current = nowIds;
   }, [active, loadPast]);
+
+  // Submit a file for analysis. Called by UploadModal on click. We
+  // insert an optimistic placeholder into `active` SYNCHRONOUSLY so
+  // the inline panel appears before the backend has even been contacted
+  // — the modal closes instantly, no awkward "modal plus panel visible
+  // at the same time" moment the user flagged. The real fetch resolves
+  // in the background and the server job_id replaces the placeholder.
+  const submitAnalysis = useCallback(async ({ file, playbook, scanMode, text, name }) => {
+    setSubmitError('');
+    // Optimistic placeholder — opens the inline panel the instant the
+    // modal closes.
+    const optimId = `optim_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const placeholder = {
+      job_id: optimId,
+      status: 'processing',
+      progress: 1,
+      stage: file ? `Uploading ${file.name}…` : 'Starting the review…',
+      document_name: file ? file.name : (name || 'Pasted contract'),
+      scan_strategy: scanMode,
+      created_at: Date.now() / 1000,
+      updated_at: Date.now() / 1000,
+    };
+    setActive((prev) => [placeholder, ...(prev || [])]);
+
+    try {
+      let data;
+      if (file) {
+        const fd = new FormData();
+        fd.append('file', file);
+        if (playbook) fd.append('playbook', playbook);
+        fd.append('scanStrategy', scanMode);
+        const res = await fetch(`${API_BASE}/api/contract/analyze-file`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'X-CSRF-TOKEN': csrf() },
+          body: fd,
+        });
+        if (res.status === 401) throw new Error('Your session has expired. Please sign in again.');
+        data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.job_id) throw new Error(data.message || 'The analysis could not be started.');
+      } else {
+        const res = await fetch(`${API_BASE}/api/contract/analyze`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+          body: JSON.stringify({ text: text.trim(), scanStrategy: scanMode }),
+        });
+        if (res.status === 401) throw new Error('Your session has expired. Please sign in again.');
+        data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.job_id) throw new Error(data.message || 'The analysis could not be started.');
+      }
+
+      try {
+        sessionStorage.setItem(`contract_name_${data.job_id}`, file ? file.name : (name || 'Pasted contract'));
+      } catch { /* ignore */ }
+      try {
+        const { useJobsStore } = await import('../stores/useJobsStore.js');
+        useJobsStore.getState().register(data.job_id, 'contract', {
+          title: file ? file.name : (name || 'Pasted contract'),
+        });
+      } catch { /* ignore */ }
+
+      // Replace the optimistic row with a stub carrying the real job_id,
+      // then kick a fresh /active poll so the stage/progress bind to the
+      // backend's own numbers on the next render.
+      setActive((prev) => (prev || []).map((r) =>
+        r.job_id === optimId
+          ? { ...r, job_id: data.job_id, status: 'processing', stage: 'Reading document…' }
+          : r
+      ));
+      loadActive();
+    } catch (e) {
+      // Drop the placeholder and surface the error inline.
+      setActive((prev) => (prev || []).filter((r) => r.job_id !== optimId));
+      setSubmitError(e.message || 'Could not start the analysis.');
+    }
+  }, [loadActive]);
 
   const deleteOne = async (jobId) => {
     try {
@@ -120,15 +209,27 @@ export default function Contracts() {
         <button className="lx-btn lx-btn--gold" onClick={() => setUpload(true)}><Ic.Upload size={15} /> Upload contract</button>
       </div>
 
+      {submitError && (
+        <div role="alert" style={{
+          margin: '16px 0', padding: '12px 16px',
+          background: 'rgba(220, 60, 60, 0.08)', border: '1px solid rgba(220, 60, 60, 0.3)',
+          color: 'var(--risk, #b53535)', borderRadius: 10, fontSize: 13,
+        }}>
+          {submitError}
+        </div>
+      )}
       <div className="lx-section-head lx-mt-xl"><h3>Review a contract</h3></div>
       <div className="lx-card lx-card--pad">
-        {active.length > 0 ? (
-          // Professional inline loading panel — appears whenever there
-          // is at least one in-flight analysis. Replaces the "Start a
-          // new contract review" empty state so the user has one clear
-          // thing to look at. If several jobs are running we show the
-          // most-recent one up top and list the rest below as compact
-          // progress rows.
+        {active === null ? (
+          // First /active fetch hasn't landed yet — show a quiet
+          // placeholder instead of the empty state so re-mounting the
+          // page while an analysis is in-flight doesn't flash the
+          // "Start a new contract review" copy for 50-200 ms before
+          // the panel appears.
+          <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+            Loading your contract reviews…
+          </div>
+        ) : active.length > 0 ? (
           <InlineAnalysisPanel
             job={active[0]}
             others={active.slice(1)}
@@ -153,18 +254,18 @@ export default function Contracts() {
           In-flight jobs render as live rows at the TOP (orange progress), then
           completed rows below. One section, one list, so the user doesn't have
           to look in two places for "what's being reviewed right now". */}
-      {!loading && (active.length > 0 || past.length > 0) && (
+      {!loading && (((active || []).length > 0) || past.length > 0) && (
         <>
           <div className="lx-section-head lx-mt-xl">
             <h3>Past reviews</h3>
             <span className="lx-muted" style={{ fontSize: 13 }}>
-              {active.length > 0 && `${active.length} in progress · `}{past.length} saved
+              {(active || []).length > 0 && `${(active || []).length} in progress · `}{past.length} saved
             </span>
           </div>
           <div className="lx-card lx-card--pad">
             <div className="lx-list">
-              {active.map((a) => (
-                <LiveReviewRow key={`live-${a.job_id}`} job={a} onOpen={() => navigate('/contracts/' + a.job_id)} />
+              {(active || []).map((a) => (
+                <LiveReviewRow key={`live-${a.job_id}`} job={a} onOpen={() => a.job_id && !String(a.job_id).startsWith('optim_') && navigate('/contracts/' + a.job_id)} />
               ))}
               {past.map((a) => (
                 <div className="lx-item" key={a.id} style={{ padding: '14px 2px', cursor: 'pointer' }} onClick={() => navigate('/contracts/' + a.job_id)}>
@@ -198,20 +299,18 @@ export default function Contracts() {
       {upload && (
         <UploadModal
           onClose={() => { setUpload(false); setHandoffText(''); setHandoffName(''); }}
-          // Close the modal AND stay on the Contracts page so the user
-          // sees the inline loading panel + the live row in Past Reviews.
-          // The user explicitly asked for this flow: the modal should
-          // vanish, and the Contracts page itself should show "proper
-          // good looking professional stylish loading" with live traces.
-          // (The old behavior auto-navigated to the detail page, which
-          // took the user away from the overview they wanted to see.)
-          onStarted={(jobId) => {
+          // One-click submit: the modal just hands up the picked file +
+          // strategy and closes IMMEDIATELY. Parent inserts an optimistic
+          // placeholder into `active` synchronously so the inline panel
+          // appears before the backend has even been contacted. The
+          // actual /analyze-file fetch runs in the parent so it survives
+          // the modal unmount — no race between "did the backend return
+          // the job_id yet?" and "modal is still open showing the old
+          // striped bar."
+          onSubmit={(payload) => {
             setUpload(false);
             setHandoffText(''); setHandoffName('');
-            // Kick a fresh poll of /active so the inline panel + Past
-            // Reviews row appear immediately instead of waiting up to
-            // 2s for the next polling tick.
-            loadActive();
+            submitAnalysis(payload);
           }}
           prefillText={handoffText}
           prefillName={handoffName}
@@ -347,34 +446,18 @@ const SCAN_MODES = [
   { id: 'aggressive', label: 'Aggressive', desc: 'Also flags stylistic and low-materiality items. High-value contracts.' },
 ];
 
-function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' }) {
+function UploadModal({ onClose, onSubmit, prefillText = '', prefillName = '' }) {
   const [file, setFile] = useState(null);
   const [playbook, setPlaybook] = useState(null);
   const [scanMode, setScanMode] = useState('balanced');
   const [text, setText] = useState(prefillText || '');
-  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const fileRef = useRef(null);
   const playbookRef = useRef(null);
-  // Progress UI shown while the modal is busy. "Starting review…" alone with
-  // no feedback for 2-4 minutes on a scanned PDF reads as "stuck" even though
-  // the server is working; a stage + elapsed timer makes the wait legible.
-  const [stage, setStage] = useState('');
-  const [stageHint, setStageHint] = useState('');
-  const [elapsed, setElapsed] = useState(0);
-  const [minimized, setMinimized] = useState(false);  // user asked to work elsewhere; promise keeps running
-  const elapsedTimerRef = useRef(null);
-  const startStage = (label, hint = '') => { setStage(label); setStageHint(hint); };
-  // Start / stop the per-second elapsed counter when busy flips.
-  useEffect(() => {
-    if (busy) {
-      const t0 = Date.now();
-      setElapsed(0);
-      elapsedTimerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
-      return () => { if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current); };
-    }
-    setElapsed(0); setStage(''); setStageHint('');
-  }, [busy]);
+  // Note: the modal no longer owns the in-flight fetch, elapsed timer,
+  // minimize state, or any striped-bar UI. All of that moved to the
+  // parent (Contracts) so the modal can close INSTANTLY on click
+  // instead of blocking while the backend creates the job.
 
   const pick = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -389,183 +472,35 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
     }
   };
 
-  // Extract text from a file via /api/contract/extract-text; returns raw text.
-  const extractTextFrom = async (f) => {
-    const fd = new FormData();
-    fd.append('file', f);
-    const r = await fetch(`${API_BASE}/api/contract/extract-text`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'X-CSRF-TOKEN': csrf() },
-      body: fd,
-    });
-    if (r.status === 401) throw new Error('Your session has expired. Please sign in again.');
-    if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      throw new Error(d.message || `We could not read ${f.name}. Try a PDF or Word file with selectable text.`);
-    }
-    const d = await r.json();
-    const out = (d.raw_text || d.text || '').trim();
-    if (!out) throw new Error(`No readable text could be extracted from ${f.name}.`);
-    return out;
-  };
-
-  const start = async () => {
+  // One-click submit — validate locally, hand the payload up to the
+  // parent, close in the same tick. Parent fires the fetch, inserts
+  // the optimistic row into Past Reviews, and shows the inline panel.
+  const start = () => {
     setErr('');
     if (!file && !text.trim()) { setErr('Upload a file or paste contract text to begin.'); return; }
-    setBusy(true);
-    try {
-      // Fast path for file uploads — ONE multipart POST to /analyze-file.
-      // The backend creates the job_id synchronously (<10 ms), spawns the
-      // OCR+analyze pipeline on a background thread, and returns the id
-      // right away. The modal can close instantly and the Contract page
-      // picks up progress from /analyses/active + the SSE stream.
-      // Previous flow was /extract-text (sync OCR, up to 10 min) then
-      // /analyze — the modal couldn't close until OCR was done.
-      if (file) {
-        const fd = new FormData();
-        fd.append('file', file);
-        if (playbook) fd.append('playbook', playbook);
-        fd.append('scanStrategy', scanMode);
-        const res = await fetch(`${API_BASE}/api/contract/analyze-file`, {
-          method: 'POST', credentials: 'include',
-          headers: { 'X-CSRF-TOKEN': csrf() },
-          body: fd,
-        });
-        if (res.status === 401) throw new Error('Your session has expired. Please sign in again.');
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.job_id) {
-          throw new Error(data.message || 'The analysis could not be started. Please try again.');
-        }
-        try {
-          sessionStorage.setItem(`contract_name_${data.job_id}`, file.name);
-        } catch { /* ignore */ }
-        try {
-          const { useJobsStore } = await import('../stores/useJobsStore.js');
-          useJobsStore.getState().register(data.job_id, 'contract', { title: file.name });
-        } catch { /* ignore */ }
-        onStarted(data.job_id);
-        return;
-      }
-
-      // Pasted-text path — unchanged, since there's no file to upload.
-      const contractText = text.trim();
-      const res = await fetch(`${API_BASE}/api/contract/analyze`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ text: contractText, scanStrategy: scanMode }),
-      });
-      if (res.status === 401) throw new Error('Your session has expired. Please sign in again.');
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.job_id) {
-        throw new Error(data.message || 'The analysis could not be started. Please try again.');
-      }
-      try {
-        sessionStorage.setItem(`contract_raw_${data.job_id}`, contractText);
-        sessionStorage.setItem(`contract_name_${data.job_id}`, prefillName || 'Pasted contract');
-      } catch { /* ignore */ }
-      try {
-        const { useJobsStore } = await import('../stores/useJobsStore.js');
-        useJobsStore.getState().register(data.job_id, 'contract', {
-          title: prefillName || 'Pasted contract',
-        });
-      } catch { /* ignore */ }
-      onStarted(data.job_id);
-    } catch (e) {
-      setErr(e.message || 'Something went wrong. Please try again.');
-      setBusy(false);
-    }
+    onSubmit({
+      file, playbook, scanMode,
+      text: text.trim(),
+      name: file ? file.name : (prefillName || 'Pasted contract'),
+    });
   };
 
   return (
-    minimized ? (
-      /* Floating pill — the modal is hidden but the async extract+analyze
-         promise is still running in this component's closures, so state
-         updates (stage, elapsed) keep updating this pill live. The user
-         can navigate anywhere in the app; the pill stays put because this
-         component is still mounted. */
-      <div
-        role="status"
-        aria-live="polite"
-        style={{
-          position: 'fixed', bottom: 20, right: 20, zIndex: 1000,
-          background: 'var(--paper)', border: '1px solid var(--rule)',
-          borderRadius: 14, padding: '14px 18px', minWidth: 320, maxWidth: 400,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-          display: 'flex', flexDirection: 'column', gap: 10,
-        }}
-      >
-        <div style={{ width: '100%', height: 3, background: 'rgba(0,0,0,0.08)', borderRadius: 999, overflow: 'hidden', position: 'relative' }}>
-          <div style={{
-            position: 'absolute', top: 0, left: 0, height: '100%', width: '40%',
-            background: 'var(--accent)', borderRadius: 999,
-            animation: 'lxBarSlide 1.6s ease-in-out infinite',
-          }} />
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500, lineHeight: 1.3 }}>
-          {stage || 'Reviewing contract…'}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '.04em' }}>
-          {`${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')} elapsed · running in the background`}
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="lx-btn lx-btn--ghost lx-btn--sm" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setMinimized(false)}>
-            Open review
-          </button>
-        </div>
-        <style>{`@keyframes lxBarSlide { 0% { left: -40%; } 100% { left: 100%; } }`}</style>
-      </div>
-    ) : (
     <Modal
       title="Review a contract"
-      onClose={busy ? () => {} : onClose}
+      onClose={onClose}
       footer={<>
-        <button className="lx-btn lx-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button>
-        {busy && (
-          <button className="lx-btn lx-btn--ghost" onClick={() => setMinimized(true)} title="Keep working in the background and let me use the rest of the app">
-            Minimize
-          </button>
-        )}
-        <button className="lx-btn lx-btn--primary" onClick={start} disabled={busy}>{busy ? 'Working…' : 'Analyze contract'}</button>
+        <button className="lx-btn lx-btn--ghost" onClick={onClose}>Cancel</button>
+        <button className="lx-btn lx-btn--primary" onClick={start}>Analyze contract</button>
       </>}
     >
       {err && <div role="alert" style={{ marginBottom: 12, color: 'var(--risk)', fontSize: 13 }}>{err}</div>}
-      {busy && (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 14, padding: '28px 16px', borderRadius: 14,
-          background: 'var(--paper-2)', border: '1px solid var(--rule)',
-          marginBottom: 16,
-        }} role="status" aria-live="polite">
-          {/* Indeterminate progress bar — real stage reporting kicks in on the
-              detail page after the job starts; here we just need the user to
-              know work is happening. */}
-          <div style={{ width: '100%', height: 4, background: 'rgba(0,0,0,0.08)', borderRadius: 999, overflow: 'hidden', position: 'relative' }}>
-            <div style={{
-              position: 'absolute', top: 0, left: 0, height: '100%', width: '40%',
-              background: 'var(--accent)', borderRadius: 999,
-              animation: 'lxBarSlide 1.6s ease-in-out infinite',
-            }} />
-          </div>
-          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 17, color: 'var(--ink)', textAlign: 'center' }}>
-            {stage || 'Preparing the review…'}
-          </div>
-          {stageHint && (
-            <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', maxWidth: 420, lineHeight: 1.5 }}>
-              {stageHint}
-            </div>
-          )}
-          <div style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: '.04em' }}>
-            {`${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')} elapsed · you can leave this tab open — it keeps working in the background`}
-          </div>
-          <style>{`@keyframes lxBarSlide { 0% { left: -40%; } 100% { left: 100%; } }`}</style>
-        </div>
-      )}
 
       {/* Main contract file / paste */}
       <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.txt" style={{ display: 'none' }} onChange={pick} />
       <div
-        onClick={() => !busy && fileRef.current && fileRef.current.click()}
-        style={{ border: '1.5px dashed var(--rule)', borderRadius: 14, padding: '36px 20px', textAlign: 'center', background: 'var(--paper-2)', cursor: busy ? 'default' : 'pointer' }}
+        onClick={() => fileRef.current && fileRef.current.click()}
+        style={{ border: '1.5px dashed var(--rule)', borderRadius: 14, padding: '36px 20px', textAlign: 'center', background: 'var(--paper-2)', cursor: 'pointer' }}
       >
         <div className="lx-empty__ico" style={{ margin: '0 auto 14px' }}><Ic.Upload size={22} /></div>
         <div style={{ fontFamily: 'var(--font-serif)', fontSize: 17, color: 'var(--ink)' }}>
@@ -618,8 +553,8 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
         </label>
         <input ref={playbookRef} type="file" accept=".pdf,.doc,.docx,.txt" style={{ display: 'none' }} onChange={pickPlaybook} />
         <div
-          onClick={() => !busy && playbookRef.current && playbookRef.current.click()}
-          style={{ border: '1px dashed var(--rule)', borderRadius: 10, padding: '14px 16px', background: 'var(--bg-card)', cursor: busy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
+          onClick={() => playbookRef.current && playbookRef.current.click()}
+          style={{ border: '1px dashed var(--rule)', borderRadius: 10, padding: '14px 16px', background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
         >
           <Ic.Doc size={16} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -643,6 +578,5 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
         </div>
       </div>
     </Modal>
-    )
   );
 }

@@ -775,22 +775,49 @@ def test_contract_detail_loading_panel_matches_new_theme():
 
 
 def test_upload_modal_posts_to_analyze_file_and_closes():
-    """The UploadModal start() path must POST to /analyze-file (one
-    multipart call) instead of the old two-step /extract-text +
-    /analyze. The old flow kept the modal open through the whole OCR
-    pass; this one lets onStarted() close it in milliseconds."""
+    """The UploadModal must close INSTANTLY on click — it must not own
+    the in-flight fetch, the busy/minimized/elapsed state, or the
+    striped-bar 'Preparing the review…' UI the user flagged. The parent
+    (Contracts) owns the submission, closes the modal in the same tick,
+    and inserts an optimistic row into `active` so the inline panel
+    appears before the backend has even been contacted.
+    """
     src = open("frontend/src/pages/Contracts.jsx", encoding="utf-8").read()
     assert "/api/contract/analyze-file" in src, (
-        "UploadModal stopped POSTing to /analyze-file — it will block "
-        "the modal open while OCR runs again"
+        "Contracts stopped POSTing to /analyze-file — it will block the "
+        "modal open while OCR runs again"
     )
-    # The Contracts page's onStarted must set upload=false WITHOUT
-    # navigating away — the user wants to stay on the overview page and
-    # see the inline loading + Past Reviews live row.
-    assert "setUpload(false)" in src, "onStarted no longer closes the modal"
-    assert "loadActive" in src, (
-        "Contracts page no longer polls /analyses/active — the inline "
-        "loading panel and Past Reviews live row have no data source"
+    # The two old states must stay removed from UploadModal.
+    assert "setMinimized" not in src, (
+        "The 'Minimize' / floating-pill flow is back in UploadModal — "
+        "the modal is no longer the owner of the long-running job"
+    )
+    assert "Preparing the review" not in src, (
+        "The 'Preparing the review…' striped-bar UI is back in UploadModal "
+        "— the user flagged this exact string as the 'old skin' that must "
+        "not appear anymore"
+    )
+    # Modal props must still be the one-click shape (onSubmit, not
+    # onStarted-with-job_id). onStarted implied the modal awaited the
+    # backend; onSubmit hands up the picked payload and closes.
+    assert "onSubmit" in src, (
+        "UploadModal no longer uses the one-click onSubmit callback — "
+        "it's back to awaiting the backend before closing"
+    )
+    assert "submitAnalysis" in src, (
+        "Contracts.jsx no longer has submitAnalysis — the parent-owned "
+        "submission flow is gone, so the modal is back to running the "
+        "fetch itself (and blocking its own close)"
+    )
+    assert "optim_" in src, (
+        "Optimistic placeholder flow was removed — the inline panel will "
+        "wait on the backend again before appearing"
+    )
+    # The null-sentinel init stops the empty-state flicker on remount.
+    assert "useState(null)" in src and "active === null" in src, (
+        "`active` lost its null-initial sentinel — the Contracts page "
+        "will flash the empty state on re-mount before the first /active "
+        "fetch lands"
     )
     assert "InlineAnalysisPanel" in src and "LiveReviewRow" in src, (
         "Live-progress components removed — Past Reviews is empty during "
