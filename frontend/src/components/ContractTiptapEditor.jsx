@@ -12,6 +12,7 @@ import TextAlign from '@tiptap/extension-text-align';
 // same place as TextStyle instead of written from scratch.
 import { TextStyle, FontSize } from '@tiptap/extension-text-style';
 import FontFamily from '@tiptap/extension-font-family';
+import Highlight from '@tiptap/extension-highlight';
 import { RiskDecoration, updateRiskDecorations } from '../tiptap/riskDecorationExtension.js';
 import { ClauseFlash } from '../tiptap/clauseFlashExtension.js';
 import { AiInsertion, AiDeletion, TrackChangesCommands } from '../tiptap/trackChangesMarks.js';
@@ -134,6 +135,20 @@ function ContractEditorToolbar({ editor }) {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" /></svg>
       </ToolbarButton>
       <div className="toolbar-divider" />
+      {/* Headline / subheadline / sub-sub buttons (pipeline item 4). These
+          existed as CSS targets but had no toolbar entry — the user could
+          only create a heading by paste or markdown shortcut, which they
+          correctly flagged as "not working". */}
+      <ToolbarButton title="Headline (H1)" active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+        <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '-.02em' }}>H1</span>
+      </ToolbarButton>
+      <ToolbarButton title="Subheadline (H2)" active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+        <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '-.02em' }}>H2</span>
+      </ToolbarButton>
+      <ToolbarButton title="Clause heading (H3)" active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+        <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '-.02em' }}>H3</span>
+      </ToolbarButton>
+      <div className="toolbar-divider" />
       <ToolbarButton title="Bold" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}>
         <strong style={{ fontSize: '13px' }}>B</strong>
       </ToolbarButton>
@@ -142,6 +157,19 @@ function ContractEditorToolbar({ editor }) {
       </ToolbarButton>
       <ToolbarButton title="Underline" active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}>
         <span style={{ textDecoration: 'underline', fontSize: '13px' }}>U</span>
+      </ToolbarButton>
+      <ToolbarButton title="Highlight" active={editor.isActive('highlight')} onClick={() => editor.chain().focus().toggleHighlight().run()}>
+        <span style={{ fontSize: '13px', background: '#fef08a', padding: '0 3px', borderRadius: 2 }}>H</span>
+      </ToolbarButton>
+      <div className="toolbar-divider" />
+      <ToolbarButton title="Bulleted list" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="6" r="1.2" /><circle cx="4" cy="12" r="1.2" /><circle cx="4" cy="18" r="1.2" /><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /></svg>
+      </ToolbarButton>
+      <ToolbarButton title="Numbered list" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><text x="2" y="8" fontSize="7" fontWeight="700" fill="currentColor" stroke="none">1</text><text x="2" y="14" fontSize="7" fontWeight="700" fill="currentColor" stroke="none">2</text><text x="2" y="20" fontSize="7" fontWeight="700" fill="currentColor" stroke="none">3</text><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /></svg>
+      </ToolbarButton>
+      <ToolbarButton title="Clear formatting" onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}>
+        <span style={{ fontSize: '10px', letterSpacing: '-.02em' }}>Tx</span>
       </ToolbarButton>
       <div className="toolbar-divider" />
       <ToolbarButton title="Align left" active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()}>
@@ -399,12 +427,23 @@ function ContractTiptapEditor({
     {
       extensions: [
         StarterKit,
-        TextAlign.configure({ types: ['paragraph'] }),
+        // Allow TextAlign on headings too — headline / subheadline are h1/h2;
+        // without 'heading' in the types list the Align buttons silently
+        // no-op whenever the caret sits inside one.
+        TextAlign.configure({ types: ['paragraph', 'heading'] }),
         // TextStyle must come before FontFamily/FontSize — both store their
         // attribute on the textStyle mark this extension defines.
         TextStyle,
         FontFamily,
         FontSize,
+        // Yellow highlight toolbar button (pipeline item 4 — "highlight was
+        // not working"). CommentHighlight is a DIFFERENT mark (used to
+        // tether review comments) and uses its own color/id attributes;
+        // this plain Highlight is the editor-only "pick a word and shade it
+        // yellow like a textbook" one. Keeping them separate avoids the
+        // toolbar accidentally picking up a yellow block when the user
+        // intended to add a comment.
+        Highlight.configure({ multicolor: false }),
         // onRiskClickRef always holds the latest onRiskClick (kept current
         // via the effect above); this closure is only ever invoked later,
         // from a real editor click, never read synchronously during render.
