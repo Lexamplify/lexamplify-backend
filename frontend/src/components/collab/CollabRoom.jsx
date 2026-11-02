@@ -241,6 +241,11 @@ export default function CollabRoom({ caseId }) {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadNote, setUploadNote] = useState(''); // transient "Uploading foo.pdf…" line
+  // Files the user picked but hasn't sent yet. They stay staged in the
+  // composer (previewed as chips) so the user can also type text and
+  // @mention someone before pressing Send — same flow as WhatsApp /
+  // Slack / Gmail. Only on Send do we upload + share.
+  const [pendingFiles, setPendingFiles] = useState([]);
   const feedRef = useRef(null);
   const fileInputRef = useRef(null);
   const clearUnread = useCollabStore((s) => s.clear);
@@ -285,29 +290,63 @@ export default function CollabRoom({ caseId }) {
 
   const recipientNames = Object.fromEntries(recipients.map((r) => [r.user_id, r.name || `User ${r.user_id}`]));
 
-  // Upload one or more files from the user's machine and drop each one
-  // into the room as a share-kind message. Reuses the existing Vault
-  // upload endpoint + /api/collab/share so privacy, notifications,
-  // mentions and audit all flow through the single share service — no
-  // new backend path, no bespoke rules to reconcile later.
-  //
-  // The composer draft (if any) rides along as the share body on the
-  // FIRST uploaded file, so a user can type "see page 3" + attach the
-  // PDF and have both land as one card. Subsequent files in the same
-  // batch get a plain "Attached <filename>" caption. Current mentions
-  // make all of them private DMs to those recipients; '@all' makes them
-  // public broadcasts — same rule as regular text messages.
-  const uploadAndShare = async (files) => {
+  // Picking files just STAGES them in the composer — no upload yet, so
+  // the user can also type text + @mention someone first. Send does the
+  // actual upload + share. This matches how WhatsApp / Slack / Gmail
+  // handle attachments: pick, type, send.
+  const stagePickedFiles = (files) => {
     if (!files || !files.length) return;
-    setUploading(true); setError('');
-    const broadcast = /(^|\s)@(all|everyone|channel)\b/i.test(draft);
-    const typedBody = draft.trim();
+    setPendingFiles((prev) => [...prev, ...files]);
+    // Reset the input so picking the SAME file twice still fires onChange.
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+  const removePendingFile = (idx) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // The one Send path. Three shapes:
+  //   (a) text only                      → POST /messages (unchanged).
+  //   (b) text + file(s)                 → upload each file, share each
+  //       as a vault_doc card; the TYPED text + current @mentions ride
+  //       on the first card so one Send produces one card per file.
+  //   (c) file(s) only                   → same as (b) with the typed
+  //       body replaced by 'Attached <name>'.
+  // Either way, @all makes the whole batch public; specific mentions
+  // make it private DMs to those recipients.
+  const send = async () => {
+    const body = draft.trim();
+    const files = pendingFiles;
+    if (!body && files.length === 0) return;
+
+    // No attachments → plain text message.
+    if (files.length === 0) {
+      setSending(true); setError('');
+      try {
+        const r = await fetch(`${API_BASE}/api/collab/cases/${caseId}/messages`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+          body: JSON.stringify({ body, mentions: mentionedIds }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.message || 'Could not send message.');
+        setMessages((prev) => [...prev, j.message]);
+        setDraft(''); setMentionedIds([]);
+      } catch (e) {
+        setError(e.message || 'Could not send message.');
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Has attachments → upload + share each.
+    setUploading(true); setSending(true); setError('');
+    const broadcast = /(^|\s)@(all|everyone|channel)\b/i.test(body);
     const mentionsForShare = broadcast ? [] : mentionedIds;
     try {
       for (let i = 0; i < files.length; i += 1) {
         const f = files[i];
         setUploadNote(`Uploading ${f.name}… (${i + 1}/${files.length})`);
-        // 1. POST to the Vault upload endpoint — gets a vault_doc id back.
         const fd = new FormData();
         fd.append('file', f);
         fd.append('case_id', String(caseId));
@@ -319,10 +358,10 @@ export default function CollabRoom({ caseId }) {
         const upJ = await up.json().catch(() => ({}));
         if (!up.ok || !upJ.id) throw new Error(upJ.message || `Could not upload ${f.name}.`);
 
-        // 2. Share the newly-uploaded vault_doc into the room. The first
-        //    file carries the typed body (so "see page 3 📎 contract.pdf"
-        //    is one message); the rest get a plain caption.
-        const body = i === 0 && typedBody ? typedBody : `Attached ${f.name}`;
+        // Only the first file carries the typed body; the rest get a
+        // plain caption so the feed shows "<typed text>" on card 1 then
+        // "Attached <file2>" / "Attached <file3>" on the rest.
+        const cardBody = (i === 0 && body) ? body : `Attached ${f.name}`;
         const share = await fetch(`${API_BASE}/api/collab/share`, {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
@@ -331,53 +370,30 @@ export default function CollabRoom({ caseId }) {
             resource_type: 'vault_doc',
             resource_id: upJ.id,
             recipient_user_ids: mentionsForShare,
-            body,
+            body: cardBody,
           }),
         });
         const shareJ = await share.json().catch(() => ({}));
         if (!share.ok) throw new Error(shareJ.message || `Could not share ${f.name} into the room.`);
 
-        // Hydrate the returned message with the filename we just uploaded
-        // so the feed card can show "📎 contract.pdf" + an image preview
-        // when it's a png/jpg/... instead of the raw "vault_doc:42" label.
         const msg = shareJ.message || {};
-        msg.resources = (msg.resources || []).map((r) => ({
-          ...r,
+        msg.resources = (msg.resources || []).map((rr) => ({
+          ...rr,
           filename: upJ.filename || f.name,
           name: upJ.title || f.name,
         }));
         setMessages((prev) => [...prev, msg]);
       }
-      // Only clear the composer once the whole batch landed, so a mid-
-      // batch failure leaves the typed draft + mentions in place for retry.
-      setDraft(''); setMentionedIds([]);
+      // All files landed → clear the composer.
+      setDraft(''); setMentionedIds([]); setPendingFiles([]);
     } catch (e) {
-      setError(e.message || 'Could not attach file.');
+      // Partial failure: keep the composer intact so the user can retry
+      // without re-typing or re-picking files.
+      setError(e.message || 'Could not send attachment.');
     } finally {
       setUploading(false);
-      setUploadNote('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const send = async () => {
-    const body = draft.trim();
-    if (!body) return;
-    setSending(true); setError('');
-    try {
-      const r = await fetch(`${API_BASE}/api/collab/cases/${caseId}/messages`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ body, mentions: mentionedIds }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.message || 'Could not send message.');
-      setMessages((prev) => [...prev, j.message]);
-      setDraft(''); setMentionedIds([]);
-    } catch (e) {
-      setError(e.message || 'Could not send message.');
-    } finally {
       setSending(false);
+      setUploadNote('');
     }
   };
 
@@ -454,13 +470,45 @@ export default function CollabRoom({ caseId }) {
       </div>
 
       <div style={{ marginTop: 12 }}>
+        {/* Pending-files strip — appears above the textarea so the user
+            can see what they picked, type a caption, @mention someone,
+            then press Send. Click × to remove a file before sending. */}
+        {pendingFiles.length > 0 && (
+          <div
+            style={{
+              display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8,
+              padding: '8px 10px', border: '1px dashed var(--rule)',
+              borderRadius: 10, background: 'var(--paper-2)',
+            }}
+          >
+            {pendingFiles.map((f, idx) => {
+              const ext = _extOf(f.name);
+              const isImg = IMAGE_EXTS.has(ext);
+              // Only build an object URL when it will actually render —
+              // revoke in the chip's unmount hook below.
+              return (
+                <PendingFileChip
+                  key={`${f.name}-${idx}`}
+                  file={f}
+                  isImg={isImg}
+                  icon={_iconFor(ext)}
+                  onRemove={() => removePendingFile(idx)}
+                  disabled={uploading || sending}
+                />
+              );
+            })}
+          </div>
+        )}
         <MentionInput
           caseId={caseId}
           value={draft}
           onChange={setDraft}
           mentionedIds={mentionedIds}
           onMentionsChange={setMentionedIds}
-          disabled={sending}
+          disabled={sending || uploading}
+          placeholder={pendingFiles.length > 0
+            ? 'Add a message with your attachment… use @ to mention a colleague.'
+            : 'Write a message… use @ to mention a colleague.'}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -470,9 +518,14 @@ export default function CollabRoom({ caseId }) {
               // glance whether this will be a channel broadcast or a
               // private DM-style note before clicking Send.
               const broadcastInBody = /(^|\s)@(all|everyone|channel)\b/i.test(draft);
-              if (broadcastInBody) return 'Public — everyone on this case will see it.';
-              if (mentionedIds.length > 0) return `Private — only you${mentionedIds.length === 1 ? ' and 1 mentioned user' : ` and ${mentionedIds.length} mentioned users`} (plus firm seniors) will see it.`;
-              return draft.trim() ? 'Public (open channel) — mention someone with @ to make it private, or type @all to broadcast.' : '';
+              const noun = pendingFiles.length > 0
+                ? (pendingFiles.length === 1 ? 'this attachment' : `these ${pendingFiles.length} attachments`)
+                : 'it';
+              if (broadcastInBody) return `Public — everyone on this case will see ${noun}.`;
+              if (mentionedIds.length > 0) return `Private — only you${mentionedIds.length === 1 ? ' and 1 mentioned user' : ` and ${mentionedIds.length} mentioned users`} (plus firm seniors) will see ${noun}.`;
+              return (draft.trim() || pendingFiles.length > 0)
+                ? `Public (open channel) — mention someone with @ to make ${noun} private, or type @all to broadcast.`
+                : '';
             })()}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -484,28 +537,88 @@ export default function CollabRoom({ caseId }) {
               type="file"
               multiple
               style={{ display: 'none' }}
-              onChange={(e) => uploadAndShare(Array.from(e.target.files || []))}
+              onChange={(e) => stagePickedFiles(Array.from(e.target.files || []))}
             />
             <button
               type="button"
               className="lx-btn lx-btn--ghost"
               disabled={uploading || sending}
               onClick={() => fileInputRef.current?.click()}
-              title="Attach a document, image, or any file. It uploads to this case's Vault and appears here as a shareable card."
+              title="Attach documents, images, or any files. They stage below the composer so you can type a message and @mention a colleague before sending."
             >
-              {uploading ? 'Uploading…' : '📎 Attach'}
+              📎 Attach
             </button>
             <button
               className="lx-btn lx-btn--primary"
               type="button"
-              disabled={sending || uploading || !draft.trim()}
+              disabled={sending || uploading || (!draft.trim() && pendingFiles.length === 0)}
               onClick={send}
             >
-              {sending ? 'Sending…' : 'Send message'}
+              {uploading
+                ? 'Sending…'
+                : (pendingFiles.length > 0
+                  ? `Send ${pendingFiles.length === 1 ? 'attachment' : `${pendingFiles.length} attachments`}`
+                  : 'Send message')}
             </button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Chip for a file the user picked but hasn't sent yet. Shows a thumbnail
+// for images, an icon + extension for everything else, with a × button
+// to drop it from the pending list.
+function PendingFileChip({ file, isImg, icon, onRemove, disabled }) {
+  const [thumb, setThumb] = useState(null);
+  useEffect(() => {
+    if (!isImg) return undefined;
+    const url = URL.createObjectURL(file);
+    setThumb(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, isImg]);
+  return (
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '4px 8px 4px 4px',
+        background: 'var(--paper)', border: '1px solid var(--rule)',
+        borderRadius: 8, maxWidth: 260,
+      }}
+      title={file.name}
+    >
+      {isImg && thumb ? (
+        <img
+          src={thumb}
+          alt=""
+          style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--rule)' }}
+        />
+      ) : (
+        <span style={{ fontSize: 20, width: 36, height: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          {icon}
+        </span>
+      )}
+      <span
+        style={{
+          fontSize: 12, color: 'var(--ink)', overflow: 'hidden',
+          textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160,
+        }}
+      >
+        {file.name}
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        aria-label={`Remove ${file.name}`}
+        style={{
+          border: 'none', background: 'transparent', cursor: disabled ? 'default' : 'pointer',
+          fontSize: 16, color: 'var(--muted)', padding: '0 4px', lineHeight: 1,
+        }}
+      >
+        ×
+      </button>
     </div>
   );
 }
