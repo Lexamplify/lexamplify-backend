@@ -991,12 +991,29 @@ def list_active_analyses():
                 continue
             if int(job.get("user_id") or -1) != uid:
                 continue
-            status = job.get("status")
-            if status != "failed":
-                continue
-            # Skip dismissed rows (frontend writes dismissed=true on
-            # DELETE so stale files don't keep re-appearing).
             if job.get("dismissed"):
+                continue
+            status = job.get("status")
+
+            # A job still marked 'processing' but NOT in this process's
+            # _LIVE_JOBS is an ORPHAN — its background thread died with
+            # the process that ran it (a restart, a crash, or the Flask
+            # reloader firing on a file save). Because every analysis
+            # runs as an in-process thread, a processing job whose
+            # worker_pid isn't us cannot be running anywhere. Flip it to
+            # 'failed' NOW via _load_job (which writes the 'restarted'
+            # message) so it shows as a real failed row instead of a
+            # ghost stuck at 2% forever, or vanishing entirely.
+            if status == "processing":
+                if job.get("worker_pid") == _os.getpid():
+                    # Belongs to this process but isn't live — _load_job
+                    # applies the stall/restart heuristics.
+                    job = _load_job(jid) or job
+                else:
+                    job = _fail_job(jid, "restarted")
+                status = job.get("status")
+
+            if status != "failed":
                 continue
             updated = job.get("updated_at") or 0
             if now - updated > RECENT_FAIL_WINDOW:
