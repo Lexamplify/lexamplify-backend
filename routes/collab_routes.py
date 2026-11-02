@@ -22,7 +22,9 @@ from __future__ import annotations
 import sqlite3
 import time
 
-from flask import Blueprint, current_app, g, jsonify, request
+import json
+
+from flask import Blueprint, Response, current_app, g, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from utils import lpms_store as L
@@ -366,6 +368,86 @@ def list_eligible_recipients(case_id):
         seen.add(r["user_id"])
         deduped.append(r)
     return jsonify({"recipients": deduped}), 200
+
+
+@collab_bp.route("/stream/notifications", methods=["GET"])
+@jwt_required()
+def stream_notifications():
+    """SSE channel the bell and the unread-mentions chip subscribe to.
+
+    Design: polls lpms_notifications for the current user every 2 seconds
+    and streams new rows (id > last_seen). Simpler than wiring Redis
+    pub/sub and sufficient for v1 — the same shape as the contract
+    analyzer's SSE channel (routes/contract_routes.py:742).
+
+    The frontend uses the EventSource API; its reconnect logic covers
+    the "connection dropped" case so this handler never has to retry
+    on its own."""
+    uid = _uid()
+    # Snapshot the current newest id so we don't replay the user's whole
+    # history on connect — only new events get pushed. Clients that need
+    # the history use GET /api/practice/notifications once.
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(id), 0) AS mx FROM lpms_notifications WHERE user_id = ?",
+            (uid,),
+        ).fetchone()
+        last_seen = int(row["mx"] or 0)
+    finally:
+        conn.close()
+
+    def stream():
+        yield f"data: {json.dumps({'type': 'ready', 'last_seen': last_seen})}\n\n"
+        nonlocal_last = {"id": last_seen}
+        # Open a short-lived connection per iteration to avoid holding a
+        # sqlite handle open across the whole SSE lifetime — SQLite can
+        # otherwise lock readers out during a bulk write elsewhere in
+        # the server.
+        while True:
+            try:
+                conn2 = sqlite3.connect(_db_path())
+                conn2.row_factory = sqlite3.Row
+                try:
+                    rows = conn2.execute(
+                        "SELECT id, kind, title, body, link, case_id, created_at "
+                        "FROM lpms_notifications "
+                        "WHERE user_id = ? AND id > ? "
+                        "ORDER BY id ASC LIMIT 20",
+                        (uid, nonlocal_last["id"]),
+                    ).fetchall()
+                finally:
+                    conn2.close()
+            except Exception as e:  # noqa: BLE001
+                # Transient DB hiccup — keep the stream open; the client
+                # will re-poll naturally on the next tick.
+                yield f": error {str(e)[:80]}\n\n"
+                time.sleep(2)
+                continue
+            for r in rows:
+                payload = {
+                    "type": "notification",
+                    "id": int(r["id"]),
+                    "kind": r["kind"],
+                    "title": r["title"],
+                    "body": r["body"],
+                    "link": r["link"],
+                    "case_id": r["case_id"],
+                    "at": r["created_at"],
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                nonlocal_last["id"] = int(r["id"])
+            # Heartbeat so proxies don't drop idle connections.
+            yield ": heartbeat\n\n"
+            time.sleep(2)
+
+    return Response(stream(), mimetype="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache, no-transform",
+                        "X-Accel-Buffering": "no",
+                        "Connection": "keep-alive",
+                    })
 
 
 @collab_bp.route("/share", methods=["POST", "OPTIONS"])

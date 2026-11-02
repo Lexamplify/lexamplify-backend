@@ -6,6 +6,8 @@ import CommandBar from '../components/CommandBar.jsx';
 import Notifications from '../components/Notifications.jsx';
 import WorkspaceSwitcher from './WorkspaceSwitcher.jsx';
 import BackgroundJobsChip from './BackgroundJobsChip.jsx';
+import UnreadMentionsChip from './UnreadMentionsChip.jsx';
+import { useCollabStream } from '../hooks/useCollabStream.js';
 import { useSettings } from '../store/useSettings.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -72,6 +74,10 @@ export default function Shell() {
   });
   const mini = layout === 'focus' || collapsed;
   const { user, logout } = useAuth();
+  // Collab plan phase 6: open the SSE channel once per shell. Hook is a
+  // no-op until the user is signed in — stops a stream from firing
+  // before authentication finishes resolving.
+  useCollabStream(!!user);
 
   // Floating tooltip for collapsed-rail hover — positioned viewport-fixed so
   // it isn't clipped by the rail's own overflow:auto scroll container.
@@ -207,6 +213,7 @@ export default function Shell() {
 
           <div className="topbar__right">
             <BackgroundJobsChip />
+            <UnreadMentionsChip />
             <button className="cmdk" onClick={() => fire('lx:cmdk')}><Ic.Search size={16} /><span>Search or ask anything</span><kbd>⌘K</kbd></button>
             <button
               className="icon-btn"
