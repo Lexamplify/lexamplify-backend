@@ -71,8 +71,12 @@ export default function Practice() {
   const pending = Array.isArray(dash?.pending) ? dash.pending : [];
   const pendingTotal = dash?.pending_total ?? pending.length;
 
+  // Pipeline item 1: workspace = client. Use workspace count instead of
+  // the legacy lpms_clients list so the stat agrees with the switcher.
+  const workspacesCount = useWorkspaceStore((s) => s.workspaces?.length || 0);
+
   const STATS = [
-    { Icon: Ic.Users, num: clients.length, label: 'Clients', sub: 'On your rolls' },
+    { Icon: Ic.Users, num: workspacesCount, label: 'Clients', sub: 'On your rolls', onClick: () => navigate('/workspaces') },
     { Icon: Ic.Matters, num: counts.active ?? open.length, label: 'Active matters', sub: 'In chambers' },
     { Icon: Ic.Gavel, num: counts.week ?? thisWeek.length, label: 'Hearings this week', sub: '7-day watch' },
     { Icon: Ic.Clock, num: pendingTotal || hearingsToday.length, label: pending.length ? 'Pending actions' : 'Hearings today', sub: pending.length ? 'Awaiting you' : 'Cause list' },
@@ -80,7 +84,7 @@ export default function Practice() {
 
   const subline = loading
     ? 'Opening your practice…'
-    : `${clients.length} client${clients.length === 1 ? '' : 's'}, ${counts.active ?? open.length} active matter${(counts.active ?? open.length) === 1 ? '' : 's'} and ${counts.week ?? thisWeek.length} hearing${(counts.week ?? thisWeek.length) === 1 ? '' : 's'} in the week ahead.`;
+    : `${workspacesCount} client${workspacesCount === 1 ? '' : 's'}, ${counts.active ?? open.length} active matter${(counts.active ?? open.length) === 1 ? '' : 's'} and ${counts.week ?? thisWeek.length} hearing${(counts.week ?? thisWeek.length) === 1 ? '' : 's'} in the week ahead.`;
 
   return (
     <div className="lx-page lx-rise">
@@ -91,7 +95,8 @@ export default function Practice() {
           <p className="ph__sub">{subline}</p>
         </div>
         <div className="lx-row" style={{ gap: 10, flexWrap: 'wrap' }}>
-          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => navigate('/clients')}><Ic.Users size={14} /> Clients</button>
+          {/* Legacy '/clients' button removed — workspace = client, so the
+              workspace switcher + /workspaces IS client management. */}
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => navigate('/practice/audit')}><Ic.Shield size={14} /> Audit log</button>
           <button className="lx-btn lx-btn--gold" onClick={() => setShowNew(true)}><Ic.Plus size={15} /> New client</button>
         </div>
@@ -100,7 +105,12 @@ export default function Practice() {
       {/* Stats */}
       <section className="lx-stats">
         {STATS.map((s) => (
-          <div className="lx-stat" key={s.label}>
+          <div
+            className="lx-stat"
+            key={s.label}
+            onClick={s.onClick}
+            style={s.onClick ? { cursor: 'pointer' } : undefined}
+          >
             <div className="lx-stat__ico"><s.Icon size={18} /></div>
             <div className="lx-stat__num">{loading ? '—' : s.num}</div>
             <div className="lx-stat__label">{s.label}</div>
@@ -159,36 +169,11 @@ export default function Practice() {
               </div>
             </section>
 
-            {/* Clients */}
-            <section>
-              <div className="lx-section-head">
-                <h3>Clients</h3>
-                <a onClick={() => setShowNew(true)}>Add client →</a>
-              </div>
-              <div className="lx-card lx-card--pad">
-                <div className="lx-list">
-                  {loading ? <div className="lx-empty"><p>Loading your clients…</p></div>
-                    : clients.length === 0 ? (
-                      <div className="lx-empty">
-                        <div className="lx-empty__ico"><Ic.Users size={22} /></div>
-                        <h4>No clients yet</h4><p>Add the people you act for to keep their contact details and matters together.</p>
-                        <button className="lx-btn lx-btn--sm" style={{ marginTop: 10 }} onClick={() => setShowNew(true)}>Add a client</button>
-                      </div>
-                    ) : clients.slice(0, 6).map((cl) => (
-                      <div className="lx-item" key={cl.id} style={{ padding: '15px 4px' }}>
-                        <div className="lx-item__ico"><Ic.Users size={18} /></div>
-                        <div className="lx-item__body" style={{ flex: 2 }}>
-                          <div className="lx-item__title">{cl.name}</div>
-                          <div className="lx-item__meta">{[cl.phone, cl.email, cl.occupation].filter(Boolean).join(' · ') || 'No contact details'}</div>
-                        </div>
-                        <span className="lx-badge lx-badge--muted" style={{ minWidth: 92, justifyContent: 'center' }}>
-                          {cl.active_cases ?? cl.cases ?? 0} active
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </section>
+            {/* Legacy 'Clients' section removed — workspace = client under
+                pipeline item 1, so the switcher + /workspaces is the single
+                source of truth. Keeping a parallel lpms_clients listing
+                here only confused users (two 'Add client' buttons that
+                did different things). */}
           </div>
 
           {/* Rail */}
