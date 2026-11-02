@@ -11,7 +11,7 @@ function csrf() {
   return m ? decodeURIComponent(m[1]) : '';
 }
 
-const TABS = ['Profile', 'Chambers', 'Team', 'Billing', 'Notifications', 'Integrations', 'Security', 'Appearance'];
+const TABS = ['Profile', 'Chambers', 'Team', 'Billing', 'Notifications', 'Contract checklist', 'Integrations', 'Security', 'Appearance'];
 
 function Row({ label, hint, children }) {
   return (
@@ -235,6 +235,8 @@ export default function Settings() {
           ))}
         </>)}
 
+        {tab === 'Contract checklist' && <ContractChecklistSection />}
+
         {tab === 'Integrations' && (<>
           <div className="lx-list">
             {INTEGRATIONS.map(([n, d], i) => (
@@ -282,6 +284,145 @@ export default function Settings() {
             <Seg options={[['full', 'Full'], ['reduced', 'Reduced']]} value={s.motion} onChange={(v) => s.update({ motion: v })} />
           </Row>
         </>)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Contract checklist section — pipeline item 3. Shows the baked-in
+ * general checklist (read-only) and the firm's master checklist
+ * (editable by Senior Advocates). Both feed the Contract Analyzer's
+ * missing_protections output on every scan.
+ */
+function ContractChecklistSection() {
+  const [general, setGeneral] = useState(null);  // null = loading
+  const [master, setMaster] = useState('');
+  const [initialMaster, setInitialMaster] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+  const [roleBlocked, setRoleBlocked] = useState(false);
+  const [noFirm, setNoFirm] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [g, m] = await Promise.all([
+          fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/contract/checklist/general`, { credentials: 'include' }),
+          fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/contract/checklist/master`, { credentials: 'include' }),
+        ]);
+        const gj = await g.json().catch(() => ({ items: [] }));
+        const mj = await m.json().catch(() => ({ body: '' }));
+        if (cancelled) return;
+        setGeneral(Array.isArray(gj.items) ? gj.items : []);
+        setMaster(mj.body || '');
+        setInitialMaster(mj.body || '');
+        if (mj.firm_id == null) setNoFirm(true);
+      } catch (e) {
+        if (!cancelled) setErr('Could not load the checklists. Check your connection.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const save = async () => {
+    setErr(''); setOk('');
+    setSaving(true);
+    try {
+      const r = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/contract/checklist/master`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': (document.cookie.match(/(?:^|;\s*)csrf_access_token=([^;]+)/) || [,''])[1] },
+        body: JSON.stringify({ body: master }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (j.code === 'ROLE_FORBIDDEN') setRoleBlocked(true);
+        throw new Error(j.message || `Save failed (HTTP ${r.status}).`);
+      }
+      setInitialMaster(master);
+      setOk('Master checklist saved. New analyses pick it up immediately.');
+    } catch (e) {
+      setErr(e.message || 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changed = master !== initialMaster;
+
+  if (loading) return <div className="lx-muted" style={{ padding: '20px 0' }}>Loading checklists…</div>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div>
+        <h3 className="lx-section-head__title" style={{ fontSize: 17, marginBottom: 6 }}>Firm master checklist</h3>
+        <p className="lx-muted" style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+          Your firm's own clause rules — anything specific to how your chambers reviews contracts. The AI treats these
+          as <b>highest priority</b> above the general checklist on every analysis. Only a Senior Advocate can edit this.
+        </p>
+        {noFirm && (
+          <div className="lx-muted" style={{ fontSize: 13, marginTop: 10, padding: 10, background: 'var(--paper-2)', borderRadius: 8 }}>
+            You're not on a firm roster yet. Set up your practice from Matters, then come back here.
+          </div>
+        )}
+        {!noFirm && (
+          <>
+            <textarea
+              value={master}
+              onChange={(e) => setMaster(e.target.value)}
+              placeholder={'E.g.\n- Indemnity cap always ≤ 100% of contract value.\n- Arbitration seat must be Mumbai or Delhi.\n- Reject any clause that waives Section 73 ICA damages.\n- Payment terms: net 30 days maximum.\n…'}
+              rows={10}
+              disabled={saving || roleBlocked}
+              style={{
+                width: '100%', marginTop: 10, padding: '12px 14px', borderRadius: 10,
+                border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink)',
+                fontFamily: 'inherit', fontSize: 13.5, lineHeight: 1.55, resize: 'vertical',
+              }}
+            />
+            {err && <div style={{ marginTop: 10, color: 'var(--risk)', fontSize: 13 }}>{err}</div>}
+            {ok && <div style={{ marginTop: 10, color: 'var(--ok, #177d5d)', fontSize: 13 }}>{ok}</div>}
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button className="lx-btn lx-btn--primary" onClick={save} disabled={!changed || saving || roleBlocked}>
+                {saving ? 'Saving…' : 'Save firm checklist'}
+              </button>
+              {changed && (
+                <button className="lx-btn lx-btn--ghost" onClick={() => setMaster(initialMaster)} disabled={saving}>Revert</button>
+              )}
+            </div>
+            <p className="lx-muted" style={{ fontSize: 11, marginTop: 8 }}>{(master || '').length} / 12,000 chars</p>
+          </>
+        )}
+      </div>
+
+      <hr className="lx-rule" style={{ margin: '8px 0' }} />
+
+      <div>
+        <h3 className="lx-section-head__title" style={{ fontSize: 17, marginBottom: 6 }}>General checklist (built-in)</h3>
+        <p className="lx-muted" style={{ fontSize: 13, lineHeight: 1.6, margin: '0 0 12px' }}>
+          The baseline Indian commercial contract review checklist. The AI checks every contract against these items
+          and flags any that are missing in the <b>Missing standard clauses</b> section of the analysis.
+          Read-only — your firm master checklist above overrides these.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(general || []).map((item, i) => (
+            <div key={i} style={{
+              padding: '10px 14px', background: 'var(--paper-2)', border: '1px solid var(--rule)',
+              borderRadius: 8,
+            }}>
+              <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500 }}>
+                {i + 1}. {item.title}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2, lineHeight: 1.5 }}>
+                {item.description}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -472,6 +472,32 @@ def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive", 
     except Exception:
         _ws_block = ""
     system_prompt = _ws_block + MASTER_SYSTEM_PROMPT.replace("{scanStrategy}", scan_strategy)
+    # Pipeline item 3: inject the baked-in general checklist + the firm's
+    # saved master checklist before the per-upload playbook. Precedence
+    # (lowest -> highest): general -> firm master -> per-upload playbook.
+    # All three feed the AI's `missing_protections` output; the per-upload
+    # playbook also drives flagged clauses.
+    try:
+        from flask import current_app as _current_app
+        import sqlite3 as _sqlite
+        from utils.contract_checklist import build_checklist_block
+        try:
+            _uid = int(get_jwt_identity())
+            _lp = _current_app.extensions.get('lpms_db_path') or 'lex_assistant.db'
+            _c = _sqlite.connect(_lp)
+            _r = _c.execute("SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1", (_uid,)).fetchone()
+            _c.close()
+            _firm_id = int(_r[0]) if _r else None
+        except Exception:  # noqa: BLE001
+            _firm_id = None
+        _checklist_block = build_checklist_block(_firm_id)
+        system_prompt = system_prompt + "\n\n" + _checklist_block
+    except Exception as _e:  # noqa: BLE001
+        try:
+            from flask import current_app as _ca
+            _ca.logger.warning(f"checklist injection skipped: {_e}")
+        except Exception:  # noqa: BLE001
+            pass
     # Inject the firm playbook — the AI must follow it as the HIGHEST-priority rulebook.
     if rule_book_text and str(rule_book_text).strip():
         pb = str(rule_book_text).strip()[:12000]  # keep under token ceiling
@@ -691,6 +717,92 @@ def analyze():
         print(f"[analyze] job {job_id[:14]} started, server memory {used} MB")
         threading.Thread(target=_run_local_job, daemon=True, name=f"analysis-{job_id[:14]}").start()
         return jsonify({"job_id": job_id, "status": "QUEUED"}), 200
+
+
+# ─── Checklists (pipeline item 3) ─────────────────────────────────────
+# GET  /api/contract/checklist/general      — read the baked-in checklist
+# GET  /api/contract/checklist/master       — read the firm's checklist
+# PUT  /api/contract/checklist/master       — update the firm's checklist
+# Available even without an active workspace — the checklist is firm-level,
+# not client-level (one firm, one master list, applies to every client).
+
+@contract_bp.route("/checklist/general", methods=["GET", "OPTIONS"])
+@jwt_required(optional=True)
+def checklist_general():
+    """The general (built-in) checklist, so the Settings UI can show it
+    side-by-side with the firm master checklist."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    from utils.contract_checklist import GENERAL_CHECKLIST
+    return jsonify({
+        "items": [{"title": t, "description": d} for t, d in GENERAL_CHECKLIST],
+    }), 200
+
+
+def _resolve_firm_id_for_jwt():
+    """Resolve the firm_id for the signed-in user via lpms_members, or None
+    if the user is not on any firm roster yet."""
+    import sqlite3 as _sqlite
+    try:
+        uid = int(get_jwt_identity())
+    except Exception:
+        return None
+    db_path = current_app.extensions.get('lpms_db_path') or 'lex_assistant.db'
+    c = _sqlite.connect(db_path)
+    try:
+        row = c.execute(
+            "SELECT firm_id, role FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
+            (uid,),
+        ).fetchone()
+        if not row:
+            return None
+        return int(row[0]), (row[1] or "").lower()
+    finally:
+        c.close()
+
+
+@contract_bp.route("/checklist/master", methods=["GET", "OPTIONS"])
+@jwt_required()
+def checklist_master_get():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    from utils.contract_checklist import get_firm_master
+    r = _resolve_firm_id_for_jwt()
+    if not r:
+        return jsonify({"body": "", "firm_id": None,
+                        "message": "Set up your practice first to use the firm master checklist."}), 200
+    firm_id, _role = r
+    return jsonify({"body": get_firm_master(firm_id), "firm_id": firm_id}), 200
+
+
+@contract_bp.route("/checklist/master", methods=["PUT", "POST", "OPTIONS"])
+@jwt_required()
+def checklist_master_set():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    from utils.contract_checklist import set_firm_master
+    r = _resolve_firm_id_for_jwt()
+    if not r:
+        return jsonify({"error": True, "message": "Set up your practice first.",
+                        "code": "NO_FIRM"}), 403
+    firm_id, role = r
+    # Only Senior Advocates / partners may change the master checklist —
+    # same precedent as firm settings in LPMS.
+    if "senior" not in role and "partner" not in role and "principal" not in role:
+        return jsonify({"error": True,
+                        "message": "Only a senior partner can change the firm's master checklist.",
+                        "code": "ROLE_FORBIDDEN"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    body = str(data.get("body") or "")
+    if len(body) > 12000:
+        return jsonify({"error": True,
+                        "message": "Master checklist is too long (12,000 characters max)."}), 400
+    try:
+        uid = int(get_jwt_identity())
+    except Exception:
+        uid = None
+    set_firm_master(firm_id, body, user_id=uid)
+    return jsonify({"body": body, "firm_id": firm_id, "ok": True}), 200
 
 
 @contract_bp.route("/cancel/<job_id>", methods=["POST"])
