@@ -88,15 +88,18 @@ export default function Practice() {
   }, []);
 
   const STATS = [
-    { Icon: Ic.Users, num: teamCount ?? 0, label: 'Team members', sub: 'In your chambers', onClick: () => navigate('/practice/team') },
+    { Icon: Ic.Users, num: teamCount ?? 0, label: 'Team members', sub: 'In your chambers', onClick: () => navigate('/settings#team') },
     { Icon: Ic.Matters, num: counts.active ?? open.length, label: 'Active matters', sub: 'In chambers' },
     { Icon: Ic.Gavel, num: counts.week ?? thisWeek.length, label: 'Hearings this week', sub: '7-day watch' },
     { Icon: Ic.Clock, num: pendingTotal || hearingsToday.length, label: pending.length ? 'Pending actions' : 'Hearings today', sub: pending.length ? 'Awaiting you' : 'Cause list' },
   ];
 
+  // Pipeline item 1: workspace = client, so the switcher already names
+  // the current client at the top of the page. Dropping the 'N clients'
+  // prefix from the subline (the user flagged it as a stale duplicate).
   const subline = loading
     ? 'Opening your practice…'
-    : `${workspacesCount} client${workspacesCount === 1 ? '' : 's'}, ${counts.active ?? open.length} active matter${(counts.active ?? open.length) === 1 ? '' : 's'} and ${counts.week ?? thisWeek.length} hearing${(counts.week ?? thisWeek.length) === 1 ? '' : 's'} in the week ahead.`;
+    : `${counts.active ?? open.length} active matter${(counts.active ?? open.length) === 1 ? '' : 's'} and ${counts.week ?? thisWeek.length} hearing${(counts.week ?? thisWeek.length) === 1 ? '' : 's'} in the week ahead.`;
 
   return (
     <div className="lx-page lx-rise">
@@ -111,7 +114,7 @@ export default function Practice() {
               removed. Added a Team button right here — one click to the
               Practice team roster where firm members (Senior / Junior /
               Office Staff) are added and assigned to matters. */}
-          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => navigate('/practice/team')}><Ic.Users size={14} /> Team</button>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => navigate('/settings#team')}><Ic.Users size={14} /> Team</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => navigate('/practice/audit')}><Ic.Shield size={14} /> Audit log</button>
           <button className="lx-btn lx-btn--gold" onClick={() => setShowNew(true)}><Ic.Plus size={15} /> New client</button>
         </div>

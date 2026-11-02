@@ -61,7 +61,14 @@ const INTEGRATIONS = [
 ];
 
 export default function Settings() {
-  const [tab, setTab] = useState('Profile');
+  // Allow deep-linking to a specific tab via the URL hash — e.g.
+  // /settings#team opens the Team tab directly. Falls back to Profile.
+  const _initialTab = (() => {
+    const h = (typeof window !== 'undefined' ? window.location.hash : '').replace(/^#/, '').toLowerCase();
+    const match = TABS.find((t) => t.toLowerCase().replace(/\s+/g, '') === h.replace(/\s+/g, ''));
+    return match || 'Profile';
+  })();
+  const [tab, setTab] = useState(_initialTab);
   const { user, logout } = useAuth();
   const s = useSettings();
 
