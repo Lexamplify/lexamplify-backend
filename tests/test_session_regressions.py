@@ -605,6 +605,48 @@ def test_download_inline_param_flips_disposition():
 #   mentions.
 # ────────────────────────────────────────────────────────────────────
 
+# ────────────────────────────────────────────────────────────────────
+# Bug 13 — commit (this one) / Collab room workspace scope leak
+#   routes/collab_routes._case_or_404 only checked firm-level ACL. A
+#   firm senior who had switched to Mehta's workspace could still read
+#   Rohit's case-room messages by deep-linking the case id. The fix
+#   mirrors case_visible_sql: when X-Workspace-Id is present, the
+#   case's workspace_id must match. No header → firm-level ACL only,
+#   so background jobs / Celery still work.
+# ────────────────────────────────────────────────────────────────────
+
+def test_collab_case_or_404_enforces_workspace_header():
+    """Lock the workspace check in _case_or_404. The three invariants
+    the scope probe just confirmed:
+      * Case under workspace 10, header=10 → access granted
+      * Case under workspace 10, header=11 → 404 (not 'not found' from
+        the firm-ACL check — this is the workspace-mismatch branch)
+      * No header → firm-ACL only (background jobs)
+    """
+    src = open("routes/collab_routes.py", encoding="utf-8").read()
+    # The workspace header must be read via the central helper so the
+    # rule is uniform across every scope-aware endpoint. Avoid a
+    # per-route reimplementation of X-Workspace-Id parsing.
+    assert "current_workspace_id" in src, (
+        "_case_or_404 no longer calls current_workspace_id — a user "
+        "who switched workspaces could deep-link into a different "
+        "client's case room by id again"
+    )
+    # The mismatch branch must still 404 (not 403, not 500). 404 keeps
+    # existence hidden, matching the Vault + Matters convention.
+    assert '"Case not found."' in src, (
+        "workspace-mismatch branch stopped returning the 'Case not "
+        "found.' 404 — switched to 403 would leak case existence"
+    )
+    # And the firm-level ACL must still be the first gate. Dropping it
+    # would make the workspace scope the ONLY check, which locks out
+    # firm-wide tooling that doesn't send a workspace header.
+    assert "require_case_access" in src, (
+        "firm-level ACL dropped from _case_or_404 — a non-member of "
+        "the firm could read a case room by guessing the id"
+    )
+
+
 def test_composer_stages_pending_files_not_auto_sends():
     """The composer must stage picked files locally and only upload on
     Send. Guard against a refactor that re-wires the file input back

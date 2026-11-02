@@ -75,7 +75,16 @@ def _case_or_404(case_id):
     """Return the lpms_cases row for case_id if the caller is allowed to
     see it; else (None, (jsonify, 404)). 404 (not 403) is the convention
     the Vault + Matters routes already use — don't disclose existence to
-    an outsider."""
+    an outsider.
+
+    Scope rule, mirroring utils.lpms_store.case_visible_sql:
+      * When the client sent X-Workspace-Id, the case's workspace_id MUST
+        match it. This stops a user who's switched to Mehta's workspace
+        from reading Rohit's case room by guessing the case id.
+      * When no header was sent (background jobs, Celery, cron, legacy
+        clients), fall back to firm-level ACL only — otherwise firm-wide
+        tooling breaks.
+    """
     try:
         cid = int(case_id)
     except (TypeError, ValueError):
@@ -88,6 +97,17 @@ def _case_or_404(case_id):
     ).fetchone()
     if not row or not require_case_access(_uid(), cid):
         return None, (jsonify({"error": True, "message": "Case not found."}), 404)
+    # Workspace scope — do this AFTER the firm ACL so an outsider still
+    # gets the same 404 regardless of which workspace header they chose.
+    try:
+        from utils.workspace_scope import current_workspace_id
+        active_ws = current_workspace_id()
+    except Exception:  # noqa: BLE001
+        active_ws = None
+    if active_ws is not None:
+        case_ws = row["workspace_id"]
+        if case_ws is None or int(case_ws) != int(active_ws):
+            return None, (jsonify({"error": True, "message": "Case not found."}), 404)
     return row, None
 
 
