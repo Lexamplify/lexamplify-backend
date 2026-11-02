@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import NewWorkspaceModal from '../components/workspace/NewWorkspaceModal.jsx';
+import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -236,8 +238,34 @@ export default function Practice() {
         </div>
       )}
 
-      {showNew && <NewClientModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); load(); }} />}
+      {/* Pipeline item 1: workspace = client. 'New client' now opens the
+          SAME shared NewWorkspaceModal that the top-bar switcher and the
+          /workspaces page use — one client-creation flow across the whole
+          app, instead of this page's legacy lpms_clients CRUD. The legacy
+          NewClientModal below still exists but is no longer wired to any
+          button; kept around only in case we need a quick-add path later. */}
+      {showNew && <PracticeNewClientGateway onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); load(); }} />}
     </div>
+  );
+}
+
+function PracticeNewClientGateway({ onClose, onCreated }) {
+  const create = useWorkspaceStore((s) => s.create);
+  const setCurrent = useWorkspaceStore((s) => s.setCurrent);
+  return (
+    <NewWorkspaceModal
+      onClose={onClose}
+      onCreated={(created) => {
+        // Auto-select the new client so the Practice page's next load
+        // reflects it immediately (the dashboard already filters by the
+        // active workspace via case_visible_sql).
+        if (created?.id) {
+          try { setCurrent(created.id); } catch { /* ignore */ }
+        }
+        onCreated?.();
+      }}
+      create={create}
+    />
   );
 }
 
