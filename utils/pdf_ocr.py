@@ -116,7 +116,7 @@ def _ocr_single_page(args):
 
 
 def ocr_pdf_bytes(pdf_bytes: bytes, *, min_text_chars_per_page: int = 50,
-                  max_pages: int = 1500) -> str:
+                  max_pages: int = 1500, progress_cb=None) -> str:
     """Extract text from a (possibly scanned) PDF. Embedded-text pages
     are returned as-is from PyMuPDF; pages with less than
     `min_text_chars_per_page` get sent through OCR.
@@ -128,6 +128,15 @@ def ocr_pdf_bytes(pdf_bytes: bytes, *, min_text_chars_per_page: int = 50,
     DPI is 150 (down from 220) — printed-contract scans are legible to
     OCR at 150 and the pixel count drops ~2.1×, which is the biggest
     single win on wall-clock time.
+
+    progress_cb(done, total, stage) — optional callback called after each
+    page is finished so the SSE channel can report "Reading page X / Y"
+    live. Called from inside the ThreadPoolExecutor's map result loop
+    (ThreadPool worker is still running, main thread is iterating), so
+    the callback runs on the caller's thread — safe to touch Flask
+    globals (g, current_app) if the caller is a request handler. Any
+    exception the callback raises is caught and ignored so a flaky
+    progress sink never crashes the OCR pass.
 
     Returns the concatenated text (blank lines between pages). On
     hard failure for a page, that page is skipped (no exception
@@ -153,16 +162,31 @@ def ocr_pdf_bytes(pdf_bytes: bytes, *, min_text_chars_per_page: int = 50,
     finally:
         doc.close()
 
-    if not pages_needing_ocr:
+    # Even when nothing needs OCR, call progress_cb once at 100% so the
+    # UI can flip from "Reading…" to "Analyzing…" without waiting.
+    total_ocr = len(pages_needing_ocr)
+    if total_ocr == 0:
+        if progress_cb:
+            try:
+                progress_cb(n, n, "Reading document (text layer)")
+            except Exception:
+                pass
         return "\n\n".join(p for p in pages_text if p)
 
     engine = _get_engine()
     dpi = int(os.getenv("OCR_DPI", "150"))
     workers = int(os.getenv("OCR_WORKERS", "0")) or min(8, (os.cpu_count() or 2))
     tasks = [(pdf_bytes, i, dpi, engine) for i in pages_needing_ocr]
+    done = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for i, txt in pool.map(_ocr_single_page, tasks):
             pages_text[i] = txt
+            done += 1
+            if progress_cb:
+                try:
+                    progress_cb(done, total_ocr, f"OCR page {done} / {total_ocr}")
+                except Exception:
+                    pass
     return "\n\n".join(p for p in pages_text if p)
 
 

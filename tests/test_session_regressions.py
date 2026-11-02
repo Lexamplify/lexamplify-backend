@@ -615,6 +615,160 @@ def test_download_inline_param_flips_disposition():
 #   so background jobs / Celery still work.
 # ────────────────────────────────────────────────────────────────────
 
+# ────────────────────────────────────────────────────────────────────
+# Bug 14 — commit (this one) / Contract Analyzer modal UX
+#   The old flow forced the user to watch a striped progress bar for
+#   the full OCR duration (up to 10 minutes on a 200-page scanned PDF)
+#   because the modal POSTed /extract-text synchronously, then /analyze.
+#   The job_id didn't exist until step 2 returned, so the user couldn't
+#   leave the page without killing the whole run, Past Reviews showed
+#   nothing in-flight, and a scanned PDF whose OCR took >600s hit
+#   EXTRACTION_TIMEOUT with no retry handle. New endpoint
+#   /api/contract/analyze-file creates the job_id up front, spawns
+#   OCR+analyze on a background thread, and returns in milliseconds.
+# ────────────────────────────────────────────────────────────────────
+
+def test_contract_analyze_file_endpoint_exists_and_returns_fast():
+    """Grep-guard the three load-bearing bits of the new endpoint:
+      * It's registered under /api/contract/analyze-file.
+      * It returns 202 (QUEUED) — NOT 200 blocked-on-extraction.
+      * It spawns a background thread for the long work, so the HTTP
+        response doesn't wait on OCR."""
+    src = open("routes/contract_routes.py", encoding="utf-8").read()
+    assert "/analyze-file" in src, (
+        "/api/contract/analyze-file route was removed — the modal UX "
+        "will go back to blocking for the entire OCR duration"
+    )
+    assert "def analyze_file" in src, "analyze_file handler is gone"
+    # Extract the handler body (from `def analyze_file` to the next
+    # `def ` or `@contract_bp.route`) so the asserts aren't fooled by
+    # strings that happen to appear elsewhere in the module.
+    _body = src.split("def analyze_file")[-1]
+    _body = _body.split("\n@contract_bp.route")[0]
+    assert '"QUEUED"' in _body or 'status": "QUEUED"' in _body, (
+        "analyze_file no longer returns QUEUED — it may be blocking "
+        "the request thread on OCR again"
+    )
+    assert "), 202" in _body, (
+        "analyze_file response status is no longer 202 (Accepted) — "
+        "whatever it is instead, the modal UX contract is broken"
+    )
+    # The background thread must still spawn — otherwise OCR runs inline.
+    assert "threading.Thread" in _body, (
+        "analyze_file no longer spawns a background thread — OCR is "
+        "back on the request thread and the modal is stuck again"
+    )
+
+
+def test_contract_analyses_active_endpoint_exists():
+    """Lock /api/contract/analyses/active. Without it the Contracts page
+    has no way to render the in-flight 'Analysing · 42%' row, Past
+    Reviews looks empty mid-run, and the inline loading panel can't
+    exist."""
+    src = open("routes/contract_routes.py", encoding="utf-8").read()
+    assert "/analyses/active" in src, (
+        "/api/contract/analyses/active route was removed — in-flight "
+        "jobs will be invisible on the Contracts page"
+    )
+    assert "def list_active_analyses" in src, (
+        "list_active_analyses handler is gone"
+    )
+
+
+def test_update_job_honors_progress_scale_and_min():
+    """The progress-scale + progress-min bands in utils.job_store.update_job
+    are what stops the progress bar from jumping backwards (OCR
+    finishes at 40%, then the LLM task's own 5–95% scale would re-draw
+    at 5% without them). Lock both branches."""
+    src = open("utils/job_store.py", encoding="utf-8").read()
+    assert "progress_scale" in src, (
+        "update_job no longer honors progress_scale — the Contract "
+        "Analyzer bar WILL jump backward from 40% to 5% after OCR"
+    )
+    assert "progress_min" in src, (
+        "update_job no longer honors progress_min — a wrapper that "
+        "sets a floor loses it as soon as the task calls report()"
+    )
+    # Lock the specific scaling arithmetic shape so a refactor that
+    # inverts the direction (hi -> lo) can't silently reverse progress.
+    assert "lo + (hi - lo)" in src, (
+        "progress_scale arithmetic was flipped — progress may now "
+        "RUN BACKWARDS as the task reports higher numbers"
+    )
+
+
+def test_extract_text_for_summary_accepts_progress_cb():
+    """Without the progress callback, OCR of a 200-page scan runs for
+    minutes with the UI showing nothing but 'Reading…' — the exact
+    'is this hung?' moment the inline loading panel exists to prevent.
+    Lock the callback plumbing on both helpers."""
+    pdf_helper = open("utils/pdf_helper.py", encoding="utf-8").read()
+    pdf_ocr = open("utils/pdf_ocr.py", encoding="utf-8").read()
+    assert "progress_cb" in pdf_helper, (
+        "extract_text_for_summary dropped its progress_cb kwarg — "
+        "/analyze-file can no longer report OCR page counter"
+    )
+    assert "progress_cb" in pdf_ocr, (
+        "ocr_pdf_bytes dropped its progress_cb kwarg — OCR runs silently"
+    )
+    # And the callback must be CALLED from inside the OCR loop, not just
+    # declared and ignored.
+    assert "progress_cb(done, total" in pdf_ocr, (
+        "ocr_pdf_bytes no longer calls progress_cb per page — the UI "
+        "will see Reading…, Reading…, Reading… and nothing else"
+    )
+
+
+def test_diagnose_llm_failure_detects_expired_api_key():
+    """Users hitting a dead OpenAI key need to UPDATE the key, not
+    retry. The _diagnose_llm_failure helper must return a specific,
+    actionable message for the 'expired' / 'invalid' / 'revoked' key
+    cases, not fall through to the generic 'please try again'."""
+    src = open("routes/contract_routes.py", encoding="utf-8").read()
+    assert "_diagnose_llm_failure" in src, (
+        "_diagnose_llm_failure helper was removed — users hitting "
+        "an expired API key will see 'please try again' forever"
+    )
+    low = src.lower()
+    for phrase in ("expired", "revoked", "invalid", "quota", "rate limit"):
+        assert phrase in low, (
+            f"_diagnose_llm_failure stopped recognizing '{phrase}' "
+            f"— that failure mode is now bucketed into the generic "
+            f"'try again' message with no useful signal"
+        )
+
+
+# ────────────────────────────────────────────────────────────────────
+# Bug 15 — commit (this one) / Modal must close on submit
+#   The user's UX request: modal closes immediately, Contract page
+#   itself shows the inline loading panel, Past Reviews shows an
+#   in-flight row. Lock the frontend wiring that makes this work.
+# ────────────────────────────────────────────────────────────────────
+
+def test_upload_modal_posts_to_analyze_file_and_closes():
+    """The UploadModal start() path must POST to /analyze-file (one
+    multipart call) instead of the old two-step /extract-text +
+    /analyze. The old flow kept the modal open through the whole OCR
+    pass; this one lets onStarted() close it in milliseconds."""
+    src = open("frontend/src/pages/Contracts.jsx", encoding="utf-8").read()
+    assert "/api/contract/analyze-file" in src, (
+        "UploadModal stopped POSTing to /analyze-file — it will block "
+        "the modal open while OCR runs again"
+    )
+    # The Contracts page's onStarted must set upload=false WITHOUT
+    # navigating away — the user wants to stay on the overview page and
+    # see the inline loading + Past Reviews live row.
+    assert "setUpload(false)" in src, "onStarted no longer closes the modal"
+    assert "loadActive" in src, (
+        "Contracts page no longer polls /analyses/active — the inline "
+        "loading panel and Past Reviews live row have no data source"
+    )
+    assert "InlineAnalysisPanel" in src and "LiveReviewRow" in src, (
+        "Live-progress components removed — Past Reviews is empty during "
+        "an in-flight analysis and the inline loading panel is gone"
+    )
+
+
 def test_collab_case_or_404_enforces_workspace_header():
     """Lock the workspace check in _case_or_404. The three invariants
     the scope probe just confirmed:

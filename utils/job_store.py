@@ -56,9 +56,32 @@ load_job = get_local_job
 
 
 def update_job(job_id: str, **kwargs) -> dict:
-    """Merge fields into a job and stamp `updated_at` (the heartbeat that tells a live job from an abandoned one)."""
+    """Merge fields into a job and stamp `updated_at` (the heartbeat that tells a live job from an abandoned one).
+
+    Honors two optional job-local fields set by the orchestrator:
+      * `progress_min` — any incoming `progress` below this is lifted up
+        to the floor. Lets a wrapper (e.g. /analyze-file after OCR
+        finishes at 40%) keep the task's own 5–95% scale from LOOKING
+        like a regression even though the task has no idea an OCR
+        stage ran first.
+      * `progress_scale` — a (lo, hi) tuple; the incoming 0–100 is
+        re-mapped into [lo, hi]. Preferred over progress_min when the
+        wrapper wants a smooth stretch instead of a floor.
+    Both are read from the on-disk job state so a Celery worker in
+    another process still obeys them.
+    """
     with _LOCK:
         job = get_local_job(job_id) or {}
+        if "progress" in kwargs and isinstance(kwargs["progress"], (int, float)):
+            p = float(kwargs["progress"])
+            scale = job.get("progress_scale")
+            if isinstance(scale, (list, tuple)) and len(scale) == 2:
+                lo, hi = float(scale[0]), float(scale[1])
+                p = lo + (hi - lo) * max(0.0, min(100.0, p)) / 100.0
+            floor = job.get("progress_min")
+            if isinstance(floor, (int, float)) and p < float(floor):
+                p = float(floor)
+            kwargs["progress"] = int(round(p))
         job.update(kwargs)
         job["updated_at"] = time.time()
         save_local_job(job_id, job)

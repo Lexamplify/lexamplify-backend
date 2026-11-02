@@ -701,13 +701,7 @@ def analyze():
                 _fail_job(job_id, message="You cancelled this analysis. Nothing was checked.")
             except Exception as err:  # noqa: BLE001
                 print(f"[analyze] job {job_id} failed: {err}")
-                text = str(err)
-                if "AI_TIMEOUT" in text:
-                    msg = "The AI service was too slow to answer, so no analysis was produced and nothing was checked. Please try again in a minute."
-                elif "AI_UNAVAILABLE" in text:
-                    msg = "The AI service did not respond, so no analysis was produced and nothing was checked. Please try again in a minute."
-                else:
-                    msg = "The analysis could not be completed. Please try again."
+                msg = _diagnose_llm_failure(err) or "The analysis could not be completed. Please try again."
                 _fail_job(job_id, message=msg)
             finally:
                 LOCAL_JOBS.pop(job_id, None)                   # the file holds the result; do not keep contracts in memory
@@ -717,6 +711,255 @@ def analyze():
         print(f"[analyze] job {job_id[:14]} started, server memory {used} MB")
         threading.Thread(target=_run_local_job, daemon=True, name=f"analysis-{job_id[:14]}").start()
         return jsonify({"job_id": job_id, "status": "QUEUED"}), 200
+
+
+def _diagnose_llm_failure(err):
+    """Map a raw AI pipeline exception into a user-readable sentence that
+    identifies the real problem — expired API key, rate limit, timeout,
+    network — instead of the generic 'try again' bucket. Users hitting a
+    dead OpenAI key need to update the key, not retry.
+
+    Returns a message string or None if the error looks like a transient
+    glitch and 'try again' is still the right response.
+    """
+    text = str(err or "")
+    low = text.lower()
+    # Order matters: more-specific pattern first.
+    if "api key" in low and ("expired" in low or "revoked" in low or "invalid" in low):
+        return ("The AI service is unavailable — the OpenAI API key appears to be expired or invalid. "
+                "Please update OPENAI_API_KEY in backend/.env and restart the server. "
+                "Nothing was checked.")
+    if "insufficient_quota" in low or "quota" in low and "exceeded" in low:
+        return ("The AI service account is out of quota. Top up the OpenAI plan or switch providers. "
+                "Nothing was checked.")
+    if "rate limit" in low or "rate_limit" in low or "too many requests" in low:
+        return ("The AI service rate-limited this request. Please wait a minute and try again. "
+                "Nothing was checked.")
+    if "AI_TIMEOUT" in text:
+        return ("The AI service was too slow to answer, so no analysis was produced and nothing was checked. "
+                "Please try again in a minute.")
+    if "AI_UNAVAILABLE" in text:
+        return ("The AI service did not respond, so no analysis was produced and nothing was checked. "
+                "Please try again in a minute.")
+    if "connection" in low or "timed out" in low or "network" in low:
+        return ("Could not reach the AI service — check your internet connection or VPN and try again. "
+                "Nothing was checked.")
+    return None
+
+
+# ─── /analyze-file — one call, immediate job_id, OCR in background ───
+# Before this endpoint existed the frontend had to POST /extract-text,
+# wait for the (potentially multi-minute) OCR to return the text, and
+# THEN POST /analyze. That meant:
+#   * the Upload modal couldn't close until OCR was done
+#   * useJobsStore couldn't register the job until step 2 returned —
+#     so the floating "Analysing contract" chip only appeared AFTER OCR
+#   * if the user navigated away mid-OCR their browser killed the fetch
+#     and the server-side OCR work was wasted
+#   * a scan whose OCR took >600s hit EXTRACTION_TIMEOUT with no job id,
+#     no retry handle, nothing in Past Reviews — just a 422 toast
+# This endpoint accepts the file in one multipart POST, creates the
+# job_id synchronously (<10 ms), spawns a background thread that does
+# extract + analyze end-to-end, and returns {job_id} in milliseconds.
+# All subsequent progress (OCR page counter, LLM section counter) goes
+# through the same /stream/<job_id> SSE channel the detail page already
+# consumes.
+@contract_bp.route("/analyze-file", methods=["POST", "OPTIONS"])
+@jwt_required()
+def analyze_file():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    import time, io
+    from werkzeug.utils import secure_filename
+
+    if not request.files.get("file"):
+        return jsonify({"error": True, "message": "No file provided."}), 400
+    f = request.files["file"]
+    data = f.read(MAX_UPLOAD_BYTES + 1)
+    filename = secure_filename((f.filename or "contract").lower()) or "contract"
+    filetype, problem = check_upload(data, filename)
+    if problem:
+        return jsonify({"error": True, "message": problem["message"], "code": problem["code"]}), problem["status"]
+
+    rule_book_text = str(request.form.get("ruleBook") or "")[:20000]
+    _raw_strategy = str(request.form.get("scanStrategy") or "Balanced").strip().lower()
+    _strategy_map = {
+        "quick": "Defensive", "defensive": "Defensive",
+        "balanced": "Balanced", "aggressive": "Aggressive",
+    }
+    scan_strategy = _strategy_map.get(_raw_strategy, "Balanced")
+
+    try:
+        owner_id = int(get_jwt_identity())
+    except (TypeError, ValueError):
+        owner_id = None
+
+    # Per-user concurrency cap — same rule the /analyze fallback enforces.
+    # A user with 3 in-flight jobs must finish one before starting another;
+    # the UI shows a friendly "You already have analyses running" message
+    # that doesn't look like a crash.
+    with _LIVE_LOCK:
+        running = sum(1 for o in _LIVE_JOBS.values() if o == owner_id)
+        if running >= MAX_ACTIVE_PER_USER:
+            return jsonify({
+                "error": True, "code": "TOO_MANY_ANALYSES",
+                "message": "You already have analyses running. Please wait for one to finish, or cancel it, then start another.",
+            }), 429
+        job_id = f"local_{uuid.uuid4()}"
+        _LIVE_JOBS[job_id] = owner_id
+
+    delete_old_jobs()
+    created_at = time.time()
+    try:
+        from utils.workspace_scope import current_workspace_id
+        active_ws = current_workspace_id()
+    except Exception:
+        active_ws = None
+
+    initial_job = {
+        "job_id": job_id,
+        "status": "processing",
+        "progress": 2,
+        "stage": f"Reading {filename}…",
+        "created_at": created_at,
+        "updated_at": created_at,
+        "worker_pid": os.getpid(),
+        "results": None, "result": None, "error": None,
+        "user_id": owner_id,
+        # Carry the display name + workspace_id into the job so /analyses/active
+        # can render a proper live card without a second DB round-trip.
+        "document_name": f.filename or filename,
+        "scan_strategy": scan_strategy,
+        "workspace_id": active_ws,
+    }
+    save_local_job(job_id, initial_job)
+    LOCAL_JOBS[job_id] = initial_job
+
+    def _progress_cb(done, total, stage_text):
+        """Called from inside extract_text_for_summary → ocr_pdf_bytes
+        once per OCR page. Maps the OCR page counter into the overall
+        progress band 2–40% (OCR), leaving 40–100% for the LLM analysis
+        stage, which calls report() with its own 15–95 range."""
+        if total <= 0:
+            return
+        pct = 2 + int(38 * (done / total))
+        update_job(job_id, status="processing", progress=pct, stage=stage_text)
+
+    def _run():
+        try:
+            # 1. Extraction — raw bytes → text. Progress callback fires per OCR page.
+            if filetype == "txt":
+                full_text = decode_text(data)
+            else:
+                full_text = extract_text_for_summary(data, filetype, progress_cb=_progress_cb)
+            if not full_text or not full_text.strip():
+                _fail_job(job_id, message="No readable text found. If this is a scanned image, try a text-based PDF or Word file instead.")
+                return
+            _max_chars = int(os.getenv("ANALYSIS_MAX_INPUT_CHARS", "2000000"))
+            if len(full_text) > _max_chars:
+                pages_est = len(full_text) // 2000
+                _fail_job(job_id, message=(
+                    f"This contract is roughly {pages_est} pages ({len(full_text):,} characters). "
+                    f"The analyzer handles up to ~1000 pages per upload. Split and analyse separately."
+                ))
+                return
+
+            # 2. Analysis — hand off to the same body /analyze uses, so a
+            # future change to the LLM pipeline doesn't need a two-site
+            # update. Set progress_scale so the task's own 5–95% range
+            # stretches into 40–98%, meaning the progress bar NEVER
+            # jumps backwards when the task's first report() lands.
+            update_job(job_id, status="processing", progress=40, stage="Starting the review…",
+                       progress_scale=[40, 98])
+            from tasks.contract_tasks import analyze_contract_task, JobCancelled
+            try:
+                res = analyze_contract_task(full_text, rule_book_text, scan_strategy, job_id=job_id)
+                job = update_job(job_id, status="complete", progress=100, stage="Complete",
+                                 results=res, result=res, error=None)
+                LOCAL_JOBS[job_id] = job
+                try:
+                    _save_contract_analysis(owner_id, job_id, full_text, res, scan_strategy)
+                except Exception as save_exc:
+                    print(f"[analyze-file] DB persist failed (results still in memory): {save_exc}")
+            except JobCancelled:
+                _fail_job(job_id, message="You cancelled this analysis. Nothing was checked.")
+        except Exception as err:  # noqa: BLE001
+            print(f"[analyze-file] job {job_id} failed: {err}")
+            import traceback; traceback.print_exc()
+            msg = _diagnose_llm_failure(err) or "The analysis could not be completed. Please try again."
+            _fail_job(job_id, message=msg)
+        finally:
+            LOCAL_JOBS.pop(job_id, None)
+            with _LIVE_LOCK:
+                _LIVE_JOBS.pop(job_id, None)
+
+    print(f"[analyze-file] job {job_id[:14]} queued ({filename}, {len(data)/1e6:.1f} MB)")
+    threading.Thread(target=_run, daemon=True, name=f"analyze-file-{job_id[:14]}").start()
+    return jsonify({
+        "job_id": job_id, "status": "QUEUED",
+        "document_name": f.filename or filename,
+        "scan_strategy": scan_strategy,
+        "status_url": f"/api/contract/stream/{job_id}",
+    }), 202
+
+
+@contract_bp.route("/analyses/active", methods=["GET", "OPTIONS"])
+@jwt_required()
+def list_active_analyses():
+    """Return the user's in-flight contract analyses so Past Reviews can
+    render them as live rows. Fed from the same in-memory + on-disk job
+    store the stream/status endpoints already use, so there is one
+    source of truth for 'what's running'.
+
+    Why this exists: /analyses only returns persisted (completed) rows.
+    Without this companion endpoint the Contract Analyzer page shows an
+    empty 'Past reviews' section the entire time a long OCR scan is
+    running — exactly when the user is most anxious about whether the
+    thing is still alive. Now each in-flight job appears with progress
+    + stage, and when it completes the row flips over to the persisted
+    shape automatically on the next poll."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    try:
+        uid = int(get_jwt_identity())
+    except Exception:
+        return jsonify({"active": []}), 200
+    out = []
+    with _LIVE_LOCK:
+        live_ids = [jid for jid, owner in _LIVE_JOBS.items() if owner == uid]
+    try:
+        from utils.workspace_scope import current_workspace_id
+        active_ws = current_workspace_id()
+    except Exception:
+        active_ws = None
+    for jid in live_ids:
+        # Prefer the live in-memory snapshot — it's the freshest. Fall
+        # back to the on-disk store for jobs whose thread finished the
+        # scan but hasn't yet popped the live-jobs entry.
+        job = LOCAL_JOBS.get(jid)
+        if not job:
+            try:
+                from utils.job_store import get_local_job
+                job = get_local_job(jid) or {}
+            except Exception:
+                job = {}
+        # Honor the active workspace filter if the job carries one.
+        job_ws = job.get("workspace_id") if isinstance(job, dict) else None
+        if active_ws is not None and job_ws is not None and int(job_ws) != int(active_ws):
+            continue
+        out.append({
+            "job_id": jid,
+            "status": job.get("status") or "processing",
+            "progress": job.get("progress") or 0,
+            "stage": job.get("stage") or "Working…",
+            "document_name": job.get("document_name") or "Contract",
+            "scan_strategy": job.get("scan_strategy") or "Balanced",
+            "created_at": job.get("created_at"),
+            "updated_at": job.get("updated_at"),
+        })
+    # Newest first.
+    out.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
+    return jsonify({"active": out}), 200
 
 
 # ─── Checklists (pipeline item 3) ─────────────────────────────────────

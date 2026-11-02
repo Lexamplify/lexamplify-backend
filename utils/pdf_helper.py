@@ -23,7 +23,7 @@ def extract_clauses_from_docx(file_bytes: bytes) -> list:
 def extract_clauses_from_text(text: str) -> list:
     return _split_into_clauses(text)
 
-def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
+def extract_text_for_summary(file_bytes: bytes, filetype: str, progress_cb=None) -> str:
     """For document summarizer / Contract Analyzer pre-scan extraction —
     returns raw text. PDF path uses PyMuPDF (fitz), not PyPDF2 — PyPDF2 has
     no internal bound on certain malformed/complex PDFs and can run for a
@@ -89,7 +89,7 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str) -> str:
         if page_count > 0 and len(text) < 120 * page_count:
             try:
                 from utils.pdf_ocr import ocr_pdf_bytes
-                ocr_text = ocr_pdf_bytes(file_bytes)
+                ocr_text = ocr_pdf_bytes(file_bytes, progress_cb=progress_cb)
                 # Prefer OCR output when it beats the fitz pass; keep fitz
                 # when it is actually richer (defensive).
                 if len(ocr_text) > len(text):
