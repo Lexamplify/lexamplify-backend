@@ -386,11 +386,33 @@ def case_visible_sql(member, alias="c"):
       • Non-senior → cases where they are the assigned advocate, OR cases
         tagged with a team they belong to (via team_memberships).
       • Restricted cases always require being the lead advocate (or senior).
+
+    Workspace scope (added for pipeline item 1 / 6): when the active
+    HTTP request carries X-Workspace-Id, the predicate also requires
+    `{alias}.workspace_id = :__ws_id OR {alias}.workspace_id IS NULL`
+    so every call site (dashboard, lists, search, timeline) only sees
+    the active client's cases plus legacy (unscoped) rows. The NULL leg
+    preserves firm-wide visibility of pre-migration data, matching the
+    scope policy in utils/workspace_filter.
     """
     uid = member.get("user_id") or 0
     p = {"fid": member["firm_id"], "mid": member["id"], "uid": uid}
+
+    # Lazily resolve the active workspace id. Zero cost when no request
+    # context (e.g. a Celery task bulk-loading cases) and zero cost when
+    # the header isn't present.
+    ws_tail = ""
+    try:
+        from utils.workspace_scope import current_workspace_id as _wsid
+        wid = _wsid()
+        if wid is not None:
+            p["__ws_id"] = int(wid)
+            ws_tail = f" AND ({alias}.workspace_id = :__ws_id OR {alias}.workspace_id IS NULL)"
+    except Exception:
+        pass
+
     if member["role"] == "senior":
-        return f"{alias}.firm_id = :fid", p
+        return f"{alias}.firm_id = :fid{ws_tail}", p
     team_access = (
         f"{alias}.team_id IS NOT NULL AND {alias}.team_id IN "
         "(SELECT team_id FROM team_memberships WHERE user_id = :uid)"
@@ -399,7 +421,7 @@ def case_visible_sql(member, alias="c"):
     return (
         f"({alias}.firm_id = :fid AND "
         f"({alias}.restricted = 0 OR {alias}.advocate_id = :mid) AND "
-        f"({alias}.advocate_id = :mid OR {team_access}))"
+        f"({alias}.advocate_id = :mid OR {team_access}){ws_tail})"
     ), p
 
 
