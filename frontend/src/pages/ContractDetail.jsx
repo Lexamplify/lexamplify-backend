@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import ShareToCaseModal from '../components/collab/ShareToCaseModal.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -42,6 +43,10 @@ export default function ContractDetail() {
   // Export report state (POST /api/contract/export → downloadable file blob).
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState('');
+  // Share-to-case modal (plan phase 4). Preselects analysis.case_id when
+  // the analysis has already been linked to a case; prompts the user to
+  // pick one otherwise.
+  const [showShare, setShowShare] = useState(false);
 
   // Flag navigator — tracks which risk is currently focused on the document surface
   const [activeFlagId, setActiveFlagId] = useState(null);
@@ -94,7 +99,11 @@ export default function ContractDetail() {
       if (!r.ok) return false;
       const d = await r.json();
       if (d && d.results) {
-        setResult(d.results);
+        // Carry the row-level case_id (added by the collab plan) into the
+        // results blob so ShareToCaseModal can pre-select it. Harmless
+        // when null — the dialog just prompts for a case.
+        const results = (d.case_id != null) ? { ...d.results, case_id: d.case_id } : d.results;
+        setResult(results);
         setProgress(100);
         setPhase('complete');
         if (d.raw_text) setRawText(d.raw_text);
@@ -359,6 +368,13 @@ export default function ContractDetail() {
                   disabled={exporting}
                 >
                   <Ic.Upload size={14} /> {exporting ? 'Preparing…' : 'Export report'}
+                </button>
+                <button
+                  className="lx-btn lx-btn--primary lx-btn--sm"
+                  onClick={() => setShowShare(true)}
+                  title="Share this analysis with teammates on a case"
+                >
+                  Share with a case
                 </button>
               </div>
               {exportErr && <div style={{ fontSize: 12, color: 'var(--risk)', maxWidth: 240, textAlign: 'right' }}>{exportErr}</div>}
@@ -700,6 +716,14 @@ export default function ContractDetail() {
           primaryText={rawText}
           primaryName={contractDisplayName || docName}
           onClose={() => setShowCrossCheck(false)}
+        />
+      )}
+      {showShare && (
+        <ShareToCaseModal
+          resource={{ type: 'contract_analysis', id, name: contractDisplayName || docName }}
+          defaultCaseId={result?.case_id || null}
+          onClose={() => setShowShare(false)}
+          onShared={() => setShowShare(false)}
         />
       )}
     </div>
