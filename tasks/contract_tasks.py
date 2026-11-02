@@ -154,17 +154,23 @@ class JobCancelled(Exception):
     """The advocate pressed Cancel."""
 
 
-# Phase 6c: raise throughput defaults so a 200-page contract (~90 chunks
-# at the old 4500-char size, ~50 chunks at the new 8000-char size)
-# finishes in ~90s instead of ~4 min. Both still env-overridable.
-# PyMuPDF-based text extraction (utils/pdf_helper.extract_text_for_summary)
-# already runs in a few seconds for 200 pages — the bottleneck was the
-# sequential LLM chunk loop, not the parsing.
-CHUNK_CHARS = int(os.getenv("ANALYSIS_CHUNK_CHARS", "10000"))
-# When OpenAI gpt-4o-mini is in play (OPENAI_API_KEY only), its 200K TPM
-# easily absorbs 10+ concurrent requests. On Groq's 8K TPM, keep 6.
+# Target: a 40-page contract completes in under a minute end-to-end
+# (baseline before this change was ~200s on a 153K-char / 17-chunk doc
+# because the adaptive worker tier capped 11-30 chunk docs at 4 workers).
+# Two levers: fewer chunks (bigger CHUNK_CHARS) and more parallel chunks
+# (higher WORKERS + a wider adaptive tier below).
+#
+# Bigger chunks also preserve context better across clause boundaries —
+# the model sees whole related sections together instead of mid-clause
+# cuts. gpt-4o-mini has a 128K-token context so 20K-char chunks are a
+# fraction of that; the cost per chunk is still bounded by the output
+# cap (ANALYSIS_MAX_OUTPUT_TOKENS, 1500) which is where latency lives.
+CHUNK_CHARS = int(os.getenv("ANALYSIS_CHUNK_CHARS", "20000"))
+# When OpenAI gpt-4o-mini is in play (OPENAI_API_KEY only), its 500K TPM
+# and 10K RPM easily absorb 15+ concurrent requests. On Groq's 8K TPM,
+# keep the lower 6.
 if os.getenv("OPENAI_API_KEY") and not os.getenv("GROQ_API_KEY"):
-    WORKERS = int(os.getenv("ANALYSIS_WORKERS", "10"))
+    WORKERS = int(os.getenv("ANALYSIS_WORKERS", "16"))
 else:
     WORKERS = int(os.getenv("ANALYSIS_WORKERS", "6"))
 PRECEDENT_SECONDS = float(os.getenv("ANALYSIS_PRECEDENT_SECONDS", "25"))
@@ -223,12 +229,15 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     if _env_chunk:
         _effective_chunk = int(_env_chunk)
     elif len(full_text) > 600_000:
-        _effective_chunk = 16000          # 300+ page: ~40 chunks
+        _effective_chunk = 30000          # 300+ page: ~20 chunks
     elif len(full_text) > 300_000:
-        _effective_chunk = 12000          # 150-300 page: ~30 chunks
+        _effective_chunk = 24000          # 150-300 page: ~15 chunks
     else:
-        _effective_chunk = CHUNK_CHARS    # default 10000
-    chunks = chunk_text_by_boundary(full_text, chunk_size=_effective_chunk, overlap=300)
+        _effective_chunk = CHUNK_CHARS    # default 20000
+    # Smaller overlap (was 300) — larger chunks mean a boundary clause
+    # already lives near the middle of some chunk, not at its edge, so
+    # the overlap mostly re-processed duplicate context.
+    chunks = chunk_text_by_boundary(full_text, chunk_size=_effective_chunk, overlap=150)
     if not chunks:
         chunks.append(full_text)
     total = len(chunks)
@@ -237,18 +246,14 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     # pay for) 10 parallel threads. Scale with the chunk count. A
     # 5-page contract = 1-2 chunks = 2 workers; a 900-page contract =
     # 100+ chunks = full WORKERS pool. ANALYSIS_WORKERS env wins.
+    # Match worker count to chunk count so a 7-chunk doc gets 7 parallel
+    # workers (one wave, not two). Floor at 4; env override still wins.
+    # Previous tiers capped sub-30-chunk docs at 4-6, which is the main
+    # reason a 40-page analyze was taking ~3 minutes.
     if os.getenv("ANALYSIS_WORKERS"):
         _effective_workers = WORKERS
-    elif total <= 3:
-        _effective_workers = min(2, WORKERS)
-    elif total <= 10:
-        _effective_workers = min(4, WORKERS)
-    elif total <= 30:
-        _effective_workers = min(6, WORKERS)
-    elif total <= 60:
-        _effective_workers = min(8, WORKERS)
     else:
-        _effective_workers = WORKERS
+        _effective_workers = max(4, min(total, WORKERS))
     # Expose it to the chunk-dispatch block below without renaming the var there.
     _WORKERS_LOCAL = _effective_workers
     deadline = started + time_budget(total)
