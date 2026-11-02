@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import { useDocStore } from '../collab/useDocStore.js';
 import { getIdentity } from '../collab/identity.js';
+import ShareToCaseModal from '../components/collab/ShareToCaseModal.jsx';
 
 // Pull a plain-text label out of whatever shape the dispute-catalog entry uses.
 // Catalog entries can be strings OR objects with { label | text | fact | title | summary | stmt | ... }.
@@ -74,6 +75,8 @@ export default function Draft() {
 
   const [tpl, setTpl] = useState('');
   const [title, setTitle] = useState(seedDispute?.title || '');
+  // Collab plan phase 5: per-row Share-to-case modal state.
+  const [shareFor, setShareFor] = useState(null); // { id, title }
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
 
@@ -260,6 +263,16 @@ export default function Draft() {
                     <span className={`lx-badge lx-badge--${s.status === 'done' ? 'ok' : 'warn'}`} style={{ minWidth: 86, justifyContent: 'center' }}>
                       {s.status === 'done' ? 'Finalised' : 'In progress'}
                     </span>
+                    {/* Collab plan phase 5: inline Share-to-case button. */}
+                    <button
+                      type="button"
+                      className="lx-btn lx-btn--ghost lx-btn--sm"
+                      onClick={(e) => { e.stopPropagation(); setShareFor({ id: s.id, title: s.title || 'Untitled draft' }); }}
+                      title="Share this draft with teammates on a case"
+                      style={{ marginLeft: 8 }}
+                    >
+                      Share
+                    </button>
                   </div>
                 ))}
               </div>
@@ -267,6 +280,13 @@ export default function Draft() {
           </div>
         </div>
       </div>
+      {shareFor && (
+        <ShareToCaseModal
+          resource={{ type: 'draft_session', id: shareFor.id, name: shareFor.title }}
+          onClose={() => setShareFor(null)}
+          onShared={() => setShareFor(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import ShareToCaseModal from '../components/collab/ShareToCaseModal.jsx';
 
 // The firm's document-management store. Everything is read over the app's
 // cookie-authenticated fetch; writes carry the CSRF token the server set.
@@ -97,6 +98,8 @@ export default function DocumentHub() {
   const [statusKey, setStatusKey] = useState('all');
   const [typeFilter, setTypeFilter] = useState('');
   const [openId, setOpenId] = useState(null);
+  // Collab plan phase 5: per-row Share-to-case modal state.
+  const [shareFor, setShareFor] = useState(null); // { id, title }
 
   // Mode: 'library' | 'review' | 'trash'. Review is a queue UX; Trash is a
   // separate list fetched from /api/dms/trash with restore/purge actions.
@@ -423,6 +426,17 @@ export default function DocumentHub() {
                     <div style={{ fontSize: 12.5, color: 'var(--ink)' }}>{fmtAgo(d.created_at)}</div>
                   </div>
                   <span className={`lx-badge lx-badge--${st.tone}`} style={{ minWidth: 92, justifyContent: 'center' }}>{st.label}</span>
+                  {/* Collab plan phase 5: Share-to-case on each row. Use case_document
+                      resource_type so the backend knows this is a DMS doc, not a vault doc. */}
+                  <button
+                    type="button"
+                    className="lx-btn lx-btn--ghost lx-btn--sm"
+                    onClick={(e) => { e.stopPropagation(); setShareFor({ id: d.id, title: d.title || d.original_name || 'Untitled document' }); }}
+                    title="Share this document with a case"
+                    style={{ marginLeft: 8 }}
+                  >
+                    Share
+                  </button>
                 </div>
               );
             })}
@@ -432,6 +446,13 @@ export default function DocumentHub() {
       )}
 
       {openId != null && <DocDetail id={openId} onClose={() => setOpenId(null)} />}
+      {shareFor && (
+        <ShareToCaseModal
+          resource={{ type: 'case_document', id: shareFor.id, name: shareFor.title }}
+          onClose={() => setShareFor(null)}
+          onShared={() => setShareFor(null)}
+        />
+      )}
     </div>
   );
 }

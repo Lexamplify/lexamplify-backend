@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import ShareToCaseModal from '../components/collab/ShareToCaseModal.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -76,6 +77,7 @@ export default function CaseVault() {
   const [renameFor, setRenameFor] = useState(null); // { id, title }
   const [moveFor, setMoveFor] = useState(null); // { id, title, folder_id }
   const [shareFor, setShareFor] = useState(null); // { id, title }
+  const [shareToCaseFor, setShareToCaseFor] = useState(null); // { id, title }
   const [newFolder, setNewFolder] = useState(false);
 
   async function deleteDoc(d) {
@@ -288,6 +290,10 @@ export default function CaseVault() {
                             ['Rename', () => { setRenameFor({ id: d.id, title }); setRowMenu(null); }],
                             ['Move to folder', () => { setMoveFor({ id: d.id, title, folder_id: d.folder_id || null }); setRowMenu(null); }],
                             ['Share with team', () => { setShareFor({ id: d.id, title }); setRowMenu(null); }],
+                            // Collab plan phase 5: share into a case room. Different flavour
+                            // from "Share with team" (which grants a user access to the vault
+                            // document); this one attaches the doc to a case's conversation.
+                            ['Share to a case…', () => { setShareToCaseFor({ id: d.id, title }); setRowMenu(null); }],
                             ['Delete', () => { setRowMenu(null); deleteDoc(d); }, true],
                           ].map(([label, fn, danger]) => (
                             <button key={label} onClick={fn} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 0, background: 'transparent', color: danger ? 'var(--risk, #c0392b)' : 'var(--ink)', fontSize: 13, cursor: 'pointer', borderRadius: 6 }}
@@ -379,6 +385,13 @@ export default function CaseVault() {
       )}
       {shareFor && (
         <ShareDocModal doc={shareFor} onClose={() => setShareFor(null)} />
+      )}
+      {shareToCaseFor && (
+        <ShareToCaseModal
+          resource={{ type: 'vault_doc', id: shareToCaseFor.id, name: shareToCaseFor.title }}
+          onClose={() => setShareToCaseFor(null)}
+          onShared={() => setShareToCaseFor(null)}
+        />
       )}
     </div>
   );
