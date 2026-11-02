@@ -212,12 +212,30 @@ def create_workspace():
     db.session.add(ws)
     db.session.flush()  # need ws.id for member row
 
-    db.session.add(WorkspaceMember(
-        workspace_id=ws.id,
-        firm_member_id=me.id,
-        role="owner",
-        added_by=uid,
-    ))
+    # Defensive: a stale workspace_members row for this (ws.id, me.id)
+    # can exist if a previous workspace with the same PK was deleted
+    # without cascading its member rows (SQLite reuses a freed PK when
+    # the table was created without AUTOINCREMENT, which is how the
+    # 'UNIQUE constraint failed' 503 slipped in). Check before inserting
+    # so a leftover row doesn't 500 the create.
+    existing_member = (
+        db.session.query(WorkspaceMember)
+        .filter(WorkspaceMember.workspace_id == ws.id,
+                WorkspaceMember.firm_member_id == me.id)
+        .first()
+    )
+    if not existing_member:
+        db.session.add(WorkspaceMember(
+            workspace_id=ws.id,
+            firm_member_id=me.id,
+            role="owner",
+            added_by=uid,
+        ))
+    else:
+        # Promote whatever stale role it had to owner so the new creator
+        # has the full rights the UI expects. added_by stays whatever it
+        # was in the old row (harmless audit detail).
+        existing_member.role = "owner"
     db.session.commit()
     return jsonify({"workspace": ws.to_dict(with_members=_members_payload(ws))}), 201
 
@@ -312,6 +330,14 @@ def delete_workspace(wid: int):
             "message": "Archive the client workspace first, then delete it. This two-step guard stops a mis-click from wiping a live client.",
             "code": "MUST_ARCHIVE_FIRST",
         }), 409
+    # Explicitly delete workspace_members for this workspace first.
+    # The relationship doesn't have cascade='all, delete-orphan' set, so
+    # without this a 'Delete forever' would orphan the member rows and
+    # the next workspace to inherit the same PK (SQLite freed-id reuse)
+    # would 503 on a UNIQUE conflict when it tried to add its own owner.
+    db.session.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == wid
+    ).delete(synchronize_session=False)
     db.session.delete(ws)
     db.session.commit()
     return jsonify({"deleted": True, "id": wid})
