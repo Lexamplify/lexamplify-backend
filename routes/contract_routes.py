@@ -932,22 +932,11 @@ def list_active_analyses():
         active_ws = current_workspace_id()
     except Exception:
         active_ws = None
-    for jid in live_ids:
-        # Prefer the live in-memory snapshot — it's the freshest. Fall
-        # back to the on-disk store for jobs whose thread finished the
-        # scan but hasn't yet popped the live-jobs entry.
-        job = LOCAL_JOBS.get(jid)
-        if not job:
-            try:
-                from utils.job_store import get_local_job
-                job = get_local_job(jid) or {}
-            except Exception:
-                job = {}
-        # Honor the active workspace filter if the job carries one.
-        job_ws = job.get("workspace_id") if isinstance(job, dict) else None
-        if active_ws is not None and job_ws is not None and int(job_ws) != int(active_ws):
-            continue
-        out.append({
+
+    # Pass 1: everything in _LIVE_JOBS right now (actively running on
+    # this process). Snapshot a fresh copy of each job.
+    def _row(jid, job):
+        return {
             "job_id": jid,
             "status": job.get("status") or "processing",
             "progress": job.get("progress") or 0,
@@ -956,10 +945,99 @@ def list_active_analyses():
             "scan_strategy": job.get("scan_strategy") or "Balanced",
             "created_at": job.get("created_at"),
             "updated_at": job.get("updated_at"),
-        })
+            # Carry the real error message so the frontend can render
+            # a 'Failed: <reason>' row with a Dismiss / Retry button
+            # instead of the row silently vanishing.
+            "error": job.get("error"),
+        }
+
+    seen = set()
+    for jid in live_ids:
+        job = LOCAL_JOBS.get(jid)
+        if not job:
+            try:
+                from utils.job_store import get_local_job
+                job = get_local_job(jid) or {}
+            except Exception:
+                job = {}
+        job_ws = job.get("workspace_id") if isinstance(job, dict) else None
+        if active_ws is not None and job_ws is not None and int(job_ws) != int(active_ws):
+            continue
+        out.append(_row(jid, job))
+        seen.add(jid)
+
+    # Pass 2: recently-FAILED jobs that are no longer in _LIVE_JOBS (the
+    # thread's `finally` already popped them). Without this pass, a user
+    # whose job fails sees the inline panel vanish silently with no idea
+    # whether the server restarted, OCR timed out, or the LLM key was
+    # revoked. We scan the on-disk store for failed jobs owned by this
+    # user whose updated_at is within RECENT_FAIL_WINDOW. The frontend
+    # dismisses an error row by calling DELETE /api/contract/analyses/
+    # <job_id> — until then, the row stays visible.
+    RECENT_FAIL_WINDOW = 10 * 60   # 10 minutes
+    try:
+        from utils.job_store import JOB_DIR, get_local_job
+        import os as _os, time as _time
+        now = _time.time()
+        for name in _os.listdir(JOB_DIR):
+            if not name.endswith(".json"):
+                continue
+            jid = name[:-5]
+            if jid in seen:
+                continue
+            try:
+                job = get_local_job(jid) or {}
+            except Exception:
+                continue
+            if int(job.get("user_id") or -1) != uid:
+                continue
+            status = job.get("status")
+            if status != "failed":
+                continue
+            # Skip dismissed rows (frontend writes dismissed=true on
+            # DELETE so stale files don't keep re-appearing).
+            if job.get("dismissed"):
+                continue
+            updated = job.get("updated_at") or 0
+            if now - updated > RECENT_FAIL_WINDOW:
+                continue
+            job_ws = job.get("workspace_id")
+            if active_ws is not None and job_ws is not None and int(job_ws) != int(active_ws):
+                continue
+            out.append(_row(jid, job))
+    except Exception:
+        # Best-effort — if the job store is unreadable, still return the
+        # live pass. Never fail the whole endpoint over a stale file.
+        pass
+
     # Newest first.
     out.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
     return jsonify({"active": out}), 200
+
+
+@contract_bp.route("/analyses/active/<job_id>", methods=["DELETE", "OPTIONS"])
+@jwt_required()
+def dismiss_active_analysis(job_id):
+    """Mark a failed job as dismissed so it stops appearing in /active.
+    The frontend hits this when the user clicks 'Dismiss' on a failed
+    row, so the error state goes away for good instead of coming back
+    on every poll until the 10-minute window closes."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    try:
+        uid = int(get_jwt_identity())
+    except Exception:
+        return jsonify({"error": True, "message": "Sign in to continue."}), 401
+    try:
+        from utils.job_store import get_local_job, save_local_job
+        job = get_local_job(job_id)
+        if not job or int(job.get("user_id") or -1) != uid:
+            return jsonify({"error": True, "message": "Not found."}), 404
+        job["dismissed"] = True
+        save_local_job(job_id, job)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        return jsonify({"error": True, "message": str(e)}), 500
 
 
 # ─── Checklists (pipeline item 3) ─────────────────────────────────────

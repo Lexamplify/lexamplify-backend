@@ -2538,4 +2538,15 @@ if __name__ == '__main__':
     init_db()
     app = create_app()
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    # Disable the auto-reloader by default: it kills every in-flight
+    # analyze_file / collab / vault thread the moment any backend .py
+    # file is saved, including documentation-only edits. Users saw this
+    # as "contract analysis just disappeared after a few minutes" — the
+    # Flask reloader restarted the process mid-OCR and every background
+    # thread was gone. Set FLASK_RELOADER=1 explicitly if you WANT the
+    # reloader for a particular session. threaded=True keeps the dev
+    # server able to serve /analyses/active polls while a background
+    # analysis thread is CPU-busy.
+    use_reloader = os.getenv("FLASK_RELOADER", "0") == "1"
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=use_reloader, threaded=True)

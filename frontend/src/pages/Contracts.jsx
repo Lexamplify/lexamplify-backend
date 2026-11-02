@@ -221,20 +221,36 @@ export default function Contracts() {
       <div className="lx-section-head lx-mt-xl"><h3>Review a contract</h3></div>
       <div className="lx-card lx-card--pad">
         {active === null ? (
-          // First /active fetch hasn't landed yet — show a quiet
-          // placeholder instead of the empty state so re-mounting the
-          // page while an analysis is in-flight doesn't flash the
-          // "Start a new contract review" copy for 50-200 ms before
-          // the panel appears.
           <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
             Loading your contract reviews…
           </div>
-        ) : active.length > 0 ? (
+        ) : active.filter((a) => a.status !== 'failed').length > 0 ? (
+          // The TOP panel always shows the most-recent STILL-RUNNING
+          // job. Failed ones push down into the Past Reviews list where
+          // they get a Dismiss button. This stops a failed row from
+          // claiming the big inline panel real estate while a newer
+          // retry is actually making progress below.
           <InlineAnalysisPanel
-            job={active[0]}
-            others={active.slice(1)}
+            job={active.filter((a) => a.status !== 'failed')[0]}
+            others={active.filter((a) => a.status !== 'failed').slice(1)}
             onStartAnother={() => setUpload(true)}
           />
+        ) : active.length > 0 ? (
+          // No in-flight jobs but at least one failure in the window —
+          // show a quiet "nothing's running" state with a Start-another
+          // call to action. The failure rows render below in Past
+          // Reviews with their Dismiss / Try again buttons.
+          <div className="lx-empty" style={{ padding: '48px 20px' }}>
+            <div className="lx-empty__ico"><Ic.Contracts size={22} /></div>
+            <h4>No reviews in progress</h4>
+            <p style={{ maxWidth: 440, margin: '0 auto' }}>
+              Your last review ran into a problem — see the row below. You can retry it
+              or start a new one.
+            </p>
+            <button className="lx-btn lx-btn--gold" style={{ marginTop: 16 }} onClick={() => setUpload(true)}>
+              <Ic.Upload size={15} /> Upload or paste a contract
+            </button>
+          </div>
         ) : (
           <div className="lx-empty" style={{ padding: '48px 20px' }}>
             <div className="lx-empty__ico"><Ic.Contracts size={22} /></div>
@@ -265,7 +281,30 @@ export default function Contracts() {
           <div className="lx-card lx-card--pad">
             <div className="lx-list">
               {(active || []).map((a) => (
-                <LiveReviewRow key={`live-${a.job_id}`} job={a} onOpen={() => a.job_id && !String(a.job_id).startsWith('optim_') && navigate('/contracts/' + a.job_id)} />
+                <LiveReviewRow
+                  key={`live-${a.job_id}`}
+                  job={a}
+                  onOpen={() => a.job_id && !String(a.job_id).startsWith('optim_') && navigate('/contracts/' + a.job_id)}
+                  onDismiss={a.status === 'failed' ? async () => {
+                    // Hide optimistically, then tell the server not to
+                    // re-surface it. Even if the DELETE fails (server
+                    // down), the row stays gone on this client.
+                    setActive((prev) => (prev || []).filter((r) => r.job_id !== a.job_id));
+                    try {
+                      await fetch(`${API_BASE}/api/contract/analyses/active/${a.job_id}`, {
+                        method: 'DELETE', credentials: 'include',
+                        headers: { 'X-CSRF-TOKEN': csrf() },
+                      });
+                    } catch { /* ignore */ }
+                  } : undefined}
+                  onRetry={a.status === 'failed' ? () => {
+                    // "Try again" just re-opens the upload modal with
+                    // the previous file's name as a prefill hint, since
+                    // the actual bytes aren't kept client-side.
+                    setHandoffName(a.document_name || '');
+                    setUpload(true);
+                  } : undefined}
+                />
               ))}
               {past.map((a) => (
                 <div className="lx-item" key={a.id} style={{ padding: '14px 2px', cursor: 'pointer' }} onClick={() => navigate('/contracts/' + a.job_id)}>
@@ -411,8 +450,54 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
 // Compact live-progress row for Past Reviews — one per in-flight job,
 // rendered at the top of the saved list so the user has a single place
 // to look for "what has been reviewed and what is being reviewed now".
-function LiveReviewRow({ job, onOpen }) {
+// Failed jobs render here too (red state + Dismiss button + Retry link)
+// so the user sees the real reason instead of the row silently vanishing.
+function LiveReviewRow({ job, onOpen, onDismiss, onRetry }) {
+  const failed = job.status === 'failed';
   const progress = Math.max(2, Math.min(99, Math.round(job.progress || 0)));
+  if (failed) {
+    return (
+      <div className="lx-item" style={{ padding: '14px 2px', alignItems: 'flex-start' }}>
+        <div className="lx-item__ico" style={{ color: 'var(--risk, #b53535)' }}>
+          <Ic.Contracts size={16} />
+        </div>
+        <div className="lx-item__body">
+          <div className="lx-item__title">{job.document_name || 'Contract analysis'}</div>
+          <div className="lx-item__meta" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'rgba(220, 60, 60, 0.1)', color: 'var(--risk, #b53535)',
+              padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500,
+              alignSelf: 'flex-start',
+            }}>
+              Failed
+            </span>
+            {job.error && (
+              <span style={{ fontSize: 12, color: 'var(--ink)', lineHeight: 1.5 }}>
+                {job.error}
+              </span>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {onRetry && (
+            <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm"
+                    style={{ padding: '2px 10px', fontSize: 11 }}
+                    onClick={(e) => { e.stopPropagation(); onRetry(); }}>
+              Try again
+            </button>
+          )}
+          {onDismiss && (
+            <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm"
+                    style={{ padding: '2px 10px', fontSize: 11, color: 'var(--muted)' }}
+                    onClick={(e) => { e.stopPropagation(); onDismiss(); }}>
+              Dismiss
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="lx-item" style={{ padding: '14px 2px', cursor: 'pointer' }} onClick={onOpen}>
       <div className="lx-item__ico"><Ic.Contracts size={16} /></div>
@@ -432,8 +517,6 @@ function LiveReviewRow({ job, onOpen }) {
         </div>
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>Open →</div>
-      {/* lxPulse keyframes live here so they survive even when the
-          UploadModal (which also defines lxBarSlide) is unmounted. */}
       <style>{`@keyframes lxPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }`}</style>
     </div>
   );
