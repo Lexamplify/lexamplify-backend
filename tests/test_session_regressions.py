@@ -235,6 +235,56 @@ def test_case_visible_sql_no_header_sees_all(app_with_lpms):
 
 
 # ────────────────────────────────────────────────────────────────────
+# Bug 4b — commit dced75a
+#   POST /api/practice/cases created rows with workspace_id=NULL.
+#   With the strict case_visible_sql filter from 4, the user's own
+#   newly-created matter 404'd on the very next GET. The create path
+#   must stamp workspace_id from X-Workspace-Id so the round-trip
+#   works.
+# ────────────────────────────────────────────────────────────────────
+
+def test_newly_created_case_is_visible_to_creator(app_with_lpms):
+    """Simulate POST creating a case with workspace_id=10 (stamped from
+    the X-Workspace-Id header), then the immediate GET: the creator
+    must see the row under their own active workspace."""
+    import sqlite3
+    conn = sqlite3.connect(app_with_lpms.extensions["lpms_db_path"])
+    conn.execute(
+        "INSERT INTO lpms_cases (id, firm_id, advocate_id, team_id, "
+        "restricted, title, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (99, 1, 1, None, 0, "Just-created Mehta case", 10),
+    )
+    conn.commit()
+    conn.close()
+    member = {"id": 1, "firm_id": 1, "user_id": 42, "role": "senior"}
+    assert 99 in _run_vis(app_with_lpms, member, 10), (
+        "a case created under workspace_id=10 must be visible to the "
+        "same workspace on the very next GET"
+    )
+
+
+def test_case_create_without_workspace_header_leaves_null(app_with_lpms):
+    """Legacy / background path: POST without X-Workspace-Id must leave
+    workspace_id=NULL (Celery jobs that run cron reminders fall into
+    this bucket). The strict filter then hides the row from any
+    client-scoped view — which is the correct behaviour."""
+    import sqlite3
+    conn = sqlite3.connect(app_with_lpms.extensions["lpms_db_path"])
+    conn.execute(
+        "INSERT INTO lpms_cases (id, firm_id, advocate_id, team_id, "
+        "restricted, title, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (100, 1, 1, None, 0, "Background-created, no workspace", None),
+    )
+    conn.commit()
+    conn.close()
+    member = {"id": 1, "firm_id": 1, "user_id": 42, "role": "senior"}
+    # Under a specific workspace header: NULL rows hidden (correct).
+    assert 100 not in _run_vis(app_with_lpms, member, 10)
+    # No header at all: NULL rows visible (correct).
+    assert 100 in _run_vis(app_with_lpms, member, None)
+
+
+# ────────────────────────────────────────────────────────────────────
 # Bug 5 — commit c5f5a62 / Settings → Contract checklist feature
 #   Firm master checklist settings PUT required senior/partner role;
 #   the server-side check was correct. We lock the string set here so
