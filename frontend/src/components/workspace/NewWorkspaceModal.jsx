@@ -84,16 +84,26 @@ export default function NewWorkspaceModal({ onClose, onCreated, create }) {
               <input type="email" value={form.client_email} onChange={update('client_email')} placeholder="client@example.com" disabled={busy} />
             </label>
           </div>
-          <div className="ws-modal__row">
-            <label>
-              <span>Phone</span>
-              <input type="tel" value={form.client_phone} onChange={update('client_phone')} placeholder="+91…" disabled={busy} />
-            </label>
-            <label>
-              <span>Address</span>
-              <input type="text" value={form.client_address} onChange={update('client_address')} placeholder="City, state" disabled={busy} />
-            </label>
-          </div>
+          <label>
+            <span>Phone</span>
+            <input type="tel" value={form.client_phone} onChange={update('client_phone')} placeholder="+91…" disabled={busy} />
+          </label>
+          <label>
+            {/* Full postal address — building / plot / street / area /
+                city / state / pincode. Multi-line because a corporate
+                client's registered address or an individual's full
+                postal address rarely fits in one line, and squeezing it
+                into a single input was the user's complaint. */}
+            <span>Address <em>(full postal address)</em></span>
+            <textarea
+              rows={3}
+              value={form.client_address}
+              onChange={update('client_address')}
+              placeholder={'Plot 14, MIDC Industrial Area,\nBhiwandi, Thane 421302,\nMaharashtra, India'}
+              disabled={busy}
+              style={{ resize: 'vertical' }}
+            />
+          </label>
           <label>
             <span>Client / matter facts <em>(AI uses this)</em></span>
             <textarea rows={5} value={form.facts} onChange={update('facts')}
