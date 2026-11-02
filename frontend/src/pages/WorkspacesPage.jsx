@@ -48,9 +48,10 @@ export default function WorkspacesPage() {
         <div>
           <h1>Workspaces</h1>
           <p className="workspaces-page__sub">
-            One workspace per case. Everything you do inside it — drafts,
-            contracts, calendar, vault — is scoped there and shared only with
-            the people you invite.
+            One workspace per client. Every matter, draft, contract,
+            calendar entry and vault document for a client lives inside
+            their workspace — scoped there and shared only with the
+            people you invite.
           </p>
         </div>
         <div className="workspaces-page__actions">
