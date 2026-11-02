@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import NewWorkspaceModal from '../components/workspace/NewWorkspaceModal.jsx';
 
 /*
  * WorkspaceSwitcher — the dropdown in the topbar that picks the current
@@ -12,9 +13,11 @@ import { useAuth } from '../context/AuthContext.jsx';
  *   * If the user has NO workspaces and the backend returned 200 (feature on),
  *     auto-create "{firm.name} — General" so the app is never in a null state.
  *   * Clicking an entry sets current + dispatches lx:workspace-changed.
- *   * "Create workspace…" opens an inline prompt (keeps the switcher simple;
- *     the full form lives on the /workspaces management page).
- *   * "Manage workspaces →" link navigates to /workspaces.
+ *   * "+ Add client" opens the SAME NewWorkspaceModal that WorkspacesPage uses
+ *     (contact + facts + notes), so the switcher and the /workspaces page
+ *     collect the exact same information — previously the switcher only
+ *     asked for a name, which the user correctly flagged as inconsistent.
+ *   * "Manage clients →" link navigates to /workspaces.
  *   * If the feature flag is off on the backend (store.enabled === false),
  *     the switcher renders as a plain, non-interactive firm crumb — exactly
  *     the pre-Phase-3 look.
@@ -29,14 +32,10 @@ export default function WorkspaceSwitcher({ firmFallback }) {
   } = useWorkspaceStore();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
-  // Dedicated flag for "the inline create form is visible". Previously
-  // the render used `creating || newName` and the "+ Add client" button
-  // tried to coax that into true with setNewName(' ') + setTimeout(..., 0)
-  // → setNewName(''), which flickered the form in and out on the same
-  // tick — the click looked completely dead.
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  // "+ Add client" opens the shared NewWorkspaceModal (same as the
+  // /workspaces page), not an inline name-only input — the previous
+  // inconsistency between the switcher and /workspaces is gone.
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [autoCreateTried, setAutoCreateTried] = useState(false);
   const rootRef = useRef(null);
 
@@ -98,25 +97,6 @@ export default function WorkspaceSwitcher({ firmFallback }) {
     setQuery('');
   };
 
-  const handleCreate = async (e) => {
-    e?.preventDefault?.();
-    const name = newName.trim();
-    if (!name) return;
-    setCreating(true);
-    try {
-      await create({ name });
-      setNewName('');
-      setShowCreateForm(false);
-      setOpen(false);
-    } catch (err) {
-      // Keep the prompt open so the user sees the error; store sets error state.
-      // eslint-disable-next-line no-console
-      console.error('workspace create failed', err);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
     <div className="ws-switcher" ref={rootRef}>
       <button
@@ -175,28 +155,13 @@ export default function WorkspaceSwitcher({ firmFallback }) {
 
           <div className="ws-switcher__divider" />
 
-          {showCreateForm ? (
-            <form className="ws-switcher__create" onSubmit={handleCreate}>
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="New client name"
-                disabled={creating}
-                autoFocus
-              />
-              <button type="submit" disabled={creating || !newName.trim()}>Create</button>
-              <button type="button" onClick={() => { setNewName(''); setShowCreateForm(false); }}>Cancel</button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              className="ws-switcher__footer-link"
-              onClick={() => { setNewName(''); setShowCreateForm(true); }}
-            >
-              + Add client
-            </button>
-          )}
+          <button
+            type="button"
+            className="ws-switcher__footer-link"
+            onClick={() => { setOpen(false); setShowCreateModal(true); }}
+          >
+            + Add client
+          </button>
 
           <Link
             to="/workspaces"
@@ -210,6 +175,21 @@ export default function WorkspaceSwitcher({ firmFallback }) {
             <div className="ws-switcher__error" role="alert">{error}</div>
           )}
         </div>
+      )}
+      {showCreateModal && (
+        <NewWorkspaceModal
+          onClose={() => setShowCreateModal(false)}
+          onCreated={(created) => {
+            // Auto-select the newly-created client so the user doesn't
+            // have to go hunt for it in the dropdown. Mirrors
+            // WorkspacesPage's post-create behaviour.
+            if (created?.id) {
+              try { setCurrent(created.id); } catch { /* ignore */ }
+            }
+            setShowCreateModal(false);
+          }}
+          create={create}
+        />
       )}
     </div>
   );
