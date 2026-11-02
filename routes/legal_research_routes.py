@@ -8,7 +8,7 @@ Blueprint: no prefix (the public paths are absolute and stay byte-identical)
 """
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 from flask_jwt_extended import jwt_required
 
 legal_research_bp = Blueprint("legal_research", __name__)
@@ -16,120 +16,27 @@ legal_research_bp = Blueprint("legal_research", __name__)
 
 @legal_research_bp.route('/api/legal-research', methods=['POST', 'OPTIONS'])
 def api_legal_research():
-    import app as app_module
-
     if request.method == 'OPTIONS':
         return jsonify({}), 200
 
+    from utils.research_service import MAX_QUESTION_CHARS, research
+
     data = request.get_json(force=True, silent=True) or {}
-    lawyer_question = data.get('question', '').strip()
+    lawyer_question = str(data.get('question', '')).strip()
 
     if not lawyer_question:
         return jsonify({"error": True, "message": "Question cannot be empty."}), 400
+    if len(lawyer_question) > MAX_QUESTION_CHARS:
+        return jsonify({"error": True, "message": f"Please keep the question under {MAX_QUESTION_CHARS} characters."}), 400
 
-    try:
-        # 1. Initialize Pinecone & Groq using existing .env keys
-        pc = app_module.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-        index = app_module._get_pinecone_index(pc)
-        namespace = os.getenv("PINECONE_NAMESPACE", "legal-cases")
-        groq_client = app_module.Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-        # 2. Embed the question and query the raw vector index — worker.py
-        # ingests via index.upsert() with real metadata (case_id, year,
-        # chunk_index, text), not via Pinecone's integrated-inference
-        # records API, so matches carry .metadata directly instead of
-        # needing the id string parsed apart.
-        embed_response = pc.inference.embed(
-            model=app_module.EMBED_MODEL,
-            inputs=[lawyer_question],
-            parameters={"input_type": "query", "truncate": "END"},
-        )
-        query_vector = embed_response[0].values
-
-        # top_k=10 (not 2) deliberately over-fetches chunks so dedup below
-        # has multiple same-case chunks to actually collapse — a small
-        # top_k would rarely return more than one chunk per case anyway,
-        # making the dedup step a no-op.
-        pinecone_results = index.query(
-            vector=query_vector,
-            top_k=10,
-            include_metadata=True,
-            namespace=namespace,
-        )
-
-        context_chunks = []
-        sources = []
-        seen_cases = set()
-
-        for match in (pinecone_results.matches or []):
-            metadata = match.metadata or {}
-            case_id = metadata.get('case_id') or match.id
-
-            text = metadata.get('text', '')
-            if text:
-                context_chunks.append(text)
-
-            # CRITICAL DEDUPLICATION — a case can have hundreds of chunks;
-            # without this, the same case would flood the UI as N
-            # identical-looking source cards.
-            if case_id in seen_cases:
-                continue
-            seen_cases.add(case_id)
-
-            sources.append({
-                "case_id": case_id,
-                "title": app_module.format_case_title(case_id),
-                "year": metadata.get('year', ''),
-                "snippet": text[:200],
-            })
-
-        context_text = "\n\n".join(context_chunks)
-
-        if not context_chunks:
-            return jsonify({
-                "status": "success",
-                "answer": "I couldn't find any relevant precedents in the Firm Library regarding this query.",
-                "sources": []
-            }), 200
-
-        # 3. Generate Answer using Groq — workspace brief prepended (Phase 5)
-        try:
-            from utils.workspace_scope import current_workspace_id as _wsid
-            from utils.workspace_context import build_workspace_context as _wsctx
-            _ws = _wsctx(_wsid())
-        except Exception:
-            _ws = ""
-        system_prompt = _ws + (
-            "You are an expert senior legal counsel in India. Analyze the following legal fragments "
-            "and answer the user's question precisely based *only* on the context provided. If the "
-            "context doesn't contain the answer, state that clearly."
-        )
-
-        user_prompt = f"Context:\n{context_text}\n\nQuestion: {lawyer_question}"
-
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            model="llama-3.1-8b-instant",
-            temperature=0.2,
-        )
-
-        ai_answer = chat_completion.choices[0].message.content
-
-        return jsonify({
-            "status": "success",
-            "answer": ai_answer,
-            "sources": sources
-        }), 200
-
-    except Exception as e:
-        print(f"[PINECONE ERROR] {e}")
-        return jsonify({
-            "answer": "I am currently unable to access the legal database. Please try again later.",
-            "context": []
-        }), 200
+    # Success keeps its original shape ({status, answer, sources}); a failure is a real error status with a specific code,
+    # never a 200 carrying a made-up answer. See utils/research_service.py for the outcomes.
+    http, body = research(lawyer_question, request_id=getattr(g, 'request_id', None))
+    resp = jsonify(body)
+    resp.status_code = http
+    if http in (503, 504) and body.get("retryable"):
+        resp.headers['Retry-After'] = '30'
+    return resp
 
 
 @legal_research_bp.route('/api/legal-research/document/<string:case_id>', methods=['GET', 'OPTIONS'])
