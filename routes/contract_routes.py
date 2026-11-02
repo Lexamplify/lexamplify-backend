@@ -27,7 +27,7 @@ contract_bp = Blueprint("contract", __name__)
 
 JOB_STALE_SECONDS = int(os.getenv("ANALYSIS_STALE_SECONDS", "75"))          # a running job writes a heartbeat every 2 s
 JOB_HARD_LIMIT_SECONDS = int(os.getenv("ANALYSIS_HARD_LIMIT_SECONDS", "1200"))
-MAX_RSS_MB = int(os.getenv("ANALYSIS_MAX_RSS_MB", "430"))                    # the free plan stops the whole service at 512 MB
+MAX_RSS_MB = int(os.getenv("ANALYSIS_MAX_RSS_MB", "2000"))                    # 2 GB default; was 430 MB for Render free tier but that trips locally (fitz + RapidOCR models + Flask routinely sit above 430 MB without even running). Override via env in production.
 MAX_ACTIVE_PER_USER = int(os.getenv("ANALYSIS_MAX_ACTIVE_PER_USER", "2"))
 STREAM_MAX_SECONDS = int(os.getenv("ANALYSIS_STREAM_MAX_SECONDS", "20"))     # a live stream holds a server thread; never for long
 _LIVE_JOBS = {}                                                            # job_id -> owner, for jobs running in THIS process
