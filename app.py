@@ -1896,6 +1896,14 @@ def create_app():
     from routes.audit_routes import audit_bp
     app.register_blueprint(drafts_bp)  # /api/drafts (guided drafting engine); url_prefix baked in
     app.register_blueprint(audit_bp)   # /api/audit (own activity + CSV); url_prefix baked in
+    # Case Collaboration blueprint — plan compiled-scribbling-scott.md phase 2.
+    # /api/collab/{cases,messages,share,...}; url_prefix baked into collab_bp.
+    try:
+        from routes.collab_routes import collab_bp
+        app.register_blueprint(collab_bp)
+        app.logger.info("collab: /api/collab endpoints registered")
+    except Exception as _e:  # noqa: BLE001
+        app.logger.warning(f"collab blueprint not registered: {_e}")
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(sso_bp)  # url_prefix already baked into sso_bp's own definition
     app.register_blueprint(library_bp)  # url_prefix already baked into library_bp's own definition
@@ -2016,6 +2024,26 @@ def create_app():
                 conn.commit()
         except Exception as e:
             app.logger.warning(f"users.phone_verified column check passed or not needed: {e}")
+
+        # Collaboration plan B6: audit_events gets structured target_type /
+        # target_id so "shared contract 42 with user 7" is filterable
+        # instead of only free-text in the detail column. SQLite-side only
+        # — raw sqlite3 ALTERs in init_db cover lex_assistant.db but
+        # audit_events lives on the SQLAlchemy connection (instance/
+        # database.db), so we need the ALTER here too.
+        for _col, _type_pg, _type_sqlite in [
+            ("target_type", "VARCHAR(40)", "VARCHAR(40)"),
+            ("target_id",   "VARCHAR(64)", "VARCHAR(64)"),
+        ]:
+            try:
+                with sqlalchemy_db.engine.connect() as conn:
+                    if _is_postgres:
+                        conn.execute(sqlalchemy_db.text(f"ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS {_col} {_type_pg};"))
+                    else:
+                        conn.execute(sqlalchemy_db.text(f"ALTER TABLE audit_events ADD COLUMN {_col} {_type_sqlite};"))
+                    conn.commit()
+            except Exception as e:
+                app.logger.warning(f"audit_events.{_col} column check passed or not needed: {e}")
 
         # One-time (idempotent) carry-over of anyone who registered through
         # the old raw-sqlite auth path in routes/auth_routes.py before it
