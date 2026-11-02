@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_TABS = ['All', 'Active', 'Hearing soon', 'Disposed'];
@@ -459,9 +460,17 @@ function FirmSetupCard({ onCreated }) {
 
 /** New matter modal — now with optional team assignment. */
 function NewMatterModal({ teams, members, isSenior, currentMemberId, onClose, onCreated }) {
-  // Default: assign to self (the creator)
+  // Pipeline item 1: workspace = client. Auto-fill client_name from the
+  // active workspace so the user doesn't retype it (and so the matter
+  // can't drift to a different client by typo). The field is hidden
+  // from the UI; the backend still receives it.
+  const activeWorkspace = useWorkspaceStore((s) =>
+    (s.workspaces || []).find((w) => w.id === s.currentWorkspaceId) || null
+  );
   const [form, setForm] = useState({
-    title: '', court: '', case_no: '', client_name: '', case_type: '',
+    title: '', court: '', case_no: '',
+    client_name: activeWorkspace?.name || '',
+    case_type: '',
     team_id: '', advocate_id: currentMemberId ? String(currentMemberId) : '',
     restricted: false,
   });
@@ -509,7 +518,23 @@ function NewMatterModal({ teams, members, isSenior, currentMemberId, onClose, on
         <div style={{ flex: 1 }}><label className="lbl">Court</label><input className="inp" value={form.court} onChange={set('court')} placeholder="Delhi High Court" /></div>
         <div style={{ flex: 1 }}><label className="lbl">Case / CNR no.</label><input className="inp" value={form.case_no} onChange={set('case_no')} placeholder="W.P.(C) …" /></div>
       </div>
-      <div><label className="lbl">Client</label><input className="inp" value={form.client_name} onChange={set('client_name')} placeholder="Client name" /></div>
+      {/* Client auto-fills from the active workspace (workspace = client).
+          Shown read-only so the user sees which client the matter will
+          attach to — never editable, so a typo can't drift the matter
+          off its workspace. */}
+      {activeWorkspace?.name && (
+        <div>
+          <label className="lbl">Client (from active workspace)</label>
+          <input
+            className="inp"
+            value={activeWorkspace.name}
+            disabled
+            readOnly
+            style={{ background: 'var(--paper-2)', cursor: 'not-allowed' }}
+            title="Switch workspace in the top bar to file this matter under a different client."
+          />
+        </div>
+      )}
       <div className="lx-row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {['Writ', 'Civil', 'Criminal', 'Advisory', 'Consumer'].map((t) => (
           <span key={t} className="chip" onClick={() => setForm((f) => ({ ...f, case_type: t }))}
