@@ -25,7 +25,7 @@ from utils.upload_guard import check_upload, decode_text, MAX_UPLOAD_BYTES
 
 contract_bp = Blueprint("contract", __name__)
 
-JOB_STALE_SECONDS = int(os.getenv("ANALYSIS_STALE_SECONDS", "75"))          # a running job writes a heartbeat every 2 s
+JOB_STALE_SECONDS = int(os.getenv("ANALYSIS_STALE_SECONDS", "180"))         # /analyze-file writes a 10s heartbeat; 180s gives a wide margin for a slow OCR page or model load before a job is judged stalled
 JOB_HARD_LIMIT_SECONDS = int(os.getenv("ANALYSIS_HARD_LIMIT_SECONDS", "1200"))
 MAX_RSS_MB = int(os.getenv("ANALYSIS_MAX_RSS_MB", "2000"))                    # 2 GB default; was 430 MB for Render free tier but that trips locally (fitz + RapidOCR models + Flask routinely sit above 430 MB without even running). Override via env in production.
 MAX_ACTIVE_PER_USER = int(os.getenv("ANALYSIS_MAX_ACTIVE_PER_USER", "2"))
@@ -845,7 +845,26 @@ def analyze_file():
         pct = 2 + int(38 * (done / total))
         update_job(job_id, status="processing", progress=pct, stage=stage_text)
 
+    # Heartbeat: a job is judged "stalled" when its updated_at is older
+    # than ANALYSIS_STALE_SECONDS (75s). During OCR the only heartbeat
+    # was a completed-page callback — but the FIRST OCR batch pays the
+    # one-time RapidOCR model download + load, and a slow page can take
+    # tens of seconds, so the gap between page callbacks routinely blew
+    # past 75s and the stall detector KILLED a job that was working fine
+    # ("stopped responding at 2%"). This daemon bumps updated_at every
+    # 10s for the whole run, decoupling liveness from OCR page cadence.
+    _hb_done = threading.Event()
+
+    def _heartbeat():
+        while not _hb_done.wait(10):
+            try:
+                update_job(job_id)   # no kwargs → just refreshes updated_at
+            except Exception:
+                pass
+
     def _run():
+        hb_thread = threading.Thread(target=_heartbeat, daemon=True, name=f"hb-{job_id[:10]}")
+        hb_thread.start()
         try:
             # 1. Extraction — raw bytes → text. Progress callback fires per OCR page.
             if filetype == "txt":
@@ -889,6 +908,7 @@ def analyze_file():
             msg = _diagnose_llm_failure(err) or "The analysis could not be completed. Please try again."
             _fail_job(job_id, message=msg)
         finally:
+            _hb_done.set()           # stop the heartbeat
             LOCAL_JOBS.pop(job_id, None)
             with _LIVE_LOCK:
                 _LIVE_JOBS.pop(job_id, None)
