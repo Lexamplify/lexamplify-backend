@@ -20,6 +20,31 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 matter_bp = Blueprint('matter', __name__)
 
 
+def _ws_id():
+    """Current workspace id from the X-Workspace-Id request header, or None.
+    Imported lazily so matter_routes stays loadable in test harnesses that
+    don't register the workspaces blueprint."""
+    try:
+        from utils.workspace_scope import current_workspace_id
+        return current_workspace_id()
+    except Exception:
+        return None
+
+
+def _matter_in_scope(row):
+    """True when the matter row's workspace matches the active workspace.
+    Legacy rows (workspace_id IS NULL) stay visible everywhere — the
+    firm-wide default from before Pipeline item 1 shipped — and when no
+    header is sent, every workspace matches. Only when BOTH the row has
+    a workspace and the request has a workspace, and they differ, do we
+    hide it."""
+    row_ws = row['workspace_id'] if 'workspace_id' in row.keys() else None
+    req_ws = _ws_id()
+    if row_ws is None or req_ws is None:
+        return True
+    return int(row_ws) == int(req_ws)
+
+
 def get_db():
     # Bare relative path — resolves transparently through app.py's
     # Persistent Disk symlink workaround, exactly like every other
@@ -58,9 +83,11 @@ def _get_matter_or_404(conn, matter_id, uid, require_owner=False):
     """Returns (row, error_response_or_None). Deliberately 404s (not 403)
     on an access-denied matter, same convention as Case Vault's
     authorization guards — don't disclose that a resource exists to a
-    caller who can't see it."""
+    caller who can't see it. Also 404s when the matter belongs to a
+    different workspace than the current request — a cross-client
+    URL-guessing attempt should look the same as a non-existent matter."""
     row = conn.execute('SELECT * FROM matters WHERE id = ?', (matter_id,)).fetchone()
-    if not row or not _matter_access_ok(conn, row, uid, require_owner=require_owner):
+    if not row or not _matter_access_ok(conn, row, uid, require_owner=require_owner) or not _matter_in_scope(row):
         return None, (jsonify({'error': True, 'message': 'Matter not found.'}), 404)
     return row, None
 
@@ -271,12 +298,18 @@ def list_matters():
             WHERE m.owner_user_id = ? OR tm.user_id = ?
             ORDER BY m.created_at DESC
         ''', (uid, uid)).fetchall()
-        matters = [dict(r) for r in rows]
+        # Workspace scope: when the client sends X-Workspace-Id, keep only
+        # matters that belong to that workspace plus legacy NULL-workspace
+        # rows (visible across every workspace by design — see
+        # _matter_in_scope). When no header is sent, nothing is filtered —
+        # legacy / unscoped frontend keeps working.
+        req_ws = _ws_id()
+        matters = [dict(r) for r in rows if _matter_in_scope(r)]
         if unassigned_only:
             matters = [m for m in matters if m['team_id'] is None]
         elif team_id_filter is not None:
             matters = [m for m in matters if m['team_id'] == team_id_filter]
-        return jsonify({'matters': matters}), 200
+        return jsonify({'matters': matters, 'workspace_id': req_ws}), 200
     finally:
         conn.close()
 
@@ -306,10 +339,15 @@ def create_matter():
             if not is_member and int(team['owner_user_id']) != uid:
                 return jsonify({'error': True, 'message': 'Team not found.'}), 404
 
+        # New matters inherit the active workspace from the X-Workspace-Id
+        # header. If the frontend forgot to send it (legacy / unscoped
+        # context), workspace_id stays NULL and the row is visible firm-wide
+        # — same convention as _matter_in_scope treats legacy data.
+        req_ws = _ws_id()
         cur = conn.execute(
-            "INSERT INTO matters (title, status, team_id, lead_counsel, opened_date, owner_user_id) "
-            "VALUES (?, 'open', ?, ?, date('now'), ?)",
-            (title, team_id, lead_counsel, uid)
+            "INSERT INTO matters (title, status, team_id, lead_counsel, opened_date, owner_user_id, workspace_id) "
+            "VALUES (?, 'open', ?, ?, date('now'), ?, ?)",
+            (title, team_id, lead_counsel, uid, req_ws)
         )
         matter_id = cur.lastrowid
         _log_activity(
