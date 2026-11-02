@@ -86,6 +86,15 @@ function renderBody(body, mentionUserIds, recipientNames) {
   });
 }
 
+// File extensions that we render inline as an image preview in the chat
+// (everything else gets a generic file card with a Download button).
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']);
+const _extOf = (name) => {
+  if (!name || typeof name !== 'string') return '';
+  const i = name.lastIndexOf('.');
+  return i >= 0 ? name.slice(i + 1).toLowerCase() : '';
+};
+
 function ResourceCard({ r, navigate }) {
   const label = {
     contract_analysis: 'Contract analysis',
@@ -99,23 +108,51 @@ function ResourceCard({ r, navigate }) {
     vault_doc: `/vault#${r.resource_id}`,
     case_document: null,
   }[r.resource_type];
+  const displayName = r.name || r.filename || `${r.resource_type}:${r.resource_id}`;
+  const isImage = r.resource_type === 'vault_doc' && IMAGE_EXTS.has(_extOf(r.filename || r.name));
+  const downloadUrl = r.resource_type === 'vault_doc'
+    ? `${API_BASE}/api/vault/documents/${r.resource_id}/download`
+    : null;
   return (
     <div
-      role={link ? 'link' : undefined}
-      tabIndex={link ? 0 : undefined}
-      onClick={() => link && navigate(link)}
-      onKeyDown={(e) => { if (link && (e.key === 'Enter' || e.key === ' ')) navigate(link); }}
       style={{
         border: '1px solid var(--rule)', borderRadius: 10, padding: '8px 12px',
-        background: 'var(--paper-2)', marginTop: 6, cursor: link ? 'pointer' : 'default',
-        fontSize: 13,
+        background: 'var(--paper-2)', marginTop: 6, fontSize: 13,
       }}
     >
       <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
         {label}
       </div>
-      <div style={{ color: 'var(--ink)', marginTop: 2 }}>
-        {r.resource_type}:{r.resource_id}
+      {isImage && (
+        // Image preview — browser authenticates via the session cookie
+        // (the backend's download endpoint accepts same-origin cookies).
+        <img
+          src={downloadUrl}
+          alt={displayName}
+          style={{ display: 'block', maxWidth: '100%', maxHeight: 320, marginTop: 8, borderRadius: 6, border: '1px solid var(--rule)' }}
+        />
+      )}
+      <div style={{ color: 'var(--ink)', marginTop: isImage ? 6 : 2, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ wordBreak: 'break-word' }}>📎 {displayName}</span>
+        {downloadUrl && (
+          <a
+            href={downloadUrl}
+            download={displayName}
+            onClick={(e) => e.stopPropagation()}
+            style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'underline' }}
+          >
+            Download
+          </a>
+        )}
+        {link && (
+          <button
+            type="button"
+            onClick={() => navigate(link)}
+            style={{ fontSize: 12, color: 'var(--muted)', border: 'none', background: 'transparent', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+          >
+            Open in {label.toLowerCase()}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -139,7 +176,10 @@ export default function CollabRoom({ caseId }) {
   const [draft, setDraft] = useState('');
   const [mentionedIds, setMentionedIds] = useState([]);
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadNote, setUploadNote] = useState(''); // transient "Uploading foo.pdf…" line
   const feedRef = useRef(null);
+  const fileInputRef = useRef(null);
   const clearUnread = useCollabStore((s) => s.clear);
 
   const load = useCallback(async () => {
@@ -181,6 +221,81 @@ export default function CollabRoom({ caseId }) {
   }, [messages.length]);
 
   const recipientNames = Object.fromEntries(recipients.map((r) => [r.user_id, r.name || `User ${r.user_id}`]));
+
+  // Upload one or more files from the user's machine and drop each one
+  // into the room as a share-kind message. Reuses the existing Vault
+  // upload endpoint + /api/collab/share so privacy, notifications,
+  // mentions and audit all flow through the single share service — no
+  // new backend path, no bespoke rules to reconcile later.
+  //
+  // The composer draft (if any) rides along as the share body on the
+  // FIRST uploaded file, so a user can type "see page 3" + attach the
+  // PDF and have both land as one card. Subsequent files in the same
+  // batch get a plain "Attached <filename>" caption. Current mentions
+  // make all of them private DMs to those recipients; '@all' makes them
+  // public broadcasts — same rule as regular text messages.
+  const uploadAndShare = async (files) => {
+    if (!files || !files.length) return;
+    setUploading(true); setError('');
+    const broadcast = /(^|\s)@(all|everyone|channel)\b/i.test(draft);
+    const typedBody = draft.trim();
+    const mentionsForShare = broadcast ? [] : mentionedIds;
+    try {
+      for (let i = 0; i < files.length; i += 1) {
+        const f = files[i];
+        setUploadNote(`Uploading ${f.name}… (${i + 1}/${files.length})`);
+        // 1. POST to the Vault upload endpoint — gets a vault_doc id back.
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('case_id', String(caseId));
+        const up = await fetch(`${API_BASE}/api/vault/documents/upload`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'X-CSRF-TOKEN': csrf() },
+          body: fd,
+        });
+        const upJ = await up.json().catch(() => ({}));
+        if (!up.ok || !upJ.id) throw new Error(upJ.message || `Could not upload ${f.name}.`);
+
+        // 2. Share the newly-uploaded vault_doc into the room. The first
+        //    file carries the typed body (so "see page 3 📎 contract.pdf"
+        //    is one message); the rest get a plain caption.
+        const body = i === 0 && typedBody ? typedBody : `Attached ${f.name}`;
+        const share = await fetch(`${API_BASE}/api/collab/share`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+          body: JSON.stringify({
+            case_id: Number(caseId),
+            resource_type: 'vault_doc',
+            resource_id: upJ.id,
+            recipient_user_ids: mentionsForShare,
+            body,
+          }),
+        });
+        const shareJ = await share.json().catch(() => ({}));
+        if (!share.ok) throw new Error(shareJ.message || `Could not share ${f.name} into the room.`);
+
+        // Hydrate the returned message with the filename we just uploaded
+        // so the feed card can show "📎 contract.pdf" + an image preview
+        // when it's a png/jpg/... instead of the raw "vault_doc:42" label.
+        const msg = shareJ.message || {};
+        msg.resources = (msg.resources || []).map((r) => ({
+          ...r,
+          filename: upJ.filename || f.name,
+          name: upJ.title || f.name,
+        }));
+        setMessages((prev) => [...prev, msg]);
+      }
+      // Only clear the composer once the whole batch landed, so a mid-
+      // batch failure leaves the typed draft + mentions in place for retry.
+      setDraft(''); setMentionedIds([]);
+    } catch (e) {
+      setError(e.message || 'Could not attach file.');
+    } finally {
+      setUploading(false);
+      setUploadNote('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const send = async () => {
     const body = draft.trim();
@@ -297,14 +412,35 @@ export default function CollabRoom({ caseId }) {
               return draft.trim() ? 'Public (open channel) — mention someone with @ to make it private, or type @all to broadcast.' : '';
             })()}
           </div>
-          <button
-            className="lx-btn lx-btn--primary"
-            type="button"
-            disabled={sending || !draft.trim()}
-            onClick={send}
-          >
-            {sending ? 'Sending…' : 'Send message'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {uploadNote && (
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uploadNote}</span>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => uploadAndShare(Array.from(e.target.files || []))}
+            />
+            <button
+              type="button"
+              className="lx-btn lx-btn--ghost"
+              disabled={uploading || sending}
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach a document, image, or any file. It uploads to this case's Vault and appears here as a shareable card."
+            >
+              {uploading ? 'Uploading…' : '📎 Attach'}
+            </button>
+            <button
+              className="lx-btn lx-btn--primary"
+              type="button"
+              disabled={sending || uploading || !draft.trim()}
+              onClick={send}
+            >
+              {sending ? 'Sending…' : 'Send message'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

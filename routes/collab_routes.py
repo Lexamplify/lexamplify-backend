@@ -138,15 +138,42 @@ def _hydrate_messages(rows):
     ids = [r["id"] for r in rows]
     qmarks = ",".join("?" for _ in ids)
     resources = {}
-    for r in c.execute(
+    # First pass: collect every (resource_type, resource_id) so we can
+    # hydrate display names in one batched query per type instead of
+    # N round-trips through the ResourceCard renderer.
+    raw_rsrc_rows = c.execute(
         f"SELECT * FROM case_message_resources WHERE message_id IN ({qmarks})",
         ids,
-    ).fetchall():
-        resources.setdefault(r["message_id"], []).append({
+    ).fetchall()
+    vault_ids = sorted({
+        int(rr["resource_id"]) for rr in raw_rsrc_rows
+        if rr["resource_type"] == "vault_doc" and str(rr["resource_id"]).isdigit()
+    })
+    vault_meta = {}
+    if vault_ids:
+        qm2 = ",".join("?" for _ in vault_ids)
+        for vr in c.execute(
+            f"SELECT id, title, smart_title, file_format FROM case_vault WHERE id IN ({qm2})",
+            vault_ids,
+        ).fetchall():
+            name = vr["smart_title"] or vr["title"] or f"document {vr['id']}"
+            ext = (vr["file_format"] or "").strip().lower()
+            # Reconstruct a filename so the frontend can detect image
+            # extensions (png/jpg/...) and show an inline preview.
+            filename = name if (not ext or name.lower().endswith("." + ext)) else f"{name}.{ext}"
+            vault_meta[int(vr["id"])] = {"name": name, "filename": filename}
+    for r in raw_rsrc_rows:
+        entry = {
             "resource_type": r["resource_type"],
             "resource_id": r["resource_id"],
             "resource_version": r["resource_version"],
-        })
+        }
+        if r["resource_type"] == "vault_doc" and str(r["resource_id"]).isdigit():
+            meta = vault_meta.get(int(r["resource_id"]))
+            if meta:
+                entry["name"] = meta["name"]
+                entry["filename"] = meta["filename"]
+        resources.setdefault(r["message_id"], []).append(entry)
     mentions = {}
     for r in c.execute(
         f"SELECT * FROM case_message_mentions WHERE message_id IN ({qmarks})",

@@ -319,7 +319,44 @@ def download_vault_document(doc_id):
             (doc_id,)
         ).fetchone()
         if not row or not app_module._vault_access_ok('document', doc_id, row[4], uid, require_edit=False):
-            return jsonify({'error': True, 'message': 'Document not found.'}), 404
+            # Fallback: a vault doc attached inside a case room via
+            # /api/collab/share should be downloadable by every user who
+            # can see that message under the collab visibility rule
+            # (public broadcast → any case member; private DM → author +
+            # mentioned recipients + firm seniors). This is cheaper than
+            # replicating team_members fan-out from the chat composer
+            # and keeps the one-share-service invariant.
+            allowed = False
+            try:
+                from utils.case_access import require_case_access
+                rows = app_module.db.execute(
+                    "SELECT m.id AS msg_id, m.case_id, m.author_user_id, m.visibility "
+                    "FROM case_message_resources r "
+                    "JOIN case_messages m ON m.id = r.message_id "
+                    "WHERE r.resource_type = 'vault_doc' AND r.resource_id = ?",
+                    (str(doc_id),),
+                ).fetchall()
+                for mr in rows:
+                    case_id_ = mr[1] if not hasattr(mr, 'keys') else mr['case_id']
+                    author_id_ = mr[2] if not hasattr(mr, 'keys') else mr['author_user_id']
+                    visibility_ = (mr[3] if not hasattr(mr, 'keys') else mr['visibility']) or 'public'
+                    msg_id_ = mr[0] if not hasattr(mr, 'keys') else mr['msg_id']
+                    if not require_case_access(uid, int(case_id_)):
+                        continue
+                    if visibility_ == 'public' or int(author_id_) == int(uid):
+                        allowed = True
+                        break
+                    ment = app_module.db.execute(
+                        "SELECT 1 FROM case_message_mentions WHERE message_id = ? AND mentioned_user_id = ?",
+                        (msg_id_, uid),
+                    ).fetchone()
+                    if ment:
+                        allowed = True
+                        break
+            except Exception:
+                allowed = False
+            if not allowed:
+                return jsonify({'error': True, 'message': 'Document not found.'}), 404
         if not row[0] and app_module._dms_present():
             # A file that went in through the Document Hub is kept on disk (checksummed, optionally
             # encrypted), not as a blob in this row - serve it from there, always as a download.
