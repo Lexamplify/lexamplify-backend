@@ -71,12 +71,24 @@ export default function Practice() {
   const pending = Array.isArray(dash?.pending) ? dash.pending : [];
   const pendingTotal = dash?.pending_total ?? pending.length;
 
-  // Pipeline item 1: workspace = client. Use workspace count instead of
-  // the legacy lpms_clients list so the stat agrees with the switcher.
+  // Pipeline item 1: workspace = client. Keep a workspace count for the
+  // subline but drop the duplicate 'Clients' stat tile — the top-bar
+  // switcher already picks the current client, so a count-of-clients
+  // tile on this page was just visual noise. In its place: Team members,
+  // which is the Practice-specific stat the user was looking for.
   const workspacesCount = useWorkspaceStore((s) => s.workspaces?.length || 0);
+  const [teamCount, setTeamCount] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/practice/members`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d?.members) setTeamCount(d.members.length); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const STATS = [
-    { Icon: Ic.Users, num: workspacesCount, label: 'Clients', sub: 'On your rolls', onClick: () => navigate('/workspaces') },
+    { Icon: Ic.Users, num: teamCount ?? 0, label: 'Team members', sub: 'In your chambers', onClick: () => navigate('/practice/team') },
     { Icon: Ic.Matters, num: counts.active ?? open.length, label: 'Active matters', sub: 'In chambers' },
     { Icon: Ic.Gavel, num: counts.week ?? thisWeek.length, label: 'Hearings this week', sub: '7-day watch' },
     { Icon: Ic.Clock, num: pendingTotal || hearingsToday.length, label: pending.length ? 'Pending actions' : 'Hearings today', sub: pending.length ? 'Awaiting you' : 'Cause list' },
@@ -95,8 +107,11 @@ export default function Practice() {
           <p className="ph__sub">{subline}</p>
         </div>
         <div className="lx-row" style={{ gap: 10, flexWrap: 'wrap' }}>
-          {/* Legacy '/clients' button removed — workspace = client, so the
-              workspace switcher + /workspaces IS client management. */}
+          {/* Pipeline item 1: workspace = client, so the Clients button
+              removed. Added a Team button right here — one click to the
+              Practice team roster where firm members (Senior / Junior /
+              Office Staff) are added and assigned to matters. */}
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => navigate('/practice/team')}><Ic.Users size={14} /> Team</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => navigate('/practice/audit')}><Ic.Shield size={14} /> Audit log</button>
           <button className="lx-btn lx-btn--gold" onClick={() => setShowNew(true)}><Ic.Plus size={15} /> New client</button>
         </div>
