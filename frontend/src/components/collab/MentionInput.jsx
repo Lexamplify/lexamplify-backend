@@ -50,7 +50,19 @@ export default function MentionInput({
     const ta = taRef.current;
     if (!ta) return;
     const rect = ta.getBoundingClientRect();
-    setMenuAnchor({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX });
+    // Open ABOVE the textarea by default — the composer sits at the
+    // bottom of the Collaboration tab, so opening below would push the
+    // picker off-screen (and the user has to scroll to read entries,
+    // which they correctly flagged as a UX bug).
+    // Height is capped at 240px in the menu style below, so top =
+    // (textarea top) - 240 - 6px gap keeps it entirely in-viewport.
+    const POPOVER_MAX_H = 240;
+    const GAP = 6;
+    setMenuAnchor({
+      top: rect.top + window.scrollY - POPOVER_MAX_H - GAP,
+      left: rect.left + window.scrollX,
+      openUpward: true,
+    });
     setShowMenu(true);
   };
 
@@ -147,12 +159,14 @@ export default function MentionInput({
           role="listbox"
           style={{
             position: 'fixed',
-            top: menuAnchor.top + 4,
+            top: menuAnchor.top,
             left: menuAnchor.left,
             background: 'var(--paper)',
             border: '1px solid var(--rule)',
             borderRadius: 10,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            // Elevated shadow going DOWNWARD since the popover is now
+            // above the textarea — the shadow should fall toward the input.
+            boxShadow: '0 10px 28px rgba(0,0,0,0.18)',
             minWidth: 240,
             maxHeight: 240,
             overflowY: 'auto',
