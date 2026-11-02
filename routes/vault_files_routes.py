@@ -432,24 +432,49 @@ def download_vault_document(doc_id):
             return jsonify({'error': True, 'message': 'No binary file stored for this document.'}), 404
         fmt = (row[1] or 'native').lower()
         name = row[2] or row[3] or f'document_{doc_id}'
-        # Server-generated exports are always 'pdf' or 'docx' (see
-        # /api/vault/save); real uploads (/api/vault/documents/upload)
-        # store the caller's own file extension in file_format, which can
-        # be anything — mislabeling a .jpg as .docx would corrupt it, so
-        # only the two known-generated formats get special-cased mimes.
+        # Full MIME map so inline previews (?inline=1) hand the browser
+        # the right type — a PDF needs application/pdf for the built-in
+        # viewer, a PNG needs image/png for the <img> tag, etc. Falls
+        # back to octet-stream for unknown extensions (which forces a
+        # download, the safe default).
         _KNOWN_MIMES = {
             'pdf': 'application/pdf',
             'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc': 'application/msword',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'png': 'image/png',
+            'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+            'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml',
+            'bmp': 'image/bmp', 'avif': 'image/avif',
+            'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime',
+            'm4v': 'video/mp4', 'ogv': 'video/ogg',
+            'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+            'm4a': 'audio/mp4', 'aac': 'audio/aac', 'flac': 'audio/flac',
+            'txt': 'text/plain', 'md': 'text/markdown',
+            'html': 'text/html', 'htm': 'text/html',
+            'csv': 'text/csv', 'json': 'application/json',
         }
         mime = _KNOWN_MIMES.get(fmt, 'application/octet-stream')
         ext = f'.{fmt}' if fmt and fmt != 'native' else ''
         safe_name = ''.join(c for c in name if c.isalnum() or c in ' _-.')
+        # ?inline=1 asks for Content-Disposition: inline so the browser
+        # renders it natively (PDF viewer, image, video) instead of
+        # downloading. Case room's "Open in new tab" uses this; the
+        # Download button omits the param and still gets a true download.
+        is_inline = (request.args.get('inline') == '1')
+        disp = 'inline' if is_inline else 'attachment'
         from utils import doc_storage
         _served = doc_storage.resolve(row[0])
         return FlaskResponse(
             _served,
             mimetype=mime,
-            headers={'Content-Disposition': f'attachment; filename="{safe_name}{ext}"'},
+            headers={
+                'Content-Disposition': f'{disp}; filename="{safe_name}{ext}"',
+                'X-Content-Type-Options': 'nosniff',
+            },
         )
     except Exception as e:
         return jsonify({'error': True, 'message': str(e)}), 500

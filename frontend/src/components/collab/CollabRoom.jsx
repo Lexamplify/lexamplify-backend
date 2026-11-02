@@ -86,13 +86,30 @@ function renderBody(body, mentionUserIds, recipientNames) {
   });
 }
 
-// File extensions that we render inline as an image preview in the chat
-// (everything else gets a generic file card with a Download button).
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']);
+// Classify an attachment by its file extension so the card can pick
+// the right preview — a photo gets rendered inline, a PDF gets an
+// embed, a video gets a <video controls>, everything else falls back
+// to the file-row card. Driven off case_vault.file_format via the
+// backend's hydration, so a .html file never pretends to be a .pdf.
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif']);
+const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv']);
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac']);
+const PDF_EXTS = new Set(['pdf']);
 const _extOf = (name) => {
   if (!name || typeof name !== 'string') return '';
   const i = name.lastIndexOf('.');
   return i >= 0 ? name.slice(i + 1).toLowerCase() : '';
+};
+const _iconFor = (ext) => {
+  if (IMAGE_EXTS.has(ext)) return '🖼️';
+  if (VIDEO_EXTS.has(ext)) return '🎞️';
+  if (AUDIO_EXTS.has(ext)) return '🎧';
+  if (PDF_EXTS.has(ext)) return '📄';
+  if (['doc', 'docx', 'odt', 'rtf', 'txt', 'md', 'html'].includes(ext)) return '📝';
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) return '📊';
+  if (['ppt', 'pptx', 'odp'].includes(ext)) return '📽️';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '🗜️';
+  return '📎';
 };
 
 function ResourceCard({ r, navigate }) {
@@ -102,17 +119,30 @@ function ResourceCard({ r, navigate }) {
     case_document: 'Case document',
     draft_session: 'Draft',
   }[r.resource_type] || r.resource_type;
-  const link = {
-    contract_analysis: `/contracts/${r.resource_id}`,
-    draft_session: `/draft/${r.resource_id}`,
-    vault_doc: `/vault#${r.resource_id}`,
-    case_document: null,
-  }[r.resource_type];
   const displayName = r.name || r.filename || `${r.resource_type}:${r.resource_id}`;
-  const isImage = r.resource_type === 'vault_doc' && IMAGE_EXTS.has(_extOf(r.filename || r.name));
+  const ext = _extOf(r.filename || r.name);
+  const icon = _iconFor(ext);
+  const [imgBroken, setImgBroken] = useState(false);
+
+  // vault_doc gets a real file URL. Everything else (a shared contract
+  // analysis, a draft) stays as an in-app link.
   const downloadUrl = r.resource_type === 'vault_doc'
     ? `${API_BASE}/api/vault/documents/${r.resource_id}/download`
     : null;
+  // ?inline=1 asks the backend to serve with Content-Disposition: inline,
+  // so clicking "Open in new tab" lets the browser render it natively
+  // (PDF viewer / image / video) instead of forcing a download.
+  const inlineUrl = downloadUrl ? `${downloadUrl}?inline=1` : null;
+  const appLink = {
+    contract_analysis: `/contracts/${r.resource_id}`,
+    draft_session: `/draft/${r.resource_id}`,
+  }[r.resource_type] || null;
+
+  const isImage = r.resource_type === 'vault_doc' && IMAGE_EXTS.has(ext) && !imgBroken;
+  const isPdf = r.resource_type === 'vault_doc' && PDF_EXTS.has(ext);
+  const isVideo = r.resource_type === 'vault_doc' && VIDEO_EXTS.has(ext);
+  const isAudio = r.resource_type === 'vault_doc' && AUDIO_EXTS.has(ext);
+
   return (
     <div
       style={{
@@ -121,19 +151,52 @@ function ResourceCard({ r, navigate }) {
       }}
     >
       <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
-        {label}
+        {label}{ext ? ` · ${ext.toUpperCase()}` : ''}
       </div>
       {isImage && (
-        // Image preview — browser authenticates via the session cookie
-        // (the backend's download endpoint accepts same-origin cookies).
         <img
-          src={downloadUrl}
+          src={inlineUrl}
           alt={displayName}
+          onError={() => setImgBroken(true)}
           style={{ display: 'block', maxWidth: '100%', maxHeight: 320, marginTop: 8, borderRadius: 6, border: '1px solid var(--rule)' }}
         />
       )}
-      <div style={{ color: 'var(--ink)', marginTop: isImage ? 6 : 2, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ wordBreak: 'break-word' }}>📎 {displayName}</span>
+      {isVideo && (
+        <video
+          controls
+          preload="metadata"
+          style={{ display: 'block', maxWidth: '100%', maxHeight: 360, marginTop: 8, borderRadius: 6, border: '1px solid var(--rule)', background: '#000' }}
+        >
+          <source src={inlineUrl} />
+          Your browser can't play this video. Use Download below.
+        </video>
+      )}
+      {isAudio && (
+        <audio controls preload="metadata" src={inlineUrl} style={{ display: 'block', width: '100%', marginTop: 8 }} />
+      )}
+      {isPdf && (
+        // Inline PDF preview — browsers render it natively from an
+        // <embed>; the fallback link covers browsers that disable the
+        // built-in viewer.
+        <embed
+          src={inlineUrl}
+          type="application/pdf"
+          style={{ display: 'block', width: '100%', height: 420, marginTop: 8, border: '1px solid var(--rule)', borderRadius: 6 }}
+        />
+      )}
+      <div style={{ color: 'var(--ink)', marginTop: (isImage || isPdf || isVideo || isAudio) ? 8 : 2, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ wordBreak: 'break-word', fontWeight: 500 }}>{icon} {displayName}</span>
+        {inlineUrl && (
+          <a
+            href={inlineUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'underline' }}
+          >
+            Open in new tab
+          </a>
+        )}
         {downloadUrl && (
           <a
             href={downloadUrl}
@@ -144,10 +207,10 @@ function ResourceCard({ r, navigate }) {
             Download
           </a>
         )}
-        {link && (
+        {appLink && (
           <button
             type="button"
-            onClick={() => navigate(link)}
+            onClick={() => navigate(appLink)}
             style={{ fontSize: 12, color: 'var(--muted)', border: 'none', background: 'transparent', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
           >
             Open in {label.toLowerCase()}
