@@ -2182,6 +2182,14 @@ def create_app():
         print(f"Database setup error: {e}")
     # --- END DATABASE BUILDER ---
 
+    # Read-only: warn (log only, no changes) when an OLD local SQLite file lacks the workspace_id columns.
+    try:
+        from utils.schema_check import warn_if_local_schema_is_old
+        with app.app_context():
+            warn_if_local_schema_is_old(app, sqlalchemy_db.engine)
+    except Exception as _e:  # noqa: BLE001 — a check must never stop the app starting
+        app.logger.warning(f"local schema check skipped: {_e}")
+
     # ── Default-deny sign-in gate ────────────────────────────────────────
     # Many older endpoints (clients, billing, cause list, IP, calendar, contract tools, AI tools, the court proxy)
     # carry no @jwt_required of their own, so anyone on the internet could read or change firm data and spend AI
@@ -2306,9 +2314,21 @@ def create_app():
             return resp
         return jsonify({"error": text, "message": text, "code": f"HTTP_{e.code}", "request_id": _rid()}), e.code
 
+    # SQLite words these "no such column" / "has no column named"; Postgres says `column "x" does not exist` / `relation "x" does not exist`.
+    _SCHEMA_ERROR_RE = re.compile(r'no such (column|table)|has no column named|(column|relation) "[^"]+" does not exist', re.I)
+
+    def _is_schema_mismatch(e):
+        from sqlalchemy.exc import OperationalError, ProgrammingError
+        return isinstance(e, (OperationalError, ProgrammingError)) and bool(_SCHEMA_ERROR_RE.search(str(getattr(e, 'orig', None) or e)))
+
     @app.errorhandler(SQLAlchemyError)
     def handle_db_error(e):
         app.logger.error(f"[{_rid()}] Database Error: {e}")
+        # A missing table/column is a code-vs-database mismatch, not a sleeping database: say so (and don't ask the user to retry).
+        if _is_schema_mismatch(e):
+            return jsonify({"error": True, "code": "DB_SCHEMA_MISMATCH", "request_id": _rid(),
+                            "message": "This feature needs a database update that has not been applied yet. "
+                                       "Please contact support and quote the reference below."}), 500
         return jsonify({"error": True, "code": "DB_UNAVAILABLE", "request_id": _rid(),
                         "message": "The database is not responding. It may be waking up. Please try again in a few seconds."}), 503
 
