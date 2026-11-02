@@ -31,6 +31,12 @@ export default function WorkspaceSwitcher({ firmFallback }) {
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  // Dedicated flag for "the inline create form is visible". Previously
+  // the render used `creating || newName` and the "+ Add client" button
+  // tried to coax that into true with setNewName(' ') + setTimeout(..., 0)
+  // → setNewName(''), which flickered the form in and out on the same
+  // tick — the click looked completely dead.
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [autoCreateTried, setAutoCreateTried] = useState(false);
   const rootRef = useRef(null);
 
@@ -100,6 +106,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
     try {
       await create({ name });
       setNewName('');
+      setShowCreateForm(false);
       setOpen(false);
     } catch (err) {
       // Keep the prompt open so the user sees the error; store sets error state.
@@ -168,7 +175,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
 
           <div className="ws-switcher__divider" />
 
-          {creating || newName ? (
+          {showCreateForm ? (
             <form className="ws-switcher__create" onSubmit={handleCreate}>
               <input
                 type="text"
@@ -179,13 +186,13 @@ export default function WorkspaceSwitcher({ firmFallback }) {
                 autoFocus
               />
               <button type="submit" disabled={creating || !newName.trim()}>Create</button>
-              <button type="button" onClick={() => { setNewName(''); setCreating(false); }}>Cancel</button>
+              <button type="button" onClick={() => { setNewName(''); setShowCreateForm(false); }}>Cancel</button>
             </form>
           ) : (
             <button
               type="button"
               className="ws-switcher__footer-link"
-              onClick={() => { setNewName(' '); setCreating(false); setTimeout(() => setNewName(''), 0); }}
+              onClick={() => { setNewName(''); setShowCreateForm(true); }}
             >
               + Add client
             </button>
