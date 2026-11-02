@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS lpms_cases (
     client_id INTEGER, advocate_id INTEGER, priority TEXT NOT NULL DEFAULT 'normal',
     status TEXT NOT NULL DEFAULT 'Active', next_action TEXT, next_action_due TEXT, remarks TEXT,
     restricted INTEGER NOT NULL DEFAULT 0, outcome TEXT, closed_at TEXT, archived_at TEXT,
-    team_id INTEGER,
+    team_id INTEGER, workspace_id INTEGER,
     created_by INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS lpms_cases_firm ON lpms_cases(firm_id, archived_at);

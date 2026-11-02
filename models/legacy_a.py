@@ -187,6 +187,7 @@ class Letterhead(db.Model):
     contact = Column(Text)
     auto_detected = Column(Boolean, nullable=False, default=False, server_default=sql_text("0"))
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class SavedDraft(db.Model):
@@ -233,6 +234,7 @@ class DocumentChunkLegacy(db.Model):
     chunk_text = Column(Text, nullable=False)
     embedding = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class ChatHistory(db.Model):
@@ -242,6 +244,7 @@ class ChatHistory(db.Model):
     user_message = Column(Text, nullable=False)
     bot_response = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -260,6 +263,7 @@ class CalendarEvent(db.Model):
     google_event_id = Column(Text)
     owner_user_id = Column(Text)
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class UserNotificationSettings(db.Model):
@@ -283,6 +287,8 @@ class ConflictClearanceMemo(db.Model):
     matter_type = Column(Text)
     generated_at = Column(Text)
     memo_text = Column(Text)
+    owner_user_id = Column(Integer)
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -345,6 +351,7 @@ class DmsDoc(db.Model):
     created_at = Column(Text, nullable=False, server_default=sql_text("CURRENT_TIMESTAMP"))
     updated_at = Column(Text)
     processed_at = Column(Text)
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class DmsPage(db.Model):
@@ -649,6 +656,7 @@ class LpmsCase(db.Model):
     created_at = Column(Text, nullable=False)
     updated_at = Column(Text, nullable=False)
     team_id = Column(Integer)
+    workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
 
 class LpmsParty(db.Model):

@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS dms_docs (
     deleted_by    INTEGER,
     created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    TEXT,
-    processed_at  TEXT
+    processed_at  TEXT,
+    workspace_id  INTEGER
 );
 CREATE INDEX IF NOT EXISTS ix_dms_sha     ON dms_docs(sha256);
 CREATE INDEX IF NOT EXISTS ix_dms_group   ON dms_docs(group_id, version);
