@@ -282,6 +282,11 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
 
     all_clauses = []
     all_summaries = []
+    # Pipeline item 2: the master prompt now returns a third top-level key,
+    # `missing_protections`, listing clauses that would FAVOR our client but
+    # are absent from the contract. Each chunk may contribute its own
+    # observations; we collect and dedupe them before returning.
+    all_missing_proactive = []
     completed = 0
     not_reached = 0
 
@@ -299,6 +304,10 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                         all_clauses.extend(c for c in res["clauses"] if isinstance(c, dict))
                     if isinstance(res.get("summary"), str) and res["summary"]:
                         all_summaries.append((idx, res["summary"]))
+                    if isinstance(res.get("missing_protections"), list):
+                        all_missing_proactive.extend(
+                            m for m in res["missing_protections"] if isinstance(m, dict)
+                        )
             progress = 15 + int((completed / total) * 55)  # climbs 15 -> 70
             report(f'Reading the contract: section {completed} of {total}', progress, sections_done=completed)  # also the heartbeat + cancel check
             if time.time() > deadline + 5:
@@ -406,6 +415,20 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
         explanation = c.get("explanation") or c.get("issue") or "This clause presents contractual risk under Indian law."
 
         cite_issues = check_citations(" ".join([str(rule), str(explanation), str(rev_text)]))
+        # Pipeline item 2: carry the AI's partisan impact tag + client-
+        # specific advice through to the UI. We fall back gracefully when
+        # an older-prompt chunk didn't populate them.
+        raw_impact = (c.get("impact") or "").strip()
+        if "favor" in raw_impact.lower():
+            impact = "Favors us"
+        elif "harm" in raw_impact.lower() or raw_impact == "":
+            # Default to "Harms us" when the AI left the field blank —
+            # a flagged clause with no impact tag is more likely bad
+            # for us than neutral (that's why it was flagged at all).
+            impact = "Harms us"
+        else:
+            impact = "Neutral — monitor"
+        client_advice = (c.get("client_specific_advice") or "").strip()
         formatted_clauses.append({
             "id": f"risk-{idx+1}",
             "quoteMatch": c.get("_quote_match", "exact"),
@@ -429,10 +452,49 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
             "text": orig_text,
             "risk": color,
             "issue": explanation,
+            # Partisan fields — exposed under both camelCase and
+            # snake_case keys so a mixed React consumer can read either.
+            "impact": impact,
+            "clientImpact": impact,
+            "client_specific_advice": client_advice,
+            "clientSpecificAdvice": client_advice,
         })
 
     report('Identifying missing standard clauses...', 80)
     missing_clauses = find_missing_clauses(full_text)
+
+    # Pipeline item 2: merge the AI-generated "missing protections our
+    # client would want" with the static checklist above. Dedupe by title
+    # so a protection the deterministic checker already caught doesn't
+    # get repeated. The AI's suggestions are more client-specific but
+    # less reliable; put them AFTER the deterministic ones so the UI's
+    # natural scan order (deterministic → AI) matches "safest first".
+    missing_titles_seen = set()
+    merged_missing = []
+    for m in missing_clauses or []:
+        if isinstance(m, dict):
+            t = str(m.get("title") or m.get("name") or "").strip().lower()
+            if t and t in missing_titles_seen:
+                continue
+            if t:
+                missing_titles_seen.add(t)
+            merged_missing.append(m)
+    for m in all_missing_proactive:
+        t = str(m.get("title") or "").strip().lower()
+        if not t or t in missing_titles_seen:
+            continue
+        missing_titles_seen.add(t)
+        merged_missing.append({
+            "title": m.get("title") or "",
+            "why_we_need_it": m.get("why_we_need_it") or "",
+            "suggested_language": m.get("suggested_language") or "",
+            "playbook_rule": m.get("playbook_rule") or "",
+            # Flag the source so the frontend can render these differently
+            # from the deterministic ones (e.g. a subtle "AI-suggested"
+            # badge). The schema stays the same so no breakage.
+            "source": "ai_proactive",
+        })
+    missing_clauses = merged_missing
 
     report('Matching precedents...', 88)
     citations = []

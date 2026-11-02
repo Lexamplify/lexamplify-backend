@@ -74,15 +74,37 @@ def build_workspace_context(workspace_id: int | None) -> str:
             return ""
 
         parts: list[str] = []
-        # Pipeline item 1 & 2: workspace is the CLIENT. Lead the brief
-        # with the client identity + perspective instruction so every
-        # AI reply thinks from this client's side (step 2 of pipeline).
-        parts.append(f"## Client brief: {ws['name']}")
+        # Pipeline item 2 (full version): the workspace brief forces every
+        # downstream AI call to think and write as this client's own
+        # counsel. The old version was a single polite sentence; this one
+        # mandates partisan framing + impact tags + missing-protection
+        # hunting on every output. See plans/compiled-scribbling-scott.md
+        # discussion thread for the rationale.
+        client_name = ws["name"]
+        parts.append(f"## Client brief: {client_name}")
         parts.append(
-            f"**You are advising _{ws['name']}_**. Analyse everything "
-            f"from this client's perspective — flag anything that would "
-            f"harm them, favour anything that would help them, and never "
-            f"advise the opposing side."
+            f"**You are {client_name}'s own counsel. You represent {client_name}. "
+            f"You are not a neutral referee.**\n\n"
+            f"**How you must frame every output:**\n"
+            f"1. **Every finding ends with an impact tag.** For every clause, risk, "
+            f"suggestion, or paragraph you produce, close with one of: `[Favors us]`, "
+            f"`[Harms us]`, `[Neutral — monitor]`. No neutral silence allowed; if you "
+            f"are unsure, mark it `[Harms us — needs human check]` and err on the side "
+            f"of flagging.\n"
+            f"2. **Hunt for what is MISSING.** A clause that would protect {client_name} "
+            f"but is absent from the document is itself a finding. Flag it with "
+            f"`[Missing — would favor us]`. The opposing side benefits every time a "
+            f"protective clause for {client_name} is left out.\n"
+            f"3. **Partisan phrasing, not neutral phrasing.** Say *\"This clause is bad "
+            f"for us because…\"* not *\"This clause is one-sided.\"* Say *\"We should "
+            f"push for…\"* not *\"The parties could consider…\"*. The reader is the "
+            f"senior advocate for {client_name}, briefing their junior.\n"
+            f"4. **Admit genuine weakness.** When a fact in the brief genuinely hurts "
+            f"{client_name}'s position, say so bluntly and recommend a defensive move — "
+            f"do not pretend the fact doesn't exist. Partisan ≠ dishonest.\n"
+            f"5. **Never draft, propose, or advise for the opposing side.** If asked "
+            f"for \"a balanced view,\" refuse — point back to the standard that applies "
+            f"and say what it means for {client_name} specifically."
         )
 
         client_bits: list[str] = []
@@ -129,7 +151,10 @@ def build_workspace_context(workspace_id: int | None) -> str:
 
         parties = _trim(ws["parties"], MAX_PARTIES_CHARS)
         if parties:
-            parts.append(f"**Parties.** {parties}")
+            # Explicitly tag the opposing parties so the AI knows who to
+            # push against — this is what "represent {client}" cashes out
+            # to in a contract or filing.
+            parts.append(f"**Parties on this matter (opposing / counterparty included).** {parties}")
 
         # Prior vault documents — most recent N, titles only.
         docs = conn.execute(
@@ -166,8 +191,11 @@ def build_workspace_context(workspace_id: int | None) -> str:
             parts.append("**Prior contract analyses:**\n" + "\n".join(ana_lines))
 
         parts.append(
-            "_Use the brief above as grounding. Do not invent facts, dates "
-            "or amounts that are not in the brief or the user's current input."
+            f"_Use the brief above as ground truth. Do not invent facts, dates "
+            f"or amounts that are not in the brief or the user's current input. "
+            f"When this brief and the user's immediate input conflict, treat the "
+            f"user's input as the newer fact pattern, but still write from "
+            f"{client_name}'s side._"
         )
         return "\n\n".join(parts) + "\n\n---\n\n"
     except Exception as e:  # noqa: BLE001
