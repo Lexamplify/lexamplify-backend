@@ -168,6 +168,7 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
   const [stage, setStage] = useState('');
   const [stageHint, setStageHint] = useState('');
   const [elapsed, setElapsed] = useState(0);
+  const [minimized, setMinimized] = useState(false);  // user asked to work elsewhere; promise keeps running
   const elapsedTimerRef = useRef(null);
   const startStage = (label, hint = '') => { setStage(label); setStageHint(hint); };
   // Start / stop the per-second elapsed counter when busy flips.
@@ -283,11 +284,54 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
   };
 
   return (
+    minimized ? (
+      /* Floating pill — the modal is hidden but the async extract+analyze
+         promise is still running in this component's closures, so state
+         updates (stage, elapsed) keep updating this pill live. The user
+         can navigate anywhere in the app; the pill stays put because this
+         component is still mounted. */
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 1000,
+          background: 'var(--paper)', border: '1px solid var(--rule)',
+          borderRadius: 14, padding: '14px 18px', minWidth: 320, maxWidth: 400,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          display: 'flex', flexDirection: 'column', gap: 10,
+        }}
+      >
+        <div style={{ width: '100%', height: 3, background: 'rgba(0,0,0,0.08)', borderRadius: 999, overflow: 'hidden', position: 'relative' }}>
+          <div style={{
+            position: 'absolute', top: 0, left: 0, height: '100%', width: '40%',
+            background: 'var(--accent)', borderRadius: 999,
+            animation: 'lxBarSlide 1.6s ease-in-out infinite',
+          }} />
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500, lineHeight: 1.3 }}>
+          {stage || 'Reviewing contract…'}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '.04em' }}>
+          {`${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')} elapsed · running in the background`}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setMinimized(false)}>
+            Open review
+          </button>
+        </div>
+        <style>{`@keyframes lxBarSlide { 0% { left: -40%; } 100% { left: 100%; } }`}</style>
+      </div>
+    ) : (
     <Modal
       title="Review a contract"
       onClose={busy ? () => {} : onClose}
       footer={<>
         <button className="lx-btn lx-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button>
+        {busy && (
+          <button className="lx-btn lx-btn--ghost" onClick={() => setMinimized(true)} title="Keep working in the background and let me use the rest of the app">
+            Minimize
+          </button>
+        )}
         <button className="lx-btn lx-btn--primary" onClick={start} disabled={busy}>{busy ? 'Working…' : 'Analyze contract'}</button>
       </>}
     >
@@ -406,5 +450,6 @@ function UploadModal({ onClose, onStarted, prefillText = '', prefillName = '' })
         </div>
       </div>
     </Modal>
+    )
   );
 }
